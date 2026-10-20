@@ -1,7 +1,7 @@
 import { api } from "./lib/api.js";
 import { $, $$, esc } from "./lib/dom.js";
 import { pct } from "./lib/format.js";
-import { applyI18n, bindLangSelect, langSelect, t } from "./lib/i18n.js";
+import { applyI18n, bindLangButton, t } from "./lib/i18n.js";
 import { icon } from "./lib/icons.js";
 import { setCrumbs } from "./lib/layout.js";
 import { onHost } from "./lib/store.js";
@@ -89,8 +89,7 @@ function init() {
     $("#navBoxCount").textContent = h.boxes.total ? `${h.boxes.running}/${h.boxes.total}` : "";
   });
 
-  $("#sidebarLang").innerHTML = langSelect("sidebarLangSelect");
-  bindLangSelect($("#sidebarLangSelect"));
+  bindLangButton($("#langBtn"), icon);
   api("/api/system")
     .then((s) => {
       $("#sidebarVersion").textContent = `MiniBox v${s.version}`;

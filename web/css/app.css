@@ -232,19 +232,7 @@ button {
   font-size: 12px;
   color: var(--text-3);
   border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-#sidebarVersion {
   white-space: nowrap;
-}
-.select.lang-select {
-  width: auto;
-  height: 28px;
-  padding: 0 26px 0 8px;
-  font-size: 12px;
 }
 
 .main {
@@ -1308,7 +1296,6 @@ input[type="range"] {
   padding: 48px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   color: #eef;
   background: radial-gradient(1200px 600px at 10% 0%, #4f46e5 0%, #312e81 45%, #111127 100%);
 }
@@ -1357,9 +1344,10 @@ input[type="range"] {
 .login-hero li .icon {
   color: #a5a2ff;
 }
-.login-hero .foot {
-  font-size: 12px;
-  color: #9a9bd8;
+/* Logo pinned top, pitch centred in the remaining height (offset by the logo row). */
+.login-hero .hero-body {
+  margin-block: auto;
+  padding-bottom: 30px;
 }
 .login-panel {
   display: grid;

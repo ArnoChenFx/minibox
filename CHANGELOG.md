@@ -8,7 +8,7 @@
 - Docker 镜像：基于官方 `oven/bun`，支持 `linux/amd64` / `linux/arm64`，包含 OCI 标签与健康检查；发布到 `ghcr.io/arnochenfx/minibox`。
 - 发布工作流（`.github/workflows/release.yml`）：推送 `vX.Y.Z` tag 后自动校验版本、运行检查与测试、构建并推送多架构镜像（`X.Y.Z` / `X.Y` / `latest`），并创建 GitHub Release。
 - 环境变量 `MINIBOX_VERSION`：覆盖显示的版本号。
-- 界面多语言：英文 / 简体中文，可在侧边栏底部、登录页和设置页切换；默认跟随浏览器语言，选择保存在 localStorage。服务端错误返回英文消息及 `key` / `params`，由前端翻译。
+- 界面多语言：英文 / 简体中文，点击右上角（控制台顶栏与登录页）的语言图标按钮一键切换；默认跟随浏览器语言，选择保存在 localStorage。服务端错误返回英文消息及 `key` / `params`，由前端翻译。
 
 ### 变更
 - 版本号在运行时解析：`MINIBOX_VERSION` → `git describe --tags` → `package.json`，不再写死。
@@ -28,6 +28,7 @@
 
 ### 移除
 - 侧边栏标语；设置页的「安全须知」卡片（相关说明保留在 README 中）。
+- 登录页底部的「基于 Docker 与 Bun 构建」文字。
 
 ## [0.2.0] - 2026-10-20
 

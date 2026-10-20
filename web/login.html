@@ -30,7 +30,7 @@
   <div class="login-page">
     <section class="login-hero" aria-hidden="true">
       <img src="/assets/logo-dark.svg" alt="" style="height:30px;align-self:flex-start" />
-      <div>
+      <div class="hero-body">
         <h1 data-i18n-html="login.heroTitle">Personal dev environments<br />for AI agents</h1>
         <p class="lead" data-i18n="login.lead"></p>
         <ul>
@@ -40,10 +40,9 @@
           <li data-icon="terminal"><span data-i18n="login.feat4"></span></li>
         </ul>
       </div>
-      <div class="foot" data-i18n="login.foot">MiniBox · Built with Docker and Bun</div>
     </section>
     <section class="login-panel">
-      <div class="login-tools"><span id="loginLang"></span><button class="icon-btn" id="themeBtn" aria-label="Toggle theme" data-i18n-attr="aria-label:shell.toggleTheme"></button></div>
+      <div class="login-tools"><button class="icon-btn" id="langBtn"></button><button class="icon-btn" id="themeBtn" aria-label="Toggle theme" data-i18n-attr="aria-label:shell.toggleTheme"></button></div>
       <form class="login-card" id="loginForm" novalidate>
         <img class="logo" data-logo src="/assets/logo.svg" alt="MiniBox" />
         <h2 data-i18n="login.heading">Sign in to the console</h2>

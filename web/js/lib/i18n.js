@@ -3,10 +3,6 @@ import zh from "../i18n/zh-CN.js";
 
 /** Tiny i18n layer: flat dictionaries, `{name}` interpolation, language persisted in localStorage. */
 const DICTS = { en, "zh-CN": zh };
-export const LANGS = [
-  { id: "en", label: "English" },
-  { id: "zh-CN", label: "简体中文" },
-];
 const KEY = "minibox.lang";
 
 function detect() {
@@ -52,13 +48,15 @@ export function applyI18n(root = document) {
   }
 }
 
-/** A compact language <select>; switching reloads the page. */
-export function langSelect(id = "langSelect") {
-  return `<select class="select lang-select" id="${id}" aria-label="${t("common.language")}">${LANGS.map(
-    (l) => `<option value="${l.id}"${l.id === lang ? " selected" : ""}>${l.label}</option>`,
-  ).join("")}</select>`;
-}
+/** The other language (two are supported, so the switch is a simple toggle). */
+export const nextLang = () => (lang === "en" ? "zh-CN" : "en");
 
-export function bindLangSelect(el) {
-  el?.addEventListener("change", (e) => setLang(e.target.value));
+/** Wire an icon button to toggle the UI language; its tooltip names the target language. */
+export function bindLangButton(btn, icon) {
+  if (!btn) return;
+  const label = t("shell.switchLang");
+  btn.innerHTML = icon("languages");
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.addEventListener("click", () => setLang(nextLang()));
 }

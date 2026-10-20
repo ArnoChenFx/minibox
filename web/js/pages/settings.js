@@ -1,7 +1,7 @@
 import { api } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { dateTime } from "../lib/format.js";
-import { bindLangSelect, langSelect, t } from "../lib/i18n.js";
+import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { currentTheme, toggleTheme } from "../lib/theme.js";
 
@@ -23,7 +23,6 @@ export function render(view) {
         <div class="card"><div class="card-head"><h3>${t("st.appearance")}</h3></div><div class="card-body stack"><div class="row between">
           <div><strong>${t("st.theme")}</strong><div class="help">${t("st.themeHelp")}</div></div>
           <button class="btn" id="stTheme">${icon(currentTheme() === "dark" ? "sun" : "moon")}${currentTheme() === "dark" ? t("st.toLight") : t("st.toDark")}</button></div>
-          <div class="row between"><div><strong>${t("st.language")}</strong><div class="help">${t("st.languageHelp")}</div></div>${langSelect("stLang")}</div>
         </div></div>
       </div>
       <div class="stack">
@@ -34,7 +33,6 @@ export function render(view) {
           <div class="row" style="justify-content:center;margin-top:16px"><a class="btn btn-sm" href="https://github.com/ArnoChenFx/minibox" target="_blank" rel="noopener">${icon("github")}GitHub</a></div>
         </div></div>
       </div>`;
-    bindLangSelect(view.querySelector("#stLang"));
     view.querySelector("#stTheme").addEventListener("click", () => {
       toggleTheme();
       render(view);

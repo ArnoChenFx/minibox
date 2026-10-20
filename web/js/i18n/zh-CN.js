@@ -1,6 +1,5 @@
 // UI strings. Flat keys shared by en.js and zh-CN.js; `{name}` marks a placeholder.
 export default {
-  "common.language": "语言",
   "common.cancel": "取消",
   "common.confirm": "确认",
   "common.ok": "确定",
@@ -33,6 +32,7 @@ export default {
   "shell.hostStatus": "宿主机状态",
   "shell.toggleTheme": "切换主题",
   "shell.toggleThemeTitle": "切换浅色 / 深色",
+  "shell.switchLang": "切换到 English",
   "shell.logout": "退出登录",
   "shell.logoutMessage": "退出后需要重新输入访问密钥才能继续使用。",
   "shell.hostUnavailable": "无法获取宿主机状态",
@@ -45,7 +45,6 @@ export default {
   "login.feat2": "快照保存完整环境，随时复制或提升为模板",
   "login.feat3": "实时查看宿主机与每个 Box 的资源占用",
   "login.feat4": "浏览器内终端，无需额外配置 SSH",
-  "login.foot": "MiniBox · 基于 Docker 与 Bun 构建",
   "login.heading": "登录控制台",
   "login.sub": "请输入访问密钥以继续。",
   "login.keyLabel": "访问密钥",
@@ -349,7 +348,5 @@ export default {
   "st.themeHelp": "默认跟随系统，手动切换后会记住你的选择。",
   "st.toLight": "切换为浅色",
   "st.toDark": "切换为深色",
-  "st.language": "语言",
-  "st.languageHelp": "默认跟随浏览器语言，切换后会记住你的选择。",
   "st.version": "版本 v{v} · 启动于 {t}",
 };

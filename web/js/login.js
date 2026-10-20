@@ -1,13 +1,12 @@
 import { api } from "./lib/api.js";
 import { $ } from "./lib/dom.js";
-import { applyI18n, bindLangSelect, langSelect, t } from "./lib/i18n.js";
+import { applyI18n, bindLangButton, t } from "./lib/i18n.js";
 import { icon } from "./lib/icons.js";
 import { applyTheme, currentTheme, toggleTheme } from "./lib/theme.js";
 
 applyI18n();
 document.title = t("login.title");
-$("#loginLang").innerHTML = langSelect("loginLangSelect");
-bindLangSelect($("#loginLangSelect"));
+bindLangButton($("#langBtn"), icon);
 
 for (const n of document.querySelectorAll("[data-icon]")) {
   if (n.tagName === "LI") n.insertAdjacentHTML("afterbegin", icon(n.dataset.icon));

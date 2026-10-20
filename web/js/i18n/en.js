@@ -1,6 +1,5 @@
 // UI strings. Flat keys shared by en.js and zh-CN.js; `{name}` marks a placeholder.
 export default {
-  "common.language": "Language",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.ok": "OK",
@@ -33,6 +32,7 @@ export default {
   "shell.hostStatus": "Host status",
   "shell.toggleTheme": "Toggle theme",
   "shell.toggleThemeTitle": "Switch light / dark",
+  "shell.switchLang": "Switch to 中文",
   "shell.logout": "Sign out",
   "shell.logoutMessage": "You'll need to enter the access key again to continue.",
   "shell.hostUnavailable": "Host status unavailable",
@@ -46,7 +46,6 @@ export default {
   "login.feat2": "Snapshots capture the full environment, ready to clone or promote to a template",
   "login.feat3": "Live resource usage for the host and every box",
   "login.feat4": "In-browser terminal, no SSH setup needed",
-  "login.foot": "MiniBox · Built with Docker and Bun",
   "login.heading": "Sign in to the console",
   "login.sub": "Enter your access key to continue.",
   "login.keyLabel": "Access key",
@@ -369,7 +368,5 @@ export default {
   "st.themeHelp": "Follows the system by default; a manual choice is remembered.",
   "st.toLight": "Switch to light",
   "st.toDark": "Switch to dark",
-  "st.language": "Language",
-  "st.languageHelp": "Defaults to your browser language; the choice is remembered.",
   "st.version": "Version v{v} · started {t}",
 };
