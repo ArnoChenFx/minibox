@@ -39,9 +39,16 @@ export async function deleteBox(box) {
   if (!res) return false;
   try {
     const r = await api(`/api/boxes/${enc(box.id)}?deleteVolume=${res.checked}`, { method: "DELETE" });
-    toast(t("ba.deleted"), {
-      message: t(r.volumeDeleted ? "ba.deletedWithVolume" : "ba.deletedKeepVolume", { name: box.name }),
-    });
+    if (r.volumeError) {
+      toast(t("ba.deletedVolumeFailed", { name: box.name }), {
+        type: "error",
+        message: t("ba.deleteVolumeFailedHint", { volume: box.volume, detail: r.volumeError }),
+      });
+    } else {
+      toast(t("ba.deleted"), {
+        message: t(r.volumeDeleted ? "ba.deletedWithVolume" : "ba.deletedKeepVolume", { name: box.name }),
+      });
+    }
     refreshHost();
     return true;
   } catch (e) {

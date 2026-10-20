@@ -229,6 +229,9 @@ export default {
   "ba.deleted": "Box deleted",
   "ba.deletedWithVolume": "{name} and its workspace volume were deleted.",
   "ba.deletedKeepVolume": "{name} was deleted; its workspace volume was kept.",
+  "ba.deletedVolumeFailed": "{name} was deleted, but its workspace volume was not removed",
+  "ba.deleteVolumeFailedHint":
+    "Volume {volume} is still there: {detail}. Once nothing uses it, remove it with docker volume rm {volume}, or create a box with the same name to reuse it.",
   "ba.deleteFailed": "Delete failed",
   "ba.snapTitle": "Create snapshot",
   "ba.snapDesc":
