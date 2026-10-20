@@ -1,9 +1,21 @@
+# dependencies
 node_modules/
+
+# secrets & local config
 .env
 .env.*
 !.env.example
-server.log
+*.pem
+*.key
+.opentunnel/
+opentunnel*.toml
+
+# logs & runtime
 *.log
-.DS_Store
+server.log
+*.pid
+
+# build / OS
 dist/
 .bun/
+.DS_Store

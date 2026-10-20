@@ -1,17 +1,32 @@
 {
   "name": "minibox",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "为 AI Agent 准备的个人开发环境：基于 Docker 的 Box 管理面板",
   "private": true,
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ArnoChenFx/minibox.git"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  },
   "scripts": {
-    "start": "bun run index.ts",
-    "dev": "bun --watch run index.ts",
-    "build:template": "docker build -t minibox-template:base -f templates/base/Dockerfile templates/base"
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run lint && bun test",
+    "build:template": "docker build -t minibox-template:base --label minibox.template=true --label minibox.template.name=base --label \"minibox.template.description=Debian 12 · Node.js 24 · Python 3 · git · build-essential\" templates/base"
   },
   "dependencies": {
     "dockerode": "^5.0.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
     "@types/bun": "^1.4.3",
     "@types/dockerode": "^4.0.2",
     "typescript": "^5.9.0"
