@@ -36,8 +36,10 @@ function route() {
   $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === match.r.nav));
   $("#shell").classList.remove("nav-open");
   setCrumbs(match.r.crumbs);
-  const view = $("#view");
-  view.innerHTML = "";
+  // Fresh element per route so page-level event listeners never leak across pages.
+  const old = $("#view");
+  const view = old.cloneNode(false);
+  old.replaceWith(view);
   const params = match.m.slice(1).map((s) => (s ? decodeURIComponent(s) : s));
   cleanup = match.r.page.render(view, ...params) ?? null;
   document.title = `${match.r.crumbs[0]} · MiniBox`;
