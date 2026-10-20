@@ -150,6 +150,24 @@ opentunnel up
 
 对外暴露之前，请先阅读[安全须知](#安全须知)。
 
+### Docker
+
+正式版本的镜像发布在 GitHub Container Registry，支持 `linux/amd64` 和 `linux/arm64`：
+
+```bash
+docker run -d --name minibox --restart unless-stopped \
+  -p 127.0.0.1:3920:3920 \
+  -e ACCESS_KEY="$(openssl rand -hex 32)" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/arnochenfx/minibox:latest
+```
+
+- MiniBox 通过宿主机的 Docker Engine 管理 Box，**必须**挂载 Docker Socket（`-v /var/run/docker.sock:/var/run/docker.sock`）。Box 会作为宿主机上的同级容器创建，而不是在 MiniBox 容器内部。
+- 请务必传入 `ACCESS_KEY`，否则会在容器内随机生成，重建容器后就丢失了（`docker logs minibox` 只显示前 4 位）。
+- 容器内监听 `0.0.0.0:3920`（`HOST=0.0.0.0`）；如上所示只发布到宿主机的 `127.0.0.1`，远程访问请走 HTTPS。
+- 镜像标签：`X.Y.Z`、`X.Y` 和 `latest`（`1.0.0-rc.1` 这类预发布版本只打完整版本号标签）。
+- 本地构建：`docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
+
 ## 配置
 
 优先级：进程环境变量 > `.env` 文件 > 默认值。参考 [`.env.example`](.env.example)。
@@ -165,6 +183,7 @@ opentunnel up
 | `METRICS_INTERVAL_MS` | `3000` | 宿主机采样间隔（毫秒） |
 | `METRICS_HISTORY` | `120` | 保留的采样点数量（默认间隔下约 6 分钟） |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `MINIBOX_VERSION` | 来自 git / `package.json` | 覆盖显示的版本号（发布镜像中自动设置） |
 
 > `bun run build:template` 固定打 `minibox-template:base` 标签。如果改了 `LABEL_PREFIX` 或 `BASE_TEMPLATE`，请改在控制台「模板 → 构建基础模板」中构建，它会使用配置的标签。
 
@@ -261,6 +280,8 @@ minibox/
 ├── templates/base/Dockerfile
 ├── tests/                   # bun test 单元测试
 ├── scripts/restart.sh       # 无 systemd 环境的重启脚本
+├── Dockerfile               # 发布镜像（oven/bun，多架构）
+├── .github/workflows/release.yml  # tag → 镜像 + GitHub Release
 └── docs/screenshots/
 ```
 
@@ -276,6 +297,20 @@ bun run check      # 以上全部
 ```
 
 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 发布
+
+版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。控制台和 `/api/system` 显示的版本在运行时解析：`MINIBOX_VERSION`（发布镜像中由 tag 写入）→ `git describe --tags`（源码目录中，例如 `0.3.0-2-gabc1234`）→ `package.json`。
+
+1. 修改 `package.json` 中的 `version`，并在 `CHANGELOG.md` 中补上对应版本的条目。
+2. 提交并推送到 `main`。
+3. 打 tag 并推送：
+
+   ```bash
+   git tag v0.3.0 && git push origin v0.3.0
+   ```
+
+随后 [发布工作流](.github/workflows/release.yml) 会校验 tag 与 `package.json` 一致，运行类型检查、lint 和测试，构建多架构镜像并推送到 `ghcr.io/arnochenfx/minibox`，再用 CHANGELOG 中对应的章节加自动生成的变更说明创建 GitHub Release。带预发布后缀的 tag（如 `v1.0.0-rc.1`）会标记为预发布，且不会更新 `latest`。
 
 ## 安全须知
 

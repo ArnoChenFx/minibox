@@ -1,5 +1,4 @@
 import type { Server } from "bun";
-import pkg from "../package.json";
 import { type App, createApp } from "./app";
 import { isAuthorized } from "./auth";
 import { loadConfig } from "./config";
@@ -10,6 +9,7 @@ import { log, setLogLevel } from "./lib/logger";
 import { routes } from "./routes";
 import { matchRoute } from "./routes/router";
 import { serveFile } from "./static";
+import { resolveVersion } from "./version";
 import { type TerminalData, terminalHandlers } from "./ws/terminal";
 
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/favicon"];
@@ -96,12 +96,13 @@ export function startServer(app: App): Server<TerminalData> {
 if (import.meta.main) {
   const cfg = loadConfig();
   setLogLevel(cfg.logLevel);
-  const app = createApp(cfg, pkg.version);
+  const version = resolveVersion();
+  const app = createApp(cfg, version);
   app.monitor.start();
   const server = startServer(app);
   log.info("server.started", {
     url: `http://${cfg.host}:${cfg.port}`,
-    version: pkg.version,
+    version,
     bun: Bun.version,
     docker: cfg.dockerSocket,
     keyPrefix: `${cfg.accessKey.slice(0, 4)}…`,

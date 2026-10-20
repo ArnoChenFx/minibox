@@ -153,6 +153,24 @@ opentunnel up
 
 Read the [security notes](#security) before exposing it.
 
+### Docker
+
+Release images are published to GitHub Container Registry for `linux/amd64` and `linux/arm64`:
+
+```bash
+docker run -d --name minibox --restart unless-stopped \
+  -p 127.0.0.1:3920:3920 \
+  -e ACCESS_KEY="$(openssl rand -hex 32)" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/arnochenfx/minibox:latest
+```
+
+- MiniBox manages boxes through the host's Docker Engine, so the Docker socket **must** be mounted (`-v /var/run/docker.sock:/var/run/docker.sock`). Boxes are created as sibling containers on the host, not inside the MiniBox container.
+- Always pass `ACCESS_KEY`; otherwise a random key is generated inside the container and lost on recreation (`docker logs minibox` shows only its first 4 characters).
+- Inside the container MiniBox listens on `0.0.0.0:3920` (`HOST=0.0.0.0`); publish it on `127.0.0.1` as above and use HTTPS for remote access.
+- Tags: `X.Y.Z`, `X.Y` and `latest` (pre-releases such as `1.0.0-rc.1` only get their exact tag).
+- Build locally: `docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
+
 ## Configuration
 
 Precedence: process environment > `.env` file > defaults. See [`.env.example`](.env.example).
@@ -168,6 +186,7 @@ Precedence: process environment > `.env` file > defaults. See [`.env.example`](.
 | `METRICS_INTERVAL_MS` | `3000` | Host metrics sampling interval (ms) |
 | `METRICS_HISTORY` | `120` | Number of samples kept (≈ 6 minutes at the default interval) |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `MINIBOX_VERSION` | from git / `package.json` | Override the displayed version (set automatically in release images) |
 
 > `bun run build:template` always tags `minibox-template:base`. If you change `LABEL_PREFIX` or `BASE_TEMPLATE`, build the base template from the dashboard (Templates → Build base template) instead, which uses the configured tag.
 
@@ -264,6 +283,8 @@ minibox/
 ├── templates/base/Dockerfile
 ├── tests/                   # bun test unit tests
 ├── scripts/restart.sh       # Restart helper for hosts without systemd
+├── Dockerfile               # Release image (oven/bun, multi-arch)
+├── .github/workflows/release.yml  # Tag → image + GitHub Release
 └── docs/screenshots/
 ```
 
@@ -279,6 +300,20 @@ bun run check      # All of the above
 ```
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). See [CHANGELOG.md](CHANGELOG.md).
+
+## Releasing
+
+Versions follow [SemVer](https://semver.org/). The version shown in the dashboard and `/api/system` is resolved at runtime: `MINIBOX_VERSION` (set in release images from the tag) → `git describe --tags` (in a checkout, e.g. `0.3.0-2-gabc1234`) → `package.json`.
+
+1. Bump `version` in `package.json` and add a section for it to `CHANGELOG.md`.
+2. Commit and push to `main`.
+3. Tag and push:
+
+   ```bash
+   git tag v0.3.0 && git push origin v0.3.0
+   ```
+
+The [release workflow](.github/workflows/release.yml) then checks that the tag matches `package.json`, runs typecheck, lint and tests, builds and pushes the multi-arch image to `ghcr.io/arnochenfx/minibox`, and creates a GitHub Release using the matching CHANGELOG section plus auto-generated notes. Tags with a pre-release suffix (`v1.0.0-rc.1`) are marked as pre-releases and don't move `latest`.
 
 ## Security
 

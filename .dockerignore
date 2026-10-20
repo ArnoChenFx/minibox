@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+.env
+.env.*
+!.env.example
+*.log
+*.pid
+.opentunnel
+opentunnel*.toml
+docs
+tests
+scripts
+.DS_Store

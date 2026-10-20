@@ -28,14 +28,8 @@ export function render(view) {
         <div class="card"><div class="card-body" style="text-align:center;padding:32px 24px">
           <img data-logo src="/assets/${currentTheme() === "dark" ? "logo-dark" : "logo"}.svg" alt="MiniBox" style="height:40px" />
           <p class="muted" style="margin-top:12px">为 AI Agent 准备的个人开发环境</p>
-          <p class="subtle" style="margin-top:6px;font-size:12.5px">版本 ${esc(s.version)} · ${esc(s.runtime)} · 启动于 ${dateTime(s.startedAt)}</p>
+          <p class="subtle" style="margin-top:6px;font-size:12.5px">版本 v${esc(s.version)} · 启动于 ${dateTime(s.startedAt)}</p>
           <div class="row" style="justify-content:center;margin-top:16px"><a class="btn btn-sm" href="https://github.com/ArnoChenFx/minibox" target="_blank" rel="noopener">${icon("github")}GitHub</a></div>
-        </div></div>
-        <div class="card"><div class="card-head"><h3>安全须知</h3>${icon("shield")}</div><div class="card-body stack" style="gap:10px;font-size:13px">
-          <div class="callout warn">${icon("alert")}<span>MiniBox 可通过 Docker Socket 控制宿主机，访问密钥等同于宿主机 root 权限，请妥善保管。</span></div>
-          <p class="muted">· 服务默认只监听 127.0.0.1，对外访问请通过隧道或反向代理，并始终使用 HTTPS。</p>
-          <p class="muted">· 需要更换密钥时，修改 <code>.env</code> 中的 <code>ACCESS_KEY</code> 并重启服务，所有会话会立即失效。</p>
-          <p class="muted">· Box 基于容器隔离，适合个人使用，不适合运行不可信的第三方代码。</p>
         </div></div>
       </div>`;
     view.querySelector("#stTheme").addEventListener("click", () => {
