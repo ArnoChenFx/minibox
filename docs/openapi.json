@@ -1272,6 +1272,9 @@
                     },
                     "volumeDeleted": {
                       "type": "boolean"
+                    },
+                    "volumeError": {
+                      "type": "string"
                     }
                   },
                   "required": [
