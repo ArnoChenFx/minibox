@@ -119,4 +119,43 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     expect(await consumer).toBe("ended");
     expect(seen).toEqual(["start", "die"]);
   });
+
+  test("ensureBridgeNetwork creates an isolated network once and refuses networks with other settings", async () => {
+    const rt = new FakeRuntime();
+    await rt.ensureBridgeNetwork("boxes", { interContainerComm: false });
+    await rt.ensureBridgeNetwork("boxes", { interContainerComm: false });
+    expect(rt.networks.get("boxes")?.options).toEqual({ "com.docker.network.bridge.enable_icc": "false" });
+    expect(rt.callsTo("ensureBridgeNetwork")).toHaveLength(2);
+
+    rt.seedNetwork("open");
+    expect(await rejectionOf(rt.ensureBridgeNetwork("open", { interContainerComm: false }))).toMatchObject({
+      kind: "conflict",
+    });
+    expect(await rejectionOf(rt.ensureBridgeNetwork("boxes", { interContainerComm: true }))).toMatchObject({
+      kind: "conflict",
+    });
+    rt.seedNetwork("overlay", {}, "overlay");
+    expect(await rejectionOf(rt.ensureBridgeNetwork("overlay", { interContainerComm: true }))).toMatchObject({
+      kind: "conflict",
+    });
+  });
+
+  test("a container on a missing network can be created but not started, and reports its network once attached", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    const { id } = await rt.createContainer({ image: "alpine:3.20", network: "boxes" });
+    expect(await rejectionOf(rt.startContainer(id))).toMatchObject({ kind: "not_found" });
+
+    await rt.ensureBridgeNetwork("boxes", { interContainerComm: false });
+    await rt.startContainer(id);
+    expect(await rt.inspectContainer(id)).toMatchObject({ running: true, network: "boxes" });
+  });
+
+  test("containers on the default bridge report bridge and need no network to start", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    const { id } = await rt.createContainer({ image: "alpine:3.20" });
+    await rt.startContainer(id);
+    expect(await rt.inspectContainer(id)).toMatchObject({ network: "bridge", running: true });
+  });
 });

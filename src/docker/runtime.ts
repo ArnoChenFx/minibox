@@ -4,12 +4,21 @@ import type { Duplex, Readable } from "node:stream";
 import Docker from "dockerode";
 
 import { stripSlash } from "../labels";
-import type { CommitSpec, ContainerInfo, CreateContainerSpec, Runtime, RuntimeEvent } from "../runtime";
+import {
+  type CommitSpec,
+  type ContainerHardening,
+  type ContainerInfo,
+  type CreateContainerSpec,
+  type Runtime,
+  type RuntimeEvent,
+  RuntimeError,
+} from "../runtime";
 import { toRuntimeError } from "./errors";
 import { demuxLogs } from "./logs";
 import { computeStats } from "./stats";
 
 const NANO_CPUS_PER_CPU = 1e9;
+const ICC_OPTION = "com.docker.network.bridge.enable_icc";
 
 /** Engine errors become RuntimeError; anything else passes through untouched. */
 async function call<T>(fn: () => Promise<T>): Promise<T> {
@@ -31,7 +40,13 @@ async function ignore304(p: Promise<unknown>): Promise<void> {
 
 const labelFilter = (labels: Record<string, string>) => Object.entries(labels).map(([k, v]) => `${k}=${v}`);
 
-function toContainerInfo(info: Docker.ContainerInspectInfo): ContainerInfo {
+/** The engine reports the default bridge as `default` in some API versions. */
+function networkOf(info: Docker.ContainerInspectInfo): string {
+  const mode = info.HostConfig?.NetworkMode;
+  return mode && mode !== "default" ? mode : "bridge";
+}
+
+export function toContainerInfo(info: Docker.ContainerInspectInfo): ContainerInfo {
   const started = info.State.StartedAt;
   return {
     id: info.Id,
@@ -44,11 +59,23 @@ function toContainerInfo(info: Docker.ContainerInspectInfo): ContainerInfo {
     startedAt: started && !started.startsWith("0001") ? started : null,
     cpus: info.HostConfig?.NanoCpus ? info.HostConfig.NanoCpus / NANO_CPUS_PER_CPU : null,
     memoryBytes: info.HostConfig?.Memory || null,
+    network: networkOf(info),
   };
 }
 
+function applyHardening(hostConfig: Docker.HostConfig, hardening: ContainerHardening): void {
+  if (hardening.capDrop?.length) hostConfig.CapDrop = hardening.capDrop;
+  if (hardening.capAdd?.length) hostConfig.CapAdd = hardening.capAdd;
+  if (hardening.noNewPrivileges) hostConfig.SecurityOpt = ["no-new-privileges:true"];
+  if (hardening.pidsLimit !== undefined) hostConfig.PidsLimit = hardening.pidsLimit;
+  if (hardening.ulimits?.length) {
+    hostConfig.Ulimits = hardening.ulimits.map((u) => ({ Name: u.name, Soft: u.soft, Hard: u.hard }));
+  }
+  if (hardening.runtime) hostConfig.Runtime = hardening.runtime;
+}
+
 /** Only set the keys that are present: dockerode serialises `undefined` as an empty query parameter. */
-function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCreateOptions {
+export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCreateOptions {
   const hostConfig: Docker.HostConfig = {};
   if (spec.mounts) hostConfig.Binds = spec.mounts.map((m) => `${m.source}:${m.target}`);
   if (spec.restart) hostConfig.RestartPolicy = { Name: spec.restart };
@@ -56,6 +83,8 @@ function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCreateOptio
   if (spec.memoryBytes !== undefined) hostConfig.Memory = spec.memoryBytes;
   if (spec.swapBytes !== undefined) hostConfig.MemorySwap = spec.swapBytes;
   if (spec.init !== undefined) hostConfig.Init = spec.init;
+  if (spec.network !== undefined) hostConfig.NetworkMode = spec.network;
+  if (spec.hardening) applyHardening(hostConfig, spec.hardening);
 
   const opts: Docker.ContainerCreateOptions = { Image: spec.image };
   if (spec.name !== undefined) opts.name = spec.name;
@@ -65,6 +94,17 @@ function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCreateOptio
   if (spec.labels !== undefined) opts.Labels = spec.labels;
   if (Object.keys(hostConfig).length > 0) opts.HostConfig = hostConfig;
   return opts;
+}
+
+/** An existing network can be used only if it is a bridge with the requested inter-container communication setting. */
+function bridgeMatches(network: Docker.NetworkInspectInfo, interContainerComm: boolean): boolean {
+  const enabled = network.Options?.[ICC_OPTION] !== "false";
+  return network.Driver === "bridge" && enabled === interContainerComm;
+}
+
+function networkConflict(name: string, interContainerComm: boolean): RuntimeError {
+  const message = `network ${name} exists but is not a bridge with inter-container communication ${interContainerComm ? "on" : "off"}`;
+  return new RuntimeError("conflict", message, message);
 }
 
 function toCommitOptions(spec: CommitSpec): Record<string, unknown> {
@@ -294,5 +334,37 @@ export function createDockerRuntime(socketPath: string): Runtime {
     async removeVolume(name) {
       await call(() => docker.getVolume(name).remove());
     },
+
+    async ensureBridgeNetwork(name, { interContainerComm }) {
+      const existing = await inspectNetwork(docker, name);
+      if (existing) {
+        if (!bridgeMatches(existing, interContainerComm)) throw networkConflict(name, interContainerComm);
+        return;
+      }
+      try {
+        await call(() =>
+          docker.createNetwork({
+            Name: name,
+            Driver: "bridge",
+            Options: interContainerComm ? {} : { [ICC_OPTION]: "false" },
+          }),
+        );
+      } catch (e) {
+        if (!(e instanceof RuntimeError) || e.kind !== "conflict") throw e;
+        // Another request created it between our inspect and create; accept it only if it matches.
+        const created = await inspectNetwork(docker, name);
+        if (!created || !bridgeMatches(created, interContainerComm)) throw networkConflict(name, interContainerComm);
+      }
+    },
   };
+}
+
+async function inspectNetwork(docker: Docker, name: string): Promise<Docker.NetworkInspectInfo | undefined> {
+  try {
+    return await docker.getNetwork(name).inspect();
+  } catch (e) {
+    const err = toRuntimeError(e);
+    if (err instanceof RuntimeError && err.kind === "not_found") return undefined;
+    throw err;
+  }
 }

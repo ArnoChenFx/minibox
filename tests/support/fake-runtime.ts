@@ -49,6 +49,12 @@ export interface FakeImage {
   size: number;
 }
 
+export interface FakeNetwork {
+  name: string;
+  driver: string;
+  options: Record<string, string>;
+}
+
 export interface FakeExec extends ExecSession {
   readonly spec: ExecSpec;
   readonly containerId: string;
@@ -65,6 +71,10 @@ const newImageId = () => `sha256:${randomBytes(32).toString("hex")}`;
 const normalizeRef = (ref: string) => (ref.includes(":") ? ref : `${ref}:latest`);
 const matchesLabels = (labels: Record<string, string>, wanted: Record<string, string>) =>
   Object.entries(wanted).every(([key, value]) => labels[key] === value);
+/** The engine's default bridge network, which needs no ensure step. */
+const DEFAULT_NETWORK = "bridge";
+/** The option name Docker stores for inter-container communication. */
+const ICC_OPTION = "com.docker.network.bridge.enable_icc";
 
 function matchesEvent(event: RuntimeEvent, filter: { labels?: Record<string, string>; types?: string[] }): boolean {
   if (filter.types && !filter.types.includes(event.type)) return false;
@@ -115,6 +125,7 @@ function toInfo(c: FakeContainer): ContainerInfo {
     startedAt: c.startedAt,
     cpus: c.cpus,
     memoryBytes: c.memoryBytes,
+    network: c.spec.network ?? DEFAULT_NETWORK,
   };
 }
 
@@ -138,6 +149,7 @@ export class FakeRuntime implements Runtime {
   readonly containers = new Map<string, FakeContainer>();
   readonly images = new Map<string, FakeImage>();
   readonly volumes = new Map<string, VolumeInfo>();
+  readonly networks = new Map<string, FakeNetwork>();
   readonly execs: FakeExec[] = [];
   /** When true, every call fails as if the engine socket were unreachable. */
   down = false;
@@ -168,6 +180,10 @@ export class FakeRuntime implements Runtime {
     const id = newImageId();
     this.images.set(id, { id, tags: [normalizeRef(ref)], labels: { ...labels }, createdAt, size: 1024 });
     return id;
+  }
+
+  seedNetwork(name: string, options: Record<string, string> = {}, driver = "bridge"): void {
+    this.networks.set(name, { name, driver, options: { ...options } });
   }
 
   /** `null` limits model a box created without them (unlimited). */
@@ -203,6 +219,13 @@ export class FakeRuntime implements Runtime {
     const c = this.findContainer(idOrName);
     if (!c) throw new RuntimeError("not_found", `No such container: ${idOrName}`);
     return c;
+  }
+
+  /** Like the engine, a container can be created on a missing network but fails to start on it. */
+  private assertNetwork(c: FakeContainer): void {
+    const network = c.spec.network ?? DEFAULT_NETWORK;
+    if (network === DEFAULT_NETWORK || this.networks.has(network)) return;
+    throw new RuntimeError("not_found", `failed to set up container networking: network ${network} not found`);
   }
 
   private findImage(ref: string): FakeImage | undefined {
@@ -287,6 +310,7 @@ export class FakeRuntime implements Runtime {
     this.enter("startContainer", [id]);
     const c = this.getContainer(id);
     if (!c.running) {
+      this.assertNetwork(c);
       c.running = true;
       c.startedAt = now();
     }
@@ -300,6 +324,7 @@ export class FakeRuntime implements Runtime {
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("restartContainer", [id, opts]);
     const c = this.getContainer(id);
+    this.assertNetwork(c);
     c.running = true;
     c.startedAt = now();
   }
@@ -493,5 +518,18 @@ export class FakeRuntime implements Runtime {
     const inUse = [...this.containers.values()].some((c) => c.spec.mounts?.some((m) => m.source === name));
     if (inUse) throw new RuntimeError("conflict", `remove ${name}: volume is in use`);
     this.volumes.delete(name);
+  }
+
+  async ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void> {
+    this.enter("ensureBridgeNetwork", [name, opts]);
+    const existing = this.networks.get(name);
+    if (!existing) {
+      this.seedNetwork(name, opts.interContainerComm ? {} : { [ICC_OPTION]: "false" });
+      return;
+    }
+    const enabled = existing.options[ICC_OPTION] !== "false";
+    if (existing.driver !== "bridge" || enabled !== opts.interContainerComm) {
+      throw new RuntimeError("conflict", `network ${name} exists but is not a bridge with the requested settings`);
+    }
   }
 }

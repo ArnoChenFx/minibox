@@ -11,6 +11,8 @@ export interface ContainerInfo {
   startedAt: string | null;
   cpus: number | null;
   memoryBytes: number | null;
+  /** Name of the network the container is attached to. The engine's default bridge is `bridge`. */
+  network: string;
 }
 
 export interface ContainerStats {
@@ -23,6 +25,26 @@ export interface ContainerStats {
 export interface Mount {
   source: string;
   target: string;
+}
+
+export interface Ulimit {
+  name: string;
+  soft: number;
+  hard: number;
+}
+
+/** Kernel-level restrictions on a container. An absent field keeps the engine's default. */
+export interface ContainerHardening {
+  /** Capabilities removed from the default set. `["ALL"]` removes every capability. */
+  capDrop?: string[];
+  /** Capabilities added back after `capDrop` is applied. */
+  capAdd?: string[];
+  /** Setuid binaries, including `sudo`, cannot gain privileges when this is set. */
+  noNewPrivileges?: boolean;
+  pidsLimit?: number;
+  ulimits?: Ulimit[];
+  /** OCI runtime name, such as `runsc` for gVisor. */
+  runtime?: string;
 }
 
 export interface CreateContainerSpec {
@@ -38,6 +60,9 @@ export interface CreateContainerSpec {
   memoryBytes?: number;
   swapBytes?: number;
   init?: boolean;
+  /** Network name. Absent means the engine's default bridge. */
+  network?: string;
+  hardening?: ContainerHardening;
 }
 
 export interface ImageSummary {
@@ -142,7 +167,7 @@ export interface Runtime {
   listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]>;
   inspectContainer(id: string): Promise<ContainerInfo>;
   createContainer(spec: CreateContainerSpec): Promise<{ id: string }>;
-  /** Starting a running container succeeds. */
+  /** Starting a running container succeeds. Fails with `not_found` when the container's network does not exist. */
   startContainer(id: string): Promise<void>;
   /** Stopping a stopped container succeeds. */
   stopContainer(id: string, opts: { timeoutSec: number }): Promise<void>;
@@ -175,4 +200,10 @@ export interface Runtime {
   inspectVolume(name: string): Promise<VolumeInfo>;
   createVolume(name: string, labels: Record<string, string>): Promise<void>;
   removeVolume(name: string): Promise<void>;
+
+  /**
+   * Creates a bridge network named `name` if it does not exist. An existing network must be a bridge whose
+   * inter-container communication matches `interContainerComm`; otherwise this fails with `conflict`.
+   */
+  ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void>;
 }
