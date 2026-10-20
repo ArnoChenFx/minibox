@@ -1,3 +1,4 @@
+import { type BoxProfile, isBoxProfile } from "../box-profile";
 import { badRequest } from "./errors";
 import { type LabelKey, msg } from "./messages";
 
@@ -33,6 +34,16 @@ export function validateName(value: unknown, field = "name", label: LabelKey = "
 export function optionalName(value: unknown, field: string, label: LabelKey): string | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   return validateName(value, field, label);
+}
+
+export function validateProfile(value: unknown): BoxProfile {
+  if (!isBoxProfile(value)) throw badRequest(msg("profile_invalid"), { field: "profile" });
+  return value;
+}
+
+export function optionalProfile(value: unknown): BoxProfile | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return validateProfile(value);
 }
 
 function toNumber(value: unknown, field: string, label: LabelKey): number {
@@ -81,6 +92,8 @@ export interface CreateBoxInput {
   image?: string;
   cpus: number;
   memoryMb: number;
+  /** Absent means the host's default profile. */
+  profile?: BoxProfile;
 }
 
 /** Image reference (repo[:tag] or sha256:...). Kept permissive but rejects whitespace/control chars. */
@@ -99,6 +112,7 @@ export function parseCreateBox(body: unknown, defaults: { cpus: number; memoryMb
     image: o.template === undefined || o.template === "" ? undefined : validateImageRef(o.template),
     cpus: o.cpus === undefined ? defaults.cpus : validateCpus(o.cpus),
     memoryMb: o.memoryMb === undefined ? defaults.memoryMb : validateMemoryMb(o.memoryMb),
+    profile: optionalProfile(o.profile),
   };
 }
 

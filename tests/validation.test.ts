@@ -8,6 +8,7 @@ import {
   validateCpus,
   validateMemoryMb,
   validateName,
+  validateProfile,
   validateTail,
 } from "../src/lib/validation";
 
@@ -75,6 +76,22 @@ describe("parseCreateBox", () => {
   test("rejects non-object bodies", () => {
     expectValidation(() => parseCreateBox(null, defaults));
     expectValidation(() => parseCreateBox("x", defaults));
+  });
+  test("profile is optional and must be a known profile", () => {
+    expect(parseCreateBox({ name: "a", profile: "strict" }, defaults).profile).toBe("strict");
+    expect(parseCreateBox({ name: "a" }, defaults).profile).toBeUndefined();
+    expect(parseCreateBox({ name: "a", profile: "" }, defaults).profile).toBeUndefined();
+    expect(parseCreateBox({ name: "a", profile: null }, defaults).profile).toBeUndefined();
+    expectValidation(() => parseCreateBox({ name: "a", profile: "paranoid" }, defaults), "profile");
+  });
+});
+
+describe("validateProfile", () => {
+  test("accepts the three profile ids", () => {
+    expect(["standard", "strict", "relaxed"].map(validateProfile)).toEqual(["standard", "strict", "relaxed"]);
+  });
+  test("rejects other values on the profile field", () => {
+    for (const bad of ["Strict", "root", "", 1, ["strict"]]) expectValidation(() => validateProfile(bad), "profile");
   });
 });
 
