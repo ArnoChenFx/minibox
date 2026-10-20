@@ -15,8 +15,9 @@ import { runOf } from "../src/routes/operations";
 import { startServer } from "../src/server";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 
-const OWNER: Principal = { type: "owner" };
+const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
+const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** One valid input for each operation, given the id of a box that exists; see `withBox`. */
 const SAMPLES: Record<string, (boxId: string) => unknown> = {
@@ -43,7 +44,7 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
-  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER };
+  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest" };
   return { app, runtime, ctx };
 }
 
@@ -52,6 +53,22 @@ async function withBox(app: App, ctx: OperationContext): Promise<string> {
     box: { id: string };
   };
   return box.id;
+}
+
+function auditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
+  return {
+    id: "01TESTTESTTESTTESTTESTTEST",
+    ts: 1,
+    durationMs: 0,
+    status: "ok",
+    op: "box.list",
+    kind: "read",
+    principal: OWNER,
+    source: "rest",
+    hostId: "local",
+    summary: "List boxes",
+    ...overrides,
+  };
 }
 
 function serve(app: App) {
@@ -139,7 +156,7 @@ describe("executor", () => {
   test("the default authorize hook admits the owner and refuses anyone else", () => {
     const operation = opNamed("box.list");
     expect(ownerOnly({ principal: OWNER, operation })).toBe(true);
-    expect(ownerOnly({ principal: { type: "owner" }, operation })).toBe(true);
+    expect(ownerOnly({ principal: { type: "owner", id: "other", name: "other" }, operation })).toBe(true);
   });
 
   test("operation names must be unique", () => {
@@ -168,7 +185,12 @@ describe("executor", () => {
       params: { op: "box.create" },
     });
     expect(events).toEqual([
-      { operation: "box.create", kind: "write", principal: "owner", outcome: "denied", code: "forbidden", status: 403 },
+      expect.objectContaining({
+        op: "box.create",
+        kind: "write",
+        status: "denied",
+        error: { code: "forbidden", status: 403 },
+      }),
     ]);
     expect(runtime.calls).toEqual([]);
     expect(app.activity.list()).toEqual([]);
@@ -189,7 +211,7 @@ describe("executor", () => {
           params: { op: "box.list" },
         },
       });
-      expect(events.map((e) => [e.operation, e.outcome])).toEqual([["box.list", "denied"]]);
+      expect(events.map((e) => [e.op, e.status])).toEqual([["box.list", "denied"]]);
       expect(runtime.calls).toEqual([]);
     } finally {
       server.stop();
@@ -201,14 +223,12 @@ describe("executor", () => {
     const { app, ctx } = appWith({ audit: (event) => events.push(event) });
     await rejectionOf(app.operations.run("box.create", ctx, { name: "bad name!" }));
     expect(events).toEqual([
-      {
-        operation: "box.create",
+      expect.objectContaining({
+        op: "box.create",
         kind: "write",
-        principal: "owner",
-        outcome: "failed",
-        code: "validation_failed",
-        status: 400,
-      },
+        status: "error",
+        error: { code: "validation_failed", status: 400 },
+      }),
     ]);
     expect(app.activity.list()).toEqual([]);
   });
@@ -223,7 +243,9 @@ describe("executor", () => {
       events.length = 0;
 
       await app.operations.run(operation.name, ctx, sample(boxId));
-      expect(events).toEqual([{ operation: operation.name, kind: operation.kind, principal: "owner", outcome: "ok" }]);
+      expect(events.map((event) => [event.op, event.kind, event.status])).toEqual([
+        [operation.name, operation.kind, "ok"],
+      ]);
     }
   });
 
@@ -232,8 +254,56 @@ describe("executor", () => {
       const events: AuditEvent[] = [];
       const { app, ctx } = appWith({ audit: (event) => events.push(event) });
       await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
-      expect(events.map((event) => event.operation)).toEqual([operation.name]);
+      expect(events.map((event) => event.op)).toEqual([operation.name]);
     }
+  });
+
+  test("an execution's event names the caller, the source, the host and the summary of the target", async () => {
+    const events: AuditEvent[] = [];
+    const { app, ctx } = appWith({ audit: (event) => events.push(event) });
+    const traced: OperationContext = { ...ctx, run: "run-7", parentId: "01PARENT0000000000000000AA" };
+    await app.operations.run("box.create", traced, { name: "alpha", cpus: 1, memoryMb: 256 });
+    const [event] = events;
+    expect(event).toMatchObject({
+      op: "box.create",
+      kind: "write",
+      status: "ok",
+      principal: OWNER,
+      source: "rest",
+      hostId: "local",
+      summary: "Create and start a box: alpha",
+      target: { kind: "box", name: "alpha" },
+      detail: { name: "alpha", cpus: 1, memoryMb: 256 },
+      run: "run-7",
+      parentId: "01PARENT0000000000000000AA",
+    });
+    expect(event?.id).toMatch(ULID);
+    expect(event?.target?.id).toMatch(/^[0-9a-f]{64}$/);
+    expect(event?.error).toBeUndefined();
+    expect(event?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(event?.ts).toBeGreaterThan(0);
+  });
+
+  test("a box action names the box it resolved, and a refused lookup names no object", async () => {
+    const events: AuditEvent[] = [];
+    const { app, ctx } = appWith({ audit: (event) => events.push(event) });
+    const id = await withBox(app, ctx);
+    await app.operations.run("box.action", ctx, { id, action: "stop" });
+    await rejectionOf(app.operations.run("box.get", ctx, { id: "missing" }));
+    const [action, lookup] = events.slice(-2);
+    expect(action).toMatchObject({ op: "box.action", target: { kind: "box", id, name: "alpha" } });
+    expect(lookup).toMatchObject({ op: "box.get", status: "error", summary: "Get one box" });
+    expect(lookup?.target).toBeUndefined();
+    expect(lookup?.detail).toEqual({ id: "missing" });
+  });
+
+  test("event ids sort in the order the executions ran", async () => {
+    const events: AuditEvent[] = [];
+    const { app, ctx } = appWith({ audit: (event) => events.push(event) });
+    for (let i = 0; i < 5; i++) await app.operations.run("box.list", ctx, {});
+    const ids = events.map((event) => event.id);
+    expect(new Set(ids).size).toBe(5);
+    expect(ids).toEqual(ids.toSorted());
   });
 
   test("only operations that change state reach the activity feed, with the outcome of the handler", async () => {
@@ -275,8 +345,8 @@ describe("audit sink", () => {
       lines.push(String(line));
     });
     try {
-      logAudit({ operation: "box.create", kind: "write", principal: "owner", run: "run-1", outcome: "ok" });
-      logAudit({ operation: "box.list", kind: "read", principal: "owner", outcome: "ok" });
+      logAudit(auditEvent({ op: "box.create", kind: "write", run: "run-1", summary: "Create and start a box" }));
+      logAudit(auditEvent({ op: "box.list", kind: "read" }));
     } finally {
       spy.mockRestore();
     }
@@ -284,6 +354,24 @@ describe("audit sink", () => {
       expect.objectContaining({ level: "info", msg: "operation.ok", operation: "box.create", run: "run-1" }),
       expect.objectContaining({ level: "debug", msg: "operation.ok", operation: "box.list" }),
     ]);
+  });
+
+  test("a refusal logs at warn and a server-side failure at error, without the detail", () => {
+    const lines: string[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      logAudit(auditEvent({ status: "denied", error: { code: "forbidden", status: 403 } }));
+      logAudit(auditEvent({ status: "error", error: { code: "internal", status: 500 }, detail: { secret: "x" } }));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines.map((line) => JSON.parse(line) as Record<string, unknown>)).toEqual([
+      expect.objectContaining({ level: "warn", msg: "operation.denied", code: "forbidden", httpStatus: 403 }),
+      expect.objectContaining({ level: "error", msg: "operation.failed", code: "internal", httpStatus: 500 }),
+    ]);
+    expect(lines.join("\n")).not.toContain("secret");
   });
 });
 

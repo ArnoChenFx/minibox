@@ -1,5 +1,6 @@
 import type { z } from "zod";
 
+import type { EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
@@ -12,13 +13,18 @@ export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 /** Who is calling. Only the owner exists until scoped tokens (#13) add other principals. */
 export interface Principal {
   readonly type: "owner";
+  readonly id: string;
+  readonly name: string;
 }
 
 export interface OperationContext {
   readonly host: HostCtx;
   readonly principal: Principal;
+  readonly source: Source;
   /** Groups the audit events of one client session: `X-Minibox-Run` over REST, the MCP session id over MCP. */
   readonly run?: string;
+  /** The event of the operation that started this one, when an operation triggers another. */
+  readonly parentId?: string;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */
@@ -55,6 +61,17 @@ export interface OperationMeta {
   readonly mcp?: McpMetadata;
 }
 
+/**
+ * How an operation appears in the event log. Both members are optional: without `target` an event has no object,
+ * and without `detail` it records the validated input.
+ */
+export interface AuditSpec<I, O, R> {
+  /** The object acted on. `resolved` is `undefined` when resolution failed or never ran; `result` only on success. */
+  target?(input: I, resolved: R | undefined, result: O | undefined): EventTarget | undefined;
+  /** Structured detail to record. Never include file contents, and name environment variables without their values. */
+  detail?(input: I, resolved: R | undefined): unknown;
+}
+
 /** Everything the registry needs to know about one operation. Handlers only ever see validated input. */
 export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> extends OperationMeta {
   readonly input: I;
@@ -68,6 +85,7 @@ export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> ex
     action(input: z.output<I>): string;
     target(input: z.output<I>, resolved: R): string;
   };
+  readonly audit?: AuditSpec<z.output<I>, z.input<O>, R>;
   run(ctx: OperationContext, input: z.output<I>, resolved: R): Promise<z.input<O>>;
 }
 
@@ -81,6 +99,10 @@ export interface Operation extends OperationMeta {
   activity?: {
     action(input: unknown): string;
     target(input: unknown, resolved: unknown): string;
+  };
+  audit?: {
+    target?(input: unknown, resolved: unknown, result: unknown): EventTarget | undefined;
+    detail?(input: unknown, resolved: unknown): unknown;
   };
   run(ctx: OperationContext, input: unknown, resolved: unknown): Promise<unknown>;
 }

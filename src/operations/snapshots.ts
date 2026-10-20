@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createBox, getBox } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
 import { createSnapshot } from "../services/snapshots";
-import { DEFAULT_RESOURCES } from "./boxes";
+import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
 import { BoxSchema, SnapshotSchema } from "./schemas";
 import { boxId, boxName, cpusWithDefault, memoryWithDefault, snapshotName, snapshotRef } from "./validation";
@@ -21,6 +21,7 @@ export const snapshotCreate = defineOperation({
   cli: "snapshot create",
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "snapshot.create", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host }, input) => ({ snapshot: await createSnapshot(host, input.id, input.name) }),
 });
 
@@ -43,6 +44,7 @@ export const snapshotFork = defineOperation({
   cli: "snapshot fork",
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
+  audit: { target: (input, _box, result) => ({ kind: "box", id: result?.box.id, name: input.name }) },
   run: async ({ host }, input) => ({
     box: await createBox(host, {
       name: input.name,

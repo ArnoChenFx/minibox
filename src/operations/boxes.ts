@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { EventTarget } from "../events/types";
 import type { HostCtx } from "../host/registry";
 import {
   type Box,
@@ -32,6 +33,8 @@ import {
 } from "./validation";
 
 export const DEFAULT_RESOURCES = { cpus: 2, memoryMb: 4096 } as const;
+
+export const boxTarget = (box: Pick<Box, "id" | "name">): EventTarget => ({ kind: "box", id: box.id, name: box.name });
 
 const ACTIONS: Record<"start" | "stop" | "restart", (host: HostCtx, id: string) => Promise<Box>> = {
   start: startBox,
@@ -75,6 +78,7 @@ export const boxGet = defineOperation({
     description: "Get one box by id or container name, with its current resource usage.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
+  audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host }, _input, box) => ({ box: { ...box, stats: await getStats(host, box.id).catch(() => null) } }),
 });
 
@@ -102,6 +106,7 @@ export const boxCreate = defineOperation({
   },
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
+  audit: { target: ({ name }, _box, result) => ({ kind: "box", id: result?.box.id, name }) },
   run: async ({ host }, input) => ({
     box: await createBox(host, { name: input.name, image: input.template, cpus: input.cpus, memoryMb: input.memoryMb }),
   }),
@@ -125,6 +130,7 @@ export const boxDelete = defineOperation({
   },
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.delete", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
   run: ({ host }, input) => deleteBox(host, input.id, input.deleteVolume),
 });
 
@@ -150,6 +156,7 @@ export const boxAction = defineOperation({
   },
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: (input) => `box.${input.action}`, target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host }, input) => ({ box: await ACTIONS[input.action](host, input.id) }),
 });
 
@@ -174,6 +181,7 @@ export const boxResources = defineOperation({
   precondition: ({ host }, input) => assertCapacity(host, input),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.resources", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host }, input) => {
     const limits: { cpus?: number; memoryMb?: number } = {};
     if (input.cpus !== undefined) limits.cpus = input.cpus;
@@ -193,6 +201,7 @@ export const boxLogs = defineOperation({
   output: z.object({ logs: z.string() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/logs", query: ["tail"] }],
   cli: "box logs",
+  audit: { target: ({ id }) => ({ kind: "box", name: id }) },
   run: async ({ host }, input) => ({ logs: await getLogs(host, input.id, input.tail) }),
 });
 
@@ -207,6 +216,7 @@ export const boxStats = defineOperation({
   output: z.object({ stats: StatsSchema.nullable() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/stats" }],
   cli: "box stats",
+  audit: { target: ({ id }) => ({ kind: "box", name: id }) },
   run: async ({ host }, input) => ({ stats: await getStats(host, input.id) }),
 });
 
