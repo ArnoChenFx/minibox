@@ -142,16 +142,28 @@ export async function createBox(opts: {
 
 export async function startBox(id: string) {
   await inspectBox(id);
-  await docker.getContainer(id).start();
+  try {
+    await docker.getContainer(id).start();
+  } catch (e: any) {
+    if (e.statusCode !== 304) throw e;
+  }
   return inspectBox(id);
 }
 
 export async function stopBox(id: string) {
   await inspectBox(id);
   try {
-    await docker.getContainer(id).stop({ t: 10 });
+    await docker.getContainer(id).stop({ t: 2 });
   } catch (e: any) {
-    if (e.statusCode !== 304) throw e;
+    if (e.statusCode === 304) {
+      // already stopped
+    } else {
+      try {
+        await docker.getContainer(id).kill();
+      } catch (e2: any) {
+        if (e2.statusCode !== 409 && e2.statusCode !== 304) throw e;
+      }
+    }
   }
   return inspectBox(id);
 }
