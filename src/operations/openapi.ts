@@ -147,7 +147,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
       title: "MiniBox API",
       version,
       description:
-        "Generated from the operation registry: boxes, snapshots and templates. Sign-in, host and activity routes are not listed yet.",
+        "Generated from the operation registry: boxes, snapshots, templates and the event log. Sign-in, host and activity routes, and the event stream (GET /api/events/stream, text/event-stream), are not listed yet.",
       license: { name: "MIT" },
     },
     tags,
