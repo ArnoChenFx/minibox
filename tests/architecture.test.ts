@@ -60,3 +60,46 @@ describe("runtime boundary", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/** The module, relative to src, that a relative import points at. Package imports have no target. */
+function targetOf(file: SourceFile, specifier: string): string | undefined {
+  if (!specifier.startsWith(".")) return undefined;
+  return relative(SRC, resolve(dirname(file.path), specifier));
+}
+
+const reaches = (target: string, module: string) => target === module || target.startsWith(module + sep);
+
+const inDir = (file: SourceFile, dir: string) => file.rel.startsWith(dir + sep);
+
+describe("operation boundary", () => {
+  const files = readSources();
+  const HTTP_AND_ROOT = ["app", "server", "guard", "static", "ws", "routes", "lib/http"];
+
+  test("the scan covers the operation layer", () => {
+    expect(files.filter((f) => inDir(f, "operations")).length).toBeGreaterThan(5);
+  });
+
+  test("the operation layer does not depend on HTTP or the composition root", () => {
+    const offenders = files
+      .filter((f) => inDir(f, "operations"))
+      .flatMap((f) =>
+        f.imports
+          .filter((s) => {
+            const target = targetOf(f, s);
+            return target !== undefined && HTTP_AND_ROOT.some((module) => reaches(target, module));
+          })
+          .map((s) => `${f.rel} imports ${s}`),
+      );
+    expect(offenders).toEqual([]);
+  });
+
+  test("the REST adapter reaches the engine only through the operations", () => {
+    const adapter = files.find((f) => f.rel === join("routes", "operations.ts"));
+    expect(adapter).toBeDefined();
+    const offenders = (adapter?.imports ?? []).filter((s) => {
+      const target = adapter ? targetOf(adapter, s) : undefined;
+      return target !== undefined && ["services", "runtime", "docker"].some((module) => reaches(target, module));
+    });
+    expect(offenders).toEqual([]);
+  });
+});

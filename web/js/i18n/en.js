@@ -91,6 +91,9 @@ export default {
   "err.origin_forbidden":
     "Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.",
   "err.unauthorized": "Not signed in, or the access key is invalid.",
+  "err.operation_forbidden": "This credential may not run {op}.",
+  "err.run_invalid":
+    "X-Minibox-Run must be 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
   "err.terminal_not_running": "The box is not running, so a terminal can't be opened.",
   "err.ws_upgrade_failed": "WebSocket upgrade failed.",
   "err.too_many_attempts": "Too many attempts. Please try again in 5 minutes.",

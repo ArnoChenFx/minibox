@@ -1,6 +1,7 @@
 import type { Config } from "../config";
 import { type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
+import { HostMonitor } from "./metrics";
 
 export const LOCAL_HOST_ID = "local";
 
@@ -21,11 +22,12 @@ export interface HostCtx {
   keys: LabelKeys;
   baseTemplateTag: string;
   templatesDir: string;
+  monitor: HostMonitor;
 }
 
 /** Single-machine installs get one implicit host with the configured Docker socket. */
 export function createLocalHost(cfg: Config, runtime: Runtime): HostCtx {
-  return {
+  const ctx: HostCtx = {
     host: {
       id: LOCAL_HOST_ID,
       name: "Local",
@@ -39,7 +41,9 @@ export function createLocalHost(cfg: Config, runtime: Runtime): HostCtx {
     keys: labelKeys(cfg.labelPrefix),
     baseTemplateTag: cfg.baseTemplateTag,
     templatesDir: cfg.templatesDir,
+    monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory),
   };
+  return ctx;
 }
 
 export class HostRegistry {

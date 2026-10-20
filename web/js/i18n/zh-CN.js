@@ -87,6 +87,8 @@ export default {
   "err.origin_forbidden":
     "已拦截：请求的 Origin 既不是当前 MiniBox 地址，也不在 ALLOWED_ORIGINS 列表中。如果通过隧道或反向代理访问，请把它的公网地址（例如 https://minibox.example.com）加入 ALLOWED_ORIGINS，并重启 MiniBox。",
   "err.unauthorized": "未登录或访问密钥无效。",
+  "err.operation_forbidden": "当前凭据不能执行 {op}。",
+  "err.run_invalid": "X-Minibox-Run 必须是 1 到 64 个字母、数字、点、冒号、下划线或连字符，且以字母或数字开头。",
   "err.terminal_not_running": "Box 未运行，无法打开终端。",
   "err.ws_upgrade_failed": "WebSocket 升级失败。",
   "err.too_many_attempts": "尝试次数过多，请 5 分钟后再试。",

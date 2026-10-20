@@ -20,3 +20,20 @@ export class ActivityLog {
     return this.entries.slice(0, limit);
   }
 }
+
+/** Run an operation and record it in the activity log (success or failure). */
+export async function tracked<T>(
+  activity: ActivityLog,
+  action: string,
+  target: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    const result = await fn();
+    activity.add({ action, target, ok: true });
+    return result;
+  } catch (e) {
+    activity.add({ action, target, ok: false, message: e instanceof Error ? e.message : String(e) });
+    throw e;
+  }
+}

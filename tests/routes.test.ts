@@ -5,9 +5,9 @@ import type { Server } from "bun";
 
 import type { App } from "../src/app";
 import type { LabelKeys } from "../src/labels";
-import { assertCapacity } from "../src/routes/boxes";
 import { RuntimeError, type RuntimeErrorKind } from "../src/runtime";
 import { startServer } from "../src/server";
+import { assertCapacity } from "../src/services/capacity";
 import type { TerminalData } from "../src/ws/terminal";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
@@ -172,12 +172,14 @@ describe("box validation and error mapping", () => {
   });
 
   test("a box larger than the host is refused before the engine is called", async () => {
-    await expect(assertCapacity(app, { cpus: os.cpus().length + 1 })).rejects.toMatchObject({
+    await expect(assertCapacity(app.hosts.get(), { cpus: os.cpus().length + 1 })).rejects.toMatchObject({
       status: 422,
       code: "insufficient_capacity",
       details: { field: "cpus" },
     });
-    await expect(assertCapacity(app, { memoryMb: Math.ceil(os.totalmem() / MB) + 1024 })).rejects.toMatchObject({
+    await expect(
+      assertCapacity(app.hosts.get(), { memoryMb: Math.ceil(os.totalmem() / MB) + 1024 }),
+    ).rejects.toMatchObject({
       status: 422,
       details: { field: "memoryMb" },
     });

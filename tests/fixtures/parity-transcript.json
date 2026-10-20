@@ -1,0 +1,778 @@
+[
+  {
+    "step": "no access key",
+    "method": "GET",
+    "path": "/api/boxes",
+    "status": 401,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"key\":\"unauthorized\"}}"
+  },
+  {
+    "step": "unknown api path",
+    "method": "GET",
+    "path": "/api/nope",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"API endpoint not found.\",\"key\":\"api_not_found\"}}"
+  },
+  {
+    "step": "wrong method",
+    "method": "PUT",
+    "path": "/api/boxes",
+    "status": 405,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"method_not_allowed\",\"message\":\"Method not allowed.\",\"key\":\"method_not_allowed\"}}"
+  },
+  {
+    "step": "health",
+    "method": "GET",
+    "path": "/api/health",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true,\"docker\":true}"
+  },
+  {
+    "step": "malformed json",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"key\":\"invalid_json\"}}"
+  },
+  {
+    "step": "array body",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+  },
+  {
+    "step": "form body refused",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 415,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"unsupported_media_type\",\"message\":\"Use Content-Type: application/json (requests without a body may omit it).\",\"key\":\"unsupported_media_type\"}}"
+  },
+  {
+    "step": "cross-site write refused",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"key\":\"origin_forbidden\"}}"
+  },
+  {
+    "step": "create without name",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "create with bad name",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "create with blank name",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "create with numeric name",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "create with cpus over the limit",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+  },
+  {
+    "step": "create with null cpus",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
+  },
+  {
+    "step": "create with text cpus",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
+  },
+  {
+    "step": "create with memory below the minimum",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
+  },
+  {
+    "step": "create with fractional memory",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
+  },
+  {
+    "step": "create with text memory",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
+  },
+  {
+    "step": "create from a missing image",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
+  },
+  {
+    "step": "create with a malformed template",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
+  },
+  {
+    "step": "create with a null template",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
+  },
+  {
+    "step": "create with a blank template",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
+  },
+  {
+    "step": "create over host cpu capacity",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 422,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
+  },
+  {
+    "step": "create over host memory capacity",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 422,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"Memory exceeds the host limit (8.0 GB).\",\"key\":\"memory_over_host\",\"params\":{\"gb\":\"8.0\"},\"details\":{\"field\":\"memoryMb\"}}}"
+  },
+  {
+    "step": "create alpha",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+  },
+  {
+    "step": "create alpha again",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “alpha” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"alpha\"}}}"
+  },
+  {
+    "step": "create beta with an empty template",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\"}}"
+  },
+  {
+    "step": "create beta",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “beta” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"beta\"}}}"
+  },
+  {
+    "step": "list boxes with stats",
+    "method": "GET",
+    "path": "/api/boxes",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
+  },
+  {
+    "step": "list boxes without stats",
+    "method": "GET",
+    "path": "/api/boxes?stats=false",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"},{\"id\":\"<id>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\"}]}"
+  },
+  {
+    "step": "list boxes, stats=0 still includes stats",
+    "method": "GET",
+    "path": "/api/boxes?stats=0",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
+  },
+  {
+    "step": "get alpha",
+    "method": "GET",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}}}"
+  },
+  {
+    "step": "get a missing box",
+    "method": "GET",
+    "path": "/api/boxes/missing",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "get an unlabelled container",
+    "method": "GET",
+    "path": "/api/boxes/<id>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "logs with default tail",
+    "method": "GET",
+    "path": "/api/boxes/<id>/logs",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"logs\":\"one\\ntwo\\nthree\\n\"}"
+  },
+  {
+    "step": "logs with tail=2",
+    "method": "GET",
+    "path": "/api/boxes/<id>/logs?tail=2",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"logs\":\"two\\nthree\\n\"}"
+  },
+  {
+    "step": "logs with an empty tail",
+    "method": "GET",
+    "path": "/api/boxes/<id>/logs?tail=",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"logs\":\"one\\ntwo\\nthree\\n\"}"
+  },
+  {
+    "step": "logs with tail=0",
+    "method": "GET",
+    "path": "/api/boxes/<id>/logs?tail=0",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+  },
+  {
+    "step": "logs with tail=abc",
+    "method": "GET",
+    "path": "/api/boxes/<id>/logs?tail=abc",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+  },
+  {
+    "step": "logs with tail=2.5",
+    "method": "GET",
+    "path": "/api/boxes/<id>/logs?tail=2.5",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+  },
+  {
+    "step": "logs of a missing box",
+    "method": "GET",
+    "path": "/api/boxes/missing/logs",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "stats of alpha",
+    "method": "GET",
+    "path": "/api/boxes/<id>/stats",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}}"
+  },
+  {
+    "step": "stats of a missing box",
+    "method": "GET",
+    "path": "/api/boxes/missing/stats",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "stop alpha",
+    "method": "POST",
+    "path": "/api/boxes/<id>/stop",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+  },
+  {
+    "step": "stop alpha again",
+    "method": "POST",
+    "path": "/api/boxes/<id>/stop",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+  },
+  {
+    "step": "start alpha",
+    "method": "POST",
+    "path": "/api/boxes/<id>/start",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+  },
+  {
+    "step": "restart alpha",
+    "method": "POST",
+    "path": "/api/boxes/<id>/restart",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+  },
+  {
+    "step": "start ignores a malformed body",
+    "method": "POST",
+    "path": "/api/boxes/<id>/start",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+  },
+  {
+    "step": "start a missing box",
+    "method": "POST",
+    "path": "/api/boxes/missing/start",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "stop a missing box",
+    "method": "POST",
+    "path": "/api/boxes/missing/stop",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "resize cpus",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":1,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+  },
+  {
+    "step": "resize memory",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"cpus\":1,\"memory\":805306368,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+  },
+  {
+    "step": "resize with nothing",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus or memoryMb.\",\"key\":\"resources_required\"}}"
+  },
+  {
+    "step": "resize with null cpus only",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus or memoryMb.\",\"key\":\"resources_required\"}}"
+  },
+  {
+    "step": "resize cpus over the limit",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+  },
+  {
+    "step": "resize with text memory",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
+  },
+  {
+    "step": "resize beyond host capacity",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 422,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
+  },
+  {
+    "step": "resize a missing box",
+    "method": "PATCH",
+    "path": "/api/boxes/missing/resources",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "resize with a malformed body",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"key\":\"invalid_json\"}}"
+  },
+  {
+    "step": "resize with an array body",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+  },
+  {
+    "step": "snapshot alpha as nightly",
+    "method": "POST",
+    "path": "/api/boxes/<id>/snapshots",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"snapshot\":{\"ref\":\"mbtest-snap:nightly-<stamp>\",\"source\":\"alpha\"}}"
+  },
+  {
+    "step": "list snapshots",
+    "method": "GET",
+    "path": "/api/snapshots",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"snapshots\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-snap:nightly-<stamp>\",\"tags\":[\"mbtest-snap:nightly-<stamp>\"],\"name\":\"nightly\",\"description\":\"Snapshot of box alpha\",\"source\":\"alpha\",\"createdAt\":\"<time>\",\"size\":1024}]}"
+  },
+  {
+    "step": "snapshot alpha with no body",
+    "method": "POST",
+    "path": "/api/boxes/<id>/snapshots",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}}"
+  },
+  {
+    "step": "discard snapshot taken with no body",
+    "method": "DELETE",
+    "path": "/api/snapshots/mbtest-snap%3Aalpha-<stamp>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "snapshot alpha with an empty name",
+    "method": "POST",
+    "path": "/api/boxes/<id>/snapshots",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}}"
+  },
+  {
+    "step": "discard snapshot taken with an empty name",
+    "method": "DELETE",
+    "path": "/api/snapshots/mbtest-snap%3Aalpha-<stamp>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "snapshot alpha with a null name",
+    "method": "POST",
+    "path": "/api/boxes/<id>/snapshots",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}}"
+  },
+  {
+    "step": "discard snapshot taken with a null name",
+    "method": "DELETE",
+    "path": "/api/snapshots/mbtest-snap%3Aalpha-<stamp>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "snapshot alpha with a bad name",
+    "method": "POST",
+    "path": "/api/boxes/<id>/snapshots",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "snapshot alpha with a numeric name",
+    "method": "POST",
+    "path": "/api/boxes/<id>/snapshots",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "snapshot a missing box",
+    "method": "POST",
+    "path": "/api/boxes/missing/snapshots",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "snapshot a missing box with a bad name",
+    "method": "POST",
+    "path": "/api/boxes/missing/snapshots",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "restore snapshot as restored",
+    "method": "POST",
+    "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"restored\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-restored\"}}"
+  },
+  {
+    "step": "restore snapshot with a body template",
+    "method": "POST",
+    "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"restored-2\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"cpus\":2,\"memory\":4294967296,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-restored-2\"}}"
+  },
+  {
+    "step": "restore snapshot with a duplicate name",
+    "method": "POST",
+    "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “restored” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"restored\"}}}"
+  },
+  {
+    "step": "restore snapshot with a bad box name",
+    "method": "POST",
+    "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "restore snapshot with cpus 0",
+    "method": "POST",
+    "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+  },
+  {
+    "step": "restore a missing image",
+    "method": "POST",
+    "path": "/api/snapshots/ghost%3A1/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
+  },
+  {
+    "step": "restore a malformed ref",
+    "method": "POST",
+    "path": "/api/snapshots/bad%20ref/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
+  },
+  {
+    "step": "restore with a non-object body",
+    "method": "POST",
+    "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+  },
+  {
+    "step": "promote nightly to gold",
+    "method": "POST",
+    "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/promote",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"template\":{\"ref\":\"mbtest-template:gold\",\"name\":\"gold\"}}"
+  },
+  {
+    "step": "build the base template",
+    "method": "POST",
+    "path": "/api/templates/base/build",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ref\":\"mbtest-template:base\",\"output\":\"Successfully built fake\\n\"}"
+  },
+  {
+    "step": "list templates",
+    "method": "GET",
+    "path": "/api/templates",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:gold\",\"tags\":[\"mbtest-template:gold\"],\"name\":\"gold\",\"description\":\"Gold image\",\"source\":\"alpha\",\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"createdAt\":\"<time>\",\"size\":1024}],\"baseTemplate\":\"mbtest-template:base\"}"
+  },
+  {
+    "step": "delete gold",
+    "method": "DELETE",
+    "path": "/api/templates/mbtest-template%3Agold",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "delete a missing snapshot",
+    "method": "DELETE",
+    "path": "/api/snapshots/missing",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Snapshot not found.\",\"key\":\"snapshot_not_found\"}}"
+  },
+  {
+    "step": "delete beta with a bad deleteVolume",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>?deleteVolume=yes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
+  },
+  {
+    "step": "delete beta with an empty deleteVolume",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>?deleteVolume=",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
+  },
+  {
+    "step": "delete beta, keeping its volume",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>?deleteVolume=0",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"beta\",\"volumeDeleted\":false}"
+  },
+  {
+    "step": "delete beta again",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "delete a missing box",
+    "method": "DELETE",
+    "path": "/api/boxes/missing",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "delete restored with its volume",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>?deleteVolume=true",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"restored\",\"volumeDeleted\":true}"
+  },
+  {
+    "step": "delete restored-2",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"restored-2\",\"volumeDeleted\":false}"
+  },
+  {
+    "step": "delete alpha, keeping its volume",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"alpha\",\"volumeDeleted\":false}"
+  },
+  {
+    "step": "delete nightly snapshot",
+    "method": "DELETE",
+    "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "list snapshots after delete",
+    "method": "GET",
+    "path": "/api/snapshots",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"snapshots\":[]}"
+  },
+  {
+    "step": "activity feed",
+    "method": "GET",
+    "path": "/api/activity",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"activity\":[{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:nightly-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"restored-2\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"restored\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"beta\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"missing\",\"ok\":false,\"message\":\"Snapshot not found.\"},{\"t\":\"<time>\",\"action\":\"template.delete\",\"target\":\"mbtest-template:gold\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"template.build\",\"target\":\"mbtest-template:base\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"template.promote\",\"target\":\"gold\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"ok-4\",\"ok\":false,\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\"},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored\",\"ok\":false,\"message\":\"A box named “restored” already exists.\"},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored-2\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true}]}"
+  },
+  {
+    "step": "final box list",
+    "method": "GET",
+    "path": "/api/boxes",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"boxes\":[]}"
+  }
+]

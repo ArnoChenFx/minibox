@@ -73,7 +73,7 @@ export class HostMonitor {
   private dockerCache: { at: number; value: HostMetrics["docker"] & { boxes: HostMetrics["boxes"] } } | null = null;
 
   constructor(
-    private readonly host: HostCtx,
+    private readonly currentHost: () => HostCtx,
     private readonly intervalMs: number,
     private readonly maxSamples: number,
   ) {}
@@ -118,7 +118,8 @@ export class HostMonitor {
     if (this.dockerCache && now - this.dockerCache.at < 2500) return this.dockerCache.value;
     let value: HostMetrics["docker"] & { boxes: HostMetrics["boxes"] };
     try {
-      const [info, boxes] = await Promise.all([this.host.runtime.info(), listBoxes(this.host)]);
+      const host = this.currentHost();
+      const [info, boxes] = await Promise.all([host.runtime.info(), listBoxes(host)]);
       value = {
         available: true,
         version: info.version,
