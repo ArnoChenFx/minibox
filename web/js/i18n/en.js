@@ -100,6 +100,8 @@ export default {
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   "err.box_exists": "A box named “{name}” already exists.",
+  "err.box_network_conflict":
+    "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
   "err.cpu_over_host": "CPU cores exceed the host limit ({cores} cores).",
   "err.memory_over_host": "Memory exceeds the host limit ({gb} GB).",
   "ui.nameRequired": "Please enter a {what}.",

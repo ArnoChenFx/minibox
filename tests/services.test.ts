@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 
+import { STANDARD_CAPS } from "../src/box-profile";
 import type { HostCtx } from "../src/host/registry";
 import type { LabelKeys } from "../src/labels";
 import { AppError } from "../src/lib/errors";
@@ -64,6 +65,7 @@ describe("createBox", () => {
     expect(runtime.ops()).toEqual([
       "listContainers",
       "inspectImage",
+      "ensureBridgeNetwork",
       "inspectVolume",
       "createVolume",
       "createContainer",
@@ -88,10 +90,11 @@ describe("createBox", () => {
     expect(runtime.ops().slice(before)).toEqual(["listContainers"]);
   });
 
-  test("a missing template image is rejected before any volume is created", async () => {
+  test("a missing template image is rejected before any volume or network is created", async () => {
     const error = await rejectionOf(newBox("alpha", { image: "ghost:latest" }));
     expect(error).toMatchObject({ status: 400, key: "template_image_missing", details: { field: "template" } });
     expect(runtime.callsTo("createVolume")).toHaveLength(0);
+    expect(runtime.callsTo("ensureBridgeNetwork")).toHaveLength(0);
     expect(runtime.callsTo("createContainer")).toHaveLength(0);
   });
 
@@ -103,6 +106,110 @@ describe("createBox", () => {
   test("an engine conflict during create propagates as a RuntimeError", async () => {
     runtime.fail("createContainer", new RuntimeError("conflict", "name taken", "name taken"));
     expect(await rejectionOf(newBox("alpha"))).toMatchObject({ kind: "conflict" });
+  });
+});
+
+describe("box security profiles", () => {
+  const ULIMITS = [
+    { name: "core", soft: 0, hard: 0 },
+    { name: "nofile", soft: 65536, hard: 65536 },
+  ];
+
+  test("a new box gets the host's default profile, its hardening and the box network", async () => {
+    const box = await newBox("alpha");
+    expect(box).toMatchObject({ profile: "standard", network: "mbtest-boxes" });
+
+    const container = runtime.containers.get(box.id);
+    expect(container?.labels).toMatchObject({ [keys.profile]: "standard" });
+    expect(container?.spec).toMatchObject({
+      network: "mbtest-boxes",
+      hardening: { capDrop: ["ALL"], capAdd: [...STANDARD_CAPS], pidsLimit: 1024, ulimits: ULIMITS },
+    });
+    expect(container?.spec.hardening?.noNewPrivileges).toBeUndefined();
+  });
+
+  test("the profile chosen for a box decides its hardening", async () => {
+    const strict = await newBox("strict-box", { profile: "strict" });
+    expect(strict.profile).toBe("strict");
+    expect(runtime.containers.get(strict.id)?.spec.hardening).toEqual({
+      capDrop: ["ALL"],
+      noNewPrivileges: true,
+      pidsLimit: 1024,
+      ulimits: ULIMITS,
+    });
+
+    const relaxed = await newBox("relaxed-box", { profile: "relaxed" });
+    expect(relaxed.profile).toBe("relaxed");
+    expect(runtime.containers.get(relaxed.id)?.spec.hardening).toEqual({ pidsLimit: 1024, ulimits: ULIMITS });
+  });
+
+  test("the host's process limit and runtime apply to the boxes it creates", async () => {
+    const other = createTestApp({
+      labelPrefix: "mbtest",
+      boxProfile: "strict",
+      boxPidsLimit: 256,
+      containerRuntime: "runsc",
+    });
+    const otherHost = other.app.hosts.get();
+    other.runtime.seedImage(otherHost.baseTemplateTag, { [otherHost.keys.template]: "true" });
+
+    const box = await boxes.createBox(otherHost, { name: "gamma", cpus: 1, memoryMb: 256 });
+    expect(box.profile).toBe("strict");
+    expect(other.runtime.containers.get(box.id)?.spec.hardening).toMatchObject({
+      noNewPrivileges: true,
+      pidsLimit: 256,
+      runtime: "runsc",
+    });
+  });
+
+  test("the box network is ensured with inter-container communication off before a box is created", async () => {
+    await newBox("alpha");
+    expect(runtime.callsTo("ensureBridgeNetwork").map((c) => c.args)).toEqual([
+      ["mbtest-boxes", { interContainerComm: false }],
+    ]);
+    expect(runtime.networks.get("mbtest-boxes")?.options).toEqual({
+      "com.docker.network.bridge.enable_icc": "false",
+    });
+  });
+
+  test("a network that lets boxes reach each other blocks creation with a 409 and creates nothing", async () => {
+    runtime.seedNetwork("mbtest-boxes", {});
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toMatchObject({ status: 409, key: "box_network_conflict", params: { network: "mbtest-boxes" } });
+    expect(runtime.callsTo("createVolume")).toHaveLength(0);
+    expect(runtime.callsTo("createContainer")).toHaveLength(0);
+  });
+
+  test("a box on the box network re-creates the network before it starts, so a pruned network does not stop it", async () => {
+    const box = await newBox("alpha");
+    await boxes.stopBox(host, box.id);
+    runtime.networks.delete("mbtest-boxes");
+
+    expect(await boxes.startBox(host, box.id)).toMatchObject({ running: true });
+    expect(runtime.networks.has("mbtest-boxes")).toBe(true);
+  });
+
+  test("restart re-creates the box network the same way", async () => {
+    const box = await newBox("alpha");
+    runtime.networks.delete("mbtest-boxes");
+
+    expect(await boxes.restartBox(host, box.id)).toMatchObject({ running: true });
+    expect(runtime.networks.has("mbtest-boxes")).toBe(true);
+  });
+
+  test("boxes created before profiles keep the default bridge, have no profile and are not touched", async () => {
+    const id = runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-legacy",
+      labels: { [keys.box]: "true", [keys.name]: "legacy" },
+    });
+    expect(await boxes.getBox(host, id)).toMatchObject({ profile: null, network: "bridge" });
+
+    await boxes.stopBox(host, id);
+    expect(await boxes.startBox(host, id)).toMatchObject({ running: true, profile: null, network: "bridge" });
+    expect(runtime.callsTo("ensureBridgeNetwork")).toHaveLength(0);
+    expect(runtime.containers.get(id)?.spec.hardening).toBeUndefined();
   });
 });
 

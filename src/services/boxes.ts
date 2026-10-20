@@ -1,3 +1,4 @@
+import { type BoxProfile, hardeningFor } from "../box-profile";
 import type { HostCtx } from "../host/registry";
 import { containerName, parseBoxLabels, volumeName } from "../labels";
 import { badRequest, conflict, notFound } from "../lib/errors";
@@ -14,6 +15,10 @@ export interface Box {
   running: boolean;
   image: string;
   template: string;
+  /** Null for boxes created before profiles existed. */
+  profile: BoxProfile | null;
+  /** Boxes created before profiles stay on the engine's default `bridge` network. */
+  network: string;
   cpus: number | null;
   memory: number | null;
   createdAt: string;
@@ -35,6 +40,8 @@ function toBox(host: HostCtx, info: ContainerInfo): Box {
     running: info.running,
     image: info.image,
     template: labels.template,
+    profile: labels.profile,
+    network: info.network,
     cpus: info.cpus,
     memory: info.memoryBytes,
     createdAt: labels.created ?? info.created,
@@ -78,12 +85,31 @@ async function ensureImage(host: HostCtx, image: string): Promise<void> {
   }
 }
 
+/** Boxes share one bridge network with inter-container communication off. A network that differs is never reused. */
+async function ensureBoxNetwork(host: HostCtx): Promise<void> {
+  try {
+    await host.runtime.ensureBridgeNetwork(host.security.network, { interContainerComm: false });
+  } catch (e) {
+    if (e instanceof RuntimeError && e.kind === "conflict") {
+      throw conflict(msg("box_network_conflict", { network: host.security.network }));
+    }
+    throw e;
+  }
+}
+
+/** The engine cannot start a box whose network is gone, for example after `docker network prune` while it was stopped. */
+async function ensureNetworkFor(host: HostCtx, box: Box): Promise<void> {
+  if (box.network === host.security.network) await ensureBoxNetwork(host);
+}
+
 export async function createBox(host: HostCtx, input: CreateBoxInput & { templateLabel?: string }): Promise<Box> {
-  const { runtime, keys, prefix } = host;
+  const { runtime, keys, prefix, security } = host;
   const image = input.image ?? host.baseTemplateTag;
+  const profile = input.profile ?? security.defaultProfile;
   const existing = await listBoxes(host);
   if (existing.some((b) => b.name === input.name)) throw conflict(msg("box_exists", { name: input.name }));
   await ensureImage(host, image);
+  await ensureBoxNetwork(host);
 
   const volume = volumeName(prefix, input.name);
   try {
@@ -104,6 +130,7 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
       [keys.name]: input.name,
       [keys.template]: input.templateLabel ?? image,
       [keys.created]: new Date().toISOString(),
+      [keys.profile]: profile,
     },
     mounts: [{ source: volume, target: "/workspace" }],
     restart: "unless-stopped",
@@ -111,14 +138,16 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
     memoryBytes,
     swapBytes: memoryBytes,
     init: true,
+    network: security.network,
+    hardening: hardeningFor(profile, security),
   });
   await runtime.startContainer(id);
-  log.info("box.created", { name: input.name, image, cpus: input.cpus, memoryMb: input.memoryMb });
+  log.info("box.created", { name: input.name, image, profile, cpus: input.cpus, memoryMb: input.memoryMb });
   return getBox(host, id);
 }
 
 export async function startBox(host: HostCtx, id: string): Promise<Box> {
-  await getBox(host, id);
+  await ensureNetworkFor(host, await getBox(host, id));
   await host.runtime.startContainer(id);
   return getBox(host, id);
 }
@@ -130,7 +159,7 @@ export async function stopBox(host: HostCtx, id: string): Promise<Box> {
 }
 
 export async function restartBox(host: HostCtx, id: string): Promise<Box> {
-  await getBox(host, id);
+  await ensureNetworkFor(host, await getBox(host, id));
   await host.runtime.restartContainer(id, { timeoutSec: STOP_TIMEOUT_SEC });
   return getBox(host, id);
 }

@@ -96,6 +96,8 @@ export default {
   "err.template_not_found": "找不到该模板。",
   "err.template_image_missing": "模板镜像 {image} 不存在，请先在「模板」页构建或选择其他模板。",
   "err.box_exists": "名为「{name}」的 Box 已存在。",
+  "err.box_network_conflict":
+    "网络「{network}」已存在，但不是关闭了容器间通信的 bridge 网络。请在没有 Box 使用它时删除该网络，然后重试。",
   "err.cpu_over_host": "CPU 核数超出宿主机上限（{cores} 核）。",
   "err.memory_over_host": "内存超出宿主机上限（{gb} GB）。",
   "ui.nameRequired": "请输入{what}。",
