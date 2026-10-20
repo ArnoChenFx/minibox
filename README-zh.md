@@ -40,7 +40,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应 |
 | 日志 | 查看容器主进程输出，支持行数选择与自动刷新 |
-| 访问控制 | 单一访问密钥，HttpOnly Cookie 或 `Authorization: Bearer`；按 IP 限制登录失败次数 |
+| 访问控制 | 单一访问密钥，HttpOnly、`SameSite=Strict` Cookie 或 `Authorization: Bearer`；按客户端地址限制登录失败次数；拒绝跨站请求 |
 | 多语言 | 英文与简体中文；点击右上角（控制台顶栏和登录页）的语言图标按钮即可切换，默认跟随浏览器语言，并在本浏览器记住选择 |
 | 界面 | 浅色 / 深色主题（跟随系统，可手动切换）、响应式布局、空状态、骨架屏、操作提示与危险操作确认 |
 
@@ -152,6 +152,8 @@ opentunnel up
 
 如果前面的代理或隧道会设置 `X-Forwarded-For` 和 `X-Forwarded-Proto`，请设置 `TRUST_PROXY=true`，这样登录限流按真实客户端计数，Cookie 也会带上 `Secure` 标记。
 
+MiniBox 还会拒绝来自其他网站的请求：浏览器的 `Origin` 必须与请求到达时的 `Host` 一致。有些代理会把 `Host` 改写成上游地址（nginx 默认如此，除非配置了 `proxy_set_header Host $host;`），这时登录页会提示「已拦截：该请求来自其他站点」。请让代理透传 `Host`，或者在 `ALLOWED_ORIGINS` 中填写公网地址，例如 `ALLOWED_ORIGINS=https://minibox.example.com`。
+
 对外暴露之前，请先阅读[安全须知](#安全须知)。
 
 ### Docker
@@ -181,7 +183,8 @@ docker run -d --name minibox --restart unless-stopped \
 | `ACCESS_KEY` | 首次启动自动生成 | 控制台与 API 的访问密钥 |
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `PORT` | `3920` | 监听端口 |
-| `TRUST_PROXY` | `false` | 信任你自己运行的反向代理或隧道设置的 `X-Forwarded-For` / `X-Forwarded-Proto`。直接访问时保持关闭（见[安全须知](#安全须知)） |
+| `TRUST_PROXY` | `false` | 信任你自己运行的反向代理或隧道设置的 `X-Forwarded-For` / `X-Forwarded-Proto`（以及 `X-Forwarded-Host`）。直接访问时保持关闭（见[安全须知](#安全须知)） |
+| `ALLOWED_ORIGINS` | 空 | 额外允许调用 API 和打开终端的浏览器来源，逗号分隔，例如 `https://minibox.example.com`。仅在代理改写了 `Host` 时需要 |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
 | `BASE_TEMPLATE` | `<前缀>-template:base` | 新建 Box 的默认模板镜像 |
@@ -194,7 +197,7 @@ docker run -d --name minibox --restart unless-stopped \
 
 ## API 参考
 
-请求与响应均为 JSON。除标注**公开**的接口外，都需要登录 Cookie（由 `/api/auth/login` 写入）或 `Authorization: Bearer <ACCESS_KEY>` 请求头。
+请求与响应均为 JSON。除标注**公开**的接口外，都需要登录 Cookie（由 `/api/auth/login` 写入）或 `Authorization: Bearer <ACCESS_KEY>` 请求头。带请求体的请求必须使用 `Content-Type: application/json`（其他类型返回 `415`），来自其他网站的浏览器请求返回 `403`。
 
 出错时返回对应的 HTTP 状态码和统一结构：
 
@@ -202,7 +205,7 @@ docker run -d --name minibox --restart unless-stopped \
 { "error": { "code": "validation_failed", "message": "CPU 核数须在 0.1 到 64 之间。", "details": { "field": "cpus" } } }
 ```
 
-常见错误码：`validation_failed`（400）、`unauthorized`（401）、`not_found`（404）、`method_not_allowed`（405）、`conflict`（409）、`insufficient_capacity`（422）、`too_many_requests`（429）、`docker_error`（502）、`docker_unavailable`（503）。
+常见错误码：`validation_failed`（400）、`unauthorized`（401）、`forbidden`（403）、`not_found`（404）、`method_not_allowed`（405）、`conflict`（409）、`unsupported_media_type`（415）、`insufficient_capacity`（422）、`too_many_requests`（429）、`docker_error`（502）、`docker_unavailable`（503）。
 
 ### 认证与系统
 
@@ -326,6 +329,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 - **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 已在 `.gitignore` 中忽略，不要提交它。
 - **访问密钥是唯一门禁。** 没有用户体系。登录失败按客户端地址限流（5 分钟内最多 10 次，IPv6 按 /64 计），密钥比对是恒定时间的，但密钥一旦泄露就等于完全失守。更换密钥：修改 `.env` 中的 `ACCESS_KEY` 后重启服务，现有会话立即失效。
+- **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。带请求体的写请求必须是 JSON，这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
 - **远程访问请使用 HTTPS。** 通过 HTTPS 访问时登录 Cookie 会带上 `Secure` 标记。默认情况下 MiniBox 忽略 `X-Forwarded-For` 和 `X-Forwarded-Proto`，因此经过反向代理访问时，所有访问者共享代理的地址来计算登录限流。只有当前面的代理由你控制并会设置这些头时，才设置 `TRUST_PROXY=true`：开启后 MiniBox 取 `X-Forwarded-For` 的最后一项（由代理追加的那一项）；关闭时客户端可以伪造这些头来绕过登录限流。
 - **公开隧道可以被发现。** 隧道域名（例如 OpenTunnel 的 `*.opentunnel.xyz`）可能出现在公开的证书透明度日志里，也可能被猜到，而且 OpenTunnel 本身不提供认证。这相当于把控制台直接放在公网上，只靠访问密钥保护；流量还会经过隧道的中继服务器。条件允许时优先使用私有网络（如 Tailscale）或带认证的反向代理，不用时把隧道关掉。

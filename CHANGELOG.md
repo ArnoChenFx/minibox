@@ -7,9 +7,14 @@
 ### 安全
 - 登录限流不再信任请求头 `X-Forwarded-For`：默认按真实连接地址计数，伪造该头无法绕过限流（#1）。新增配置 `TRUST_PROXY`（默认 `false`），仅在由你控制的反向代理之后设置为 `true`，此时读取 `X-Forwarded-For` 的最后一项与 `X-Forwarded-Proto`。
 - 登录限流按客户端地址计数，IPv6 按 /64 归并；失败记录表设置容量上限并定期清理过期项，大量伪造地址无法撑大内存（#1）。
+- WebSocket 终端升级请求，以及 `/api/` 下的 POST / PATCH / DELETE，要求浏览器的 `Origin` 与请求的 `Host` 同源（或列在新配置 `ALLOWED_ORIGINS` 中），否则返回 `403`。不带 `Origin` 的请求（如使用 `Authorization: Bearer` 的脚本）不受影响（#3）。
+- 带请求体的 API 写请求必须是 `application/json`，否则返回 `415`，HTML 表单提交无法触发写操作（#3）。
+- 登录 Cookie 由 `SameSite=Lax` 改为 `SameSite=Strict`（#3）。
 
 ### 变更（升级注意）
 - 经反向代理或隧道访问、且未设置 `TRUST_PROXY=true` 时：所有访问者共享代理的地址进行登录限流，登录 Cookie 也不再因代理的 `X-Forwarded-Proto` 自动带上 `Secure`。升级后请按需设置 `TRUST_PROXY=true`。
+- 代理或隧道改写了 `Host` 头（例如 nginx 默认的 `proxy_set_header Host $proxy_host`）时，浏览器的 `Origin` 不再匹配，登录和控制台写操作会返回 `403`。请让代理透传 `Host`（nginx 中使用 `proxy_set_header Host $host;`），或设置 `ALLOWED_ORIGINS=https://你的域名`（#3）。
+- 从其他网站打开控制台链接时，浏览器不再携带登录 Cookie，可能需要重新登录一次（#3）。
 
 ## [0.3.0] - 2026-10-21
 

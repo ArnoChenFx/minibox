@@ -115,11 +115,11 @@ function expandIPv6(ip: string): number[] | null {
 }
 
 export function sessionCookie(key: string, secure: boolean): string {
-  return `${COOKIE_NAME}=${encodeURIComponent(key)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}${secure ? "; Secure" : ""}`;
+  return `${COOKIE_NAME}=${encodeURIComponent(key)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${MAX_AGE}${secure ? "; Secure" : ""}`;
 }
 
 export function clearSessionCookie(): string {
-  return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
 }
 
 /**

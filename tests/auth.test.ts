@@ -41,11 +41,13 @@ describe("auth", () => {
     expect(isAuthorized(req({}), KEY)).toBe(false);
   });
 
-  test("cookies are HttpOnly and Secure only on https", () => {
+  test("cookies are HttpOnly, SameSite=Strict and Secure only on https", () => {
     expect(sessionCookie(KEY, true)).toContain("HttpOnly");
+    expect(sessionCookie(KEY, true)).toContain("SameSite=Strict");
     expect(sessionCookie(KEY, true)).toContain("Secure");
     expect(sessionCookie(KEY, false)).not.toContain("Secure");
     expect(clearSessionCookie()).toContain("Max-Age=0");
+    expect(clearSessionCookie()).toContain("SameSite=Strict");
   });
 
   test("detects https behind tunnels only when trustProxy is enabled", () => {

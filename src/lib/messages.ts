@@ -34,6 +34,9 @@ export const MESSAGES = {
   unknown_error: "Unknown error",
   api_not_found: "API endpoint not found.",
   method_not_allowed: "Method not allowed.",
+  unsupported_media_type: "Requests with a body must be JSON (Content-Type: application/json).",
+  origin_forbidden:
+    "Cross-site request blocked. Open MiniBox at its own address, or allow that address with ALLOWED_ORIGINS.",
   unauthorized: "Not signed in, or the access key is invalid.",
   terminal_not_running: "The box is not running, so a terminal can't be opened.",
   ws_upgrade_failed: "WebSocket upgrade failed.",
