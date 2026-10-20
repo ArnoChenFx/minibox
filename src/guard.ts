@@ -48,12 +48,14 @@ export function guardRequest(req: Request, policy: GuardPolicy): void {
 }
 
 /**
- * A plain HTML form can only send urlencoded or multipart bodies without a CORS preflight, so requiring
- * JSON for every body makes cross-site form posts fail even if they bypass the Origin check.
+ * A plain HTML form can only send urlencoded or multipart bodies without a CORS preflight, so any declared
+ * type other than JSON is refused, even with an empty body. Writes that send neither a body nor a
+ * Content-Type (the console's buttons, simple scripts) are still accepted.
  */
 export function requireJsonBody(req: Request): void {
-  if (!hasBody(req)) return;
-  const type = req.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+  const declared = req.headers.get("content-type");
+  if (declared === null && !hasBody(req)) return;
+  const type = declared?.split(";")[0]?.trim().toLowerCase();
   if (type !== "application/json") {
     throw new AppError(415, "unsupported_media_type", msg("unsupported_media_type"));
   }

@@ -82,8 +82,9 @@ export default {
   "err.unknown_error": "未知错误",
   "err.api_not_found": "接口不存在。",
   "err.method_not_allowed": "不支持该请求方法。",
-  "err.unsupported_media_type": "带请求体的请求必须是 JSON。",
-  "err.origin_forbidden": "已拦截：该请求来自其他站点。请直接访问 MiniBox 的地址，或在 ALLOWED_ORIGINS 中允许该地址。",
+  "err.unsupported_media_type": "请使用 Content-Type: application/json（没有请求体时可以不带该头）。",
+  "err.origin_forbidden":
+    "已拦截：请求的 Origin 既不是当前 MiniBox 地址，也不在 ALLOWED_ORIGINS 列表中。如果通过隧道或反向代理访问，请把它的公网地址（例如 https://minibox.example.com）加入 ALLOWED_ORIGINS，并重启 MiniBox。",
   "err.unauthorized": "未登录或访问密钥无效。",
   "err.terminal_not_running": "Box 未运行，无法打开终端。",
   "err.ws_upgrade_failed": "WebSocket 升级失败。",

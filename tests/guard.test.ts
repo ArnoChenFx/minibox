@@ -85,10 +85,18 @@ describe("guardRequest", () => {
     expect(guard(req("POST", "/api/boxes", text))).toBe(415);
   });
 
-  test("bodyless writes and empty bodies need no content type", () => {
+  test("bodyless writes without a Content-Type are accepted", () => {
     expect(guard(req("POST", "/api/boxes/a/start"))).toBeNull();
+    expect(guard(req("POST", "/api/boxes/a/start", { origin: APP, "content-type": "application/json" }))).toBeNull();
+  });
+
+  test("a declared non-JSON type is refused even when the body is empty", () => {
     const emptyForm = { origin: APP, "content-type": "application/x-www-form-urlencoded", "content-length": "0" };
-    expect(guard(req("POST", "/api/boxes/a/start", emptyForm))).toBeNull();
+    expect(guard(req("POST", "/api/boxes/a/start", emptyForm))).toBe(415);
+  });
+
+  test("the refusal names ALLOWED_ORIGINS, the setting that admits a proxied address", () => {
+    expect(() => guardRequest(req("POST", "/api/auth/login", evil), direct)).toThrow("ALLOWED_ORIGINS");
   });
 
   test("Bearer-token CLIs without an Origin header are not refused", () => {

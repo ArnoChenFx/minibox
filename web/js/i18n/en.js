@@ -85,9 +85,9 @@ export default {
   "err.unknown_error": "Unknown error",
   "err.api_not_found": "API endpoint not found.",
   "err.method_not_allowed": "Method not allowed.",
-  "err.unsupported_media_type": "Requests with a body must be JSON.",
+  "err.unsupported_media_type": "Use Content-Type: application/json (requests without a body may omit it).",
   "err.origin_forbidden":
-    "Blocked: this request came from another site. Open MiniBox at its own address, or allow that address with ALLOWED_ORIGINS.",
+    "Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.",
   "err.unauthorized": "Not signed in, or the access key is invalid.",
   "err.terminal_not_running": "The box is not running, so a terminal can't be opened.",
   "err.ws_upgrade_failed": "WebSocket upgrade failed.",
