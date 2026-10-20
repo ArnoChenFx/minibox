@@ -15,7 +15,7 @@ import type { FakeRuntime } from "./support/fake-runtime";
 
 const SNAPSHOT_REF = "mbtest-snap:demo-20261020-000000";
 
-/** Line breaks and tabs that would start a new Dockerfile instruction if they reached the commit unescaped. */
+/** Descriptions with a line break, carriage return or tab. Each must be refused before anything is committed. */
 const INJECTIONS = [
   "ok\nENV X=1",
   'ok\nCMD ["sh","-c","id"]',
@@ -111,7 +111,7 @@ describe("promote route", () => {
     expect(labelsOf(lastCommit().changes)[keys.templateDesc]).toBe('a "b" \\c $HOME');
   });
 
-  test("every single-line description is stored as the same text, one instruction per change", async () => {
+  test("every single-line description is stored as the same text, and no change spans lines", async () => {
     for (const [i, description] of SINGLE_LINE.entries()) {
       expect((await promote({ name: `tpl${i}`, description })).status).toBe(201);
       const { changes } = lastCommit();
