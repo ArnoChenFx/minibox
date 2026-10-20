@@ -3,7 +3,15 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, s
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { accessKeyPath, createSecretFile, ensureDataDir, readSecretFile, resolveDataDir } from "../src/data-dir";
+import {
+  accessKeyPath,
+  createSecretFile,
+  ensureDataDir,
+  readSecretFile,
+  resolveDataDir,
+  sessionsPath,
+  writeFileAtomic,
+} from "../src/data-dir";
 
 const mode = (path: string) => statSync(path).mode & 0o777;
 
@@ -28,6 +36,10 @@ describe("resolveDataDir", () => {
 
 test("accessKeyPath sits directly in DATA_DIR", () => {
   expect(accessKeyPath("/data")).toBe("/data/access_key");
+});
+
+test("sessionsPath sits directly in DATA_DIR", () => {
+  expect(sessionsPath("/data")).toBe("/data/sessions.json");
 });
 
 describe("layout and secret files", () => {
@@ -79,5 +91,39 @@ describe("layout and secret files", () => {
 
     writeFileSync(path, "  \n");
     expect(readSecretFile(path)).toBeNull();
+  });
+});
+
+describe("writeFileAtomic", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "minibox-atomic-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("replaces the contents and leaves no temporary file behind", () => {
+    const path = join(dir, "sessions.json");
+    writeFileAtomic(path, "first\n");
+    writeFileAtomic(path, "second\n");
+    expect(readFileSync(path, "utf8")).toBe("second\n");
+    expect(readdirSync(dir)).toEqual(["sessions.json"]);
+  });
+  test("creates files with mode 600 unless told otherwise", () => {
+    const secret = join(dir, "secret");
+    writeFileAtomic(secret, "x");
+    expect(mode(secret)).toBe(0o600);
+
+    const shared = join(dir, "shared");
+    writeFileAtomic(shared, "x", 0o644);
+    expect(mode(shared)).toBe(0o644);
+  });
+  test("a failed write throws and leaves nothing behind", () => {
+    const path = join(dir, "missing", "sessions.json");
+    expect(() => writeFileAtomic(path, "x")).toThrow();
+    expect(readdirSync(dir)).toEqual([]);
   });
 });
