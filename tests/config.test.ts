@@ -77,6 +77,46 @@ describe("loadConfig", () => {
     expect(() => load({ ACCESS_KEY: KEY, ALLOWED_ORIGINS: "minibox.example.com" })).toThrow("ALLOWED_ORIGINS");
     expect(() => load({ ACCESS_KEY: KEY, ALLOWED_ORIGINS: "ftp://files.example.com" })).toThrow("ALLOWED_ORIGINS");
   });
+  test("event retention and output limits default to 365, 30, 7 days and 512 MB", () => {
+    expect(load({ ACCESS_KEY: KEY })).toMatchObject({
+      eventRetentionAuditDays: 365,
+      eventRetentionActivityDays: 30,
+      eventOutputRetentionDays: 7,
+      eventOutputMaxMb: 512,
+    });
+  });
+  test("event retention and output limits are read from the environment or .env", () => {
+    writeFileSync(envFile, "EVENT_OUTPUT_MAX_MB=64\n");
+    expect(
+      load({
+        ACCESS_KEY: KEY,
+        EVENT_RETENTION_AUDIT_DAYS: "90",
+        EVENT_RETENTION_ACTIVITY_DAYS: "7",
+        EVENT_OUTPUT_RETENTION_DAYS: "2",
+      }),
+    ).toMatchObject({
+      eventRetentionAuditDays: 90,
+      eventRetentionActivityDays: 7,
+      eventOutputRetentionDays: 2,
+      eventOutputMaxMb: 64,
+    });
+  });
+  test("event retention values that are not positive whole numbers fall back to the defaults", () => {
+    expect(
+      load({
+        ACCESS_KEY: KEY,
+        EVENT_RETENTION_AUDIT_DAYS: "0",
+        EVENT_RETENTION_ACTIVITY_DAYS: "forever",
+        EVENT_OUTPUT_RETENTION_DAYS: "1.5",
+        EVENT_OUTPUT_MAX_MB: "-3",
+      }),
+    ).toMatchObject({
+      eventRetentionAuditDays: 365,
+      eventRetentionActivityDays: 30,
+      eventOutputRetentionDays: 7,
+      eventOutputMaxMb: 512,
+    });
+  });
 });
 
 describe("ACCESS_KEY precedence", () => {

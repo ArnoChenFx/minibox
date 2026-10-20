@@ -140,6 +140,7 @@ if (import.meta.main) {
   const version = resolveVersion();
   const app = createApp(cfg, version);
   app.monitor.start();
+  app.retention.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
 
@@ -149,10 +150,12 @@ if (import.meta.main) {
     stopping = true;
     log.info("server.stopping", { signal });
     app.monitor.stop();
+    app.retention.stop();
     app.throttle.stop();
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);
+    app.events.close();
     log.info("server.stopped");
     process.exit(0);
   };

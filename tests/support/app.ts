@@ -24,6 +24,10 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     templatesDir: join(ROOT, "templates"),
     metricsIntervalMs: 60_000,
     metricsHistory: 10,
+    eventRetentionAuditDays: 365,
+    eventRetentionActivityDays: 30,
+    eventOutputRetentionDays: 7,
+    eventOutputMaxMb: 512,
     logLevel: "error",
     trustProxy: false,
     cookieSecure: false,
@@ -37,7 +41,8 @@ export function createTestApp(
   runtime = new FakeRuntime(),
   hooks: Partial<ExecutorHooks> = {},
 ): { app: App; runtime: FakeRuntime } {
-  return { app: createApp(testConfig(overrides), "0.0.0-test", { runtime, hooks }), runtime };
+  const app = createApp(testConfig(overrides), "0.0.0-test", { runtime, hooks, eventsPath: ":memory:" });
+  return { app, runtime };
 }
 
 /** The logger writes expected failures (e.g. 5xx responses) to the console. Mute it so test output stays readable. */

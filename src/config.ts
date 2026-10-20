@@ -23,6 +23,10 @@ export interface Config {
   templatesDir: string;
   metricsIntervalMs: number;
   metricsHistory: number;
+  eventRetentionAuditDays: number;
+  eventRetentionActivityDays: number;
+  eventOutputRetentionDays: number;
+  eventOutputMaxMb: number;
   logLevel: "debug" | "info" | "warn" | "error";
   trustProxy: boolean;
   cookieSecure: boolean;
@@ -117,6 +121,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     templatesDir: join(ROOT, "templates"),
     metricsIntervalMs: intOr(get("METRICS_INTERVAL_MS"), 3000),
     metricsHistory: intOr(get("METRICS_HISTORY"), 120),
+    eventRetentionAuditDays: intOr(get("EVENT_RETENTION_AUDIT_DAYS"), 365),
+    eventRetentionActivityDays: intOr(get("EVENT_RETENTION_ACTIVITY_DAYS"), 30),
+    eventOutputRetentionDays: intOr(get("EVENT_OUTPUT_RETENTION_DAYS"), 7),
+    eventOutputMaxMb: intOr(get("EVENT_OUTPUT_MAX_MB"), 512),
     logLevel: level === "debug" || level === "warn" || level === "error" ? level : "info",
     trustProxy: isTruthy(get("TRUST_PROXY")),
     cookieSecure: isTruthy(get("COOKIE_SECURE")),
