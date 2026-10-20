@@ -16,4 +16,11 @@ describe("loadConfig", () => {
     expect(cfg.metricsIntervalMs).toBe(3000);
     expect(cfg.logLevel).toBe("info");
   });
+  test("TRUST_PROXY is off unless explicitly enabled", () => {
+    expect(loadConfig({ ACCESS_KEY: KEY }).trustProxy).toBe(false);
+    expect(loadConfig({ ACCESS_KEY: KEY, TRUST_PROXY: "false" }).trustProxy).toBe(false);
+    expect(loadConfig({ ACCESS_KEY: KEY, TRUST_PROXY: "0" }).trustProxy).toBe(false);
+    expect(loadConfig({ ACCESS_KEY: KEY, TRUST_PROXY: "true" }).trustProxy).toBe(true);
+    expect(loadConfig({ ACCESS_KEY: KEY, TRUST_PROXY: " ON " }).trustProxy).toBe(true);
+  });
 });

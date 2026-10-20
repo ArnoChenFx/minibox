@@ -40,7 +40,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
 | Logs | Main-process output with selectable line count and auto-refresh |
-| Access control | Single access key via HttpOnly cookie or `Authorization: Bearer`; login rate limiting per IP |
+| Access control | Single access key via HttpOnly cookie or `Authorization: Bearer`; login rate limiting per client address |
 | Languages | English and Simplified Chinese; toggle with the language icon button in the top-right corner (console header and login page). Defaults to the browser language and is remembered per browser |
 | UI | Light / dark theme (follows the system, manual toggle), responsive layout, empty states, skeleton loaders, toasts, confirmation for destructive actions |
 
@@ -150,6 +150,8 @@ opentunnel up
 # → https://minibox.<your-id>.opentunnel.xyz
 ```
 
+If the proxy or tunnel sets `X-Forwarded-For` and `X-Forwarded-Proto`, set `TRUST_PROXY=true` so login rate limiting counts real clients and the cookie gets the `Secure` flag.
+
 Read the [security notes](#security) before exposing it.
 
 ### Docker
@@ -179,6 +181,7 @@ Precedence: process environment > `.env` file > defaults. See [`.env.example`](.
 | `ACCESS_KEY` | generated on first start | Access key for the dashboard and API |
 | `HOST` | `127.0.0.1` | Listen address |
 | `PORT` | `3920` | Listen port |
+| `TRUST_PROXY` | `false` | Read `X-Forwarded-For` / `X-Forwarded-Proto` from a reverse proxy or tunnel you run in front of MiniBox. Keep off when clients connect directly (see [Security](#security)) |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
 | `BASE_TEMPLATE` | `<prefix>-template:base` | Default template image for new boxes |
@@ -205,7 +208,7 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `not_found` (404)
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/auth/login` | **Public.** Body `{ "key": "..." }`; sets an HttpOnly cookie (30 days). Max 10 failures per IP per 5 min |
+| `POST` | `/api/auth/login` | **Public.** Body `{ "key": "..." }`; sets an HttpOnly cookie (30 days). Max 10 failures per client address per 5 min (IPv6: per /64) |
 | `POST` | `/api/auth/logout` | **Public.** Clears the cookie |
 | `GET` | `/api/auth/session` | **Public.** `{ "authenticated": boolean }` |
 | `GET` | `/api/health` | **Public.** `{ "ok": true, "docker": boolean }`; `503` when Docker is unreachable |
@@ -322,9 +325,9 @@ The [release workflow](.github/workflows/release.yml) then runs the same CI chec
 MiniBox is built for **one trusted user on their own machine**. Please read this before exposing it.
 
 - **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` is git-ignored — keep it that way.
-- **The access key is the only guard.** There are no user accounts. Login failures are rate-limited per IP (10 per 5 minutes) and the key is compared in constant time, but a leaked key means full access. To rotate it, change `ACCESS_KEY` in `.env` and restart; existing sessions stop working immediately.
+- **The access key is the only guard.** There are no user accounts. Login failures are rate-limited per client address (10 per 5 minutes; IPv6 addresses per /64) and the key is compared in constant time, but a leaked key means full access. To rotate it, change `ACCESS_KEY` in `.env` and restart; existing sessions stop working immediately.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
-- **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS (including behind TLS-terminating proxies that set `X-Forwarded-Proto`).
+- **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS. MiniBox ignores `X-Forwarded-For`, `X-Forwarded-Proto` by default, so behind a proxy every visitor shares the proxy's address for rate limiting. Set `TRUST_PROXY=true` only when a proxy you control sets these headers. With it on, MiniBox uses the right-most `X-Forwarded-For` entry, which the proxy appended. With it off, a client can forge these headers to dodge the login limit.
 - **Public tunnels are discoverable.** Tunnel hostnames (e.g. OpenTunnel's `*.opentunnel.xyz`) can show up in public Certificate Transparency logs or be guessed, and OpenTunnel itself does not add authentication — the dashboard is effectively on the internet, protected only by the access key. Traffic also passes through the tunnel's relay. Prefer a private network (e.g. Tailscale) or an authenticating reverse proxy when you can, and stop the tunnel when you don't need it.
 - **Container isolation, not a security sandbox.** Boxes share the host kernel. They are fine for your own agents, but **not for untrusted third-party code** — use gVisor or a microVM-based sandbox for that. Don't mount the Docker socket or sensitive host paths into a box.
 - **Snapshots don't include `/workspace`.** `docker commit` skips mounted volumes; keep code in git or back up the volume separately.
