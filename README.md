@@ -26,7 +26,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 
 - Agents make a mess: random global installs, half-finished builds, stray processes. A box keeps that off your host and can be reset, snapshotted or deleted in one click.
 - Hosted sandboxes are great, but sometimes you want your own hardware, your own network and zero per-minute billing.
-- Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database**, all state lives in Docker labels, images and volumes.
+- Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database server**. Box state lives in Docker labels, images and volumes, and MiniBox keeps its own small files in a [data directory](#data-directory).
 
 ## Features
 
@@ -178,16 +178,16 @@ bun run build:template
 bun start
 ```
 
-If `ACCESS_KEY` is empty, MiniBox generates a random 64-character hex key on first start and writes it to `.env` (mode `600`):
+If no `ACCESS_KEY` is set in the environment or in `.env`, MiniBox generates a random 64-character hex key on first start and stores it in `DATA_DIR/access_key` (mode `600`; `./data/access_key` by default). `.env` is never modified:
 
 ```bash
-grep ACCESS_KEY .env
+cat data/access_key
 ```
 
 Open <http://127.0.0.1:3920> and sign in with that key.
 
 > [!TIP]
-> When the key is auto-generated, `.env` is rewritten with only `ACCESS_KEY`, `PORT` and `HOST`. Set your other options after the first start, or put a key into `.env` yourself (e.g. `openssl rand -hex 32`).
+> To choose the key yourself, set `ACCESS_KEY` in `.env` (e.g. `openssl rand -hex 32`). A key from `.env` or the environment always takes precedence over the generated one, and keys that earlier versions wrote into `.env` keep working.
 
 ### Running in the background
 
@@ -198,7 +198,7 @@ scripts/restart.sh              # include the tunnel
 scripts/restart.sh --no-tunnel  # server only
 ```
 
-Server output goes to `server.log` in the project root (git-ignored).
+Server output goes to `server.log` in the project root (git-ignored). The script also reports where the access key is stored, never the key itself.
 
 With systemd, a simple service unit running `bun /path/to/minibox/src/server.ts` is the recommended setup.
 
@@ -223,25 +223,29 @@ docker run -d --name minibox --restart unless-stopped \
   -p 127.0.0.1:3920:3920 \
   -e ACCESS_KEY="$(openssl rand -hex 32)" \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v minibox-data:/data \
   ghcr.io/arnochenfx/minibox:latest
 ```
 
 - MiniBox manages boxes through the host's Docker Engine, so the Docker socket **must** be mounted (`-v /var/run/docker.sock:/var/run/docker.sock`). Boxes are created as sibling containers on the host, not inside the MiniBox container.
-- Always pass `ACCESS_KEY`; otherwise a random key is generated inside the container and lost on recreation (`docker logs minibox` shows only its first 4 characters).
+- Mount a volume at `/data` (`-v minibox-data:/data`). It holds the [data directory](#data-directory), including a generated access key, so state survives container re-creation. Without it, that state is lost when the container is removed.
+- If you don't pass `ACCESS_KEY`, read the generated key with `docker exec minibox cat /data/access_key`. `docker logs` shows only its first 4 characters.
+- Upgrading from an image that generated its key into `/app/.env`: that file lives in the old container and is lost when the container is re-created. Copy the key out first, while the old container is running, with `docker exec minibox grep '^ACCESS_KEY=' /app/.env`, then pass it as `-e ACCESS_KEY=...`.
 - Inside the container MiniBox listens on `0.0.0.0:3920` (`HOST=0.0.0.0`); publish it on `127.0.0.1` as above and use HTTPS for remote access.
 - Tags: `X.Y.Z`, `X.Y` and `latest` (pre-releases such as `1.0.0-rc.1` only get their exact tag).
 - Build locally: `docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
 
 ## Configuration
 
-Precedence: process environment > `.env` file > defaults. See [`.env.example`](.env.example).
+Precedence: process environment > `.env` file > defaults. The access key also falls back to `DATA_DIR/access_key`. See [`.env.example`](.env.example).
 
 | Variable | Default | Description |
 |---|---|---|
-| `ACCESS_KEY` | generated on first start | Access key for the dashboard and API |
+| `ACCESS_KEY` | generated into `DATA_DIR/access_key` | Access key for the dashboard and API. MiniBox never writes it to `.env` |
 | `HOST` | `127.0.0.1` | Listen address |
 | `PORT` | `3920` | Listen port |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
+| `DATA_DIR` | `./data` (`/data` in the image) | State directory, see [Data directory](#data-directory) |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
 | `BASE_TEMPLATE` | `<prefix>-template:base` | Default template image for new boxes |
 | `METRICS_INTERVAL_MS` | `3000` | Host metrics sampling interval (ms) |
@@ -250,6 +254,19 @@ Precedence: process environment > `.env` file > defaults. See [`.env.example`](.
 | `MINIBOX_VERSION` | from git / `package.json` | Override the displayed version (set automatically in release images) |
 
 > `bun run build:template` always tags `minibox-template:base`. If you change `LABEL_PREFIX` or `BASE_TEMPLATE`, build the base template from the dashboard (Templates → Build base template) instead, which uses the configured tag.
+
+## Data directory
+
+MiniBox keeps the state it owns in `DATA_DIR`. It is a directory of plain files, not a database server, so include it in your backups. Relative paths resolve from the project root, and `~/` expands to your home directory.
+
+| Path | Mode | Contents |
+|---|---|---|
+| `access_key` | `600` | Access key generated when none is set in the environment or `.env` |
+| `boxes/` | `700` | Box specifications (created now, used by later features) |
+| `exec/` | `700` | Output of `exec` commands (created now, used by later features) |
+| `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
+
+MiniBox creates these directories at startup and tightens looser modes. It never writes `.env`. If `DATA_DIR` is lost and no key is set in `.env` or the environment, the next start generates a new access key, so everyone has to sign in with it. Keep a copy of `access_key`, or set `ACCESS_KEY` in `.env`, if you rely on the current one.
 
 ## API reference
 
@@ -311,7 +328,7 @@ Only images carrying MiniBox labels can be deleted through the API.
 ### Example
 
 ```bash
-KEY=$(grep ACCESS_KEY .env | cut -d= -f2)
+KEY=$(grep '^ACCESS_KEY=' .env | cut -d= -f2)   # or: KEY=$(cat data/access_key) if MiniBox generated it
 curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"name":"agent-dev","cpus":2,"memoryMb":4096}' http://127.0.0.1:3920/api/boxes
 
@@ -326,7 +343,8 @@ minibox/
 ├── src/
 │   ├── server.ts            # Entry: Bun.serve, static files, WebSocket upgrade, graceful shutdown
 │   ├── app.ts               # App context (config, Docker, monitor, activity log)
-│   ├── config.ts            # Env / .env loading, key generation
+│   ├── config.ts            # Env / .env loading, access key precedence
+│   ├── data-dir.ts          # DATA_DIR layout and secret files (600)
 │   ├── auth.ts              # Key check, cookies, login throttle
 │   ├── labels.ts            # Docker label keys and parsers
 │   ├── activity.ts          # Recent-operations log
@@ -383,8 +401,9 @@ The [release workflow](.github/workflows/release.yml) then runs the same CI chec
 
 MiniBox is built for **one trusted user on their own machine**. Please read this before exposing it.
 
-- **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` is git-ignored — keep it that way.
-- **The access key is the only guard.** There are no user accounts. Login failures are rate-limited per IP (10 per 5 minutes) and the key is compared in constant time, but a leaked key means full access. To rotate it, change `ACCESS_KEY` in `.env` and restart; existing sessions stop working immediately.
+- **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` and `data/` are git-ignored — keep them that way.
+- **The container runs as root**, because it needs the Docker socket, which is root-equivalent. To narrow that, put a socket proxy that forwards only the Docker API calls MiniBox uses in front of the socket, and point `DOCKER_SOCKET` at the proxy's Unix socket. Or run MiniBox against a rootless Docker or Podman socket.
+- **The access key is the only guard.** There are no user accounts. Login failures are rate-limited per IP (10 per 5 minutes) and the key is compared in constant time, but a leaked key means full access. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; existing sessions stop working immediately.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
 - **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS (including behind TLS-terminating proxies that set `X-Forwarded-Proto`).
 - **Public tunnels are discoverable.** Tunnel hostnames (e.g. OpenTunnel's `*.opentunnel.xyz`) can show up in public Certificate Transparency logs or be guessed, and OpenTunnel itself does not add authentication — the dashboard is effectively on the internet, protected only by the access key. Traffic also passes through the tunnel's relay. Prefer a private network (e.g. Tailscale) or an authenticating reverse proxy when you can, and stop the tunnel when you don't need it.

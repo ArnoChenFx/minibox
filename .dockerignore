@@ -4,6 +4,7 @@ node_modules
 .env
 .env.*
 !.env.example
+data
 *.log
 *.pid
 .opentunnel

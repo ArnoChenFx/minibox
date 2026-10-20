@@ -7,6 +7,8 @@ node_modules/
 !.env.example
 *.pem
 *.key
+access_key
+/data/
 .opentunnel/
 opentunnel*.toml
 

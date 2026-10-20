@@ -6,8 +6,9 @@ export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 LOG="$ROOT/server.log"
-PORT="$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2 || true)"
-PORT="${PORT:-3920}"
+# Ask the server's own loader for PORT and the key location, so this script agrees with the running server.
+CONFIG="$(bun -e 'const { loadConfig } = await import("./src/config.ts"); const { accessKeyPath } = await import("./src/data-dir.ts"); const c = loadConfig(); console.log([c.port, c.accessKeySource, accessKeyPath(c.dataDir)].join("\t"));')"
+IFS=$'\t' read -r PORT KEY_SOURCE KEY_FILE <<<"$CONFIG"
 
 # 1. Docker daemon
 if ! docker info >/dev/null 2>&1; then
@@ -32,6 +33,12 @@ setsid nohup bun "$ROOT/src/server.ts" >> "$LOG" 2>&1 < /dev/null &
 echo "[restart] minibox pid=$!"
 for _ in $(seq 1 20); do curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
 curl -fsS "http://127.0.0.1:${PORT}/api/health" && echo
+case "$KEY_SOURCE" in
+  env) echo "[restart] ACCESS_KEY comes from the environment" ;;
+  env-file) echo "[restart] ACCESS_KEY comes from .env" ;;
+  data-dir) echo "[restart] ACCESS_KEY is read from $KEY_FILE" ;;
+  generated) echo "[restart] generated ACCESS_KEY is stored in $KEY_FILE (mode 600); .env was not changed" ;;
+esac
 
 # 4. OpenTunnel (no systemd here, so run the foreground service detached)
 if [[ "${1:-}" != "--no-tunnel" ]] && command -v opentunnel >/dev/null; then
