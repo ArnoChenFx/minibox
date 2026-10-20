@@ -13,11 +13,18 @@ const PRESETS = [
   { id: "custom", label: "cb.custom" },
 ];
 
+const PROFILES = [
+  { id: "standard", label: "cb.profileStandard", hint: "cb.profileStandardHint", icon: "box" },
+  { id: "strict", label: "cb.profileStrict", hint: "cb.profileStrictHint", icon: "key" },
+  { id: "relaxed", label: "cb.profileRelaxed", hint: "cb.profileRelaxedHint", icon: "zap" },
+];
+
 /**
  * Create-box dialog. When `snapshot` is given the image is fixed and the box is created from it.
  * `onCreated(box)` runs after success.
  */
 export async function openCreateBox({ snapshot, template, onCreated } = {}) {
+  const systemPromise = api("/api/system").catch(() => null);
   if (!hostNow()) await refreshHost();
   const host = hostNow();
   const maxCpu = host?.cpu.cores ?? 16;
@@ -30,6 +37,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       templates = [];
     }
   }
+  const defaultProfile = (await systemPromise)?.config?.boxProfile;
   const fits = (p) => p.cpus <= maxCpu && p.memoryMb <= maxMem;
   const initial = PRESETS.find((p) => p.id !== "custom" && fits(p)) ?? PRESETS[3];
   const state = {
@@ -37,6 +45,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     memoryMb: initial.memoryMb ?? 2048,
     preset: initial.id,
     template: templates.find((tp) => tp.ref === template)?.ref ?? templates[0]?.ref ?? "",
+    profile: PROFILES.some((p) => p.id === defaultProfile) ? defaultProfile : "standard",
   };
 
   const templatePicker = snapshot
@@ -77,7 +86,22 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       <div class="field"><span class="label">${t("cb.memory")} <span class="subtle">MB</span></span>
         <div class="slider-row"><input type="range" id="cbMemR" min="256" max="${maxMem}" step="256" /><input class="input" id="cbMem" type="number" min="128" max="${maxMem}" step="128" /></div>
         <div class="error-text" id="cbResErr"></div></div>
-      <div id="cbCapacity"></div>`,
+      <div id="cbCapacity"></div>
+      <details class="advanced" id="cbAdvanced">
+        <summary>${icon("sliders")}<span>${t("cb.advanced")}</span></summary>
+        <div class="advanced-body">
+          <div class="field"><span class="label">${t("cb.profile")}</span>
+            <div class="option-list" role="radiogroup" id="cbProfiles">${PROFILES.map(
+              (
+                p,
+              ) => `<div class="option" role="radio" tabindex="0" aria-checked="${p.id === state.profile}" data-profile="${p.id}">
+              <span class="avatar">${icon(p.icon)}</span>
+              <span class="meta"><strong>${t(p.label)}</strong><span>${t(p.hint)}</span></span></div>`,
+            ).join("")}</div>
+            <div class="help">${t("cb.profileHelp")}</div></div>
+          <div class="callout info">${icon("info")}<span>${t("cb.networkNote")} ${t("cb.diskNote")}</span></div>
+        </div>
+      </details>`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
 
@@ -139,6 +163,17 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     state.template = o.dataset.ref;
     $$(".option", root).forEach((x) => x.setAttribute("aria-checked", String(x === o)));
   });
+  q("#cbProfiles").addEventListener("click", (e) => {
+    const o = e.target.closest(".option");
+    if (!o) return;
+    state.profile = o.dataset.profile;
+    $$("#cbProfiles .option", root).forEach((x) => x.setAttribute("aria-checked", String(x === o)));
+  });
+  q("#cbProfiles").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.target.closest(".option")?.click();
+  });
   q("#cbName").addEventListener("input", () => {
     q("#cbName").classList.remove("invalid");
     q("#cbNameErr").textContent = "";
@@ -160,7 +195,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
     try {
-      const body = { name, cpus: state.cpus, memoryMb: state.memoryMb };
+      const body = { name, cpus: state.cpus, memoryMb: state.memoryMb, profile: state.profile };
       const res = snapshot
         ? await api(`/api/snapshots/${enc(snapshot)}/boxes`, { method: "POST", body })
         : await api("/api/boxes", { method: "POST", body: { ...body, template: state.template } });

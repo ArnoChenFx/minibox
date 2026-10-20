@@ -76,6 +76,23 @@ describe("parseCreateBox", () => {
     expectValidation(() => parseCreateBox(null, defaults));
     expectValidation(() => parseCreateBox("x", defaults));
   });
+  test("accepts a known security profile and leaves it to the server default otherwise", () => {
+    expect(parseCreateBox({ name: "a", profile: "strict" }, defaults).profile).toBe("strict");
+    expect(parseCreateBox({ name: "a" }, defaults).profile).toBeUndefined();
+    expect(parseCreateBox({ name: "a", profile: "" }, defaults).profile).toBeUndefined();
+    expect(parseCreateBox({ name: "a", profile: null }, defaults).profile).toBeUndefined();
+  });
+  test("rejects unknown security profiles with a translatable key", () => {
+    for (const bad of ["privileged", "Strict", 1, true]) {
+      expectValidation(() => parseCreateBox({ name: "a", profile: bad }, defaults), "profile");
+    }
+    try {
+      parseCreateBox({ name: "a", profile: "privileged" }, defaults);
+    } catch (e) {
+      expect((e as AppError).key).toBe("profile_invalid");
+      expect((e as AppError).params).toEqual({ profiles: "standard, strict, relaxed" });
+    }
+  });
 });
 
 describe("misc", () => {

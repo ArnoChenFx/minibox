@@ -36,4 +36,20 @@ describe("loadConfig", () => {
       "ALLOWED_ORIGINS",
     );
   });
+  test("box hardening defaults to the standard profile, 1024 processes and the daemon's runtime", () => {
+    const cfg = loadConfig({ ACCESS_KEY: KEY, BOX_PROFILE: "", BOX_PIDS_LIMIT: "", RUNTIME: "" });
+    expect(cfg).toMatchObject({ boxProfile: "standard", boxPidsLimit: 1024, containerRuntime: null });
+  });
+  test("BOX_PROFILE, BOX_PIDS_LIMIT and RUNTIME are read", () => {
+    const cfg = loadConfig({ ACCESS_KEY: KEY, BOX_PROFILE: "strict", BOX_PIDS_LIMIT: "256", RUNTIME: " runsc " });
+    expect(cfg).toMatchObject({ boxProfile: "strict", boxPidsLimit: 256, containerRuntime: "runsc" });
+  });
+  test("an unknown BOX_PROFILE stops startup rather than silently picking another profile", () => {
+    expect(() => loadConfig({ ACCESS_KEY: KEY, BOX_PROFILE: "stricter" })).toThrow("BOX_PROFILE");
+    expect(() => loadConfig({ ACCESS_KEY: KEY, BOX_PROFILE: "Strict" })).toThrow("BOX_PROFILE");
+  });
+  test("an invalid BOX_PIDS_LIMIT falls back to the default", () => {
+    expect(loadConfig({ ACCESS_KEY: KEY, BOX_PIDS_LIMIT: "-5" }).boxPidsLimit).toBe(1024);
+    expect(loadConfig({ ACCESS_KEY: KEY, BOX_PIDS_LIMIT: "many" }).boxPidsLimit).toBe(1024);
+  });
 });

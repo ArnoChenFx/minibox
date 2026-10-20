@@ -19,6 +19,11 @@ export function render(view) {
           <dt>${t("st.baseTemplate")}</dt><dd class="mono">${esc(s.config.baseTemplate)}</dd>
           <dt>${t("st.interval")}</dt><dd>${t("st.intervalValue", { n: s.config.metricsIntervalMs / 1000 })}</dd>
           <dt>${t("st.boxLimits")}</dt><dd>${t("st.boxLimitsValue", { minC: s.limits.minCpus, maxC: s.limits.maxCpus, minM: s.limits.minMemoryMb, maxM: s.limits.maxMemoryMb })}</dd>
+          <dt>${t("st.boxProfile")}</dt><dd class="mono">${esc(s.config.boxProfile)}</dd>
+          <dt>${t("st.pidsLimit")}</dt><dd class="num">${s.config.boxPidsLimit}</dd>
+          <dt>${t("st.containerRuntime")}</dt><dd class="mono">${s.config.containerRuntime ? esc(s.config.containerRuntime) : t("st.runtimeDefault")}</dd>
+          <dt>${t("st.boxNetwork")}</dt><dd class="mono">${esc(s.config.boxNetwork)}</dd>
+          <dt>${t("st.diskQuota")}</dt><dd>${t("st.diskQuotaValue")}</dd>
         </dl></div></div>
         <div class="card"><div class="card-head"><h3>${t("st.appearance")}</h3></div><div class="card-body stack"><div class="row between">
           <div><strong>${t("st.theme")}</strong><div class="help">${t("st.themeHelp")}</div></div>

@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { BOX_PROFILES, type BoxProfile, DEFAULT_BOX_PROFILE, isBoxProfile } from "./box-profile";
+
 export const ROOT = join(import.meta.dir, "..");
 export const ENV_PATH = join(ROOT, ".env");
 
@@ -19,6 +21,9 @@ export interface Config {
   logLevel: "debug" | "info" | "warn" | "error";
   trustProxy: boolean;
   allowedOrigins: string[];
+  boxProfile: BoxProfile;
+  boxPidsLimit: number;
+  containerRuntime: string | null;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -75,6 +80,13 @@ function parseOrigins(value: string | undefined): string[] {
     });
 }
 
+function parseBoxProfile(value: string | undefined): BoxProfile {
+  const v = value?.trim() ?? "";
+  if (!v) return DEFAULT_BOX_PROFILE;
+  if (!isBoxProfile(v)) throw new Error(`BOX_PROFILE: "${v}" must be one of ${BOX_PROFILES.join(", ")}`);
+  return v;
+}
+
 /**
  * Load configuration. Precedence: process env > .env file > defaults.
  * When no ACCESS_KEY exists anywhere, a random one is generated and persisted to .env (mode 600).
@@ -106,5 +118,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     logLevel: level === "debug" || level === "warn" || level === "error" ? level : "info",
     trustProxy: isTruthy(get("TRUST_PROXY")),
     allowedOrigins: parseOrigins(get("ALLOWED_ORIGINS")),
+    boxProfile: parseBoxProfile(get("BOX_PROFILE")),
+    boxPidsLimit: intOr(get("BOX_PIDS_LIMIT"), 1024),
+    containerRuntime: get("RUNTIME")?.trim() || null,
   };
 }

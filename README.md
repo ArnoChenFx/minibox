@@ -34,6 +34,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 |---|---|
 | Box lifecycle | Create, start, stop, restart, delete; on delete, keep or remove the workspace volume |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
+| Box hardening | Security profiles (`standard` / `strict` / `relaxed`) limit Linux capabilities and privilege escalation; boxes run as a non-root `dev` user, on a network where boxes can't reach each other, with a per-box process limit. See [Box hardening](#box-hardening) |
 | Snapshots | Save a box's system environment via `docker commit`, create new boxes from a snapshot, or promote it to a template |
 | Templates | Bundled base template (Debian 12 · Node.js 24 · Python 3 · git · build-essential) plus your own promoted templates |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
@@ -87,7 +88,7 @@ flowchart LR
   D --- I
 ```
 
-- **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`, restart policy `unless-stopped`). `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`.
+- **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`, restart policy `unless-stopped`). `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. It runs as the non-root user `dev` and joins the isolated network `minibox-boxes`; its [security profile](#box-hardening) is recorded in the `minibox.profile` label.
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
@@ -184,6 +185,9 @@ Precedence: process environment > `.env` file > defaults. See [`.env.example`](.
 | `PORT` | `3920` | Listen port |
 | `TRUST_PROXY` | `false` | Read `X-Forwarded-For` / `X-Forwarded-Proto` (and `X-Forwarded-Host`) from a reverse proxy or tunnel you run in front of MiniBox. Keep off when clients connect directly (see [Security](#security)) |
 | `ALLOWED_ORIGINS` | empty | Extra browser origins allowed to call the API and open the terminal, comma-separated, e.g. `https://minibox.example.com`. Only needed when a proxy rewrites `Host` |
+| `BOX_PROFILE` | `standard` | Default [security profile](#box-hardening) for new boxes: `standard`, `strict` or `relaxed`. A box can choose its own profile when created |
+| `BOX_PIDS_LIMIT` | `1024` | Maximum number of processes per box (Docker `pids-limit`) |
+| `RUNTIME` | empty (Docker's default `runc`) | Container runtime for new boxes, e.g. `runsc` for [gVisor](https://gvisor.dev). The runtime must already be configured in the Docker daemon; MiniBox doesn't install it |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
 | `BASE_TEMPLATE` | `<prefix>-template:base` | Default template image for new boxes |
@@ -223,7 +227,7 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | List boxes; live usage of running boxes is included unless `stats=false` |
-| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"? }`; defaults 2 vCPU / 4096 MB |
+| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`; defaults 2 vCPU / 4096 MB and the `BOX_PROFILE` profile |
 | `GET` | `/api/boxes/:id` | Details, including live usage |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete; optionally delete the workspace volume too |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions |
@@ -243,7 +247,7 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 |---|---|---|
 | `GET` | `/api/snapshots` | List snapshots |
 | `DELETE` | `/api/snapshots/:ref` | Delete a snapshot |
-| `POST` | `/api/snapshots/:ref/boxes` | Create a box from a snapshot `{ "name", "cpus"?, "memoryMb"? }` |
+| `POST` | `/api/snapshots/:ref/boxes` | Create a box from a snapshot `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
 | `POST` | `/api/snapshots/:ref/promote` | Promote to a template `{ "name", "description"? }` |
 | `GET` | `/api/templates` | List templates |
 | `POST` | `/api/templates/base/build` | Build the bundled base template |
@@ -262,6 +266,8 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 docker exec -it minibox-agent-dev bash
 ```
 
+Commands in new boxes run as `dev`, in the web terminal and with `docker exec`. For root, use `sudo` inside a `standard` or `relaxed` box, or `docker exec -u root`.
+
 ## Project structure
 
 ```text
@@ -272,9 +278,10 @@ minibox/
 │   ├── config.ts            # Env / .env loading, key generation
 │   ├── auth.ts              # Key check, cookies, login throttle
 │   ├── labels.ts            # Docker label keys and parsers
+│   ├── box-profile.ts       # Box security profiles (standard / strict / relaxed)
 │   ├── activity.ts          # Recent-operations log
 │   ├── static.ts            # Static file serving (path-traversal safe)
-│   ├── docker/              # client / boxes / snapshots / templates / images / stats
+│   ├── docker/              # client / boxes / hardening / network / snapshots / templates / images / stats
 │   ├── host/                # procfs parsers, HostMonitor sampler
 │   ├── routes/              # Router and route groups (auth / system / boxes / images)
 │   ├── ws/terminal.ts       # WebSocket terminal
@@ -287,6 +294,7 @@ minibox/
 ├── templates/base/Dockerfile
 ├── tests/                   # bun test unit tests
 ├── scripts/restart.sh       # Restart helper for hosts without systemd
+├── scripts/check-box-image.sh  # Base template and box isolation checks against Docker (CI)
 ├── Dockerfile               # Release image (oven/bun, multi-arch)
 ├── .github/workflows/release.yml  # Tag → image + GitHub Release
 └── docs/screenshots/

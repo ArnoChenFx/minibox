@@ -26,6 +26,7 @@ export const MESSAGES = {
   template_required: "Please choose a template.",
   image_ref_invalid: "Invalid image reference.",
   resources_required: "Provide at least one of cpus or memoryMb.",
+  profile_invalid: "Security profile must be one of {profiles}.",
   docker_unavailable:
     "Cannot connect to the Docker daemon. Make sure Docker is running and the current user can access it.",
   docker_not_found: "Not found: {detail}",

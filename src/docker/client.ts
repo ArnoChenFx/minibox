@@ -2,6 +2,7 @@ import Docker from "dockerode";
 
 import type { Config } from "../config";
 import { type LabelKeys, labelKeys } from "../labels";
+import type { Hardening } from "./hardening";
 
 export interface DockerCtx {
   docker: Docker;
@@ -9,6 +10,8 @@ export interface DockerCtx {
   prefix: string;
   baseTemplateTag: string;
   templatesDir: string;
+  hardening: Hardening;
+  boxNetwork: string;
 }
 
 export function createDockerCtx(cfg: Config): DockerCtx {
@@ -18,6 +21,12 @@ export function createDockerCtx(cfg: Config): DockerCtx {
     prefix: cfg.labelPrefix,
     baseTemplateTag: cfg.baseTemplateTag,
     templatesDir: cfg.templatesDir,
+    hardening: {
+      defaultProfile: cfg.boxProfile,
+      pidsLimit: cfg.boxPidsLimit,
+      runtime: cfg.containerRuntime,
+    },
+    boxNetwork: `${cfg.labelPrefix}-boxes`,
   };
 }
 

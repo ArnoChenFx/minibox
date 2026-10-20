@@ -53,3 +53,8 @@ jobs:
           done
           docker logs minibox-ci
           exit 1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Base template, box privileges and network isolation
+        run: bash scripts/check-box-image.sh

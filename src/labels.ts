@@ -1,9 +1,12 @@
+import { type BoxProfile, isBoxProfile } from "./box-profile";
+
 /** Label keys derived from a configurable prefix. All MiniBox state lives in Docker labels. */
 export interface LabelKeys {
   box: string;
   name: string;
   template: string;
   created: string;
+  profile: string;
   templateName: string;
   templateDesc: string;
   snapshot: string;
@@ -16,6 +19,7 @@ export function labelKeys(prefix: string): LabelKeys {
     name: `${prefix}.name`,
     template: `${prefix}.template`,
     created: `${prefix}.created`,
+    profile: `${prefix}.profile`,
     templateName: `${prefix}.template.name`,
     templateDesc: `${prefix}.template.description`,
     snapshot: `${prefix}.snapshot`,
@@ -28,15 +32,18 @@ export interface BoxLabels {
   name: string | null;
   template: string;
   created: string | null;
+  profile: BoxProfile | null;
 }
 
 export function parseBoxLabels(labels: Record<string, string> | undefined | null, keys: LabelKeys): BoxLabels {
   const l = labels ?? {};
+  const profile = l[keys.profile];
   return {
     isBox: l[keys.box] === "true",
     name: l[keys.name]?.trim() || null,
     template: l[keys.template] ?? "",
     created: l[keys.created] ?? null,
+    profile: isBoxProfile(profile) ? profile : null,
   };
 }
 

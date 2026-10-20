@@ -1,11 +1,14 @@
 import type Docker from "dockerode";
 
+import type { BoxProfile } from "../box-profile";
 import { containerName, parseBoxLabels, stripSlash, volumeName } from "../labels";
 import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { CreateBoxInput } from "../lib/validation";
 import { type DockerCtx, ignore304 } from "./client";
+import { hostConfigFor } from "./hardening";
+import { ensureBoxNetwork } from "./network";
 import { type BoxStats, getContainerStats } from "./stats";
 
 export interface Box {
@@ -16,6 +19,7 @@ export interface Box {
   running: boolean;
   image: string;
   template: string;
+  profile: BoxProfile | null;
   cpus: number | null;
   memory: number | null;
   createdAt: string;
@@ -36,6 +40,7 @@ function toBox(ctx: DockerCtx, info: Docker.ContainerInspectInfo): Box {
     running: info.State.Running,
     image: info.Config.Image,
     template: labels.template,
+    profile: labels.profile,
     cpus: info.HostConfig?.NanoCpus ? info.HostConfig.NanoCpus / 1e9 : null,
     memory: info.HostConfig?.Memory || null,
     createdAt: labels.created ?? info.Created,
@@ -85,9 +90,11 @@ async function ensureImage(ctx: DockerCtx, image: string): Promise<void> {
 
 export async function createBox(ctx: DockerCtx, input: CreateBoxInput & { templateLabel?: string }): Promise<Box> {
   const image = input.image ?? ctx.baseTemplateTag;
+  const profile = input.profile ?? ctx.hardening.defaultProfile;
   const existing = await listBoxes(ctx);
   if (existing.some((b) => b.name === input.name)) throw conflict(msg("box_exists", { name: input.name }));
   await ensureImage(ctx, image);
+  const network = await ensureBoxNetwork(ctx);
 
   const volume = volumeName(ctx.prefix, input.name);
   try {
@@ -107,6 +114,7 @@ export async function createBox(ctx: DockerCtx, input: CreateBoxInput & { templa
       [ctx.keys.name]: input.name,
       [ctx.keys.template]: input.templateLabel ?? image,
       [ctx.keys.created]: new Date().toISOString(),
+      [ctx.keys.profile]: profile,
     },
     HostConfig: {
       Binds: [`${volume}:/workspace`],
@@ -115,10 +123,12 @@ export async function createBox(ctx: DockerCtx, input: CreateBoxInput & { templa
       Memory: input.memoryMb * 1024 * 1024,
       MemorySwap: input.memoryMb * 1024 * 1024,
       Init: true,
+      NetworkMode: network,
+      ...hostConfigFor(profile, ctx.hardening),
     },
   });
   await container.start();
-  log.info("box.created", { name: input.name, image, cpus: input.cpus, memoryMb: input.memoryMb });
+  log.info("box.created", { name: input.name, image, profile, cpus: input.cpus, memoryMb: input.memoryMb });
   return getBox(ctx, container.id);
 }
 

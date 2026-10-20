@@ -162,6 +162,36 @@ describe("cross-site protection (end to end)", () => {
   });
 });
 
+describe("box hardening (end to end)", () => {
+  const bearer = { authorization: `Bearer ${KEY}`, "content-type": "application/json" };
+
+  test("an unknown security profile is refused before any Docker call", async () => {
+    await withServer({}, async ({ base }) => {
+      const res = await fetch(`${base}/api/boxes`, {
+        method: "POST",
+        headers: bearer,
+        body: JSON.stringify({ name: "x", profile: "privileged" }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { key: "profile_invalid", details: { field: "profile" } } });
+    });
+  });
+
+  test("the system endpoint reports the box hardening settings", async () => {
+    await withServer({ BOX_PROFILE: "strict", BOX_PIDS_LIMIT: "256", RUNTIME: "runsc" }, async ({ base }) => {
+      const res = await fetch(`${base}/api/system`, { headers: bearer });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { config: Record<string, unknown> };
+      expect(body.config).toMatchObject({
+        boxProfile: "strict",
+        boxPidsLimit: 256,
+        containerRuntime: "runsc",
+        boxNetwork: "minibox-boxes",
+      });
+    });
+  });
+});
+
 describe("console delivery (end to end)", () => {
   test("pages are served under the strict Content-Security-Policy", async () => {
     await withServer({}, async ({ base }) => {

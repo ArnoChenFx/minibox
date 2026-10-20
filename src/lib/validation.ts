@@ -1,3 +1,4 @@
+import { BOX_PROFILES, type BoxProfile, isBoxProfile } from "../box-profile";
 import { badRequest } from "./errors";
 import { type LabelKey, msg } from "./messages";
 
@@ -81,6 +82,14 @@ export interface CreateBoxInput {
   image?: string;
   cpus: number;
   memoryMb: number;
+  profile?: BoxProfile;
+}
+
+export function validateProfile(value: unknown): BoxProfile {
+  if (!isBoxProfile(value)) {
+    throw badRequest(msg("profile_invalid", { profiles: BOX_PROFILES.join(", ") }), { field: "profile" });
+  }
+  return value;
 }
 
 /** Image reference (repo[:tag] or sha256:...). Kept permissive but rejects whitespace/control chars. */
@@ -99,6 +108,7 @@ export function parseCreateBox(body: unknown, defaults: { cpus: number; memoryMb
     image: o.template === undefined || o.template === "" ? undefined : validateImageRef(o.template),
     cpus: o.cpus === undefined ? defaults.cpus : validateCpus(o.cpus),
     memoryMb: o.memoryMb === undefined ? defaults.memoryMb : validateMemoryMb(o.memoryMb),
+    profile: o.profile === undefined || o.profile === null || o.profile === "" ? undefined : validateProfile(o.profile),
   };
 }
 

@@ -13,12 +13,29 @@ describe("labels", () => {
   test("parseBoxLabels", () => {
     expect(
       parseBoxLabels(
-        { minibox: "true", "minibox.name": "demo", "minibox.template": "img:1", "minibox.created": "2026-01-01" },
+        {
+          minibox: "true",
+          "minibox.name": "demo",
+          "minibox.template": "img:1",
+          "minibox.created": "2026-01-01",
+          "minibox.profile": "strict",
+        },
         keys,
       ),
-    ).toEqual({ isBox: true, name: "demo", template: "img:1", created: "2026-01-01" });
-    expect(parseBoxLabels(undefined, keys)).toEqual({ isBox: false, name: null, template: "", created: null });
+    ).toEqual({ isBox: true, name: "demo", template: "img:1", created: "2026-01-01", profile: "strict" });
+    expect(parseBoxLabels(undefined, keys)).toEqual({
+      isBox: false,
+      name: null,
+      template: "",
+      created: null,
+      profile: null,
+    });
     expect(parseBoxLabels({ minibox: "false" }, keys).isBox).toBe(false);
+  });
+
+  test("boxes created before profiles existed have no profile", () => {
+    expect(parseBoxLabels({ minibox: "true", "minibox.profile": "loud" }, keys).profile).toBeNull();
+    expect(parseBoxLabels({ minibox: "true" }, keys).profile).toBeNull();
   });
 
   test("parseImageLabels", () => {
