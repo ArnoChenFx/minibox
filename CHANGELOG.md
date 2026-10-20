@@ -44,7 +44,7 @@
 - `package.json` 的 `engines.bun` 最低版本要求由 `>=1.2.0` 提高为 `>=1.4.3`，README 中的版本要求同步。
 - 所有 GitHub Actions 引用固定到完整 commit SHA，并以注释保留版本号，升级由 Dependabot 提出。
 - 发布工作流的镜像构建与 GitHub Release 步骤显式依赖 CI 检查（`checks`），检查不通过时不会推送镜像，也不会创建 Release。
-- 新增 `FakeRuntime` 与基于它的单元测试，覆盖 Box 创建 / 删除、快照与模板提升、路由校验与错误映射、终端升级和主机指标。新增架构测试，限制只有 `src/docker/` 与组合根可以使用 Docker SDK。
+- 新增 `FakeRuntime` 与基于它的单元测试，覆盖 Box 创建 / 删除、快照与模板提升、路由校验与错误映射、终端升级和主机指标。新增架构测试：只有 `src/docker/` 可以引入 Docker SDK，只有 `src/docker/` 与组合根可以引用 Docker 适配器。
 - 新增可选的真实引擎集成测试 `tests/docker-runtime.test.ts`，设置 `MINIBOX_TEST_DOCKER=1` 时运行。
 
 ### 修复
