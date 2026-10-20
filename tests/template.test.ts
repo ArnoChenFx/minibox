@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { STANDARD_CAPS } from "../src/box-profile";
 import { BASE_DESCRIPTION } from "../src/services/templates";
 
 const root = resolve(import.meta.dir, "..");
@@ -33,6 +34,18 @@ describe("base template", () => {
     for (const pkg of ["tmux", "jq", "ripgrep", "openssh-client", "unzip", "sudo", "git", "curl", "python3"]) {
       expect(aptInstall).toContain(pkg);
     }
+  });
+
+  test("ping is installed so the box network can be checked from inside a box", () => {
+    expect(aptInstall).toContain("iputils-ping");
+  });
+
+  test("the image check runs each box profile with the capability list from src/box-profile.ts", () => {
+    const script = read("scripts/check-box-image.sh");
+    const listed = /for cap in ([A-Z_ ]+); do/.exec(script)?.[1]?.split(" ");
+    expect(listed).toEqual([...STANDARD_CAPS]);
+    expect(script).toContain("--cap-drop ALL");
+    expect(script).toContain("no-new-privileges:true");
   });
 
   test("mount points and cache variables follow the convention", () => {

@@ -6,7 +6,15 @@ import { createSnapshot, deleteSnapshot, listSnapshots } from "../services/snaps
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
 import { BoxSchema, ImageSchema, OkSchema, SnapshotSchema } from "./schemas";
-import { boxId, boxName, cpusWithDefault, memoryWithDefault, snapshotName, snapshotRef } from "./validation";
+import {
+  boxId,
+  boxName,
+  boxProfile,
+  cpusWithDefault,
+  memoryWithDefault,
+  snapshotName,
+  snapshotRef,
+} from "./validation";
 
 export const snapshotCreate = defineOperation({
   name: "snapshot.create",
@@ -38,6 +46,7 @@ export const snapshotFork = defineOperation({
     ref: snapshotRef(),
     cpus: cpusWithDefault(DEFAULT_RESOURCES.cpus),
     memoryMb: memoryWithDefault(DEFAULT_RESOURCES.memoryMb),
+    profile: boxProfile(),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/snapshots/:ref/boxes", body: true, status: 201 }],
@@ -51,6 +60,7 @@ export const snapshotFork = defineOperation({
       image: input.ref.trim(),
       cpus: input.cpus,
       memoryMb: input.memoryMb,
+      profile: input.profile,
       templateLabel: `snapshot:${input.ref}`,
     }),
   }),

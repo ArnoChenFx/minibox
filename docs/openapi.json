@@ -87,6 +87,24 @@
                           "template": {
                             "type": "string"
                           },
+                          "profile": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "standard",
+                                  "strict",
+                                  "relaxed"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "network": {
+                            "type": "string"
+                          },
                           "cpus": {
                             "type": [
                               "number",
@@ -151,6 +169,8 @@
                           "running",
                           "image",
                           "template",
+                          "profile",
+                          "network",
                           "cpus",
                           "memory",
                           "createdAt",
@@ -289,6 +309,15 @@
                     "minimum": 128,
                     "maximum": 262144,
                     "description": "Memory in MB, an integer between 128 and 262144. Defaults to 4096."
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "strict",
+                      "relaxed"
+                    ],
+                    "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
                   }
                 },
                 "required": [
@@ -330,6 +359,24 @@
                         "template": {
                           "type": "string"
                         },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -363,6 +410,8 @@
                         "running",
                         "image",
                         "template",
+                        "profile",
+                        "network",
                         "cpus",
                         "memory",
                         "createdAt",
@@ -543,6 +592,24 @@
                         "template": {
                           "type": "string"
                         },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -607,6 +674,8 @@
                         "running",
                         "image",
                         "template",
+                        "profile",
+                        "network",
                         "cpus",
                         "memory",
                         "createdAt",
@@ -920,6 +989,24 @@
                         "template": {
                           "type": "string"
                         },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -953,6 +1040,8 @@
                         "running",
                         "image",
                         "template",
+                        "profile",
+                        "network",
                         "cpus",
                         "memory",
                         "createdAt",
@@ -1123,6 +1212,24 @@
                         "template": {
                           "type": "string"
                         },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -1156,6 +1263,8 @@
                         "running",
                         "image",
                         "template",
+                        "profile",
+                        "network",
                         "cpus",
                         "memory",
                         "createdAt",
@@ -1326,6 +1435,24 @@
                         "template": {
                           "type": "string"
                         },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -1359,6 +1486,8 @@
                         "running",
                         "image",
                         "template",
+                        "profile",
+                        "network",
                         "cpus",
                         "memory",
                         "createdAt",
@@ -1553,6 +1682,24 @@
                         "template": {
                           "type": "string"
                         },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -1586,6 +1733,8 @@
                         "running",
                         "image",
                         "template",
+                        "profile",
+                        "network",
                         "cpus",
                         "memory",
                         "createdAt",
@@ -2378,6 +2527,15 @@
                     "minimum": 128,
                     "maximum": 262144,
                     "description": "Memory in MB, an integer between 128 and 262144. Defaults to 4096."
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "strict",
+                      "relaxed"
+                    ],
+                    "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
                   }
                 },
                 "required": [
@@ -2419,6 +2577,24 @@
                         "template": {
                           "type": "string"
                         },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -2452,6 +2628,8 @@
                         "running",
                         "image",
                         "template",
+                        "profile",
+                        "network",
                         "cpus",
                         "memory",
                         "createdAt",

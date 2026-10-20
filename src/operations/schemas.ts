@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { BOX_PROFILES } from "../box-profile";
+
 export const StatsSchema = z.object({
   cpuPercent: z.number(),
   memUsage: z.number(),
@@ -15,6 +17,10 @@ export const BoxSchema = z.object({
   running: z.boolean(),
   image: z.string(),
   template: z.string(),
+  /** Null for boxes created before profiles existed. */
+  profile: z.enum(BOX_PROFILES).nullable(),
+  /** Boxes created before profiles stay on the engine's default `bridge` network. */
+  network: z.string(),
   cpus: z.number().nullable(),
   memory: z.number().nullable(),
   createdAt: z.string(),

@@ -2,6 +2,7 @@ import { spyOn } from "bun:test";
 import { join } from "node:path";
 
 import { type App, createApp } from "../../src/app";
+import { DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT } from "../../src/box-profile";
 import { type Config, ROOT } from "../../src/config";
 import type { ExecutorHooks } from "../../src/operations/executor";
 import { FakeRuntime } from "./fake-runtime";
@@ -32,6 +33,9 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     trustProxy: false,
     cookieSecure: false,
     allowedOrigins: [],
+    boxProfile: DEFAULT_BOX_PROFILE,
+    boxPidsLimit: DEFAULT_PIDS_LIMIT,
+    containerRuntime: null,
     ...overrides,
   };
 }

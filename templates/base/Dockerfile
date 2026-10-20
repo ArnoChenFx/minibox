@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 
 # Box user convention (docs/design.md §11.4). Every MiniBox template uses the same uid and gid, so a volume that
 # several boxes mount has one owner. Change these only together with the volumes that already use them.
@@ -16,7 +16,7 @@ RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       git curl ca-certificates python3 python3-pip python3-venv \
       build-essential procps vim-tiny less sudo \
-      tmux jq ripgrep openssh-client unzip \
+      tmux jq ripgrep openssh-client unzip iputils-ping \
  && rm -rf /var/lib/apt/lists/*
 
 # The node image already has a `node` user on uid/gid 1000. Remove it instead of renaming it, so `dev` can take the

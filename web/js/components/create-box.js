@@ -13,6 +13,8 @@ const PRESETS = [
   { id: "custom", label: "cb.custom" },
 ];
 
+const PROFILES = ["standard", "strict", "relaxed"];
+
 /**
  * Create-box dialog. When `snapshot` is given the image is fixed and the box is created from it.
  * `onCreated(box)` runs after success.
@@ -30,6 +32,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       templates = [];
     }
   }
+  const system = await api("/api/system").catch(() => null);
+  const defaultProfile = PROFILES.includes(system?.config?.boxProfile) ? system.config.boxProfile : "standard";
   const fits = (p) => p.cpus <= maxCpu && p.memoryMb <= maxMem;
   const initial = PRESETS.find((p) => p.id !== "custom" && fits(p)) ?? PRESETS[3];
   const state = {
@@ -37,6 +41,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     memoryMb: initial.memoryMb ?? 2048,
     preset: initial.id,
     template: templates.find((tp) => tp.ref === template)?.ref ?? templates[0]?.ref ?? "",
+    profile: defaultProfile,
   };
 
   const templatePicker = snapshot
@@ -77,7 +82,16 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       <div class="field"><span class="label">${t("cb.memory")} <span class="subtle">MB</span></span>
         <div class="slider-row"><input type="range" id="cbMemR" min="256" max="${maxMem}" step="256" /><input class="input" id="cbMem" type="number" min="128" max="${maxMem}" step="128" /></div>
         <div class="error-text" id="cbResErr"></div></div>
-      <div id="cbCapacity"></div>`,
+      <div id="cbCapacity"></div>
+      <details class="advanced" id="cbAdvanced">
+        <summary>${t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) })}</summary>
+        <div class="field"><span class="label">${t("cb.profile")}</span>
+          <div class="segmented segmented-3" id="cbProfiles">${PROFILES.map(
+            (p) =>
+              `<button type="button" class="seg" data-profile="${p}" aria-pressed="${p === state.profile}"><strong>${t(`profile.${p}`)}</strong><span>${t(`profile.${p}Hint`)}</span></button>`,
+          ).join("")}</div>
+          <div class="help">${t("cb.profileHelp")}</div></div>
+      </details>`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
 
@@ -87,7 +101,9 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbCpu").value = state.cpus;
     q("#cbMemR").value = state.memoryMb;
     q("#cbMem").value = state.memoryMb;
-    $$(".seg", root).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.preset === state.preset)));
+    $$("#cbPresets .seg", root).forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.preset === state.preset)),
+    );
     validateRes();
   };
   const validateRes = () => {
@@ -139,6 +155,13 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     state.template = o.dataset.ref;
     $$(".option", root).forEach((x) => x.setAttribute("aria-checked", String(x === o)));
   });
+  q("#cbProfiles").addEventListener("click", (e) => {
+    const b = e.target.closest(".seg");
+    if (!b) return;
+    state.profile = b.dataset.profile;
+    $$("#cbProfiles .seg", root).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    q("#cbAdvanced summary").textContent = t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) });
+  });
   q("#cbName").addEventListener("input", () => {
     q("#cbName").classList.remove("invalid");
     q("#cbNameErr").textContent = "";
@@ -160,7 +183,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
     try {
-      const body = { name, cpus: state.cpus, memoryMb: state.memoryMb };
+      const body = { name, cpus: state.cpus, memoryMb: state.memoryMb, profile: state.profile };
       const res = snapshot
         ? await api(`/api/snapshots/${enc(snapshot)}/boxes`, { method: "POST", body })
         : await api("/api/boxes", { method: "POST", body: { ...body, template: state.template } });

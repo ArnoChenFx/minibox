@@ -13,7 +13,7 @@ export const systemRoutes: Route[] = [
     },
     { public: true },
   ),
-  route("GET", "/api/system", ({ app }) =>
+  route("GET", "/api/system", ({ app, host }) =>
     json({
       name: "MiniBox",
       version: app.version,
@@ -26,6 +26,10 @@ export const systemRoutes: Route[] = [
         labelPrefix: app.cfg.labelPrefix,
         baseTemplate: app.cfg.baseTemplateTag,
         metricsIntervalMs: app.cfg.metricsIntervalMs,
+        boxProfile: host.security.defaultProfile,
+        boxPidsLimit: host.security.pidsLimit,
+        containerRuntime: host.security.runtime,
+        boxNetwork: host.security.network,
       },
       limits: LIMITS,
     }),

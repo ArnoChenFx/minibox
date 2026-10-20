@@ -681,7 +681,7 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 `templates/base/Dockerfile` 需要：
 
-1. 非 root 用户 `dev`，固定 uid/gid（如 1000，构建参数可调），默认以该用户进入终端与 exec；「标准」安全档位下提供无密码 `sudo`（仅限 Box 内），「严格」档位下没有 `sudo`（见 [14](#14-安全设计)）。
+1. 非 root 用户 `dev`，固定 uid/gid（如 1000，构建参数可调），默认以该用户进入终端与 exec；「标准」与「宽松」档位下提供无密码 `sudo`（仅限 Box 内）；「严格」档位下 `sudo` 仍已安装，但因 `no-new-privileges` 无法提权（见 [14](#14-安全设计)）。
 2. 预装 `tmux`。
 3. 常用工具：`jq`、`ripgrep`、`openssh-client`、`unzip`，保留现有 git / curl / python3 / build-essential / procps / less / vim-tiny。
 4. 挂载点约定：`/workspace`、`/home/dev`、`/opt/minibox/tools`；`~/.cache` 与包管理器缓存（`npm_config_cache`、`PIP_CACHE_DIR` 等）指向 `cache` 卷。
@@ -862,7 +862,7 @@ MiniBox 的前提是**一个可信用户在自己的机器上使用**。Docker S
 | Cookie 存原始 `ACCESS_KEY` | 会话令牌，见 [9.3](#93-浏览器会话) |
 | WebSocket 终端和写接口没有 Origin 校验 | 校验 `Origin`（或 `Sec-Fetch-Site`），写接口要求 `Content-Type: application/json`，Cookie 升级为 `SameSite=Strict`（需验证） |
 | 没有 CSP / HSTS；xterm.js 从 CDN 加载且无 SRI | xterm 打包进 `web/vendor/`，加严格 CSP，HTTPS 请求发送 HSTS；`innerHTML` 拼接逐步收敛到统一转义 |
-| Box 缺少加固 | 两个安全档位（见下）；默认都带 `PidsLimit`、ulimit、`CapDrop: ["ALL"]` 后按需加回；模板用非 root；每个 Box 独立网络并提供出站策略；可选 `RUNTIME=runsc`（gVisor）；磁盘配额待存储节点代理（已后移） |
+| Box 缺少加固 | 三个安全档位（见下），默认都带 `PidsLimit` 与 ulimit；模板用非 root；每个 Box 放在独立网络 `minibox-boxes`（关闭容器间通信），出站策略暂缓（见下）；可选 `RUNTIME=runsc`（gVisor）；磁盘配额待存储节点代理（已后移） |
 | 快照描述存在标签注入 | 校验拒绝控制字符与换行，或统一转义标签值 |
 | `restart.sh` 的 `chmod 666 docker.sock` | 改为把用户加入 `docker` 组 |
 | 镜像以 root 运行 | 挂载 Socket 的代价；文档给出 socket proxy 或 rootless 方案 |
@@ -880,14 +880,17 @@ OpenTunnel 已在线上实测（tcpdump 验证）：隧道保留 `Host` 与 `Ori
 
 ### 安全档位：`no-new-privileges` 与 `sudo` 互斥
 
-实测表明，默认加 `no-new-privileges` 会让容器内的 setuid 程序无法提权，`sudo` 因此失效。两者不能同时作为默认值，所以拆成两个档位：
+实测表明，默认加 `no-new-privileges` 会让容器内的 setuid 程序无法提权，`sudo` 因此失效。所以默认的「标准」档位不开启它，另设一个开启它的「严格」档位，「宽松」档位则保留引擎默认能力：
 
 | 档位 | `no-new-privileges` | `sudo` | `CapDrop` | 适用 |
 | --- | --- | --- | --- | --- |
-| **标准（默认）** | 否 | 有（无密码，仅限 Box 内） | `ALL`，再加回 `sudo` / `apt` 所需的最小集合（如 `CHOWN`、`DAC_OVERRIDE`、`FOWNER`、`SETUID`、`SETGID`、`KILL`、`AUDIT_WRITE`，具体集合以实测为准） | Agent 需要 `apt install` 等操作的日常使用 |
-| **严格** | 是 | 无 | `ALL` | 不需要提权的环境；系统包只能放进模板（与「系统包归模板」一致） |
+| **标准（默认）** | 否 | 有（无密码，仅限 Box 内） | `ALL`，再加回 11 项：`AUDIT_WRITE`、`CHOWN`、`DAC_OVERRIDE`、`FOWNER`、`FSETID`、`KILL`、`NET_BIND_SERVICE`、`NET_RAW`、`SETFCAP`、`SETGID`、`SETUID` | Agent 需要 `apt install`、`ping` 等操作的日常使用 |
+| **严格** | 是 | 已安装，但无法提权 | `ALL`，不加回任何能力 | 不需要提权的环境；系统包只能放进模板（与「系统包归模板」一致）。`ping` 也不可用（没有 `NET_RAW`） |
+| **宽松** | 否 | 有（无密码，仅限 Box 内） | 不做 `CapDrop`，保留引擎默认能力集（即标准的 11 项再加 `MKNOD`、`SETPCAP`、`SYS_CHROOT`） | 其它档位拦截了工具时手动选用，默认不用 |
 
-两档都默认带 `PidsLimit`、ulimit、独立网络。档位是规格里的 `securityProfile` 字段，属于「重建」类变更。
+三个档位都默认带 `PidsLimit`（`BOX_PIDS_LIMIT`，默认 1024）与 ulimit（core 为 0，nofile 为 65536），并放在独立网络 `minibox-boxes` 上，其中的 Box 之间不能互相访问。档位是规格里的 `securityProfile` 字段（API 中为 `profile`），属于「重建」类变更：在重建流程（#23）落地之前，已有 Box 不能改档位，需要新建。
+
+**暂缓：出站策略与磁盘配额。** 本阶段不为 Box 实现出站（egress）策略：Box 的出站流量经 Docker 的普通 NAT 转发，不做过滤，也能访问宿主机在网桥网关上提供的服务。磁盘配额依赖存储节点代理，同样暂缓。两者都不随 #5 交付，动手前需要单独评估范围。
 
 另有两条贯穿全文的约束：
 
@@ -926,13 +929,15 @@ flowchart LR
 | PR | 内容 | issue | 前置 |
 | --- | --- | --- | --- |
 | 1-1 | 基础模板：非 root 用户 `dev`、tmux、常用工具、挂载点约定、多架构构建 | #27 | 阶段 0 |
-| 1-2 | Box 加固（不依赖模板的部分）：`PidsLimit`、ulimit、独立网络与出站策略、`RUNTIME` 配置；引入 `securityProfile` 字段 | #5 的 A 部分 | 阶段 0 |
-| 1-3 | Box 加固（依赖模板的部分）：`标准` / `严格` 两个档位，`CapDrop` 与 `sudo` | #5 的 B 部分 | 1-1 1-2 |
+| 1-2 | Box 加固（不依赖模板的部分）：`PidsLimit`、ulimit、独立网络（出站策略暂缓，见 [14](#14-安全设计)）、`RUNTIME` 配置；引入 `securityProfile` 字段 | #5 的 A 部分 | 阶段 0 |
+| 1-3 | Box 加固（依赖模板的部分）：`标准` / `严格` / `宽松` 三个档位，`CapDrop` 与 `sudo` | #5 的 B 部分 | 1-1 1-2 |
 | 1-4 | Box 规格：`BoxSpec` 存储、稳定 ID、自动认领、漂移检测（先只读，不改变现有行为） | #23 前半 | 阶段 0 |
 | 1-5 | 事件与审计：SQLite 事件库、脱敏、保留策略、`events` 查询接口 | #25 前半 | 阶段 0 的 #22 |
 | 1-6 | 异步任务模型与 SSE 事件总线 | #16 与 #25 后半 | 1-5 |
 | 1-7 | 规格变更：原地更新、重建流程（含失败回滚）、`revision` 与 `If-Match`、`docker diff` 预览 | #23 后半 | 1-4 1-6 |
 | 1-8 | 令牌与会话令牌：`authorize` 钩子的真实实现、`created-by-me`、配额与 TTL、浏览器会话 | #13 #2 | 1-4 1-5 |
+
+#5 的 A、B 两部分由 1-2 与 1-3 合并为一个 PR 实现。其中 1-2 的出站策略按 [14](#14-安全设计) 暂缓。
 
 ### 阶段 0 的发布注意事项
 
@@ -1019,10 +1024,11 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | 34 | Agent 与存储节点 | 保留 issue #28 #29，移出主路线，排到最后，动手前先单独评估范围；第一版设计不依赖它们，多宿主机第一版只做 SSH / TLS |
 | 35 | 辅助容器 | 文件 API、`nfs` 后端建目录、restic 都使用短生命周期的辅助容器，镜像选择见开放问题 |
 | 36 | 工具数量 | 更正：共 27 个工具（13 + 3 + 2 + 5 + 2 + 2），默认启用 `core` + `meta`（15 个）；原「约 18 个」是计数错误 |
-| 37 | 安全档位 | `no-new-privileges` 会让 `sudo` 失效，二者互斥：默认「标准」档（有 `sudo`，不开 `no-new-privileges`，`CapDrop: ALL` 后加回最小集合），可选「严格」档（`no-new-privileges`，无 `sudo`） |
+| 37 | 安全档位 | `no-new-privileges` 会让 `sudo` 失效，二者互斥：默认「标准」档（有 `sudo`，不开 `no-new-privileges`，`CapDrop: ALL` 后加回 11 项最小集合），可选「严格」档（`no-new-privileges`，`sudo` 已安装但无法提权）（**经第 41 条补充「宽松」档**） |
 | 38 | 自动生成的密钥 | 写入 `DATA_DIR/access_key`（权限 600），MiniBox 不再写 `.env`；优先级：进程环境变量 > `.env` > `DATA_DIR/access_key` |
 | 39 | 阶段 1 拆分 | 拆为 8 个 PR（模板 / 加固 A / 加固 B / 规格 / 事件 / 任务与总线 / 变更与重建 / 令牌），见 [15](#15-实施路线) |
 | 40 | 阶段 0 顺序 | 先 #1 #3 #4 的现成代码整理为第一个 PR，再并行 #32 #6 #18，最后 #22；第一个 PR 合并前，改写 `Host` 的反向代理需先配好 `ALLOWED_ORIGINS` 并实测登录（OpenTunnel 已实测，无需改动，见 [15](#15-实施路线)） |
+| 41 | Box 加固（#5） | 新增「宽松」档（引擎默认能力集，不做 `CapDrop`，有 `sudo`）；「严格」档的 `sudo` 行为见第 37 条。出站策略与磁盘配额暂缓，不随 #5 交付。已有 Box 保留创建时的网络与配置，早于此功能创建的 Box 仍在默认 `bridge` 网络上，不强制重建 |
 
 ---
 

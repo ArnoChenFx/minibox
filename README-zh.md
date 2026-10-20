@@ -34,7 +34,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 |---|---|
 | Box 生命周期 | 创建、启动、停止、重启、删除；删除时可选择保留或一并删除工作区数据卷 |
 | 资源配额 | 按预设（小型 2 核 4 GB / 中型 4 核 8 GB / 大型 8 核 16 GB）或自定义设置 CPU、内存，并按宿主机容量校验；运行中可热更新（`docker update`） |
-| Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行，并可无密码使用 `sudo`；Web 终端与 `docker exec` 默认以 `dev` 进入。见[基础模板](#基础模板) |
+| Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行；Web 终端与 `docker exec` 默认以 `dev` 进入。三个[安全档位](#安全档位)决定 Box 能做什么：默认的「标准」档位保留无密码 `sudo`，「严格」档位禁止提权。见[基础模板](#基础模板) |
 | 快照 | 基于 `docker commit` 保存 Box 的系统环境，可从快照创建新 Box，或提升为模板 |
 | 模板 | 内置基础模板（Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
@@ -157,7 +157,7 @@ flowchart LR
 - **Volume** 属于某个存储池，而不属于某个 Box。`cache` 卷留在本地池，不进入检查点。
 - **检查点** = Box 规格 + 各卷的快照（restic）+ 可选的系统层。
 - **辅助容器**是短生命周期的，负责文件操作、创建 NFS 目录和运行 restic。
-- Box 以非 root 的 `dev` 用户运行，并使用「标准」或「严格」两个安全档位之一。
+- Box 以非 root 的 `dev` 用户运行，并使用「标准」（默认）、「严格」或「宽松」三个安全档位之一。
 - MiniBox Agent 与存储节点角色不在主路线上，因此图中未画。
 
 ## 环境要求
@@ -279,6 +279,9 @@ docker run -d --name minibox --restart unless-stopped \
 | `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
 | `BASE_TEMPLATE` | `<前缀>-template:base` | 新建 Box 的默认模板镜像 |
+| `BOX_PROFILE` | `standard` | 新建 Box 的默认[安全档位](#安全档位)：`standard`、`strict` 或 `relaxed` |
+| `BOX_PIDS_LIMIT` | `1024` | 每个新建 Box 允许的最大进程数（正整数） |
+| `RUNTIME` | 引擎默认 | 新建 Box 使用的 OCI 运行时，例如 gVisor 的 `runsc`。该运行时必须已经安装在 Docker 引擎中 |
 | `METRICS_INTERVAL_MS` | `3000` | 宿主机采样间隔（毫秒） |
 | `METRICS_HISTORY` | `120` | 保留的采样点数量（默认间隔下约 6 分钟） |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | 审计事件的保留天数：写操作、删除与被拒绝的调用。见[事件](#事件) |
@@ -296,7 +299,7 @@ docker run -d --name minibox --restart unless-stopped \
 
 | 方面 | 约定 |
 |---|---|
-| 用户 | `dev`，uid/gid 为 `1000`。Box 以镜像默认用户启动，因此 Web 终端与 `docker exec` 默认以 `dev` 进入。`sudo` 无需密码，且仅限 Box 内 |
+| 用户 | `dev`，uid/gid 为 `1000`。Box 以镜像默认用户启动，因此 Web 终端与 `docker exec` 默认以 `dev` 进入。`sudo` 无需密码，且仅限 Box 内。「严格」档位下 `sudo` 已安装但无法提权（见[安全档位](#安全档位)） |
 | 挂载点 | `/workspace`（工作区卷）、`/home/dev`（主目录）、`/opt/minibox/tools`（共享且只读的工具，其 `bin` 在 `PATH` 中）、`/home/dev/.cache`（缓存）。在 [#24](https://github.com/ArnoChenFx/minibox/issues/24) 实现数据卷挂载之前，它们是镜像里的普通目录 |
 | 缓存 | `XDG_CACHE_HOME`、`npm_config_cache`、`PIP_CACHE_DIR` 与 `YARN_CACHE_FOLDER` 指向 `/home/dev/.cache` 下。`NPM_CONFIG_PREFIX` 为 `/home/dev/.npm-global`，因此 `npm install -g` 无需 root |
 | 标签 | `minibox.template.user`、`minibox.template.uid` 与 `minibox.template.gid` 记录该约定，便于校验其他模板 |
@@ -323,7 +326,7 @@ docker run -d --name minibox --restart unless-stopped \
 
   MiniBox 暂不自动执行。对整个工作区递归 `chown` 可能耗时很长，并且会改动你没有要求改动的数据，因此这件事归入 [#24](https://github.com/ArnoChenFx/minibox/issues/24) 的存储工作一起处理。
 
-用 Docker 检查镜像：执行 `bun run build:template` 后，运行 `bun run check:template`（或 `scripts/check-box-image.sh <镜像>`）。它会检查用户、uid、`sudo`、工具、挂载点、缓存变量、登录 Shell 的 `PATH`，并检查两个共享同一卷的容器能否读写它。CI 会对 `linux/amd64` 执行检查，并在模拟环境下对 `linux/arm64` 执行检查。
+用 Docker 检查镜像：执行 `bun run build:template` 后，运行 `bun run check:template`（或 `scripts/check-box-image.sh <镜像>`）。它会检查用户、uid、`sudo`、工具、挂载点、缓存变量、登录 Shell 的 `PATH`，并检查两个共享同一卷的容器能否读写它。它还会以每个安全档位启动一个容器，检查其能力集、`no-new-privileges`、`sudo` 与 `ping`。CI 会对 `linux/amd64` 执行检查，并在模拟环境下对 `linux/arm64` 执行检查。
 
 ## 数据目录
 
@@ -370,7 +373,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | 列表；除非 `stats=false`，否则附带运行中 Box 的实时占用 |
-| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"? }`，默认 2 核 / 4096 MB |
+| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB |
 | `GET` | `/api/boxes/:id` | 详情（含实时占用） |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除；可选同时删除工作区数据卷 |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作 |
@@ -390,7 +393,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 |---|---|---|
 | `GET` | `/api/snapshots` | 快照列表 |
 | `DELETE` | `/api/snapshots/:ref` | 删除快照 |
-| `POST` | `/api/snapshots/:ref/boxes` | 从快照创建 Box `{ "name", "cpus"?, "memoryMb"? }` |
+| `POST` | `/api/snapshots/:ref/boxes` | 从快照创建 Box `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
 | `POST` | `/api/snapshots/:ref/promote` | 提升为模板 `{ "name", "description"? }` |
 | `GET` | `/api/templates` | 模板列表 |
 | `POST` | `/api/templates/base/build` | 构建内置基础模板 |
@@ -522,9 +525,23 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **远程访问请使用 HTTPS。** 通过 HTTPS 访问（或请求带有 `https://` Origin，浏览器登录时会带上）时，登录 Cookie 会带上 `Secure` 标记；`COOKIE_SECURE=1` 可强制加上。默认情况下 MiniBox 忽略 `X-Forwarded-For`、`X-Forwarded-Proto` 和 `X-Forwarded-Host`，因此经过反向代理访问时，所有访问者共享代理的地址来计算登录限流。只有当前面的代理会覆盖这些头，并且 MiniBox 只能经由该代理访问时，才设置 `TRUST_PROXY=true`：开启后 MiniBox 取 `X-Forwarded-For` 的最后一项（由代理追加的那一项），并同样信任另外两个头；关闭时这些头被忽略，伪造它们没有任何效果。
 - **公开隧道可以被发现。** 隧道域名（例如 OpenTunnel 的 `*.opentunnel.xyz`）可能出现在公开的证书透明度日志里，也可能被猜到，而且 OpenTunnel 本身不提供认证。这相当于把控制台直接放在公网上，只靠访问密钥保护；流量还会经过隧道的中继服务器。条件允许时优先使用私有网络（如 Tailscale）或带认证的反向代理，不用时把隧道关掉。
 - **这是容器隔离，不是安全沙箱。** Box 与宿主机共享内核，适合运行你自己的 Agent，**不适合运行不可信的第三方代码**，那种场景请使用 gVisor 或基于 microVM 的沙箱。不要把 Docker Socket 或宿主机敏感目录挂进 Box。
-- **Box 拥有无密码 `sudo`。** Box 内的 `dev` 用户可以提升为 root，而 Box 内的 root 可以改动 Box 以及其工作区卷中的任何内容。容器仍使用 Docker 默认的 capability 集合，而不是特权容器。不带 `sudo` 的严格档位已规划在 [#5](https://github.com/ArnoChenFx/minibox/issues/5) 中。
+- **默认的「标准」档位拥有无密码 `sudo`。** Box 内的 `dev` 用户可以提升为 root，而 Box 内的 root 可以改动 Box 以及其工作区卷中的任何内容。「标准」档位还丢弃了大部分 Linux capability，因此 Box 不是特权容器。「严格」档位禁止提权，见[安全档位](#安全档位)。
 - **快照不包含 `/workspace`。** `docker commit` 不会保存挂载的数据卷，重要代码请用 git 同步或单独备份数据卷。
 - `scripts/restart.sh` 是单用户沙箱的便利脚本。它可能会用 `sudo` 启动 `dockerd`，然后把 Docker Socket 的属组设为你的主组、权限设为 `660`，只有该主组的成员（通常只有你）和 root 能使用 Docker。但 Docker 访问等同于 root 权限，用在其他环境前请先检查脚本。
+
+### 安全档位
+
+Box 的安全档位在创建时确定。可以在创建对话框的「高级」中选择，也可以使用 `POST /api/boxes` 的 `profile` 字段，或用 `BOX_PROFILE` 设置默认值。在本功能出现之前创建的 Box 保持原有设置，不会被重建。
+
+| 档位 | `sudo` | `no-new-privileges` | Linux capability | 取舍 |
+|---|---|---|---|---|
+| `standard`（默认） | 无密码，仅限 Box 内 | 关闭 | 全部丢弃，再加回 11 项，供 `sudo`、`apt` 与 `ping` 使用 | Box 内的 root 可以改动 Box 与其工作区卷 |
+| `strict` | 已安装，但无法提权 | 开启 | 全部丢弃 | 无法通过 `sudo` 提权，因此 Box 内不能安装系统包，请改为放进模板。`ping` 也不可用 |
+| `relaxed` | 无密码，仅限 Box 内 | 关闭 | Docker 默认能力集，即「标准」的 11 项再加 `MKNOD`、`SETPCAP`、`SYS_CHROOT` | 保留了其它档位去掉的能力，只用于其它档位拦截了的工具 |
+
+三个档位都会限制每个 Box 的进程数（`BOX_PIDS_LIMIT`，默认 1024），关闭 core dump，把打开文件数上限设为 65536，并把 Box 放在 `<前缀>-boxes` 网络上（默认 `minibox-boxes`），其中的 Box 之间不能互相访问。
+
+出站（egress）策略与磁盘配额暂缓实现。Box 的出站流量经 Docker 的普通 NAT 转发，不做过滤，也能访问宿主机在网桥网关上提供的服务，磁盘用量也没有上限。如果 `minibox-boxes` 上的 Box 无法访问外网，而默认的 `bridge` 可以，说明宿主机防火墙阻止了自定义网桥的转发，例如 `iptables-legacy` 的 FORWARD 策略为 `DROP`。请在宿主机上修复。见 [`docs/design.md`](docs/design.md) 第 14 节。
 
 ## 路线图
 
@@ -545,7 +562,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 ### M1 · 模板、规格、审计与令牌
 
 - [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) 基础模板：非 root 用户 `dev`、tmux、挂载点约定
-- [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」与「严格」两个安全档位
+- [x] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」「严格」「宽松」三个安全档位，出站策略与磁盘配额暂缓
 - [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流

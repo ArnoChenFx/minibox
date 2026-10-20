@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { BOX_PROFILES, type BoxProfile, DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT, isBoxProfile } from "./box-profile";
 import { accessKeyPath, createSecretFile, ensureDataDir, readSecretFile, resolveDataDir } from "./data-dir";
 import { log } from "./lib/logger";
 
@@ -31,6 +32,12 @@ export interface Config {
   trustProxy: boolean;
   cookieSecure: boolean;
   allowedOrigins: string[];
+  /** Security profile for new boxes when the request does not choose one. */
+  boxProfile: BoxProfile;
+  /** Maximum number of processes in each box. */
+  boxPidsLimit: number;
+  /** OCI runtime for boxes, such as `runsc` for gVisor. Null keeps the engine's default runtime. */
+  containerRuntime: string | null;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -89,6 +96,31 @@ function parseOrigins(value: string | undefined): string[] {
 
 const nonBlank = (value: string | undefined): string | undefined => value?.trim() || undefined;
 
+/** An unknown name stops startup: a typo must not quietly give every new box a different profile. */
+function parseBoxProfile(value: string | undefined): BoxProfile {
+  const v = nonBlank(value);
+  if (v === undefined) return DEFAULT_BOX_PROFILE;
+  if (!isBoxProfile(v)) throw new Error(`BOX_PROFILE: "${v}" must be one of ${BOX_PROFILES.join(", ")}`);
+  return v;
+}
+
+function parseBoxPidsLimit(value: string | undefined): number {
+  const v = nonBlank(value);
+  if (v === undefined) return DEFAULT_PIDS_LIMIT;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`BOX_PIDS_LIMIT: "${v}" must be a positive integer`);
+  return n;
+}
+
+const RUNTIME_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+
+function parseContainerRuntime(value: string | undefined): string | null {
+  const v = nonBlank(value);
+  if (v === undefined) return null;
+  if (!RUNTIME_NAME_RE.test(v)) throw new Error(`RUNTIME: "${v}" is not a valid runtime name (for example runsc)`);
+  return v;
+}
+
 export interface LoadOptions {
   /** Dotenv file to read. It is only ever read, never written. Defaults to `<project>/.env`. */
   envFile?: string;
@@ -129,6 +161,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     trustProxy: isTruthy(get("TRUST_PROXY")),
     cookieSecure: isTruthy(get("COOKIE_SECURE")),
     allowedOrigins: parseOrigins(get("ALLOWED_ORIGINS")),
+    boxProfile: parseBoxProfile(get("BOX_PROFILE")),
+    boxPidsLimit: parseBoxPidsLimit(get("BOX_PIDS_LIMIT")),
+    containerRuntime: parseContainerRuntime(get("RUNTIME")),
   };
 }
 

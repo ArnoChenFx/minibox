@@ -6,6 +6,7 @@ import { type Exchange, runParityScenario } from "./parity/scenario";
 
 // Recorded from origin/main at 98d6f39, before the operation registry existed. Regenerating it from the current code
 // would make the test compare the code with itself, so it must only change when the HTTP contract changes on purpose.
+// Box objects gained `profile` and `network` with box hardening; no other exchange differs from that recording.
 const TRANSCRIPT = join(import.meta.dir, "fixtures", "parity-transcript.json");
 
 describe("HTTP parity", () => {

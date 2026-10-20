@@ -1,5 +1,6 @@
+import type { BoxProfile } from "../box-profile";
 import type { Config } from "../config";
-import { type LabelKeys, labelKeys } from "../labels";
+import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
 import { HostMonitor } from "./metrics";
 
@@ -14,6 +15,14 @@ export interface Host {
   status: "online" | "offline" | "unknown";
 }
 
+/** Box hardening settings that apply to one engine. Each box records the profile it was created with. */
+export interface HostSecurity {
+  defaultProfile: BoxProfile;
+  pidsLimit: number;
+  runtime: string | null;
+  network: string;
+}
+
 /** Everything business code needs to act on one host. `host.id` is the hostId the internal APIs are scoped by. */
 export interface HostCtx {
   host: Host;
@@ -22,6 +31,7 @@ export interface HostCtx {
   keys: LabelKeys;
   baseTemplateTag: string;
   templatesDir: string;
+  security: HostSecurity;
   monitor: HostMonitor;
 }
 
@@ -41,6 +51,12 @@ export function createLocalHost(cfg: Config, runtime: Runtime): HostCtx {
     keys: labelKeys(cfg.labelPrefix),
     baseTemplateTag: cfg.baseTemplateTag,
     templatesDir: cfg.templatesDir,
+    security: {
+      defaultProfile: cfg.boxProfile,
+      pidsLimit: cfg.boxPidsLimit,
+      runtime: cfg.containerRuntime,
+      network: boxNetworkName(cfg.labelPrefix),
+    },
     monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory),
   };
   return ctx;
