@@ -17,6 +17,7 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "test": "bun test",
+    "test:docker": "bun scripts/docker-integration.ts",
     "check": "bun run fmt:check && bun run lint && bun run typecheck && bun test",
     "openapi": "bun scripts/export-openapi.ts",
     "build:template": "docker build -t minibox-template:base --label minibox.template=true --label minibox.template.name=base --label \"minibox.template.description=Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root dev user\" templates/base",

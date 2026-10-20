@@ -1,10 +1,13 @@
 /**
  * Runs the Docker adapter and the box/snapshot/template services against a real engine.
  *
- *   MINIBOX_TEST_DOCKER=1 bun test tests/docker-runtime.test.ts
+ *   bun run test:docker
+ *
+ * That script (scripts/docker-integration.ts) pulls the image, picks a fresh label prefix and sweeps what the run left
+ * behind. To run this file directly: MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbit<id> bun test tests/docker-runtime.test.ts
  *
  * Optional: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20, must already be
- * present locally). Every resource is labelled with a unique prefix and removed afterwards.
+ * present locally). The prefix must start with "mbit", so the cleanup can never touch a real MiniBox install.
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -27,7 +30,9 @@ const SOCKET = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
 const IMAGE = process.env.MINIBOX_TEST_IMAGE ?? "alpine:3.20";
 const LONG = 60_000;
 
-const prefix = `mbit${Date.now().toString(36)}`;
+const PREFIX_PATTERN = /^mbit[a-z0-9-]{3,40}$/;
+const prefix = process.env.MINIBOX_TEST_PREFIX ?? `mbit${Date.now().toString(36)}`;
+if (enabled && !PREFIX_PATTERN.test(prefix)) throw new Error(`MINIBOX_TEST_PREFIX must match ${PREFIX_PATTERN}`);
 const runtime: Runtime = createDockerRuntime(SOCKET);
 const cfg = testConfig({
   labelPrefix: prefix,
@@ -64,6 +69,19 @@ async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Runs a command in a box and returns its output and exit code once the stream has ended. */
+async function execIn(id: string, cmd: string[]): Promise<{ output: string; exitCode: number | null }> {
+  const exec = await runtime.startExec(id, { cmd, env: ["TERM=xterm-256color"], workingDir: "/" });
+  let output = "";
+  exec.stream.on("data", (chunk: Buffer) => {
+    output += chunk.toString("utf8");
+  });
+  const ended = await settleWithin(new Promise<void>((resolve) => exec.stream.once("end", resolve)), 15_000);
+  exec.stream.destroy();
+  if (ended === "timeout") throw new Error(`the command did not finish: ${cmd.join(" ")}`);
+  return { output, exitCode: (await exec.inspect()).exitCode };
 }
 
 afterAll(async () => {
@@ -258,19 +276,30 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
-    "a box can be created, snapshotted, restored from the snapshot and promoted to a template",
+    "a box is written to, snapshotted, restored from the snapshot, promoted to a template and deleted",
     async () => {
       const restore = silenceLogs();
       try {
         const alpha = await boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 });
         expect(alpha).toMatchObject({ running: true, volume: `${prefix}-ws-a` });
         expect(await runtime.inspectVolume(`${prefix}-ws-a`)).toMatchObject({ name: `${prefix}-ws-a` });
+        expect(
+          await rejectionOf(boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 })),
+        ).toMatchObject({ status: 409, key: "box_exists" });
+        expect((await runtime.inspectContainer(alpha.id)).running).toBe(true);
+        expect(await execIn(alpha.id, ["sh", "-c", "echo snapshot-marker > /opt/marker"])).toMatchObject({
+          exitCode: 0,
+        });
 
         const { ref } = await createSnapshot(host, alpha.id, "base");
         expect(ref).toMatch(new RegExp(`^${prefix}-snap:base-`));
 
         const beta = await boxes.createBox(host, { name: "b", image: ref, cpus: 0.5, memoryMb: 64 });
         expect(beta).toMatchObject({ running: true, template: ref });
+        expect(await execIn(beta.id, ["cat", "/opt/marker"])).toMatchObject({
+          exitCode: 0,
+          output: expect.stringContaining("snapshot-marker"),
+        });
 
         const promoted = await promoteSnapshot(host, ref, "gold", "Gold");
         expect(promoted.ref).toBe(`${prefix}-template:gold`);
@@ -279,8 +308,9 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
           [`${prefix}.snapshot`]: "false",
         });
 
-        await boxes.deleteBox(host, alpha.id, true);
-        await boxes.deleteBox(host, beta.id, true);
+        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "a", volumeDeleted: true });
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "b", volumeDeleted: true });
+        expect(await rejectionOf(runtime.inspectContainer(alpha.id))).toMatchObject({ kind: "not_found" });
         expect(await rejectionOf(runtime.inspectVolume(`${prefix}-ws-a`))).toMatchObject({ kind: "not_found" });
 
         await deleteSnapshot(host, ref);
