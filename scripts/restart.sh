@@ -4,6 +4,7 @@
 #
 # Single-user sandbox convenience, not a deployment script. It starts dockerd with sudo and gives the Docker socket to
 # your primary group only (mode 660). Docker access is root-equivalent, so do not use this on a shared host.
+# Logs are appended to, never truncated.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,7 +23,8 @@ grant_docker_socket() {
 # 1. Docker daemon
 if ! docker info >/dev/null 2>&1; then
   echo "[restart] starting dockerd"
-  setsid sudo nohup dockerd --host=unix:///var/run/docker.sock > /tmp/dockerd.log 2>&1 < /dev/null &
+  printf -- '--- %s dockerd start\n' "$(date -Is)" >> /tmp/dockerd.log
+  setsid sudo nohup dockerd --host=unix:///var/run/docker.sock >> /tmp/dockerd.log 2>&1 < /dev/null &
   for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; grant_docker_socket 2>/dev/null || true; sleep 1; done
 fi
 grant_docker_socket || echo "[restart] could not give the Docker socket to group $(id -gn); check sudo" >&2
@@ -53,7 +55,8 @@ esac
 if [[ "${1:-}" != "--no-tunnel" ]] && command -v opentunnel >/dev/null; then
   if ! pgrep -f "opentunnel (serve|up)" >/dev/null; then
     echo "[restart] starting opentunnel"
-    setsid nohup opentunnel serve > /tmp/opentunnel.log 2>&1 < /dev/null &
+    printf -- '--- %s opentunnel start\n' "$(date -Is)" >> /tmp/opentunnel.log
+    setsid nohup opentunnel serve >> /tmp/opentunnel.log 2>&1 < /dev/null &
     sleep 2
   fi
   opentunnel status || true
