@@ -67,7 +67,8 @@ flowchart LR
     XT[xterm.js]
   end
   subgraph Server[MiniBox server · Bun]
-    HTTP[Bun.serve<br/>routing / auth / validation]
+    HTTP[Bun.serve<br/>routing / guard / auth]
+    OPS[Operation registry<br/>authorize · validate · audit]
     WS[WebSocket terminal]
     MON[HostMonitor<br/>/proc sampling]
   end
@@ -81,7 +82,9 @@ flowchart LR
   end
   UI -- REST / JSON --> HTTP
   XT -- WebSocket --> WS
-  HTTP -- dockerode --> D
+  HTTP -- box routes --> OPS
+  HTTP -- other routes --> D
+  OPS -- Runtime --> D
   WS -- exec / TTY --> D
   MON --> PROC
   D --> B1 & B2
@@ -297,6 +300,8 @@ MiniBox creates these directories at startup and tightens looser modes. It never
 
 All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer <ACCESS_KEY>` header. Writes must send `Content-Type: application/json`, except requests that have neither a body nor a `Content-Type` (any other declared type gets `415`), and browser requests from other websites get `403`.
 
+A request may send an `X-Minibox-Run` header that names the client session it belongs to; the audit events of one session share that value. It takes 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit. Any other value gets `400`.
+
 Errors use a consistent shape and the matching HTTP status:
 
 ```json
@@ -350,6 +355,10 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 
 Only images carrying MiniBox labels can be deleted through the API.
 
+### OpenAPI
+
+The box and box-snapshot routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. Auth, system, template and other snapshot routes are not in it yet.
+
 ### Example
 
 ```bash
@@ -378,7 +387,8 @@ minibox/
 │   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats
 │   ├── services/            # Business logic on Runtime: boxes / images / snapshots / templates
 │   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
-│   ├── routes/              # Router and route groups (auth / system / boxes / images)
+│   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
+│   ├── routes/              # Router, route groups (auth / system / images) and the REST adapter for operations
 │   ├── ws/terminal.ts       # WebSocket terminal
 │   └── lib/                 # errors / http / logger / validation
 ├── web/
@@ -389,11 +399,13 @@ minibox/
 ├── templates/base/Dockerfile
 ├── tests/                   # bun test unit tests; support/ has FakeRuntime and test helpers
 ├── scripts/restart.sh       # Restart helper for hosts without systemd
+├── scripts/export-openapi.ts # Writes docs/openapi.json (bun run openapi)
 ├── Dockerfile               # Release image (oven/bun, multi-arch)
 ├── .github/workflows/release.yml  # Tag → image + GitHub Release
 └── docs/
     ├── design.md            # Product and architecture design (Chinese)
     ├── runtime.md           # Runtime interface, errors and adding a backend (Chinese)
+    ├── openapi.json         # OpenAPI 3.1 document generated from the operation registry
     └── screenshots/
 ```
 
@@ -407,6 +419,7 @@ bun run lint       # oxlint (warnings fail the run)
 bun run typecheck  # TypeScript (strict, tsc --noEmit)
 bun test           # Unit tests (no Docker needed)
 bun run check      # All of the above, same as CI
+bun run openapi    # Regenerate docs/openapi.json from the operation registry
 ```
 
 Formatting uses [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) (`.oxfmtrc.json`) and linting uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) (`.oxlintrc.json`). [CI](.github/workflows/ci.yml) runs `fmt:check`, `lint`, `typecheck` and `bun test` on every push to `main` and every pull request, plus a Docker build smoke test that starts the image and probes `/login`.

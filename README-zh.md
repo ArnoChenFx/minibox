@@ -67,7 +67,8 @@ flowchart LR
     XT[xterm.js]
   end
   subgraph Server[MiniBox 服务 · Bun]
-    HTTP[Bun.serve<br/>路由 / 鉴权 / 校验]
+    HTTP[Bun.serve<br/>路由 / 守卫 / 鉴权]
+    OPS[操作注册表<br/>鉴权 / 校验 / 审计]
     WS[WebSocket 终端]
     MON[HostMonitor<br/>/proc 采样]
   end
@@ -81,7 +82,9 @@ flowchart LR
   end
   UI -- REST / JSON --> HTTP
   XT -- WebSocket --> WS
-  HTTP -- dockerode --> D
+  HTTP -- 盒子路由 --> OPS
+  HTTP -- 其他路由 --> D
+  OPS -- Runtime --> D
   WS -- exec / TTY --> D
   MON --> PROC
   D --> B1 & B2
@@ -297,6 +300,8 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 请求与响应均为 JSON。除标注**公开**的接口外，都需要登录 Cookie（由 `/api/auth/login` 写入）或 `Authorization: Bearer <ACCESS_KEY>` 请求头。写请求必须使用 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外；其他声明的类型返回 `415`），来自其他网站的浏览器请求返回 `403`。
 
+请求可以带上 `X-Minibox-Run` 请求头，标明所属的客户端会话，同一会话的审计事件共享该值。取值为 1 到 64 位字母、数字、点、冒号、下划线或连字符，且以字母或数字开头；其他取值返回 `400`。
+
 出错时返回对应的 HTTP 状态码和统一结构：
 
 ```json
@@ -350,6 +355,10 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 只有带 MiniBox 标签的镜像才能通过 API 删除。
 
+### OpenAPI
+
+盒子及盒子快照的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。认证、系统、模板以及其他快照接口暂未纳入。
+
 ### 示例
 
 ```bash
@@ -378,7 +387,8 @@ minibox/
 │   ├── docker/              # Docker 适配器（唯一使用 dockerode）：runtime / errors / logs / stats
 │   ├── services/            # 基于 Runtime 的业务逻辑：boxes / images / snapshots / templates
 │   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostMonitor 采样
-│   ├── routes/              # router 与各组路由（auth / system / boxes / images）
+│   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
+│   ├── routes/              # router、各组路由（auth / system / images）与操作的 REST 适配层
 │   ├── ws/terminal.ts       # WebSocket 终端
 │   └── lib/                 # errors / http / logger / validation
 ├── web/
@@ -389,11 +399,13 @@ minibox/
 ├── templates/base/Dockerfile
 ├── tests/                   # bun test 单元测试；support/ 含 FakeRuntime 与测试辅助
 ├── scripts/restart.sh       # 无 systemd 环境的重启脚本
+├── scripts/export-openapi.ts # 写入 docs/openapi.json（bun run openapi）
 ├── Dockerfile               # 发布镜像（oven/bun，多架构）
 ├── .github/workflows/release.yml  # tag → 镜像 + GitHub Release
 └── docs/
     ├── design.md            # 产品与架构设计
     ├── runtime.md           # Runtime 接口、错误与新增后端
+    ├── openapi.json         # 由操作注册表生成的 OpenAPI 3.1 文档
     └── screenshots/
 ```
 
@@ -407,6 +419,7 @@ bun run lint       # oxlint 检查（有警告即失败）
 bun run typecheck  # TypeScript 严格模式类型检查（tsc --noEmit）
 bun test           # 单元测试（不需要 Docker）
 bun run check      # 以上全部，与 CI 一致
+bun run openapi    # 由操作注册表重新生成 docs/openapi.json
 ```
 
 格式化使用 [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html)（`.oxfmtrc.json`），代码检查使用 [oxlint](https://oxc.rs/docs/guide/usage/linter.html)（`.oxlintrc.json`）。[CI](.github/workflows/ci.yml) 会在每次推送到 `main` 和每个 Pull Request 时运行 `fmt:check`、`lint`、`typecheck` 和 `bun test`，并做一次 Docker 构建冒烟测试（启动镜像并访问 `/login`）。
