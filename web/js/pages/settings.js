@@ -87,10 +87,10 @@ function sessionRow(s) {
     ? `<span class="badge badge-accent">${t("st.sessionCurrent")}</span>`
     : `<button class="btn btn-sm btn-danger" data-revoke="${esc(s.id)}">${icon("x")}${t("st.sessionRevoke")}</button>`;
   return `<tr>
-    <td><div class="truncate" style="max-width:420px" title="${esc(s.userAgent)}">${device}</div></td>
+    <td><div class="session-ua" title="${esc(s.userAgent)}">${device}</div></td>
     <td class="hide-sm subtle nowrap">${dateTime(s.createdAt)}</td>
     <td class="subtle nowrap">${relTime(s.lastSeenAt)}</td>
-    <td><div class="actions">${action}</div></td>
+    <td class="nowrap"><div class="actions">${action}</div></td>
   </tr>`;
 }
 
