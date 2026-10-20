@@ -108,7 +108,7 @@ describe("createBox", () => {
     expect((await newBox("beta", { templateLabel: "snapshot:x" })).template).toBe("snapshot:x");
   });
 
-  test("a name taken after the caller's check is still a duplicate, not an engine error", async () => {
+  test("a name claimed by a concurrent create is a duplicate, not an engine error", async () => {
     runtime.fail("createContainer", new RuntimeError("conflict", "name taken", "name taken"));
     expect(await rejectionOf(newBox("alpha"))).toMatchObject({ status: 409, key: "box_exists" });
     expect(runtime.callsTo("startContainer")).toHaveLength(0);
