@@ -90,7 +90,7 @@ flowchart LR
 - **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`，重启策略 `unless-stopped`）。`/workspace` 挂载在独立数据卷 `minibox-ws-<名称>`。
 - **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`。
 - **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。
-- 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 从 jsDelivr CDN 加载。
+- 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 随仓库放在 [`web/vendor/`](web/vendor/README.md)，控制台不会从 CDN 加载任何代码。
 
 （`minibox` 是默认的 `LABEL_PREFIX`，所有名称和标签都随前缀变化。）
 
@@ -99,7 +99,6 @@ flowchart LR
 - 装有 Docker Engine 的 Linux 宿主机（宿主机指标读取自 `/proc`）
 - [Bun](https://bun.sh) ≥ 1.4.3
 - 运行 MiniBox 的用户对 Docker Socket 有读写权限
-- 浏览器能访问 `cdn.jsdelivr.net`（网页终端需要）
 
 ## 快速开始
 
@@ -330,6 +329,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 已在 `.gitignore` 中忽略，不要提交它。
 - **访问密钥是唯一门禁。** 没有用户体系。登录失败按客户端地址限流（5 分钟内最多 10 次，IPv6 按 /64 计），密钥比对是恒定时间的，但密钥一旦泄露就等于完全失守。更换密钥：修改 `.env` 中的 `ACCESS_KEY` 后重启服务，现有会话立即失效。
 - **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。带请求体的写请求必须是 JSON，这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
+- **严格的内容安全策略（CSP）。** 脚本只会从 MiniBox 自身加载（`script-src 'self'`），页面没有内联脚本，且禁止被嵌入 iframe（`frame-ancestors 'none'`）。通过 HTTPS 访问（直接访问，或在 `TRUST_PROXY=true` 时经由代理）的请求还会带上 `Strict-Transport-Security`，有效期一年，不包含子域名。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
 - **远程访问请使用 HTTPS。** 通过 HTTPS 访问时登录 Cookie 会带上 `Secure` 标记。默认情况下 MiniBox 忽略 `X-Forwarded-For` 和 `X-Forwarded-Proto`，因此经过反向代理访问时，所有访问者共享代理的地址来计算登录限流。只有当前面的代理由你控制并会设置这些头时，才设置 `TRUST_PROXY=true`：开启后 MiniBox 取 `X-Forwarded-For` 的最后一项（由代理追加的那一项）；关闭时客户端可以伪造这些头来绕过登录限流。
 - **公开隧道可以被发现。** 隧道域名（例如 OpenTunnel 的 `*.opentunnel.xyz`）可能出现在公开的证书透明度日志里，也可能被猜到，而且 OpenTunnel 本身不提供认证。这相当于把控制台直接放在公网上，只靠访问密钥保护；流量还会经过隧道的中继服务器。条件允许时优先使用私有网络（如 Tailscale）或带认证的反向代理，不用时把隧道关掉。

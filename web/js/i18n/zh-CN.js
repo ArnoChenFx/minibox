@@ -265,7 +265,7 @@ export default {
   "bd.startBox": "启动 Box",
   "bd.reconnect": "重新连接",
   "bd.termHelp": "会话使用 bash 登录 Shell；离开此页面即断开，后台进程请使用 nohup 或 tmux 保持。",
-  "bd.termLoadFailed": "终端组件加载失败，请检查能否访问 cdn.jsdelivr.net。",
+  "bd.termLoadFailed": "终端组件加载失败，请刷新页面重试。",
   "bd.connected": "已连接",
   "bd.disconnected": "已断开",
   "bd.logs": "容器日志",

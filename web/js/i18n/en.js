@@ -279,7 +279,7 @@ export default {
   "bd.reconnect": "Reconnect",
   "bd.termHelp":
     "Sessions use a bash login shell and disconnect when you leave this page. Use nohup or tmux for background processes.",
-  "bd.termLoadFailed": "Failed to load the terminal component. Check that cdn.jsdelivr.net is reachable.",
+  "bd.termLoadFailed": "Failed to load the terminal component. Reload the page to try again.",
   "bd.connected": "Connected",
   "bd.disconnected": "Disconnected",
   "bd.logs": "Container logs",

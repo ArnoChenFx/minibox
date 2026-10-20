@@ -90,7 +90,7 @@ flowchart LR
 - **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`, restart policy `unless-stopped`). `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`.
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
-- The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is loaded from the jsDelivr CDN.
+- The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
 
 (`minibox` is the default `LABEL_PREFIX`; all names and labels follow the prefix.)
 
@@ -99,7 +99,6 @@ flowchart LR
 - Linux host with Docker Engine (the server reads `/proc` for host metrics)
 - [Bun](https://bun.sh) ≥ 1.4.3
 - Read/write access to the Docker socket for the user running MiniBox
-- A browser that can reach `cdn.jsdelivr.net` (for the web terminal)
 
 ## Quick start
 
@@ -330,6 +329,7 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` is git-ignored — keep it that way.
 - **The access key is the only guard.** There are no user accounts. Login failures are rate-limited per client address (10 per 5 minutes; IPv6 addresses per /64) and the key is compared in constant time, but a leaked key means full access. To rotate it, change `ACCESS_KEY` in `.env` and restart; existing sessions stop working immediately.
 - **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin listed in `ALLOWED_ORIGINS`. Requests without an `Origin` header (scripts using `Authorization: Bearer`) are accepted. Writes with a body must be JSON, which also blocks HTML form posts. The session cookie is `SameSite=Strict`, so a link from another website may ask you to sign in once more.
+- **Strict Content-Security-Policy.** Scripts load only from MiniBox itself (`script-src 'self'`), the pages have no inline scripts, and MiniBox can't be framed (`frame-ancestors 'none'`). Requests that arrive over HTTPS (directly, or through a proxy when `TRUST_PROXY=true`) also get `Strict-Transport-Security` for one year, without `includeSubDomains`.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
 - **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS. MiniBox ignores `X-Forwarded-For`, `X-Forwarded-Proto` by default, so behind a proxy every visitor shares the proxy's address for rate limiting. Set `TRUST_PROXY=true` only when a proxy you control sets these headers. With it on, MiniBox uses the right-most `X-Forwarded-For` entry, which the proxy appended. With it off, a client can forge these headers to dodge the login limit.
 - **Public tunnels are discoverable.** Tunnel hostnames (e.g. OpenTunnel's `*.opentunnel.xyz`) can show up in public Certificate Transparency logs or be guessed, and OpenTunnel itself does not add authentication — the dashboard is effectively on the internet, protected only by the access key. Traffic also passes through the tunnel's relay. Prefer a private network (e.g. Tailscale) or an authenticating reverse proxy when you can, and stop the tunnel when you don't need it.

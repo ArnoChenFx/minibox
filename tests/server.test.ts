@@ -161,3 +161,34 @@ describe("cross-site protection (end to end)", () => {
     });
   });
 });
+
+describe("console delivery (end to end)", () => {
+  test("pages are served under the strict Content-Security-Policy", async () => {
+    await withServer({}, async ({ base }) => {
+      const res = await fetch(`${base}/login`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-security-policy")).toContain("script-src 'self'");
+      expect(res.headers.get("strict-transport-security")).toBeNull();
+    });
+  });
+
+  test("the terminal library is served by MiniBox itself", async () => {
+    await withServer({}, async ({ base }) => {
+      const res = await fetch(`${base}/vendor/xterm/xterm.js`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("javascript");
+    });
+  });
+
+  test("HSTS is sent for requests a trusted proxy reports as HTTPS", async () => {
+    const forwarded = { "x-forwarded-proto": "https" };
+    await withServer({ TRUST_PROXY: "true" }, async ({ base }) => {
+      const res = await fetch(`${base}/login`, { headers: forwarded });
+      expect(res.headers.get("strict-transport-security")).toBe("max-age=31536000");
+    });
+    await withServer({ TRUST_PROXY: "false" }, async ({ base }) => {
+      const res = await fetch(`${base}/login`, { headers: forwarded });
+      expect(res.headers.get("strict-transport-security")).toBeNull();
+    });
+  });
+});
