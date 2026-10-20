@@ -403,7 +403,9 @@ Only images carrying MiniBox labels can be deleted through the API.
 
 ### Events
 
-Every operation call, whether it comes over REST, MCP or the CLI, is recorded once in the event log, `events.db` in the [data directory](#data-directory). An event says who made the call (`principal`), what it touched (`op`, `target`), when and for how long (`ts`, `durationMs`), the outcome (`status`) and the client session (`run`, from `X-Minibox-Run`). Requests refused before they reach an operation, such as a missing key (`401`) or a cross-site request (`403`), are not recorded.
+Every operation call is recorded once in the event log, `events.db` in the [data directory](#data-directory), whichever interface it came through. Today that is REST; the MCP server and the CLI arrive with [#9](https://github.com/ArnoChenFx/minibox/issues/9). An event says who made the call (`principal`), what it touched (`op`, `target`), when and for how long (`ts`, `durationMs`), the outcome (`status`) and the client session (`run`, from `X-Minibox-Run`).
+
+The log covers calls made through MiniBox. It does not record what runs inside a box, including commands an agent runs in its own shell there. Requests refused before they reach an operation, such as a missing key (`401`) or a cross-site request (`403`), are not recorded either.
 
 | Method | Path | Description |
 |---|---|---|
