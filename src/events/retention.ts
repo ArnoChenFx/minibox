@@ -17,7 +17,10 @@ export interface PruneResult {
   readonly outputs: number;
 }
 
-/** Applies the retention policy now, and then on a timer. Pruning is a `DELETE` per tier, so it never blocks writes for long. */
+/**
+ * Applies the retention policy now, and then on a timer. Each run is one `DELETE` per tier, which the `(tier, ts)` index
+ * serves.
+ */
 export class RetentionJob {
   private timer: ReturnType<typeof setInterval> | undefined;
 
