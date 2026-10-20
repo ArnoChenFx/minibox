@@ -332,6 +332,8 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 
 ## Roadmap
 
+The full product and architecture design (in Chinese) is in [`docs/design.md`](docs/design.md); the implementation plan is tracked in [#20](https://github.com/ArnoChenFx/minibox/issues/20).
+
 - [ ] **Idle auto-sleep** — stop boxes after a period without exec / terminal activity and wake them on the next request
 - [ ] **Workspace backup** — export / restore `/workspace` volumes alongside snapshots
 - [ ] **Agent-facing API** — file read/write, streaming exec, and an MCP server on top
