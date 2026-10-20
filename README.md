@@ -33,9 +33,10 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Area | What you get |
 |---|---|
 | Box lifecycle | Create, start, stop, restart, delete; on delete, keep or remove the workspace volume |
+| Box user | Boxes run as the non-root `dev` user (uid/gid 1000) with passwordless `sudo`; the web terminal and `docker exec` start as `dev`. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
 | Snapshots | Save a box's system environment via `docker commit`, create new boxes from a snapshot, or promote it to a template |
-| Templates | Bundled base template (Debian 12 · Node.js 24 · Python 3 · git · build-essential) plus your own promoted templates |
+| Templates | Bundled base template (Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
@@ -89,7 +90,7 @@ flowchart LR
   D --- I
 ```
 
-- **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`, restart policy `unless-stopped`). `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`.
+- **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`, restart policy `unless-stopped`). `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. The container runs as the non-root user `dev` (see [Base template](#base-template)).
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
@@ -280,6 +281,41 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 
 > `bun run build:template` always tags `minibox-template:base`. If you change `LABEL_PREFIX` or `BASE_TEMPLATE`, build the base template from the dashboard (Templates → Build base template) instead, which uses the configured tag.
 
+## Base template
+
+The bundled template ([`templates/base/Dockerfile`](templates/base/Dockerfile)) is the image new boxes start from. Its conventions:
+
+| Area | Convention |
+|---|---|
+| User | `dev`, uid/gid `1000`. A box starts the image's default user, so the web terminal and `docker exec` enter as `dev`. `sudo` needs no password, inside the box only |
+| Mount points | `/workspace` (workspace volume), `/home/dev` (home), `/opt/minibox/tools` (shared, read-only tools; its `bin` is on `PATH`), `/home/dev/.cache` (caches). Until volume support lands in [#24](https://github.com/ArnoChenFx/minibox/issues/24), these are plain directories in the image |
+| Caches | `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR` and `YARN_CACHE_FOLDER` point under `/home/dev/.cache`. `NPM_CONFIG_PREFIX` is `/home/dev/.npm-global`, so `npm install -g` works without root |
+| Labels | `minibox.template.user`, `minibox.template.uid` and `minibox.template.gid` record the convention, so other templates can be checked against it |
+
+Tools: `tmux`, `jq`, `ripgrep`, `openssh-client`, `unzip`, `less`, `vim-tiny` and `sudo`, plus `git`, `curl`, `python3`, `build-essential` and `procps`.
+
+**One uid for every template.** Boxes that share a volume only work if their templates agree on the uid and gid. The Node image ships a `node` user on uid 1000. The template removes that user rather than renaming it, so `dev` takes the uid and no second account shares it. To build with another uid, pass `--build-arg DEV_UID=<uid> --build-arg DEV_GID=<gid>` to `docker build`. Every template and volume that shares data with that image must then use the same values.
+
+**Upgrading from the root template.**
+
+- Existing boxes keep running as root on the template they were created from. Nothing is renamed or rebuilt.
+- Boxes created from an older snapshot or template keep that image's user, which is root for images made before this change.
+- A new box that reuses a workspace volume from an older box (you kept the volume when you deleted that box) gets a root-owned `/workspace`, so `dev` can't write to it. Fix the ownership once, with the box running:
+
+  ```bash
+  docker exec -u root minibox-<name> chown -R 1000:1000 /workspace
+  ```
+
+  Or, while the volume is not in use, run a one-off container on it:
+
+  ```bash
+  docker run --rm --user root -v minibox-ws-<name>:/workspace minibox-template:base chown -R 1000:1000 /workspace
+  ```
+
+  MiniBox doesn't run this for you yet. A recursive `chown` over a whole workspace can take a long time and changes ownership of data you didn't ask to touch, so it belongs with the storage work in [#24](https://github.com/ArnoChenFx/minibox/issues/24).
+
+Checking an image against Docker: after `bun run build:template`, run `bun run check:template` (or `scripts/check-box-image.sh <image>`). It checks the user, uid, `sudo`, tools, mount points, cache variables, the PATH of login shells, and that two containers sharing a volume can write to it. CI runs it for `linux/amd64` and, under emulation, `linux/arm64`.
+
 ## Data directory
 
 MiniBox keeps the state it owns in `DATA_DIR`. It is a directory of plain files, not a database server, so include it in your backups. Relative paths resolve from the project root, and `~/` expands to your home directory.
@@ -389,6 +425,7 @@ minibox/
 ├── templates/base/Dockerfile
 ├── tests/                   # bun test unit tests; support/ has FakeRuntime and test helpers
 ├── scripts/restart.sh       # Restart helper for hosts without systemd
+├── scripts/check-box-image.sh  # Base template checks against Docker (CI runs amd64 and arm64)
 ├── Dockerfile               # Release image (oven/bun, multi-arch)
 ├── .github/workflows/release.yml  # Tag → image + GitHub Release
 └── docs/
@@ -407,6 +444,7 @@ bun run lint       # oxlint (warnings fail the run)
 bun run typecheck  # TypeScript (strict, tsc --noEmit)
 bun test           # Unit tests (no Docker needed)
 bun run check      # All of the above, same as CI
+bun run build:template && bun run check:template  # Base template checks (needs Docker)
 ```
 
 Formatting uses [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) (`.oxfmtrc.json`) and linting uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) (`.oxlintrc.json`). [CI](.github/workflows/ci.yml) runs `fmt:check`, `lint`, `typecheck` and `bun test` on every push to `main` and every pull request, plus a Docker build smoke test that starts the image and probes `/login`.
@@ -440,6 +478,7 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS or carries an `https://` Origin, which browsers send on login; `COOKIE_SECURE=1` forces it. By default MiniBox ignores `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`, so behind a reverse proxy every visitor shares the proxy's address for rate limiting. Set `TRUST_PROXY=true` only behind a proxy that overwrites these headers, and only when MiniBox is reachable only through that proxy. With it on, MiniBox uses the right-most `X-Forwarded-For` entry, which the proxy appended, and trusts the other two headers too. With it off, the headers are ignored, so forging them has no effect.
 - **Public tunnels are discoverable.** Tunnel hostnames (e.g. OpenTunnel's `*.opentunnel.xyz`) can show up in public Certificate Transparency logs or be guessed, and OpenTunnel itself does not add authentication — the dashboard is effectively on the internet, protected only by the access key. Traffic also passes through the tunnel's relay. Prefer a private network (e.g. Tailscale) or an authenticating reverse proxy when you can, and stop the tunnel when you don't need it.
 - **Container isolation, not a security sandbox.** Boxes share the host kernel. They are fine for your own agents, but **not for untrusted third-party code** — use gVisor or a microVM-based sandbox for that. Don't mount the Docker socket or sensitive host paths into a box.
+- **Boxes have passwordless `sudo`.** The `dev` user can become root inside its box, and root there can change anything in the box and in its workspace volume. The container still runs with Docker's default capabilities, not as a privileged container. A stricter profile without `sudo` is planned with [#5](https://github.com/ArnoChenFx/minibox/issues/5).
 - **Snapshots don't include `/workspace`.** `docker commit` skips mounted volumes; keep code in git or back up the volume separately.
 - `scripts/restart.sh` may start `dockerd` with `sudo` and `chmod 666` the Docker socket so a non-root user can reach it. That's convenient on a single-user sandbox but loosens permissions; review it before using it elsewhere.
 
@@ -461,7 +500,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 
 ### M1 · Templates, specs, audit and tokens
 
-- [ ] [#27](https://github.com/ArnoChenFx/minibox/issues/27) Base template: non-root `dev` user, tmux and mount-point conventions
+- [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) Base template: non-root `dev` user, tmux and mount-point conventions
 - [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box hardening with `standard` and `strict` security profiles
 - [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
 - [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus

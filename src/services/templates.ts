@@ -8,7 +8,7 @@ import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images"
 
 export const listTemplates = (host: HostCtx): Promise<ImageItem[]> => listImagesByLabel(host, host.keys.template);
 
-const BASE_DESCRIPTION = "Debian 12 · Node.js 24 · Python 3 · git · build-essential";
+export const BASE_DESCRIPTION = "Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root dev user";
 
 /** Re-tag a snapshot image as a template by committing a throwaway container with template labels. */
 export async function promoteSnapshot(

@@ -145,7 +145,7 @@ const TAB_RENDER = {
       return null;
     }
     root.innerHTML = `<div class="terminal-frame">
-      <div class="terminal-bar"><span class="lights"><i></i><i></i><i></i></span><span class="mono">root@${esc(b.name)}: /workspace</span>
+      <div class="terminal-bar"><span class="lights"><i></i><i></i><i></i></span><span class="mono">${esc(b.name)}: /workspace</span>
         <span class="status" id="tStatus"><span class="dot"></span><span id="tStatusText">${t("common.connecting")}</span></span>
         <button class="btn btn-ghost btn-sm" id="tReconnect" style="color:#a1a1aa">${icon("refresh")}${t("bd.reconnect")}</button></div>
       <div class="terminal" id="term"></div></div>

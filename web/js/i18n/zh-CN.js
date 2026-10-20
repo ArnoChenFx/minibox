@@ -320,7 +320,8 @@ export default {
   "tp.build": "构建基础模板",
   "tp.loadFailed": "无法加载模板",
   "tp.empty": "还没有模板",
-  "tp.emptyText": "构建内置的基础模板（Debian 12 · Node.js 24 · Python 3 · git），首次构建约需 1–3 分钟。",
+  "tp.emptyText":
+    "构建内置的基础模板（Debian 12 · Node.js 24 · Python 3 · git · tmux · 非 root 用户 dev），首次构建约需 1–3 分钟。",
   "tp.builtin": "内置",
   "tp.custom": "自定义",
   "tp.noDesc": "无描述",
