@@ -23,7 +23,8 @@ grant_docker_socket() {
 # 1. Docker daemon
 if ! docker info >/dev/null 2>&1; then
   echo "[restart] starting dockerd"
-  printf -- '--- %s dockerd start\n' "$(date -Is)" >> /tmp/dockerd.log
+  # Markers are best effort: a log this user cannot write must not stop the restart.
+  printf -- '--- %s dockerd start\n' "$(date -Is)" >> /tmp/dockerd.log || true
   setsid sudo nohup dockerd --host=unix:///var/run/docker.sock >> /tmp/dockerd.log 2>&1 < /dev/null &
   for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; grant_docker_socket 2>/dev/null || true; sleep 1; done
 fi
@@ -55,7 +56,7 @@ esac
 if [[ "${1:-}" != "--no-tunnel" ]] && command -v opentunnel >/dev/null; then
   if ! pgrep -f "opentunnel (serve|up)" >/dev/null; then
     echo "[restart] starting opentunnel"
-    printf -- '--- %s opentunnel start\n' "$(date -Is)" >> /tmp/opentunnel.log
+    printf -- '--- %s opentunnel start\n' "$(date -Is)" >> /tmp/opentunnel.log || true
     setsid nohup opentunnel serve >> /tmp/opentunnel.log 2>&1 < /dev/null &
     sleep 2
   fi
