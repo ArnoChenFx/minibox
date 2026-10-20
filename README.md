@@ -28,9 +28,6 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 - Hosted sandboxes are great, but sometimes you want your own hardware, your own network and zero per-minute billing.
 - Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database**, all state lives in Docker labels, images and volumes.
 
-> [!NOTE]
-> The dashboard UI is currently in Simplified Chinese. The API, code and docs are in English.
-
 ## Features
 
 | Area | What you get |
