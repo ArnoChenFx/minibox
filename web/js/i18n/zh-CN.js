@@ -132,6 +132,8 @@ export default {
   "disk.root": "系统盘",
   "disk.docker": "Docker 数据",
   "disk.root+docker": "系统盘（含 Docker 数据）",
+  "disk.container": "容器磁盘",
+  "disk.container+docker": "容器磁盘（含 Docker 数据）",
   "act.box.create": "创建 Box",
   "act.box.delete": "删除 Box",
   "act.box.start": "启动 Box",

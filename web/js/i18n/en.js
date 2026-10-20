@@ -140,6 +140,8 @@ export default {
   "disk.root": "System disk",
   "disk.docker": "Docker data",
   "disk.root+docker": "System disk (incl. Docker data)",
+  "disk.container": "Container disk",
+  "disk.container+docker": "Container disk (incl. Docker data)",
   "act.box.create": "Created box",
   "act.box.delete": "Deleted box",
   "act.box.start": "Started box",

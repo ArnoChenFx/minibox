@@ -1,4 +1,4 @@
-import { readFileSync, statfsSync } from "node:fs";
+import { existsSync, readFileSync, statfsSync } from "node:fs";
 import os from "node:os";
 
 import { log } from "../lib/logger";
@@ -8,7 +8,7 @@ import type { HostCtx } from "./registry";
 
 export interface DiskUsage {
   mount: string;
-  /** Stable id translated by the UI: "root" | "docker" | "root+docker". */
+  /** Stable id translated by the UI: "root" | "root+docker" | "docker" | "container" | "container+docker". */
   label: string;
   total: number;
   used: number;
@@ -50,15 +50,40 @@ function readText(path: string): string | null {
   }
 }
 
-function disk(mount: string, label: string): DiskUsage | null {
+type Usage = Omit<DiskUsage, "label">;
+
+function disk(mount: string): Usage | null {
   try {
     const s = statfsSync(mount);
     const total = s.blocks * s.bsize;
     const free = s.bavail * s.bsize;
-    return { mount, label, total, free, used: total - s.bfree * s.bsize };
+    return { mount, total, free, used: total - s.bfree * s.bsize };
   } catch {
     return null;
   }
+}
+
+/** Docker and Podman each create one of these files in the containers they start. */
+const CONTAINER_MARKERS = ["/.dockerenv", "/run/.containerenv"];
+
+export function runsInContainer(exists: (path: string) => boolean = existsSync): boolean {
+  return CONTAINER_MARKERS.some((path) => exists(path));
+}
+
+/**
+ * Labels the disks to show. Inside a container, "/" is the container's own filesystem rather than the host's, so it
+ * is labelled "container". The Docker data root is listed on its own only when its total size differs from the root's,
+ * since statfs gives no device id to compare.
+ */
+export function assembleDisks(root: Usage | null, docker: Usage | null, inContainer: boolean): DiskUsage[] {
+  const rootLabel = inContainer ? "container" : "root";
+  if (!root) return docker ? [{ ...docker, label: "docker" }] : [];
+  if (!docker) return [{ ...root, label: rootLabel }];
+  if (docker.total === root.total) return [{ ...root, label: `${rootLabel}+docker` }];
+  return [
+    { ...root, label: rootLabel },
+    { ...docker, label: "docker" },
+  ];
 }
 
 /**
@@ -71,6 +96,7 @@ export class HostMonitor {
   private history: HostSample[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private dockerCache: { at: number; value: HostMetrics["docker"] & { boxes: HostMetrics["boxes"] } } | null = null;
+  private readonly inContainer = runsInContainer();
 
   constructor(
     private readonly currentHost: () => HostCtx,
@@ -153,13 +179,7 @@ export class HostMonitor {
     const d = await this.dockerInfo();
     const { boxes, ...docker } = d;
     const cpus = os.cpus();
-    const disks = [disk("/", "root")];
-    if (docker.rootDir) {
-      const dd = disk(docker.rootDir, "docker");
-      // Only list separately when on a different filesystem.
-      if (dd && disks[0] && dd.total !== disks[0].total) disks.push(dd);
-      else if (dd && disks[0]) disks[0].label = "root+docker";
-    }
+    const disks = assembleDisks(disk("/"), docker.rootDir ? disk(docker.rootDir) : null, this.inContainer);
     const load = os.loadavg();
     return {
       hostname: os.hostname(),
@@ -178,7 +198,7 @@ export class HostMonitor {
         ],
       },
       memory: this.memory(),
-      disks: disks.filter((x): x is DiskUsage => x !== null),
+      disks,
       docker,
       boxes,
       history: this.history,
