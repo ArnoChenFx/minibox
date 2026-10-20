@@ -3,8 +3,14 @@ import { containerName, parseBoxLabels, volumeName } from "../labels";
 import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
-import type { CreateBoxInput } from "../lib/validation";
 import { type ContainerInfo, type ContainerStats, RuntimeError } from "../runtime";
+
+export interface CreateBoxInput {
+  name: string;
+  image?: string;
+  cpus: number;
+  memoryMb: number;
+}
 
 export interface Box {
   id: string;

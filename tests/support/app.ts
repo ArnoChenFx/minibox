@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { type App, createApp } from "../../src/app";
 import { type Config, ROOT } from "../../src/config";
+import type { ExecutorHooks } from "../../src/operations/executor";
 import { FakeRuntime } from "./fake-runtime";
 
 export const TEST_KEY = "k".repeat(64);
@@ -34,8 +35,9 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
 export function createTestApp(
   overrides: Partial<Config> = {},
   runtime = new FakeRuntime(),
+  hooks: Partial<ExecutorHooks> = {},
 ): { app: App; runtime: FakeRuntime } {
-  return { app: createApp(testConfig(overrides), "0.0.0-test", { runtime }), runtime };
+  return { app: createApp(testConfig(overrides), "0.0.0-test", { runtime, hooks }), runtime };
 }
 
 /** The logger writes expected failures (e.g. 5xx responses) to the console. Mute it so test output stays readable. */
