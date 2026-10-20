@@ -58,6 +58,8 @@ More in [`docs/screenshots`](docs/screenshots).
 
 ## Architecture
 
+### Current (v0.3)
+
 ```mermaid
 flowchart LR
   subgraph Browser
@@ -93,6 +95,66 @@ flowchart LR
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is loaded from the jsDelivr CDN.
 
 (`minibox` is the default `LABEL_PREFIX`; all names and labels follow the prefix.)
+
+### Target architecture (planned)
+
+> [!NOTE]
+> Planned, not implemented yet. The full design and its rationale are in [`docs/design.md`](docs/design.md) (in Chinese).
+
+```mermaid
+flowchart LR
+  subgraph Clients
+    UI["Console"]
+    AG["MCP clients<br/>(AI agents)"]
+    CLI["minibox CLI"]
+  end
+  subgraph Control["Control plane · Bun"]
+    API["REST · OpenAPI · /mcp"]
+    EXE["Operation registry<br/>auth and audit hooks"]
+    RT["WS terminal → tmux<br/>preview proxy"]
+    BUS["Event bus · SSE"]
+    BG["Tasks · reconciler<br/>sampler · idle sleep"]
+    DATA[("DATA_DIR<br/>specs · events · tokens")]
+    HR["HostRegistry"]
+  end
+  subgraph Hosts["Compute hosts · one Runtime per host"]
+    RN["Runtime<br/>unix socket · ssh / tcp+TLS"]
+    D["Docker Engine"]
+    B["Box containers<br/>dev user"]
+    H["Helper containers<br/>files · NFS dirs · restic"]
+  end
+  subgraph Storage["Storage pools · local / nfs / path"]
+    V[("Volumes<br/>workspace · home · tools · cache")]
+    CK[("Checkpoint repository<br/>restic")]
+  end
+  UI --> API
+  UI --> RT
+  BUS -. SSE .-> UI
+  AG --> API
+  CLI --> API
+  API --> EXE
+  RT --> EXE
+  RT --> HR
+  EXE --> DATA
+  EXE --> BUS
+  EXE --> HR
+  BG --> BUS
+  BG --> DATA
+  BG --> HR
+  HR --> RN
+  RN --> D
+  D --> B & H
+  B --- V
+  H --- V
+  H -. backup .-> CK
+```
+
+- **Box** = a spec in `DATA_DIR` plus one container. Container labels hold only what cannot change after creation.
+- **Volume** belongs to a storage pool, not to a box. `cache` volumes stay on the local pool and are excluded from checkpoints.
+- **Checkpoint** = box spec + volume snapshots (restic) + an optional system layer.
+- **Helper containers** are short-lived. They serve file operations, create NFS directories and run restic.
+- Boxes run as the non-root `dev` user under one of two security profiles, `standard` or `strict`.
+- The MiniBox Agent and storage-node roles are not on the main path, so they are not drawn.
 
 ## Requirements
 
@@ -332,13 +394,63 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 
 ## Roadmap
 
-The full product and architecture design (in Chinese) is in [`docs/design.md`](docs/design.md); the implementation plan is tracked in [#20](https://github.com/ArnoChenFx/minibox/issues/20).
+The full product and architecture design (in Chinese) is in [`docs/design.md`](docs/design.md); the implementation plan is tracked in [#20](https://github.com/ArnoChenFx/minibox/issues/20). Planned work is grouped into milestones. Items link to their issues where one exists.
 
-- [ ] **Idle auto-sleep** — stop boxes after a period without exec / terminal activity and wake them on the next request
-- [ ] **Workspace backup** — export / restore `/workspace` volumes alongside snapshots
-- [ ] **Agent-facing API** — file read/write, streaming exec, and an MCP server on top
-- [ ] **Host-side secret injection** — keep API keys on the host and inject them via an egress proxy instead of box env vars
-- [ ] **Declarative templates & warm pool** — templates from Dockerfiles in the repo, plus pre-started boxes for instant creation
+### M0 · Foundations
+
+Order: the first PR bundles the changes already written for #1, #3 and #4. Then #32, #6 and #18 run in parallel, and #22 comes last.
+
+- [ ] [#1](https://github.com/ArnoChenFx/minibox/issues/1) Login rate limiting: proxy headers are trusted only with `TRUST_PROXY`
+- [ ] [#3](https://github.com/ArnoChenFx/minibox/issues/3) Origin checks for WebSocket and write endpoints
+- [ ] [#4](https://github.com/ArnoChenFx/minibox/issues/4) CSP and HSTS; self-host xterm.js instead of the CDN
+- [ ] [#32](https://github.com/ArnoChenFx/minibox/issues/32) Runtime / Host abstraction (implicit `local`, no behavior change)
+- [ ] [#6](https://github.com/ArnoChenFx/minibox/issues/6) `DATA_DIR` for control-plane state; the generated access key moves out of `.env`
+- [x] [#18](https://github.com/ArnoChenFx/minibox/issues/18) Dependabot, pinned action SHAs, a Bun ≥ 1.4.3 floor and branch protection on `main`
+- [ ] [#22](https://github.com/ArnoChenFx/minibox/issues/22) One operation registry that generates REST, OpenAPI, MCP and CLI
+
+### M1 · Templates, specs, audit and tokens
+
+- [ ] [#27](https://github.com/ArnoChenFx/minibox/issues/27) Base template: non-root `dev` user, tmux and mount-point conventions
+- [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box hardening with `standard` and `strict` security profiles
+- [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
+- [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
+- [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
+- [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and TTL
+- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) Revocable session tokens instead of the raw access key in cookies
+
+### M2 · Storage and agent interface
+
+- [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volumes and storage pools (`local`, `nfs`, `path`)
+- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) Exec and file API for agents, with an MCP server and CLI
+- [ ] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux sessions with human takeover
+- [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) Stream box state and resource usage over SSE instead of polling
+- [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS setup guide
+
+### M3 · Core value
+
+- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) Checkpoints with restic: fork, rollback and retention
+- [ ] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Port preview for dev servers running inside boxes
+- [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) Optional agent CLI install at creation or at runtime
+
+### M4 · Multi-host and optimization
+
+- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) Multi-host support over SSH or TLS
+- [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) Idle auto-sleep with on-demand wake
+- [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) Template enhancements and warm pool
+
+### Across all milestones
+
+- [ ] [#26](https://github.com/ArnoChenFx/minibox/issues/26) Console redesign, shipped page by page
+- [ ] [#19](https://github.com/ArnoChenFx/minibox/issues/19) Integration tests for the Docker layer and routes
+- [ ] [#7](https://github.com/ArnoChenFx/minibox/issues/7) Low-risk security hardening
+
+### Later / under evaluation
+
+Not on the main path. Each needs a scope review before work starts.
+
+- [#28](https://github.com/ArnoChenFx/minibox/issues/28) MiniBox Agent framework: pairing, mTLS and an outbound channel
+- [#29](https://github.com/ArnoChenFx/minibox/issues/29) Storage-node role for NAS and Linux storage servers: directories, quotas, snapshots
+- Host-side secret injection: keep API keys on the host instead of in box environment variables (no tracking issue yet)
 
 ## License
 

@@ -58,6 +58,8 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 
 ## 架构
 
+### 当前架构（v0.3）
+
 ```mermaid
 flowchart LR
   subgraph Browser[浏览器]
@@ -93,6 +95,66 @@ flowchart LR
 - 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 从 jsDelivr CDN 加载。
 
 （`minibox` 是默认的 `LABEL_PREFIX`，所有名称和标签都随前缀变化。）
+
+### 目标架构（规划中）
+
+> [!NOTE]
+> 规划中的设计，尚未实现。完整设计与取舍见 [`docs/design.md`](docs/design.md)。
+
+```mermaid
+flowchart LR
+  subgraph Clients["客户端"]
+    UI["控制台"]
+    AG["MCP 客户端<br/>（AI Agent）"]
+    CLI["minibox CLI"]
+  end
+  subgraph Control["控制端 · Bun"]
+    API["REST · OpenAPI · /mcp"]
+    EXE["操作注册表<br/>鉴权与审计钩子"]
+    RT["WS 终端 → tmux<br/>预览代理"]
+    BUS["事件总线 · SSE"]
+    BG["任务 · reconciler<br/>采样 · 空闲休眠"]
+    DATA[("DATA_DIR<br/>规格 · 事件 · 令牌")]
+    HR["HostRegistry"]
+  end
+  subgraph Hosts["计算宿主机 · 每台一个 Runtime"]
+    RN["Runtime<br/>unix socket · ssh / tcp+TLS"]
+    D["Docker Engine"]
+    B["Box 容器<br/>dev 用户"]
+    H["辅助容器<br/>文件 · NFS 目录 · restic"]
+  end
+  subgraph Storage["存储池 · local / nfs / path"]
+    V[("Volume<br/>workspace · home · tools · cache")]
+    CK[("检查点仓库<br/>restic")]
+  end
+  UI --> API
+  UI --> RT
+  BUS -. SSE .-> UI
+  AG --> API
+  CLI --> API
+  API --> EXE
+  RT --> EXE
+  RT --> HR
+  EXE --> DATA
+  EXE --> BUS
+  EXE --> HR
+  BG --> BUS
+  BG --> DATA
+  BG --> HR
+  HR --> RN
+  RN --> D
+  D --> B & H
+  B --- V
+  H --- V
+  H -. 备份 .-> CK
+```
+
+- **Box** = `DATA_DIR` 中的规格 + 一个容器。容器标签只保存创建后不可变的部分。
+- **Volume** 属于某个存储池，而不属于某个 Box。`cache` 卷留在本地池，不进入检查点。
+- **检查点** = Box 规格 + 各卷的快照（restic）+ 可选的系统层。
+- **辅助容器**是短生命周期的，负责文件操作、创建 NFS 目录和运行 restic。
+- Box 以非 root 的 `dev` 用户运行，并使用「标准」或「严格」两个安全档位之一。
+- MiniBox Agent 与存储节点角色不在主路线上，因此图中未画。
 
 ## 环境要求
 
@@ -332,13 +394,63 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 ## 路线图
 
-完整的产品与架构设计见 [`docs/design.md`](docs/design.md)，实施路线与任务拆分见 [#20](https://github.com/ArnoChenFx/minibox/issues/20)。
+完整的产品与架构设计见 [`docs/design.md`](docs/design.md)，实施路线与任务拆分见 [#20](https://github.com/ArnoChenFx/minibox/issues/20)。规划中的工作按里程碑分组，有对应 issue 的项目都会链接过去。
 
-- [ ] **空闲自动休眠**：一段时间没有 exec / 终端活动就停止 Box，下次请求时自动唤醒
-- [ ] **工作区备份**：随快照一起导出 / 恢复 `/workspace` 数据卷
-- [ ] **面向 Agent 的接口**：文件读写、流式执行命令，并在此之上提供 MCP 服务
-- [ ] **宿主机侧密钥注入**：API Key 只保存在宿主机上，由出站代理注入，而不是写进 Box 的环境变量
-- [ ] **声明式模板与预热池**：用仓库中的 Dockerfile 声明模板，并预先启动 Box 以实现秒开
+### M0 · 地基
+
+顺序：第一个 PR 整理已写好的 #1 #3 #4 改动，然后并行推进 #32 #6 #18，最后是 #22。
+
+- [ ] [#1](https://github.com/ArnoChenFx/minibox/issues/1) 登录限流：只有开启 `TRUST_PROXY` 才信任代理头
+- [ ] [#3](https://github.com/ArnoChenFx/minibox/issues/3) WebSocket 与写接口的 Origin 校验
+- [ ] [#4](https://github.com/ArnoChenFx/minibox/issues/4) CSP / HSTS，xterm.js 改为本地托管
+- [ ] [#32](https://github.com/ArnoChenFx/minibox/issues/32) Runtime / Host 抽象（隐式 `local`，行为不变）
+- [ ] [#6](https://github.com/ArnoChenFx/minibox/issues/6) `DATA_DIR` 作为控制端状态目录；自动生成的访问密钥不再写入 `.env`
+- [x] [#18](https://github.com/ArnoChenFx/minibox/issues/18) Dependabot、固定 action 的 commit SHA、Bun ≥ 1.4.3 下限，以及 `main` 分支保护
+- [ ] [#22](https://github.com/ArnoChenFx/minibox/issues/22) 统一生成 REST / OpenAPI / MCP / CLI 的操作注册表
+
+### M1 · 模板、规格、审计与令牌
+
+- [ ] [#27](https://github.com/ArnoChenFx/minibox/issues/27) 基础模板：非 root 用户 `dev`、tmux、挂载点约定
+- [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」与「严格」两个安全档位
+- [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
+- [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
+- [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
+- [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与 TTL
+- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
+
+### M2 · 存储与 Agent 接口
+
+- [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volume 与存储池（`local` / `nfs` / `path`）
+- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI
+- [ ] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
+- [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) 通过 SSE 推送 Box 状态与资源占用，取代轮询
+- [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS 部署指南
+
+### M3 · 核心价值
+
+- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) 基于 restic 的检查点：派生、回滚与保留策略
+- [ ] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Box 内 dev server 的端口预览
+- [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) 创建时或运行中可选装 Agent CLI
+
+### M4 · 多宿主机与优化
+
+- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) 多宿主机（仅 SSH / TLS 直连）
+- [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) 空闲自动休眠与按需唤醒
+- [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) 模板增强与预热池
+
+### 贯穿各里程碑
+
+- [ ] [#26](https://github.com/ArnoChenFx/minibox/issues/26) 控制台改版，逐页落地
+- [ ] [#19](https://github.com/ArnoChenFx/minibox/issues/19) Docker 层与路由的集成测试
+- [ ] [#7](https://github.com/ArnoChenFx/minibox/issues/7) 低危安全加固
+
+### 后续，待评估
+
+不在主路线上，动手前需要先单独评估范围。
+
+- [#28](https://github.com/ArnoChenFx/minibox/issues/28) MiniBox Agent 框架：配对、mTLS 与出站通道
+- [#29](https://github.com/ArnoChenFx/minibox/issues/29) 存储节点角色：NAS 与 Linux 存储服务器上的目录、配额与快照
+- 宿主机侧密钥注入：API Key 只保存在宿主机上，不写入 Box 的环境变量（暂无对应 issue）
 
 ## 许可证
 
