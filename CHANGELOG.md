@@ -57,6 +57,8 @@
 - 基础模板的挂载点约定：`/workspace`、`/home/dev`、`/opt/minibox/tools`（只读共享工具，其 `bin` 在 `PATH` 中）与 `/home/dev/.cache`。缓存变量 `XDG_CACHE_HOME`、`npm_config_cache`、`PIP_CACHE_DIR`、`YARN_CACHE_FOLDER` 指向 `/home/dev/.cache` 下，`NPM_CONFIG_PREFIX` 指向 `/home/dev/.npm-global`。卷挂载由 #24 落地。
 - 基础模板标签 `minibox.template.user`、`minibox.template.uid` 与 `minibox.template.gid` 记录 uid 约定。
 - `scripts/check-box-image.sh` 与 `bun run check:template`：用 Docker 检查基础模板镜像的用户、sudo、工具、挂载点、环境变量、登录 Shell 的 PATH，以及共享卷读写。
+- `STOP_TIMEOUT_SEC`（默认 `3`，允许 0 到 300 的整数）：停止与重启 Box 时，发送 SIGTERM 后等待退出的秒数，超时则强制结束。空值或无效值回退为 3 秒（#19）。
+- `DELETE /api/boxes/:id` 的响应新增 `volumeError` 字段：删除数据卷失败时返回引擎给出的原因。Box 本身仍会被删除（#19）。
 
 ### 变更
 - Box 的加固只在创建时生效。已有 Box 保留创建时的设置，不会被强制重建；早于本版本创建的 Box 没有记录档位，仍在默认的 `bridge` 网络上（#5）。
@@ -74,6 +76,7 @@
 - 基础模板描述改为「Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · 非 root 用户 dev」，网页端构建与 `bun run build:template` 使用同一描述。
 - Box 详情页的终端标题栏不再固定显示 `root@`，改为 `<名称>: /workspace`，因为新建 Box 以 `dev` 运行，旧 Box 仍为 root。
 - `scripts/restart.sh` 启动 `dockerd` 与 OpenTunnel 时改为追加写入 `/tmp/dockerd.log` 与 `/tmp/opentunnel.log`，每次启动写入一行 `---` 分隔标记，不再清空上一次的诊断信息。
+- 在容器内运行 MiniBox 时，磁盘标签显示为「容器磁盘」（`container`）或「容器磁盘（含 Docker 数据）」，不再把容器自己的文件系统标为「系统盘」（#19）。
 
 ### 工程化
 - `Runtime` 接口新增 `ensureBridgeNetwork` 与 `reattachNetwork`，`createContainer` 支持网络与加固字段。`FakeRuntime` 模拟引擎的网络固定行为，新增 `tests/box-profile.test.ts` 检查各档位映射出的容器配置；真实引擎测试 `tests/docker-runtime.test.ts` 覆盖网络与各档位（设置 `MINIBOX_TEST_DOCKER=1` 时运行）（#5）。
@@ -88,11 +91,18 @@
 - 新增 HTTP 等价性测试 `tests/parity.test.ts`：以重构前录制的 `tests/fixtures/parity-transcript.json` 为基线，逐条比对 97 次请求的状态码、内容类型与响应体（时间、ID 与镜像摘要已规范化）（#22）。
 - 新增 OpenAPI 测试：校验生成的文档与 `docs/openapi.json`；检查路径、方法与 operationId 和注册表一致；要求录制的每个响应都符合对应操作的输出结构或错误结构（#22）。
 - 架构测试新增两条规则：`src/operations/` 不得依赖 HTTP 层或组合根；REST 适配层只能通过操作访问服务与引擎（#22）。
+- 新增 `bun run test:docker`（`scripts/docker-integration.ts`），在独立的 `mbit` 标签前缀下运行真实引擎测试，结束后清理本次运行创建的容器、镜像与卷。CI 新增非必需的 `Integration tests (real Docker engine)` 任务（#19）。
+- 新增假引擎 socket 上的 Docker 适配器测试（`tests/docker-adapter.test.ts`），以及终端 WebSocket 的鉴权、Origin 检查、非运行状态拒绝和 `parseControl` 测试，并为 `format.js` 与 i18n 加载补充前端纯逻辑测试（#19）。
+- `tsconfig.json` 的类型检查范围包含 `scripts/`（#19）。
 - CI 的 `Docker build (smoke)` 任务新增基础模板的多架构构建（`linux/amd64`、`linux/arm64`），并对 amd64 镜像及模拟的 arm64 镜像运行 `scripts/check-box-image.sh`。新增的 `docker/setup-qemu-action` 同样固定到完整 commit SHA。
 
 ### 修复
 - 自动生成访问密钥时不再整体重写 `.env`。此前会把 `.env` 改写为只剩 `ACCESS_KEY`、`PORT`、`HOST` 三项，其他配置随之丢失。现在任何情况下都不修改 `.env`。
 - 模板描述与快照标签的值统一转义（反斜杠、双引号、美元符号按字面保存），并拒绝控制字符。此前 `$VAR` 会从镜像环境展开进标签，反斜杠后接换行会把后续文字并入标签。`POST /api/snapshots/:ref/promote` 的 `description` 含换行或其他控制字符时返回 400（`description_invalid`）；描述去除首尾空格，只含空格的描述视为未填写。
+- 创建 Box 的重名检查改为依赖引擎的 409 冲突。此前先查询全部 Box 再创建，两个同名请求可能同时通过检查（#19）。
+- 引擎不可达或返回其它错误时，创建 Box、提升快照、删除快照与模板不再误报为「模板镜像不存在」或「快照 / 模板不存在」，而是返回引擎的真实错误类别（#19）。
+- 删除 Box 时若数据卷未能删除，界面仍显示删除成功。现在会弹出错误提示，说明数据卷仍然保留及原因（#19）。
+- `listBoxes` 对每个容器的 `inspect` 改为并发执行。列出时只跳过已消失的容器，其它引擎错误不再被静默忽略（#19）。仍需每个容器一次 `inspect`，见 `docs/runtime.md` 的已知限制。
 
 ### 文档
 - README、README-zh 与 `.env.example` 说明会话行为、`SESSION_TTL_DAYS` 与 `SESSION_IDLE_DAYS`、数据目录中的 `sessions.json` 以及新接口。`docs/design.md` §9.3 改为已实现（#2）。
@@ -102,6 +112,8 @@
 - 新增 `docs/runtime.md`，说明 `Runtime` 接口、错误分类与 HTTP 映射、Host 模型，以及如何新增后端。
 - README 与 README-zh 的 API 参考新增 `X-Minibox-Run`、OpenAPI 文档与 `bun run openapi`；架构图与项目结构同步更新（#22）。
 - README 与 README-zh 新增「基础模板」章节，说明用户与 uid 约定、挂载点、缓存、标签、检查方法，以及从 root 版模板升级的步骤。
+- `docs/runtime.md` 补充真实引擎测试的运行方式（`bun run test:docker`、`MINIBOX_TEST_PREFIX`）与假引擎适配器测试，并更新已知限制。
+- README 与 README-zh 的配置表新增 `STOP_TIMEOUT_SEC`，开发命令与 CI 说明新增 `bun run test:docker` 与非必需的集成任务（#19）。
 
 ### 升级说明
 - 新建 Box 默认使用「标准」档位。与之前相比，它去掉了 `MKNOD`、`SETPCAP` 与 `SYS_CHROOT` 三项能力，并设置了进程数上限与 ulimit。需要这些能力的工具，请创建「宽松」档位的 Box，或设置 `BOX_PROFILE=relaxed`。已有 Box 不会被重建（#5）。
