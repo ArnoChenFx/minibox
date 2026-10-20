@@ -200,7 +200,7 @@ scripts/restart.sh --no-tunnel  # server only
 
 Server output goes to `server.log` in the project root (git-ignored), appended to on each start. The script also reports where the access key is stored, never the key itself. `/tmp/dockerd.log` and `/tmp/opentunnel.log` are appended to as well, with a `---` marker line each time the script starts that service.
 
-`restart.sh` is a single-user sandbox convenience. After it runs, the Docker socket belongs to your primary group with mode `660`, so the server it starts can use Docker without a re-login. Members of that group can use Docker. The socket belongs to one group at a time: the account that ran the script last keeps access, and other accounts, including members of the `docker` group, are locked out. Docker access is root-equivalent, so do not use this script on a shared host.
+`restart.sh` is a single-user sandbox convenience. After it runs, the Docker socket belongs to your primary group with mode `660`, so the server it starts can use Docker without a re-login. Members of that group can use Docker. The socket belongs to one group at a time: the primary group of the account that ran the script last keeps access, and every other account, including members of the `docker` group, is locked out. Docker access is root-equivalent, so do not use this script on a shared host.
 
 With systemd, a simple service unit running `bun /path/to/minibox/src/server.ts` is the recommended setup.
 

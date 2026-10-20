@@ -200,7 +200,7 @@ scripts/restart.sh --no-tunnel  # 只启动服务
 
 服务输出写入项目根目录的 `server.log`（已在 git 中忽略），每次启动追加写入。脚本还会报告访问密钥的保存位置，但不会输出密钥本身。`/tmp/dockerd.log` 与 `/tmp/opentunnel.log` 同样是追加写入的，脚本每次启动对应服务时写入一行 `---` 分隔标记。
 
-`restart.sh` 是单用户沙箱的便利脚本。运行后，Docker Socket 的属组设为你的主组、权限为 `660`，因此它启动的服务无需重新登录即可使用 Docker。该主组的成员都能使用 Docker。Socket 同一时间只属于一个组：最后运行脚本的账户保留访问，其他账户（包括 `docker` 组的成员）无法访问。Docker 访问等同于 root 权限，请勿在共享主机上使用该脚本。
+`restart.sh` 是单用户沙箱的便利脚本。运行后，Docker Socket 的属组设为你的主组、权限为 `660`，因此它启动的服务无需重新登录即可使用 Docker。该主组的成员都能使用 Docker。Socket 同一时间只属于一个组：最后运行脚本的账户所在的主组保留访问，其他账户（包括 `docker` 组的成员）无法访问。Docker 访问等同于 root 权限，请勿在共享主机上使用该脚本。
 
 有 systemd 时，推荐写一个服务单元执行 `bun /path/to/minibox/src/server.ts`。
 
