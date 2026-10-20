@@ -22,6 +22,8 @@ import { computeStats } from "./stats";
 
 const NANO_CPUS_PER_CPU = 1e9;
 const ICC_OPTION = "com.docker.network.bridge.enable_icc";
+/** Longest a cached container inspect is reused when nothing MiniBox changed the container (see listContainers). */
+const INSPECT_TTL_MS = 30_000;
 
 /** Engine errors become RuntimeError; anything else passes through untouched. */
 async function call<T>(fn: () => Promise<T>): Promise<T> {
@@ -186,6 +188,34 @@ async function* readEvents(stream: Readable, signal?: AbortSignal): AsyncGenerat
 /** The only module that talks to the Docker Engine API. */
 export function createDockerRuntime(socketPath: string): Runtime {
   const docker = new Docker({ socketPath });
+  // The list has each container's state but not its limits, start time or network, which take one inspect per
+  // container. An inspect is reused while the list reports the same state. Every change made through this adapter
+  // clears the cache, so only a change made outside MiniBox can go unseen, and then for at most INSPECT_TTL_MS.
+  const inspected = new Map<string, { state: string; at: number; info: ContainerInfo }>();
+  let changes = 0;
+
+  const mutate = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await call(fn);
+    } finally {
+      changes += 1;
+      inspected.clear();
+    }
+  };
+
+  async function inspectListed(id: string, state: string): Promise<ContainerInfo | null> {
+    const hit = inspected.get(id);
+    if (hit && hit.state === state && Date.now() - hit.at < INSPECT_TTL_MS) return hit.info;
+    const generation = changes;
+    try {
+      const info = toContainerInfo(await call(() => docker.getContainer(id).inspect()));
+      if (generation === changes) inspected.set(id, { state, at: Date.now(), info });
+      return info;
+    } catch (e) {
+      if (isRuntimeError(e, "not_found")) return null;
+      throw e;
+    }
+  }
 
   return {
     async ping() {
@@ -206,16 +236,11 @@ export function createDockerRuntime(socketPath: string): Runtime {
 
     async listContainers({ labels }) {
       const list = await call(() => docker.listContainers({ all: true, filters: { label: labelFilter(labels) } }));
-      const infos = await Promise.all(
-        list.map(async (c) => {
-          try {
-            return toContainerInfo(await call(() => docker.getContainer(c.Id).inspect()));
-          } catch (e) {
-            if (isRuntimeError(e, "not_found")) return null;
-            throw e;
-          }
-        }),
-      );
+      const listed = new Set(list.map((c) => c.Id));
+      for (const id of inspected.keys()) {
+        if (!listed.has(id)) inspected.delete(id);
+      }
+      const infos = await Promise.all(list.map((c) => inspectListed(c.Id, c.State)));
       return infos.filter((info): info is ContainerInfo => info !== null);
     },
 
@@ -224,32 +249,32 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
 
     async createContainer(spec) {
-      const container = await call(() => docker.createContainer(toCreateOptions(spec)));
+      const container = await mutate(() => docker.createContainer(toCreateOptions(spec)));
       return { id: container.id };
     },
 
     async startContainer(id) {
-      await call(() => ignore304(docker.getContainer(id).start()));
+      await mutate(() => ignore304(docker.getContainer(id).start()));
     },
 
     async stopContainer(id, { timeoutSec }) {
-      await call(() => ignore304(docker.getContainer(id).stop({ t: timeoutSec })));
+      await mutate(() => ignore304(docker.getContainer(id).stop({ t: timeoutSec })));
     },
 
     async restartContainer(id, { timeoutSec }) {
-      await call(() => docker.getContainer(id).restart({ t: timeoutSec }));
+      await mutate(() => docker.getContainer(id).restart({ t: timeoutSec }));
     },
 
     async removeContainer(id, { force }) {
-      await call(() => docker.getContainer(id).remove({ force }));
+      await mutate(() => docker.getContainer(id).remove({ force }));
     },
 
     async renameContainer(id, name) {
-      await call(() => docker.getContainer(id).rename({ name }));
+      await mutate(() => docker.getContainer(id).rename({ name }));
     },
 
     async updateContainer(id, limits) {
-      await call(() => docker.getContainer(id).update(toUpdateOptions(limits)));
+      await mutate(() => docker.getContainer(id).update(toUpdateOptions(limits)));
     },
 
     async containerLogs(id, { tail, timestamps }) {
@@ -391,8 +416,8 @@ export function createDockerRuntime(socketPath: string): Runtime {
       const endpoint = info.NetworkSettings.Networks[name];
       if (endpoint?.NetworkID === network.Id) return;
       // The engine rejects a disconnect from a network the container has no endpoint on.
-      if (endpoint) await call(() => docker.getNetwork(name).disconnect({ Container: containerId }));
-      await call(() => docker.getNetwork(name).connect({ Container: containerId }));
+      if (endpoint) await mutate(() => docker.getNetwork(name).disconnect({ Container: containerId }));
+      await mutate(() => docker.getNetwork(name).connect({ Container: containerId }));
     },
   };
 }

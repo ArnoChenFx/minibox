@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { Server } from "bun";
 
 import { createDockerRuntime } from "../src/docker/runtime";
+import type { Runtime } from "../src/runtime";
 import { rejectionOf } from "./support/app";
 
 /** A tiny Engine API on a unix socket, so the adapter's HTTP error handling runs without a daemon. */
@@ -19,6 +20,7 @@ let dir: string;
 let socket: string;
 let server: Server<undefined>;
 let listed: string[] = [];
+let listStates: Record<string, string> = {};
 const recorded: Recorded[] = [];
 
 const RUNNING = {
@@ -39,6 +41,9 @@ const NEVER_STARTED = {
   HostConfig: { NanoCpus: 0, Memory: 0, NetworkMode: "default" },
 };
 
+/** When set, inspects of "ok" wait for it, so a test can change the container while an inspect is in flight. */
+let inspectGate: Promise<void> | null = null;
+
 const inspectable: Record<string, { status: number; body: unknown }> = {
   ok: { status: 200, body: RUNNING },
   fresh: { status: 200, body: NEVER_STARTED },
@@ -55,10 +60,11 @@ async function engine(req: Request): Promise<Response> {
 
   if (req.method === "GET" && path === "/_ping") return new Response("OK");
   if (req.method === "GET" && path === "/containers/json") {
-    return json(listed.map((id) => ({ Id: id, Names: [`/${id}`], Labels: {} })));
+    return json(listed.map((id) => ({ Id: id, Names: [`/${id}`], Labels: {}, State: listStates[id] ?? "running" })));
   }
   const inspect = /^\/containers\/([^/]+)\/json$/.exec(path);
   if (req.method === "GET" && inspect) {
+    if (inspect[1] === "ok" && inspectGate) await inspectGate;
     const entry = inspectable[inspect[1] ?? ""] ?? { status: 404, body: { message: "No such container" } };
     return json(entry.body, entry.status);
   }
@@ -73,6 +79,10 @@ async function engine(req: Request): Promise<Response> {
   const lifecycle = /^\/containers\/([^/]+)\/(start|stop)$/.exec(path);
   if (req.method === "POST" && lifecycle) {
     return new Response(null, { status: lifecycle[1] === "already" ? 304 : 204 });
+  }
+  const change = /^\/containers\/([^/]+)\/(update|rename|restart)$/.exec(path);
+  if (req.method === "POST" && change) {
+    return change[2] === "update" ? json({ Warnings: [] }) : new Response(null, { status: 204 });
   }
   const volume = /^\/volumes\/([^/]+)$/.exec(path);
   if (volume) {
@@ -178,5 +188,109 @@ describe("Docker adapter against a fake engine socket", () => {
       ["POST", "/containers/already/stop"],
     ]);
     expect(recorded[1]?.search).toBe("?t=12");
+  });
+});
+
+const inspects = (id: string) =>
+  recorded.filter((r) => r.method === "GET" && r.path === `/containers/${id}/json`).length;
+
+/** Lists "ok", applies one change through the adapter, lists again, and counts the inspects the second list made. */
+async function inspectsAfterChange(change: (adapter: Runtime) => Promise<unknown>): Promise<number> {
+  listed = ["ok"];
+  const adapter = createDockerRuntime(socket);
+  await adapter.listContainers({ labels: {} });
+  const before = inspects("ok");
+  await change(adapter);
+  await adapter.listContainers({ labels: {} });
+  return inspects("ok") - before;
+}
+
+describe("Docker adapter list inspect cache", () => {
+  test("a second list reuses the inspect of a container whose state did not change", async () => {
+    listed = ["ok"];
+    const adapter = createDockerRuntime(socket);
+    await adapter.listContainers({ labels: {} });
+    const before = inspects("ok");
+    expect((await adapter.listContainers({ labels: {} })).map((c) => c.id)).toEqual(["ok"]);
+    expect(inspects("ok")).toBe(before);
+  });
+
+  test("a container whose listed state changed is inspected again, and the others are not", async () => {
+    listed = ["ok", "fresh"];
+    listStates = { ok: "running", fresh: "created" };
+    const adapter = createDockerRuntime(socket);
+    await adapter.listContainers({ labels: {} });
+    const [okBefore, freshBefore] = [inspects("ok"), inspects("fresh")];
+    await adapter.listContainers({ labels: {} });
+    expect([inspects("ok"), inspects("fresh")]).toEqual([okBefore, freshBefore]);
+
+    listStates = { ok: "exited", fresh: "created" };
+    await adapter.listContainers({ labels: {} });
+    expect(inspects("ok")).toBe(okBefore + 1);
+    expect(inspects("fresh")).toBe(freshBefore);
+    listStates = {};
+  });
+
+  test("an update, rename or restart through the adapter makes the next list inspect again", async () => {
+    expect(await inspectsAfterChange((adapter) => adapter.updateContainer("ok", { cpus: 2 }))).toBe(1);
+    expect(await inspectsAfterChange((adapter) => adapter.renameContainer("ok", "alpha-2"))).toBe(1);
+    expect(await inspectsAfterChange((adapter) => adapter.restartContainer("ok", { timeoutSec: 1 }))).toBe(1);
+  });
+
+  test("a container that leaves the list is inspected again when it returns", async () => {
+    listed = ["ok"];
+    const adapter = createDockerRuntime(socket);
+    await adapter.listContainers({ labels: {} });
+    const before = inspects("ok");
+    listed = [];
+    await adapter.listContainers({ labels: {} });
+    listed = ["ok"];
+    await adapter.listContainers({ labels: {} });
+    expect(inspects("ok")).toBe(before + 1);
+  });
+
+  test("an inspect still in flight when the container changes is not cached", async () => {
+    listed = ["ok"];
+    const adapter = createDockerRuntime(socket);
+    const before = inspects("ok");
+    let release!: () => void;
+    inspectGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const firstList = adapter.listContainers({ labels: {} });
+      for (let i = 0; i < 400 && inspects("ok") === before; i++) await Bun.sleep(5);
+      expect(inspects("ok")).toBeGreaterThan(before);
+      await adapter.updateContainer("ok", { cpus: 2 });
+      inspectGate = null;
+      release();
+      await firstList;
+    } finally {
+      inspectGate = null;
+      release();
+    }
+
+    const afterFirst = inspects("ok");
+    await adapter.listContainers({ labels: {} });
+    expect(inspects("ok")).toBe(afterFirst + 1);
+  });
+
+  test("a cached inspect expires after 30 seconds even when the state never changes", async () => {
+    listed = ["ok"];
+    const adapter = createDockerRuntime(socket);
+    const clock = spyOn(Date, "now");
+    try {
+      clock.mockReturnValue(1_000_000);
+      await adapter.listContainers({ labels: {} });
+      const before = inspects("ok");
+      clock.mockReturnValue(1_000_000 + 29_999);
+      await adapter.listContainers({ labels: {} });
+      expect(inspects("ok")).toBe(before);
+      clock.mockReturnValue(1_000_000 + 30_000);
+      await adapter.listContainers({ labels: {} });
+      expect(inspects("ok")).toBe(before + 1);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
