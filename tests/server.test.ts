@@ -33,7 +33,7 @@ async function withServer(
   fn: (ctx: { base: string; app: App }) => Promise<void>,
   limits: Partial<LoginLimits> = {},
 ): Promise<void> {
-  const app = createApp(testConfig(env), "test", new LoginLimiter({ penaltyMs: 0, ...limits }));
+  const app = createApp(testConfig(env), "test", { throttle: new LoginLimiter({ penaltyMs: 0, ...limits }) });
   const server: Server<TerminalData> = startServer(app);
   try {
     await fn({ base: `http://127.0.0.1:${server.port}`, app });

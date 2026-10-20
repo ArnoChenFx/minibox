@@ -403,15 +403,17 @@ docker exec -it minibox-agent-dev bash
 minibox/
 ├── src/
 │   ├── server.ts            # Entry: Bun.serve, static files, WebSocket upgrade, graceful shutdown
-│   ├── app.ts               # App context (config, Docker, monitor, activity log)
+│   ├── app.ts               # Composition root: config, Runtime, host registry, monitor, activity log
 │   ├── config.ts            # Env / .env loading, access key precedence
 │   ├── data-dir.ts          # DATA_DIR layout and secret files (600)
 │   ├── auth.ts              # Key check, cookies, login throttle
 │   ├── labels.ts            # Docker label keys and parsers
 │   ├── activity.ts          # Recent-operations log
 │   ├── static.ts            # Static file serving (path-traversal safe)
-│   ├── docker/              # client / boxes / snapshots / templates / images / stats
-│   ├── host/                # procfs parsers, HostMonitor sampler
+│   ├── runtime/             # Runtime interface and RuntimeError (the engine seam)
+│   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats
+│   ├── services/            # Business logic on Runtime: boxes / images / snapshots / templates
+│   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
 │   ├── routes/              # Router and route groups (auth / system / boxes / images)
 │   ├── ws/terminal.ts       # WebSocket terminal
 │   └── lib/                 # errors / http / logger / validation
@@ -421,12 +423,15 @@ minibox/
 │   ├── js/                  # app, pages/*, components/*, lib/*
 │   └── assets/              # Logo, favicons, icons
 ├── templates/base/Dockerfile
-├── tests/                   # bun test unit tests
+├── tests/                   # bun test unit tests; support/ has FakeRuntime and test helpers
 ├── scripts/restart.sh       # Restart helper for hosts without systemd
 ├── scripts/check-box-image.sh  # Base template checks against Docker (CI runs amd64 and arm64)
 ├── Dockerfile               # Release image (oven/bun, multi-arch)
 ├── .github/workflows/release.yml  # Tag → image + GitHub Release
-└── docs/screenshots/
+└── docs/
+    ├── design.md            # Product and architecture design (Chinese)
+    ├── runtime.md           # Runtime interface, errors and adding a backend (Chinese)
+    └── screenshots/
 ```
 
 ## Development

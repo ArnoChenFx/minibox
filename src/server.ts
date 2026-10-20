@@ -4,7 +4,6 @@ import { type App, createApp } from "./app";
 import { isAuthorized, isSecureRequest, isWeakAccessKey, MIN_ACCESS_KEY_LENGTH, proxyHeaderWarner } from "./auth";
 import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
-import { getBox } from "./docker/boxes";
 import { guardRequest } from "./guard";
 import { AppError } from "./lib/errors";
 import { errorResponse, withSecurityHeaders } from "./lib/http";
@@ -12,6 +11,7 @@ import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
 import { routes } from "./routes";
 import { matchRoute } from "./routes/router";
+import { getBox } from "./services/boxes";
 import { serveFile } from "./static";
 import { resolveVersion } from "./version";
 import { type TerminalData, terminalHandlers } from "./ws/terminal";
@@ -28,7 +28,14 @@ async function handleApi(app: App, req: Request, url: URL, server: Server<Termin
   if (!m.route.public && !isAuthorized(req, app.cfg.accessKey)) {
     throw new AppError(401, "unauthorized", msg("unauthorized"));
   }
-  return m.route.handler({ app, req, url, params: m.params, server: server as Server<unknown> });
+  return m.route.handler({
+    app,
+    host: app.hosts.get(),
+    req,
+    url,
+    params: m.params,
+    server: server as Server<unknown>,
+  });
 }
 
 /** Relative redirect: correct behind TLS-terminating tunnels/proxies where req.url is http. */
@@ -54,7 +61,7 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
 }
 
 export function startServer(app: App): Server<TerminalData> {
-  const term = terminalHandlers(app);
+  const term = terminalHandlers();
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
   );
@@ -72,9 +79,10 @@ export function startServer(app: App): Server<TerminalData> {
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           if (!isAuthorized(req, app.cfg.accessKey)) throw new AppError(401, "unauthorized", msg("unauthorized"));
-          const box = await getBox(app.docker, decodeURIComponent(tm[1] ?? ""));
+          const host = app.hosts.get();
+          const box = await getBox(host, decodeURIComponent(tm[1] ?? ""));
           if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
-          if (server.upgrade(req, { data: { boxId: box.id } })) return undefined;
+          if (server.upgrade(req, { data: { boxId: box.id, host } })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
         res = url.pathname.startsWith("/api/")

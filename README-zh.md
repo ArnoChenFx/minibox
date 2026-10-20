@@ -403,15 +403,17 @@ docker exec -it minibox-agent-dev bash
 minibox/
 ├── src/
 │   ├── server.ts            # 入口：Bun.serve、静态资源、WebSocket 升级、优雅退出
-│   ├── app.ts               # 应用上下文（配置、Docker、监控、操作记录）
+│   ├── app.ts               # 组合根：配置、Runtime、主机注册表、监控、操作记录
 │   ├── config.ts            # 环境变量 / .env 配置、访问密钥优先级
 │   ├── data-dir.ts          # DATA_DIR 布局与密钥文件（600）
 │   ├── auth.ts              # 密钥校验、Cookie、登录限流
 │   ├── labels.ts            # Docker 标签键与解析
 │   ├── activity.ts          # 最近操作记录
 │   ├── static.ts            # 静态文件服务（防目录穿越）
-│   ├── docker/              # client / boxes / snapshots / templates / images / stats
-│   ├── host/                # procfs 解析、HostMonitor 采样
+│   ├── runtime/             # Runtime 接口与 RuntimeError（引擎边界）
+│   ├── docker/              # Docker 适配器（唯一使用 dockerode）：runtime / errors / logs / stats
+│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / images / snapshots / templates
+│   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostMonitor 采样
 │   ├── routes/              # router 与各组路由（auth / system / boxes / images）
 │   ├── ws/terminal.ts       # WebSocket 终端
 │   └── lib/                 # errors / http / logger / validation
@@ -421,12 +423,15 @@ minibox/
 │   ├── js/                  # app、pages/*、components/*、lib/*
 │   └── assets/              # logo、favicon、图标
 ├── templates/base/Dockerfile
-├── tests/                   # bun test 单元测试
+├── tests/                   # bun test 单元测试；support/ 含 FakeRuntime 与测试辅助
 ├── scripts/restart.sh       # 无 systemd 环境的重启脚本
 ├── scripts/check-box-image.sh  # 基础模板的 Docker 检查（CI 中检查 amd64 与 arm64）
 ├── Dockerfile               # 发布镜像（oven/bun，多架构）
 ├── .github/workflows/release.yml  # tag → 镜像 + GitHub Release
-└── docs/screenshots/
+└── docs/
+    ├── design.md            # 产品与架构设计
+    ├── runtime.md           # Runtime 接口、错误与新增后端
+    └── screenshots/
 ```
 
 ## 开发
