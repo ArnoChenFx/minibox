@@ -21,7 +21,8 @@
     "build:template": "docker build -t minibox-template:base --label minibox.template=true --label minibox.template.name=base --label \"minibox.template.description=Debian 12 · Node.js 24 · Python 3 · git · build-essential\" templates/base"
   },
   "dependencies": {
-    "dockerode": "^5.0.1"
+    "dockerode": "^5.0.1",
+    "zod": "^4"
   },
   "devDependencies": {
     "@types/bun": "^1.4.3",
