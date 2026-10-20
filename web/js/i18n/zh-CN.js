@@ -52,7 +52,7 @@ export default {
   "login.submit": "登录",
   "login.verifying": "正在验证…",
   "login.note":
-    "访问密钥保存在服务器项目目录的 <code>.env</code> 文件中（<code>ACCESS_KEY</code>）。登录状态在本浏览器保留 30 天。",
+    "访问密钥由服务器 <code>.env</code> 文件中的 <code>ACCESS_KEY</code> 设置。若由 MiniBox 自动生成，则保存在 <code>DATA_DIR/access_key</code> 中。登录状态在本浏览器保留 30 天。",
   "login.keyRequired": "请输入访问密钥。",
   "api.network": "无法连接服务器，请检查网络后重试。",
   "api.sessionExpired": "登录已失效，请重新登录。",
