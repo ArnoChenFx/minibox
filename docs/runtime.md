@@ -28,6 +28,7 @@
 - 事件：`events`，按标签与类型过滤；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
 - 卷：`inspectVolume`、`createVolume`、`removeVolume`
+- 网络：`ensureBridgeNetwork`、`reattachNetwork`
 
 实现需要满足以下语义，业务代码依赖这些约定：
 
@@ -39,6 +40,9 @@
 - 提交容器时，容器标签与 `LABEL` 指令合并，指令优先。
 - `containerLogs` 返回去掉流帧头后的文本。
 - `listContainers` 跳过在列出与检查之间消失的容器。
+- `createContainer` 的 `hardening`（能力、`no-new-privileges`、进程数上限、ulimit、运行时）只覆盖请求中出现的字段，其余保持引擎默认值。
+- `ensureBridgeNetwork(name, { interContainerComm })` 在网络不存在时创建桥接网络。同名网络已存在但不是桥接网络，或容器间通信的设置不同，返回 `conflict`。
+- `reattachNetwork(id, name)` 把容器接入同名的当前网络。引擎把容器固定在它上次运行时的网络 ID 上，网络被删除并重建后，不先调用它，已停止的容器无法启动。容器已在当前网络上时不做任何事；容器不在 `name` 上时返回 `invalid`。
 
 ## 错误契约
 
@@ -81,6 +85,7 @@
 - `FakeRuntime`（`tests/support/fake-runtime.ts`）是内存实现，遵循服务层依赖的语义：名称与镜像冲突、`not_found`、被挂载的卷不能删除、标签合并。仍被容器使用的镜像，移除最后一个标签需要 `force`，强制移除后镜像成为悬空镜像。
   - 它记录每次调用（`calls`、`callsTo(op)`、`ops()`）。
   - `fail(op, error)` 让下一次该操作失败，`down = true` 模拟引擎不可达。
+  - 网络有 ID，容器第一次启动时固定在当前网络的 ID 上。网络被删除并重建后，启动该容器返回 `not_found`，直到调用 `reattachNetwork`，与真实引擎一致。
   - `seedImage()` 与 `seedContainer()` 预置状态，不记录调用。
 - `tests/support/app.ts` 的 `createTestApp(overrides, runtime)` 创建使用 fake 的应用：端口 0，不访问真实 socket，标签前缀为 `mbtest`。`silenceLogs()` 静默日志输出，`rejectionOf()` 取得 rejected 的错误。
 - 真实引擎测试：`MINIBOX_TEST_DOCKER=1 bun test tests/docker-runtime.test.ts`。可选环境变量为 `DOCKER_SOCKET`（默认 `/var/run/docker.sock`）与 `MINIBOX_TEST_IMAGE`（默认 `alpine:3.20`，需要本地已有）。每次运行使用随机标签前缀，结束后删除自己创建的容器、镜像与卷。未设置 `MINIBOX_TEST_DOCKER=1` 时跳过。
