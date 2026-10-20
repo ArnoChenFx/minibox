@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Restart MiniBox on a host without systemd: ensure dockerd, restart the Bun server, ensure the tunnel.
 # Usage: scripts/restart.sh [--no-tunnel]
+#
+# Single-user sandbox convenience, not a deployment script. It starts dockerd with sudo and gives the Docker socket to
+# your primary group only (mode 660). Docker access is root-equivalent, so do not use this on a shared host.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,13 +13,19 @@ LOG="$ROOT/server.log"
 CONFIG="$(bun -e 'const { loadConfig } = await import("./src/config.ts"); const { accessKeyPath } = await import("./src/data-dir.ts"); const c = loadConfig(); console.log([c.port, c.accessKeySource, accessKeyPath(c.dataDir)].join("\t"));')"
 IFS=$'\t' read -r PORT KEY_SOURCE KEY_FILE <<<"$CONFIG"
 
+# Socket access goes to the caller's primary group (mode 660). That group is already in this shell's credentials, so the
+# server started below reaches Docker without a re-login. A new supplementary group (docker) would not apply here.
+grant_docker_socket() {
+  sudo chgrp "$(id -gn)" /var/run/docker.sock && sudo chmod 660 /var/run/docker.sock
+}
+
 # 1. Docker daemon
 if ! docker info >/dev/null 2>&1; then
   echo "[restart] starting dockerd"
   setsid sudo nohup dockerd --host=unix:///var/run/docker.sock > /tmp/dockerd.log 2>&1 < /dev/null &
-  for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sudo chmod 666 /var/run/docker.sock 2>/dev/null || true; sleep 1; done
-  sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+  for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; grant_docker_socket 2>/dev/null || true; sleep 1; done
 fi
+grant_docker_socket || echo "[restart] could not give the Docker socket to group $(id -gn); check sudo" >&2
 docker info --format 'docker {{.ServerVersion}}' 
 
 # 2. Base template (first run only)
