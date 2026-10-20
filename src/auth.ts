@@ -73,6 +73,23 @@ export function clientAddress(req: Request, peer: string | undefined, trustProxy
   return peer ?? "unknown";
 }
 
+const PROXY_HEADERS = ["x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"] as const;
+
+/**
+ * Reports, once per process, the first request that carries proxy headers while trustProxy is off. Those
+ * headers are ignored, so a tunnel or reverse proxy in front of MiniBox is most likely missing TRUST_PROXY.
+ */
+export function proxyHeaderWarner(trustProxy: boolean, report: (headers: string[]) => void): (req: Request) => void {
+  let reported = false;
+  return (req) => {
+    if (trustProxy || reported) return;
+    const ignored = PROXY_HEADERS.filter((name) => req.headers.has(name));
+    if (ignored.length === 0) return;
+    reported = true;
+    report(ignored);
+  };
+}
+
 /**
  * Throttle bucket for an address. A single IPv6 host usually owns a whole /64, so addresses are grouped
  * by that prefix; IPv4-mapped IPv6 addresses collapse to their IPv4 form.

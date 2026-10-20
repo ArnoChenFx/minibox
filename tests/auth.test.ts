@@ -9,6 +9,7 @@ import {
   isSecureRequest,
   LoginThrottle,
   parseCookies,
+  proxyHeaderWarner,
   rateLimitKey,
   safeEqual,
   sessionCookie,
@@ -101,6 +102,31 @@ describe("client address for rate limiting", () => {
   test("malformed IPv6 is kept verbatim rather than mis-grouped", () => {
     expect(rateLimitKey("2001:db8::1::2")).toBe("2001:db8::1::2");
     expect(rateLimitKey("2001:db8:zz::1")).toBe("2001:db8:zz::1");
+  });
+});
+
+describe("proxy header warning", () => {
+  test("reports the first request with proxy headers while trustProxy is off, and only once", () => {
+    const reports: string[][] = [];
+    const warn = proxyHeaderWarner(false, (headers) => reports.push(headers));
+    warn(req({}));
+    warn(req({ "x-forwarded-for": "198.51.100.1" }));
+    warn(req({ "x-forwarded-proto": "https", "x-forwarded-host": "minibox.example.com" }));
+    expect(reports).toEqual([["x-forwarded-for"]]);
+  });
+
+  test("lists every proxy header that is being ignored", () => {
+    const reports: string[][] = [];
+    proxyHeaderWarner(false, (headers) => reports.push(headers))(
+      req({ "x-forwarded-for": "198.51.100.1", "x-forwarded-proto": "https" }),
+    );
+    expect(reports).toEqual([["x-forwarded-for", "x-forwarded-proto"]]);
+  });
+
+  test("stays silent when trustProxy is on", () => {
+    const reports: string[][] = [];
+    proxyHeaderWarner(true, (headers) => reports.push(headers))(req({ "x-forwarded-for": "198.51.100.1" }));
+    expect(reports).toEqual([]);
   });
 });
 

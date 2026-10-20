@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { connect } from "node:net";
 
 import type { Server } from "bun";
@@ -100,6 +100,28 @@ describe("login rate limit (end to end)", () => {
       }
       expect((await login(base, KEY, { "x-forwarded-for": "10.1.1.1, 198.51.100.7" })).status).toBe(429);
     });
+  });
+});
+
+describe("proxy header warning (end to end)", () => {
+  test("proxied requests without TRUST_PROXY log a single warning that names the setting", async () => {
+    const lines: string[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    setLogLevel("warn");
+    try {
+      await withServer({ TRUST_PROXY: "false" }, async ({ base }) => {
+        await fetch(`${base}/login`, { headers: { "x-forwarded-for": "198.51.100.1" } });
+        await fetch(`${base}/login`, { headers: { "x-forwarded-for": "198.51.100.2" } });
+      });
+    } finally {
+      spy.mockRestore();
+      setLogLevel("error");
+    }
+    const warnings = lines.filter((line) => line.includes("proxy.headers_ignored"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("TRUST_PROXY=true");
   });
 });
 

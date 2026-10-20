@@ -1,7 +1,7 @@
 import type { Server } from "bun";
 
 import { type App, createApp } from "./app";
-import { isAuthorized, isSecureRequest } from "./auth";
+import { isAuthorized, isSecureRequest, proxyHeaderWarner } from "./auth";
 import { loadConfig } from "./config";
 import { getBox } from "./docker/boxes";
 import { guardRequest } from "./guard";
@@ -17,6 +17,8 @@ import { type TerminalData, terminalHandlers } from "./ws/terminal";
 
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
+const PROXY_HINT =
+  "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. If a proxy or tunnel you control sets them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). Otherwise ignore this warning.";
 
 async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
   const m = matchRoute(routes, req.method, url.pathname);
@@ -52,11 +54,15 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
 
 export function startServer(app: App): Server<TerminalData> {
   const term = terminalHandlers(app);
+  const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
+    log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
+  );
   return Bun.serve<TerminalData>({
     hostname: app.cfg.host,
     port: app.cfg.port,
     idleTimeout: 60,
     async fetch(req, server) {
+      warnIgnoredProxyHeaders(req);
       const url = new URL(req.url);
       const started = performance.now();
       let res: Response | undefined;
