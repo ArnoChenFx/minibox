@@ -68,6 +68,10 @@ describe("ACCESS_KEY precedence", () => {
     rmSync(envFile);
     expect(load()).toMatchObject({ accessKey: "stored", accessKeySource: "data-dir" });
   });
+  test("a value Bun mirrored from .env into the process env is reported as env-file", () => {
+    writeFileSync(envFile, "ACCESS_KEY=from-file\n");
+    expect(load({ ACCESS_KEY: "from-file" })).toMatchObject({ accessKey: "from-file", accessKeySource: "env-file" });
+  });
   test("blank values count as unset and fall through to the next source", () => {
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(join(dataDir, "access_key"), "stored\n", { mode: 0o600 });

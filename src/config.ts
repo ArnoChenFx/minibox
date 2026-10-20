@@ -110,8 +110,11 @@ function resolveAccessKey(
   dataDir: string,
 ): { accessKey: string; accessKeySource: AccessKeySource } {
   const fromEnv = nonBlank(env.ACCESS_KEY);
-  if (fromEnv) return { accessKey: fromEnv, accessKeySource: "env" };
   const fromFile = nonBlank(file.ACCESS_KEY);
+  if (fromEnv) {
+    // Bun copies .env into process.env when started from the project root, so an identical value came from .env.
+    return { accessKey: fromEnv, accessKeySource: fromEnv === fromFile ? "env-file" : "env" };
+  }
   if (fromFile) return { accessKey: fromFile, accessKeySource: "env-file" };
 
   const path = accessKeyPath(dataDir);
