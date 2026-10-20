@@ -23,7 +23,8 @@ ENV NODE_ENV=production \
     MINIBOX_VERSION=${MINIBOX_VERSION} \
     HOST=0.0.0.0 \
     PORT=3920 \
-    DOCKER_SOCKET=/var/run/docker.sock
+    DOCKER_SOCKET=/var/run/docker.sock \
+    DATA_DIR=/data
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -31,6 +32,9 @@ COPY package.json bun.lock tsconfig.json ./
 COPY src ./src
 COPY web ./web
 COPY templates ./templates
+
+# Mount a named volume here (-v minibox-data:/data). A new volume copies this mode, keeping access_key private.
+RUN mkdir -m 700 /data
 
 # Runs as root so it can use the mounted /var/run/docker.sock (root:docker on most hosts).
 EXPOSE 3920
