@@ -24,6 +24,9 @@ export interface Config {
   metricsIntervalMs: number;
   metricsHistory: number;
   logLevel: "debug" | "info" | "warn" | "error";
+  trustProxy: boolean;
+  cookieSecure: boolean;
+  allowedOrigins: string[];
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -54,6 +57,30 @@ function readEnvFile(path: string): Record<string, string> {
 function intOr(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+function isTruthy(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on"].includes(value?.trim().toLowerCase() ?? "");
+}
+
+/** Comma-separated list of extra browser origins allowed to make cross-host requests, e.g. `https://minibox.example.com`. */
+function parseOrigins(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      let url: URL;
+      try {
+        url = new URL(s);
+      } catch {
+        throw new Error(`ALLOWED_ORIGINS: "${s}" is not a valid origin (expected e.g. https://minibox.example.com)`);
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error(`ALLOWED_ORIGINS: "${s}" must use http:// or https://`);
+      }
+      return url.origin;
+    });
 }
 
 const nonBlank = (value: string | undefined): string | undefined => value?.trim() || undefined;
@@ -91,6 +118,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     metricsIntervalMs: intOr(get("METRICS_INTERVAL_MS"), 3000),
     metricsHistory: intOr(get("METRICS_HISTORY"), 120),
     logLevel: level === "debug" || level === "warn" || level === "error" ? level : "info",
+    trustProxy: isTruthy(get("TRUST_PROXY")),
+    cookieSecure: isTruthy(get("COOKIE_SECURE")),
+    allowedOrigins: parseOrigins(get("ALLOWED_ORIGINS")),
   };
 }
 

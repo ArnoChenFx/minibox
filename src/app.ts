@@ -1,5 +1,5 @@
 import { ActivityLog } from "./activity";
-import { LoginThrottle } from "./auth";
+import { LoginLimiter } from "./auth";
 import type { Config } from "./config";
 import { createDockerCtx, type DockerCtx } from "./docker/client";
 import { HostMonitor } from "./host/metrics";
@@ -10,19 +10,19 @@ export interface App {
   docker: DockerCtx;
   monitor: HostMonitor;
   activity: ActivityLog;
-  throttle: LoginThrottle;
+  throttle: LoginLimiter;
   version: string;
   startedAt: Date;
 }
 
-export function createApp(cfg: Config, version: string): App {
+export function createApp(cfg: Config, version: string, throttle = new LoginLimiter()): App {
   const docker = createDockerCtx(cfg);
   return {
     cfg,
     docker,
     monitor: new HostMonitor(docker, cfg.metricsIntervalMs, cfg.metricsHistory),
     activity: new ActivityLog(),
-    throttle: new LoginThrottle(),
+    throttle,
     version,
     startedAt: new Date(),
   };

@@ -852,13 +852,15 @@ MiniBox 的前提是**一个可信用户在自己的机器上使用**。Docker S
 | 镜像以 root 运行 | 挂载 Socket 的代价；文档给出 socket proxy 或 rootless 方案 |
 | 自动生成密钥会覆盖整个 `.env` | 自动生成的密钥写入 `DATA_DIR/access_key`（权限 600），**MiniBox 不再写 `.env`**；读取优先级为进程环境变量 > `.env` > `DATA_DIR/access_key`；已有部署里写在 `.env` 的密钥照常生效 |
 
-### 升级注意事项：限流与 Origin 校验可能让现有部署登不进去
+### 升级注意事项：隧道无需改动，改写 Host 的反向代理需要 ALLOWED_ORIGINS
 
-`TRUST_PROXY` 默认关闭（issue #1）和 Origin 校验（issue #3）都会改变通过隧道或反向代理访问的现有部署的行为：
+OpenTunnel 已在线上实测（tcpdump 验证）：隧道保留 `Host` 与 `Origin`，不添加任何 `X-Forwarded-*` 头，客户端自带的 `X-Forwarded-For` / `X-Forwarded-Host` 原样透传，所有请求都从 `127.0.0.1` 到达。因此 OpenTunnel 后面的部署保持 `TRUST_PROXY` 关闭，`ALLOWED_ORIGINS` 可选，升级时无需改动配置。其他隧道未实测，应按反向代理处理：先确认它覆盖还是追加了哪些头、是否改写 `Host`，再决定配置。
 
-- 默认不信任 `X-Forwarded-For` / `X-Forwarded-Proto` 后，隧道后面所有请求在限流里看起来是同一个来源，且登录 Cookie 可能失去 `Secure` 标记。这类部署需要显式设置 `TRUST_PROXY=true`。
-- Origin 校验按 `Host`（或 `ALLOWED_ORIGINS`）判断同源；隧道改写了 `Host` 时，登录请求会被拒绝。
-- 因此需要：启动时对「检测到代理头但 `TRUST_PROXY` 未开启」给出明确警告；`ALLOWED_ORIGINS` 在文档和 CHANGELOG 里作为升级必读事项；发布前在真实的隧道环境里实测登录。
+`TRUST_PROXY` 默认关闭（issue #1）与 Origin 校验（issue #3）会改变通过反向代理访问的现有部署的行为：
+
+- 隧道后面所有请求都来自 `127.0.0.1`，限流按同一个来源计数：错误的密钥共享额度，但正确的密钥总能登录。不要为隧道开启 `TRUST_PROXY`：隧道不添加代理头，开启后 MiniBox 会信任客户端自带的 `X-Forwarded-For`，换一个值即可绕过按地址的限流，只剩全局上限。登录 Cookie 的 `Secure` 不依赖 `TRUST_PROXY`：浏览器在 HTTPS 页面登录时带的 `https://` Origin 已足以加上它（`COOKIE_SECURE=1` 可强制加上）。
+- Origin 校验按 `Host`（或 `ALLOWED_ORIGINS`）判断同源。OpenTunnel 保留 `Host`，同源检查直接通过。改写 `Host` 的反向代理（nginx 默认如此）会让登录与终端请求返回 `403`，此时需要设置 `ALLOWED_ORIGINS=https://公网地址`。
+- 只有会覆盖 `X-Forwarded-For`、`X-Forwarded-Proto`、`X-Forwarded-Host` 的反向代理之后，才设置 `TRUST_PROXY=true`。检测到代理头而 `TRUST_PROXY` 未开启时，MiniBox 会输出一次 `proxy.headers_ignored` 警告；OpenTunnel 不添加代理头，正常情况下不会出现。README 与 CHANGELOG 把这两项列为升级必读，并分别写明隧道与反向代理的做法。
 
 ### 安全档位：`no-new-privileges` 与 `sudo` 互斥
 
@@ -918,7 +920,7 @@ flowchart LR
 
 ### 阶段 0 的发布注意事项
 
-M0 的第一个 PR 会改变通过隧道或反向代理访问的现有部署的行为（见 [14](#14-安全设计)「升级注意事项」）。合并前，需要先在线上实例配好 `ALLOWED_ORIGINS` / `TRUST_PROXY` 并实测登录，否则自动更新后可能登不进去。
+M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（见 [14](#14-安全设计)「升级注意事项」）。OpenTunnel 已在线上实测：保持 `TRUST_PROXY` 关闭，`ALLOWED_ORIGINS` 可选，升级时无需改动配置。改写 `Host` 的反向代理需要在合并前配好 `ALLOWED_ORIGINS` 并实测登录，否则自动更新后登录请求会返回 `403`。
 
 ### 依赖关系
 
@@ -1004,7 +1006,7 @@ M0 的第一个 PR 会改变通过隧道或反向代理访问的现有部署的�
 | 37 | 安全档位 | `no-new-privileges` 会让 `sudo` 失效，二者互斥：默认「标准」档（有 `sudo`，不开 `no-new-privileges`，`CapDrop: ALL` 后加回最小集合），可选「严格」档（`no-new-privileges`，无 `sudo`） |
 | 38 | 自动生成的密钥 | 写入 `DATA_DIR/access_key`（权限 600），MiniBox 不再写 `.env`；优先级：进程环境变量 > `.env` > `DATA_DIR/access_key` |
 | 39 | 阶段 1 拆分 | 拆为 8 个 PR（模板 / 加固 A / 加固 B / 规格 / 事件 / 任务与总线 / 变更与重建 / 令牌），见 [15](#15-实施路线) |
-| 40 | 阶段 0 顺序 | 先 #1 #3 #4 的现成代码整理为第一个 PR，再并行 #32 #6 #18，最后 #22；第一个 PR 合并前先在线上实例配好 `ALLOWED_ORIGINS` / `TRUST_PROXY` 并实测登录 |
+| 40 | 阶段 0 顺序 | 先 #1 #3 #4 的现成代码整理为第一个 PR，再并行 #32 #6 #18，最后 #22；第一个 PR 合并前，改写 `Host` 的反向代理需先配好 `ALLOWED_ORIGINS` 并实测登录（OpenTunnel 已实测，无需改动，见 [15](#15-实施路线)） |
 
 ---
 
