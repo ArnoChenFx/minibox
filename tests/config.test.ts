@@ -23,4 +23,17 @@ describe("loadConfig", () => {
     expect(loadConfig({ ACCESS_KEY: KEY, TRUST_PROXY: "true" }).trustProxy).toBe(true);
     expect(loadConfig({ ACCESS_KEY: KEY, TRUST_PROXY: " ON " }).trustProxy).toBe(true);
   });
+  test("ALLOWED_ORIGINS is a comma-separated list normalized to origins", () => {
+    const cfg = loadConfig({
+      ACCESS_KEY: KEY,
+      ALLOWED_ORIGINS: "https://panel.example.net/, http://192.168.1.5:3920 ,",
+    });
+    expect(cfg.allowedOrigins).toEqual(["https://panel.example.net", "http://192.168.1.5:3920"]);
+  });
+  test("ALLOWED_ORIGINS rejects entries that are not http(s) origins", () => {
+    expect(() => loadConfig({ ACCESS_KEY: KEY, ALLOWED_ORIGINS: "minibox.example.com" })).toThrow("ALLOWED_ORIGINS");
+    expect(() => loadConfig({ ACCESS_KEY: KEY, ALLOWED_ORIGINS: "ftp://files.example.com" })).toThrow(
+      "ALLOWED_ORIGINS",
+    );
+  });
 });

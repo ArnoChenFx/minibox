@@ -85,6 +85,9 @@ export default {
   "err.unknown_error": "Unknown error",
   "err.api_not_found": "API endpoint not found.",
   "err.method_not_allowed": "Method not allowed.",
+  "err.unsupported_media_type": "Requests with a body must be JSON.",
+  "err.origin_forbidden":
+    "Blocked: this request came from another site. Open MiniBox at its own address, or allow that address with ALLOWED_ORIGINS.",
   "err.unauthorized": "Not signed in, or the access key is invalid.",
   "err.terminal_not_running": "The box is not running, so a terminal can't be opened.",
   "err.ws_upgrade_failed": "WebSocket upgrade failed.",

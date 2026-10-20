@@ -4,6 +4,7 @@ import { type App, createApp } from "./app";
 import { isAuthorized } from "./auth";
 import { loadConfig } from "./config";
 import { getBox } from "./docker/boxes";
+import { guardRequest } from "./guard";
 import { AppError } from "./lib/errors";
 import { errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
@@ -60,6 +61,7 @@ export function startServer(app: App): Server<TerminalData> {
       const started = performance.now();
       let res: Response | undefined;
       try {
+        guardRequest(req, app.cfg);
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           if (!isAuthorized(req, app.cfg.accessKey)) throw new AppError(401, "unauthorized", msg("unauthorized"));

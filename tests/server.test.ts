@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { connect } from "node:net";
 
 import type { Server } from "bun";
 
 import { type App, createApp } from "../src/app";
+import { COOKIE_NAME } from "../src/auth";
 import { type Config, loadConfig } from "../src/config";
 import { setLogLevel } from "../src/lib/logger";
 import { startServer } from "../src/server";
@@ -39,6 +41,36 @@ const login = (base: string, key: string, headers: Record<string, string> = {}) 
     body: JSON.stringify({ key }),
   });
 
+/** Sends a raw WebSocket handshake and resolves with the HTTP status the server answers with. */
+function upgradeStatus(port: number, headers: Record<string, string>): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const socket = connect({ host: "127.0.0.1", port }, () => {
+      const lines = [
+        "GET /api/boxes/demo/terminal HTTP/1.1",
+        `Host: 127.0.0.1:${port}`,
+        "Connection: Upgrade",
+        "Upgrade: websocket",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        ...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
+        "",
+        "",
+      ];
+      socket.write(lines.join("\r\n"));
+    });
+    let received = "";
+    socket.on("data", (chunk) => {
+      received += chunk.toString("latin1");
+      const status = /^HTTP\/1\.1 (\d{3})/.exec(received);
+      if (status) {
+        socket.destroy();
+        resolve(Number(status[1]));
+      }
+    });
+    socket.on("error", reject);
+  });
+}
+
 describe("login rate limit (end to end)", () => {
   test("forged X-Forwarded-For cannot reset the failure count when no proxy is trusted", async () => {
     await withServer({ TRUST_PROXY: "false" }, async ({ base }) => {
@@ -67,6 +99,65 @@ describe("login rate limit (end to end)", () => {
         expect((await login(base, "wrong", { "x-forwarded-for": `10.9.9.${i}, 198.51.100.7` })).status).toBe(401);
       }
       expect((await login(base, KEY, { "x-forwarded-for": "10.1.1.1, 198.51.100.7" })).status).toBe(429);
+    });
+  });
+});
+
+describe("cross-site protection (end to end)", () => {
+  const CROSS_SITE = "https://evil.example";
+
+  test("cross-site logins are refused before they can count as failures", async () => {
+    await withServer({}, async ({ base }) => {
+      for (let i = 0; i < 12; i++) {
+        expect((await login(base, "wrong", { origin: CROSS_SITE })).status).toBe(403);
+      }
+      expect((await login(base, KEY, { origin: base })).status).toBe(200);
+    });
+  });
+
+  test("same-origin login sets a HttpOnly SameSite=Strict session cookie", async () => {
+    await withServer({}, async ({ base }) => {
+      const cookie = (await login(base, KEY, { origin: base })).headers.get("set-cookie") ?? "";
+      expect(cookie).toStartWith(`${COOKIE_NAME}=`);
+      expect(cookie).toContain("HttpOnly");
+      expect(cookie).toContain("SameSite=Strict");
+    });
+  });
+
+  test("API writes must carry a JSON body; form posts get 415 even from the same origin", async () => {
+    await withServer({}, async ({ base }) => {
+      const form = await fetch(`${base}/api/auth/logout`, {
+        method: "POST",
+        headers: { origin: base, "content-type": "application/x-www-form-urlencoded" },
+        body: "x=1",
+      });
+      expect(form.status).toBe(415);
+      const json = await fetch(`${base}/api/auth/logout`, {
+        method: "POST",
+        headers: { origin: base, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(json.status).toBe(200);
+    });
+  });
+
+  test("cross-site writes are refused even when the browser attaches the session cookie", async () => {
+    await withServer({}, async ({ base }) => {
+      const res = await fetch(`${base}/api/auth/logout`, {
+        method: "POST",
+        headers: { origin: CROSS_SITE, "content-type": "application/json", cookie: `${COOKIE_NAME}=${KEY}` },
+        body: "{}",
+      });
+      expect(res.status).toBe(403);
+    });
+  });
+
+  test("a cross-site WebSocket upgrade is refused with 403 even with a valid session cookie", async () => {
+    await withServer({}, async ({ base }) => {
+      const port = Number(new URL(base).port);
+      const cookie = `${COOKIE_NAME}=${KEY}`;
+      expect(await upgradeStatus(port, { origin: CROSS_SITE, cookie })).toBe(403);
+      expect(await upgradeStatus(port, { origin: base })).toBe(401);
     });
   });
 });

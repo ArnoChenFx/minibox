@@ -40,7 +40,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
 | Logs | Main-process output with selectable line count and auto-refresh |
-| Access control | Single access key via HttpOnly cookie or `Authorization: Bearer`; login rate limiting per client address |
+| Access control | Single access key via HttpOnly, `SameSite=Strict` cookie or `Authorization: Bearer`; login rate limiting per client address; cross-site requests refused |
 | Languages | English and Simplified Chinese; toggle with the language icon button in the top-right corner (console header and login page). Defaults to the browser language and is remembered per browser |
 | UI | Light / dark theme (follows the system, manual toggle), responsive layout, empty states, skeleton loaders, toasts, confirmation for destructive actions |
 
@@ -152,6 +152,8 @@ opentunnel up
 
 If the proxy or tunnel sets `X-Forwarded-For` and `X-Forwarded-Proto`, set `TRUST_PROXY=true` so login rate limiting counts real clients and the cookie gets the `Secure` flag.
 
+MiniBox also refuses requests that come from other websites. The browser's `Origin` must match the `Host` the request arrived with. Some proxies rewrite `Host` to the upstream address (nginx does this unless configured with `proxy_set_header Host $host;`); then the dashboard shows "Blocked: this request came from another site" on login. Either let the proxy pass `Host` through, or list the public address in `ALLOWED_ORIGINS`, e.g. `ALLOWED_ORIGINS=https://minibox.example.com`.
+
 Read the [security notes](#security) before exposing it.
 
 ### Docker
@@ -181,7 +183,8 @@ Precedence: process environment > `.env` file > defaults. See [`.env.example`](.
 | `ACCESS_KEY` | generated on first start | Access key for the dashboard and API |
 | `HOST` | `127.0.0.1` | Listen address |
 | `PORT` | `3920` | Listen port |
-| `TRUST_PROXY` | `false` | Read `X-Forwarded-For` / `X-Forwarded-Proto` from a reverse proxy or tunnel you run in front of MiniBox. Keep off when clients connect directly (see [Security](#security)) |
+| `TRUST_PROXY` | `false` | Read `X-Forwarded-For` / `X-Forwarded-Proto` (and `X-Forwarded-Host`) from a reverse proxy or tunnel you run in front of MiniBox. Keep off when clients connect directly (see [Security](#security)) |
+| `ALLOWED_ORIGINS` | empty | Extra browser origins allowed to call the API and open the terminal, comma-separated, e.g. `https://minibox.example.com`. Only needed when a proxy rewrites `Host` |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
 | `BASE_TEMPLATE` | `<prefix>-template:base` | Default template image for new boxes |
@@ -194,7 +197,7 @@ Precedence: process environment > `.env` file > defaults. See [`.env.example`](.
 
 ## API reference
 
-All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer <ACCESS_KEY>` header.
+All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer <ACCESS_KEY>` header. Requests with a body must send `Content-Type: application/json` (other content types get `415`), and browser requests from other websites get `403`.
 
 Errors use a consistent shape and the matching HTTP status:
 
@@ -202,7 +205,7 @@ Errors use a consistent shape and the matching HTTP status:
 { "error": { "code": "validation_failed", "message": "…", "details": { "field": "cpus" } } }
 ```
 
-Common codes: `validation_failed` (400), `unauthorized` (401), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `insufficient_capacity` (422), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in Chinese.
+Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `unsupported_media_type` (415), `insufficient_capacity` (422), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in Chinese.
 
 ### Auth & system
 
@@ -326,6 +329,7 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 
 - **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` is git-ignored — keep it that way.
 - **The access key is the only guard.** There are no user accounts. Login failures are rate-limited per client address (10 per 5 minutes; IPv6 addresses per /64) and the key is compared in constant time, but a leaked key means full access. To rotate it, change `ACCESS_KEY` in `.env` and restart; existing sessions stop working immediately.
+- **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin listed in `ALLOWED_ORIGINS`. Requests without an `Origin` header (scripts using `Authorization: Bearer`) are accepted. Writes with a body must be JSON, which also blocks HTML form posts. The session cookie is `SameSite=Strict`, so a link from another website may ask you to sign in once more.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
 - **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS. MiniBox ignores `X-Forwarded-For`, `X-Forwarded-Proto` by default, so behind a proxy every visitor shares the proxy's address for rate limiting. Set `TRUST_PROXY=true` only when a proxy you control sets these headers. With it on, MiniBox uses the right-most `X-Forwarded-For` entry, which the proxy appended. With it off, a client can forge these headers to dodge the login limit.
 - **Public tunnels are discoverable.** Tunnel hostnames (e.g. OpenTunnel's `*.opentunnel.xyz`) can show up in public Certificate Transparency logs or be guessed, and OpenTunnel itself does not add authentication — the dashboard is effectively on the internet, protected only by the access key. Traffic also passes through the tunnel's relay. Prefer a private network (e.g. Tailscale) or an authenticating reverse proxy when you can, and stop the tunnel when you don't need it.

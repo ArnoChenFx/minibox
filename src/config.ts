@@ -18,6 +18,7 @@ export interface Config {
   metricsHistory: number;
   logLevel: "debug" | "info" | "warn" | "error";
   trustProxy: boolean;
+  allowedOrigins: string[];
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -54,6 +55,26 @@ function isTruthy(value: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes(value?.trim().toLowerCase() ?? "");
 }
 
+/** Comma-separated list of extra browser origins allowed to make cross-host requests, e.g. `https://minibox.example.com`. */
+function parseOrigins(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      let url: URL;
+      try {
+        url = new URL(s);
+      } catch {
+        throw new Error(`ALLOWED_ORIGINS: "${s}" is not a valid origin (expected e.g. https://minibox.example.com)`);
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error(`ALLOWED_ORIGINS: "${s}" must use http:// or https://`);
+      }
+      return url.origin;
+    });
+}
+
 /**
  * Load configuration. Precedence: process env > .env file > defaults.
  * When no ACCESS_KEY exists anywhere, a random one is generated and persisted to .env (mode 600).
@@ -84,5 +105,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     metricsHistory: intOr(get("METRICS_HISTORY"), 120),
     logLevel: level === "debug" || level === "warn" || level === "error" ? level : "info",
     trustProxy: isTruthy(get("TRUST_PROXY")),
+    allowedOrigins: parseOrigins(get("ALLOWED_ORIGINS")),
   };
 }
