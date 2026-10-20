@@ -394,7 +394,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 ## 路线图
 
-完整的产品与架构设计见 [`docs/design.md`](docs/design.md)，实施路线与任务拆分见 [#20](https://github.com/ArnoChenFx/minibox/issues/20)。规划中的工作按里程碑分组，每项都链接到对应的 issue。
+完整的产品与架构设计见 [`docs/design.md`](docs/design.md)，实施路线与任务拆分见 [#20](https://github.com/ArnoChenFx/minibox/issues/20)。规划中的工作按里程碑分组，有对应 issue 的项目都会链接过去。
 
 ### M0 · 地基
 
@@ -438,7 +438,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) 空闲自动休眠与按需唤醒
 - [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) 模板增强与预热池
 
-### 贯穿各阶段
+### 贯穿各里程碑
 
 - [ ] [#26](https://github.com/ArnoChenFx/minibox/issues/26) 控制台改版，逐页落地
 - [ ] [#19](https://github.com/ArnoChenFx/minibox/issues/19) Docker 层与路由的集成测试
