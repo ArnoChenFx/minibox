@@ -61,7 +61,7 @@
 
 ### 修复
 - 自动生成访问密钥时不再整体重写 `.env`。此前会把 `.env` 改写为只剩 `ACCESS_KEY`、`PORT`、`HOST` 三项，其他配置随之丢失。现在任何情况下都不修改 `.env`。
-- 模板描述与快照标签的值统一转义（反斜杠、双引号、美元符号按字面保存），并拒绝控制字符。此前 `$VAR` 会从镜像环境展开进标签，反斜杠后接换行会把后续文字并入标签。`POST /api/snapshots/:ref/promote` 的 `description` 含换行或其他控制字符时返回 400（`description_invalid`）；描述去除首尾空白，空白描述视为未填写。
+- 模板描述与快照标签的值统一转义（反斜杠、双引号、美元符号按字面保存），并拒绝控制字符。此前 `$VAR` 会从镜像环境展开进标签，反斜杠后接换行会把后续文字并入标签。`POST /api/snapshots/:ref/promote` 的 `description` 含换行或其他控制字符时返回 400（`description_invalid`）；描述去除首尾空格，只含空格的描述视为未填写。
 
 ### 文档
 - README 与 README-zh 说明数据目录、访问密钥的位置与优先级、Docker 数据卷的用法，以及 `.env.example` 中的 `DATA_DIR` 配置项。
