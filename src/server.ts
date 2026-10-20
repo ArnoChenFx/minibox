@@ -18,7 +18,7 @@ import { type TerminalData, terminalHandlers } from "./ws/terminal";
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
 const PROXY_HINT =
-  "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. If a proxy or tunnel you control sets them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). Otherwise ignore this warning.";
+  "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
 async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
   const m = matchRoute(routes, req.method, url.pathname);
