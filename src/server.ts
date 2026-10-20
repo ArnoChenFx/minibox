@@ -116,6 +116,7 @@ if (import.meta.main) {
     stopping = true;
     log.info("server.stopping", { signal });
     app.monitor.stop();
+    app.throttle.stop();
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);

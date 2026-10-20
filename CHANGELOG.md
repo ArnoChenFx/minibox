@@ -2,6 +2,15 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 安全
+- 登录限流不再信任请求头 `X-Forwarded-For`：默认按真实连接地址计数，伪造该头无法绕过限流（#1）。新增配置 `TRUST_PROXY`（默认 `false`），仅在由你控制的反向代理之后设置为 `true`，此时读取 `X-Forwarded-For` 的最后一项与 `X-Forwarded-Proto`。
+- 登录限流按客户端地址计数，IPv6 按 /64 归并；失败记录表设置容量上限并定期清理过期项，大量伪造地址无法撑大内存（#1）。
+
+### 变更（升级注意）
+- 经反向代理或隧道访问、且未设置 `TRUST_PROXY=true` 时：所有访问者共享代理的地址进行登录限流，登录 Cookie 也不再因代理的 `X-Forwarded-Proto` 自动带上 `Secure`。升级后请按需设置 `TRUST_PROXY=true`。
+
 ## [0.3.0] - 2026-10-21
 
 ### 新增

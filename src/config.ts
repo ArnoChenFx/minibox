@@ -17,6 +17,7 @@ export interface Config {
   metricsIntervalMs: number;
   metricsHistory: number;
   logLevel: "debug" | "info" | "warn" | "error";
+  trustProxy: boolean;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -49,6 +50,10 @@ function intOr(value: string | undefined, fallback: number): number {
   return Number.isInteger(n) && n > 0 ? n : fallback;
 }
 
+function isTruthy(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on"].includes(value?.trim().toLowerCase() ?? "");
+}
+
 /**
  * Load configuration. Precedence: process env > .env file > defaults.
  * When no ACCESS_KEY exists anywhere, a random one is generated and persisted to .env (mode 600).
@@ -78,5 +83,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     metricsIntervalMs: intOr(get("METRICS_INTERVAL_MS"), 3000),
     metricsHistory: intOr(get("METRICS_HISTORY"), 120),
     logLevel: level === "debug" || level === "warn" || level === "error" ? level : "info",
+    trustProxy: isTruthy(get("TRUST_PROXY")),
   };
 }
