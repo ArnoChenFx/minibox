@@ -128,10 +128,8 @@ function resolveAccessKey(
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     throw new Error(
-      `No ACCESS_KEY is configured and ${path} cannot be created (${reason}). Set ACCESS_KEY or DATA_DIR.`,
-      {
-        cause: e,
-      },
+      `No ACCESS_KEY is configured and ${path} cannot be used (${reason}). Set ACCESS_KEY, or point DATA_DIR at a writable directory.`,
+      { cause: e },
     );
   }
 

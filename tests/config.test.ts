@@ -159,7 +159,7 @@ describe("unusable DATA_DIR", () => {
   });
   test("fails with an actionable error when a key has to be generated", () => {
     writeFileSync(dataDir, "not a directory");
-    expect(() => load()).toThrow(/Set ACCESS_KEY or DATA_DIR/);
+    expect(() => load()).toThrow(/Set ACCESS_KEY, or point DATA_DIR at a writable directory/);
   });
   test("refuses to replace an empty key file", () => {
     mkdirSync(dataDir, { recursive: true });
