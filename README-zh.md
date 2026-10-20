@@ -281,6 +281,10 @@ docker run -d --name minibox --restart unless-stopped \
 | `BASE_TEMPLATE` | `<前缀>-template:base` | 新建 Box 的默认模板镜像 |
 | `METRICS_INTERVAL_MS` | `3000` | 宿主机采样间隔（毫秒） |
 | `METRICS_HISTORY` | `120` | 保留的采样点数量（默认间隔下约 6 分钟） |
+| `EVENT_RETENTION_AUDIT_DAYS` | `365` | 审计事件的保留天数：写操作、删除与被拒绝的调用。见[事件](#事件) |
+| `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | 读取事件的保留天数。同一分钟内的重复读取会合并 |
+| `EVENT_OUTPUT_RETENTION_DAYS` | `7` | 命令输出（`DATA_DIR/exec`）的保留天数。在 `exec`（[#9](https://github.com/ArnoChenFx/minibox/issues/9)）落地前没有写入方 |
+| `EVENT_OUTPUT_MAX_MB` | `512` | 命令输出的总大小上限（MB），最旧的先删除 |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `MINIBOX_VERSION` | 来自 git / `package.json` | 覆盖显示的版本号（发布镜像中自动设置） |
 
@@ -323,7 +327,7 @@ docker run -d --name minibox --restart unless-stopped \
 
 ## 数据目录
 
-MiniBox 把自己管理的状态保存在 `DATA_DIR` 里。它是一个普通文件目录，而不是数据库服务，请和其他数据一起备份。相对路径相对于项目根目录解析，`~/` 会展开为你的主目录。
+MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目录，外加一个内嵌的 SQLite 数据库，即[事件日志](#事件)。它不是数据库服务，请和其他数据一起备份。相对路径相对于项目根目录解析，`~/` 会展开为你的主目录。
 
 | 路径 | 权限 | 内容 |
 |---|---|---|
@@ -331,8 +335,9 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里。它是一个普通文
 | `boxes/` | `700` | Box 规格（现在创建，后续功能使用） |
 | `exec/` | `700` | `exec` 命令的输出（现在创建，后续功能使用） |
 | `secrets/` | `700` | 密钥值与仓库密钥（现在创建，后续功能使用） |
+| `events.db`（旁边还有 `events.db-wal` 与 `events.db-shm`） | 位于 `DATA_DIR` 内 | 事件库，SQLite WAL 模式。见[事件](#事件) |
 
-MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写入 `.env`。如果 `DATA_DIR` 丢失，且 `.env` 和环境变量中也没有设置密钥，下次启动会生成新的访问密钥，所有人都需要用新密钥登录。如果你依赖当前密钥，请备份 `access_key`，或在 `.env` 中设置 `ACCESS_KEY`。
+MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写入 `.env`。如果 `DATA_DIR` 丢失，且 `.env` 和环境变量中也没有设置密钥，下次启动会生成新的访问密钥，所有人都需要用新密钥登录。如果你依赖当前密钥，请备份 `access_key`，或在 `.env` 中设置 `ACCESS_KEY`。复制 `events.db` 之前请先停止 MiniBox：WAL 模式下，最近的变更会留在 `events.db-wal` 中，直到 SQLite 将其写回主文件，因此只复制主文件可能是旧的。
 
 ## API 参考
 
@@ -393,9 +398,32 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 只有带 MiniBox 标签的镜像才能通过 API 删除。
 
+### 事件
+
+每次操作调用（无论经 REST、MCP 还是 CLI）都会在事件日志中记录一次，即[数据目录](#数据目录)中的 `events.db`。事件记录调用者（`principal`）、操作的对象（`op`、`target`）、开始时间与耗时（`ts`、`durationMs`）、结果（`status`），以及所属的客户端会话（`run`，来自 `X-Minibox-Run`）。在请求到达操作之前就被拒绝的请求（例如缺少密钥返回 `401`，或跨站请求返回 `403`）不会被记录。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/events` | 事件，最新的在前。过滤条件：`box`（ID 或名称）、`principal`、`op`、`status`（`started`、`ok`、`error` 或 `denied`）、`run`、`since`（ISO 8601，例如 `2026-10-20T00:00:00Z`）。分页：`limit`（1–200，默认 50）与 `cursor`（上一页的 `nextCursor`）。返回 `{ "events": [...], "nextCursor": ... }`，最后一页的 `nextCursor` 为 `null` |
+| `GET` | `/api/events/stream` | 同样的过滤条件，以服务器推送事件（`text/event-stream`）的方式返回。见下文 |
+
+事件流每条消息对应一个事件：`id` 为事件的序号，`data` 为 JSON 格式的事件。新连接只会收到连接之后记录的事件。断线重连的客户端会把最后收到的 `id` 放在 `Last-Event-ID` 中发回（浏览器会自动这样做），并收到它错过的事件，最多 500 条。如果错过的超过 500 条，或在未读取期间排队的消息超过 1000 条，流会改为发送 `event: reset`（`{"after": N}`）。客户端随后用相同的过滤条件读取 `GET /api/events`，沿 `nextCursor` 翻页直到遇到它收到的最后一个 `id`，然后继续接收事件流。`reset` 消息不带 `id`，因此 `Last-Event-ID` 仍指向最后收到的事件。空闲时流每 15 秒发送一条 `: keep-alive` 注释，使代理不会断开连接。
+
+事件在写入前会脱敏。访问密钥在出现的任何位置都会被替换；环境变量只记录变量名；名为 `password`、`token`、`secret` 或 `api_key` 等的字段值会被替换；常见凭据格式也会被替换：PEM 私钥、`Bearer` 令牌、URL 中的密码、JWT、`sk-` 密钥、GitHub 令牌、AWS 访问密钥、Slack 令牌和 Google API 密钥。这是尽力而为，不保证完整：未列出的格式，或被拆分到多个字段中的凭据，不会被识别。超过 8 KB 的 `detail` 会被替换为一条带大小的说明。
+
+| 档位 | 内容 | 默认保留 |
+|---|---|---|
+| 审计 | 任何结果的写操作与删除，以及被拒绝的调用 | 365 天（`EVENT_RETENTION_AUDIT_DAYS`） |
+| 活动 | 未被拒绝的读取。同一主体对同一对象、相同操作与结果的读取，在一分钟内合并为一条，带 `count` | 30 天（`EVENT_RETENTION_ACTIVITY_DAYS`） |
+| 输出 | `DATA_DIR/exec` 中的命令输出。目前还没有写入方；`exec` 随 [#9](https://github.com/ArnoChenFx/minibox/issues/9) 落地 | 7 天，总计最多 512 MB（`EVENT_OUTPUT_RETENTION_DAYS`、`EVENT_OUTPUT_MAX_MB`） |
+
+清理在启动时执行，之后每小时执行一次。超过各档位保留期的事件会被删除；输出先按时间删除，再从最旧的开始删除，直到总量不超过上限。保留相关配置必须是正整数，其他取值回退为默认值。
+
+目前只有所有者可以读取事件日志。范围令牌（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）落地后，将限制每个令牌能看到的内容。记录事件永远不会导致操作失败：如果事件无法写入，失败会以 `audit.failed` 记入日志，响应保持不变。如果 `events.db` 无法打开（例如 `DATA_DIR` 不可写），启动会失败。
+
 ### OpenAPI
 
-盒子及盒子快照的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。认证、系统、模板以及其他快照接口暂未纳入。
+盒子、快照、模板以及事件列表的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。认证、系统、宿主机与活动记录接口，以及事件流，暂未纳入。
 
 ### 示例
 
@@ -425,10 +453,11 @@ minibox/
 │   ├── docker/              # Docker 适配器（唯一使用 dockerode）：runtime / errors / logs / stats
 │   ├── services/            # 基于 Runtime 的业务逻辑：boxes / images / snapshots / templates
 │   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostMonitor 采样
+│   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、范围钩子
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
 │   ├── routes/              # router、各组路由（auth / system / images）与操作的 REST 适配层
 │   ├── ws/terminal.ts       # WebSocket 终端
-│   └── lib/                 # errors / http / logger / validation
+│   └── lib/                 # errors / http / logger / bus（进程内事件总线）/ validation
 ├── web/
 │   ├── index.html · login.html
 │   ├── css/app.css          # 设计系统（变量、组件、浅色 / 深色）
@@ -518,7 +547,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) 基础模板：非 root 用户 `dev`、tmux、挂载点约定
 - [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」与「严格」两个安全档位
 - [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
-- [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
+- [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与 TTL
 - [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥

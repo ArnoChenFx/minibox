@@ -281,6 +281,10 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `BASE_TEMPLATE` | `<prefix>-template:base` | Default template image for new boxes |
 | `METRICS_INTERVAL_MS` | `3000` | Host metrics sampling interval (ms) |
 | `METRICS_HISTORY` | `120` | Number of samples kept (≈ 6 minutes at the default interval) |
+| `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
+| `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | Days to keep read events. Repeated reads are merged per minute |
+| `EVENT_OUTPUT_RETENTION_DAYS` | `7` | Days to keep command output in `DATA_DIR/exec`. Nothing writes there until `exec` arrives ([#9](https://github.com/ArnoChenFx/minibox/issues/9)) |
+| `EVENT_OUTPUT_MAX_MB` | `512` | Total size cap for stored command output, in MB. The oldest output is removed first |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `MINIBOX_VERSION` | from git / `package.json` | Override the displayed version (set automatically in release images) |
 
@@ -323,7 +327,7 @@ Checking an image against Docker: after `bun run build:template`, run `bun run c
 
 ## Data directory
 
-MiniBox keeps the state it owns in `DATA_DIR`. It is a directory of plain files, not a database server, so include it in your backups. Relative paths resolve from the project root, and `~/` expands to your home directory.
+MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and one embedded SQLite database, the [event log](#events). It is not a database server, so include it in your backups. Relative paths resolve from the project root, and `~/` expands to your home directory.
 
 | Path | Mode | Contents |
 |---|---|---|
@@ -331,8 +335,9 @@ MiniBox keeps the state it owns in `DATA_DIR`. It is a directory of plain files,
 | `boxes/` | `700` | Box specifications (created now, used by later features) |
 | `exec/` | `700` | Output of `exec` commands (created now, used by later features) |
 | `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
+| `events.db` (with `events.db-wal` and `events.db-shm` beside it) | inside `DATA_DIR` | Event log, SQLite in WAL mode. See [Events](#events) |
 
-MiniBox creates these directories at startup and tightens looser modes. It never writes `.env`. If `DATA_DIR` is lost and no key is set in `.env` or the environment, the next start generates a new access key, so everyone has to sign in with it. Keep a copy of `access_key`, or set `ACCESS_KEY` in `.env`, if you rely on the current one.
+MiniBox creates these directories at startup and tightens looser modes. It never writes `.env`. If `DATA_DIR` is lost and no key is set in `.env` or the environment, the next start generates a new access key, so everyone has to sign in with it. Keep a copy of `access_key`, or set `ACCESS_KEY` in `.env`, if you rely on the current one. Stop MiniBox before copying `events.db`: in WAL mode, recent changes stay in `events.db-wal` until SQLite checkpoints them, so the main file alone can be stale.
 
 ## API reference
 
@@ -393,9 +398,32 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 
 Only images carrying MiniBox labels can be deleted through the API.
 
+### Events
+
+Every operation call, whether it comes over REST, MCP or the CLI, is recorded once in the event log, `events.db` in the [data directory](#data-directory). An event says who made the call (`principal`), what it touched (`op`, `target`), when and for how long (`ts`, `durationMs`), the outcome (`status`) and the client session (`run`, from `X-Minibox-Run`). Requests refused before they reach an operation, such as a missing key (`401`) or a cross-site request (`403`), are not recorded.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/events` | Events, newest first. Filters: `box` (id or name), `principal`, `op`, `status` (`started`, `ok`, `error` or `denied`), `run`, `since` (ISO 8601, such as `2026-10-20T00:00:00Z`). Paging: `limit` (1–200, default 50) and `cursor`, the `nextCursor` of the previous page. Returns `{ "events": [...], "nextCursor": ... }`, where `nextCursor` is `null` on the last page |
+| `GET` | `/api/events/stream` | The same filters as a server-sent event stream (`text/event-stream`). See below |
+
+The stream sends one message per event: `id` is the event's sequence number and `data` is the event as JSON. A new connection receives only the events recorded after it connects. A client that reconnects sends its last `id` back as `Last-Event-ID` (browsers do this on their own), and receives the events it missed, up to 500. If it missed more than 500, or more than 1000 messages queued up while it was not reading, the stream sends `event: reset` with `{"after": N}` instead. The client then reads `GET /api/events` with the same filters, following `nextCursor` until it reaches the last `id` it received, and carries on with the stream. The reset carries no `id`, so `Last-Event-ID` still points at the last event received. An idle stream sends a `: keep-alive` comment every 15 seconds, so proxies keep the connection open.
+
+Events are redacted before they are written. The access key is replaced wherever it appears, environment variables are recorded by name only, values under keys such as `password`, `token`, `secret` or `api_key` are replaced, and common credential formats are replaced too: PEM private keys, `Bearer` tokens, passwords in URLs, JWTs, `sk-` keys, GitHub tokens, AWS access keys, Slack tokens and Google API keys. This is best effort and not a guarantee: a credential in a format not listed here, or one split across fields, is not caught. A `detail` over 8 KB is replaced by a note with its size.
+
+| Tier | What it holds | Default |
+|---|---|---|
+| Audit | Writes and deletes in any outcome, and refused calls | 365 days (`EVENT_RETENTION_AUDIT_DAYS`) |
+| Activity | Reads that were not refused. Reads with the same operation and outcome, by one principal on one target, within a minute are merged into one event with a `count` | 30 days (`EVENT_RETENTION_ACTIVITY_DAYS`) |
+| Output | Command output in `DATA_DIR/exec`. Nothing writes there yet; `exec` arrives with [#9](https://github.com/ArnoChenFx/minibox/issues/9) | 7 days, at most 512 MB in total (`EVENT_OUTPUT_RETENTION_DAYS`, `EVENT_OUTPUT_MAX_MB`) |
+
+Pruning runs at startup and then every hour. Events older than their tier's window are deleted. Output is deleted by age, then oldest first until the total fits the cap. Retention settings must be positive whole numbers; any other value falls back to its default.
+
+Only the owner can read the event log for now. Scoped tokens ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) will narrow what each token sees. Recording never fails an operation: if an event cannot be written, the failure is logged as `audit.failed` and the response is unchanged. Startup fails if `events.db` cannot be opened, for example because `DATA_DIR` is not writable.
+
 ### OpenAPI
 
-The box and box-snapshot routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. Auth, system, template and other snapshot routes are not in it yet.
+The box, snapshot, template and event-list routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. Auth, system, host and activity routes, and the event stream, are not in it yet.
 
 ### Example
 
@@ -425,10 +453,11 @@ minibox/
 │   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats
 │   ├── services/            # Business logic on Runtime: boxes / images / snapshots / templates
 │   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
+│   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, scope hook
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
 │   ├── routes/              # Router, route groups (auth / system / images) and the REST adapter for operations
 │   ├── ws/terminal.ts       # WebSocket terminal
-│   └── lib/                 # errors / http / logger / validation
+│   └── lib/                 # errors / http / logger / bus (in-process event bus) / validation
 ├── web/
 │   ├── index.html · login.html
 │   ├── css/app.css          # Design system (tokens, components, light / dark)
@@ -518,7 +547,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 - [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) Base template: non-root `dev` user, tmux and mount-point conventions
 - [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box hardening with `standard` and `strict` security profiles
 - [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
-- [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
+- [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and TTL
 - [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) Revocable session tokens instead of the raw access key in cookies
