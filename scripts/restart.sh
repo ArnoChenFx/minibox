@@ -3,7 +3,8 @@
 # Usage: scripts/restart.sh [--no-tunnel]
 #
 # Single-user sandbox convenience, not a deployment script. It starts dockerd with sudo and gives the Docker socket to
-# your primary group only (mode 660). Docker access is root-equivalent, so do not use this on a shared host.
+# your primary group (mode 660), so every member of that group can use Docker. Docker access is root-equivalent, so do
+# not use this on a shared host.
 # Logs are appended to, never truncated.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
