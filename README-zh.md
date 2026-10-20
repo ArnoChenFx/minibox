@@ -405,7 +405,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - [ ] [#4](https://github.com/ArnoChenFx/minibox/issues/4) CSP / HSTS，xterm.js 改为本地托管
 - [ ] [#32](https://github.com/ArnoChenFx/minibox/issues/32) Runtime / Host 抽象（隐式 `local`，行为不变）
 - [ ] [#6](https://github.com/ArnoChenFx/minibox/issues/6) `DATA_DIR` 作为控制端状态目录；自动生成的访问密钥不再写入 `.env`
-- [x] [#18](https://github.com/ArnoChenFx/minibox/issues/18) Dependabot、固定 action 的 commit SHA，并要求 Bun ≥ 1.4.3
+- [x] [#18](https://github.com/ArnoChenFx/minibox/issues/18) Dependabot、固定 action 的 commit SHA、Bun ≥ 1.4.3 下限，以及 `main` 分支保护
 - [ ] [#22](https://github.com/ArnoChenFx/minibox/issues/22) 统一生成 REST / OpenAPI / MCP / CLI 的操作注册表
 
 ### M1 · 模板、规格、审计与令牌
@@ -416,7 +416,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与 TTL
-- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2)、[#38](https://github.com/ArnoChenFx/minibox/issues/38) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
+- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
 
 ### M2 · 存储与 Agent 接口
 

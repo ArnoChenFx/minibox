@@ -405,7 +405,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 - [ ] [#4](https://github.com/ArnoChenFx/minibox/issues/4) CSP and HSTS; self-host xterm.js instead of the CDN
 - [ ] [#32](https://github.com/ArnoChenFx/minibox/issues/32) Runtime / Host abstraction (implicit `local`, no behavior change)
 - [ ] [#6](https://github.com/ArnoChenFx/minibox/issues/6) `DATA_DIR` for control-plane state; the generated access key moves out of `.env`
-- [x] [#18](https://github.com/ArnoChenFx/minibox/issues/18) Dependabot, pinned action SHAs and a Bun ≥ 1.4.3 floor
+- [x] [#18](https://github.com/ArnoChenFx/minibox/issues/18) Dependabot, pinned action SHAs, a Bun ≥ 1.4.3 floor and branch protection on `main`
 - [ ] [#22](https://github.com/ArnoChenFx/minibox/issues/22) One operation registry that generates REST, OpenAPI, MCP and CLI
 
 ### M1 · Templates, specs, audit and tokens
@@ -416,7 +416,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 - [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and TTL
-- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2), [#38](https://github.com/ArnoChenFx/minibox/issues/38) Revocable session tokens instead of the raw access key in cookies
+- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) Revocable session tokens instead of the raw access key in cookies
 
 ### M2 · Storage and agent interface
 
