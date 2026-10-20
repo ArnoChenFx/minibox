@@ -7,31 +7,44 @@
 ### 新增
 - 数据目录 `DATA_DIR`（默认 `./data`，Docker 镜像中为 `/data`）。目录权限 700；启动时创建 `boxes/`、`exec/`、`secrets/` 子目录，供后续功能使用。
 - Docker 镜像设置 `DATA_DIR=/data` 并创建该挂载点，README 中的示例使用 `-v minibox-data:/data` 持久化。
+- 基础模板以非 root 用户 `dev` 运行（uid/gid 为 1000，可用构建参数 `DEV_UID` / `DEV_GID` 调整）。网页终端与 `docker exec` 默认以 `dev` 进入，并提供无密码 `sudo`（仅限 Box 内）。
+- 基础模板预装 `tmux`、`jq`、`ripgrep`、`openssh-client`、`unzip` 与 `less`，并保留 `git`、`curl`、`python3`、`build-essential` 与 `procps`。
+- 基础模板的挂载点约定：`/workspace`、`/home/dev`、`/opt/minibox/tools`（只读共享工具，其 `bin` 在 `PATH` 中）与 `/home/dev/.cache`。缓存变量 `XDG_CACHE_HOME`、`npm_config_cache`、`PIP_CACHE_DIR`、`YARN_CACHE_FOLDER` 指向 `/home/dev/.cache` 下，`NPM_CONFIG_PREFIX` 指向 `/home/dev/.npm-global`。卷挂载由 #24 落地。
+- 基础模板标签 `minibox.template.user`、`minibox.template.uid` 与 `minibox.template.gid` 记录 uid 约定。
+- `scripts/check-box-image.sh` 与 `bun run check:template`：用 Docker 检查基础模板镜像的用户、sudo、工具、挂载点、环境变量、登录 Shell 的 PATH，以及共享卷读写。
 
 ### 变更
 - 未设置 `ACCESS_KEY` 时，自动生成的密钥写入 `DATA_DIR/access_key`（权限 600），重启后保持不变。访问密钥的优先级为：进程环境变量 > `.env` > `DATA_DIR/access_key` > 自动生成。空值视为未设置。
 - `scripts/restart.sh` 改为通过服务自身的配置加载逻辑读取 `PORT` 与密钥位置（此前只读取 `.env` 中的 `PORT`），启动后提示密钥保存位置，但不输出密钥本身。
 - 登录页说明访问密钥的来源（`.env` 或 `DATA_DIR/access_key`）。
+- 基础模板不再保留镜像自带的 `node` 用户（uid 1000），由 `dev` 使用该 uid。
+- 基础模板描述改为「Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · 非 root 用户 dev」，网页端构建与 `bun run build:template` 使用同一描述。
+- Box 详情页的终端标题栏不再固定显示 `root@`，改为 `<名称>: /workspace`，因为新建 Box 以 `dev` 运行，旧 Box 仍为 root。
 
 ### 工程化
 - 新增 `.github/dependabot.yml`：每周检查 npm 依赖（Bun）、GitHub Actions 与 Docker 基础镜像（根目录 `Dockerfile` 与 `templates/base`）的更新；GitHub Actions 的小版本与补丁版本更新合并为一个 PR。
 - `package.json` 的 `engines.bun` 最低版本要求由 `>=1.2.0` 提高为 `>=1.4.3`，README 中的版本要求同步。
 - 所有 GitHub Actions 引用固定到完整 commit SHA，并以注释保留版本号，升级由 Dependabot 提出。
 - 发布工作流的镜像构建与 GitHub Release 步骤显式依赖 CI 检查（`checks`），检查不通过时不会推送镜像，也不会创建 Release。
+- CI 的 `Docker build (smoke)` 任务新增基础模板的多架构构建（`linux/amd64`、`linux/arm64`），并对 amd64 镜像及模拟的 arm64 镜像运行 `scripts/check-box-image.sh`。新增的 `docker/setup-qemu-action` 同样固定到完整 commit SHA。
 
 ### 修复
 - 自动生成访问密钥时不再整体重写 `.env`。此前会把 `.env` 改写为只剩 `ACCESS_KEY`、`PORT`、`HOST` 三项，其他配置随之丢失。现在任何情况下都不修改 `.env`。
 
 ### 安全
 - 文档补充容器以 root 运行的说明，以及缓解方案：Docker Socket 代理（只转发 MiniBox 所需的 API），或 rootless Docker / Podman。
+- 基础模板的 `dev` 用户拥有无密码 `sudo`，Box 内的 root 可以改动该 Box 及其工作区卷。默认的「标准」安全档位不设置 `no-new-privileges`，否则 `sudo` 会失效；不带 `sudo` 的「严格」档位归入 #5。
 
 ### 文档
 - README 与 README-zh 说明数据目录、访问密钥的位置与优先级、Docker 数据卷的用法，以及 `.env.example` 中的 `DATA_DIR` 配置项。
+- README 与 README-zh 新增「基础模板」章节，说明用户与 uid 约定、挂载点、缓存、标签、检查方法，以及从 root 版模板升级的步骤。
 
 ### 升级说明
 - 已有部署无需操作：`.env` 中的 `ACCESS_KEY` 照常生效，`.env` 不再被改写。
 - Docker 部署且未传入 `-e ACCESS_KEY` 时，旧镜像生成的密钥位于容器内的 `/app/.env`，重建容器后会丢失。重建前请在旧容器运行时执行 `docker exec <容器名> grep '^ACCESS_KEY=' /app/.env` 取出密钥，再通过 `-e ACCESS_KEY=...` 传入，并挂载 `-v minibox-data:/data`。
 - 首次启动会创建 `./data/`（已在 git 中忽略），其中只有空的子目录。
+- 已构建的 `minibox-template:base` 仍是旧的 root 版本。在控制台「模板 → 构建基础模板」或运行 `bun run build:template` 重新构建后，新建 Box 才以 `dev` 运行。已有 Box 保持原样，不会改名或重建。
+- 新 Box 复用旧 Box 保留下来的工作区卷时，卷内 `/workspace` 仍属于 root，`dev` 无法写入。在该 Box 运行时执行一次 `docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace` 即可修复。MiniBox 暂不自动执行，详见 README「基础模板」。
 
 ## [0.3.0] - 2026-10-21
 
