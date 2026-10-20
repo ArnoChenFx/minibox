@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 
 # Box user convention (docs/design.md §11.4). Every MiniBox template uses the same uid and gid, so a volume that
 # several boxes mount has one owner. Change these only together with the volumes that already use them.
