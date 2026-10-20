@@ -198,7 +198,9 @@ scripts/restart.sh              # include the tunnel
 scripts/restart.sh --no-tunnel  # server only
 ```
 
-Server output goes to `server.log` in the project root (git-ignored). The script also reports where the access key is stored, never the key itself.
+Server output goes to `server.log` in the project root (git-ignored). The script also reports where the access key is stored, never the key itself. `server.log`, `/tmp/dockerd.log` and `/tmp/opentunnel.log` are appended to, and each start adds a `---` marker line.
+
+`restart.sh` is a single-user sandbox convenience. After it runs, the Docker socket belongs to your primary group with mode `660`, so the server it starts can use Docker without a re-login. Other accounts, including members of the `docker` group, cannot use the socket until they run the script themselves. Docker access is root-equivalent, so do not use this script on a shared host.
 
 With systemd, a simple service unit running `bun /path/to/minibox/src/server.ts` is the recommended setup.
 
@@ -480,7 +482,7 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **Container isolation, not a security sandbox.** Boxes share the host kernel. They are fine for your own agents, but **not for untrusted third-party code** — use gVisor or a microVM-based sandbox for that. Don't mount the Docker socket or sensitive host paths into a box.
 - **Boxes have passwordless `sudo`.** The `dev` user can become root inside its box, and root there can change anything in the box and in its workspace volume. The container still runs with Docker's default capabilities, not as a privileged container. A stricter profile without `sudo` is planned with [#5](https://github.com/ArnoChenFx/minibox/issues/5).
 - **Snapshots don't include `/workspace`.** `docker commit` skips mounted volumes; keep code in git or back up the volume separately.
-- `scripts/restart.sh` may start `dockerd` with `sudo` and `chmod 666` the Docker socket so a non-root user can reach it. That's convenient on a single-user sandbox but loosens permissions; review it before using it elsewhere.
+- `scripts/restart.sh` is a single-user sandbox convenience. It may start `dockerd` with `sudo`, then gives the Docker socket to your primary group with mode `660`, so only you and root can use it. Docker access is still root-equivalent, so review the script before using it elsewhere.
 
 ## Roadmap
 
