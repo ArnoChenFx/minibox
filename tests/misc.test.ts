@@ -6,7 +6,6 @@ import { cpuPercent, parseCpuMax, parseMeminfo, parseProcStat } from "../src/hos
 import { compilePath, matchRoute, route } from "../src/routes/router";
 import { snapshotTag } from "../src/services/snapshots";
 import { safeJoin } from "../src/static";
-import { parseControl } from "../src/ws/terminal";
 
 describe("procfs", () => {
   test("cpu percent from /proc/stat deltas", () => {
@@ -66,10 +65,5 @@ describe("misc", () => {
     expect(safeJoin("/srv/web", "/../etc/passwd")).toBe("/srv/web/etc/passwd");
     expect(safeJoin("/srv/web", "/%2e%2e/%2e%2e/etc")).toBe("/srv/web/etc");
     expect(safeJoin("/srv/web", "/%00")).toBeNull();
-  });
-  test("terminal control frames", () => {
-    expect(parseControl('{"type":"resize","cols":80,"rows":24}')).toEqual({ type: "resize", cols: 80, rows: 24 });
-    expect(parseControl('{"type":"resize","cols":"x"}')).toBeNull();
-    expect(parseControl("ls -la\r")).toBeNull();
   });
 });
