@@ -67,7 +67,8 @@
 ## Host 模型
 
 - `Host` 为 `{ id, name, kind, endpoint, labels, status }`。`probeHost()` 调用 `ping` 后把 `status` 记为 `online` 或 `offline`，`/api/health` 使用它。
-- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, templatesDir }`。services 的函数接收 `HostCtx`，而不是 host id。
+- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, templatesDir, security, monitor, specs }`。services 的函数接收 `HostCtx`，而不是 host id。`specs` 是控制面共享的一份规格存储（`DATA_DIR/boxes`），不是每个引擎一份。
+- `ContainerInfo` 还包含 `imageId`、`pidsLimit`、`restart` 与 `mounts`。`updateContainer` 可以改 CPU、内存、swap、进程数上限和重启策略，且不会重建容器，也不会改标签。
 - `HostRegistry` 的 `add()` 对重复 id 抛错；`get(hostId = "local")` 对未知 id 抛错。
 
 路由目前通过 `app.hosts.get()` 取得 `local`，不接受 host id，`/api/hosts/...` 尚未提供。

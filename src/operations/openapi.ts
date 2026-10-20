@@ -15,7 +15,9 @@ const ERROR_RESPONSES: Record<string, string> = {
   "404": "The box, snapshot or template named in the path does not exist.",
   "409": "The name is already taken.",
   "415": "The request declares a body that is not JSON.",
+  "412": "The If-Match revision is not the box's current revision.",
   "422": "The box would exceed the host's CPU or memory.",
+  "428": "If-Match is required and was not sent.",
   "500": "Unexpected server error.",
   "502": "Docker returned an error.",
   "503": "Docker is unavailable.",
@@ -46,6 +48,15 @@ const schemaOf = (op: Operation, key: string): JsonSchema => {
   return field ? toJsonSchema(field) : {};
 };
 
+const IF_MATCH_PARAMETER: JsonSchema = {
+  name: "If-Match",
+  in: "header",
+  required: true,
+  description:
+    "The box's current revision: a positive integer, a quoted entity tag, or a weak tag. Missing is 428 precondition_required. A stale revision is 412 precondition_failed.",
+  schema: { type: "string", minLength: 1 },
+};
+
 const RUN_PARAMETER: JsonSchema = {
   name: RUN_HEADER,
   in: "header",
@@ -65,6 +76,7 @@ function parameters(op: Operation, binding: RestBinding): JsonSchema[] {
   return [
     ...pathParams(binding).map((name) => param(name, true)),
     ...(binding.query ?? []).map((name) => param(name, false)),
+    ...(binding.ifMatch ? [IF_MATCH_PARAMETER] : []),
     RUN_PARAMETER,
   ];
 }
@@ -73,6 +85,7 @@ function parameters(op: Operation, binding: RestBinding): JsonSchema[] {
 function requestBody(op: Operation, binding: RestBinding): JsonSchema | undefined {
   if (!binding.body) return undefined;
   const supplied = new Set([...pathParams(binding), ...(binding.query ?? []), ...Object.keys(binding.fixed ?? {})]);
+  if (binding.ifMatch) supplied.add("expectedRevision");
   const keys = Object.keys(op.input.shape).filter((key) => !supplied.has(key));
   const schema = toJsonSchema(z.object(fieldsOf(op, keys)));
   return {
@@ -87,6 +100,10 @@ function errorResponses(op: Operation, binding: RestBinding): Record<string, Jso
   if (op.conflicts) codes.add("409");
   if (binding.method !== "GET") codes.add("415");
   if (op.precondition) codes.add("422");
+  if (binding.ifMatch) {
+    codes.add("412");
+    codes.add("428");
+  }
   return Object.fromEntries(
     [...codes].map((code) => [
       code,

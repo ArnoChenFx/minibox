@@ -11,6 +11,8 @@ export type ErrorCode =
   | "unsupported_media_type"
   | "too_many_requests"
   | "conflict"
+  | "precondition_failed"
+  | "precondition_required"
   | "insufficient_capacity"
   | "docker_unavailable"
   | "docker_error"

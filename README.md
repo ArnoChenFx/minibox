@@ -93,7 +93,7 @@ flowchart LR
   D --- I
 ```
 
-- **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`, restart policy `unless-stopped`). `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. The container runs as the non-root user `dev` (see [Base template](#base-template)).
+- **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`). The restart policy is `no`: a startup reconciler starts or stops the container to match the spec's desired state (`running` or `stopped`). The spec file under `DATA_DIR/boxes/` is the authority for mutable state. Container labels are written once, at create, and are not changed later. `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. The container runs as the non-root user `dev` (see [Base template](#base-template)).
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
@@ -335,7 +335,7 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | Path | Mode | Contents |
 |---|---|---|
 | `access_key` | `600` | Access key generated when none is set in the environment or `.env` |
-| `boxes/` | `700` | Box specifications (created now, used by later features) |
+| `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
 | `exec/` | `700` | Output of `exec` commands (created now, used by later features) |
 | `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
 | `events.db` (with `events.db-wal` and `events.db-shm` beside it) | inside `DATA_DIR` | Event log, SQLite in WAL mode. See [Events](#events) |
@@ -354,7 +354,7 @@ Errors use a consistent shape and the matching HTTP status:
 { "error": { "code": "validation_failed", "message": "…", "details": { "field": "cpus" } } }
 ```
 
-Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `unsupported_media_type` (415), `insufficient_capacity` (422), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in Chinese.
+Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `precondition_failed` (412), `unsupported_media_type` (415), `insufficient_capacity` (422), `precondition_required` (428), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in English, with a `key` the UI translates.
 
 ### Auth & system
 
@@ -374,16 +374,17 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | List boxes; live usage of running boxes is included unless `stats=false` |
 | `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB |
-| `GET` | `/api/boxes/:id` | Details, including live usage |
+| `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
+| `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. Template, mounts, env and profile are ignored until rebuild |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete; optionally delete the workspace volume too |
-| `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions |
-| `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"? }` |
+| `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions. Start and stop record the desired state |
+| `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"?, "pids"? }`. Requires `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | Live usage |
 | `GET` | `/api/boxes/:id/logs?tail=300` | Container logs (1–5000 lines) |
 | `POST` | `/api/boxes/:id/snapshots` | Create a snapshot `{ "name"? }` |
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket terminal. Send `{"type":"resize","cols":N,"rows":N}` to resize; any other message is stdin |
 
-`:id` is a container ID or container name (`minibox-<name>`). Limits: CPU 0.1–64, memory 128–262144 MB, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
+`:id` is a container id, a container name (`minibox-<name>`), a stable box id (`bx_…`), or the box name. Updates that change a box require `If-Match` set to its current revision (a bare number, a quoted tag, or a weak tag). A missing header is `428 precondition_required`; a stale revision is `412 precondition_failed`. Limits: CPU 0.1–64, memory 128–262144 MB, process limit 1–1000000, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
 
 ### Snapshots & templates
 
@@ -456,7 +457,8 @@ minibox/
 │   ├── static.ts            # Static file serving (path-traversal safe)
 │   ├── runtime/             # Runtime interface and RuntimeError (the engine seam)
 │   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats
-│   ├── services/            # Business logic on Runtime: boxes / images / snapshots / templates
+│   ├── specs/               # Box spec store, claim, drift and If-Match revisions
+│   ├── services/            # Business logic on Runtime: boxes / images / snapshots / templates / reconcile
 │   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
 │   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, scope hook
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections

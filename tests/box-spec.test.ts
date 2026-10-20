@@ -1,0 +1,341 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { readdirSync, statSync } from "node:fs";
+
+import type { Server } from "bun";
+
+import type { App } from "../src/app";
+import type { HostCtx } from "../src/host/registry";
+import type { LabelKeys } from "../src/labels";
+import { AppError } from "../src/lib/errors";
+import { startServer } from "../src/server";
+import * as boxes from "../src/services/boxes";
+import { reconcileHost } from "../src/services/reconcile";
+import { parseRevision } from "../src/specs/revision";
+import { RESET_FIELDS } from "../src/specs/types";
+import type { TerminalData } from "../src/ws/terminal";
+import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
+import type { FakeRuntime } from "./support/fake-runtime";
+
+const MB = 1024 * 1024;
+
+let runtime: FakeRuntime;
+let app: App;
+let host: HostCtx;
+let keys: LabelKeys;
+let restoreLogs: () => void;
+
+beforeAll(() => {
+  restoreLogs = silenceLogs();
+});
+afterAll(() => restoreLogs());
+
+beforeEach(() => {
+  const created = createTestApp({ labelPrefix: "mbtest" });
+  app = created.app;
+  runtime = created.runtime;
+  host = app.hosts.get();
+  keys = host.keys;
+  runtime.seedImage(host.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
+});
+
+const newBox = (name: string) => boxes.createBox(host, { name, cpus: 1, memoryMb: 256 });
+
+const mode = (path: string) => statSync(path).mode & 0o777;
+
+describe("spec storage", () => {
+  test("a new box is a mode-600 file under a mode-700 boxes directory, with restart policy no", async () => {
+    const box = await newBox("alpha");
+
+    expect(box.boxId).toMatch(/^bx_[0-9a-z]+$/);
+    expect(box.revision).toBe(1);
+    expect(box.desired).toBe("running");
+    expect(box.createdBy).toBe("owner");
+    expect(box.pids).toBe(1024);
+    expect(box.recovery).toBeNull();
+    expect(box.drift).toEqual([]);
+    expect(box.mounts).toEqual([{ volume: "mbtest-ws-alpha", path: "/workspace", mode: "rw" }]);
+    expect(mode(host.specs.dir())).toBe(0o700);
+    expect(mode(host.specs.pathFor(box.boxId))).toBe(0o600);
+    expect(readdirSync(host.specs.dir()).some((name) => name.endsWith(".tmp"))).toBe(false);
+
+    const container = runtime.containers.get(box.id);
+    expect(container?.spec.restart).toBe("no");
+    expect(container?.labels).toMatchObject({
+      [keys.id]: box.boxId,
+      [keys.name]: "alpha",
+      [keys.createdBy]: "owner",
+      [keys.cpus]: "1",
+      [keys.memory]: String(256 * MB),
+      [keys.pids]: "1024",
+    });
+  });
+});
+
+describe("claim and old routes", () => {
+  test("an existing container is claimed without a rename or a label change", async () => {
+    const id = runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-legacy",
+      running: true,
+      restart: "unless-stopped",
+      cpus: 1,
+      memoryBytes: 128 * MB,
+      labels: { [keys.box]: "true", [keys.name]: "legacy", [keys.template]: "old:1" },
+    });
+    const labels = { ...runtime.containers.get(id)?.labels };
+
+    const box = await boxes.getBox(host, id);
+    expect(box.name).toBe("legacy");
+    expect(box.containerName).toBe("mbtest-legacy");
+    expect(box.desired).toBe("running");
+    expect(box.recovery).toMatchObject({
+      source: "claim",
+      needsReset: [...RESET_FIELDS, "createdBy"],
+      observedRestart: "unless-stopped",
+    });
+    expect(runtime.containers.get(id)?.name).toBe("mbtest-legacy");
+    expect(runtime.containers.get(id)?.labels).toEqual(labels);
+    expect(runtime.callsTo("renameContainer")).toHaveLength(0);
+    expect(runtime.callsTo("updateContainer")).toHaveLength(0);
+
+    expect((await boxes.getBox(host, "mbtest-legacy")).boxId).toBe(box.boxId);
+    expect((await boxes.getBox(host, box.boxId)).id).toBe(id);
+    expect((await boxes.getBox(host, "legacy")).id).toBe(id);
+  });
+
+  test("a lost spec is restored from labels, and mutable fields need to be set again", async () => {
+    const box = await newBox("alpha");
+    const container = runtime.containers.get(box.id);
+    if (!container) throw new Error("box missing");
+    container.cpus = 4;
+    host.specs.remove(box.boxId);
+
+    const recovered = await boxes.getBox(host, box.id);
+    expect(recovered.boxId).toBe(box.boxId);
+    expect(recovered.cpus).toBe(4);
+    expect(recovered.recovery).toMatchObject({
+      source: "degraded",
+      needsReset: [...RESET_FIELDS],
+    });
+    expect(recovered.recovery?.needsReset).not.toContain("createdBy");
+    expect(host.specs.read(box.boxId)?.createdResources.cpus).toBe(1);
+    expect(host.specs.read(box.boxId)?.resources.cpus).toBe(4);
+    expect(container.labels[keys.id]).toBe(box.boxId);
+    expect(container.name).toBe("mbtest-alpha");
+  });
+
+  test("a container whose id label already belongs to another spec gets a new id", async () => {
+    const box = await newBox("alpha");
+    const other = runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-other",
+      running: true,
+      labels: { [keys.box]: "true", [keys.name]: "other", [keys.id]: box.boxId },
+    });
+
+    const claimed = await boxes.getBox(host, other);
+    expect(claimed.boxId).not.toBe(box.boxId);
+    expect(host.specs.read(box.boxId)?.containerId).toBe(box.id);
+    expect(runtime.containers.get(other)?.labels[keys.id]).toBe(box.boxId);
+  });
+
+  test("two containers that would share a name do not fail the whole list", async () => {
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-dup",
+      labels: { [keys.box]: "true", [keys.name]: "dup" },
+    });
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "plain-dup",
+      labels: { [keys.box]: "true", [keys.name]: "dup" },
+    });
+
+    expect((await boxes.listBoxes(host)).map((box) => box.name)).toEqual(["dup"]);
+  });
+
+  test("an illegal name label is kept, and a renamed container keeps the suffix", async () => {
+    const quoted = runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-dev",
+      labels: { [keys.box]: "true", [keys.name]: 'dev"$HOME' },
+    });
+    expect((await boxes.getBox(host, quoted)).name).toBe('dev"$HOME');
+
+    const renamed = runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-beta",
+      labels: { [keys.box]: "true", [keys.name]: "alpha" },
+    });
+    const box = await boxes.getBox(host, renamed);
+    expect(box.name).toBe("beta");
+    expect(host.specs.read(box.boxId)?.createdName).toBe("alpha");
+  });
+});
+
+describe("in-place updates", () => {
+  test("cpus, pids and a rename do not change container labels", async () => {
+    const box = await newBox("alpha");
+    const labels = { ...runtime.containers.get(box.id)?.labels };
+
+    const updated = await boxes.updateBox(host, box.id, box.revision, { cpus: 2, pids: 256, name: "beta" });
+    const container = runtime.containers.get(box.id);
+    expect(updated).toMatchObject({
+      name: "beta",
+      cpus: 2,
+      pids: 256,
+      revision: box.revision + 1,
+      volume: "mbtest-ws-alpha",
+      containerName: "mbtest-beta",
+    });
+    expect(container?.labels).toEqual(labels);
+    expect(container?.name).toBe("mbtest-beta");
+    expect(container?.spec.hostname).toBe("alpha");
+    expect(labels[keys.name]).toBe("alpha");
+  });
+
+  test("an idle timeout stays in the spec and does not call docker update", async () => {
+    const box = await newBox("alpha");
+    const before = runtime.callsTo("updateContainer").length;
+
+    const updated = await boxes.updateBox(host, box.boxId, box.revision, { idleTimeoutSec: 30, ttlSec: null });
+    expect(updated.idleTimeoutSec).toBe(30);
+    expect(updated.ttlSec).toBeNull();
+    expect(runtime.callsTo("updateContainer").length).toBe(before);
+  });
+
+  test("a stale revision is rejected and a missing If-Match is a 428", async () => {
+    const box = await newBox("alpha");
+    const stale = await rejectionOf(boxes.updateBox(host, box.id, box.revision + 5, { cpus: 2 }));
+    expect(stale).toMatchObject({
+      status: 412,
+      code: "precondition_failed",
+      key: "revision_mismatch",
+      details: { revision: box.revision, expected: box.revision + 5 },
+    });
+    expect(runtime.containers.get(box.id)?.cpus).toBe(1);
+
+    const server: Server<TerminalData> = startServer(app);
+    try {
+      const base = `http://127.0.0.1:${server.port}`;
+      const headers = { authorization: `Bearer ${TEST_KEY}`, "content-type": "application/json" };
+      const missing = await fetch(`${base}/api/boxes/${box.id}/resources`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ cpus: 2 }),
+      });
+      expect(missing.status).toBe(428);
+      expect(await missing.json()).toMatchObject({
+        error: { code: "precondition_required", key: "revision_required" },
+      });
+
+      const quoted = await fetch(`${base}/api/boxes/${box.id}`, {
+        method: "PATCH",
+        headers: { ...headers, "if-match": `W/"${box.revision}"` },
+        body: JSON.stringify({ labels: { team: "lab" }, template: "other:1" }),
+      });
+      expect(quoted.status).toBe(200);
+      const body = (await quoted.json()) as {
+        box: { revision: number; labels: Record<string, string>; image: string };
+      };
+      expect(body.box.labels).toEqual({ team: "lab" });
+      expect(body.box.image).toBe(host.baseTemplateTag);
+      expect(runtime.containers.get(box.id)?.labels[keys.template]).toBe(host.baseTemplateTag);
+      expect(runtime.containers.get(box.id)?.spec.image).toBe(host.baseTemplateTag);
+
+      const again = await fetch(`${base}/api/boxes/${box.id}/resources`, {
+        method: "PATCH",
+        headers: { ...headers, "if-match": String(box.revision) },
+        body: JSON.stringify({ cpus: 2 }),
+      });
+      expect(again.status).toBe(412);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("two updates with the same revision: one applies and the other is rejected", async () => {
+    const box = await newBox("alpha");
+    const [first, second] = await Promise.allSettled([
+      boxes.updateBox(host, box.id, box.revision, { cpus: 2 }),
+      boxes.updateBox(host, box.id, box.revision, { cpus: 3 }),
+    ]);
+    const outcomes = [first, second].map((result) => result.status);
+    expect(outcomes.toSorted()).toEqual(["fulfilled", "rejected"]);
+    const rejected = [first, second].find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" && rejected.reason).toBeInstanceOf(AppError);
+    expect(rejected?.status === "rejected" && rejected.reason).toMatchObject({ status: 412 });
+    const cpus = runtime.containers.get(box.id)?.cpus;
+    expect(cpus === 2 || cpus === 3).toBe(true);
+    expect(host.specs.read(box.boxId)?.revision).toBe(box.revision + 1);
+  });
+
+  test("parseRevision accepts a bare, quoted or weak tag", () => {
+    expect(parseRevision(undefined)).toBe("missing");
+    expect(parseRevision("  ")).toBe("missing");
+    expect(parseRevision("0")).toBe("invalid");
+    expect(parseRevision("1")).toBe(1);
+    expect(parseRevision('"12"')).toBe(12);
+    expect(parseRevision('W/"3"')).toBe(3);
+  });
+});
+
+describe("drift and the reconciler", () => {
+  test("drift comes from inspect versus the spec and is not repaired", async () => {
+    const box = await newBox("alpha");
+    const container = runtime.containers.get(box.id);
+    if (!container) throw new Error("box missing");
+    container.cpus = 3;
+
+    const drifted = await boxes.getBox(host, box.id);
+    expect(drifted.drift).toContainEqual({ field: "cpus", expected: "1", actual: "3" });
+
+    const report = await reconcileHost(host);
+    expect(report.started).toEqual([]);
+    expect(report.stopped).toEqual([]);
+    expect(runtime.containers.get(box.id)?.cpus).toBe(3);
+    expect((await boxes.getBox(host, box.id)).drift.map((item) => item.field)).toContain("cpus");
+  });
+
+  test("a desired-running box is started and a desired-stopped box is stopped, without a revision bump", async () => {
+    const running = await newBox("alpha");
+    await runtime.stopContainer(running.id, { timeoutSec: 1 });
+    const started = await reconcileHost(host);
+    expect(started.started).toEqual([running.boxId]);
+    expect((await boxes.getBox(host, running.boxId)).running).toBe(true);
+    expect(host.specs.read(running.boxId)?.revision).toBe(running.revision);
+
+    const stopped = await boxes.stopBox(host, running.boxId);
+    expect(stopped.desired).toBe("stopped");
+    expect(stopped.revision).toBe(running.revision + 1);
+    await runtime.startContainer(running.id);
+    const halted = await reconcileHost(host);
+    expect(halted.stopped).toEqual([running.boxId]);
+    expect((await boxes.getBox(host, running.boxId)).running).toBe(false);
+    expect(host.specs.read(running.boxId)?.revision).toBe(stopped.revision);
+
+    const again = await boxes.stopBox(host, running.boxId);
+    expect(again.revision).toBe(stopped.revision);
+  });
+
+  test("restart policy is forced to no and a running box stays running", async () => {
+    const id = runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-legacy",
+      running: true,
+      restart: "unless-stopped",
+      cpus: 1,
+      memoryBytes: 128 * MB,
+      labels: { [keys.box]: "true", [keys.name]: "legacy" },
+    });
+
+    const report = await reconcileHost(host);
+    expect(report.restartReset).toHaveLength(1);
+    expect(report.stopped).toEqual([]);
+    expect(report.started).toEqual([]);
+    expect(runtime.containers.get(id)?.running).toBe(true);
+    expect((await runtime.inspectContainer(id)).restart).toBe("no");
+    expect(host.specs.read(report.restartReset[0] ?? "")?.revision).toBe(1);
+    expect(runtime.containers.get(id)?.labels[keys.id]).toBeUndefined();
+  });
+});

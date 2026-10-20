@@ -1,9 +1,19 @@
 import type { Duplex, Readable } from "node:stream";
 
+export interface ContainerMount {
+  /** Volume name, or the host path for a bind mount. */
+  source: string;
+  target: string;
+  mode: "rw" | "ro";
+}
+
 export interface ContainerInfo {
   id: string;
   name: string;
+  /** Image reference the container was created from (`Config.Image`). */
   image: string;
+  /** Image id the container is currently based on, usually `sha256:…`. */
+  imageId: string;
   labels: Record<string, string>;
   created: string;
   state: string;
@@ -11,6 +21,11 @@ export interface ContainerInfo {
   startedAt: string | null;
   cpus: number | null;
   memoryBytes: number | null;
+  /** Null when the engine has no process limit. */
+  pidsLimit: number | null;
+  /** Engine restart policy name, such as `no` or `unless-stopped`. */
+  restart: string;
+  mounts: ContainerMount[];
   /** Name of the network the container is attached to. The engine's default bridge is `bridge`. */
   network: string;
 }
@@ -45,6 +60,15 @@ export interface ContainerHardening {
   ulimits?: Ulimit[];
   /** OCI runtime name, such as `runsc` for gVisor. */
   runtime?: string;
+}
+
+/** A live change to an existing container. Absent fields stay as they are. */
+export interface ContainerUpdate {
+  cpus?: number;
+  memoryBytes?: number;
+  swapBytes?: number;
+  pidsLimit?: number;
+  restart?: "no" | "unless-stopped" | "always" | "on-failure";
 }
 
 export interface CreateContainerSpec {
@@ -174,8 +198,8 @@ export interface Runtime {
   restartContainer(id: string, opts: { timeoutSec: number }): Promise<void>;
   removeContainer(id: string, opts: { force: boolean }): Promise<void>;
   renameContainer(id: string, name: string): Promise<void>;
-  /** Only the limits that are present change. */
-  updateContainer(id: string, limits: { cpus?: number; memoryBytes?: number; swapBytes?: number }): Promise<void>;
+  /** Only the fields that are present change. Restart policy changes do not recreate the container. */
+  updateContainer(id: string, limits: ContainerUpdate): Promise<void>;
   /** Log text with any stream framing removed. */
   containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string>;
   containerStats(id: string): Promise<ContainerStats>;

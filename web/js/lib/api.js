@@ -20,14 +20,16 @@ export class ApiError extends Error {
 }
 
 /** JSON fetch wrapper. Redirects to /login on 401. Throws ApiError with the server's `{error:{code,message}}`. */
-export async function api(path, { method = "GET", body, signal } = {}) {
+export async function api(path, { method = "GET", body, signal, headers } = {}) {
   let res;
   try {
     const init = { method, signal, credentials: "same-origin" };
+    const hdrs = new Headers(headers);
     if (body !== undefined) {
-      init.headers = { "content-type": "application/json" };
+      if (!hdrs.has("content-type")) hdrs.set("content-type", "application/json");
       init.body = JSON.stringify(body);
     }
+    init.headers = hdrs;
     res = await fetch(path, init);
   } catch (e) {
     if (e.name === "AbortError") throw e;

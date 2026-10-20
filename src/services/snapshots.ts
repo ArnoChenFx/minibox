@@ -19,7 +19,7 @@ export async function createSnapshot(
   const box = await getBox(host, boxId);
   const { repo, tag } = snapshotTag(host.prefix, name ?? box.name);
   const k = host.keys;
-  await host.runtime.commitContainer(boxId, {
+  await host.runtime.commitContainer(box.id, {
     repo,
     tag,
     comment: `MiniBox snapshot of ${box.name}`,

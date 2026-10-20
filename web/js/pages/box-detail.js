@@ -9,6 +9,34 @@ import { setCrumbs } from "../lib/layout.js";
 import { sparkline } from "../lib/sparkline.js";
 import { emptyState, stateBadge, toastError, usageBar } from "../lib/ui.js";
 
+function joined(names, translate) {
+  return esc((names ?? []).map((name) => (translate ? t(`reset.${name}`) : name)).join(t("reset.sep")));
+}
+
+function specBanners(box) {
+  const parts = [];
+  const recovery = box.recovery;
+  if (recovery?.needsReset?.length) {
+    const fields = joined(recovery.needsReset, true);
+    const degraded = recovery.source === "degraded";
+    const title = degraded ? t("bd.degradedTitle") : t("bd.claimTitle");
+    const text = degraded ? t("bd.degradedText", { fields }) : t("bd.claimText", { fields });
+    parts.push(
+      `<div class="callout warn" style="margin-bottom:16px">${icon("alert")}<span><strong>${title}</strong> ${text}</span></div>`,
+    );
+  }
+  if (box.drift?.length) {
+    const fields = joined(
+      box.drift.map((item) => item.field),
+      false,
+    );
+    parts.push(
+      `<div class="callout warn" style="margin-bottom:16px">${icon("alert")}<span><strong>${t("bd.driftTitle")}</strong> ${t("bd.driftText", { fields })}</span></div>`,
+    );
+  }
+  return parts.join("");
+}
+
 const TABS = [
   ["overview", "bd.tabOverview", "dashboard"],
   ["terminal", "bd.tabTerminal", "terminal"],
@@ -106,6 +134,7 @@ const TAB_RENDER = {
       const b = box();
       const s = b.stats;
       root.innerHTML = `
+        ${specBanners(b)}
         <div class="grid grid-3">
           <div class="card metric"><div class="metric-top"><span>CPU</span>${icon("cpu")}</div>
             <div class="metric-value">${s ? pct(s.cpuPercent) : "—"}<small>${t("bd.quota", { v: cpus(b.cpus) })}</small></div>
@@ -119,6 +148,10 @@ const TAB_RENDER = {
         </div>
         <div class="card" style="margin-top:16px"><div class="card-head"><h3>${t("bd.info")}</h3></div><div class="card-body"><dl class="kv">
           <dt>${t("bd.name")}</dt><dd>${esc(b.name)}</dd>
+          <dt>${t("bd.boxId")}</dt><dd class="mono">${esc(b.boxId || "—")}</dd>
+          <dt>${t("bd.revision")}</dt><dd>${esc(String(b.revision ?? "—"))}</dd>
+          <dt>${t("bd.desired")}</dt><dd>${b.desired === "stopped" ? t("bd.desiredStopped") : t("bd.desiredRunning")}</dd>
+          <dt>${t("bd.createdBy")}</dt><dd>${b.createdBy ? esc(b.createdBy) : t("bd.createdByUnknown")}</dd>
           <dt>${t("bd.containerId")}</dt><dd class="mono">${esc(b.id)}</dd>
           <dt>${t("bd.image")}</dt><dd class="mono">${esc(b.image)}</dd>
           <dt>${t("bd.template")}</dt><dd class="mono">${esc(b.template || "—")}</dd>
@@ -126,7 +159,7 @@ const TAB_RENDER = {
           <dt>${t("bd.network")}</dt><dd class="mono">${esc(b.network)}</dd>
           <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume)}</span></dd>
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
-          <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(`minibox-${b.name}`)} bash</code></dd>
+          <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(b.containerName || `minibox-${b.name}`)} bash</code></dd>
         </dl></div></div>`;
     };
     draw();
@@ -242,6 +275,7 @@ const TAB_RENDER = {
           <div class="card-body"><dl class="kv">
             <dt>${t("bd.cpuLimit")}</dt><dd>${cpus(b.cpus)}</dd>
             <dt>${t("bd.memLimit")}</dt><dd>${mem(b.memory)}</dd>
+            <dt>${t("bd.pids")}</dt><dd>${b.pids ?? t("common.unlimited")}</dd>
             <dt>${t("bd.swap")}</dt><dd>${t("bd.swapValue")}</dd>
             <dt>${t("bd.restartPolicy")}</dt><dd>${t("bd.restartValue")}</dd>
           </dl><div class="callout" style="margin-top:16px">${icon("info")}<span>${t("bd.hotUpdate")}</span></div></div></div>

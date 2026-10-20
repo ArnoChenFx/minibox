@@ -1,6 +1,10 @@
 import { type BoxProfile, isBoxProfile } from "./box-profile";
 
-/** Label keys derived from a configurable prefix. All MiniBox state lives in Docker labels. */
+/**
+ * Label keys derived from a configurable prefix.
+ * Container labels are written once, at create, and only for values that cannot change later.
+ * Mutable box state lives in DATA_DIR.
+ */
 export interface LabelKeys {
   box: string;
   name: string;
@@ -11,6 +15,14 @@ export interface LabelKeys {
   snapshot: string;
   snapshotOf: string;
   profile: string;
+  /** Stable box id (`bx_…`). Absent on boxes created before specs existed. */
+  id: string;
+  digest: string;
+  mounts: string;
+  cpus: string;
+  memory: string;
+  pids: string;
+  createdBy: string;
 }
 
 export function labelKeys(prefix: string): LabelKeys {
@@ -24,6 +36,13 @@ export function labelKeys(prefix: string): LabelKeys {
     snapshot: `${prefix}.snapshot`,
     snapshotOf: `${prefix}.snapshot.of`,
     profile: `${prefix}.profile`,
+    id: `${prefix}.id`,
+    digest: `${prefix}.digest`,
+    mounts: `${prefix}.mounts`,
+    cpus: `${prefix}.cpus`,
+    memory: `${prefix}.memory`,
+    pids: `${prefix}.pids`,
+    createdBy: `${prefix}.createdBy`,
   };
 }
 

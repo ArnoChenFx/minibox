@@ -63,6 +63,9 @@ export function registryProblems(operations: readonly Operation[]): string[] {
       for (const key of [...(binding.query ?? []), ...Object.keys(binding.fixed ?? {})]) {
         if (!inputs.has(key)) problems.push(`${op.name} binds ${key}, which is not an input`);
       }
+      if (binding.ifMatch && !inputs.has("expectedRevision")) {
+        problems.push(`${op.name} requires If-Match but has no expectedRevision input`);
+      }
     }
   }
   return problems;

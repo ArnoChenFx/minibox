@@ -41,6 +41,11 @@ export interface RestBinding {
   readonly body?: boolean;
   /** Input values the route supplies itself, so clients cannot send them. */
   readonly fixed?: Readonly<Record<string, string>>;
+  /**
+   * Read `If-Match` into `expectedRevision`, overwriting any value in the body.
+   * The operation's input must have an `expectedRevision` field.
+   */
+  readonly ifMatch?: boolean;
 }
 
 export interface McpMetadata {

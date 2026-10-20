@@ -2,6 +2,7 @@ import type { BoxProfile } from "../box-profile";
 import type { Config } from "../config";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
+import { SpecStore } from "../specs/store";
 import { HostMonitor } from "./metrics";
 
 export const LOCAL_HOST_ID = "local";
@@ -33,10 +34,15 @@ export interface HostCtx {
   templatesDir: string;
   security: HostSecurity;
   monitor: HostMonitor;
+  /** Control-plane spec store. One store is shared by every host; files live under `DATA_DIR/boxes`. */
+  specs: SpecStore;
 }
 
-/** Single-machine installs get one implicit host with the configured Docker socket. */
-export function createLocalHost(cfg: Config, runtime: Runtime): HostCtx {
+/**
+ * Single-machine installs get one implicit host with the configured Docker socket.
+ * `specs` defaults to a store for `cfg.dataDir`. Pass one store when several hosts share a control plane.
+ */
+export function createLocalHost(cfg: Config, runtime: Runtime, specs: SpecStore = new SpecStore(cfg.dataDir)): HostCtx {
   const ctx: HostCtx = {
     host: {
       id: LOCAL_HOST_ID,
@@ -58,6 +64,7 @@ export function createLocalHost(cfg: Config, runtime: Runtime): HostCtx {
       network: boxNetworkName(cfg.labelPrefix),
     },
     monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory),
+    specs,
   };
   return ctx;
 }
@@ -68,6 +75,10 @@ export class HostRegistry {
   add(ctx: HostCtx): void {
     if (this.hosts.has(ctx.host.id)) throw new Error(`host already registered: ${ctx.host.id}`);
     this.hosts.set(ctx.host.id, ctx);
+  }
+
+  list(): HostCtx[] {
+    return [...this.hosts.values()];
   }
 
   /** Defaults to `local`. Unknown ids are a programming error: no route accepts a host id yet. */

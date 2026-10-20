@@ -8,6 +8,8 @@ import {
   type CommitSpec,
   type ContainerHardening,
   type ContainerInfo,
+  type ContainerMount,
+  type ContainerUpdate,
   type CreateContainerSpec,
   type Runtime,
   type RuntimeEvent,
@@ -46,12 +48,27 @@ function networkOf(info: Docker.ContainerInspectInfo): string {
   return mode && mode !== "default" ? mode : "bridge";
 }
 
+/** A zero or negative process limit means the engine is not enforcing one. */
+function pidsOf(value: number | undefined): number | null {
+  return value !== undefined && value > 0 ? value : null;
+}
+
+function mountsOf(info: Docker.ContainerInspectInfo): ContainerMount[] {
+  return (info.Mounts ?? []).flatMap((mount) => {
+    const source = mount.Type === "volume" ? (mount.Name ?? mount.Source) : mount.Source;
+    if (!source || !mount.Destination) return [];
+    const readOnly = mount.RW === false || (mount.Mode ?? "").split(",").includes("ro");
+    return [{ source, target: mount.Destination, mode: readOnly ? "ro" : "rw" }];
+  });
+}
+
 export function toContainerInfo(info: Docker.ContainerInspectInfo): ContainerInfo {
   const started = info.State.StartedAt;
   return {
     id: info.Id,
     name: stripSlash(info.Name),
     image: info.Config.Image,
+    imageId: info.Image,
     labels: info.Config?.Labels ?? {},
     created: info.Created,
     state: info.State.Status,
@@ -59,6 +76,9 @@ export function toContainerInfo(info: Docker.ContainerInspectInfo): ContainerInf
     startedAt: started && !started.startsWith("0001") ? started : null,
     cpus: info.HostConfig?.NanoCpus ? info.HostConfig.NanoCpus / NANO_CPUS_PER_CPU : null,
     memoryBytes: info.HostConfig?.Memory || null,
+    pidsLimit: pidsOf(info.HostConfig?.PidsLimit),
+    restart: info.HostConfig?.RestartPolicy?.Name || "no",
+    mounts: mountsOf(info),
     network: networkOf(info),
   };
 }
@@ -115,11 +135,13 @@ function toCommitOptions(spec: CommitSpec): Record<string, unknown> {
   return opts;
 }
 
-function toUpdateOptions(limits: { cpus?: number; memoryBytes?: number; swapBytes?: number }): Record<string, number> {
-  const opts: Record<string, number> = {};
+export function toUpdateOptions(limits: ContainerUpdate): Record<string, unknown> {
+  const opts: Record<string, unknown> = {};
   if (limits.cpus !== undefined) opts.NanoCpus = Math.round(limits.cpus * NANO_CPUS_PER_CPU);
   if (limits.memoryBytes !== undefined) opts.Memory = limits.memoryBytes;
   if (limits.swapBytes !== undefined) opts.MemorySwap = limits.swapBytes;
+  if (limits.pidsLimit !== undefined) opts.PidsLimit = limits.pidsLimit;
+  if (limits.restart !== undefined) opts.RestartPolicy = { Name: limits.restart };
   return opts;
 }
 

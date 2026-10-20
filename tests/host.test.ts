@@ -33,6 +33,7 @@ describe("HostRegistry", () => {
     expect(app.hosts.get("local")).toBe(ctx);
     expect(ctx.baseTemplateTag).toBe(app.cfg.baseTemplateTag);
     expect(ctx.keys.box).toBe("mbtest");
+    expect(app.hosts.list().map((item) => item.host.id)).toEqual(["local"]);
   });
 
   test("unknown ids are an error, and a host id can only be registered once", () => {

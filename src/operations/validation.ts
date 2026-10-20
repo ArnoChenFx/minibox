@@ -19,6 +19,12 @@ import {
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
 const DEFAULT_TAIL = 300;
+const PIDS_MIN = 1;
+const PIDS_MAX = 1_000_000;
+/** 365 days. Idle timeout and TTL share the cap. */
+const MAX_LIFETIME_SEC = 31_536_000;
+const LABEL_COUNT_MAX = 32;
+const LABEL_VALUE_MAX = 256;
 
 type Meta = z.core.GlobalMeta;
 
@@ -107,8 +113,11 @@ export function field<T>(check: (value: unknown) => Checked<T>, meta: Meta) {
     .meta(meta);
 }
 
-/** A box as the path or the body names it: its container id, or its name. */
-export const boxId = () => z.string().meta({ description: "Box id: the container id, or the container name." });
+/** A box as the path or the body names it: container id, container name, stable id, or box name. */
+export const boxId = () =>
+  z.string().meta({
+    description: "Box id: a container id, a container name, a stable box id (bx_…), or the box name.",
+  });
 
 export const boxName = () =>
   field((value) => checkName(value, "boxName"), {
@@ -210,12 +219,124 @@ export const statsFlag = () =>
     description: withDefault("Include current resource usage of running boxes. Send false to skip it.", true),
   }).default(true);
 
-/** Names neither CPU nor memory. Like the legacy check, it runs only once every field has passed. */
-export function requireResources(ctx: z.RefinementCtx, input: { cpus?: unknown; memoryMb?: unknown }): void {
-  if (input.cpus === undefined && input.memoryMb === undefined) {
+function checkPids(value: unknown): Checked<number> {
+  const n = toNumber(value);
+  if (n === undefined || !Number.isInteger(n)) return reject(msg("not_a_number", { label: "pids" }), "pids");
+  if (n < PIDS_MIN || n > PIDS_MAX) return reject(msg("pids_range", { min: PIDS_MIN, max: PIDS_MAX }), "pids");
+  return accept(n);
+}
+
+function checkLifetime(value: unknown, field: "idleTimeoutSec" | "ttlSec"): Checked<number | null | undefined> {
+  if (value === undefined) return accept(undefined);
+  if (value === null) return accept(null);
+  const n = toNumber(value);
+  const key = field === "idleTimeoutSec" ? "idle_timeout_invalid" : "ttl_invalid";
+  if (n === undefined || !Number.isInteger(n) || n < 1 || n > MAX_LIFETIME_SEC) {
+    return reject(msg(key, { max: MAX_LIFETIME_SEC }), field);
+  }
+  return accept(n);
+}
+
+function checkLabels(value: unknown): Checked<Record<string, string> | undefined> {
+  if (value === undefined) return accept(undefined);
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return reject(msg("label_invalid"), "labels");
+  const entries = Object.entries(value);
+  if (entries.length > LABEL_COUNT_MAX) return reject(msg("label_invalid"), "labels");
+  const labels: Record<string, string> = {};
+  for (const [key, raw] of entries) {
+    if (!NAME_RE.test(key) || typeof raw !== "string" || raw.length > LABEL_VALUE_MAX || /\p{Cc}/u.test(raw)) {
+      return reject(msg("label_invalid"), "labels");
+    }
+    labels[key] = raw;
+  }
+  return accept(labels);
+}
+
+const PIDS_META: Meta = {
+  type: "integer",
+  minimum: PIDS_MIN,
+  maximum: PIDS_MAX,
+  description: "Process limit, an integer between 1 and 1000000.",
+};
+
+const LIFETIME_HELP =
+  "A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.";
+
+/** Names neither CPU, memory nor a process limit. It runs only once every field has passed. */
+export function requireResources(
+  ctx: z.RefinementCtx,
+  input: { cpus?: unknown; memoryMb?: unknown; pids?: unknown },
+): void {
+  if (input.cpus === undefined && input.memoryMb === undefined && input.pids === undefined) {
     addFailure(ctx, { message: msg("resources_required") });
   }
 }
+
+const UPDATE_FIELDS = ["name", "cpus", "memoryMb", "pids", "labels", "idleTimeoutSec", "ttlSec"] as const;
+
+/** An in-place update has to change something. Template, mounts, env and profile are not accepted here. */
+export function requireUpdate(
+  ctx: z.RefinementCtx,
+  input: {
+    name?: unknown;
+    cpus?: unknown;
+    memoryMb?: unknown;
+    pids?: unknown;
+    labels?: unknown;
+    idleTimeoutSec?: unknown;
+    ttlSec?: unknown;
+  },
+): void {
+  if (UPDATE_FIELDS.every((key) => input[key] === undefined)) addFailure(ctx, { message: msg("box_update_empty") });
+}
+
+export const optionalBoxName = () =>
+  field(
+    (value): Checked<string | undefined> =>
+      value === undefined || value === null || value === "" ? accept(undefined) : checkName(value, "boxName"),
+    {
+      ...NAME_META,
+      description: "New box name. The container is renamed to prefix-name. The workspace volume is not renamed.",
+    },
+  ).optional();
+
+export const optionalPids = () =>
+  field(
+    (value): Checked<number | undefined> => (value === null ? accept(undefined) : checkPids(value)),
+    PIDS_META,
+  ).optional();
+
+export const idleTimeout = () =>
+  field((value) => checkLifetime(value, "idleTimeoutSec"), {
+    description: `Idle timeout in seconds. ${LIFETIME_HELP}`,
+    anyOf: [{ type: "integer", minimum: 1, maximum: MAX_LIFETIME_SEC }, { type: "null" }],
+  }).optional();
+
+export const ttl = () =>
+  field((value) => checkLifetime(value, "ttlSec"), {
+    description: `Time to live in seconds. ${LIFETIME_HELP}`,
+    anyOf: [{ type: "integer", minimum: 1, maximum: MAX_LIFETIME_SEC }, { type: "null" }],
+  }).optional();
+
+export const userLabels = () =>
+  field(checkLabels, {
+    type: "object",
+    description:
+      "User labels stored in the spec. At most 32 entries. Keys follow box name rules. Values are a single line of at most 256 characters. Replaces the current set. Never copied onto the container.",
+    maxProperties: LABEL_COUNT_MAX,
+    additionalProperties: { type: "string", maxLength: LABEL_VALUE_MAX },
+  }).optional();
+
+/**
+ * Present so MCP and direct callers can pass the revision. REST overwrites it with the If-Match header.
+ * Empty means the caller did not send one; the handler rejects that with 428 after the other checks.
+ */
+export const expectedRevision = () =>
+  z.string().default("").meta({
+    description:
+      "The box's current revision. REST sends it as the If-Match header (a bare number, a quoted tag or a weak tag). MCP and the CLI pass this argument. Omitting it is rejected with 428; a stale value is rejected with 412.",
+  });
 
 /** Validates one input and reports the first failing field, in the order the handwritten validators checked them. */
 export function parseInput<T extends z.ZodObject>(schema: T, raw: unknown): z.output<T> {

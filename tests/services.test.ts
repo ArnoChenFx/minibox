@@ -54,7 +54,7 @@ describe("createBox", () => {
       cmd: ["sleep", "infinity"],
       workingDir: "/workspace",
       hostname: "alpha",
-      restart: "unless-stopped",
+      restart: "no",
       cpus: 1,
       memoryBytes: 256 * MB,
       swapBytes: 256 * MB,
@@ -285,10 +285,11 @@ describe("box lifecycle and resources", () => {
 
   test("resource updates only send the limits that were given, and memory also sets swap", async () => {
     const box = await newBox("alpha");
-    expect(await boxes.updateResources(host, box.id, { cpus: 2 })).toMatchObject({ cpus: 2, memory: 256 * MB });
+    const resized = await boxes.updateResources(host, box.id, { cpus: 2 }, box.revision);
+    expect(resized).toMatchObject({ cpus: 2, memory: 256 * MB });
     expect(runtime.callsTo("updateContainer")[0]?.args[1]).toEqual({ cpus: 2 });
 
-    await boxes.updateResources(host, box.id, { memoryMb: 512 });
+    await boxes.updateResources(host, box.id, { memoryMb: 512 }, resized.revision);
     expect(runtime.callsTo("updateContainer")[1]?.args[1]).toEqual({ memoryBytes: 512 * MB, swapBytes: 512 * MB });
   });
 
