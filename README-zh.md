@@ -26,7 +26,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 
 - Agent 很容易把环境弄乱：随手全局安装、做到一半的构建、残留进程。放进 Box 里就不会污染宿主机，一键即可重建、快照或删除。
 - 托管沙箱很好用，但有时你更想用自己的硬件和网络，也不想按分钟计费。
-- 更重的自托管方案（基于 Firecracker 的沙箱、Coder、Kubernetes Operator）对个人来说太重。MiniBox 只是一个和本机 Docker Engine 通信的 Bun 进程，**不需要数据库**，所有状态都保存在 Docker 的标签、镜像和数据卷中。
+- 更重的自托管方案（基于 Firecracker 的沙箱、Coder、Kubernetes Operator）对个人来说太重。MiniBox 只是一个和本机 Docker Engine 通信的 Bun 进程，**不需要数据库服务**。Box 的状态保存在 Docker 的标签、镜像和数据卷中，MiniBox 自身的少量文件保存在[数据目录](#数据目录)里。
 
 ## 功能
 
@@ -116,16 +116,16 @@ bun run build:template
 bun start
 ```
 
-如果 `ACCESS_KEY` 为空，首次启动时会自动生成一个 64 位十六进制密钥并写入 `.env`（权限 600）：
+如果环境变量和 `.env` 中都没有设置 `ACCESS_KEY`，首次启动时会自动生成一个 64 位十六进制密钥，并保存到 `DATA_DIR/access_key`（权限 600，默认为 `./data/access_key`）。`.env` 永远不会被修改：
 
 ```bash
-grep ACCESS_KEY .env
+cat data/access_key
 ```
 
 浏览器打开 <http://127.0.0.1:3920>，输入密钥登录。
 
 > [!TIP]
-> 自动生成密钥时，`.env` 会被重写为只包含 `ACCESS_KEY`、`PORT` 和 `HOST` 三项。其他配置请在首次启动之后再填写，或者事先自己在 `.env` 里写好密钥（例如 `openssl rand -hex 32`）。
+> 想自己指定密钥，就在 `.env` 里设置 `ACCESS_KEY`（例如 `openssl rand -hex 32`）。`.env` 或环境变量中的密钥始终优先于自动生成的密钥；早期版本写入 `.env` 的密钥照常生效。
 
 ### 后台运行
 
@@ -136,7 +136,7 @@ scripts/restart.sh              # 包含隧道
 scripts/restart.sh --no-tunnel  # 只启动服务
 ```
 
-服务输出写入项目根目录的 `server.log`（已在 git 中忽略）。
+服务输出写入项目根目录的 `server.log`（已在 git 中忽略）。脚本还会报告访问密钥的保存位置，但不会输出密钥本身。
 
 有 systemd 时，推荐写一个服务单元执行 `bun /path/to/minibox/src/server.ts`。
 
@@ -161,25 +161,29 @@ docker run -d --name minibox --restart unless-stopped \
   -p 127.0.0.1:3920:3920 \
   -e ACCESS_KEY="$(openssl rand -hex 32)" \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v minibox-data:/data \
   ghcr.io/arnochenfx/minibox:latest
 ```
 
 - MiniBox 通过宿主机的 Docker Engine 管理 Box，**必须**挂载 Docker Socket（`-v /var/run/docker.sock:/var/run/docker.sock`）。Box 会作为宿主机上的同级容器创建，而不是在 MiniBox 容器内部。
-- 请务必传入 `ACCESS_KEY`，否则会在容器内随机生成，重建容器后就丢失了（`docker logs minibox` 只显示前 4 位）。
+- 挂载一个数据卷到 `/data`（`-v minibox-data:/data`）。它保存[数据目录](#数据目录)，包括自动生成的访问密钥，因此重建容器后状态不会丢失。没有数据卷的话，删除容器时这些状态也会丢失。
+- 如果没有传入 `ACCESS_KEY`，用 `docker exec minibox cat /data/access_key` 读取自动生成的密钥。`docker logs` 只显示前 4 位。
+- 从把密钥生成到 `/app/.env` 的旧镜像升级：该文件位于旧容器内，重建容器时会丢失。请先用 `docker exec minibox grep '^ACCESS_KEY=' /app/.env` 把密钥取出来，再通过 `-e ACCESS_KEY=...` 传入。
 - 容器内监听 `0.0.0.0:3920`（`HOST=0.0.0.0`）；如上所示只发布到宿主机的 `127.0.0.1`，远程访问请走 HTTPS。
 - 镜像标签：`X.Y.Z`、`X.Y` 和 `latest`（`1.0.0-rc.1` 这类预发布版本只打完整版本号标签）。
 - 本地构建：`docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
 
 ## 配置
 
-优先级：进程环境变量 > `.env` 文件 > 默认值。参考 [`.env.example`](.env.example)。
+优先级：进程环境变量 > `.env` 文件 > 默认值。访问密钥还会回退到 `DATA_DIR/access_key`。参考 [`.env.example`](.env.example)。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `ACCESS_KEY` | 首次启动自动生成 | 控制台与 API 的访问密钥 |
+| `ACCESS_KEY` | 自动生成到 `DATA_DIR/access_key` | 控制台与 API 的访问密钥。MiniBox 不会把它写入 `.env` |
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `PORT` | `3920` | 监听端口 |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
+| `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
 | `BASE_TEMPLATE` | `<前缀>-template:base` | 新建 Box 的默认模板镜像 |
 | `METRICS_INTERVAL_MS` | `3000` | 宿主机采样间隔（毫秒） |
@@ -188,6 +192,19 @@ docker run -d --name minibox --restart unless-stopped \
 | `MINIBOX_VERSION` | 来自 git / `package.json` | 覆盖显示的版本号（发布镜像中自动设置） |
 
 > `bun run build:template` 固定打 `minibox-template:base` 标签。如果改了 `LABEL_PREFIX` 或 `BASE_TEMPLATE`，请改在控制台「模板 → 构建基础模板」中构建，它会使用配置的标签。
+
+## 数据目录
+
+MiniBox 把自己管理的状态保存在 `DATA_DIR` 里。它是一个普通文件目录，而不是数据库服务，请和其他数据一起备份。相对路径相对于项目根目录解析，`~/` 会展开为你的主目录。
+
+| 路径 | 权限 | 内容 |
+|---|---|---|
+| `access_key` | `600` | 环境变量和 `.env` 中都没有设置时自动生成的访问密钥 |
+| `boxes/` | `700` | Box 规格（现在创建，后续功能使用） |
+| `exec/` | `700` | `exec` 命令的输出（现在创建，后续功能使用） |
+| `secrets/` | `700` | 密钥值与仓库密钥（现在创建，后续功能使用） |
+
+MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写入 `.env`。如果 `DATA_DIR` 丢失，且 `.env` 和环境变量中也没有设置密钥，下次启动会生成新的访问密钥，所有人都需要用新密钥登录。如果你依赖当前密钥，请备份 `access_key`，或在 `.env` 中设置 `ACCESS_KEY`。
 
 ## API 参考
 
@@ -249,7 +266,7 @@ docker run -d --name minibox --restart unless-stopped \
 ### 示例
 
 ```bash
-KEY=$(grep ACCESS_KEY .env | cut -d= -f2)
+KEY=$(grep '^ACCESS_KEY=' .env | cut -d= -f2)   # 若由 MiniBox 生成密钥，也可以用 KEY=$(cat data/access_key)
 curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"name":"agent-dev","cpus":2,"memoryMb":4096}' http://127.0.0.1:3920/api/boxes
 
@@ -264,7 +281,8 @@ minibox/
 ├── src/
 │   ├── server.ts            # 入口：Bun.serve、静态资源、WebSocket 升级、优雅退出
 │   ├── app.ts               # 应用上下文（配置、Docker、监控、操作记录）
-│   ├── config.ts            # 环境变量 / .env 配置、密钥生成
+│   ├── config.ts            # 环境变量 / .env 配置、访问密钥优先级
+│   ├── data-dir.ts          # DATA_DIR 布局与密钥文件（600）
 │   ├── auth.ts              # 密钥校验、Cookie、登录限流
 │   ├── labels.ts            # Docker 标签键与解析
 │   ├── activity.ts          # 最近操作记录
@@ -321,8 +339,9 @@ bun run check      # 以上全部，与 CI 一致
 
 MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。对外暴露前请务必阅读。
 
-- **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 已在 `.gitignore` 中忽略，不要提交它。
-- **访问密钥是唯一门禁。** 没有用户体系。登录失败按 IP 限流（5 分钟内最多 10 次），密钥比对是恒定时间的，但密钥一旦泄露就等于完全失守。更换密钥：修改 `.env` 中的 `ACCESS_KEY` 后重启服务，现有会话立即失效。
+- **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 和 `data/` 已在 `.gitignore` 中忽略，不要提交它们。
+- **容器以 root 运行。** 容器需要使用 Docker Socket，而 Docker Socket 等同于 root。要缩小这部分权限，可以在 Socket 前放一个只转发 MiniBox 所需 Docker API 的 Socket 代理，并把 `DOCKER_SOCKET` 指向代理的 Unix Socket；也可以让 MiniBox 连接 rootless Docker 或 Podman 的 Socket。
+- **访问密钥是唯一门禁。** 没有用户体系。登录失败按 IP 限流（5 分钟内最多 10 次），密钥比对是恒定时间的，但密钥一旦泄露就等于完全失守。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务。重启后现有会话失效。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
 - **远程访问请使用 HTTPS。** 通过 HTTPS 访问时（包括在设置了 `X-Forwarded-Proto` 的 TLS 反向代理之后），登录 Cookie 会带上 `Secure` 标记。
 - **公开隧道可以被发现。** 隧道域名（例如 OpenTunnel 的 `*.opentunnel.xyz`）可能出现在公开的证书透明度日志里，也可能被猜到，而且 OpenTunnel 本身不提供认证。这相当于把控制台直接放在公网上，只靠访问密钥保护；流量还会经过隧道的中继服务器。条件允许时优先使用私有网络（如 Tailscale）或带认证的反向代理，不用时把隧道关掉。
