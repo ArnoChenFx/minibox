@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
+import { COOKIE_NAME } from "../src/auth";
 import type { HostMetrics } from "../src/host/metrics";
 import { startServer } from "../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
@@ -43,6 +44,7 @@ afterEach(async () => {
     for (const stream of started.streams) await stream.close();
     started.server.stop(true);
     started.app.throttle.stop();
+    started.app.sessions.stop();
     started.app.events.close();
   }
   running = [];
@@ -80,12 +82,30 @@ async function listEvents(base: string, query = ""): Promise<Page> {
 }
 
 async function openStream(server: Running, query = "", extra: Record<string, string> = {}): Promise<SseReader> {
-  const res = await fetch(`${server.base}/api/events/stream${query ? `?${query}` : ""}`, { headers: auth(extra) });
+  return openStreamWith(server, auth(extra), query);
+}
+
+async function openStreamWith(server: Running, headers: Record<string, string>, query = ""): Promise<SseReader> {
+  const res = await fetch(`${server.base}/api/events/stream${query ? `?${query}` : ""}`, { headers });
   expect(res.status).toBe(200);
   if (!res.body) throw new Error("the stream has no body");
   const reader = new SseReader(res.body.getReader());
   server.streams.push(reader);
   return reader;
+}
+
+const cookieFor = (token: string) => ({ cookie: `${COOKIE_NAME}=${token}` });
+
+/** Signs in with the access key and returns the session token that the sign-in cookie carries. */
+async function signIn(base: string): Promise<string> {
+  const res = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { origin: base, "content-type": "application/json" },
+    body: JSON.stringify({ key: TEST_KEY }),
+  });
+  expect(res.status).toBe(200);
+  const cookie = res.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE_NAME}=`)) ?? "";
+  return cookie.slice(COOKIE_NAME.length + 1).split(";")[0] ?? "";
 }
 
 async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
@@ -282,5 +302,38 @@ describe("GET /api/events/stream", () => {
 
     await sse.close();
     await waitFor(() => server.app.bus.listenerCount("event") === baseline);
+  });
+
+  test("a stream opened with a browser session ends when that session signs out", async () => {
+    const server = start();
+    const token = await signIn(server.base);
+    const sse = await openStreamWith(server, cookieFor(token));
+    expect((await sse.next()).retry).toBe(3000);
+
+    const logout = await fetch(`${server.base}/api/auth/logout`, {
+      method: "POST",
+      headers: { origin: server.base, "content-type": "application/json", ...cookieFor(token) },
+      body: "{}",
+    });
+    expect(logout.status).toBe(200);
+    await sse.untilEnd();
+  });
+
+  test("revoking one session ends its stream and leaves another session's stream receiving events", async () => {
+    const server = start();
+    const { token, session } = server.app.sessions.create({ userAgent: "test", ip: "127.0.0.1" });
+    const kept = await signIn(server.base);
+    const revoked = await openStreamWith(server, cookieFor(token));
+    const live = await openStreamWith(server, cookieFor(kept));
+    await revoked.next();
+    await live.next();
+
+    const res = await fetch(`${server.base}/api/auth/sessions/${session.id}`, { method: "DELETE", headers: auth() });
+    expect(res.status).toBe(200);
+    await revoked.untilEnd();
+
+    await createBox(server.base, "after-revoke");
+    const frame = await live.until((f) => opOf(f) === "box.create");
+    expect(summaryOf(frame)).toBe("Create and start a box: after-revoke");
   });
 });

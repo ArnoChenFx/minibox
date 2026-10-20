@@ -67,6 +67,14 @@ export class SseReader {
     }
   }
 
+  /** Reads and discards whatever arrives until the server ends the stream. Fails if it stays open for `timeoutMs`. */
+  async untilEnd(timeoutMs = 5000): Promise<void> {
+    for (;;) {
+      const { done } = await within(this.reader.read(), timeoutMs);
+      if (done) return;
+    }
+  }
+
   async close(): Promise<void> {
     await this.reader.cancel().catch(() => undefined);
   }
