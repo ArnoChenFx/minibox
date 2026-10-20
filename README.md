@@ -41,7 +41,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
 | Logs | Main-process output with selectable line count and auto-refresh |
-| Access control | Single access key via HttpOnly, `SameSite=Strict` cookie or `Authorization: Bearer`; login rate limiting per client address; cross-site requests refused |
+| Access control | Single access key, exchanged at sign-in for a revocable session token in an HttpOnly, `SameSite=Strict` cookie, or sent as `Authorization: Bearer`; login rate limiting per client address; cross-site requests refused |
 | Languages | English and Simplified Chinese; toggle with the language icon button in the top-right corner (console header and login page). Defaults to the browser language and is remembered per browser |
 | UI | Light / dark theme (follows the system, manual toggle), responsive layout, empty states, skeleton loaders, toasts, confirmation for destructive actions |
 
@@ -275,6 +275,8 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` from a reverse proxy you run in front of MiniBox. **Only behind a proxy that overwrites or strips them on every request**, and only when MiniBox is reachable through that proxy alone. Leave `false` for OpenTunnel and other tunnels that add no such headers (see [Remote access](#remote-access)) |
 | `ALLOWED_ORIGINS` | empty | This MiniBox's public origin(s), full `https://` addresses, comma-separated, e.g. `https://minibox.example.com`. **Needed when a proxy rewrites `Host`** (nginx does by default); without it, login and terminal requests from that address get `403`. Optional with OpenTunnel, which keeps `Host`, and harmless there |
 | `COOKIE_SECURE` | `false` | Always set the `Secure` flag on the session cookie. Usually unnecessary: browsers send an `https://` Origin on login, which already sets it. Only use over HTTPS, because browsers drop `Secure` cookies from plain HTTP |
+| `SESSION_TTL_DAYS` | `30` | How long a sign-in lasts, counted from sign-in: a number of days above 0, at most 3650, fractions allowed. Sessions already signed in keep the lifetime they were given |
+| `SESSION_IDLE_DAYS` | empty (off) | Optional sliding renewal: a session also ends after this many days without use. Each request counts as use, and so does typing in an open terminal. A session never outlives `SESSION_TTL_DAYS` |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
 | `DATA_DIR` | `./data` (`/data` in the image) | State directory, see [Data directory](#data-directory) |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
@@ -335,6 +337,7 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | Path | Mode | Contents |
 |---|---|---|
 | `access_key` | `600` | Access key generated when none is set in the environment or `.env` |
+| `sessions.json` | `600` | Browser sessions: SHA-256 hashes of the tokens (never the tokens themselves), sign-in and expiry times, last use, user agent and address, and a scrypt check of the access key that ends every session when the key changes |
 | `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
 | `exec/` | `700` | Output of `exec` commands (created now, used by later features) |
 | `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
@@ -360,9 +363,12 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/auth/login` | **Public.** Body `{ "key": "..." }`; sets an HttpOnly cookie (30 days). A correct key always signs in. Wrong keys are refused (`429`) after 10 failures per client address (IPv6: per /64) or 50 failures from all addresses together, within 5 min |
-| `POST` | `/api/auth/logout` | **Public.** Clears the cookie |
+| `POST` | `/api/auth/login` | **Public.** Body `{ "key": "..." }`; sets an HttpOnly session cookie (`SESSION_TTL_DAYS`, 30 days by default). Signing in again ends the session it replaces. A correct key always signs in. Wrong keys are refused (`429`) after 10 failures per client address (IPv6: per /64) or 50 failures from all addresses together, within 5 min |
+| `POST` | `/api/auth/logout` | **Public.** Ends this browser's session on the server at once, and clears the cookie |
 | `GET` | `/api/auth/session` | **Public.** `{ "authenticated": boolean }` |
+| `GET` | `/api/auth/sessions` | Signed-in browser sessions, most recently used first: `id`, `current`, `createdAt`, `lastSeenAt`, `userAgent`, `ip`. Tokens are never returned |
+| `DELETE` | `/api/auth/sessions/{id}` | End one session, including this browser's own (which also clears its cookie). `404` for an unknown id |
+| `POST` | `/api/auth/sessions/revoke-others` | End every session except this browser's. Returns `{ "ok": true, "revoked": n }` |
 | `GET` | `/api/health` | **Public.** `{ "ok": true, "docker": boolean }`; `503` when Docker is unreachable |
 | `GET` | `/api/system` | Version, runtime, non-secret config and limits |
 | `GET` | `/api/host/metrics` | Host metrics with sample history |
@@ -451,7 +457,8 @@ minibox/
 │   ├── app.ts               # Composition root: config, Runtime, host registry, monitor, activity log
 │   ├── config.ts            # Env / .env loading, access key precedence
 │   ├── data-dir.ts          # DATA_DIR layout and secret files (600)
-│   ├── auth.ts              # Key check, cookies, login throttle
+│   ├── auth.ts              # Caller checks (bearer or session), session cookie, login throttle
+│   ├── sessions.ts          # Browser sessions: token hashes, expiry, sessions.json
 │   ├── labels.ts            # Docker label keys and parsers
 │   ├── activity.ts          # Recent-operations log
 │   ├── static.ts            # Static file serving (path-traversal safe)
@@ -522,7 +529,8 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 
 - **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` and `data/` are git-ignored — keep them that way.
 - **The container runs as root**, because it needs the Docker socket, which is root-equivalent. To narrow that, put a socket proxy that forwards only the Docker API calls MiniBox uses in front of the socket, and point `DOCKER_SOCKET` at the proxy's Unix socket. Or run MiniBox against a rootless Docker or Podman socket.
-- **The access key is the only guard.** There are no user accounts, and a leaked key means full access. The key is compared in constant time. Login limiting only refuses wrong keys: a correct key always signs in, even while wrong keys are refused. Wrong keys are refused after 10 failures per client address (IPv6 addresses per /64) or 50 from all addresses together, within 5 minutes. The limiter does not stop guessing, because every key is still checked, so the key's length and randomness are what matter: use at least 20 random characters, such as `openssl rand -hex 32` (the generated key is 64 hex characters). At startup, a key shorter than 20 characters, or obviously low-entropy (one character class under 24 characters, or one repeated character), logs an `auth.weak_key` warning. MiniBox still starts, so existing deployments keep working. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; existing sessions stop working immediately.
+- **The access key is the only guard.** There are no user accounts, and a leaked key means full access. The key is compared in constant time. Login limiting only refuses wrong keys: a correct key always signs in, even while wrong keys are refused. Wrong keys are refused after 10 failures per client address (IPv6 addresses per /64) or 50 from all addresses together, within 5 minutes. The limiter does not stop guessing, because every key is still checked, so the key's length and randomness are what matter: use at least 20 random characters, such as `openssl rand -hex 32` (the generated key is 64 hex characters). At startup, a key shorter than 20 characters, or obviously low-entropy (one character class under 24 characters, or one repeated character), logs an `auth.weak_key` warning. MiniBox still starts, so existing deployments keep working. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; every browser session ends when MiniBox starts with the new key.
+- **Sessions are revocable.** A sign-in does not put the key in the browser. The cookie holds a random 32-byte session token, and `DATA_DIR/sessions.json` keeps only its SHA-256 hash, so a copy of that file cannot be replayed as a cookie. The file also holds a scrypt check of the access key, so the key's strength still matters. Sessions end on logout, when revoked in Settings, at their expiry (`SESSION_TTL_DAYS`, 30 days by default), or when the access key changes. An open terminal closes when its session ends.
 - **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin listed in `ALLOWED_ORIGINS`. Requests without an `Origin` header (scripts using `Authorization: Bearer`) are accepted. Writes must declare `Content-Type: application/json` unless they carry neither a body nor a `Content-Type`, which also blocks HTML form posts. The session cookie is `SameSite=Strict`, so a link from another website may ask you to sign in once more.
 - **Strict Content-Security-Policy.** Scripts load only from MiniBox itself (`script-src 'self'`), the pages have no inline scripts, and MiniBox can't be framed (`frame-ancestors 'none'`). Requests that arrive over HTTPS (directly, with an `https://` Origin, or through a proxy when `TRUST_PROXY=true`) also get `Strict-Transport-Security` for one year, without `includeSubDomains`.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
@@ -571,7 +579,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and TTL
-- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) Revocable session tokens instead of the raw access key in cookies
+- [x] [#2](https://github.com/ArnoChenFx/minibox/issues/2) Revocable session tokens instead of the raw access key in cookies
 
 ### M2 · Storage and agent interface
 
