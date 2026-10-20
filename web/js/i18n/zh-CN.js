@@ -216,7 +216,7 @@ export default {
   "profile.strict": "严格",
   "profile.relaxed": "宽松",
   "profile.standardHint": "推荐。丢弃大部分内核能力，保留 sudo 以便安装软件。",
-  "profile.strictHint": "禁止提权，sudo 无法提升权限。适合运行不可信的代码。",
+  "profile.strictHint": "禁止提权，sudo 无法提升权限。不需要在 Box 内安装系统包时选择。",
   "profile.relaxedHint": "使用 Docker 默认的内核能力，适用于其它配置都拦截的工具。",
   "cb.small": "小型",
   "cb.medium": "中型",

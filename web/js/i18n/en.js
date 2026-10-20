@@ -228,7 +228,7 @@ export default {
   "profile.strict": "Strict",
   "profile.relaxed": "Relaxed",
   "profile.standardHint": "Recommended. Most capabilities are dropped, and sudo still works for installing software.",
-  "profile.strictHint": "No new privileges, so sudo cannot escalate. Pick this for code you don't trust.",
+  "profile.strictHint": "No new privileges, so sudo cannot escalate. Pick this when the box needs no system packages.",
   "profile.relaxedHint": "Docker's default capabilities. For tools the other profiles block.",
   "cb.small": "Small",
   "cb.medium": "Medium",
