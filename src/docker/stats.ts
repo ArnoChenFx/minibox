@@ -1,16 +1,11 @@
 import type Docker from "dockerode";
 
-export interface BoxStats {
-  cpuPercent: number;
-  memUsage: number;
-  memLimit: number;
-  memPercent: number;
-}
+import type { ContainerStats } from "../runtime";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Convert a one-shot Docker stats payload into percentages (same formula as `docker stats`). */
-export function computeStats(raw: Docker.ContainerStats): BoxStats {
+export function computeStats(raw: Docker.ContainerStats): ContainerStats {
   const cpuDelta = raw.cpu_stats.cpu_usage.total_usage - raw.precpu_stats.cpu_usage.total_usage;
   const sysDelta = (raw.cpu_stats.system_cpu_usage ?? 0) - (raw.precpu_stats.system_cpu_usage ?? 0);
   const online = raw.cpu_stats.online_cpus || raw.cpu_stats.cpu_usage.percpu_usage?.length || 1;
@@ -26,9 +21,4 @@ export function computeStats(raw: Docker.ContainerStats): BoxStats {
     memLimit,
     memPercent: memLimit ? round2((memUsage / memLimit) * 100) : 0,
   };
-}
-
-export async function getContainerStats(docker: Docker, id: string): Promise<BoxStats> {
-  const raw = (await docker.getContainer(id).stats({ stream: false })) as Docker.ContainerStats;
-  return computeStats(raw);
 }
