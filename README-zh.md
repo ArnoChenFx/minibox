@@ -332,6 +332,8 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 ## 路线图
 
+完整的产品与架构设计见 [`docs/design.md`](docs/design.md)，实施路线与任务拆分见 [#20](https://github.com/ArnoChenFx/minibox/issues/20)。
+
 - [ ] **空闲自动休眠**：一段时间没有 exec / 终端活动就停止 Box，下次请求时自动唤醒
 - [ ] **工作区备份**：随快照一起导出 / 恢复 `/workspace` 数据卷
 - [ ] **面向 Agent 的接口**：文件读写、流式执行命令，并在此之上提供 MCP 服务
