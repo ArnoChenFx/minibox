@@ -4,7 +4,9 @@
 > 路线图与任务拆分见 [#20](https://github.com/ArnoChenFx/minibox/issues/20)，每个章节末尾标注了对应的 issue。
 > 与当前代码不一致之处，以本文为目标、以代码为现状。
 >
-> **修订记录**：开发主管评审（见 [17 决策记录](#17-决策记录) 第 30–35 条）后做了以下修正：规格备份改为只在标签里存不可变部分；Box 停止时的文件 API 改用辅助容器 + Docker archive API；操作注册表的鉴权与审计改为可插拔钩子；Runtime / Host 抽象提前到阶段 0；基础模板提前到阶段 1；事件总线随审计在阶段 1 引入；MiniBox Agent 与存储节点移出主路线。
+> **第二轮修订**（决策记录第 36–40 条）：更正 MCP 工具数量（27 个，默认启用 15 个）；`no-new-privileges` 与 `sudo` 互斥，改为「标准 / 严格」两个安全档位；自动生成的密钥写入 `DATA_DIR/access_key` 而不是 `.env`；阶段 1 拆为 8 个 PR；明确阶段 0 的顺序与发布注意事项。
+>
+> **第一轮修订记录**：开发主管评审（见 [17 决策记录](#17-决策记录) 第 30–35 条）后做了以下修正：规格备份改为只在标签里存不可变部分；Box 停止时的文件 API 改用辅助容器 + Docker archive API；操作注册表的鉴权与审计改为可插拔钩子；Runtime / Host 抽象提前到阶段 0；基础模板提前到阶段 1；事件总线随审计在阶段 1 引入；MiniBox Agent 与存储节点移出主路线。
 
 ## 目录
 
@@ -154,6 +156,7 @@ flowchart LR
 | `events.db` | 审计与活动事件（`bun:sqlite`，WAL） |
 | `exec/` | exec 输出，单独存放，7 天且有总大小上限 |
 | `secrets/` | 环境变量里的密钥值、restic 仓库密钥；规格里只放引用 |
+| `access_key` | 自动生成的 `ACCESS_KEY`（权限 600）；MiniBox 不再改写 `.env` |
 | `tokens` / `sessions` | 令牌哈希、浏览器会话 |
 | `hosts.json` / `pools.json` | 宿主机、存储节点、存储池配置与证书 |
 
@@ -195,7 +198,7 @@ flowchart LR
 
 ### 4.2 MCP 工具集
 
-约 18 个工具，按工具集分组，可按需启用（`/mcp?toolsets=core,session`），避免占满 Agent 的上下文。
+共 27 个工具，按工具集分组，可按需启用（`/mcp?toolsets=core,session`），避免占满 Agent 的上下文。**默认只启用 `core` + `meta`（15 个）**，其余工具集按需打开。（此前文档误写为「约 18 个」，以下表为准。）
 
 | 工具集 | 工具 |
 | --- | --- |
@@ -662,7 +665,7 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 `templates/base/Dockerfile` 需要：
 
-1. 非 root 用户 `dev`，固定 uid/gid（如 1000，构建参数可调），默认以该用户进入终端与 exec；提供无密码 `sudo`（仅限 Box 内）。
+1. 非 root 用户 `dev`，固定 uid/gid（如 1000，构建参数可调），默认以该用户进入终端与 exec；「标准」安全档位下提供无密码 `sudo`（仅限 Box 内），「严格」档位下没有 `sudo`（见 [14](#14-安全设计)）。
 2. 预装 `tmux`。
 3. 常用工具：`jq`、`ripgrep`、`openssh-client`、`unzip`，保留现有 git / curl / python3 / build-essential / procps / less / vim-tiny。
 4. 挂载点约定：`/workspace`、`/home/dev`、`/opt/minibox/tools`；`~/.cache` 与包管理器缓存（`npm_config_cache`、`PIP_CACHE_DIR` 等）指向 `cache` 卷。
@@ -843,11 +846,30 @@ MiniBox 的前提是**一个可信用户在自己的机器上使用**。Docker S
 | Cookie 存原始 `ACCESS_KEY` | 会话令牌，见 [9.3](#93-浏览器会话) |
 | WebSocket 终端和写接口没有 Origin 校验 | 校验 `Origin`（或 `Sec-Fetch-Site`），写接口要求 `Content-Type: application/json`，Cookie 升级为 `SameSite=Strict`（需验证） |
 | 没有 CSP / HSTS；xterm.js 从 CDN 加载且无 SRI | xterm 打包进 `web/vendor/`，加严格 CSP，HTTPS 请求发送 HSTS；`innerHTML` 拼接逐步收敛到统一转义 |
-| Box 缺少加固 | 默认 `PidsLimit`、`CapDrop: ["ALL"]` 后按需加回、`no-new-privileges`、ulimit；模板用非 root；每个 Box 独立网络并提供出站策略；可选 `RUNTIME=runsc`（gVisor）；磁盘配额待存储节点代理（已后移） |
+| Box 缺少加固 | 两个安全档位（见下）；默认都带 `PidsLimit`、ulimit、`CapDrop: ["ALL"]` 后按需加回；模板用非 root；每个 Box 独立网络并提供出站策略；可选 `RUNTIME=runsc`（gVisor）；磁盘配额待存储节点代理（已后移） |
 | 快照描述存在标签注入 | 校验拒绝控制字符与换行，或统一转义标签值 |
 | `restart.sh` 的 `chmod 666 docker.sock` | 改为把用户加入 `docker` 组 |
 | 镜像以 root 运行 | 挂载 Socket 的代价；文档给出 socket proxy 或 rootless 方案 |
-| 自动生成密钥会覆盖整个 `.env` | 只追加 `ACCESS_KEY`，并引入 `DATA_DIR` |
+| 自动生成密钥会覆盖整个 `.env` | 自动生成的密钥写入 `DATA_DIR/access_key`（权限 600），**MiniBox 不再写 `.env`**；读取优先级为进程环境变量 > `.env` > `DATA_DIR/access_key`；已有部署里写在 `.env` 的密钥照常生效 |
+
+### 升级注意事项：限流与 Origin 校验可能让现有部署登不进去
+
+`TRUST_PROXY` 默认关闭（issue #1）和 Origin 校验（issue #3）都会改变通过隧道或反向代理访问的现有部署的行为：
+
+- 默认不信任 `X-Forwarded-For` / `X-Forwarded-Proto` 后，隧道后面所有请求在限流里看起来是同一个来源，且登录 Cookie 可能失去 `Secure` 标记。这类部署需要显式设置 `TRUST_PROXY=true`。
+- Origin 校验按 `Host`（或 `ALLOWED_ORIGINS`）判断同源；隧道改写了 `Host` 时，登录请求会被拒绝。
+- 因此需要：启动时对「检测到代理头但 `TRUST_PROXY` 未开启」给出明确警告；`ALLOWED_ORIGINS` 在文档和 CHANGELOG 里作为升级必读事项；发布前在真实的隧道环境里实测登录。
+
+### 安全档位：`no-new-privileges` 与 `sudo` 互斥
+
+实测表明，默认加 `no-new-privileges` 会让容器内的 setuid 程序无法提权，`sudo` 因此失效。两者不能同时作为默认值，所以拆成两个档位：
+
+| 档位 | `no-new-privileges` | `sudo` | `CapDrop` | 适用 |
+| --- | --- | --- | --- | --- |
+| **标准（默认）** | 否 | 有（无密码，仅限 Box 内） | `ALL`，再加回 `sudo` / `apt` 所需的最小集合（如 `CHOWN`、`DAC_OVERRIDE`、`FOWNER`、`SETUID`、`SETGID`、`KILL`、`AUDIT_WRITE`，具体集合以实测为准） | Agent 需要 `apt install` 等操作的日常使用 |
+| **严格** | 是 | 无 | `ALL` | 不需要提权的环境；系统包只能放进模板（与「系统包归模板」一致） |
+
+两档都默认带 `PidsLimit`、ulimit、独立网络。档位是规格里的 `securityProfile` 字段，属于「重建」类变更。
 
 另有两条贯穿全文的约束：
 
@@ -869,15 +891,34 @@ flowchart LR
 
 | 阶段 | 内容 | issue |
 | --- | --- | --- |
-| **0 地基** | Runtime / Host 抽象（隐式 `local`，行为不变）、`DATA_DIR`、剩余 CI（Dependabot、固定 bun 版本、分支保护）、限流与 Origin 与 CSP 安全修复、操作注册表（鉴权与审计为可插拔钩子，先实现仅所有者与日志接收器） | #32 #6 #18 #1 #3 #4 #22 |
-| **1 模板、规格、审计、令牌** | 基础模板（非 root、tmux、挂载点约定）、Box 加固、Box 规格与稳定 ID（挂载先等价于现状）、事件与审计 + SSE 事件总线、令牌与会话令牌、异步任务 | #27 #5 #23 #25 #13 #2 #16 |
+| **0 地基** | 先做 M0 的第一个 PR：限流、Origin、CSP 的现成代码整理（#1 #3 #4）；然后并行：Runtime / Host 抽象（隐式 `local`，行为不变，#32）、`DATA_DIR`（#6）、剩余 CI（#18）；最后是操作注册表（鉴权与审计为可插拔钩子，先实现仅所有者与日志接收器，#22） | #1 #3 #4 → #32 #6 #18 → #22 |
+| **1 模板、规格、审计、令牌** | 拆为 8 个 PR，见下 | #27 #5 #23 #25 #16 #13 #2 |
 | **2 存储与 Agent 接口** | Volume 与存储池（`local` / `nfs` / `path`）、exec 与文件 API（辅助容器 + archive API）与 MCP 与 CLI、tmux 会话与接管、Docker 采样迁到事件总线、NAS 文档 | #24 #9 #14 #17 #30 |
 | **3 核心价值** | Checkpoint（restic）、端口预览、创建时选装 Agent CLI | #11 #10 #8 |
 | **4 多宿主机与优化** | 多宿主机（仅 SSH / TLS）、空闲休眠、模板增强与预热池 | #21 #12 #15 |
 | **后续，待评估** | MiniBox Agent 框架、存储节点角色、计算节点出站 Agent；动手前先单独评估范围 | #28 #29 |
 | **贯穿各阶段** | 控制台改版（逐页落地）、集成测试、低危安全加固 | #26 #19 #7 |
 
-阶段内的先后顺序：阶段 1 中 #27 先于 #5（非 root 与 `CapDrop` 需要模板配合；`PidsLimit`、`no-new-privileges`、ulimit 不依赖模板，可先做），#23 先于 #13（`created-by-me` 需要 Box 记录创建者），#25 引入事件总线。阶段 1 的规格里 `mounts[]` 先等价于现状（每个 Box 自带一个 workspace 卷），共享与存储池由阶段 2 的 #24 放开。
+阶段内的先后顺序：阶段 1 中 #27 先于 #5 的模板相关部分（非 root 与 `CapDrop` 需要模板配合；`PidsLimit`、ulimit、网络隔离不依赖模板，可先做），#23 先于 #13（`created-by-me` 需要 Box 记录创建者），#25 引入事件总线。阶段 1 的规格里 `mounts[]` 先等价于现状（每个 Box 自带一个 workspace 卷），共享与存储池由阶段 2 的 #24 放开。
+
+### 阶段 1 的 PR 拆分（8 个）
+
+阶段 1 原先一次性涵盖 7 个 issue，过重。按下面的顺序拆成 8 个可独立评审、独立合并的 PR（拆分可由实施者调整，但每个 PR 应保持可独立验证）：
+
+| PR | 内容 | issue | 前置 |
+| --- | --- | --- | --- |
+| 1-1 | 基础模板：非 root 用户 `dev`、tmux、常用工具、挂载点约定、多架构构建 | #27 | 阶段 0 |
+| 1-2 | Box 加固（不依赖模板的部分）：`PidsLimit`、ulimit、独立网络与出站策略、`RUNTIME` 配置；引入 `securityProfile` 字段 | #5 的 A 部分 | 阶段 0 |
+| 1-3 | Box 加固（依赖模板的部分）：`标准` / `严格` 两个档位，`CapDrop` 与 `sudo` | #5 的 B 部分 | 1-1 1-2 |
+| 1-4 | Box 规格：`BoxSpec` 存储、稳定 ID、自动认领、漂移检测（先只读，不改变现有行为） | #23 前半 | 阶段 0 |
+| 1-5 | 事件与审计：SQLite 事件库、脱敏、保留策略、`events` 查询接口 | #25 前半 | 阶段 0 的 #22 |
+| 1-6 | 异步任务模型与 SSE 事件总线 | #16 与 #25 后半 | 1-5 |
+| 1-7 | 规格变更：原地更新、重建流程（含失败回滚）、`revision` 与 `If-Match`、`docker diff` 预览 | #23 后半 | 1-4 1-6 |
+| 1-8 | 令牌与会话令牌：`authorize` 钩子的真实实现、`created-by-me`、配额与 TTL、浏览器会话 | #13 #2 | 1-4 1-5 |
+
+### 阶段 0 的发布注意事项
+
+M0 的第一个 PR 会改变通过隧道或反向代理访问的现有部署的行为（见 [14](#14-安全设计)「升级注意事项」）。合并前，需要先在线上实例配好 `ALLOWED_ORIGINS` / `TRUST_PROXY` 并实测登录，否则自动更新后可能登不进去。
 
 ### 依赖关系
 
@@ -939,7 +980,7 @@ flowchart LR
 | 13 | 快照对象 | Checkpoint 组合对象 |
 | 14 | 回滚方式 | 恢复到新卷并切换挂载，原卷保留到确认 |
 | 15 | 检查点默认内容 | 规格 + 自有卷（workspace + home），系统层可选，派生时默认不复制 home |
-| 16 | 工具粒度 | 约 18 个工具，按工具集分组，可按需启用 |
+| 16 | 工具粒度 | 按工具集分组、可按需启用；共 27 个工具，默认启用 `core` + `meta`（15 个）（**数量经第 36 条更正**，原写「约 18 个」） |
 | 17 | 令牌范围 | 默认只管理自己创建的 Box，附带配额和 TTL |
 | 18 | 实现方式 | 单一操作注册表，统一生成 REST / OpenAPI / MCP / CLI |
 | 19 | 会话原语 | 第一版纳入，与控制台终端共享同一个 tmux 会话 |
@@ -959,6 +1000,11 @@ flowchart LR
 | 33 | 阶段调整 | Runtime / Host 抽象（#32）提前到阶段 0 最前面；基础模板（#27）提前到阶段 1 并先于 #5 的非 root 部分；事件总线随 #25 在阶段 1 引入；阶段 1 的规格挂载先等价于现状 |
 | 34 | Agent 与存储节点 | 保留 issue #28 #29，移出主路线，排到最后，动手前先单独评估范围；第一版设计不依赖它们，多宿主机第一版只做 SSH / TLS |
 | 35 | 辅助容器 | 文件 API、`nfs` 后端建目录、restic 都使用短生命周期的辅助容器，镜像选择见开放问题 |
+| 36 | 工具数量 | 更正：共 27 个工具（13 + 3 + 2 + 5 + 2 + 2），默认启用 `core` + `meta`（15 个）；原「约 18 个」是计数错误 |
+| 37 | 安全档位 | `no-new-privileges` 会让 `sudo` 失效，二者互斥：默认「标准」档（有 `sudo`，不开 `no-new-privileges`，`CapDrop: ALL` 后加回最小集合），可选「严格」档（`no-new-privileges`，无 `sudo`） |
+| 38 | 自动生成的密钥 | 写入 `DATA_DIR/access_key`（权限 600），MiniBox 不再写 `.env`；优先级：进程环境变量 > `.env` > `DATA_DIR/access_key` |
+| 39 | 阶段 1 拆分 | 拆为 8 个 PR（模板 / 加固 A / 加固 B / 规格 / 事件 / 任务与总线 / 变更与重建 / 令牌），见 [15](#15-实施路线) |
+| 40 | 阶段 0 顺序 | 先 #1 #3 #4 的现成代码整理为第一个 PR，再并行 #32 #6 #18，最后 #22；第一个 PR 合并前先在线上实例配好 `ALLOWED_ORIGINS` / `TRUST_PROXY` 并实测登录 |
 
 ---
 
