@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 214 64" role="img" aria-label="MiniBox">
+  <defs>
+    <linearGradient id="mb-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6E6AF6"/>
+      <stop offset="1" stop-color="#4338CA"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#mb-bg)"/>
+  <path d="M32 13 49 22.5 32 32 15 22.5Z" fill="#fff"/>
+  <path d="M15 22.5 32 32V51L15 41.5Z" fill="#fff" fill-opacity=".72"/>
+  <path d="M49 22.5V41.5L32 51V32Z" fill="#fff" fill-opacity=".42"/>
+  <path d="M32 21.5 38.5 25.2 32 28.8 25.5 25.2Z" fill="#4F46E5"/>
+  <text x="80" y="43" font-family="Inter, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.8" fill="#18181B">Mini<tspan fill="#4F46E5">Box</tspan></text>
+</svg>

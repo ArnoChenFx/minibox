@@ -1,0 +1,8 @@
+{
+  "name": "MiniBox",
+  "short_name": "MiniBox",
+  "icons": [{ "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png" }],
+  "theme_color": "#4F46E5",
+  "background_color": "#ffffff",
+  "display": "standalone"
+}
