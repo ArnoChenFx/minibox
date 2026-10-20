@@ -6,6 +6,7 @@ import {
   type CommitSpec,
   type ContainerInfo,
   type ContainerStats,
+  type ContainerUpdate,
   type CreateContainerSpec,
   type ExecSession,
   type ExecSpec,
@@ -38,6 +39,9 @@ export interface FakeContainer {
   cpus: number | null;
   memoryBytes: number | null;
   swapBytes: number | null;
+  pidsLimit: number | null;
+  /** Engine restart policy. Updates can set values create does not offer, such as `always`. */
+  restart: string;
   logs: string;
   /** ID of the network the container's endpoint points at. Null until the container first starts, as in the engine. */
   networkId: string | null;
@@ -124,6 +128,7 @@ function toInfo(c: FakeContainer): ContainerInfo {
     id: c.id,
     name: c.name,
     image: c.spec.image,
+    imageId: c.imageId,
     labels: { ...c.labels },
     created: c.created,
     state: c.running ? "running" : c.startedAt ? "exited" : "created",
@@ -131,6 +136,9 @@ function toInfo(c: FakeContainer): ContainerInfo {
     startedAt: c.startedAt,
     cpus: c.cpus,
     memoryBytes: c.memoryBytes,
+    pidsLimit: c.pidsLimit,
+    restart: c.restart,
+    mounts: (c.spec.mounts ?? []).map((mount) => ({ source: mount.source, target: mount.target, mode: "rw" as const })),
     network: c.spec.network ?? DEFAULT_NETWORK,
   };
 }
@@ -290,6 +298,8 @@ export class FakeRuntime implements Runtime {
       running,
       startedAt: running ? now() : null,
       ...limits,
+      pidsLimit: spec.hardening?.pidsLimit ?? null,
+      restart: spec.restart ?? "no",
       logs: "",
       networkId: running ? this.networkIdOf(spec.network) : null,
     };
@@ -377,15 +387,14 @@ export class FakeRuntime implements Runtime {
     c.name = name;
   }
 
-  async updateContainer(
-    id: string,
-    limits: { cpus?: number; memoryBytes?: number; swapBytes?: number },
-  ): Promise<void> {
+  async updateContainer(id: string, limits: ContainerUpdate): Promise<void> {
     this.enter("updateContainer", [id, limits]);
     const c = this.getContainer(id);
     if (limits.cpus !== undefined) c.cpus = limits.cpus;
     if (limits.memoryBytes !== undefined) c.memoryBytes = limits.memoryBytes;
     if (limits.swapBytes !== undefined) c.swapBytes = limits.swapBytes;
+    if (limits.pidsLimit !== undefined) c.pidsLimit = limits.pidsLimit;
+    if (limits.restart !== undefined) c.restart = limits.restart;
   }
 
   async containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string> {

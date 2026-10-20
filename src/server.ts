@@ -12,6 +12,7 @@ import { msg } from "./lib/messages";
 import { routes } from "./routes";
 import { matchRoute } from "./routes/router";
 import { getBox } from "./services/boxes";
+import { reconcileHost } from "./services/reconcile";
 import { serveFile } from "./static";
 import { resolveVersion } from "./version";
 import { type TerminalData, terminalHandlers } from "./ws/terminal";
@@ -132,13 +133,21 @@ export function warnIfWeakAccessKey(cfg: Config): void {
   log.warn("auth.weak_key", { hint: WEAK_KEY_HINT, source: cfg.accessKeySource });
 }
 
-if (import.meta.main) {
+async function boot(): Promise<void> {
   const cfg = loadConfig();
   setLogLevel(cfg.logLevel);
   if (cfg.accessKeySource === "generated") log.info("access_key.generated", { path: accessKeyPath(cfg.dataDir) });
   warnIfWeakAccessKey(cfg);
   const version = resolveVersion();
   const app = createApp(cfg, version);
+  for (const host of app.hosts.list()) {
+    try {
+      const report = await reconcileHost(host);
+      log.info("box.reconciled", { host: host.host.id, ...report });
+    } catch (e) {
+      log.error("box.reconcile_failed", { host: host.host.id, error: String(e) });
+    }
+  }
   app.monitor.start();
   app.retention.start();
   const server = startServer(app);
@@ -162,3 +171,5 @@ if (import.meta.main) {
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
+
+if (import.meta.main) void boot();

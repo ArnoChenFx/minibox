@@ -1,4 +1,6 @@
 import { spyOn } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { type App, createApp } from "../../src/app";
@@ -45,7 +47,9 @@ export function createTestApp(
   runtime = new FakeRuntime(),
   hooks: Partial<ExecutorHooks> = {},
 ): { app: App; runtime: FakeRuntime } {
-  const app = createApp(testConfig(overrides), "0.0.0-test", { runtime, hooks, eventsPath: ":memory:" });
+  const cfg = testConfig(overrides);
+  if (overrides.dataDir === undefined) cfg.dataDir = mkdtempSync(join(tmpdir(), "minibox-test-"));
+  const app = createApp(cfg, "0.0.0-test", { runtime, hooks, eventsPath: ":memory:" });
   return { app, runtime };
 }
 

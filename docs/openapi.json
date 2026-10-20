@@ -69,6 +69,9 @@
                           "id": {
                             "type": "string"
                           },
+                          "boxId": {
+                            "type": "string"
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -117,6 +120,12 @@
                               "null"
                             ]
                           },
+                          "pids": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
                           "createdAt": {
                             "type": "string"
                           },
@@ -128,6 +137,134 @@
                           },
                           "volume": {
                             "type": "string"
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "desired": {
+                            "type": "string",
+                            "enum": [
+                              "running",
+                              "stopped"
+                            ]
+                          },
+                          "idleTimeoutSec": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "ttlSec": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "labels": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "containerName": {
+                            "type": "string"
+                          },
+                          "drift": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "expected": {
+                                  "type": "string"
+                                },
+                                "actual": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "expected",
+                                "actual"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "recovery": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string",
+                                    "enum": [
+                                      "claim",
+                                      "degraded"
+                                    ]
+                                  },
+                                  "at": {
+                                    "type": "string"
+                                  },
+                                  "needsReset": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "observedRestart": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "at",
+                                  "needsReset",
+                                  "observedRestart"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "mounts": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "volume": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "rw",
+                                    "ro"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "volume",
+                                "path",
+                                "mode"
+                              ],
+                              "additionalProperties": false
+                            }
                           },
                           "stats": {
                             "anyOf": [
@@ -163,6 +300,7 @@
                         },
                         "required": [
                           "id",
+                          "boxId",
                           "name",
                           "state",
                           "status",
@@ -173,9 +311,20 @@
                           "network",
                           "cpus",
                           "memory",
+                          "pids",
                           "createdAt",
                           "startedAt",
-                          "volume"
+                          "volume",
+                          "revision",
+                          "desired",
+                          "idleTimeoutSec",
+                          "ttlSec",
+                          "labels",
+                          "createdBy",
+                          "containerName",
+                          "drift",
+                          "recovery",
+                          "mounts"
                         ],
                         "additionalProperties": false
                       }
@@ -341,6 +490,9 @@
                         "id": {
                           "type": "string"
                         },
+                        "boxId": {
+                          "type": "string"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -389,6 +541,12 @@
                             "null"
                           ]
                         },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -400,10 +558,139 @@
                         },
                         "volume": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
                         "id",
+                        "boxId",
                         "name",
                         "state",
                         "status",
@@ -414,9 +701,20 @@
                         "network",
                         "cpus",
                         "memory",
+                        "pids",
                         "createdAt",
                         "startedAt",
-                        "volume"
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts"
                       ],
                       "additionalProperties": false
                     }
@@ -544,7 +842,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
             }
           },
           {
@@ -572,6 +870,9 @@
                       "type": "object",
                       "properties": {
                         "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
                           "type": "string"
                         },
                         "name": {
@@ -622,6 +923,12 @@
                             "null"
                           ]
                         },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -633,6 +940,134 @@
                         },
                         "volume": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
                         },
                         "stats": {
                           "anyOf": [
@@ -668,6 +1103,7 @@
                       },
                       "required": [
                         "id",
+                        "boxId",
                         "name",
                         "state",
                         "status",
@@ -678,9 +1114,20 @@
                         "network",
                         "cpus",
                         "memory",
+                        "pids",
                         "createdAt",
                         "startedAt",
                         "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts",
                         "stats"
                       ],
                       "additionalProperties": false
@@ -787,7 +1234,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
             }
           },
           {
@@ -925,15 +1372,13 @@
           "name": "delete_box",
           "toolset": "core"
         }
-      }
-    },
-    "/api/boxes/{id}/start": {
-      "post": {
-        "operationId": "box.action.start",
+      },
+      "patch": {
+        "operationId": "box.update",
         "tags": [
           "boxes"
         ],
-        "summary": "Start, stop or restart a box",
+        "summary": "Update a box in place",
         "parameters": [
           {
             "name": "id",
@@ -941,7 +1386,17 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "The box's current revision: a positive integer, a quoted entity tag, or a weak tag. Missing is 428 precondition_required. A stale revision is 412 precondition_failed.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
             }
           },
           {
@@ -957,6 +1412,78 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+                    "description": "New box name. The container is renamed to prefix-name. The workspace volume is not renamed."
+                  },
+                  "cpus": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 64,
+                    "description": "CPU cores, between 0.1 and 64, rounded to two decimals."
+                  },
+                  "memoryMb": {
+                    "type": "integer",
+                    "minimum": 128,
+                    "maximum": 262144,
+                    "description": "Memory in MB, an integer between 128 and 262144."
+                  },
+                  "pids": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000,
+                    "description": "Process limit, an integer between 1 and 1000000."
+                  },
+                  "labels": {
+                    "type": "object",
+                    "description": "User labels stored in the spec. At most 32 entries. Keys follow box name rules. Values are a single line of at most 256 characters. Replaces the current set. Never copied onto the container.",
+                    "maxProperties": 32,
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 256
+                    }
+                  },
+                  "idleTimeoutSec": {
+                    "description": "Idle timeout in seconds. A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 31536000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ttlSec": {
+                    "description": "Time to live in seconds. A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 31536000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK.",
@@ -969,6 +1496,9 @@
                       "type": "object",
                       "properties": {
                         "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
                           "type": "string"
                         },
                         "name": {
@@ -1019,6 +1549,12 @@
                             "null"
                           ]
                         },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -1030,10 +1566,139 @@
                         },
                         "volume": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
                         "id",
+                        "boxId",
                         "name",
                         "state",
                         "status",
@@ -1044,9 +1709,432 @@
                         "network",
                         "cpus",
                         "memory",
+                        "pids",
                         "createdAt",
                         "startedAt",
-                        "volume"
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "box"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot or template named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The If-Match revision is not the box's current revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required and was not sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:write",
+        "x-async": false,
+        "x-cli": "box update",
+        "x-mcp": {
+          "name": "update_box",
+          "toolset": "core"
+        }
+      }
+    },
+    "/api/boxes/{id}/start": {
+      "post": {
+        "operationId": "box.action.start",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Start, stop or restart a box",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "box": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "image": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
+                        "cpus": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "memory": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "volume": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "boxId",
+                        "name",
+                        "state",
+                        "status",
+                        "running",
+                        "image",
+                        "template",
+                        "profile",
+                        "network",
+                        "cpus",
+                        "memory",
+                        "pids",
+                        "createdAt",
+                        "startedAt",
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts"
                       ],
                       "additionalProperties": false
                     }
@@ -1164,7 +2252,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
             }
           },
           {
@@ -1192,6 +2280,9 @@
                       "type": "object",
                       "properties": {
                         "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
                           "type": "string"
                         },
                         "name": {
@@ -1242,6 +2333,12 @@
                             "null"
                           ]
                         },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -1253,10 +2350,139 @@
                         },
                         "volume": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
                         "id",
+                        "boxId",
                         "name",
                         "state",
                         "status",
@@ -1267,9 +2493,20 @@
                         "network",
                         "cpus",
                         "memory",
+                        "pids",
                         "createdAt",
                         "startedAt",
-                        "volume"
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts"
                       ],
                       "additionalProperties": false
                     }
@@ -1387,7 +2624,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
             }
           },
           {
@@ -1415,6 +2652,9 @@
                       "type": "object",
                       "properties": {
                         "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
                           "type": "string"
                         },
                         "name": {
@@ -1465,6 +2705,12 @@
                             "null"
                           ]
                         },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -1476,10 +2722,139 @@
                         },
                         "volume": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
                         "id",
+                        "boxId",
                         "name",
                         "state",
                         "status",
@@ -1490,9 +2865,20 @@
                         "network",
                         "cpus",
                         "memory",
+                        "pids",
                         "createdAt",
                         "startedAt",
-                        "volume"
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts"
                       ],
                       "additionalProperties": false
                     }
@@ -1602,7 +2988,7 @@
         "tags": [
           "boxes"
         ],
-        "summary": "Change the CPU or memory limit of a box",
+        "summary": "Change the CPU, memory or process limit of a box",
         "parameters": [
           {
             "name": "id",
@@ -1610,7 +2996,17 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "The box's current revision: a positive integer, a quoted entity tag, or a weak tag. Missing is 428 precondition_required. A stale revision is 412 precondition_failed.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
             }
           },
           {
@@ -1644,6 +3040,12 @@
                     "minimum": 128,
                     "maximum": 262144,
                     "description": "Memory in MB, an integer between 128 and 262144."
+                  },
+                  "pids": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000,
+                    "description": "Process limit, an integer between 1 and 1000000."
                   }
                 }
               }
@@ -1662,6 +3064,9 @@
                       "type": "object",
                       "properties": {
                         "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
                           "type": "string"
                         },
                         "name": {
@@ -1712,6 +3117,12 @@
                             "null"
                           ]
                         },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -1723,10 +3134,139 @@
                         },
                         "volume": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
                         "id",
+                        "boxId",
                         "name",
                         "state",
                         "status",
@@ -1737,9 +3277,20 @@
                         "network",
                         "cpus",
                         "memory",
+                        "pids",
                         "createdAt",
                         "startedAt",
-                        "volume"
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts"
                       ],
                       "additionalProperties": false
                     }
@@ -1792,6 +3343,16 @@
               }
             }
           },
+          "412": {
+            "description": "The If-Match revision is not the box's current revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "415": {
             "description": "The request declares a body that is not JSON.",
             "content": {
@@ -1804,6 +3365,16 @@
           },
           "422": {
             "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required and was not sent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1846,11 +3417,7 @@
         "x-kind": "write",
         "x-scope": "box:write",
         "x-async": false,
-        "x-cli": "box resize",
-        "x-mcp": {
-          "name": "update_box",
-          "toolset": "core"
-        }
+        "x-cli": "box resize"
       }
     },
     "/api/boxes/{id}/logs": {
@@ -1867,7 +3434,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
             }
           },
           {
@@ -2005,7 +3572,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
             }
           },
           {
@@ -2317,7 +3884,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Box id: the container id, or the container name."
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
             }
           },
           {
@@ -2559,6 +4126,9 @@
                         "id": {
                           "type": "string"
                         },
+                        "boxId": {
+                          "type": "string"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -2607,6 +4177,12 @@
                             "null"
                           ]
                         },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -2618,10 +4194,139 @@
                         },
                         "volume": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
                         "id",
+                        "boxId",
                         "name",
                         "state",
                         "status",
@@ -2632,9 +4337,20 @@
                         "network",
                         "cpus",
                         "memory",
+                        "pids",
                         "createdAt",
                         "startedAt",
-                        "volume"
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts"
                       ],
                       "additionalProperties": false
                     }

@@ -13,9 +13,10 @@ import {
   restartBox,
   startBox,
   stopBox,
-  updateResources,
+  updateBox,
 } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
+import { requireRevision } from "../specs/revision";
 import { defineOperation } from "./define";
 import { BoxSchema, BoxWithStatsSchema, StatsSchema } from "./schemas";
 import {
@@ -24,13 +25,20 @@ import {
   boxProfile,
   cpusWithDefault,
   deleteVolumeFlag,
+  expectedRevision,
+  idleTimeout,
   memoryWithDefault,
+  optionalBoxName,
   optionalCpus,
   optionalMemoryMb,
+  optionalPids,
   requireResources,
+  requireUpdate,
   statsFlag,
   tail,
   templateImage,
+  ttl,
+  userLabels,
 } from "./validation";
 
 export const DEFAULT_RESOURCES = { cpus: 2, memoryMb: 4096 } as const;
@@ -76,7 +84,7 @@ export const boxGet = defineOperation({
   mcp: {
     toolset: "core",
     name: "get_box",
-    description: "Get one box by id or container name, with its current resource usage.",
+    description: "Get one box by container id, container name, stable id or box name, with its current resource usage.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
   audit: { target: (_input, box) => box && boxTarget(box) },
@@ -110,13 +118,14 @@ export const boxCreate = defineOperation({
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: ({ name }, _box, result) => ({ kind: "box", id: result?.box.id, name }) },
-  run: async ({ host }, input) => ({
+  run: async ({ host, principal }, input) => ({
     box: await createBox(host, {
       name: input.name,
       image: input.template,
       cpus: input.cpus,
       memoryMb: input.memoryMb,
       profile: input.profile,
+      createdBy: principal.type,
     }),
   }),
 });
@@ -172,31 +181,80 @@ export const boxAction = defineOperation({
 export const boxResources = defineOperation({
   name: "box.resources",
   tag: "boxes",
-  summary: "Change the CPU or memory limit of a box",
+  summary: "Change the CPU, memory or process limit of a box",
   kind: "write",
   scope: "box:write",
   async: false,
   input: z
-    .object({ id: boxId(), cpus: optionalCpus(), memoryMb: optionalMemoryMb() })
+    .object({
+      id: boxId(),
+      cpus: optionalCpus(),
+      memoryMb: optionalMemoryMb(),
+      pids: optionalPids(),
+      expectedRevision: expectedRevision(),
+    })
     .superRefine((input, ctx) => requireResources(ctx, input)),
   output: z.object({ box: BoxSchema }),
-  rest: [{ method: "PATCH", path: "/api/boxes/:id/resources", body: true }],
+  rest: [{ method: "PATCH", path: "/api/boxes/:id/resources", body: true, ifMatch: true }],
   cli: "box resize",
-  mcp: {
-    toolset: "core",
-    name: "update_box",
-    description: "Change the CPU or memory limit of a box. Only the limits that are passed change.",
-  },
   precondition: ({ host }, input) => assertCapacity(host, input),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.resources", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host }, input) => {
-    const limits: { cpus?: number; memoryMb?: number } = {};
-    if (input.cpus !== undefined) limits.cpus = input.cpus;
-    if (input.memoryMb !== undefined) limits.memoryMb = input.memoryMb;
-    return { box: await updateResources(host, input.id, limits) };
+  run: async ({ host }, input) => ({
+    box: await updateBox(host, input.id, requireRevision(input.expectedRevision), {
+      cpus: input.cpus,
+      memoryMb: input.memoryMb,
+      pids: input.pids,
+    }),
+  }),
+});
+
+export const boxUpdate = defineOperation({
+  name: "box.update",
+  tag: "boxes",
+  summary: "Update a box in place",
+  kind: "write",
+  scope: "box:write",
+  async: false,
+  conflicts: true,
+  input: z
+    .object({
+      id: boxId(),
+      name: optionalBoxName(),
+      cpus: optionalCpus(),
+      memoryMb: optionalMemoryMb(),
+      pids: optionalPids(),
+      labels: userLabels(),
+      idleTimeoutSec: idleTimeout(),
+      ttlSec: ttl(),
+      expectedRevision: expectedRevision(),
+    })
+    .superRefine((input, ctx) => requireUpdate(ctx, input)),
+  output: z.object({ box: BoxSchema }),
+  rest: [{ method: "PATCH", path: "/api/boxes/:id", body: true, ifMatch: true }],
+  cli: "box update",
+  mcp: {
+    toolset: "core",
+    name: "update_box",
+    description:
+      "Change a box in place: name, CPU, memory, process limit, labels, idle timeout or TTL. Pass expectedRevision, the box's current revision. Container labels are not changed. Template, mounts, env and profile are ignored until a rebuild exists.",
   },
+  precondition: ({ host }, input) => assertCapacity(host, input),
+  resolve: ({ host }, input) => getBox(host, input.id),
+  activity: { action: () => "box.update", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
+  run: async ({ host }, input) => ({
+    box: await updateBox(host, input.id, requireRevision(input.expectedRevision), {
+      name: input.name,
+      cpus: input.cpus,
+      memoryMb: input.memoryMb,
+      pids: input.pids,
+      labels: input.labels,
+      idleTimeoutSec: input.idleTimeoutSec,
+      ttlSec: input.ttlSec,
+    }),
+  }),
 });
 
 export const boxLogs = defineOperation({
@@ -229,4 +287,14 @@ export const boxStats = defineOperation({
   run: async ({ host }, input) => ({ stats: await getStats(host, input.id) }),
 });
 
-export const boxOperations = [boxList, boxGet, boxCreate, boxDelete, boxAction, boxResources, boxLogs, boxStats];
+export const boxOperations = [
+  boxList,
+  boxGet,
+  boxCreate,
+  boxDelete,
+  boxAction,
+  boxResources,
+  boxUpdate,
+  boxLogs,
+  boxStats,
+];

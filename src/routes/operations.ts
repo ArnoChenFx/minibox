@@ -18,14 +18,30 @@ export function runOf(req: Request): string | undefined {
   return value;
 }
 
-/** The input a binding reads from the request. Path and fixed values win over anything the client sent. */
-function inputOf(binding: RestBinding, url: URL, params: Record<string, string>, body: Record<string, unknown>) {
+/** The input a binding reads from the request. Path, If-Match and fixed values win over anything the client sent. */
+function inputOf(
+  binding: RestBinding,
+  url: URL,
+  params: Record<string, string>,
+  body: Record<string, unknown>,
+  ifMatch: string | null,
+) {
   const query: Record<string, string> = {};
   for (const key of binding.query ?? []) {
     const value = url.searchParams.get(key);
     if (value !== null) query[key] = value;
   }
-  return { ...body, ...query, ...params, ...binding.fixed };
+  const revision = binding.ifMatch ? { expectedRevision: ifMatch ?? "" } : {};
+  return { ...body, ...query, ...params, ...revision, ...binding.fixed };
+}
+
+/** Single-box responses carry the revision as an entity tag so a client can send it back as If-Match. */
+function entityTag(result: unknown): Record<string, string> {
+  if (typeof result !== "object" || result === null || !("box" in result)) return {};
+  const box = result.box;
+  if (typeof box !== "object" || box === null || !("revision" in box)) return {};
+  const revision = box.revision;
+  return typeof revision === "number" ? { etag: `"${revision}"` } : {};
 }
 
 function handlerFor(operation: Operation, binding: RestBinding): Handler {
@@ -35,9 +51,9 @@ function handlerFor(operation: Operation, binding: RestBinding): Handler {
     const result = await app.operations.run(
       operation.name,
       { host, principal: OWNER, source: "rest", run, events: app.events },
-      inputOf(binding, url, params, body),
+      inputOf(binding, url, params, body, req.headers.get("if-match")),
     );
-    return json(result, binding.status ?? 200);
+    return json(result, binding.status ?? 200, entityTag(result));
   };
 }
 

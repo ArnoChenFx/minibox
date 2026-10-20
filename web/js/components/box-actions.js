@@ -103,7 +103,11 @@ export function editResources(box, onSaved) {
     const memoryMb = Number(q("#erMem").value);
     try {
       await withBusy(e.currentTarget, () =>
-        api(`/api/boxes/${enc(box.id)}/resources`, { method: "PATCH", body: { cpus, memoryMb } }),
+        api(`/api/boxes/${enc(box.id)}/resources`, {
+          method: "PATCH",
+          body: { cpus, memoryMb },
+          headers: { "if-match": String(box.revision) },
+        }),
       );
       close();
       toast(t("ba.resUpdated"), {

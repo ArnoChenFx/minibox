@@ -7,6 +7,9 @@
  * present locally). Every resource is labelled with a unique prefix and removed afterwards.
  */
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import Docker from "dockerode";
 
@@ -26,7 +29,12 @@ const LONG = 60_000;
 
 const prefix = `mbit${Date.now().toString(36)}`;
 const runtime: Runtime = createDockerRuntime(SOCKET);
-const cfg = testConfig({ labelPrefix: prefix, dockerSocket: SOCKET, baseTemplateTag: `${prefix}-template:base` });
+const cfg = testConfig({
+  labelPrefix: prefix,
+  dockerSocket: SOCKET,
+  baseTemplateTag: `${prefix}-template:base`,
+  dataDir: mkdtempSync(join(tmpdir(), "minibox-docker-test-")),
+});
 const host = createLocalHost(cfg, runtime);
 const owned = { [prefix]: "true" };
 const docker = new Docker({ socketPath: SOCKET });
@@ -165,6 +173,8 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
 
       await runtime.updateContainer(id, { cpus: 1 });
       expect(await runtime.inspectContainer(id)).toMatchObject({ cpus: 1, memoryBytes: 64 * 1024 * 1024 });
+      await runtime.updateContainer(id, { pidsLimit: 128, restart: "no" });
+      expect(await runtime.inspectContainer(id)).toMatchObject({ pidsLimit: 128, restart: "no" });
 
       await runtime.stopContainer(id, { timeoutSec: 1 });
       await runtime.stopContainer(id, { timeoutSec: 1 });

@@ -93,7 +93,7 @@ flowchart LR
   D --- I
 ```
 
-- **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`，重启策略 `unless-stopped`）。`/workspace` 挂载在独立数据卷 `minibox-ws-<名称>`。容器以非 root 用户 `dev` 运行（见[基础模板](#基础模板)）。
+- **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`）。重启策略为 `no`：启动时的协调器按规格里的期望状态（`running` 或 `stopped`）启动或停止容器。`DATA_DIR/boxes/` 下的规格文件是可变状态的权威来源。容器标签只在创建时写入，之后不再修改。`/workspace` 挂载在独立数据卷 `minibox-ws-<名称>`。容器以非 root 用户 `dev` 运行（见[基础模板](#基础模板)）。
 - **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`。
 - **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。
 - 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 随仓库放在 [`web/vendor/`](web/vendor/README.md)，控制台不会从 CDN 加载任何代码。
@@ -335,7 +335,7 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 | 路径 | 权限 | 内容 |
 |---|---|---|
 | `access_key` | `600` | 环境变量和 `.env` 中都没有设置时自动生成的访问密钥 |
-| `boxes/` | `700` | Box 规格（现在创建，后续功能使用） |
+| `boxes/` | `700` | 每个 Box 一个规格文件 `<id>.json`（权限 `600`）。可变状态写在这里；标签只是创建时的副本 |
 | `exec/` | `700` | `exec` 命令的输出（现在创建，后续功能使用） |
 | `secrets/` | `700` | 密钥值与仓库密钥（现在创建，后续功能使用） |
 | `events.db`（旁边还有 `events.db-wal` 与 `events.db-shm`） | 位于 `DATA_DIR` 内 | 事件库，SQLite WAL 模式。见[事件](#事件) |
@@ -354,7 +354,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 { "error": { "code": "validation_failed", "message": "CPU 核数须在 0.1 到 64 之间。", "details": { "field": "cpus" } } }
 ```
 
-常见错误码：`validation_failed`（400）、`unauthorized`（401）、`forbidden`（403）、`not_found`（404）、`method_not_allowed`（405）、`conflict`（409）、`unsupported_media_type`（415）、`insufficient_capacity`（422）、`too_many_requests`（429）、`docker_error`（502）、`docker_unavailable`（503）。
+常见错误码：`validation_failed`（400）、`unauthorized`（401）、`forbidden`（403）、`not_found`（404）、`method_not_allowed`（405）、`conflict`（409）、`precondition_failed`（412）、`unsupported_media_type`（415）、`insufficient_capacity`（422）、`precondition_required`（428）、`too_many_requests`（429）、`docker_error`（502）、`docker_unavailable`（503）。错误消息为英文，并带有 `key` 供界面翻译。
 
 ### 认证与系统
 
@@ -374,16 +374,17 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | 列表；除非 `stats=false`，否则附带运行中 Box 的实时占用 |
 | `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB |
-| `GET` | `/api/boxes/:id` | 详情（含实时占用） |
+| `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
+| `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。模板、挂载、环境变量和安全档位在重建实现前会被忽略 |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除；可选同时删除工作区数据卷 |
-| `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作 |
-| `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"? }` |
+| `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作。启动和停止会记下期望状态 |
+| `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"?, "pids"? }`。必须带 `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | 实时占用 |
 | `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行） |
 | `POST` | `/api/boxes/:id/snapshots` | 创建快照 `{ "name"? }` |
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket 终端；发送 `{"type":"resize","cols":N,"rows":N}` 调整窗口，其余消息作为输入 |
 
-`:id` 可以是容器 ID 或容器名（`minibox-<名称>`）。限制：CPU 0.1–64 核，内存 128–262144 MB，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
+`:id` 可以是容器 ID、容器名（`minibox-<名称>`）、稳定 ID（`bx_…`）或 Box 名称。会改动 Box 的请求必须带 `If-Match`，值为当前版本号（纯数字、带引号的实体标签，或弱标签）。缺少该头返回 `428 precondition_required`；版本过期返回 `412 precondition_failed`。限制：CPU 0.1–64 核，内存 128–262144 MB，进程数 1–1000000，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
 
 ### 快照与模板
 
@@ -456,7 +457,8 @@ minibox/
 │   ├── static.ts            # 静态文件服务（防目录穿越）
 │   ├── runtime/             # Runtime 接口与 RuntimeError（引擎边界）
 │   ├── docker/              # Docker 适配器（唯一使用 dockerode）：runtime / errors / logs / stats
-│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / images / snapshots / templates
+│   ├── specs/               # Box 规格存储、认领、漂移与 If-Match 版本号
+│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / images / snapshots / templates / reconcile
 │   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostMonitor 采样
 │   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、范围钩子
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影

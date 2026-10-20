@@ -14,6 +14,7 @@ import { Bus } from "./lib/bus";
 import { Executor, type ExecutorHooks, logAudit, ownerOnly, type AuditEvent } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
 import type { Runtime } from "./runtime";
+import { SpecStore } from "./specs/store";
 
 /** What the in-process bus carries. Later producers (task progress, box status) add their topics here. */
 export type AppTopics = {
@@ -68,7 +69,8 @@ function openEventStore(path: string, redactor: Redactor): EventStore {
 
 export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App {
   const hosts = new HostRegistry();
-  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket));
+  const specs = new SpecStore(cfg.dataDir);
+  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs);
   hosts.add(local);
   const activity = new ActivityLog();
   const redactor = createRedactor({ knownSecrets: [cfg.accessKey] });

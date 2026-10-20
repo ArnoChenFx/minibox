@@ -23,6 +23,7 @@ const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as Host
  */
 export function normalize(text: string): string {
   return text
+    .replace(/bx_[0-9a-z]+/g, "<boxId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/[0-9a-f]{64}/g, "<id>")
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<time>")
@@ -58,17 +59,25 @@ export async function runParityScenario(): Promise<Exchange[]> {
   );
 
   const exchanges: Exchange[] = [];
+  let alphaRev = 0;
 
   async function send(
     step: string,
     method: string,
     path: string,
-    init: { body?: string; contentType?: string; authed?: boolean; origin?: string } = {},
+    init: {
+      body?: string;
+      contentType?: string;
+      authed?: boolean;
+      origin?: string;
+      headers?: Record<string, string>;
+    } = {},
   ): Promise<{ status: number; json: Record<string, unknown> | null }> {
     const headers = new Headers();
     if (init.authed !== false) headers.set("authorization", `Bearer ${TEST_KEY}`);
     if (init.contentType) headers.set("content-type", init.contentType);
     if (init.origin) headers.set("origin", init.origin);
+    for (const [key, value] of Object.entries(init.headers ?? {})) headers.set(key, value);
     const res = await fetch(`${base}${path}`, { method, headers, body: init.body });
     const text = await res.text();
     exchanges.push({
@@ -85,14 +94,16 @@ export async function runParityScenario(): Promise<Exchange[]> {
     } catch {
       json = null;
     }
+    const box = json?.box as { name?: string; revision?: number } | undefined;
+    if (box?.name === "alpha" && typeof box.revision === "number") alphaRev = box.revision;
     return { status: res.status, json };
   }
 
   const JSON_TYPE = "application/json";
   const post = (step: string, path: string, body: unknown) =>
     send(step, "POST", path, { body: JSON.stringify(body), contentType: JSON_TYPE });
-  const patch = (step: string, path: string, body: unknown) =>
-    send(step, "PATCH", path, { body: JSON.stringify(body), contentType: JSON_TYPE });
+  const patch = (step: string, path: string, body: unknown, headers?: Record<string, string>) =>
+    send(step, "PATCH", path, { body: JSON.stringify(body), contentType: JSON_TYPE, headers });
   const raw = (step: string, method: string, path: string, body: string) =>
     send(step, method, path, { body, contentType: JSON_TYPE });
 
@@ -173,8 +184,16 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("start a missing box", "POST", "/api/boxes/missing/start");
     await send("stop a missing box", "POST", "/api/boxes/missing/stop");
 
-    await patch("resize cpus", `/api/boxes/${alpha}/resources`, { cpus: 1 });
-    await patch("resize memory", `/api/boxes/${alpha}/resources`, { memoryMb: 768 });
+    await patch("resize cpus", `/api/boxes/${alpha}/resources`, { cpus: 1 }, { "if-match": String(alphaRev) });
+    await patch("resize memory", `/api/boxes/${alpha}/resources`, { memoryMb: 768 }, { "if-match": String(alphaRev) });
+    await patch("resize without If-Match", `/api/boxes/${alpha}/resources`, { cpus: 1 });
+    await patch(
+      "resize with a stale If-Match",
+      `/api/boxes/${alpha}/resources`,
+      { cpus: 1 },
+      { "if-match": alphaRev === 1 ? "999" : "1" },
+    );
+    await patch("update idle timeout", `/api/boxes/${alpha}`, { idleTimeoutSec: 60 }, { "if-match": String(alphaRev) });
     await patch("resize with nothing", `/api/boxes/${alpha}/resources`, {});
     await patch("resize with null cpus only", `/api/boxes/${alpha}/resources`, { cpus: null });
     await patch("resize cpus over the limit", `/api/boxes/${alpha}/resources`, { cpus: 999 });

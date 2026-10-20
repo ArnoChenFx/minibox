@@ -74,6 +74,7 @@ describe("OpenAPI document", () => {
       "box.logs",
       "box.resources",
       "box.stats",
+      "box.update",
       "events.list",
       "snapshot.create",
       "snapshot.delete",

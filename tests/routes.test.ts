@@ -63,10 +63,10 @@ async function errorOf(res: Response): Promise<ErrorBody> {
   return ((await res.json()) as { error: ErrorBody }).error;
 }
 
-async function createBox(name: string): Promise<{ id: string; name: string }> {
+async function createBox(name: string): Promise<{ id: string; name: string; revision: number }> {
   const res = await post("/api/boxes", { name, cpus: 1, memoryMb: 256 });
   expect(res.status).toBe(201);
-  return ((await res.json()) as { box: { id: string; name: string } }).box;
+  return ((await res.json()) as { box: { id: string; name: string; revision: number } }).box;
 }
 
 describe("access and routing", () => {
@@ -276,9 +276,10 @@ describe("box routes", () => {
     const res = await api(`/api/boxes/${box.id}/resources`, {
       method: "PATCH",
       body: JSON.stringify({ cpus: 2 }),
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "if-match": String(box.revision) },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("etag")).toBe(`"${box.revision + 1}"`);
     expect(await res.json()).toMatchObject({ box: { cpus: 2, memory: 256 * MB } });
   });
 

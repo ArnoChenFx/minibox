@@ -9,6 +9,7 @@ export const LABELS = {
   snapshotName: "Snapshot name",
   cpus: "CPU cores",
   memory: "Memory",
+  pids: "Process limit",
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
@@ -27,7 +28,17 @@ export const MESSAGES = {
   image_ref_invalid: "Invalid image reference.",
   profile_invalid: "Security profile must be one of standard, strict or relaxed.",
   description_invalid: "Description must be a single line without control characters, such as line breaks or tabs.",
-  resources_required: "Provide at least one of cpus or memoryMb.",
+  resources_required: "Provide at least one of cpus, memoryMb or pids.",
+  revision_required: "Send the request header If-Match with this box's current revision.",
+  revision_mismatch: "This box is at revision {revision}, not {expected}. Refresh it and try again.",
+  revision_invalid: "If-Match must be the box revision, a positive integer.",
+  box_update_empty: "Provide at least one of name, cpus, memoryMb, pids, labels, idleTimeoutSec or ttlSec.",
+  pids_range: "Process limit must be an integer between {min} and {max}.",
+  idle_timeout_invalid: "Idle timeout must be a positive number of seconds up to {max}, or null to clear it.",
+  ttl_invalid: "TTL must be a positive number of seconds up to {max}, or null to clear it.",
+  label_invalid:
+    "Labels may have at most 32 entries. Keys follow box name rules, and each value is a single line of at most 256 characters.",
+  box_claim_failed: "Could not claim this container as a box: {detail}.",
   docker_unavailable:
     "Cannot connect to the Docker daemon. Make sure Docker is running and the current user can access it.",
   docker_not_found: "Not found: {detail}",

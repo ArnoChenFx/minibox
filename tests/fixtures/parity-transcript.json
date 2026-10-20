@@ -197,7 +197,7 @@
     "path": "/api/boxes",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "create alpha again",
@@ -213,7 +213,7 @@
     "path": "/api/boxes",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-beta\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "create beta",
@@ -229,7 +229,7 @@
     "path": "/api/boxes",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"boxes\":[{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-beta\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
   },
   {
     "step": "list boxes without stats",
@@ -237,7 +237,7 @@
     "path": "/api/boxes?stats=false",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"boxes\":[{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"},{\"id\":\"<id>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\"}]}"
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-beta\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}]}"
   },
   {
     "step": "list boxes, stats=0 still includes stats",
@@ -245,7 +245,7 @@
     "path": "/api/boxes?stats=0",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"boxes\":[{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-beta\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
   },
   {
     "step": "get alpha",
@@ -253,7 +253,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}}}"
   },
   {
     "step": "get a missing box",
@@ -349,7 +349,7 @@
     "path": "/api/boxes/<id>/stop",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":2,\"desired\":\"stopped\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "stop alpha again",
@@ -357,7 +357,7 @@
     "path": "/api/boxes/<id>/stop",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":2,\"desired\":\"stopped\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "start alpha",
@@ -365,7 +365,7 @@
     "path": "/api/boxes/<id>/start",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "restart alpha",
@@ -373,7 +373,7 @@
     "path": "/api/boxes/<id>/restart",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "start ignores a malformed body",
@@ -381,7 +381,7 @@
     "path": "/api/boxes/<id>/start",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "start a missing box",
@@ -405,7 +405,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":536870912,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":4,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "resize memory",
@@ -413,7 +413,31 @@
     "path": "/api/boxes/<id>/resources",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":5,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+  },
+  {
+    "step": "resize without If-Match",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 428,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"precondition_required\",\"message\":\"Send the request header If-Match with this box's current revision.\",\"key\":\"revision_required\"}}"
+  },
+  {
+    "step": "resize with a stale If-Match",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>/resources",
+    "status": 412,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"precondition_failed\",\"message\":\"This box is at revision 5, not 1. Refresh it and try again.\",\"key\":\"revision_mismatch\",\"params\":{\"revision\":5,\"expected\":1},\"details\":{\"revision\":5,\"expected\":1}}}"
+  },
+  {
+    "step": "update idle timeout",
+    "method": "PATCH",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":6,\"desired\":\"running\",\"idleTimeoutSec\":60,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "resize with nothing",
@@ -421,7 +445,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus or memoryMb.\",\"key\":\"resources_required\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"key\":\"resources_required\"}}"
   },
   {
     "step": "resize with null cpus only",
@@ -429,7 +453,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus or memoryMb.\",\"key\":\"resources_required\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"key\":\"resources_required\"}}"
   },
   {
     "step": "resize cpus over the limit",
@@ -581,7 +605,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"restored\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-restored\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"restored\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-restored\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-restored\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-restored\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "restore snapshot with a body template",
@@ -589,7 +613,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"name\":\"restored-2\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":4294967296,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-restored-2\"}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"restored-2\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":4294967296,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-restored-2\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-restored-2\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-restored-2\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
   },
   {
     "step": "restore snapshot with a duplicate name",
@@ -821,6 +845,6 @@
     "path": "/api/events?box=alpha&status=error",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"events\":[{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
+    "body": "{\"events\":[{\"seq\":39,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"1\"},\"error\":{\"code\":\"precondition_failed\",\"status\":412}},{\"seq\":38,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"\"},\"error\":{\"code\":\"precondition_required\",\"status\":428}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
   }
 ]

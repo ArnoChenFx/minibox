@@ -9,8 +9,28 @@ export const StatsSchema = z.object({
   memPercent: z.number(),
 });
 
+export const BoxMountSchema = z.object({
+  volume: z.string(),
+  path: z.string(),
+  mode: z.enum(["rw", "ro"]),
+});
+
+export const BoxDriftSchema = z.object({
+  field: z.string(),
+  expected: z.string(),
+  actual: z.string(),
+});
+
+export const BoxRecoverySchema = z.object({
+  source: z.enum(["claim", "degraded"]),
+  at: z.string(),
+  needsReset: z.array(z.string()),
+  observedRestart: z.string(),
+});
+
 export const BoxSchema = z.object({
   id: z.string(),
+  boxId: z.string(),
   name: z.string(),
   state: z.string(),
   status: z.string(),
@@ -23,9 +43,20 @@ export const BoxSchema = z.object({
   network: z.string(),
   cpus: z.number().nullable(),
   memory: z.number().nullable(),
+  pids: z.number().nullable(),
   createdAt: z.string(),
   startedAt: z.string().nullable(),
   volume: z.string(),
+  revision: z.number(),
+  desired: z.enum(["running", "stopped"]),
+  idleTimeoutSec: z.number().nullable(),
+  ttlSec: z.number().nullable(),
+  labels: z.record(z.string(), z.string()),
+  createdBy: z.string().nullable(),
+  containerName: z.string(),
+  drift: z.array(BoxDriftSchema),
+  recovery: BoxRecoverySchema.nullable(),
+  mounts: z.array(BoxMountSchema),
 });
 
 export const BoxWithStatsSchema = BoxSchema.extend({
