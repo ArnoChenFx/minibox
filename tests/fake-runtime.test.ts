@@ -151,6 +151,50 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     expect(await rt.inspectContainer(id)).toMatchObject({ running: true, network: "boxes" });
   });
 
+  test("a stopped container cannot start on a re-created network until it is re-attached", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    await rt.ensureBridgeNetwork("boxes", { interContainerComm: false });
+    const oldId = rt.networks.get("boxes")?.id ?? "";
+    const { id } = await rt.createContainer({ image: "alpine:3.20", network: "boxes" });
+    await rt.startContainer(id);
+    await rt.stopContainer(id, { timeoutSec: 1 });
+
+    rt.pruneNetworks();
+    await rt.ensureBridgeNetwork("boxes", { interContainerComm: false });
+    const failure = await rejectionOf(rt.startContainer(id));
+    expect(failure).toMatchObject({ kind: "not_found" });
+    expect((failure as Error).message).toContain(oldId);
+
+    await rt.reattachNetwork(id, "boxes");
+    await rt.startContainer(id);
+    expect(await rt.inspectContainer(id)).toMatchObject({ running: true, network: "boxes" });
+  });
+
+  test("reattachNetwork refuses containers on other networks and networks that do not exist", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    await rt.ensureBridgeNetwork("boxes", { interContainerComm: false });
+    const { id } = await rt.createContainer({ image: "alpine:3.20", network: "boxes" });
+
+    expect(await rejectionOf(rt.reattachNetwork(id, "other"))).toMatchObject({ kind: "invalid" });
+    rt.networks.delete("boxes");
+    expect(await rejectionOf(rt.reattachNetwork(id, "boxes"))).toMatchObject({ kind: "not_found" });
+  });
+
+  test("pruning keeps only networks that a running container uses", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    rt.seedNetwork("stopped-only");
+    rt.seedNetwork("in-use");
+    rt.seedNetwork("idle");
+    rt.seedContainer({ image: "alpine:3.20", network: "stopped-only" });
+    rt.seedContainer({ image: "alpine:3.20", network: "in-use", running: true });
+
+    rt.pruneNetworks();
+    expect([...rt.networks.keys()]).toEqual(["in-use"]);
+  });
+
   test("containers on the default bridge report bridge and need no network to start", async () => {
     const rt = new FakeRuntime();
     rt.seedImage("alpine:3.20");

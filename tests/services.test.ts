@@ -181,21 +181,44 @@ describe("box security profiles", () => {
     expect(runtime.callsTo("createContainer")).toHaveLength(0);
   });
 
-  test("a box on the box network re-creates the network before it starts, so a pruned network does not stop it", async () => {
+  test("a stopped box starts after its pruned network is re-created, once it is attached to the new one", async () => {
     const box = await newBox("alpha");
     await boxes.stopBox(host, box.id);
-    runtime.networks.delete("mbtest-boxes");
+    runtime.pruneNetworks();
+    expect(runtime.networks.has("mbtest-boxes")).toBe(false);
 
     expect(await boxes.startBox(host, box.id)).toMatchObject({ running: true });
     expect(runtime.networks.has("mbtest-boxes")).toBe(true);
+    expect(runtime.callsTo("reattachNetwork")[0]?.args).toEqual([box.id, "mbtest-boxes"]);
   });
 
-  test("restart re-creates the box network the same way", async () => {
+  test("restart attaches a stopped box to the re-created network the same way", async () => {
     const box = await newBox("alpha");
-    runtime.networks.delete("mbtest-boxes");
+    await boxes.stopBox(host, box.id);
+    runtime.pruneNetworks();
 
     expect(await boxes.restartBox(host, box.id)).toMatchObject({ running: true });
     expect(runtime.networks.has("mbtest-boxes")).toBe(true);
+    expect(runtime.callsTo("reattachNetwork")).toHaveLength(1);
+  });
+
+  test("a stopped box is attached to its network before the engine starts it", async () => {
+    const box = await newBox("alpha");
+    await boxes.stopBox(host, box.id);
+    const before = runtime.calls.length;
+
+    await boxes.startBox(host, box.id);
+    const ops = runtime.ops().slice(before);
+    expect(ops.indexOf("reattachNetwork")).toBeGreaterThan(-1);
+    expect(ops.indexOf("reattachNetwork")).toBeLessThan(ops.indexOf("startContainer"));
+  });
+
+  test("a running box keeps its network endpoint when it is started or restarted", async () => {
+    const box = await newBox("alpha");
+    await boxes.startBox(host, box.id);
+    await boxes.restartBox(host, box.id);
+
+    expect(runtime.callsTo("reattachNetwork")).toHaveLength(0);
   });
 
   test("boxes created before profiles keep the default bridge, have no profile and are not touched", async () => {
@@ -209,6 +232,7 @@ describe("box security profiles", () => {
     await boxes.stopBox(host, id);
     expect(await boxes.startBox(host, id)).toMatchObject({ running: true, profile: null, network: "bridge" });
     expect(runtime.callsTo("ensureBridgeNetwork")).toHaveLength(0);
+    expect(runtime.callsTo("reattachNetwork")).toHaveLength(0);
     expect(runtime.containers.get(id)?.spec.hardening).toBeUndefined();
   });
 });

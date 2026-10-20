@@ -97,9 +97,15 @@ async function ensureBoxNetwork(host: HostCtx): Promise<void> {
   }
 }
 
-/** The engine cannot start a box whose network is gone, for example after `docker network prune` while it was stopped. */
-async function ensureNetworkFor(host: HostCtx, box: Box): Promise<void> {
-  if (box.network === host.security.network) await ensureBoxNetwork(host);
+/**
+ * A stopped box keeps the ID of the network it last ran on. After `docker network prune` removes that network, the box
+ * starts only once it is attached to the network that now has the same name. A running box's network is in use, so it
+ * cannot have been removed and is left alone.
+ */
+async function attachToBoxNetwork(host: HostCtx, box: Box): Promise<void> {
+  if (box.network !== host.security.network || box.running) return;
+  await ensureBoxNetwork(host);
+  await host.runtime.reattachNetwork(box.id, host.security.network);
 }
 
 export async function createBox(host: HostCtx, input: CreateBoxInput & { templateLabel?: string }): Promise<Box> {
@@ -147,7 +153,7 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
 }
 
 export async function startBox(host: HostCtx, id: string): Promise<Box> {
-  await ensureNetworkFor(host, await getBox(host, id));
+  await attachToBoxNetwork(host, await getBox(host, id));
   await host.runtime.startContainer(id);
   return getBox(host, id);
 }
@@ -159,7 +165,7 @@ export async function stopBox(host: HostCtx, id: string): Promise<Box> {
 }
 
 export async function restartBox(host: HostCtx, id: string): Promise<Box> {
-  await ensureNetworkFor(host, await getBox(host, id));
+  await attachToBoxNetwork(host, await getBox(host, id));
   await host.runtime.restartContainer(id, { timeoutSec: STOP_TIMEOUT_SEC });
   return getBox(host, id);
 }

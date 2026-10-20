@@ -356,6 +356,20 @@ export function createDockerRuntime(socketPath: string): Runtime {
         if (!created || !bridgeMatches(created, interContainerComm)) throw networkConflict(name, interContainerComm);
       }
     },
+
+    async reattachNetwork(containerId, name) {
+      const info = await call(() => docker.getContainer(containerId).inspect());
+      if (networkOf(info) !== name) {
+        throw new RuntimeError("invalid", `container ${containerId} is not on network ${name}`);
+      }
+      const network = await inspectNetwork(docker, name);
+      if (!network) throw new RuntimeError("not_found", `network ${name} not found`);
+      const endpoint = info.NetworkSettings.Networks[name];
+      if (endpoint?.NetworkID === network.Id) return;
+      // The engine rejects a disconnect from a network the container has no endpoint on.
+      if (endpoint) await call(() => docker.getNetwork(name).disconnect({ Container: containerId }));
+      await call(() => docker.getNetwork(name).connect({ Container: containerId }));
+    },
   };
 }
 

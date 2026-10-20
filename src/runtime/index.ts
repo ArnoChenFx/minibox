@@ -167,7 +167,7 @@ export interface Runtime {
   listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]>;
   inspectContainer(id: string): Promise<ContainerInfo>;
   createContainer(spec: CreateContainerSpec): Promise<{ id: string }>;
-  /** Starting a running container succeeds. Fails with `not_found` when the container's network does not exist. */
+  /** Starting a running container succeeds. Fails with `not_found` while the container's network is missing. */
   startContainer(id: string): Promise<void>;
   /** Stopping a stopped container succeeds. */
   stopContainer(id: string, opts: { timeoutSec: number }): Promise<void>;
@@ -206,4 +206,12 @@ export interface Runtime {
    * inter-container communication matches `interContainerComm`; otherwise this fails with `conflict`.
    */
   ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void>;
+
+  /**
+   * Attaches a container to the network named `name` as it is now. The engine pins a container to the ID of the
+   * network it last ran on, so after that network is removed and created again the container cannot start until this
+   * is called. Does nothing when the container is already attached to the current network. Fails with `invalid` when
+   * the container's network is not `name`.
+   */
+  reattachNetwork(containerId: string, name: string): Promise<void>;
 }
