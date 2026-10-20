@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml"><img src="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
-  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.2-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.2" /></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.3-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.4.3" /></a>
   <img src="https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&amp;logoColor=white" alt="Sandbox: Docker" />
 </p>
 
@@ -97,7 +97,7 @@ flowchart LR
 ## 环境要求
 
 - 装有 Docker Engine 的 Linux 宿主机（宿主机指标读取自 `/proc`）
-- [Bun](https://bun.sh) ≥ 1.2
+- [Bun](https://bun.sh) ≥ 1.4.3
 - 运行 MiniBox 的用户对 Docker Socket 有读写权限
 - 浏览器能访问 `cdn.jsdelivr.net`（网页终端需要）
 
