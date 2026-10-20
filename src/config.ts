@@ -18,6 +18,7 @@ export interface Config {
   metricsHistory: number;
   logLevel: "debug" | "info" | "warn" | "error";
   trustProxy: boolean;
+  cookieSecure: boolean;
   allowedOrigins: string[];
 }
 
@@ -105,6 +106,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     metricsHistory: intOr(get("METRICS_HISTORY"), 120),
     logLevel: level === "debug" || level === "warn" || level === "error" ? level : "info",
     trustProxy: isTruthy(get("TRUST_PROXY")),
+    cookieSecure: isTruthy(get("COOKIE_SECURE")),
     allowedOrigins: parseOrigins(get("ALLOWED_ORIGINS")),
   };
 }

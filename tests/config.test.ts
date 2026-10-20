@@ -23,6 +23,11 @@ describe("loadConfig", () => {
     expect(loadConfig({ ACCESS_KEY: KEY, TRUST_PROXY: "true" }).trustProxy).toBe(true);
     expect(loadConfig({ ACCESS_KEY: KEY, TRUST_PROXY: " ON " }).trustProxy).toBe(true);
   });
+  test("COOKIE_SECURE is off unless enabled", () => {
+    expect(loadConfig({ ACCESS_KEY: KEY }).cookieSecure).toBe(false);
+    expect(loadConfig({ ACCESS_KEY: KEY, COOKIE_SECURE: "0" }).cookieSecure).toBe(false);
+    expect(loadConfig({ ACCESS_KEY: KEY, COOKIE_SECURE: "1" }).cookieSecure).toBe(true);
+  });
   test("ALLOWED_ORIGINS is a comma-separated list normalized to origins", () => {
     const cfg = loadConfig({
       ACCESS_KEY: KEY,

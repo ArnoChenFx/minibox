@@ -189,6 +189,22 @@ describe("cross-site protection (end to end)", () => {
       expect(cookie).toStartWith(`${COOKIE_NAME}=`);
       expect(cookie).toContain("HttpOnly");
       expect(cookie).toContain("SameSite=Strict");
+      expect(cookie).not.toContain("Secure");
+    });
+  });
+
+  test("a login from an https Origin sets Secure without TRUST_PROXY, as behind a same-host tunnel", async () => {
+    await withServer({}, async ({ base }) => {
+      const tunnelOrigin = base.replace("http://", "https://");
+      const cookie = (await login(base, KEY, { origin: tunnelOrigin })).headers.get("set-cookie") ?? "";
+      expect(cookie).toContain("; Secure");
+    });
+  });
+
+  test("COOKIE_SECURE sets Secure on the session cookie even over plain http", async () => {
+    await withServer({ COOKIE_SECURE: "1" }, async ({ base }) => {
+      const cookie = (await login(base, KEY, { origin: base })).headers.get("set-cookie") ?? "";
+      expect(cookie).toContain("; Secure");
     });
   });
 
@@ -257,6 +273,13 @@ describe("console delivery (end to end)", () => {
     await withServer({ TRUST_PROXY: "false" }, async ({ base }) => {
       const res = await fetch(`${base}/login`, { headers: forwarded });
       expect(res.headers.get("strict-transport-security")).toBeNull();
+    });
+  });
+
+  test("HSTS is sent for an https Origin behind a same-host tunnel, without TRUST_PROXY", async () => {
+    await withServer({}, async ({ base }) => {
+      const res = await fetch(`${base}/login`, { headers: { origin: base.replace("http://", "https://") } });
+      expect(res.headers.get("strict-transport-security")).toBe("max-age=31536000");
     });
   });
 });

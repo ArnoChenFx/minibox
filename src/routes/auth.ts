@@ -25,7 +25,8 @@ export const authRoutes: Route[] = [
       if (key && safeEqual(key, app.cfg.accessKey)) {
         app.throttle.recordSuccess(ip);
         log.info("auth.login", { ip });
-        return json({ ok: true }, 200, { "set-cookie": sessionCookie(key, isSecureRequest(req, app.cfg.trustProxy)) });
+        const secure = app.cfg.cookieSecure || isSecureRequest(req, app.cfg.trustProxy);
+        return json({ ok: true }, 200, { "set-cookie": sessionCookie(key, secure) });
       }
       const refused = app.throttle.refuses(ip);
       app.throttle.recordFailure(ip);

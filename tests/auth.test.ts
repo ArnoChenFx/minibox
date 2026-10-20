@@ -52,12 +52,20 @@ describe("auth", () => {
     expect(clearSessionCookie()).toContain("SameSite=Strict");
   });
 
-  test("detects https behind tunnels only when trustProxy is enabled", () => {
+  test("an https request URL is secure", () => {
+    expect(isSecureRequest(new Request("https://minibox.example.com/login"), false)).toBe(true);
+  });
+
+  test("an https Origin is secure behind a tunnel, without trustProxy", () => {
     expect(isSecureRequest(req({}), false)).toBe(false);
+    expect(isSecureRequest(req({ origin: "https://minibox.example.com" }), false)).toBe(true);
+    expect(isSecureRequest(req({ origin: "http://minibox.example.com" }), false)).toBe(false);
+  });
+
+  test("X-Forwarded-Proto is trusted only when trustProxy is enabled", () => {
     expect(isSecureRequest(req({ "x-forwarded-proto": "https" }), false)).toBe(false);
     expect(isSecureRequest(req({ "x-forwarded-proto": "https" }), true)).toBe(true);
-    expect(isSecureRequest(req({ origin: "https://minibox.example.com" }), true)).toBe(true);
-    expect(isSecureRequest(req({ origin: "https://minibox.example.com" }), false)).toBe(false);
+    expect(isSecureRequest(req({ "x-forwarded-proto": "http" }), true)).toBe(false);
   });
 });
 

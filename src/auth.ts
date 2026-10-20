@@ -49,16 +49,14 @@ export function lastListValue(value: string | null): string | null {
 }
 
 /**
- * Whether the browser reached us over HTTPS. Behind a TLS-terminating tunnel the request URL is
- * plain http, so when trustProxy is enabled we also check X-Forwarded-Proto and Origin.
+ * Whether the browser reached us over HTTPS. Behind a TLS-terminating tunnel the request URL is plain http, so the
+ * browser's Origin is checked without trustProxy: same-host tunnels leave it intact, and a forged value can only add
+ * the Secure flag. X-Forwarded-Proto is read only when trustProxy is enabled.
  */
 export function isSecureRequest(req: Request, trustProxy: boolean): boolean {
   if (new URL(req.url).protocol === "https:") return true;
-  if (!trustProxy) return false;
-  return (
-    lastListValue(req.headers.get("x-forwarded-proto")) === "https" ||
-    (req.headers.get("origin") ?? "").startsWith("https://")
-  );
+  if ((req.headers.get("origin") ?? "").startsWith("https://")) return true;
+  return trustProxy && lastListValue(req.headers.get("x-forwarded-proto")) === "https";
 }
 
 /**
