@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MiniBox · Agent 开发环境</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+</head>
+<body>
+  <div id="loginView" class="login-wrap hidden">
+    <div class="login-card">
+      <h1>MiniBox</h1>
+      <p>个人 Docker Agent 开发环境控制台。请输入访问密钥。</p>
+      <form id="loginForm">
+        <label>访问密钥
+          <input id="loginKey" type="password" autocomplete="current-password" required placeholder="ACCESS_KEY" />
+        </label>
+        <div class="error" id="loginError"></div>
+        <button class="btn primary" type="submit">登录</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="appView" class="hidden">
+    <header class="app-header">
+      <div>
+        <h1>MiniBox</h1>
+        <div class="meta">仿 Upstash Box · 本机 Docker 沙箱</div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnRefresh">刷新</button>
+        <button class="btn" id="btnLogout">退出</button>
+      </div>
+    </header>
+    <nav class="tabs">
+      <button class="tab active" data-tab="boxes">Boxes</button>
+      <button class="tab" data-tab="snapshots">快照</button>
+      <button class="tab" data-tab="templates">模板</button>
+    </nav>
+    <main class="main">
+      <section id="tab-boxes">
+        <div class="toolbar">
+          <button class="btn primary" id="btnCreate">创建 Box</button>
+          <span class="muted" id="boxCount"></span>
+        </div>
+        <div id="boxList"></div>
+      </section>
+      <section id="tab-snapshots" class="hidden">
+        <div class="toolbar"><span class="muted">容器 commit 生成的镜像</span></div>
+        <div id="snapList"></div>
+      </section>
+      <section id="tab-templates" class="hidden">
+        <div class="toolbar">
+          <button class="btn primary" id="btnBuildTemplate">构建基础模板 base</button>
+          <span class="muted">带 minibox.template=true 的镜像</span>
+        </div>
+        <div id="tplList"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modalRoot"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

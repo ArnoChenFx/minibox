@@ -1,0 +1,19 @@
+{
+  "name": "minibox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun --watch run index.ts",
+    "build:template": "docker build -t minibox-template:base -f templates/base/Dockerfile templates/base"
+  },
+  "dependencies": {
+    "dockerode": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "@types/dockerode": "^4.0.2",
+    "typescript": "^5.9.0"
+  }
+}
