@@ -43,6 +43,33 @@ export function isAuthorized(req: Request, accessKey: string): boolean {
   return key !== null && safeEqual(key, accessKey);
 }
 
+export const MIN_ACCESS_KEY_LENGTH = 20;
+const SINGLE_CLASS_MIN_LENGTH = 24;
+
+function characterClasses(key: string): Set<string> {
+  const classes = new Set<string>();
+  for (const ch of key) {
+    if (/[a-z]/.test(ch)) classes.add("lower");
+    else if (/[A-Z]/.test(ch)) classes.add("upper");
+    else if (/[0-9]/.test(ch)) classes.add("digit");
+    else classes.add("other");
+  }
+  return classes;
+}
+
+/**
+ * Whether an access key is too weak to rely on. The login limiter does not stop guessing, so the key's strength is
+ * what resists brute force. The check is deliberately coarse: it flags keys shorter than MIN_ACCESS_KEY_LENGTH, keys
+ * from one class (lowercase, uppercase, digits, or everything else) shorter than SINGLE_CLASS_MIN_LENGTH, and keys
+ * that repeat a single character.
+ */
+export function isWeakAccessKey(key: string): boolean {
+  const chars = [...key];
+  if (chars.length < MIN_ACCESS_KEY_LENGTH) return true;
+  if (new Set(chars).size === 1) return true;
+  return chars.length < SINGLE_CLASS_MIN_LENGTH && characterClasses(key).size === 1;
+}
+
 /** The right-most entry of a comma-separated proxy header: the one appended by the proxy closest to MiniBox. */
 export function lastListValue(value: string | null): string | null {
   return value?.split(",").at(-1)?.trim() || null;

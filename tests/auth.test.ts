@@ -7,6 +7,7 @@ import {
   extractKey,
   isAuthorized,
   isSecureRequest,
+  isWeakAccessKey,
   LoginLimiter,
   LoginThrottle,
   parseCookies,
@@ -136,6 +137,34 @@ describe("proxy header warning", () => {
     const reports: string[][] = [];
     proxyHeaderWarner(true, (headers) => reports.push(headers))(req({ "x-forwarded-for": "198.51.100.1" }));
     expect(reports).toEqual([]);
+  });
+});
+
+describe("weak access key", () => {
+  const STRONG = "Q9wZk3Lm7Xv2Bn5Tc8Rp";
+
+  test("flags keys shorter than 20 characters", () => {
+    expect(isWeakAccessKey("")).toBe(true);
+    expect(isWeakAccessKey(STRONG.slice(0, 19))).toBe(true);
+    expect(isWeakAccessKey(STRONG)).toBe(false);
+  });
+
+  test("flags a key of 20 to 23 characters drawn from one class", () => {
+    expect(isWeakAccessKey("abcdefghijklmnopqrst")).toBe(true);
+    expect(isWeakAccessKey("ABCDEFGHIJKLMNOPQRSTUVW")).toBe(true);
+    expect(isWeakAccessKey("12345678901234567890123")).toBe(true);
+    expect(isWeakAccessKey("abcdefghijklmnopqrstuvwx")).toBe(false);
+  });
+
+  test("accepts keys that mix classes, use symbols, or are passphrases", () => {
+    expect(isWeakAccessKey("Q9w!k3L@7Xv2Bn5T#8Rp")).toBe(false);
+    expect(isWeakAccessKey("correct horse battery staple")).toBe(false);
+    expect(isWeakAccessKey("3f9a0c7e5b21d8a46e0f9c1b7d4a2e83c5f60b9d1a7e4c28f3b0d6e9a5c1f742")).toBe(false);
+  });
+
+  test("flags a key that repeats one character, at any length", () => {
+    expect(isWeakAccessKey("a".repeat(40))).toBe(true);
+    expect(isWeakAccessKey("0".repeat(64))).toBe(true);
   });
 });
 

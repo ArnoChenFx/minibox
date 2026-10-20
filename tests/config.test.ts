@@ -109,6 +109,12 @@ describe("ACCESS_KEY precedence", () => {
   });
 });
 
+describe("ACCESS_KEY strength", () => {
+  test("a weak key still loads, so the startup warning never blocks a deployment", () => {
+    expect(load({ ACCESS_KEY: "short" })).toMatchObject({ accessKey: "short", accessKeySource: "env" });
+  });
+});
+
 describe("generated ACCESS_KEY", () => {
   test("is written to DATA_DIR/access_key and the same key is read back on restart", () => {
     const first = load();

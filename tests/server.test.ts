@@ -10,7 +10,7 @@ import { type App, createApp } from "../src/app";
 import { COOKIE_NAME, LoginLimiter, type LoginLimits } from "../src/auth";
 import { type Config, loadConfig } from "../src/config";
 import { setLogLevel } from "../src/lib/logger";
-import { startServer, startupFields } from "../src/server";
+import { startServer, startupFields, warnIfWeakAccessKey } from "../src/server";
 import type { TerminalData } from "../src/ws/terminal";
 
 setLogLevel("error");
@@ -302,5 +302,46 @@ describe("startup logging", () => {
     expect(fields).not.toHaveProperty("keyPrefix");
     expect(text).not.toContain(FIXTURE_KEY.slice(0, 4));
     expect(text).not.toContain(FIXTURE_KEY);
+  });
+});
+
+function weakKeyWarnings(cfg: Config): string[] {
+  const lines: string[] = [];
+  const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+    lines.push(String(line));
+  });
+  setLogLevel("warn");
+  try {
+    warnIfWeakAccessKey(cfg);
+  } finally {
+    spy.mockRestore();
+    setLogLevel("error");
+  }
+  return lines.filter((line) => line.includes("auth.weak_key"));
+}
+
+describe("weak access key warning", () => {
+  const WEAK_KEY = "Q9wZk3Lm7Xv2";
+  const STRONG_KEY = "Q9wZk3Lm7Xv2Bn5Tc8Rp";
+
+  test("a weak key logs one warning with neither the key, a prefix of it, nor its length", () => {
+    const warnings = weakKeyWarnings(testConfig({ ACCESS_KEY: WEAK_KEY }));
+    expect(warnings).toHaveLength(1);
+    const [line = ""] = warnings;
+    const entry = JSON.parse(line);
+    expect(entry).toMatchObject({ level: "warn", msg: "auth.weak_key", source: "env" });
+    expect(Object.keys(entry).toSorted()).toEqual(["hint", "level", "msg", "source", "ts"]);
+    expect(line).not.toContain(WEAK_KEY);
+    expect(line).not.toContain(WEAK_KEY.slice(0, 4));
+  });
+
+  test("a strong key logs nothing", () => {
+    expect(weakKeyWarnings(testConfig({ ACCESS_KEY: STRONG_KEY }))).toEqual([]);
+  });
+
+  test("a weak key still starts and signs in", async () => {
+    await withServer({ ACCESS_KEY: WEAK_KEY }, async ({ base }) => {
+      expect((await login(base, WEAK_KEY)).status).toBe(200);
+    });
   });
 });

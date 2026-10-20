@@ -1,7 +1,7 @@
 import type { Server } from "bun";
 
 import { type App, createApp } from "./app";
-import { isAuthorized, isSecureRequest, proxyHeaderWarner } from "./auth";
+import { isAuthorized, isSecureRequest, isWeakAccessKey, MIN_ACCESS_KEY_LENGTH, proxyHeaderWarner } from "./auth";
 import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
 import { getBox } from "./docker/boxes";
@@ -116,10 +116,19 @@ export function startupFields(cfg: Config, version: string) {
   };
 }
 
+const WEAK_KEY_HINT = `ACCESS_KEY is weak: use at least ${MIN_ACCESS_KEY_LENGTH} random characters, for example openssl rand -hex 32, then restart.`;
+
+/** Warns about a weak key without refusing to start, so existing deployments keep running. The key is never logged. */
+export function warnIfWeakAccessKey(cfg: Config): void {
+  if (!isWeakAccessKey(cfg.accessKey)) return;
+  log.warn("auth.weak_key", { hint: WEAK_KEY_HINT, source: cfg.accessKeySource });
+}
+
 if (import.meta.main) {
   const cfg = loadConfig();
   setLogLevel(cfg.logLevel);
   if (cfg.accessKeySource === "generated") log.info("access_key.generated", { path: accessKeyPath(cfg.dataDir) });
+  warnIfWeakAccessKey(cfg);
   const version = resolveVersion();
   const app = createApp(cfg, version);
   app.monitor.start();
