@@ -86,12 +86,6 @@ function init() {
     $("#navBoxCount").textContent = h.boxes.total ? `${h.boxes.running}/${h.boxes.total}` : "";
   });
 
-  api("/api/system")
-    .then((s) => {
-      $("#sidebarFoot").innerHTML = `MiniBox v${esc(s.version)} · ${esc(s.runtime)}`;
-    })
-    .catch(() => {});
-
   window.addEventListener("hashchange", route);
   route();
 }
