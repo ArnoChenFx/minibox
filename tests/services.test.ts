@@ -63,7 +63,6 @@ describe("createBox", () => {
     });
     expect(runtime.volumes.get("mbtest-ws-alpha")?.labels).toEqual({ [keys.box]: "true", [keys.name]: "alpha" });
     expect(runtime.ops()).toEqual([
-      "listContainers",
       "inspectImage",
       "ensureBridgeNetwork",
       "inspectVolume",
@@ -87,7 +86,13 @@ describe("createBox", () => {
     const error = await rejectionOf(newBox("alpha"));
     expect(error).toBeInstanceOf(AppError);
     expect(error).toMatchObject({ status: 409, key: "box_exists", params: { name: "alpha" } });
-    expect(runtime.ops().slice(before)).toEqual(["listContainers"]);
+    expect(runtime.ops().slice(before)).toEqual([
+      "inspectImage",
+      "ensureBridgeNetwork",
+      "inspectVolume",
+      "createContainer",
+    ]);
+    expect(runtime.containers.size).toBe(1);
   });
 
   test("a missing template image is rejected before any volume or network is created", async () => {
@@ -103,9 +108,23 @@ describe("createBox", () => {
     expect((await newBox("beta", { templateLabel: "snapshot:x" })).template).toBe("snapshot:x");
   });
 
-  test("an engine conflict during create propagates as a RuntimeError", async () => {
+  test("a name taken after the caller's check is still a duplicate, not an engine error", async () => {
     runtime.fail("createContainer", new RuntimeError("conflict", "name taken", "name taken"));
-    expect(await rejectionOf(newBox("alpha"))).toMatchObject({ kind: "conflict" });
+    expect(await rejectionOf(newBox("alpha"))).toMatchObject({ status: 409, key: "box_exists" });
+    expect(runtime.callsTo("startContainer")).toHaveLength(0);
+  });
+
+  test("an engine outage while checking the template is not reported as a missing template", async () => {
+    runtime.fail("inspectImage", new RuntimeError("unavailable", "connect ECONNREFUSED", "connect ECONNREFUSED"));
+    expect(await rejectionOf(newBox("alpha"))).toMatchObject({ kind: "unavailable" });
+    expect(runtime.callsTo("createVolume")).toHaveLength(0);
+  });
+
+  test("a failed volume lookup stops the create instead of creating a volume blindly", async () => {
+    runtime.fail("inspectVolume", new RuntimeError("engine", "volume lookup failed", "volume lookup failed"));
+    expect(await rejectionOf(newBox("alpha"))).toMatchObject({ kind: "engine" });
+    expect(runtime.callsTo("createVolume")).toHaveLength(0);
+    expect(runtime.callsTo("createContainer")).toHaveLength(0);
   });
 });
 
@@ -258,9 +277,36 @@ describe("deleteBox", () => {
     const box = await newBox("alpha");
     runtime.fail("removeVolume", new RuntimeError("engine", "device busy", "device busy"));
 
-    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: false });
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({
+      name: "alpha",
+      volumeDeleted: false,
+      volumeError: "device busy",
+    });
     expect(runtime.containers.size).toBe(0);
     expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+  });
+
+  test("a volume still mounted elsewhere is kept and the engine's reason is returned", async () => {
+    const box = await newBox("alpha");
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "other",
+      mounts: [{ source: "mbtest-ws-alpha", target: "/data" }],
+    });
+
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({
+      name: "alpha",
+      volumeDeleted: false,
+      volumeError: "remove mbtest-ws-alpha: volume is in use",
+    });
+    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+  });
+
+  test("a volume that is already gone counts as deleted", async () => {
+    const box = await newBox("alpha");
+    runtime.volumes.delete("mbtest-ws-alpha");
+
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
   });
 
   test("containers without the MiniBox label are never removed", async () => {
@@ -353,6 +399,15 @@ describe("snapshots", () => {
     expect(await listSnapshots(host)).toEqual([]);
   });
 
+  test("an engine outage while deleting a snapshot is not reported as a missing snapshot", async () => {
+    const box = await newBox("alpha");
+    const { ref } = await createSnapshot(host, box.id, "spare");
+    runtime.fail("inspectImage", new RuntimeError("unavailable", "connect ECONNREFUSED", "connect ECONNREFUSED"));
+
+    expect(await rejectionOf(deleteSnapshot(host, ref))).toMatchObject({ kind: "unavailable" });
+    expect(runtime.callsTo("removeImage")).toHaveLength(0);
+  });
+
   test("snapshot lists are newest first", async () => {
     runtime.seedImage("mbtest-snap:old", { [keys.snapshot]: "true" }, "2026-10-01T00:00:00.000Z");
     runtime.seedImage("mbtest-snap:new", { [keys.snapshot]: "true" }, "2026-10-02T00:00:00.000Z");
@@ -405,6 +460,15 @@ describe("templates", () => {
     expect(runtime.callsTo("createContainer")).toHaveLength(0);
   });
 
+  test("an engine outage while looking up a snapshot is not reported as a missing snapshot", async () => {
+    const box = await newBox("alpha");
+    const { ref } = await createSnapshot(host, box.id, "source");
+    runtime.fail("inspectImage", new RuntimeError("unavailable", "connect ECONNREFUSED", "connect ECONNREFUSED"));
+
+    expect(await rejectionOf(promoteSnapshot(host, ref, "gold"))).toMatchObject({ kind: "unavailable" });
+    expect(runtime.callsTo("createContainer")).toHaveLength(1);
+  });
+
   test("deleteTemplate removes template images and refuses other images", async () => {
     const template = runtime.seedImage("mbtest-template:tmp", { [keys.template]: "true" });
     await deleteTemplate(host, "mbtest-template:tmp");
@@ -415,6 +479,14 @@ describe("templates", () => {
       status: 404,
       key: "template_not_found",
     });
+  });
+
+  test("an engine outage while deleting a template is not reported as a missing template", async () => {
+    runtime.seedImage("mbtest-template:tmp", { [keys.template]: "true" });
+    runtime.fail("inspectImage", new RuntimeError("unavailable", "connect ECONNREFUSED", "connect ECONNREFUSED"));
+
+    expect(await rejectionOf(deleteTemplate(host, "mbtest-template:tmp"))).toMatchObject({ kind: "unavailable" });
+    expect(runtime.callsTo("removeImage")).toHaveLength(0);
   });
 
   test("concurrent base builds share one engine build, and a later build runs again", async () => {

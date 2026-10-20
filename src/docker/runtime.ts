@@ -11,6 +11,7 @@ import {
   type ContainerMount,
   type ContainerUpdate,
   type CreateContainerSpec,
+  isRuntimeError,
   type Runtime,
   type RuntimeEvent,
   RuntimeError,
@@ -208,9 +209,10 @@ export function createDockerRuntime(socketPath: string): Runtime {
       const infos = await Promise.all(
         list.map(async (c) => {
           try {
-            return toContainerInfo(await docker.getContainer(c.Id).inspect());
-          } catch {
-            return null;
+            return toContainerInfo(await call(() => docker.getContainer(c.Id).inspect()));
+          } catch (e) {
+            if (isRuntimeError(e, "not_found")) return null;
+            throw e;
           }
         }),
       );

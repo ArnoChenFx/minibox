@@ -179,6 +179,10 @@ export class RuntimeError extends Error {
   }
 }
 
+/** Business code branches on the kind of an engine failure, never on its message. */
+export const isRuntimeError = (e: unknown, kind: RuntimeErrorKind): e is RuntimeError =>
+  e instanceof RuntimeError && e.kind === kind;
+
 /**
  * Operations MiniBox needs from a container engine. Engine failures are RuntimeError; anything else is an
  * unexpected Error. See docs/runtime.md for the contract.

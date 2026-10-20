@@ -5,6 +5,7 @@ import { labelChange } from "../labels";
 import { notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
+import { isRuntimeError } from "../runtime";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 
 export const listTemplates = (host: HostCtx): Promise<ImageItem[]> => listImagesByLabel(host, host.keys.template);
@@ -19,7 +20,10 @@ export async function promoteSnapshot(
   description?: string,
 ): Promise<{ ref: string; name: string }> {
   const { runtime, keys: k, prefix } = host;
-  const info = await runtime.inspectImage(ref).catch(() => null);
+  const info = await runtime.inspectImage(ref).catch((e: unknown) => {
+    if (isRuntimeError(e, "not_found")) return null;
+    throw e;
+  });
   const labels = info?.labels;
   const isSnapshot = labels?.[k.snapshot] === "true";
   if (!labels || !isSnapshot) throw notFound(msg("snapshot_not_found"));
