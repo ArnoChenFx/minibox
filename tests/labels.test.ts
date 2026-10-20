@@ -3,9 +3,11 @@ import { describe, expect, test } from "bun:test";
 import {
   boxNetworkName,
   containerName,
+  labelChange,
   labelKeys,
   parseBoxLabels,
   parseImageLabels,
+  quoteLabelValue,
   stripSlash,
   volumeName,
 } from "../src/labels";
@@ -54,5 +56,16 @@ describe("labels", () => {
     expect(boxNetworkName("minibox")).toBe("minibox-boxes");
     expect(boxNetworkName("mb")).toBe("mb-boxes");
     expect(stripSlash("/minibox-a")).toBe("minibox-a");
+  });
+
+  test("label values are double-quoted, with backslash, quote and dollar escaped", () => {
+    expect(quoteLabelValue('say "hi" C:\\tmp $HOME')).toBe('"say \\"hi\\" C:\\\\tmp \\$HOME"');
+    expect(labelChange("minibox.template", "true")).toBe('LABEL minibox.template="true"');
+  });
+
+  test("label values with control characters are refused, so they cannot start a new instruction", () => {
+    for (const bad of ["a\nENV X=1", 'a\nCMD ["sh"]', "a\rb", "a\tb", "a\u0000b", "a\u007fb"]) {
+      expect(() => labelChange("minibox.template.description", bad)).toThrow("control characters");
+    }
   });
 });

@@ -75,6 +75,7 @@ export default {
   "err.template_required": "请选择模板。",
   "err.image_ref_invalid": "镜像引用格式不正确。",
   "err.profile_invalid": "安全档位必须是 standard、strict 或 relaxed 之一。",
+  "err.description_invalid": "描述只能是单行文本，不能包含换行、制表符等控制字符。",
   "err.resources_required": "请至少提供 cpus 或 memoryMb 其中一项。",
   "err.docker_unavailable": "无法连接 Docker 守护进程，请确认 Docker 已启动且当前用户有权限访问。",
   "err.docker_not_found": "资源不存在：{detail}",

@@ -6,6 +6,7 @@ import {
   parseCreateBox,
   parseResources,
   validateCpus,
+  validateDescription,
   validateMemoryMb,
   validateName,
   validateProfile,
@@ -92,6 +93,34 @@ describe("validateProfile", () => {
   });
   test("rejects other values on the profile field", () => {
     for (const bad of ["Strict", "root", "", 1, ["strict"]]) expectValidation(() => validateProfile(bad), "profile");
+  });
+});
+
+describe("validateDescription", () => {
+  test("keeps one-line text, including quotes, backslashes and dollar signs", () => {
+    expect(validateDescription('say "hi" C:\\tmp $HOME')).toBe('say "hi" C:\\tmp $HOME');
+  });
+  test("missing or blank means no description; text is trimmed and capped at 200 characters", () => {
+    expect(validateDescription(undefined)).toBeUndefined();
+    expect(validateDescription("   ")).toBeUndefined();
+    expect(validateDescription("  demo  ")).toBe("demo");
+    expect(validateDescription("é".repeat(300))).toHaveLength(200);
+  });
+  test("refuses newlines and other control characters", () => {
+    for (const bad of ["ok\nENV X=1", 'ok\r\nCMD ["sh"]', "tab\there", "nul\u0000", "trailing\n"]) {
+      expectValidation(() => validateDescription(bad), "description");
+    }
+  });
+  test("the refusal carries a translatable key", () => {
+    const err = (() => {
+      try {
+        validateDescription("a\nb");
+      } catch (e) {
+        return e as AppError;
+      }
+      return undefined;
+    })();
+    expect(err?.key).toBe("description_invalid");
   });
 });
 

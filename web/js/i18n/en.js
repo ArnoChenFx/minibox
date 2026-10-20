@@ -77,6 +77,8 @@ export default {
   "err.template_required": "Please choose a template.",
   "err.image_ref_invalid": "Invalid image reference.",
   "err.profile_invalid": "Security profile must be one of standard, strict or relaxed.",
+  "err.description_invalid":
+    "Description must be a single line without control characters, such as line breaks or tabs.",
   "err.resources_required": "Provide at least one of cpus or memoryMb.",
   "err.docker_unavailable":
     "Cannot connect to the Docker daemon. Make sure Docker is running and the current user can access it.",
