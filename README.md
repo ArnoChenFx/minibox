@@ -41,7 +41,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
 | Logs | Main-process output with selectable line count and auto-refresh |
-| Access control | Single access key via HttpOnly cookie or `Authorization: Bearer`; login rate limiting per IP |
+| Access control | Single access key via HttpOnly, `SameSite=Strict` cookie or `Authorization: Bearer`; login rate limiting per client address; cross-site requests refused |
 | Languages | English and Simplified Chinese; toggle with the language icon button in the top-right corner (console header and login page). Defaults to the browser language and is remembered per browser |
 | UI | Light / dark theme (follows the system, manual toggle), responsive layout, empty states, skeleton loaders, toasts, confirmation for destructive actions |
 
@@ -93,7 +93,7 @@ flowchart LR
 - **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`, restart policy `unless-stopped`). `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. The container runs as the non-root user `dev` (see [Base template](#base-template)).
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
-- The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is loaded from the jsDelivr CDN.
+- The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
 
 (`minibox` is the default `LABEL_PREFIX`; all names and labels follow the prefix.)
 
@@ -162,7 +162,6 @@ flowchart LR
 - Linux host with Docker Engine (the server reads `/proc` for host metrics)
 - [Bun](https://bun.sh) ≥ 1.4.3
 - Read/write access to the Docker socket for the user running MiniBox
-- A browser that can reach `cdn.jsdelivr.net` (for the web terminal)
 
 ## Quick start
 
@@ -188,7 +187,7 @@ cat data/access_key
 Open <http://127.0.0.1:3920> and sign in with that key.
 
 > [!TIP]
-> To choose the key yourself, set `ACCESS_KEY` in `.env` (e.g. `openssl rand -hex 32`). A key from `.env` or the environment always takes precedence over the generated one, and keys that earlier versions wrote into `.env` keep working.
+> To choose the key yourself, set `ACCESS_KEY` in `.env` to at least 20 random characters (e.g. `openssl rand -hex 32`). A key from `.env` or the environment always takes precedence over the generated one, and keys that earlier versions wrote into `.env` keep working.
 
 ### Running in the background
 
@@ -213,6 +212,29 @@ opentunnel up
 # → https://minibox.<your-id>.opentunnel.xyz
 ```
 
+> **Upgrading an existing tunnel or reverse-proxy setup? Read this first.** Which settings you need depends on what sits in front of MiniBox:
+>
+> 1. **OpenTunnel, or any tunnel that keeps `Host` and `Origin` and adds no `X-Forwarded-*` headers: leave `TRUST_PROXY` off.** Every request then reaches MiniBox from `127.0.0.1`, so all visitors share one login rate-limit bucket, but a correct access key always signs in (see [Security](#security)). `ALLOWED_ORIGINS` is optional there, because `Host` already matches the public address; setting it does no harm. The session cookie gets `Secure` from the browser's `https://` Origin.
+> 2. **A reverse proxy you control: set `TRUST_PROXY=true`** only if it overwrites (or strips and re-adds) `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` on every request, and MiniBox is reachable only through that proxy (keep `HOST=127.0.0.1`). `TRUST_PROXY` makes MiniBox trust all three headers, so a client that can reach MiniBox directly, or a proxy that passes client-supplied values through, can forge them.
+> 3. **`ALLOWED_ORIGINS=https://your-public-address`** if the proxy rewrites `Host` to its upstream address. Otherwise login and terminal requests from the public address get `403`, and the login page reports that the Origin is not in `ALLOWED_ORIGINS`. nginx rewrites `Host` unless configured with `proxy_set_header Host $host;`.
+> 4. **`COOKIE_SECURE=1`** only if browsers reach MiniBox over HTTPS but the requests MiniBox sees carry no `https://` Origin, for example because a proxy strips it. Browsers drop `Secure` cookies received over plain HTTP, so never set it for an address that is only reachable over http.
+>
+> If the log shows `proxy.headers_ignored`, MiniBox received forwarded headers while `TRUST_PROXY` was off. Behind a reverse proxy that sets them, enable `TRUST_PROXY` as above. A same-host tunnel such as OpenTunnel adds none of them, so any such header came from a client and the setting stays off.
+
+MiniBox also refuses requests that come from other websites. The browser's `Origin` must match the `Host` the request arrived with, or be listed in `ALLOWED_ORIGINS`. With a proxy that passes the public `Host` through, the server block looks like this:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3920;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
 Read the [security notes](#security) before exposing it.
 
 ### Docker
@@ -230,7 +252,7 @@ docker run -d --name minibox --restart unless-stopped \
 
 - MiniBox manages boxes through the host's Docker Engine, so the Docker socket **must** be mounted (`-v /var/run/docker.sock:/var/run/docker.sock`). Boxes are created as sibling containers on the host, not inside the MiniBox container.
 - Mount a volume at `/data` (`-v minibox-data:/data`). It holds the [data directory](#data-directory), including a generated access key, so state survives container re-creation. Without it, that state is lost when the container is removed.
-- If you don't pass `ACCESS_KEY`, read the generated key with `docker exec minibox cat /data/access_key`. `docker logs` shows only its first 4 characters.
+- If you don't pass `ACCESS_KEY`, read the generated key with `docker exec minibox cat /data/access_key`. `docker logs` never prints the key.
 - Upgrading from an image that generated its key into `/app/.env`: that file lives in the old container and is lost when the container is re-created. Copy the key out first, while the old container is running, with `docker exec minibox grep '^ACCESS_KEY=' /app/.env`, then pass it as `-e ACCESS_KEY=...`.
 - Inside the container MiniBox listens on `0.0.0.0:3920` (`HOST=0.0.0.0`); publish it on `127.0.0.1` as above and use HTTPS for remote access.
 - Tags: `X.Y.Z`, `X.Y` and `latest` (pre-releases such as `1.0.0-rc.1` only get their exact tag).
@@ -242,9 +264,12 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 
 | Variable | Default | Description |
 |---|---|---|
-| `ACCESS_KEY` | generated into `DATA_DIR/access_key` | Access key for the dashboard and API. MiniBox never writes it to `.env` |
+| `ACCESS_KEY` | generated into `DATA_DIR/access_key` | Access key for the dashboard and API: at least 20 random characters (see [Security](#security)). MiniBox never writes it to `.env` |
 | `HOST` | `127.0.0.1` | Listen address |
 | `PORT` | `3920` | Listen port |
+| `TRUST_PROXY` | `false` | Trust `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` from a reverse proxy you run in front of MiniBox. **Only behind a proxy that overwrites or strips them on every request**, and only when MiniBox is reachable through that proxy alone. Leave `false` for OpenTunnel and other tunnels that add no such headers (see [Remote access](#remote-access)) |
+| `ALLOWED_ORIGINS` | empty | This MiniBox's public origin(s), full `https://` addresses, comma-separated, e.g. `https://minibox.example.com`. **Needed when a proxy rewrites `Host`** (nginx does by default); without it, login and terminal requests from that address get `403`. Optional with OpenTunnel, which keeps `Host`, and harmless there |
+| `COOKIE_SECURE` | `false` | Always set the `Secure` flag on the session cookie. Usually unnecessary: browsers send an `https://` Origin on login, which already sets it. Only use over HTTPS, because browsers drop `Secure` cookies from plain HTTP |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
 | `DATA_DIR` | `./data` (`/data` in the image) | State directory, see [Data directory](#data-directory) |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
@@ -306,7 +331,7 @@ MiniBox creates these directories at startup and tightens looser modes. It never
 
 ## API reference
 
-All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer <ACCESS_KEY>` header.
+All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer <ACCESS_KEY>` header. Writes must send `Content-Type: application/json`, except requests that have neither a body nor a `Content-Type` (any other declared type gets `415`), and browser requests from other websites get `403`.
 
 Errors use a consistent shape and the matching HTTP status:
 
@@ -314,13 +339,13 @@ Errors use a consistent shape and the matching HTTP status:
 { "error": { "code": "validation_failed", "message": "…", "details": { "field": "cpus" } } }
 ```
 
-Common codes: `validation_failed` (400), `unauthorized` (401), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `insufficient_capacity` (422), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in Chinese.
+Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `unsupported_media_type` (415), `insufficient_capacity` (422), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in Chinese.
 
 ### Auth & system
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/auth/login` | **Public.** Body `{ "key": "..." }`; sets an HttpOnly cookie (30 days). Max 10 failures per IP per 5 min |
+| `POST` | `/api/auth/login` | **Public.** Body `{ "key": "..." }`; sets an HttpOnly cookie (30 days). A correct key always signs in. Wrong keys are refused (`429`) after 10 failures per client address (IPv6: per /64) or 50 failures from all addresses together, within 5 min |
 | `POST` | `/api/auth/logout` | **Public.** Clears the cookie |
 | `GET` | `/api/auth/session` | **Public.** `{ "authenticated": boolean }` |
 | `GET` | `/api/health` | **Public.** `{ "ok": true, "docker": boolean }`; `503` when Docker is unreachable |
@@ -441,9 +466,11 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 
 - **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` and `data/` are git-ignored — keep them that way.
 - **The container runs as root**, because it needs the Docker socket, which is root-equivalent. To narrow that, put a socket proxy that forwards only the Docker API calls MiniBox uses in front of the socket, and point `DOCKER_SOCKET` at the proxy's Unix socket. Or run MiniBox against a rootless Docker or Podman socket.
-- **The access key is the only guard.** There are no user accounts. Login failures are rate-limited per IP (10 per 5 minutes) and the key is compared in constant time, but a leaked key means full access. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; existing sessions stop working immediately.
+- **The access key is the only guard.** There are no user accounts, and a leaked key means full access. The key is compared in constant time. Login limiting only refuses wrong keys: a correct key always signs in, even while wrong keys are refused. Wrong keys are refused after 10 failures per client address (IPv6 addresses per /64) or 50 from all addresses together, within 5 minutes. The limiter does not stop guessing, because every key is still checked, so the key's length and randomness are what matter: use at least 20 random characters, such as `openssl rand -hex 32` (the generated key is 64 hex characters). At startup, a key shorter than 20 characters, or obviously low-entropy (one character class under 24 characters, or one repeated character), logs an `auth.weak_key` warning. MiniBox still starts, so existing deployments keep working. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; existing sessions stop working immediately.
+- **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin listed in `ALLOWED_ORIGINS`. Requests without an `Origin` header (scripts using `Authorization: Bearer`) are accepted. Writes must declare `Content-Type: application/json` unless they carry neither a body nor a `Content-Type`, which also blocks HTML form posts. The session cookie is `SameSite=Strict`, so a link from another website may ask you to sign in once more.
+- **Strict Content-Security-Policy.** Scripts load only from MiniBox itself (`script-src 'self'`), the pages have no inline scripts, and MiniBox can't be framed (`frame-ancestors 'none'`). Requests that arrive over HTTPS (directly, with an `https://` Origin, or through a proxy when `TRUST_PROXY=true`) also get `Strict-Transport-Security` for one year, without `includeSubDomains`.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
-- **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS (including behind TLS-terminating proxies that set `X-Forwarded-Proto`).
+- **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS or carries an `https://` Origin, which browsers send on login; `COOKIE_SECURE=1` forces it. By default MiniBox ignores `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`, so behind a reverse proxy every visitor shares the proxy's address for rate limiting. Set `TRUST_PROXY=true` only behind a proxy that overwrites these headers, and only when MiniBox is reachable only through that proxy. With it on, MiniBox uses the right-most `X-Forwarded-For` entry, which the proxy appended, and trusts the other two headers too. With it off, the headers are ignored, so forging them has no effect.
 - **Public tunnels are discoverable.** Tunnel hostnames (e.g. OpenTunnel's `*.opentunnel.xyz`) can show up in public Certificate Transparency logs or be guessed, and OpenTunnel itself does not add authentication — the dashboard is effectively on the internet, protected only by the access key. Traffic also passes through the tunnel's relay. Prefer a private network (e.g. Tailscale) or an authenticating reverse proxy when you can, and stop the tunnel when you don't need it.
 - **Container isolation, not a security sandbox.** Boxes share the host kernel. They are fine for your own agents, but **not for untrusted third-party code** — use gVisor or a microVM-based sandbox for that. Don't mount the Docker socket or sensitive host paths into a box.
 - **Boxes have passwordless `sudo`.** The `dev` user can become root inside its box, and root there can change anything in the box and in its workspace volume. The container still runs with Docker's default capabilities, not as a privileged container. A stricter profile without `sudo` is planned with [#5](https://github.com/ArnoChenFx/minibox/issues/5).

@@ -82,6 +82,9 @@ export default {
   "err.unknown_error": "未知错误",
   "err.api_not_found": "接口不存在。",
   "err.method_not_allowed": "不支持该请求方法。",
+  "err.unsupported_media_type": "请使用 Content-Type: application/json（没有请求体时可以不带该头）。",
+  "err.origin_forbidden":
+    "已拦截：请求的 Origin 既不是当前 MiniBox 地址，也不在 ALLOWED_ORIGINS 列表中。如果通过隧道或反向代理访问，请把它的公网地址（例如 https://minibox.example.com）加入 ALLOWED_ORIGINS，并重启 MiniBox。",
   "err.unauthorized": "未登录或访问密钥无效。",
   "err.terminal_not_running": "Box 未运行，无法打开终端。",
   "err.ws_upgrade_failed": "WebSocket 升级失败。",
@@ -263,7 +266,7 @@ export default {
   "bd.startBox": "启动 Box",
   "bd.reconnect": "重新连接",
   "bd.termHelp": "会话使用 bash 登录 Shell；离开此页面即断开，后台进程请使用 nohup 或 tmux 保持。",
-  "bd.termLoadFailed": "终端组件加载失败，请检查能否访问 cdn.jsdelivr.net。",
+  "bd.termLoadFailed": "终端组件加载失败，请刷新页面重试。",
   "bd.connected": "已连接",
   "bd.disconnected": "已断开",
   "bd.logs": "容器日志",

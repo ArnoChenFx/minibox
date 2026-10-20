@@ -54,6 +54,29 @@ describe("loadConfig", () => {
     expect(loadConfig({ ACCESS_KEY: KEY }, { envFile }).dataDir).toBe(fromFile);
     expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).dataDir).toBe(dataDir);
   });
+  test("TRUST_PROXY is off unless explicitly enabled", () => {
+    expect(load({ ACCESS_KEY: KEY }).trustProxy).toBe(false);
+    expect(load({ ACCESS_KEY: KEY, TRUST_PROXY: "false" }).trustProxy).toBe(false);
+    expect(load({ ACCESS_KEY: KEY, TRUST_PROXY: "0" }).trustProxy).toBe(false);
+    expect(load({ ACCESS_KEY: KEY, TRUST_PROXY: "true" }).trustProxy).toBe(true);
+    expect(load({ ACCESS_KEY: KEY, TRUST_PROXY: " ON " }).trustProxy).toBe(true);
+  });
+  test("COOKIE_SECURE is off unless enabled", () => {
+    expect(load({ ACCESS_KEY: KEY }).cookieSecure).toBe(false);
+    expect(load({ ACCESS_KEY: KEY, COOKIE_SECURE: "0" }).cookieSecure).toBe(false);
+    expect(load({ ACCESS_KEY: KEY, COOKIE_SECURE: "1" }).cookieSecure).toBe(true);
+  });
+  test("ALLOWED_ORIGINS is a comma-separated list normalized to origins", () => {
+    const cfg = load({
+      ACCESS_KEY: KEY,
+      ALLOWED_ORIGINS: "https://panel.example.net/, http://192.168.1.5:3920 ,",
+    });
+    expect(cfg.allowedOrigins).toEqual(["https://panel.example.net", "http://192.168.1.5:3920"]);
+  });
+  test("ALLOWED_ORIGINS rejects entries that are not http(s) origins", () => {
+    expect(() => load({ ACCESS_KEY: KEY, ALLOWED_ORIGINS: "minibox.example.com" })).toThrow("ALLOWED_ORIGINS");
+    expect(() => load({ ACCESS_KEY: KEY, ALLOWED_ORIGINS: "ftp://files.example.com" })).toThrow("ALLOWED_ORIGINS");
+  });
 });
 
 describe("ACCESS_KEY precedence", () => {
@@ -83,6 +106,12 @@ describe("ACCESS_KEY precedence", () => {
     writeFileSync(envFile, "ACCESS_KEY=from-file\n");
     expect(load()).toMatchObject({ accessKey: "from-file", accessKeySource: "env-file" });
     expect(existsSync(join(dataDir, "access_key"))).toBe(false);
+  });
+});
+
+describe("ACCESS_KEY strength", () => {
+  test("a weak key still loads, so the startup warning never blocks a deployment", () => {
+    expect(load({ ACCESS_KEY: "short" })).toMatchObject({ accessKey: "short", accessKeySource: "env" });
   });
 });
 

@@ -1,10 +1,11 @@
 import type { Server } from "bun";
 
 import { type App, createApp } from "./app";
-import { isAuthorized } from "./auth";
-import { loadConfig } from "./config";
+import { isAuthorized, isSecureRequest, isWeakAccessKey, MIN_ACCESS_KEY_LENGTH, proxyHeaderWarner } from "./auth";
+import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
 import { getBox } from "./docker/boxes";
+import { guardRequest } from "./guard";
 import { AppError } from "./lib/errors";
 import { errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
@@ -15,8 +16,10 @@ import { serveFile } from "./static";
 import { resolveVersion } from "./version";
 import { type TerminalData, terminalHandlers } from "./ws/terminal";
 
-const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/favicon"];
+const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
+const PROXY_HINT =
+  "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
 async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
   const m = matchRoute(routes, req.method, url.pathname);
@@ -52,15 +55,20 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
 
 export function startServer(app: App): Server<TerminalData> {
   const term = terminalHandlers(app);
+  const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
+    log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
+  );
   return Bun.serve<TerminalData>({
     hostname: app.cfg.host,
     port: app.cfg.port,
     idleTimeout: 60,
     async fetch(req, server) {
+      warnIgnoredProxyHeaders(req);
       const url = new URL(req.url);
       const started = performance.now();
       let res: Response | undefined;
       try {
+        guardRequest(req, app.cfg);
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           if (!isAuthorized(req, app.cfg.accessKey)) throw new AppError(401, "unauthorized", msg("unauthorized"));
@@ -85,7 +93,7 @@ export function startServer(app: App): Server<TerminalData> {
           ms: Math.round(performance.now() - started),
         });
       }
-      return withSecurityHeaders(res);
+      return withSecurityHeaders(res, isSecureRequest(req, app.cfg.trustProxy));
     },
     websocket: {
       open: term.open,
@@ -96,23 +104,36 @@ export function startServer(app: App): Server<TerminalData> {
   });
 }
 
-if (import.meta.main) {
-  const cfg = loadConfig();
-  setLogLevel(cfg.logLevel);
-  if (cfg.accessKeySource === "generated") log.info("access_key.generated", { path: accessKeyPath(cfg.dataDir) });
-  const version = resolveVersion();
-  const app = createApp(cfg, version);
-  app.monitor.start();
-  const server = startServer(app);
-  log.info("server.started", {
+/** Fields of the `server.started` log line. None of them may carry any part of the access key. */
+export function startupFields(cfg: Config, version: string) {
+  return {
     url: `http://${cfg.host}:${cfg.port}`,
     version,
     bun: Bun.version,
     docker: cfg.dockerSocket,
     dataDir: cfg.dataDir,
     accessKeySource: cfg.accessKeySource,
-    keyPrefix: `${cfg.accessKey.slice(0, 4)}…`,
-  });
+  };
+}
+
+const WEAK_KEY_HINT = `ACCESS_KEY is weak: use at least ${MIN_ACCESS_KEY_LENGTH} random characters, for example openssl rand -hex 32, then restart.`;
+
+/** Warns about a weak key without refusing to start, so existing deployments keep running. The key is never logged. */
+export function warnIfWeakAccessKey(cfg: Config): void {
+  if (!isWeakAccessKey(cfg.accessKey)) return;
+  log.warn("auth.weak_key", { hint: WEAK_KEY_HINT, source: cfg.accessKeySource });
+}
+
+if (import.meta.main) {
+  const cfg = loadConfig();
+  setLogLevel(cfg.logLevel);
+  if (cfg.accessKeySource === "generated") log.info("access_key.generated", { path: accessKeyPath(cfg.dataDir) });
+  warnIfWeakAccessKey(cfg);
+  const version = resolveVersion();
+  const app = createApp(cfg, version);
+  app.monitor.start();
+  const server = startServer(app);
+  log.info("server.started", startupFields(cfg, version));
 
   let stopping = false;
   const shutdown = async (signal: string) => {
@@ -120,6 +141,7 @@ if (import.meta.main) {
     stopping = true;
     log.info("server.stopping", { signal });
     app.monitor.stop();
+    app.throttle.stop();
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);

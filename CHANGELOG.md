@@ -4,6 +4,31 @@
 
 ## [Unreleased]
 
+### 升级必读（经隧道或反向代理访问的部署）
+- 通过隧道或反向代理访问 MiniBox 的部署，升级后请先检查以下设置：
+  - **OpenTunnel 或其他保留 `Host` / `Origin`、不添加 `X-Forwarded-*` 头的隧道：保持 `TRUST_PROXY` 关闭。** 所有请求都从 `127.0.0.1` 到达，访问者共享同一个登录限流计数，但正确的密钥总能登录。`ALLOWED_ORIGINS` 可选（`Host` 已与公网地址一致，设置也无害）。登录 Cookie 会因浏览器的 `https://` Origin 自动带上 `Secure`（#1 #3）。
+  - **`TRUST_PROXY=true`**：只在你控制的反向代理之后开启，并且代理会在每个请求上覆盖（或剥离后重新添加）`X-Forwarded-For`、`X-Forwarded-Proto` 与 `X-Forwarded-Host`，MiniBox 只能经由该代理访问。开启后 MiniBox 信任这三个头，能直连 MiniBox 的客户端或原样透传客户端值的代理都可以伪造它们（#1）。
+  - **`ALLOWED_ORIGINS=https://你的公网地址`**：代理改写了 `Host` 时需要设置。nginx 默认会改写 `Host`，除非配置 `proxy_set_header Host $host;`。未设置时，从公网地址发出的登录与终端请求返回 `403`，登录页会提示该请求的 Origin 不在 `ALLOWED_ORIGINS` 中（#3）。
+  - **`COOKIE_SECURE=1`**：仅当浏览器通过 HTTPS 访问、但请求不带 `https://` Origin（例如代理剥离了它）时才需要。纯 HTTP 地址不要设置（#3）。
+- 收到代理头而 `TRUST_PROXY` 未开启时，日志会输出一条 `proxy.headers_ignored` 警告（每个进程一次）。在会设置这些头的反向代理后面请按上面开启；OpenTunnel 不添加这些头，此时出现的头来自客户端，应保持关闭（#1）。
+- 登录 Cookie 由 `SameSite=Lax` 改为 `SameSite=Strict`：从其他网站打开的控制台链接，可能需要重新登录一次（#3）。
+- 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
+
+### 安全
+- 登录限流不再信任请求头 `X-Forwarded-For`：默认按真实连接地址计数。新增配置 `TRUST_PROXY`（默认 `false`），仅在由你控制、会覆盖这些头的反向代理之后设置为 `true`；此时读取 `X-Forwarded-For` 的最后一项，并信任 `X-Forwarded-Proto` 与 `X-Forwarded-Host`（#1）。
+- 登录限流只拒绝错误的密钥：正确的密钥总能登录，即使同一地址（或所有访问者）已被限流。同一地址 5 分钟内错误 10 次，或全部地址合计 50 次后，之后的错误密钥被拒绝（`429`），并延迟约 1 秒返回；IPv6 按 /64 归并。失败记录表设置容量上限并定期清理过期项（#1）。限流不会阻止猜测（每个密钥仍会被校验），抵抗暴力破解靠的是密钥的长度与随机性。
+- 新增配置 `COOKIE_SECURE`（默认 `false`）：始终为会话 Cookie 加上 `Secure`。通过 HTTPS 访问，或请求带有 `https://` Origin 时，Cookie 已会带上 `Secure`，通常无需设置（#3）。
+- WebSocket 终端升级请求，以及 `/api/` 下的 POST / PATCH / DELETE，要求浏览器的 `Origin` 与请求的 `Host` 同源（或列在新配置 `ALLOWED_ORIGINS` 中），否则返回 `403`。不带 `Origin` 的请求（如使用 `Authorization: Bearer` 的脚本）不受影响（#3）。
+- API 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`，HTML 表单提交无法触发写操作（#3）。
+- 登录 Cookie 由 `SameSite=Lax` 改为 `SameSite=Strict`（#3）。
+- 增加 `Content-Security-Policy`：脚本只从同源加载（`script-src 'self'`），页面不再使用内联脚本，且禁止被其他页面嵌入（`frame-ancestors 'none'`）（#4）。
+- 通过 HTTPS 访问时（直接访问、请求带有 `https://` Origin，或 `TRUST_PROXY=true` 时经代理识别）发送 `Strict-Transport-Security`（一年，不含子域名）（#4）。
+- 所有响应增加 `Cross-Origin-Opener-Policy` 与 `Cross-Origin-Resource-Policy: same-origin`（#4）。
+- 文档补充容器以 root 运行的说明，以及缓解方案：Docker Socket 代理（只转发 MiniBox 所需的 API），或 rootless Docker / Podman。
+- 启动时检查访问密钥强度。短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符）的密钥会记录 `auth.weak_key` 警告。警告不包含密钥或其长度，服务仍正常启动。
+- `server.started` 启动日志不再输出 `keyPrefix`（访问密钥的前 4 位）。启动日志与 `docker logs` 中不会出现密钥的任何部分。
+- 基础模板的 `dev` 用户拥有无密码 `sudo`，Box 内的 root 可以改动该 Box 及其工作区卷。默认的「标准」安全档位不设置 `no-new-privileges`，否则 `sudo` 会失效；不带 `sudo` 的「严格」档位归入 #5。
+
 ### 新增
 - 数据目录 `DATA_DIR`（默认 `./data`，Docker 镜像中为 `/data`）。目录权限 700；启动时创建 `boxes/`、`exec/`、`secrets/` 子目录，供后续功能使用。
 - Docker 镜像设置 `DATA_DIR=/data` 并创建该挂载点，README 中的示例使用 `-v minibox-data:/data` 持久化。
@@ -17,6 +42,7 @@
 - 未设置 `ACCESS_KEY` 时，自动生成的密钥写入 `DATA_DIR/access_key`（权限 600），重启后保持不变。访问密钥的优先级为：进程环境变量 > `.env` > `DATA_DIR/access_key` > 自动生成。空值视为未设置。
 - `scripts/restart.sh` 改为通过服务自身的配置加载逻辑读取 `PORT` 与密钥位置（此前只读取 `.env` 中的 `PORT`），启动后提示密钥保存位置，但不输出密钥本身。
 - 登录页说明访问密钥的来源（`.env` 或 `DATA_DIR/access_key`）。
+- xterm.js 与 addon-fit 改为随仓库提供（`web/vendor/`，附 SHA-256 校验测试），不再从 jsDelivr CDN 加载；网页终端可在离线或内网环境中使用（#4）。
 - 基础模板不再保留镜像自带的 `node` 用户（uid 1000），由 `dev` 使用该 uid。
 - 基础模板描述改为「Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · 非 root 用户 dev」，网页端构建与 `bun run build:template` 使用同一描述。
 - Box 详情页的终端标题栏不再固定显示 `root@`，改为 `<名称>: /workspace`，因为新建 Box 以 `dev` 运行，旧 Box 仍为 root。
@@ -31,10 +57,6 @@
 ### 修复
 - 自动生成访问密钥时不再整体重写 `.env`。此前会把 `.env` 改写为只剩 `ACCESS_KEY`、`PORT`、`HOST` 三项，其他配置随之丢失。现在任何情况下都不修改 `.env`。
 
-### 安全
-- 文档补充容器以 root 运行的说明，以及缓解方案：Docker Socket 代理（只转发 MiniBox 所需的 API），或 rootless Docker / Podman。
-- 基础模板的 `dev` 用户拥有无密码 `sudo`，Box 内的 root 可以改动该 Box 及其工作区卷。默认的「标准」安全档位不设置 `no-new-privileges`，否则 `sudo` 会失效；不带 `sudo` 的「严格」档位归入 #5。
-
 ### 文档
 - README 与 README-zh 说明数据目录、访问密钥的位置与优先级、Docker 数据卷的用法，以及 `.env.example` 中的 `DATA_DIR` 配置项。
 - README 与 README-zh 新增「基础模板」章节，说明用户与 uid 约定、挂载点、缓存、标签、检查方法，以及从 root 版模板升级的步骤。
@@ -43,6 +65,7 @@
 - 已有部署无需操作：`.env` 中的 `ACCESS_KEY` 照常生效，`.env` 不再被改写。
 - Docker 部署且未传入 `-e ACCESS_KEY` 时，旧镜像生成的密钥位于容器内的 `/app/.env`，重建容器后会丢失。重建前请在旧容器运行时执行 `docker exec <容器名> grep '^ACCESS_KEY=' /app/.env` 取出密钥，再通过 `-e ACCESS_KEY=...` 传入，并挂载 `-v minibox-data:/data`。
 - 首次启动会创建 `./data/`（已在 git 中忽略），其中只有空的子目录。
+- 若现有访问密钥短于 20 位或强度不足，升级后启动日志会出现 `auth.weak_key` 警告。服务不受影响；建议换成至少 20 位的随机字符（例如 `openssl rand -hex 32`）并重启。
 - 已构建的 `minibox-template:base` 仍是旧的 root 版本。在控制台「模板 → 构建基础模板」或运行 `bun run build:template` 重新构建后，新建 Box 才以 `dev` 运行。已有 Box 保持原样，不会改名或重建。
 - 新 Box 复用旧 Box 保留下来的工作区卷时，卷内 `/workspace` 仍属于 root，`dev` 无法写入。在该 Box 运行时执行一次 `docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace` 即可修复。MiniBox 暂不自动执行，详见 README「基础模板」。
 
