@@ -23,10 +23,14 @@ grant_docker_socket() {
 
 # 1. Docker daemon
 if ! docker info >/dev/null 2>&1; then
-  echo "[restart] starting dockerd"
-  # Markers are best effort: a log this user cannot write must not stop the restart.
-  printf -- '--- %s dockerd start\n' "$(date -Is)" >> /tmp/dockerd.log || true
-  setsid sudo nohup dockerd --host=unix:///var/run/docker.sock >> /tmp/dockerd.log 2>&1 < /dev/null &
+  if sudo docker info >/dev/null 2>&1; then
+    echo "[restart] dockerd is already running; giving this user the socket"
+  else
+    echo "[restart] starting dockerd"
+    # Markers are best effort: a log this user cannot write must not stop the restart.
+    printf -- '--- %s dockerd start\n' "$(date -Is)" >> /tmp/dockerd.log || true
+    setsid sudo nohup dockerd --host=unix:///var/run/docker.sock >> /tmp/dockerd.log 2>&1 < /dev/null &
+  fi
   for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; grant_docker_socket 2>/dev/null || true; sleep 1; done
 fi
 grant_docker_socket || echo "[restart] could not give the Docker socket to group $(id -gn); check sudo" >&2
