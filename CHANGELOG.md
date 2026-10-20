@@ -15,6 +15,11 @@
 - 侧边栏左下角显示当前版本（`MiniBox vX.Y.Z`）；导航「设置与关于」更名为「设置」。
 - 设置页的关于卡片不再显示 Bun 版本。
 
+### 工程化
+- 代码格式化与检查从 Biome 换成 oxfmt + oxlint（`bun run fmt` / `fmt:check` / `lint`），`bun run check` 依次运行格式检查、lint、类型检查和测试。
+- 新增 CI 工作流（`.github/workflows/ci.yml`）：推送到 main 和 Pull Request 时自动检查与测试，并做 Docker 构建冒烟测试；发布工作流复用同一套检查。
+- 新增配置加载、i18n 词典与错误消息的单元测试。
+
 ### 修复
 - Box 详情页标签栏右侧多出的竖向滚动条（标签负外边距导致容器溢出 1px）。
 

@@ -23,13 +23,12 @@ export class ApiError extends Error {
 export async function api(path, { method = "GET", body, signal } = {}) {
   let res;
   try {
-    res = await fetch(path, {
-      method,
-      signal,
-      credentials: "same-origin",
-      headers: body !== undefined ? { "content-type": "application/json" } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    const init = { method, signal, credentials: "same-origin" };
+    if (body !== undefined) {
+      init.headers = { "content-type": "application/json" };
+      init.body = JSON.stringify(body);
+    }
+    res = await fetch(path, init);
   } catch (e) {
     if (e.name === "AbortError") throw e;
     throw new ApiError(0, "network", t("api.network"));

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { AppError } from "../src/lib/errors";
 import {
   optionalBoolean,

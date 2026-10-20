@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import pkg from "../package.json";
 import { normalizeVersion, resolveVersion } from "../src/version";
 

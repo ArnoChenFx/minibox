@@ -175,13 +175,16 @@ const TAB_RENDER = {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${proto}//${location.host}/api/boxes/${enc(b.id)}/terminal`);
       ws.binaryType = "arraybuffer";
-      ws.onopen = () => {
+      const sock = ws;
+      sock.addEventListener("open", () => {
         setStatus(true, t("bd.connected"));
-        ws.send(JSON.stringify({ type: "resize", cols: xterm.cols, rows: xterm.rows }));
+        sock.send(JSON.stringify({ type: "resize", cols: xterm.cols, rows: xterm.rows }));
         xterm.focus();
-      };
-      ws.onmessage = (ev) => xterm.write(typeof ev.data === "string" ? ev.data : new Uint8Array(ev.data));
-      ws.onclose = () => setStatus(false, t("bd.disconnected"));
+      });
+      sock.addEventListener("message", (ev) =>
+        xterm.write(typeof ev.data === "string" ? ev.data : new Uint8Array(ev.data)),
+      );
+      sock.addEventListener("close", () => sock === ws && setStatus(false, t("bd.disconnected")));
     };
     const dataSub = xterm.onData((d) => ws?.readyState === 1 && ws.send(d));
     const resizeSub = xterm.onResize(

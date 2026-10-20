@@ -8,6 +8,7 @@
 <p align="center"><strong>为 AI Agent 准备的个人自托管开发环境：基于 Docker 的 Box 与管理面板。</strong></p>
 
 <p align="center">
+  <a href="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml"><img src="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.2-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.2" /></a>
   <img src="https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&amp;logoColor=white" alt="Sandbox: Docker" />
@@ -290,12 +291,15 @@ minibox/
 
 ```bash
 bun run dev        # 监听文件变化自动重启
-bun run typecheck  # TypeScript 严格模式类型检查
-bun run lint       # Biome 检查（格式 + lint）
-bun run format     # 自动修复格式
-bun test           # 单元测试
-bun run check      # 以上全部
+bun run fmt        # 用 oxfmt 格式化（直接写入文件）
+bun run fmt:check  # 只检查格式
+bun run lint       # oxlint 检查（有警告即失败）
+bun run typecheck  # TypeScript 严格模式类型检查（tsc --noEmit）
+bun test           # 单元测试（不需要 Docker）
+bun run check      # 以上全部，与 CI 一致
 ```
+
+格式化使用 [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html)（`.oxfmtrc.json`），代码检查使用 [oxlint](https://oxc.rs/docs/guide/usage/linter.html)（`.oxlintrc.json`）。[CI](.github/workflows/ci.yml) 会在每次推送到 `main` 和每个 Pull Request 时运行 `fmt:check`、`lint`、`typecheck` 和 `bun test`，并做一次 Docker 构建冒烟测试（启动镜像并访问 `/login`）。
 
 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -311,7 +315,7 @@ bun run check      # 以上全部
    git tag v0.3.0 && git push origin v0.3.0
    ```
 
-随后 [发布工作流](.github/workflows/release.yml) 会校验 tag 与 `package.json` 一致，运行类型检查、lint 和测试，构建多架构镜像并推送到 `ghcr.io/arnochenfx/minibox`，再用 CHANGELOG 中对应的章节加自动生成的变更说明创建 GitHub Release。带预发布后缀的 tag（如 `v1.0.0-rc.1`）会标记为预发布，且不会更新 `latest`。
+随后 [发布工作流](.github/workflows/release.yml) 会先运行同一套 CI 检查，校验 tag 与 `package.json` 一致，构建多架构镜像并推送到 `ghcr.io/arnochenfx/minibox`，再用 CHANGELOG 中对应的章节加自动生成的变更说明创建 GitHub Release。带预发布后缀的 tag（如 `v1.0.0-rc.1`）会标记为预发布，且不会更新 `latest`。
 
 ## 安全须知
 

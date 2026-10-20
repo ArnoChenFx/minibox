@@ -1,4 +1,5 @@
 import type { Server } from "bun";
+
 import type { App } from "../app";
 
 export interface RouteCtx {

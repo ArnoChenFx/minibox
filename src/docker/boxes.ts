@@ -1,4 +1,5 @@
 import type Docker from "dockerode";
+
 import { containerName, parseBoxLabels, stripSlash, volumeName } from "../labels";
 import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
@@ -71,7 +72,7 @@ export async function listBoxes(ctx: DockerCtx, opts: { withStats?: boolean } = 
       }
     }),
   );
-  return boxes.filter((b): b is Box => b !== null).sort((a, b) => a.name.localeCompare(b.name));
+  return boxes.filter((b): b is Box => b !== null).toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
 async function ensureImage(ctx: DockerCtx, image: string): Promise<void> {

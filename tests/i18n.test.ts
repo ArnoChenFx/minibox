@@ -1,15 +1,16 @@
 import { describe, expect, test } from "bun:test";
+
 import { AppError } from "../src/lib/errors";
 import { errorResponse } from "../src/lib/http";
 import { MESSAGES, msg } from "../src/lib/messages";
 import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
 
-const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).toSorted();
 
 describe("i18n dictionaries", () => {
   test("en and zh-CN have the same keys", () => {
-    expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort());
+    expect(Object.keys(zh).toSorted()).toEqual(Object.keys(en).toSorted());
   });
   test("translations keep the same placeholders", () => {
     for (const [k, v] of Object.entries(en)) expect([k, placeholders(zh[k] ?? "")]).toEqual([k, placeholders(v)]);

@@ -1,4 +1,5 @@
 import type Docker from "dockerode";
+
 import { parseImageLabels } from "../labels";
 import { notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
@@ -33,7 +34,7 @@ export function toImageItem(ctx: DockerCtx, img: Docker.ImageInfo): ImageItem {
 
 export async function listImagesByLabel(ctx: DockerCtx, label: string): Promise<ImageItem[]> {
   const images = await ctx.docker.listImages({ filters: { label: [`${label}=true`] } });
-  return images.map((i) => toImageItem(ctx, i)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return images.map((i) => toImageItem(ctx, i)).toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 /** Remove an image only if it carries the given MiniBox label (refuse to delete arbitrary images). */

@@ -1,4 +1,5 @@
 import type { Server } from "bun";
+
 import { type App, createApp } from "./app";
 import { isAuthorized } from "./auth";
 import { loadConfig } from "./config";

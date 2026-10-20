@@ -1,5 +1,7 @@
 import type { Duplex } from "node:stream";
+
 import type { ServerWebSocket } from "bun";
+
 import type { App } from "../app";
 import { log } from "../lib/logger";
 

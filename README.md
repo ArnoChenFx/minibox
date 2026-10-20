@@ -8,6 +8,7 @@
 <p align="center"><strong>Personal, self-hosted dev environments for AI agents — Docker boxes with a dashboard.</strong></p>
 
 <p align="center">
+  <a href="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml"><img src="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.2-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.2" /></a>
   <img src="https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&amp;logoColor=white" alt="Sandbox: Docker" />
@@ -293,12 +294,15 @@ minibox/
 
 ```bash
 bun run dev        # Restart on file changes
-bun run typecheck  # TypeScript (strict)
-bun run lint       # Biome (format + lint)
-bun run format     # Auto-fix formatting
-bun test           # Unit tests
-bun run check      # All of the above
+bun run fmt        # Format with oxfmt (writes files)
+bun run fmt:check  # Check formatting only
+bun run lint       # oxlint (warnings fail the run)
+bun run typecheck  # TypeScript (strict, tsc --noEmit)
+bun test           # Unit tests (no Docker needed)
+bun run check      # All of the above, same as CI
 ```
+
+Formatting uses [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) (`.oxfmtrc.json`) and linting uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) (`.oxlintrc.json`). [CI](.github/workflows/ci.yml) runs `fmt:check`, `lint`, `typecheck` and `bun test` on every push to `main` and every pull request, plus a Docker build smoke test that starts the image and probes `/login`.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). See [CHANGELOG.md](CHANGELOG.md).
 
@@ -314,7 +318,7 @@ Versions follow [SemVer](https://semver.org/). The version shown in the dashboar
    git tag v0.3.0 && git push origin v0.3.0
    ```
 
-The [release workflow](.github/workflows/release.yml) then checks that the tag matches `package.json`, runs typecheck, lint and tests, builds and pushes the multi-arch image to `ghcr.io/arnochenfx/minibox`, and creates a GitHub Release using the matching CHANGELOG section plus auto-generated notes. Tags with a pre-release suffix (`v1.0.0-rc.1`) are marked as pre-releases and don't move `latest`.
+The [release workflow](.github/workflows/release.yml) then runs the same CI checks, verifies that the tag matches `package.json`, builds and pushes the multi-arch image to `ghcr.io/arnochenfx/minibox`, and creates a GitHub Release using the matching CHANGELOG section plus auto-generated notes. Tags with a pre-release suffix (`v1.0.0-rc.1`) are marked as pre-releases and don't move `latest`.
 
 ## Security
 
