@@ -1,11 +1,33 @@
 import { AppError, toAppError } from "./errors";
 import { msg } from "./messages";
 
+/**
+ * Everything the console loads comes from MiniBox itself (xterm.js is vendored), so scripts are limited to
+ * 'self'. Styles keep 'unsafe-inline' because the UI renders inline style attributes.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "connect-src 'self' ws: wss:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
 const SECURITY_HEADERS: Record<string, string> = {
+  "content-security-policy": CONTENT_SECURITY_POLICY,
   "x-content-type-options": "nosniff",
   "referrer-policy": "same-origin",
   "x-frame-options": "DENY",
+  "cross-origin-opener-policy": "same-origin",
+  "cross-origin-resource-policy": "same-origin",
 };
+
+/** Sent only for HTTPS requests. No includeSubDomains, so other hosts under the same domain are not affected. */
+const HSTS = "max-age=31536000";
 
 export function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
@@ -13,7 +35,6 @@ export function json(data: unknown, status = 200, headers: Record<string, string
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
-      ...SECURITY_HEADERS,
       ...headers,
     },
   });
@@ -43,8 +64,9 @@ export async function readJson(req: Request): Promise<unknown> {
   }
 }
 
-export function withSecurityHeaders(res: Response): Response {
-  for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+export function withSecurityHeaders(res: Response, secure: boolean): Response {
+  const headers = secure ? { ...SECURITY_HEADERS, "strict-transport-security": HSTS } : SECURITY_HEADERS;
+  for (const [k, v] of Object.entries(headers)) {
     if (!res.headers.has(k)) res.headers.set(k, v);
   }
   return res;

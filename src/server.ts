@@ -1,7 +1,7 @@
 import type { Server } from "bun";
 
 import { type App, createApp } from "./app";
-import { isAuthorized } from "./auth";
+import { isAuthorized, isSecureRequest } from "./auth";
 import { loadConfig } from "./config";
 import { getBox } from "./docker/boxes";
 import { guardRequest } from "./guard";
@@ -15,7 +15,7 @@ import { serveFile } from "./static";
 import { resolveVersion } from "./version";
 import { type TerminalData, terminalHandlers } from "./ws/terminal";
 
-const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/favicon"];
+const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
 
 async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
@@ -86,7 +86,7 @@ export function startServer(app: App): Server<TerminalData> {
           ms: Math.round(performance.now() - started),
         });
       }
-      return withSecurityHeaders(res);
+      return withSecurityHeaders(res, isSecureRequest(req, app.cfg.trustProxy));
     },
     websocket: {
       open: term.open,

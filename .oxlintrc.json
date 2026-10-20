@@ -8,7 +8,7 @@
   "env": {
     "es2024": true
   },
-  "ignorePatterns": ["node_modules/**", "docs/**"],
+  "ignorePatterns": ["node_modules/**", "docs/**", "web/vendor/**"],
   "rules": {
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     "eqeqeq": ["error", "always", { "null": "ignore" }],

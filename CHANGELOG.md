@@ -10,6 +10,12 @@
 - WebSocket 终端升级请求，以及 `/api/` 下的 POST / PATCH / DELETE，要求浏览器的 `Origin` 与请求的 `Host` 同源（或列在新配置 `ALLOWED_ORIGINS` 中），否则返回 `403`。不带 `Origin` 的请求（如使用 `Authorization: Bearer` 的脚本）不受影响（#3）。
 - 带请求体的 API 写请求必须是 `application/json`，否则返回 `415`，HTML 表单提交无法触发写操作（#3）。
 - 登录 Cookie 由 `SameSite=Lax` 改为 `SameSite=Strict`（#3）。
+- 增加 `Content-Security-Policy`：脚本只从同源加载（`script-src 'self'`），页面不再使用内联脚本，且禁止被其他页面嵌入（`frame-ancestors 'none'`）（#4）。
+- 通过 HTTPS 访问时（直接访问，或 `TRUST_PROXY=true` 时经代理识别）发送 `Strict-Transport-Security`（一年，不含子域名）（#4）。
+- 所有响应增加 `Cross-Origin-Opener-Policy` 与 `Cross-Origin-Resource-Policy: same-origin`（#4）。
+
+### 变更
+- xterm.js 与 addon-fit 改为随仓库提供（`web/vendor/`，附 SHA-256 校验测试），不再从 jsDelivr CDN 加载；网页终端可在离线或内网环境中使用（#4）。
 
 ### 变更（升级注意）
 - 经反向代理或隧道访问、且未设置 `TRUST_PROXY=true` 时：所有访问者共享代理的地址进行登录限流，登录 Cookie 也不再因代理的 `X-Forwarded-Proto` 自动带上 `Secure`。升级后请按需设置 `TRUST_PROXY=true`。

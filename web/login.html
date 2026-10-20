@@ -10,20 +10,7 @@
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
   <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png" />
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
-  <script>
-    (() => {
-      var t = localStorage.getItem("minibox.theme");
-      if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      document.documentElement.dataset.theme = t;
-    })();
-  </script>
-  <script>
-    (() => {
-      var l = localStorage.getItem("minibox.lang");
-      if (l !== "en" && l !== "zh-CN") l = /^zh/i.test(navigator.language || "") ? "zh-CN" : "en";
-      document.documentElement.lang = l;
-    })();
-  </script>
+  <script src="/js/boot.js"></script>
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
