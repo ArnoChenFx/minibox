@@ -483,6 +483,7 @@ minibox/
 ├── scripts/restart.sh       # Restart helper for hosts without systemd
 ├── scripts/export-openapi.ts # Writes docs/openapi.json (bun run openapi)
 ├── scripts/check-box-image.sh  # Base template checks against Docker (CI runs amd64 and arm64)
+├── scripts/docker-integration.ts  # Real-engine integration tests, with cleanup (bun run test:docker)
 ├── Dockerfile               # Release image (oven/bun, multi-arch)
 ├── .github/workflows/release.yml  # Tag → image + GitHub Release
 └── docs/
@@ -502,11 +503,12 @@ bun run lint       # oxlint (warnings fail the run)
 bun run typecheck  # TypeScript (strict, tsc --noEmit)
 bun test           # Unit tests (no Docker needed)
 bun run check      # All of the above, same as CI
-bun run openapi    # Regenerate docs/openapi.json from the operation registry
+bun run test:docker  # Real-engine integration tests (needs Docker; not part of check)
+bun run openapi      # Regenerate docs/openapi.json from the operation registry
 bun run build:template && bun run check:template  # Base template checks (needs Docker)
 ```
 
-Formatting uses [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) (`.oxfmtrc.json`) and linting uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) (`.oxlintrc.json`). [CI](.github/workflows/ci.yml) runs `fmt:check`, `lint`, `typecheck` and `bun test` on every push to `main` and every pull request, plus a Docker build smoke test that starts the image and probes `/login`.
+Formatting uses [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) (`.oxfmtrc.json`) and linting uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) (`.oxlintrc.json`). [CI](.github/workflows/ci.yml) runs `fmt:check`, `lint`, `typecheck` and `bun test` on every push to `main` and every pull request, plus a Docker build smoke test that starts the image and probes `/login`. A separate job, `Integration tests (real Docker engine)`, runs `bun run test:docker` against the runner's Docker engine. It is not a required check. The script uses its own `mbit` label prefix and removes what it created, so it can run next to a real install.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). See [CHANGELOG.md](CHANGELOG.md).
 

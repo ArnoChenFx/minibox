@@ -483,6 +483,7 @@ minibox/
 ├── scripts/restart.sh       # 无 systemd 环境的重启脚本
 ├── scripts/export-openapi.ts # 写入 docs/openapi.json（bun run openapi）
 ├── scripts/check-box-image.sh  # 基础模板的 Docker 检查（CI 中检查 amd64 与 arm64）
+├── scripts/docker-integration.ts  # 真实引擎集成测试，结束后清理（bun run test:docker）
 ├── Dockerfile               # 发布镜像（oven/bun，多架构）
 ├── .github/workflows/release.yml  # tag → 镜像 + GitHub Release
 └── docs/
@@ -502,11 +503,12 @@ bun run lint       # oxlint 检查（有警告即失败）
 bun run typecheck  # TypeScript 严格模式类型检查（tsc --noEmit）
 bun test           # 单元测试（不需要 Docker）
 bun run check      # 以上全部，与 CI 一致
-bun run openapi    # 由操作注册表重新生成 docs/openapi.json
+bun run test:docker  # 真实引擎集成测试（需要 Docker，不包含在 bun run check 中）
+bun run openapi      # 由操作注册表重新生成 docs/openapi.json
 bun run build:template && bun run check:template  # 基础模板检查（需要 Docker）
 ```
 
-格式化使用 [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html)（`.oxfmtrc.json`），代码检查使用 [oxlint](https://oxc.rs/docs/guide/usage/linter.html)（`.oxlintrc.json`）。[CI](.github/workflows/ci.yml) 会在每次推送到 `main` 和每个 Pull Request 时运行 `fmt:check`、`lint`、`typecheck` 和 `bun test`，并做一次 Docker 构建冒烟测试（启动镜像并访问 `/login`）。
+格式化使用 [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html)（`.oxfmtrc.json`），代码检查使用 [oxlint](https://oxc.rs/docs/guide/usage/linter.html)（`.oxlintrc.json`）。[CI](.github/workflows/ci.yml) 会在每次推送到 `main` 和每个 Pull Request 时运行 `fmt:check`、`lint`、`typecheck` 和 `bun test`，并做一次 Docker 构建冒烟测试（启动镜像并访问 `/login`）。另有一个独立任务 `Integration tests (real Docker engine)`，会在运行器的 Docker 引擎上执行 `bun run test:docker`，它不是必需检查。脚本使用独立的 `mbit` 标签前缀，并清理自己创建的资源，因此可以与真实安装并存。
 
 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
