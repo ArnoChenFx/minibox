@@ -25,6 +25,9 @@ async function handleApi(app: App, req: Request, url: URL, server: Server<Termin
   return m.route.handler({ app, req, url, params: m.params, server: server as Server<unknown> });
 }
 
+/** Relative redirect: correct behind TLS-terminating tunnels/proxies where req.url is http. */
+const redirect = (location: string) => new Response(null, { status: 302, headers: { location } });
+
 async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
   const path = url.pathname;
   const authed = isAuthorized(req, app.cfg.accessKey);
@@ -34,11 +37,11 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
     return new Response("Not Found", { status: 404 });
   }
   if (path === "/login") {
-    if (authed) return Response.redirect(new URL("/", url).toString(), 302);
+    if (authed) return redirect("/");
     return (await serveFile(app.cfg.webDir, "/login.html")) ?? new Response("Not Found", { status: 404 });
   }
   if (path === "/" || path === "/index.html") {
-    if (!authed) return Response.redirect(new URL("/login", url).toString(), 302);
+    if (!authed) return redirect("/login");
     return (await serveFile(app.cfg.webDir, "/index.html")) ?? new Response("Not Found", { status: 404 });
   }
   return new Response("Not Found", { status: 404 });

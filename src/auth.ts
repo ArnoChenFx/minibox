@@ -42,8 +42,16 @@ export function isAuthorized(req: Request, accessKey: string): boolean {
   return key !== null && safeEqual(key, accessKey);
 }
 
+/**
+ * Whether the browser reached us over HTTPS. Behind a TLS-terminating tunnel the request URL is
+ * plain http, so also trust X-Forwarded-Proto and the browser-set Origin header.
+ */
 export function isSecureRequest(req: Request): boolean {
-  return new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+  return (
+    new URL(req.url).protocol === "https:" ||
+    req.headers.get("x-forwarded-proto") === "https" ||
+    (req.headers.get("origin") ?? "").startsWith("https://")
+  );
 }
 
 export function sessionCookie(key: string, secure: boolean): string {

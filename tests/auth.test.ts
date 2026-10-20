@@ -4,6 +4,7 @@ import {
   clearSessionCookie,
   extractKey,
   isAuthorized,
+  isSecureRequest,
   LoginThrottle,
   parseCookies,
   safeEqual,
@@ -42,6 +43,12 @@ describe("auth", () => {
     expect(sessionCookie(KEY, true)).toContain("Secure");
     expect(sessionCookie(KEY, false)).not.toContain("Secure");
     expect(clearSessionCookie()).toContain("Max-Age=0");
+  });
+
+  test("detects https behind tunnels", () => {
+    expect(isSecureRequest(req({}))).toBe(false);
+    expect(isSecureRequest(req({ "x-forwarded-proto": "https" }))).toBe(true);
+    expect(isSecureRequest(req({ origin: "https://minibox.example.com" }))).toBe(true);
   });
 
   test("login throttle blocks after limit and resets after window", () => {
