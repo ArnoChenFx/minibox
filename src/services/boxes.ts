@@ -78,7 +78,6 @@ export interface Box {
   stats?: ContainerStats | null;
 }
 
-const STOP_TIMEOUT_SEC = 3;
 const MB = 1024 * 1024;
 
 function workspaceVolume(host: HostCtx, spec: BoxSpec): string {
@@ -366,7 +365,7 @@ export async function startBox(host: HostCtx, ref: string): Promise<Box> {
 
 export async function stopBox(host: HostCtx, ref: string): Promise<Box> {
   const box = await getBox(host, ref);
-  await host.runtime.stopContainer(box.id, { timeoutSec: STOP_TIMEOUT_SEC });
+  await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await setDesired(host, box.boxId, "stopped");
   return getBox(host, box.boxId);
 }
@@ -374,7 +373,7 @@ export async function stopBox(host: HostCtx, ref: string): Promise<Box> {
 export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   const box = await getBox(host, ref);
   await attachToBoxNetwork(host, box);
-  await host.runtime.restartContainer(box.id, { timeoutSec: STOP_TIMEOUT_SEC });
+  await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await setDesired(host, box.boxId, "running");
   return getBox(host, box.boxId);
 }

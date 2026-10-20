@@ -329,6 +329,18 @@ describe("box lifecycle and resources", () => {
     expect(runtime.callsTo("restartContainer")[0]?.args[1]).toEqual({ timeoutSec: 3 });
   });
 
+  test("stop and restart use the configured STOP_TIMEOUT_SEC", async () => {
+    const custom = createTestApp({ labelPrefix: "mbtest", stopTimeoutSec: 12 });
+    const customHost = custom.app.hosts.get();
+    custom.runtime.seedImage(customHost.baseTemplateTag, { [customHost.keys.template]: "true" });
+    const box = await boxes.createBox(customHost, { name: "alpha", cpus: 1, memoryMb: 256 });
+
+    await boxes.stopBox(customHost, box.id);
+    await boxes.restartBox(customHost, box.id);
+    expect(custom.runtime.callsTo("stopContainer")[0]?.args[1]).toEqual({ timeoutSec: 12 });
+    expect(custom.runtime.callsTo("restartContainer")[0]?.args[1]).toEqual({ timeoutSec: 12 });
+  });
+
   test("resource updates only send the limits that were given, and memory also sets swap", async () => {
     const box = await newBox("alpha");
     const resized = await boxes.updateResources(host, box.id, { cpus: 2 }, box.revision);

@@ -20,6 +20,8 @@ export interface Config {
   dockerSocket: string;
   labelPrefix: string;
   baseTemplateTag: string;
+  /** Seconds a box gets to stop after SIGTERM before it is killed. Used by stop and restart. */
+  stopTimeoutSec: number;
   webDir: string;
   templatesDir: string;
   metricsIntervalMs: number;
@@ -72,6 +74,14 @@ function readEnvFile(path: string): Record<string, string> {
 function intOr(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/** A whole number from `min` to `max`. Blank or out-of-range values fall back, as intOr does. */
+function intInRange(value: string | undefined, fallback: number, min: number, max: number): number {
+  const text = value?.trim() ?? "";
+  if (text === "") return fallback;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
 }
 
 function isTruthy(value: string | undefined): boolean {
@@ -168,6 +178,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dockerSocket: get("DOCKER_SOCKET")?.trim() || "/var/run/docker.sock",
     labelPrefix,
     baseTemplateTag: get("BASE_TEMPLATE")?.trim() || `${labelPrefix}-template:base`,
+    stopTimeoutSec: intInRange(get("STOP_TIMEOUT_SEC"), 3, 0, 300),
     webDir: join(ROOT, "web"),
     templatesDir: join(ROOT, "templates"),
     metricsIntervalMs: intOr(get("METRICS_INTERVAL_MS"), 3000),

@@ -117,6 +117,15 @@ describe("loadConfig", () => {
       eventOutputMaxMb: 512,
     });
   });
+  test("STOP_TIMEOUT_SEC defaults to 3 seconds and accepts whole numbers from 0 to 300", () => {
+    expect(load({ ACCESS_KEY: KEY }).stopTimeoutSec).toBe(3);
+    expect(load({ ACCESS_KEY: KEY, STOP_TIMEOUT_SEC: "0" }).stopTimeoutSec).toBe(0);
+    expect(load({ ACCESS_KEY: KEY, STOP_TIMEOUT_SEC: " 20 " }).stopTimeoutSec).toBe(20);
+    expect(load({ ACCESS_KEY: KEY, STOP_TIMEOUT_SEC: "300" }).stopTimeoutSec).toBe(300);
+  });
+  test.each(["301", "-1", "1.5", "soon", ""])("STOP_TIMEOUT_SEC=%p falls back to 3 seconds", (value) => {
+    expect(load({ ACCESS_KEY: KEY, STOP_TIMEOUT_SEC: value }).stopTimeoutSec).toBe(3);
+  });
 });
 
 describe("box security settings", () => {

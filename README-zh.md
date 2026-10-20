@@ -284,6 +284,7 @@ docker run -d --name minibox --restart unless-stopped \
 | `BOX_PROFILE` | `standard` | 新建 Box 的默认[安全档位](#安全档位)：`standard`、`strict` 或 `relaxed` |
 | `BOX_PIDS_LIMIT` | `1024` | 每个新建 Box 允许的最大进程数（正整数） |
 | `RUNTIME` | 引擎默认 | 新建 Box 使用的 OCI 运行时，例如 gVisor 的 `runsc`。该运行时必须已经安装在 Docker 引擎中 |
+| `STOP_TIMEOUT_SEC` | `3` | 停止或重启 Box 时，发送 SIGTERM 后等待退出的秒数，超时则强制结束。0 到 300 之间的整数 |
 | `METRICS_INTERVAL_MS` | `3000` | 宿主机采样间隔（毫秒） |
 | `METRICS_HISTORY` | `120` | 保留的采样点数量（默认间隔下约 6 分钟） |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | 审计事件的保留天数：写操作、删除与被拒绝的调用。见[事件](#事件) |
