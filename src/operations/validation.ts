@@ -3,7 +3,18 @@ import { z } from "zod";
 import { BOX_PROFILES, type BoxProfile, isBoxProfile } from "../box-profile";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
-import { accept, asObject, type Checked, checkName, type Failure, LIMITS, NAME_RE, reject } from "../lib/validation";
+import {
+  accept,
+  asObject,
+  type Checked,
+  checkDescription,
+  checkName,
+  DESCRIPTION_MAX,
+  type Failure,
+  LIMITS,
+  NAME_RE,
+  reject,
+} from "../lib/validation";
 
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
@@ -84,7 +95,7 @@ export function addFailure(ctx: z.RefinementCtx, failure: Failure): void {
  * One legacy check as a zod schema. The input side accepts anything, so that every problem surfaces as the legacy
  * message rather than as a zod message; the meta describes the accepted shape for OpenAPI and MCP.
  */
-function field<T>(check: (value: unknown) => Checked<T>, meta: Meta) {
+export function field<T>(check: (value: unknown) => Checked<T>, meta: Meta) {
   return z
     .unknown()
     .transform((value, ctx) => {
@@ -134,15 +145,32 @@ function checkProfile(value: unknown): Checked<BoxProfile | undefined> {
 export const boxProfile = () =>
   field(checkProfile, { type: "string", enum: [...BOX_PROFILES], description: PROFILE_HELP }).optional();
 
-/** A snapshot reference from the path. The raw text is kept, because the box label records what the client sent. */
-export const snapshotRef = () =>
+/** An image reference from the path. The raw text is kept, because the box label records what the client sent. */
+const imageRef = (description: string) =>
   field(
     (value): Checked<string> => {
       const checked = checkImageRef(value);
       return checked.ok ? accept(value as string) : checked;
     },
-    { type: "string", description: "Snapshot image reference, URL-encoded." },
+    { type: "string", description },
   );
+
+export const snapshotRef = () => imageRef("Snapshot image reference, URL-encoded.");
+
+export const templateRef = () => imageRef("Template image reference, URL-encoded.");
+
+export const templateName = () =>
+  field((value) => checkName(value, "templateName"), {
+    ...NAME_META,
+    description: "Template name, with the same rules as a box name.",
+  });
+
+export const templateDescription = () =>
+  field(checkDescription, {
+    type: "string",
+    maxLength: DESCRIPTION_MAX,
+    description: `One line, at most ${DESCRIPTION_MAX} characters. Line breaks and other control characters are refused.`,
+  }).optional();
 
 export const cpusWithDefault = (defaultValue: number) =>
   field(checkCpus, { ...CPUS_META, description: withDefault(CPUS_HELP, defaultValue) }).default(defaultValue);

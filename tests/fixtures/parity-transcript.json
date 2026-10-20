@@ -774,5 +774,53 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"boxes\":[]}"
+  },
+  {
+    "step": "events without a key",
+    "method": "GET",
+    "path": "/api/events",
+    "status": 401,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"key\":\"unauthorized\"}}"
+  },
+  {
+    "step": "events from another site",
+    "method": "GET",
+    "path": "/api/events",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"key\":\"origin_forbidden\"}}"
+  },
+  {
+    "step": "events of box creation",
+    "method": "GET",
+    "path": "/api/events?op=box.create&limit=2",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"events\":[{\"seq\":20,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: beta\",\"target\":{\"kind\":\"box\",\"name\":\"beta\"},\"detail\":{\"name\":\"beta\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":19,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"ok\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: beta\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"beta\"},\"detail\":{\"name\":\"beta\",\"cpus\":1,\"memoryMb\":256}}],\"nextCursor\":19}"
+  },
+  {
+    "step": "older events of box creation",
+    "method": "GET",
+    "path": "/api/events?op=box.create&limit=2&cursor=19",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"events\":[{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":17,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"ok\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":2,\"memoryMb\":512}}],\"nextCursor\":17}"
+  },
+  {
+    "step": "events with limit 0",
+    "method": "GET",
+    "path": "/api/events?limit=0",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"limit must be an integer between 1 and 200.\",\"key\":\"event_limit_range\",\"params\":{\"max\":200},\"details\":{\"field\":\"limit\"}}}"
+  },
+  {
+    "step": "events of alpha that failed",
+    "method": "GET",
+    "path": "/api/events?box=alpha&status=error",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"events\":[{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
   }
 ]

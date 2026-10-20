@@ -43,6 +43,12 @@ export const MESSAGES = {
   operation_forbidden: "This credential may not run {op}.",
   run_invalid:
     "X-Minibox-Run must be 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+  event_filter_invalid: "{field} must be 1 to 200 characters, without control characters.",
+  event_status_invalid: "status must be one of started, ok, error or denied.",
+  event_limit_range: "limit must be an integer between 1 and {max}.",
+  event_cursor_invalid: "cursor must be a sequence number from an earlier page.",
+  event_since_invalid: "since must be an ISO 8601 date or date and time, such as 2026-10-20T00:00:00Z.",
+  last_event_id_invalid: "Last-Event-ID must be a sequence number from an earlier event.",
   terminal_not_running: "The box is not running, so a terminal can't be opened.",
   ws_upgrade_failed: "WebSocket upgrade failed.",
   too_many_attempts: "Too many attempts. Please try again in 5 minutes.",

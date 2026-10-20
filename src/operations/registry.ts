@@ -1,10 +1,17 @@
 import { boxOperations } from "./boxes";
+import { eventOperations } from "./events";
 import { operationIdOf } from "./openapi";
 import { snapshotOperations } from "./snapshots";
+import { templateOperations } from "./templates";
 import type { Operation } from "./types";
 
 /** Every operation the API serves. REST routes, OpenAPI, MCP tools and CLI commands are all derived from this list. */
-export const OPERATIONS: readonly Operation[] = [...boxOperations, ...snapshotOperations];
+export const OPERATIONS: readonly Operation[] = [
+  ...boxOperations,
+  ...snapshotOperations,
+  ...templateOperations,
+  ...eventOperations,
+];
 
 const OPERATION_NAME = /^[a-z]+(\.[a-z]+)+$/;
 const MCP_NAME = /^[a-z][a-z0-9_]*$/;

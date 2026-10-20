@@ -2,10 +2,10 @@ import { z } from "zod";
 
 import { createBox, getBox } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
-import { createSnapshot } from "../services/snapshots";
-import { DEFAULT_RESOURCES } from "./boxes";
+import { createSnapshot, deleteSnapshot, listSnapshots } from "../services/snapshots";
+import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
-import { BoxSchema, SnapshotSchema } from "./schemas";
+import { BoxSchema, ImageSchema, OkSchema, SnapshotSchema } from "./schemas";
 import {
   boxId,
   boxName,
@@ -29,6 +29,7 @@ export const snapshotCreate = defineOperation({
   cli: "snapshot create",
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "snapshot.create", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host }, input) => ({ snapshot: await createSnapshot(host, input.id, input.name) }),
 });
 
@@ -52,6 +53,7 @@ export const snapshotFork = defineOperation({
   cli: "snapshot fork",
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
+  audit: { target: (input, _box, result) => ({ kind: "box", id: result?.box.id, name: input.name }) },
   run: async ({ host }, input) => ({
     box: await createBox(host, {
       name: input.name,
@@ -64,4 +66,37 @@ export const snapshotFork = defineOperation({
   }),
 });
 
-export const snapshotOperations = [snapshotCreate, snapshotFork];
+export const snapshotList = defineOperation({
+  name: "snapshot.list",
+  tag: "snapshots",
+  summary: "List snapshots",
+  kind: "read",
+  scope: "snapshot:read",
+  async: false,
+  input: z.object({}),
+  output: z.object({ snapshots: z.array(ImageSchema) }),
+  rest: [{ method: "GET", path: "/api/snapshots" }],
+  cli: "snapshot list",
+  run: async ({ host }) => ({ snapshots: await listSnapshots(host) }),
+});
+
+export const snapshotDelete = defineOperation({
+  name: "snapshot.delete",
+  tag: "snapshots",
+  summary: "Delete a snapshot",
+  kind: "destructive",
+  scope: "snapshot:delete",
+  async: false,
+  input: z.object({ ref: snapshotRef() }),
+  output: OkSchema,
+  rest: [{ method: "DELETE", path: "/api/snapshots/:ref" }],
+  cli: "snapshot rm",
+  activity: { action: () => "snapshot.delete", target: ({ ref }) => ref },
+  audit: { target: ({ ref }) => ({ kind: "snapshot", name: ref }) },
+  run: async ({ host }, input) => {
+    await deleteSnapshot(host, input.ref);
+    return { ok: true as const };
+  },
+});
+
+export const snapshotOperations = [snapshotList, snapshotCreate, snapshotFork, snapshotDelete];
