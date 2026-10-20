@@ -71,19 +71,6 @@ async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<
   }
 }
 
-/** Runs a command in a box and returns its output and exit code once the stream has ended. */
-async function execIn(id: string, cmd: string[]): Promise<{ output: string; exitCode: number | null }> {
-  const exec = await runtime.startExec(id, { cmd, env: ["TERM=xterm-256color"], workingDir: "/" });
-  let output = "";
-  exec.stream.on("data", (chunk: Buffer) => {
-    output += chunk.toString("utf8");
-  });
-  const ended = await settleWithin(new Promise<void>((resolve) => exec.stream.once("end", resolve)), 15_000);
-  exec.stream.destroy();
-  if (ended === "timeout") throw new Error(`the command did not finish: ${cmd.join(" ")}`);
-  return { output, exitCode: (await exec.inspect()).exitCode };
-}
-
 afterAll(async () => {
   if (!enabled) return;
   for (const c of await runtime.listContainers({ labels: owned })) {
@@ -287,19 +274,14 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
           await rejectionOf(boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 })),
         ).toMatchObject({ status: 409, key: "box_exists" });
         expect((await runtime.inspectContainer(alpha.id)).running).toBe(true);
-        expect(await execIn(alpha.id, ["sh", "-c", "echo snapshot-marker > /opt/marker"])).toMatchObject({
-          exitCode: 0,
-        });
+        expect(await shell(alpha.id, "echo snapshot-marker > /opt/marker")).toBe("");
 
         const { ref } = await createSnapshot(host, alpha.id, "base");
         expect(ref).toMatch(new RegExp(`^${prefix}-snap:base-`));
 
         const beta = await boxes.createBox(host, { name: "b", image: ref, cpus: 0.5, memoryMb: 64 });
         expect(beta).toMatchObject({ running: true, template: ref });
-        expect(await execIn(beta.id, ["cat", "/opt/marker"])).toMatchObject({
-          exitCode: 0,
-          output: expect.stringContaining("snapshot-marker"),
-        });
+        expect(await shell(beta.id, "cat /opt/marker")).toBe("snapshot-marker");
 
         const promoted = await promoteSnapshot(host, ref, "gold", "Gold");
         expect(promoted.ref).toBe(`${prefix}-template:gold`);

@@ -4,7 +4,7 @@
  *   bun run test:docker
  *
  * Every run gets its own label prefix, so nothing it creates can be mistaken for a real install. Containers, images
- * and volumes that carry the prefix are removed afterwards, even when the tests fail.
+ * and volumes labelled with the prefix, and networks named with it, are removed afterwards, even when the tests fail.
  *
  * Environment: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20).
  */
@@ -91,8 +91,13 @@ async function sweep(): Promise<void> {
   const volumes = lines(await docker(["volume", "ls", "-q", "--filter", `label=${prefix}`]));
   if (volumes.length > 0) await docker(["volume", "rm", ...volumes]);
 
+  const networks = lines(await docker(["network", "ls", "--format", "{{.Name}}"])).filter((name) =>
+    name.startsWith(`${prefix}-`),
+  );
+  for (const network of networks) await docker(["network", "rm", network]);
+
   console.log(
-    `[docker-integration] swept ${containers.length} containers, ${uniqueImages.length} images, ${volumes.length} volumes`,
+    `[docker-integration] swept ${containers.length} containers, ${uniqueImages.length} images, ${volumes.length} volumes, ${networks.length} networks`,
   );
 }
 
