@@ -28,10 +28,10 @@
 ### 文档
 - README 与 README-zh 说明数据目录、访问密钥的位置与优先级、Docker 数据卷的用法，以及 `.env.example` 中的 `DATA_DIR` 配置项。
 
-### 迁移
-- 已有部署无需操作。`.env` 中已有的 `ACCESS_KEY` 照常生效，之前写入 `.env` 的密钥不会改变。
-- 新版本首次启动时会创建 `./data/`（已在 git 中忽略）。其中只有空的子目录，不影响现有 Box。
-- Docker 部署：旧镜像自动生成的密钥写在容器内的 `/app/.env`，删除容器后会丢失。重建容器前，请先用 `docker exec <容器名> grep '^ACCESS_KEY=' /app/.env` 取出密钥，并通过 `-e ACCESS_KEY=...` 传入。另外建议挂载数据卷 `-v minibox-data:/data`，之后生成的密钥会保存在卷中，重建容器时不会丢失。
+### 升级说明
+- 已有部署无需操作：`.env` 中的 `ACCESS_KEY` 照常生效，`.env` 不再被改写。
+- Docker 部署且未传入 `-e ACCESS_KEY` 时，旧镜像生成的密钥位于容器内的 `/app/.env`，重建容器后会丢失。重建前请在旧容器运行时执行 `docker exec <容器名> grep '^ACCESS_KEY=' /app/.env` 取出密钥，再通过 `-e ACCESS_KEY=...` 传入，并挂载 `-v minibox-data:/data`。
+- 首次启动会创建 `./data/`（已在 git 中忽略），其中只有空的子目录。
 
 ## [0.3.0] - 2026-10-21
 
