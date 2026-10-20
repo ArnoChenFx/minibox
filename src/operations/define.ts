@@ -1,0 +1,24 @@
+import type { z } from "zod";
+
+import type { Operation, OperationSpec } from "./types";
+import { parseInput } from "./validation";
+
+/** Erases the schema types of an operation definition, so that the registry can hold every operation in one list. */
+export function defineOperation<I extends z.ZodObject, O extends z.ZodType, R = undefined>(
+  spec: OperationSpec<I, O, R>,
+): Operation {
+  const { input, output, precondition, resolve, activity, run, ...meta } = spec;
+  return {
+    ...meta,
+    input,
+    output,
+    parse: (raw) => parseInput(input, raw),
+    precondition: precondition && ((ctx, value) => precondition(ctx, value as z.output<I>)),
+    resolve: resolve && ((ctx, value) => resolve(ctx, value as z.output<I>)),
+    activity: activity && {
+      action: (value) => activity.action(value as z.output<I>),
+      target: (value, resolved) => activity.target(value as z.output<I>, resolved as R),
+    },
+    run: (ctx, value, resolved) => run(ctx, value as z.output<I>, resolved as R),
+  };
+}

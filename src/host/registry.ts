@@ -2,6 +2,7 @@ import type { BoxProfile } from "../box-profile";
 import type { Config } from "../config";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
+import { HostMonitor } from "./metrics";
 
 export const LOCAL_HOST_ID = "local";
 
@@ -31,11 +32,12 @@ export interface HostCtx {
   baseTemplateTag: string;
   templatesDir: string;
   security: HostSecurity;
+  monitor: HostMonitor;
 }
 
 /** Single-machine installs get one implicit host with the configured Docker socket. */
 export function createLocalHost(cfg: Config, runtime: Runtime): HostCtx {
-  return {
+  const ctx: HostCtx = {
     host: {
       id: LOCAL_HOST_ID,
       name: "Local",
@@ -55,7 +57,9 @@ export function createLocalHost(cfg: Config, runtime: Runtime): HostCtx {
       runtime: cfg.containerRuntime,
       network: boxNetworkName(cfg.labelPrefix),
     },
+    monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory),
   };
+  return ctx;
 }
 
 export class HostRegistry {
