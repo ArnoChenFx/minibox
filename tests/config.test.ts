@@ -79,6 +79,45 @@ describe("loadConfig", () => {
   });
 });
 
+describe("box security settings", () => {
+  test("default to the standard profile, 1024 processes and the engine's default runtime", () => {
+    expect(load({ ACCESS_KEY: KEY })).toMatchObject({
+      boxProfile: "standard",
+      boxPidsLimit: 1024,
+      containerRuntime: null,
+    });
+  });
+  test("BOX_PROFILE, BOX_PIDS_LIMIT and RUNTIME are read from the environment", () => {
+    expect(load({ ACCESS_KEY: KEY, BOX_PROFILE: "strict", BOX_PIDS_LIMIT: "256", RUNTIME: "runsc" })).toMatchObject({
+      boxProfile: "strict",
+      boxPidsLimit: 256,
+      containerRuntime: "runsc",
+    });
+  });
+  test("they can also come from .env", () => {
+    writeFileSync(envFile, "BOX_PROFILE=relaxed\nBOX_PIDS_LIMIT=512\nRUNTIME=runsc\n");
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile })).toMatchObject({
+      boxProfile: "relaxed",
+      boxPidsLimit: 512,
+      containerRuntime: "runsc",
+    });
+  });
+  test("blank values count as unset", () => {
+    expect(load({ ACCESS_KEY: KEY, BOX_PROFILE: " ", BOX_PIDS_LIMIT: "", RUNTIME: "  " })).toMatchObject({
+      boxProfile: "standard",
+      boxPidsLimit: 1024,
+      containerRuntime: null,
+    });
+  });
+  test("invalid values stop startup instead of silently changing box hardening", () => {
+    expect(() => load({ ACCESS_KEY: KEY, BOX_PROFILE: "paranoid" })).toThrow("BOX_PROFILE");
+    expect(() => load({ ACCESS_KEY: KEY, BOX_PIDS_LIMIT: "0" })).toThrow("BOX_PIDS_LIMIT");
+    expect(() => load({ ACCESS_KEY: KEY, BOX_PIDS_LIMIT: "-1" })).toThrow("BOX_PIDS_LIMIT");
+    expect(() => load({ ACCESS_KEY: KEY, BOX_PIDS_LIMIT: "1.5" })).toThrow("BOX_PIDS_LIMIT");
+    expect(() => load({ ACCESS_KEY: KEY, RUNTIME: "runsc --debug" })).toThrow("RUNTIME");
+  });
+});
+
 describe("ACCESS_KEY precedence", () => {
   test("process env beats .env, which beats DATA_DIR/access_key", () => {
     mkdirSync(dataDir, { recursive: true });

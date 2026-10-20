@@ -357,6 +357,7 @@ describe("projections", () => {
       "template",
       "cpus",
       "memoryMb",
+      "profile",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });

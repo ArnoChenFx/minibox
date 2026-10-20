@@ -33,7 +33,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Area | What you get |
 |---|---|
 | Box lifecycle | Create, start, stop, restart, delete; on delete, keep or remove the workspace volume |
-| Box user | Boxes run as the non-root `dev` user (uid/gid 1000) with passwordless `sudo`; the web terminal and `docker exec` start as `dev`. See [Base template](#base-template) |
+| Box user | Boxes run as the non-root `dev` user (uid/gid 1000); the web terminal and `docker exec` start as `dev`. Three [security profiles](#security-profiles) set what a box can do: `standard` (default) keeps passwordless `sudo`, and `strict` blocks escalation. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
 | Snapshots | Save a box's system environment via `docker commit`, create new boxes from a snapshot, or promote it to a template |
 | Templates | Bundled base template (Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
@@ -157,7 +157,7 @@ flowchart LR
 - **Volume** belongs to a storage pool, not to a box. `cache` volumes stay on the local pool and are excluded from checkpoints.
 - **Checkpoint** = box spec + volume snapshots (restic) + an optional system layer.
 - **Helper containers** are short-lived. They serve file operations, create NFS directories and run restic.
-- Boxes run as the non-root `dev` user under one of two security profiles, `standard` or `strict`.
+- Boxes run as the non-root `dev` user under one of three security profiles: `standard` (default), `strict` or `relaxed`.
 - The MiniBox Agent and storage-node roles are not on the main path, so they are not drawn.
 
 ## Requirements
@@ -279,6 +279,9 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `DATA_DIR` | `./data` (`/data` in the image) | State directory, see [Data directory](#data-directory) |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
 | `BASE_TEMPLATE` | `<prefix>-template:base` | Default template image for new boxes |
+| `BOX_PROFILE` | `standard` | Default [security profile](#security-profiles) for new boxes: `standard`, `strict` or `relaxed` |
+| `BOX_PIDS_LIMIT` | `1024` | Maximum number of processes in each new box (a positive integer) |
+| `RUNTIME` | engine default | OCI runtime for new boxes, such as `runsc` (gVisor). The runtime must already be installed in the Docker engine |
 | `METRICS_INTERVAL_MS` | `3000` | Host metrics sampling interval (ms) |
 | `METRICS_HISTORY` | `120` | Number of samples kept (≈ 6 minutes at the default interval) |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
@@ -292,7 +295,7 @@ The bundled template ([`templates/base/Dockerfile`](templates/base/Dockerfile)) 
 
 | Area | Convention |
 |---|---|
-| User | `dev`, uid/gid `1000`. A box starts the image's default user, so the web terminal and `docker exec` enter as `dev`. `sudo` needs no password, inside the box only |
+| User | `dev`, uid/gid `1000`. A box starts the image's default user, so the web terminal and `docker exec` enter as `dev`. `sudo` needs no password, inside the box only. Under the `strict` profile it is installed but cannot escalate (see [Security profiles](#security-profiles)) |
 | Mount points | `/workspace` (workspace volume), `/home/dev` (home), `/opt/minibox/tools` (shared, read-only tools; its `bin` is on `PATH`), `/home/dev/.cache` (caches). Until volume support lands in [#24](https://github.com/ArnoChenFx/minibox/issues/24), these are plain directories in the image |
 | Caches | `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR` and `YARN_CACHE_FOLDER` point under `/home/dev/.cache`. `NPM_CONFIG_PREFIX` is `/home/dev/.npm-global`, so `npm install -g` works without root |
 | Labels | `minibox.template.user`, `minibox.template.uid` and `minibox.template.gid` record the convention, so other templates can be checked against it |
@@ -319,7 +322,7 @@ Tools: `tmux`, `jq`, `ripgrep`, `openssh-client`, `unzip`, `less`, `vim-tiny` an
 
   MiniBox doesn't run this for you yet. A recursive `chown` over a whole workspace can take a long time and changes ownership of data you didn't ask to touch, so it belongs with the storage work in [#24](https://github.com/ArnoChenFx/minibox/issues/24).
 
-Checking an image against Docker: after `bun run build:template`, run `bun run check:template` (or `scripts/check-box-image.sh <image>`). It checks the user, uid, `sudo`, tools, mount points, cache variables, the PATH of login shells, and that two containers sharing a volume can write to it. CI runs it for `linux/amd64` and, under emulation, `linux/arm64`.
+Checking an image against Docker: after `bun run build:template`, run `bun run check:template` (or `scripts/check-box-image.sh <image>`). It checks the user, uid, `sudo`, tools, mount points, cache variables, the PATH of login shells, and that two containers sharing a volume can write to it. It also starts a container under each security profile and checks its capabilities, `no-new-privileges`, `sudo` and `ping`. CI runs it for `linux/amd64` and, under emulation, `linux/arm64`.
 
 ## Data directory
 
@@ -365,7 +368,7 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | List boxes; live usage of running boxes is included unless `stats=false` |
-| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"? }`; defaults 2 vCPU / 4096 MB |
+| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB |
 | `GET` | `/api/boxes/:id` | Details, including live usage |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete; optionally delete the workspace volume too |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions |
@@ -385,7 +388,7 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 |---|---|---|
 | `GET` | `/api/snapshots` | List snapshots |
 | `DELETE` | `/api/snapshots/:ref` | Delete a snapshot |
-| `POST` | `/api/snapshots/:ref/boxes` | Create a box from a snapshot `{ "name", "cpus"?, "memoryMb"? }` |
+| `POST` | `/api/snapshots/:ref/boxes` | Create a box from a snapshot `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
 | `POST` | `/api/snapshots/:ref/promote` | Promote to a template `{ "name", "description"? }` |
 | `GET` | `/api/templates` | List templates |
 | `POST` | `/api/templates/base/build` | Build the bundled base template |
@@ -493,9 +496,23 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request arrives over HTTPS or carries an `https://` Origin, which browsers send on login; `COOKIE_SECURE=1` forces it. By default MiniBox ignores `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`, so behind a reverse proxy every visitor shares the proxy's address for rate limiting. Set `TRUST_PROXY=true` only behind a proxy that overwrites these headers, and only when MiniBox is reachable only through that proxy. With it on, MiniBox uses the right-most `X-Forwarded-For` entry, which the proxy appended, and trusts the other two headers too. With it off, the headers are ignored, so forging them has no effect.
 - **Public tunnels are discoverable.** Tunnel hostnames (e.g. OpenTunnel's `*.opentunnel.xyz`) can show up in public Certificate Transparency logs or be guessed, and OpenTunnel itself does not add authentication — the dashboard is effectively on the internet, protected only by the access key. Traffic also passes through the tunnel's relay. Prefer a private network (e.g. Tailscale) or an authenticating reverse proxy when you can, and stop the tunnel when you don't need it.
 - **Container isolation, not a security sandbox.** Boxes share the host kernel. They are fine for your own agents, but **not for untrusted third-party code** — use gVisor or a microVM-based sandbox for that. Don't mount the Docker socket or sensitive host paths into a box.
-- **Boxes have passwordless `sudo`.** The `dev` user can become root inside its box, and root there can change anything in the box and in its workspace volume. The container still runs with Docker's default capabilities, not as a privileged container. A stricter profile without `sudo` is planned with [#5](https://github.com/ArnoChenFx/minibox/issues/5).
+- **Boxes have passwordless `sudo` by default.** Under the default `standard` profile the `dev` user can become root inside its box, and root there can change anything in the box and in its workspace volume. `standard` also drops most Linux capabilities, so a box is not a privileged container. The `strict` profile stops escalation; see [Security profiles](#security-profiles).
 - **Snapshots don't include `/workspace`.** `docker commit` skips mounted volumes; keep code in git or back up the volume separately.
 - `scripts/restart.sh` is a single-user sandbox convenience. It may start `dockerd` with `sudo`, then gives the Docker socket to your primary group with mode `660`, so only members of that group (normally just you) and root can use it. Docker access is still root-equivalent, so review the script before using it elsewhere.
+
+### Security profiles
+
+A box's profile is fixed when the box is created. Choose it in the create dialog (Advanced), with the `profile` field of `POST /api/boxes`, or set the default with `BOX_PROFILE`. Boxes created before profiles existed keep their settings, and nothing is recreated.
+
+| Profile | `sudo` | `no-new-privileges` | Linux capabilities | Trade-off |
+|---|---|---|---|---|
+| `standard` (default) | passwordless, inside the box | off | all dropped, then 11 added back for `sudo`, `apt` and `ping` | Root in the box can change the box and its workspace volume |
+| `strict` | installed but cannot escalate | on | all dropped | `sudo` cannot elevate, so system packages cannot be installed in the box. Add them to the template instead. `ping` fails too |
+| `relaxed` | passwordless, inside the box | off | Docker's default set: the `standard` set plus `MKNOD`, `SETPCAP` and `SYS_CHROOT` | Keeps capabilities the other profiles remove. Use it only for a tool that they block |
+
+Every profile also limits each box to `BOX_PIDS_LIMIT` processes (1024 by default), disables core dumps, sets the open-file limit to 65536, and puts the box on the `<LABEL_PREFIX>-boxes` network (`minibox-boxes` by default), where boxes cannot reach each other.
+
+Outbound (egress) filtering and disk quotas are deferred and not implemented yet. Box traffic leaves through Docker's normal NAT without filtering, boxes can reach services on the host's bridge gateway, and nothing limits a box's disk use. If boxes on `minibox-boxes` cannot reach the internet while the default `bridge` can, the host's firewall is blocking forwarding for user-defined bridges. A stale `iptables-legacy` FORWARD policy of `DROP` is one cause; fix it on the host. See [`docs/design.md`](docs/design.md) §14.
 
 ## Roadmap
 
@@ -516,7 +533,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 ### M1 · Templates, specs, audit and tokens
 
 - [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) Base template: non-root `dev` user, tmux and mount-point conventions
-- [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box hardening with `standard` and `strict` security profiles
+- [x] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box hardening with `standard`, `strict` and `relaxed` security profiles; outbound filtering and disk quotas are deferred
 - [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
 - [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams

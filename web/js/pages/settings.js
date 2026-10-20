@@ -17,6 +17,10 @@ export function render(view) {
           <dt>Docker Socket</dt><dd class="mono">${esc(s.config.dockerSocket)}</dd>
           <dt>${t("st.labelPrefix")}</dt><dd class="mono">${esc(s.config.labelPrefix)}</dd>
           <dt>${t("st.baseTemplate")}</dt><dd class="mono">${esc(s.config.baseTemplate)}</dd>
+          <dt>${t("st.boxProfile")}</dt><dd>${t(`profile.${s.config.boxProfile}`)}</dd>
+          <dt>${t("st.containerRuntime")}</dt><dd>${s.config.containerRuntime ? `<span class="mono">${esc(s.config.containerRuntime)}</span>` : t("st.runtimeDefault")}</dd>
+          <dt>${t("st.pidsLimit")}</dt><dd>${t("st.pidsValue", { n: s.config.boxPidsLimit })}</dd>
+          <dt>${t("st.boxNetwork")}</dt><dd class="mono">${esc(s.config.boxNetwork)}</dd>
           <dt>${t("st.interval")}</dt><dd>${t("st.intervalValue", { n: s.config.metricsIntervalMs / 1000 })}</dd>
           <dt>${t("st.boxLimits")}</dt><dd>${t("st.boxLimitsValue", { minC: s.limits.minCpus, maxC: s.limits.maxCpus, minM: s.limits.minMemoryMb, maxM: s.limits.maxMemoryMb })}</dd>
         </dl></div></div>

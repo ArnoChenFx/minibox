@@ -39,6 +39,8 @@ export interface FakeContainer {
   memoryBytes: number | null;
   swapBytes: number | null;
   logs: string;
+  /** ID of the network the container's endpoint points at. Null until the container first starts, as in the engine. */
+  networkId: string | null;
 }
 
 export interface FakeImage {
@@ -47,6 +49,13 @@ export interface FakeImage {
   labels: Record<string, string>;
   createdAt: string;
   size: number;
+}
+
+export interface FakeNetwork {
+  id: string;
+  name: string;
+  driver: string;
+  options: Record<string, string>;
 }
 
 export interface FakeExec extends ExecSession {
@@ -61,10 +70,17 @@ export interface FakeExec extends ExecSession {
 
 const now = () => new Date().toISOString();
 const newContainerId = () => randomBytes(32).toString("hex");
+const newNetworkId = () => randomBytes(32).toString("hex");
 const newImageId = () => `sha256:${randomBytes(32).toString("hex")}`;
 const normalizeRef = (ref: string) => (ref.includes(":") ? ref : `${ref}:latest`);
 const matchesLabels = (labels: Record<string, string>, wanted: Record<string, string>) =>
   Object.entries(wanted).every(([key, value]) => labels[key] === value);
+/** The engine's default bridge network, which needs no ensure step. */
+const DEFAULT_NETWORK = "bridge";
+/** The option name Docker stores for inter-container communication. */
+const ICC_OPTION = "com.docker.network.bridge.enable_icc";
+const networkMissing = (network: string) =>
+  new RuntimeError("not_found", `failed to set up container networking: network ${network} not found`);
 
 function matchesEvent(event: RuntimeEvent, filter: { labels?: Record<string, string>; types?: string[] }): boolean {
   if (filter.types && !filter.types.includes(event.type)) return false;
@@ -115,6 +131,7 @@ function toInfo(c: FakeContainer): ContainerInfo {
     startedAt: c.startedAt,
     cpus: c.cpus,
     memoryBytes: c.memoryBytes,
+    network: c.spec.network ?? DEFAULT_NETWORK,
   };
 }
 
@@ -138,6 +155,7 @@ export class FakeRuntime implements Runtime {
   readonly containers = new Map<string, FakeContainer>();
   readonly images = new Map<string, FakeImage>();
   readonly volumes = new Map<string, VolumeInfo>();
+  readonly networks = new Map<string, FakeNetwork>();
   readonly execs: FakeExec[] = [];
   /** When true, every call fails as if the engine socket were unreachable. */
   down = false;
@@ -168,6 +186,19 @@ export class FakeRuntime implements Runtime {
     const id = newImageId();
     this.images.set(id, { id, tags: [normalizeRef(ref)], labels: { ...labels }, createdAt, size: 1024 });
     return id;
+  }
+
+  /** A network that is created again gets a new ID, which containers that ran on the old one still point at. */
+  seedNetwork(name: string, options: Record<string, string> = {}, driver = "bridge"): void {
+    this.networks.set(name, { id: newNetworkId(), name, driver, options: { ...options } });
+  }
+
+  /** Removes networks that no running container uses, as `docker network prune` does. */
+  pruneNetworks(): void {
+    for (const name of this.networks.keys()) {
+      const inUse = [...this.containers.values()].some((c) => c.running && c.spec.network === name);
+      if (!inUse) this.networks.delete(name);
+    }
   }
 
   /** `null` limits model a box created without them (unlimited). */
@@ -205,6 +236,27 @@ export class FakeRuntime implements Runtime {
     return c;
   }
 
+  /**
+   * Like the engine, a container can be created on a missing network but fails to start on it. Its endpoint is set up
+   * on the first start and keeps the ID of that network, so a start also fails while that network ID is gone.
+   */
+  private attach(c: FakeContainer): void {
+    const name = c.spec.network ?? DEFAULT_NETWORK;
+    if (name === DEFAULT_NETWORK) return;
+    if (c.networkId === null) {
+      const network = this.networks.get(name);
+      if (!network) throw networkMissing(name);
+      c.networkId = network.id;
+    } else if (![...this.networks.values()].some((network) => network.id === c.networkId)) {
+      throw networkMissing(c.networkId);
+    }
+  }
+
+  private networkIdOf(name: string | undefined): string | null {
+    if (name === undefined || name === DEFAULT_NETWORK) return null;
+    return this.networks.get(name)?.id ?? null;
+  }
+
   private findImage(ref: string): FakeImage | undefined {
     const tag = normalizeRef(ref);
     return [...this.images.values()].find((img) => img.id === ref || img.tags.includes(tag));
@@ -239,6 +291,7 @@ export class FakeRuntime implements Runtime {
       startedAt: running ? now() : null,
       ...limits,
       logs: "",
+      networkId: running ? this.networkIdOf(spec.network) : null,
     };
     this.containers.set(c.id, c);
     return c;
@@ -287,6 +340,7 @@ export class FakeRuntime implements Runtime {
     this.enter("startContainer", [id]);
     const c = this.getContainer(id);
     if (!c.running) {
+      this.attach(c);
       c.running = true;
       c.startedAt = now();
     }
@@ -300,6 +354,7 @@ export class FakeRuntime implements Runtime {
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("restartContainer", [id, opts]);
     const c = this.getContainer(id);
+    this.attach(c);
     c.running = true;
     c.startedAt = now();
   }
@@ -493,5 +548,29 @@ export class FakeRuntime implements Runtime {
     const inUse = [...this.containers.values()].some((c) => c.spec.mounts?.some((m) => m.source === name));
     if (inUse) throw new RuntimeError("conflict", `remove ${name}: volume is in use`);
     this.volumes.delete(name);
+  }
+
+  async ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void> {
+    this.enter("ensureBridgeNetwork", [name, opts]);
+    const existing = this.networks.get(name);
+    if (!existing) {
+      this.seedNetwork(name, opts.interContainerComm ? {} : { [ICC_OPTION]: "false" });
+      return;
+    }
+    const enabled = existing.options[ICC_OPTION] !== "false";
+    if (existing.driver !== "bridge" || enabled !== opts.interContainerComm) {
+      throw new RuntimeError("conflict", `network ${name} exists but is not a bridge with the requested settings`);
+    }
+  }
+
+  async reattachNetwork(id: string, name: string): Promise<void> {
+    this.enter("reattachNetwork", [id, name]);
+    const c = this.getContainer(id);
+    if ((c.spec.network ?? DEFAULT_NETWORK) !== name) {
+      throw new RuntimeError("invalid", `container ${c.id} is not on network ${name}`);
+    }
+    const network = this.networks.get(name);
+    if (!network) throw new RuntimeError("not_found", `network ${name} not found`);
+    c.networkId = network.id;
   }
 }

@@ -94,6 +94,29 @@ describe("box create", () => {
   });
 });
 
+describe("box profile", () => {
+  test("is optional, and an empty or null value means the host default", () => {
+    expect(boxCreate.parse({ name: "a" }).profile).toBeUndefined();
+    expect(boxCreate.parse({ name: "a", profile: "" }).profile).toBeUndefined();
+    expect(boxCreate.parse({ name: "a", profile: null }).profile).toBeUndefined();
+  });
+  test("accepts the three profile ids", () => {
+    for (const profile of ["standard", "strict", "relaxed"]) {
+      expect(boxCreate.parse({ name: "a", profile })).toMatchObject({ profile });
+    }
+  });
+  test("rejects any other value, on create and on fork", () => {
+    for (const bad of ["Strict", "root", "paranoid", 1, ["strict"]]) {
+      expectValidation(boxCreate, { name: "a", profile: bad }, "profile");
+      expectValidation(snapshotFork, { name: "a", ref: "mbtest-snap:x", profile: bad }, "profile");
+    }
+  });
+  test("the refusal carries the legacy key, and the profile is checked after the resources", () => {
+    expect(rejection(boxCreate, { name: "a", profile: "paranoid" })).toMatchObject({ key: "profile_invalid" });
+    expect(rejection(boxCreate, { name: "a", cpus: 0, profile: "paranoid" }).details).toEqual({ field: "cpus" });
+  });
+});
+
 describe("snapshots", () => {
   test("a snapshot name is optional, and empty means the box name", () => {
     expect(snapshotCreate.parse({ id: "alpha" }).name).toBeUndefined();

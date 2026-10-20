@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { BOX_PROFILES, type BoxProfile, isBoxProfile } from "../box-profile";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { accept, asObject, type Checked, checkName, type Failure, LIMITS, NAME_RE, reject } from "../lib/validation";
@@ -122,6 +123,16 @@ export const templateImage = () =>
       description: "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used.",
     },
   ).optional();
+
+const PROFILE_HELP = "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used.";
+
+function checkProfile(value: unknown): Checked<BoxProfile | undefined> {
+  if (value === undefined || value === null || value === "") return accept(undefined);
+  return isBoxProfile(value) ? accept(value) : reject(msg("profile_invalid"), "profile");
+}
+
+export const boxProfile = () =>
+  field(checkProfile, { type: "string", enum: [...BOX_PROFILES], description: PROFILE_HELP }).optional();
 
 /** A snapshot reference from the path. The raw text is kept, because the box label records what the client sent. */
 export const snapshotRef = () =>

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks a built base template against a real Docker daemon: the dev user and uid convention, sudo, tools, mount
-# points, cache variables, the PATH of login shells, and whether containers sharing one volume can read and write it.
+# points, cache variables, the PATH of login shells, whether containers sharing one volume can read and write it, and
+# how each box profile (docs/design.md §14) treats capabilities, no-new-privileges, sudo and ping.
 #   bun run build:template && scripts/check-box-image.sh
 #   PLATFORM=linux/arm64 scripts/check-box-image.sh minibox-template:base-arm64
 set -euo pipefail
@@ -62,10 +63,10 @@ in_box 'sudo -n true' >/dev/null 2>&1 || fail "sudo -n does not work for dev"
 [[ "$(in_box 'sudo -n id -u' 2>/dev/null)" == "0" ]] || fail "sudo does not reach root"
 echo "ok: passwordless sudo"
 
-in_box 'for t in git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny; do
+in_box 'for t in git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny ping; do
   command -v "$t" >/dev/null || { echo "missing: $t" >&2; exit 1; }
 done' || fail "a required tool is missing"
-echo "ok: git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny are installed"
+echo "ok: git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny ping are installed"
 
 in_box 'test -O /workspace && test -w /workspace && test -O /home/dev && test -O /home/dev/.cache' \
   || fail "a writable mount point is missing or not owned by dev"
@@ -102,5 +103,33 @@ owners="$(docker_run --rm -v "$VOLUME:/workspace" "$TAG" sh -c \
   'stat -c "%u:%g" /workspace/shared.txt /workspace/second /workspace/second/by-second' | sort -u)"
 [[ "$owners" == "1000:1000" ]] || fail "files in the shared volume are owned by: $(echo "$owners" | tr '\n' ' ')"
 echo "ok: two containers sharing one volume read and write it; every file is owned by 1000:1000"
+
+# The flags mirror src/box-profile.ts; tests/template.test.ts keeps the capability list in step with it.
+standard_flags=(--cap-drop ALL)
+for cap in AUDIT_WRITE CHOWN DAC_OVERRIDE FOWNER FSETID KILL NET_BIND_SERVICE NET_RAW SETFCAP SETGID SETUID; do
+  standard_flags+=(--cap-add "$cap")
+done
+strict_flags=(--cap-drop ALL --security-opt no-new-privileges:true)
+relaxed_flags=()
+
+# Arguments: profile, expected CapBnd, expected NoNewPrivs, expected sudo and ping (ok|fail), then docker run flags.
+check_profile() {
+  local name="$1" cap_bnd="$2" no_new_privs="$3" sudo_want="$4" ping_want="$5"
+  shift 5
+  local state sudo_got ping_got=""
+  state="$(docker_run --rm "$@" "$TAG" sh -c 'grep -E "^(CapBnd|NoNewPrivs):" /proc/self/status | cut -f2 | tr "\n" " "')"
+  [[ "$state" == "$cap_bnd $no_new_privs " ]] || fail "$name profile: CapBnd and NoNewPrivs are '$state'"
+  if docker_run --rm "$@" "$TAG" sudo -n true >/dev/null 2>&1; then sudo_got=ok; else sudo_got=fail; fi
+  [[ "$sudo_got" == "$sudo_want" ]] || fail "$name profile: sudo is $sudo_got, expected $sudo_want"
+  # File capabilities are not applied to binaries run under QEMU, so ping is only checked on the native platform.
+  if [[ -z "${PLATFORM:-}" ]]; then
+    if docker_run --rm "$@" "$TAG" ping -c 1 -W 2 127.0.0.1 >/dev/null 2>&1; then ping_got=ok; else ping_got=fail; fi
+    [[ "$ping_got" == "$ping_want" ]] || fail "$name profile: ping is $ping_got, expected $ping_want"
+  fi
+  echo "ok: $name profile: CapBnd $cap_bnd, NoNewPrivs $no_new_privs, sudo $sudo_got, ping ${ping_got:-not checked under emulation}"
+}
+check_profile standard 00000000a00024fb 0 ok ok "${standard_flags[@]}"
+check_profile strict 0000000000000000 1 fail fail "${strict_flags[@]}"
+check_profile relaxed 00000000a80425fb 0 ok ok "${relaxed_flags[@]}"
 
 echo "all box image checks passed for $TAG"

@@ -122,6 +122,8 @@ const TAB_RENDER = {
           <dt>${t("bd.containerId")}</dt><dd class="mono">${esc(b.id)}</dd>
           <dt>${t("bd.image")}</dt><dd class="mono">${esc(b.image)}</dd>
           <dt>${t("bd.template")}</dt><dd class="mono">${esc(b.template || "—")}</dd>
+          <dt>${t("bd.profile")}</dt><dd>${b.profile ? t(`profile.${b.profile}`) : t("bd.profileLegacy")}</dd>
+          <dt>${t("bd.network")}</dt><dd class="mono">${esc(b.network)}</dd>
           <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume)}</span></dd>
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
           <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(`minibox-${b.name}`)} bash</code></dd>

@@ -20,6 +20,7 @@ import { BoxSchema, BoxWithStatsSchema, StatsSchema } from "./schemas";
 import {
   boxId,
   boxName,
+  boxProfile,
   cpusWithDefault,
   deleteVolumeFlag,
   memoryWithDefault,
@@ -91,6 +92,7 @@ export const boxCreate = defineOperation({
     template: templateImage(),
     cpus: cpusWithDefault(DEFAULT_RESOURCES.cpus),
     memoryMb: memoryWithDefault(DEFAULT_RESOURCES.memoryMb),
+    profile: boxProfile(),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/boxes", body: true, status: 201 }],
@@ -98,12 +100,19 @@ export const boxCreate = defineOperation({
   mcp: {
     toolset: "core",
     name: "create_box",
-    description: "Create and start a box from a template with the given CPU and memory limits.",
+    description:
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Omitting the profile uses the host default.",
   },
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   run: async ({ host }, input) => ({
-    box: await createBox(host, { name: input.name, image: input.template, cpus: input.cpus, memoryMb: input.memoryMb }),
+    box: await createBox(host, {
+      name: input.name,
+      image: input.template,
+      cpus: input.cpus,
+      memoryMb: input.memoryMb,
+      profile: input.profile,
+    }),
   }),
 });
 

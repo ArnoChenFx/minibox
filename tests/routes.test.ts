@@ -222,7 +222,37 @@ describe("box validation and error mapping", () => {
   });
 });
 
+describe("system", () => {
+  test("reports the box security settings that new boxes are created with", async () => {
+    const { config } = (await (await get("/api/system")).json()) as { config: Record<string, unknown> };
+    expect(config).toMatchObject({
+      boxProfile: "standard",
+      boxPidsLimit: 1024,
+      containerRuntime: null,
+      boxNetwork: "mbtest-boxes",
+    });
+  });
+});
+
 describe("box routes", () => {
+  test("a box can choose its profile, and an unknown profile is refused before the engine is called", async () => {
+    const res = await post("/api/boxes", { name: "alpha", cpus: 1, memoryMb: 256, profile: "strict" });
+    expect(res.status).toBe(201);
+    const { box } = (await res.json()) as { box: Record<string, unknown> };
+    expect(box).toMatchObject({ profile: "strict", network: "mbtest-boxes" });
+    expect(runtime.containers.get(String(box.id))?.spec.hardening).toMatchObject({ noNewPrivileges: true });
+
+    const before = runtime.calls.length;
+    const bad = await post("/api/boxes", { name: "beta", cpus: 1, memoryMb: 256, profile: "paranoid" });
+    expect(bad.status).toBe(400);
+    expect(await errorOf(bad)).toMatchObject({
+      code: "validation_failed",
+      key: "profile_invalid",
+      details: { field: "profile" },
+    });
+    expect(runtime.calls.length).toBe(before);
+  });
+
   test("create returns 201 with the box and the labels it was created with", async () => {
     const res = await post("/api/boxes", { name: "alpha", cpus: 1, memoryMb: 256 });
     expect(res.status).toBe(201);
