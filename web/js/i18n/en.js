@@ -336,7 +336,7 @@ export default {
   "tp.loadFailed": "Couldn't load templates",
   "tp.empty": "No templates yet",
   "tp.emptyText":
-    "Build the bundled base template (Debian 12 · Node.js 24 · Python 3 · git). The first build takes about 1–3 minutes.",
+    "Build the bundled base template (Debian 12 · Node.js 24 · Python 3 · git · tmux · non-root dev user). The first build takes about 1–3 minutes.",
   "tp.builtin": "Built-in",
   "tp.custom": "Custom",
   "tp.noDesc": "No description",
