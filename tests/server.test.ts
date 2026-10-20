@@ -1,5 +1,8 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { connect } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Server } from "bun";
 
@@ -13,9 +16,15 @@ import type { TerminalData } from "../src/ws/terminal";
 setLogLevel("error");
 
 const KEY = "k".repeat(64);
+const SANDBOX = mkdtempSync(join(tmpdir(), "minibox-server-test-"));
+afterAll(() => rmSync(SANDBOX, { recursive: true, force: true }));
 
+/** Uses a temp DATA_DIR and .env, so the suite never creates the repository's data/ or reads its .env. */
 function testConfig(env: Record<string, string> = {}): Config {
-  const cfg = loadConfig({ ACCESS_KEY: KEY, HOST: "127.0.0.1", LOG_LEVEL: "error", ...env });
+  const cfg = loadConfig(
+    { ACCESS_KEY: KEY, HOST: "127.0.0.1", LOG_LEVEL: "error", DATA_DIR: join(SANDBOX, "data"), ...env },
+    { envFile: join(SANDBOX, ".env") },
+  );
   return { ...cfg, port: 0 };
 }
 
