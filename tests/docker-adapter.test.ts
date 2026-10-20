@@ -27,7 +27,7 @@ const RUNNING = {
   Created: "2026-10-20T10:00:00Z",
   Config: { Image: "minibox-template:base", Labels: { minibox: "true", "minibox.name": "alpha" } },
   State: { Status: "running", Running: true, StartedAt: "2026-10-20T10:01:00Z" },
-  HostConfig: { NanoCpus: 1_500_000_000, Memory: 512 * 1024 * 1024 },
+  HostConfig: { NanoCpus: 1_500_000_000, Memory: 512 * 1024 * 1024, NetworkMode: "minibox-boxes" },
 };
 
 const NEVER_STARTED = {
@@ -36,7 +36,7 @@ const NEVER_STARTED = {
   Created: "2026-10-20T10:00:00Z",
   Config: { Image: "minibox-template:base", Labels: {} },
   State: { Status: "created", Running: false, StartedAt: "0001-01-01T00:00:00Z" },
-  HostConfig: { NanoCpus: 0, Memory: 0 },
+  HostConfig: { NanoCpus: 0, Memory: 0, NetworkMode: "default" },
 };
 
 const inspectable: Record<string, { status: number; body: unknown }> = {
@@ -118,6 +118,7 @@ describe("Docker adapter against a fake engine socket", () => {
       startedAt: "2026-10-20T10:01:00Z",
       cpus: 1.5,
       memoryBytes: 512 * 1024 * 1024,
+      network: "minibox-boxes",
     });
     expect(await runtime().inspectContainer("fresh")).toMatchObject({
       state: "created",
@@ -125,6 +126,7 @@ describe("Docker adapter against a fake engine socket", () => {
       startedAt: null,
       cpus: null,
       memoryBytes: null,
+      network: "bridge",
     });
   });
 
