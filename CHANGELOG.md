@@ -17,7 +17,7 @@
 ### 安全
 - 登录 Cookie 不再保存原始 `ACCESS_KEY`。登录后签发随机的 32 字节会话令牌（来自 CSPRNG），Cookie 只保存该令牌。服务端只在 `DATA_DIR/sessions.json` 中保存其 SHA-256 哈希，令牌与访问密钥都不写入日志（#2）。
 - 会话可撤销：登出会立即在服务端作废会话。修改 `ACCESS_KEY` 后，下次启动时全部会话失效；文件中只保存用于检测变更的 scrypt 校验值。`Authorization: Bearer <ACCESS_KEY>` 不受影响（#2）。
-- 终端 WebSocket 与所有 Cookie 校验都接受会话令牌。会话结束（撤销、登出或到期）后，已打开的终端以 WebSocket 关闭码 1008 关闭；到期由定期清理发现，最迟约 10 秒（#2）。
+- 终端 WebSocket 与所有 Cookie 校验都接受会话令牌。会话结束（撤销、登出或到期）后，已打开的终端以 WebSocket 关闭码 1008 关闭，已打开的事件流（`/api/events/stream`）随之结束；到期由定期清理发现，最迟约 10 秒（#2）。
 - 登录限流不再信任请求头 `X-Forwarded-For`：默认按真实连接地址计数。新增配置 `TRUST_PROXY`（默认 `false`），仅在由你控制、会覆盖这些头的反向代理之后设置为 `true`；此时读取 `X-Forwarded-For` 的最后一项，并信任 `X-Forwarded-Proto` 与 `X-Forwarded-Host`（#1）。
 - 登录限流只拒绝错误的密钥：正确的密钥总能登录，即使同一地址（或所有访问者）已被限流。同一地址 5 分钟内错误 10 次，或全部地址合计 50 次后，之后的错误密钥被拒绝（`429`），并延迟约 1 秒返回；IPv6 按 /64 归并。失败记录表设置容量上限并定期清理过期项（#1）。限流不会阻止猜测（每个密钥仍会被校验），抵抗暴力破解靠的是密钥的长度与随机性。
 - 新增配置 `COOKIE_SECURE`（默认 `false`）：始终为会话 Cookie 加上 `Secure`。通过 HTTPS 访问，或请求带有 `https://` Origin 时，Cookie 已会带上 `Secure`，通常无需设置（#3）。
@@ -77,7 +77,7 @@
 
 ### 工程化
 - `Runtime` 接口新增 `ensureBridgeNetwork` 与 `reattachNetwork`，`createContainer` 支持网络与加固字段。`FakeRuntime` 模拟引擎的网络固定行为，新增 `tests/box-profile.test.ts` 检查各档位映射出的容器配置；真实引擎测试 `tests/docker-runtime.test.ts` 覆盖网络与各档位（设置 `MINIBOX_TEST_DOCKER=1` 时运行）（#5）。
-- 新增会话测试（`tests/sessions.test.ts`，并扩展 `tests/auth.test.ts`、`tests/server.test.ts`、`tests/terminal.test.ts`）：令牌与密钥不同、登出与撤销、修改密钥后失效、过期与滑动续期、重启后保持、Bearer 仍可用、终端随会话结束而关闭，以及日志中不含令牌或密钥（#2）。
+- 新增会话测试（`tests/sessions.test.ts`，并扩展 `tests/auth.test.ts`、`tests/server.test.ts`、`tests/terminal.test.ts`）：令牌与密钥不同、登出与撤销、修改密钥后失效、过期与滑动续期、重启后保持、Bearer 仍可用、终端与事件流随会话结束而关闭，以及日志中不含令牌或密钥（#2）。
 - 新增 `.github/dependabot.yml`：每周检查 npm 依赖（Bun）、GitHub Actions 与 Docker 基础镜像（根目录 `Dockerfile` 与 `templates/base`）的更新；GitHub Actions 的小版本与补丁版本更新合并为一个 PR。
 - `package.json` 的 `engines.bun` 最低版本要求由 `>=1.2.0` 提高为 `>=1.4.3`，README 中的版本要求同步。
 - 所有 GitHub Actions 引用固定到完整 commit SHA，并以注释保留版本号，升级由 Dependabot 提出。
