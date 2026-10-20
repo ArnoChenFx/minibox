@@ -10,7 +10,7 @@ import { type App, createApp } from "../src/app";
 import { COOKIE_NAME, LoginLimiter, type LoginLimits } from "../src/auth";
 import { type Config, loadConfig } from "../src/config";
 import { setLogLevel } from "../src/lib/logger";
-import { startServer } from "../src/server";
+import { startServer, startupFields } from "../src/server";
 import type { TerminalData } from "../src/ws/terminal";
 
 setLogLevel("error");
@@ -290,5 +290,17 @@ describe("console delivery (end to end)", () => {
       const res = await fetch(`${base}/login`, { headers: { origin: base.replace("http://", "https://") } });
       expect(res.headers.get("strict-transport-security")).toBe("max-age=31536000");
     });
+  });
+});
+
+describe("startup logging", () => {
+  const FIXTURE_KEY = "Q9wZk3Lm7Xv2Bn5Tc8Rp4Hd6";
+
+  test("server.started carries no part of the access key", () => {
+    const fields = startupFields(testConfig({ ACCESS_KEY: FIXTURE_KEY }), "test");
+    const text = JSON.stringify(fields);
+    expect(fields).not.toHaveProperty("keyPrefix");
+    expect(text).not.toContain(FIXTURE_KEY.slice(0, 4));
+    expect(text).not.toContain(FIXTURE_KEY);
   });
 });

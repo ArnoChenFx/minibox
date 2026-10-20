@@ -2,7 +2,7 @@ import type { Server } from "bun";
 
 import { type App, createApp } from "./app";
 import { isAuthorized, isSecureRequest, proxyHeaderWarner } from "./auth";
-import { loadConfig } from "./config";
+import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
 import { getBox } from "./docker/boxes";
 import { guardRequest } from "./guard";
@@ -104,6 +104,18 @@ export function startServer(app: App): Server<TerminalData> {
   });
 }
 
+/** Fields of the `server.started` log line. None of them may carry any part of the access key. */
+export function startupFields(cfg: Config, version: string) {
+  return {
+    url: `http://${cfg.host}:${cfg.port}`,
+    version,
+    bun: Bun.version,
+    docker: cfg.dockerSocket,
+    dataDir: cfg.dataDir,
+    accessKeySource: cfg.accessKeySource,
+  };
+}
+
 if (import.meta.main) {
   const cfg = loadConfig();
   setLogLevel(cfg.logLevel);
@@ -112,15 +124,7 @@ if (import.meta.main) {
   const app = createApp(cfg, version);
   app.monitor.start();
   const server = startServer(app);
-  log.info("server.started", {
-    url: `http://${cfg.host}:${cfg.port}`,
-    version,
-    bun: Bun.version,
-    docker: cfg.dockerSocket,
-    dataDir: cfg.dataDir,
-    accessKeySource: cfg.accessKeySource,
-    keyPrefix: `${cfg.accessKey.slice(0, 4)}…`,
-  });
+  log.info("server.started", startupFields(cfg, version));
 
   let stopping = false;
   const shutdown = async (signal: string) => {
