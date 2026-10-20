@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录 · MiniBox</title>
+  <meta name="description" content="MiniBox：为 AI Agent 准备的个人开发环境" />
+  <meta name="theme-color" content="#4F46E5" />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+  <script>
+    (() => {
+      var t = localStorage.getItem("minibox.theme");
+      if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="login-page">
+    <section class="login-hero" aria-hidden="true">
+      <img src="/assets/logo-dark.svg" alt="" style="height:30px;align-self:flex-start" />
+      <div>
+        <h1>为 AI Agent 准备的<br />个人开发环境</h1>
+        <p class="lead">在自己的机器上一键创建隔离的 Box，统一管理生命周期、资源配额、快照与模板。</p>
+        <ul>
+          <li data-icon="box">每个 Box 拥有独立的文件系统、进程与工作区数据卷</li>
+          <li data-icon="camera">快照保存完整环境，随时复制或提升为模板</li>
+          <li data-icon="activity">实时查看宿主机与每个 Box 的资源占用</li>
+          <li data-icon="terminal">浏览器内终端，无需额外配置 SSH</li>
+        </ul>
+      </div>
+      <div class="foot">MiniBox · 基于 Docker 与 Bun 构建</div>
+    </section>
+    <section class="login-panel">
+      <button class="icon-btn login-theme" id="themeBtn" aria-label="切换主题"></button>
+      <form class="login-card" id="loginForm" novalidate>
+        <img class="logo" data-logo src="/assets/logo.svg" alt="MiniBox" />
+        <h2>登录控制台</h2>
+        <p class="sub">请输入访问密钥以继续。</p>
+        <div class="field">
+          <label class="label" for="key">访问密钥</label>
+          <div class="input-group"><span data-icon="key"></span><input class="input" id="key" name="key" type="password" autocomplete="current-password" placeholder="粘贴 64 位访问密钥" autofocus required /></div>
+          <div class="error-text" id="err" role="alert"></div>
+        </div>
+        <button class="btn btn-primary btn-block" id="submit" type="submit">登录</button>
+        <p class="note">访问密钥保存在服务器项目目录的 <code>.env</code> 文件中（<code>ACCESS_KEY</code>）。登录状态在本浏览器保留 30 天。</p>
+      </form>
+    </section>
+  </div>
+  <script type="module" src="/js/login.js"></script>
+</body>
+</html>
