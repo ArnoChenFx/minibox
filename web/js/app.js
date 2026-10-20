@@ -19,7 +19,7 @@ const ROUTES = [
   { re: /^\/boxes\/([^/]+)(?:\/(\w+))?$/, page: boxDetail, nav: "boxes", crumbs: ["Box"] },
   { re: /^\/snapshots$/, page: snapshots, nav: "snapshots", crumbs: ["快照"] },
   { re: /^\/templates$/, page: templates, nav: "templates", crumbs: ["模板"] },
-  { re: /^\/settings$/, page: settings, nav: "settings", crumbs: ["设置与关于"] },
+  { re: /^\/settings$/, page: settings, nav: "settings", crumbs: ["设置"] },
 ];
 
 let cleanup = null;
@@ -85,6 +85,12 @@ function init() {
       : "Docker 不可用";
     $("#navBoxCount").textContent = h.boxes.total ? `${h.boxes.running}/${h.boxes.total}` : "";
   });
+
+  api("/api/system")
+    .then((s) => {
+      $("#sidebarFoot").textContent = `MiniBox v${s.version}`;
+    })
+    .catch(() => {});
 
   window.addEventListener("hashchange", route);
   route();

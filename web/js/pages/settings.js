@@ -6,7 +6,7 @@ import { currentTheme, toggleTheme } from "../lib/theme.js";
 
 export function render(view) {
   view.innerHTML = `
-    <div class="page-head"><div><h1>设置与关于</h1><p>运行配置为只读，修改请编辑项目根目录的 <code>.env</code> 后重启服务。</p></div></div>
+    <div class="page-head"><div><h1>设置</h1><p>运行配置为只读，修改请编辑项目根目录的 <code>.env</code> 后重启服务。</p></div></div>
     <div class="grid grid-2" id="stGrid"><div class="card"><div class="card-body"><div class="skeleton sk-line"></div></div></div></div>`;
   api("/api/system").then((s) => {
     view.querySelector("#stGrid").innerHTML = `
