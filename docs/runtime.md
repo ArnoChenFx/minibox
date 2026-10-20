@@ -37,6 +37,7 @@
 - 仍被容器挂载的卷不能删除，`removeVolume` 返回 `conflict`。
 - `createVolume` 对已存在的卷成功，并保留原有标签。
 - 创建容器时，镜像标签与请求中的标签合并，请求中的标签优先。
+- 创建同名容器返回 `conflict`。调用方不先查询再创建，重名由引擎判定。
 - 提交容器时，容器标签与 `LABEL` 指令合并，指令优先。
 - `containerLogs` 返回去掉流帧头后的文本。
 - `listContainers` 跳过在列出与检查之间消失的容器。
@@ -67,7 +68,7 @@
 ## Host 模型
 
 - `Host` 为 `{ id, name, kind, endpoint, labels, status }`。`probeHost()` 调用 `ping` 后把 `status` 记为 `online` 或 `offline`，`/api/health` 使用它。
-- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, templatesDir, security, monitor, specs }`。services 的函数接收 `HostCtx`，而不是 host id。`specs` 是控制面共享的一份规格存储（`DATA_DIR/boxes`），不是每个引擎一份。
+- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, stopTimeoutSec, templatesDir, security, monitor, specs }`。services 的函数接收 `HostCtx`，而不是 host id。`stopTimeoutSec` 来自 `STOP_TIMEOUT_SEC`（默认 3，允许 0 到 300），停止与重启 Box 时传给 `stopContainer` 与 `restartContainer`。`specs` 是控制面共享的一份规格存储（`DATA_DIR/boxes`），不是每个引擎一份。
 - `ContainerInfo` 还包含 `imageId`、`pidsLimit`、`restart` 与 `mounts`。`updateContainer` 可以改 CPU、内存、swap、进程数上限和重启策略，且不会重建容器，也不会改标签。
 - `HostRegistry` 的 `add()` 对重复 id 抛错；`get(hostId = "local")` 对未知 id 抛错。
 
@@ -89,11 +90,15 @@
   - 网络有 ID，容器第一次启动时固定在当前网络的 ID 上。网络被删除并重建后，启动该容器返回 `not_found`，直到调用 `reattachNetwork`，与真实引擎一致。
   - `seedImage()` 与 `seedContainer()` 预置状态，不记录调用。
 - `tests/support/app.ts` 的 `createTestApp(overrides, runtime)` 创建使用 fake 的应用：端口 0，不访问真实 socket，标签前缀为 `mbtest`。`silenceLogs()` 静默日志输出，`rejectionOf()` 取得 rejected 的错误。
-- 真实引擎测试：`MINIBOX_TEST_DOCKER=1 bun test tests/docker-runtime.test.ts`。可选环境变量为 `DOCKER_SOCKET`（默认 `/var/run/docker.sock`）与 `MINIBOX_TEST_IMAGE`（默认 `alpine:3.20`，需要本地已有）。每次运行使用随机标签前缀，结束后删除自己创建的容器、镜像与卷。未设置 `MINIBOX_TEST_DOCKER=1` 时跳过。
+- 假引擎适配器测试：`tests/docker-adapter.test.ts` 在一个 unix socket 上启动最小的 Engine API（不需要 daemon），经由真实的 `createDockerRuntime()` 检查状态码到 `kind` 的映射、列出时跳过已消失的容器、`stopContainer` 发送的 `t` 参数等。
+- 真实引擎测试：运行 `bun run test:docker`（`scripts/docker-integration.ts`）。脚本检查引擎，缺少镜像时拉取 `MINIBOX_TEST_IMAGE`（默认 `alpine:3.20`），用新的 `mbit` 前缀运行 `tests/docker-runtime.test.ts`，结束后按前缀删除容器、模板与快照镜像和卷。测试失败时会再清理一次，以覆盖仍在进行中的快照提交。可选环境变量为 `DOCKER_SOCKET`（默认 `/var/run/docker.sock`）。
+- 直接运行测试文件：`MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbit<id> bun test tests/docker-runtime.test.ts`。`MINIBOX_TEST_PREFIX` 必须以 `mbit` 开头，清理只作用于该前缀，因此不会误删真实安装的资源。直接运行时没有脚本的兜底清理，中断后可用 `docker ps -a --filter label=<前缀>` 检查残留。未设置 `MINIBOX_TEST_DOCKER=1` 时跳过。
+- CI 中的 `Integration tests (real Docker engine)` 任务运行 `bun run test:docker`，不是必需检查。
 
 ## 已知限制
 
 - 没有同时运行于 fake 与真实后端的契约测试套件。两者的一致性分别由 `tests/fake-runtime.test.ts` 的断言与真实引擎测试保证。
 - 镜像构建时，引擎在输出流中报告的错误仍是普通 `Error`，因此映射为 500。这与改动前一致，统一为 `engine` 错误留待后续处理。
-- `createBox` 中的模板镜像检查会把任何错误都报告为 `template_image_missing`（400），包括引擎不可达。卷检查的任何错误都会触发创建卷。这些 `catch` 应只处理 `not_found`，属于 #19 的小问题，本阶段保持行为不变。
-- #19 中的其它问题（`createBox` 的重名竞态、`listBoxes` 的 N+1 查询、磁盘标签、`/api/health` 的返回内容、可配置的停止超时）未在本阶段处理。
+- `listBoxes` 仍需要每个容器一次 `inspect`。引擎的列表接口不返回 CPU 与内存限制，也不返回启动时间，而 `Box` 需要这些字段。各次 `inspect` 并发执行，只跳过已消失的容器，其它错误原样抛出；但请求数量仍与 Box 数量相同，引擎也没有批量 inspect 接口。`HostMonitor` 的指标快照通过 `listBoxes` 统计 Box，结果缓存 2.5 秒。
+- `deleteBox` 先删除容器，再删除工作区卷。卷删除失败时 Box 已经不存在：API 在响应中返回 `volumeError`，界面提示用 `docker volume rm` 手动删除该卷。
+- `/api/health` 的返回内容未改动（#19 第 5 项）。路由层的测试等待 #22 落地后补充，本次不改动 `src/routes/`。
