@@ -1,3 +1,4 @@
+import { probeHost } from "../host/registry";
 import { json } from "../lib/http";
 import { LIMITS } from "../lib/validation";
 import { type Route, route } from "./router";
@@ -6,11 +7,8 @@ export const systemRoutes: Route[] = [
   route(
     "GET",
     "/api/health",
-    async ({ app }) => {
-      const docker = await app.docker.docker
-        .ping()
-        .then(() => true)
-        .catch(() => false);
+    async ({ host }) => {
+      const docker = (await probeHost(host)) === "online";
       return json({ ok: true, docker }, docker ? 200 : 503);
     },
     { public: true },

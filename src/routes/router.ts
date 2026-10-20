@@ -1,9 +1,11 @@
 import type { Server } from "bun";
 
 import type { App } from "../app";
+import type { HostCtx } from "../host/registry";
 
 export interface RouteCtx {
   app: App;
+  host: HostCtx;
   req: Request;
   url: URL;
   params: Record<string, string>;

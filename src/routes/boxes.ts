@@ -1,6 +1,5 @@
 import type { App } from "../app";
-import * as boxes from "../docker/boxes";
-import { createSnapshot } from "../docker/snapshots";
+import type { HostCtx } from "../host/registry";
 import { AppError } from "../lib/errors";
 import { json, readJson } from "../lib/http";
 import { msg } from "../lib/messages";
@@ -13,6 +12,8 @@ import {
   parseResources,
   validateTail,
 } from "../lib/validation";
+import * as boxes from "../services/boxes";
+import { createSnapshot } from "../services/snapshots";
 import { type Route, route } from "./router";
 
 export const DEFAULT_RESOURCES = { cpus: 2, memoryMb: 4096 };
@@ -43,59 +44,59 @@ export async function tracked<T>(app: App, action: string, target: string, fn: (
   }
 }
 
-export async function createBoxFrom(app: App, input: CreateBoxInput, templateLabel?: string) {
+export async function createBoxFrom(app: App, host: HostCtx, input: CreateBoxInput, templateLabel?: string) {
   await assertCapacity(app, input);
-  return tracked(app, "box.create", input.name, () => boxes.createBox(app.docker, { ...input, templateLabel }));
+  return tracked(app, "box.create", input.name, () => boxes.createBox(host, { ...input, templateLabel }));
 }
 
-const nameOf = async (app: App, id: string) => (await boxes.getBox(app.docker, id)).name;
+const nameOf = async (host: HostCtx, id: string) => (await boxes.getBox(host, id)).name;
 
 export const boxRoutes: Route[] = [
-  route("GET", "/api/boxes", async ({ app, url }) =>
-    json({ boxes: await boxes.listBoxes(app.docker, { withStats: url.searchParams.get("stats") !== "false" }) }),
+  route("GET", "/api/boxes", async ({ host, url }) =>
+    json({ boxes: await boxes.listBoxes(host, { withStats: url.searchParams.get("stats") !== "false" }) }),
   ),
-  route("POST", "/api/boxes", async ({ app, req }) => {
+  route("POST", "/api/boxes", async ({ app, host, req }) => {
     const input = parseCreateBox(await readJson(req), DEFAULT_RESOURCES);
-    return json({ box: await createBoxFrom(app, input) }, 201);
+    return json({ box: await createBoxFrom(app, host, input) }, 201);
   }),
-  route("GET", "/api/boxes/:id", async ({ app, params }) => {
-    const box = await boxes.getBox(app.docker, params.id ?? "");
-    return json({ box: { ...box, stats: await boxes.getStats(app.docker, box.id).catch(() => null) } });
+  route("GET", "/api/boxes/:id", async ({ host, params }) => {
+    const box = await boxes.getBox(host, params.id ?? "");
+    return json({ box: { ...box, stats: await boxes.getStats(host, box.id).catch(() => null) } });
   }),
-  route("DELETE", "/api/boxes/:id", async ({ app, params, url }) => {
+  route("DELETE", "/api/boxes/:id", async ({ app, host, params, url }) => {
     const id = params.id ?? "";
     const deleteVolume = optionalBoolean(url.searchParams.get("deleteVolume") ?? undefined, "deleteVolume");
-    const name = await nameOf(app, id);
-    return json(await tracked(app, "box.delete", name, () => boxes.deleteBox(app.docker, id, deleteVolume)));
+    const name = await nameOf(host, id);
+    return json(await tracked(app, "box.delete", name, () => boxes.deleteBox(host, id, deleteVolume)));
   }),
   ...(["start", "stop", "restart"] as const).map((action) =>
-    route("POST", `/api/boxes/:id/${action}`, async ({ app, params }) => {
+    route("POST", `/api/boxes/:id/${action}`, async ({ app, host, params }) => {
       const id = params.id ?? "";
-      const name = await nameOf(app, id);
+      const name = await nameOf(host, id);
       const fn = { start: boxes.startBox, stop: boxes.stopBox, restart: boxes.restartBox }[action];
-      return json({ box: await tracked(app, `box.${action}`, name, () => fn(app.docker, id)) });
+      return json({ box: await tracked(app, `box.${action}`, name, () => fn(host, id)) });
     }),
   ),
-  route("PATCH", "/api/boxes/:id/resources", async ({ app, params, req }) => {
+  route("PATCH", "/api/boxes/:id/resources", async ({ app, host, params, req }) => {
     const id = params.id ?? "";
     const res = parseResources(await readJson(req));
     await assertCapacity(app, res);
-    const name = await nameOf(app, id);
-    return json({ box: await tracked(app, "box.resources", name, () => boxes.updateResources(app.docker, id, res)) });
+    const name = await nameOf(host, id);
+    return json({ box: await tracked(app, "box.resources", name, () => boxes.updateResources(host, id, res)) });
   }),
-  route("GET", "/api/boxes/:id/logs", async ({ app, params, url }) =>
-    json({ logs: await boxes.getLogs(app.docker, params.id ?? "", validateTail(url.searchParams.get("tail"))) }),
+  route("GET", "/api/boxes/:id/logs", async ({ host, params, url }) =>
+    json({ logs: await boxes.getLogs(host, params.id ?? "", validateTail(url.searchParams.get("tail"))) }),
   ),
-  route("GET", "/api/boxes/:id/stats", async ({ app, params }) =>
-    json({ stats: await boxes.getStats(app.docker, params.id ?? "") }),
+  route("GET", "/api/boxes/:id/stats", async ({ host, params }) =>
+    json({ stats: await boxes.getStats(host, params.id ?? "") }),
   ),
-  route("POST", "/api/boxes/:id/snapshots", async ({ app, params, req }) => {
+  route("POST", "/api/boxes/:id/snapshots", async ({ app, host, params, req }) => {
     const id = params.id ?? "";
     const body = asObject(await readJson(req));
     const name = optionalName(body.name, "name", "snapshotName");
-    const boxName = await nameOf(app, id);
+    const boxName = await nameOf(host, id);
     return json(
-      { snapshot: await tracked(app, "snapshot.create", boxName, () => createSnapshot(app.docker, id, name)) },
+      { snapshot: await tracked(app, "snapshot.create", boxName, () => createSnapshot(host, id, name)) },
       201,
     );
   }),

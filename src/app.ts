@@ -1,13 +1,15 @@
 import { ActivityLog } from "./activity";
 import { LoginLimiter } from "./auth";
 import type { Config } from "./config";
-import { createDockerCtx, type DockerCtx } from "./docker/client";
+import { createDockerRuntime } from "./docker/runtime";
 import { HostMonitor } from "./host/metrics";
+import { createLocalHost, HostRegistry } from "./host/registry";
+import type { Runtime } from "./runtime";
 
 /** Shared application state passed to every route handler. */
 export interface App {
   cfg: Config;
-  docker: DockerCtx;
+  hosts: HostRegistry;
   monitor: HostMonitor;
   activity: ActivityLog;
   throttle: LoginLimiter;
@@ -15,14 +17,22 @@ export interface App {
   startedAt: Date;
 }
 
-export function createApp(cfg: Config, version: string, throttle = new LoginLimiter()): App {
-  const docker = createDockerCtx(cfg);
+/** Collaborators a caller may replace. Anything omitted is built from the config. */
+export interface AppDeps {
+  runtime?: Runtime;
+  throttle?: LoginLimiter;
+}
+
+export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App {
+  const hosts = new HostRegistry();
+  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket));
+  hosts.add(local);
   return {
     cfg,
-    docker,
-    monitor: new HostMonitor(docker, cfg.metricsIntervalMs, cfg.metricsHistory),
+    hosts,
+    monitor: new HostMonitor(local, cfg.metricsIntervalMs, cfg.metricsHistory),
     activity: new ActivityLog(),
-    throttle,
+    throttle: deps.throttle ?? new LoginLimiter(),
     version,
     startedAt: new Date(),
   };

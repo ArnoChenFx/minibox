@@ -1,10 +1,10 @@
 import { readFileSync, statfsSync } from "node:fs";
 import os from "node:os";
 
-import { listBoxes } from "../docker/boxes";
-import type { DockerCtx } from "../docker/client";
 import { log } from "../lib/logger";
+import { listBoxes } from "../services/boxes";
 import { type CpuTimes, cpuPercent, parseMeminfo, parseProcStat } from "./procfs";
+import type { HostCtx } from "./registry";
 
 export interface DiskUsage {
   mount: string;
@@ -73,7 +73,7 @@ export class HostMonitor {
   private dockerCache: { at: number; value: HostMetrics["docker"] & { boxes: HostMetrics["boxes"] } } | null = null;
 
   constructor(
-    private readonly ctx: DockerCtx,
+    private readonly host: HostCtx,
     private readonly intervalMs: number,
     private readonly maxSamples: number,
   ) {}
@@ -118,17 +118,13 @@ export class HostMonitor {
     if (this.dockerCache && now - this.dockerCache.at < 2500) return this.dockerCache.value;
     let value: HostMetrics["docker"] & { boxes: HostMetrics["boxes"] };
     try {
-      const [info, version, boxes] = await Promise.all([
-        this.ctx.docker.info() as Promise<Record<string, unknown>>,
-        this.ctx.docker.version(),
-        listBoxes(this.ctx),
-      ]);
+      const [info, boxes] = await Promise.all([this.host.runtime.info(), listBoxes(this.host)]);
       value = {
         available: true,
-        version: version.Version ?? null,
-        rootDir: (info.DockerRootDir as string) ?? null,
-        containers: { running: Number(info.ContainersRunning ?? 0), total: Number(info.Containers ?? 0) },
-        images: Number(info.Images ?? 0),
+        version: info.version,
+        rootDir: info.rootDir,
+        containers: info.containers,
+        images: info.images,
         boxes: {
           total: boxes.length,
           running: boxes.filter((b) => b.running).length,

@@ -1,14 +1,13 @@
-import type { Duplex } from "node:stream";
-
 import type { ServerWebSocket } from "bun";
 
-import type { App } from "../app";
+import type { HostCtx } from "../host/registry";
 import { log } from "../lib/logger";
+import type { ExecSession } from "../runtime";
 
 export interface TerminalData {
   boxId: string;
-  execId?: string;
-  stream?: Duplex;
+  host: HostCtx;
+  exec?: ExecSession;
 }
 
 /** Client → server control frame. Anything else is treated as stdin bytes. */
@@ -27,26 +26,19 @@ export function parseControl(data: string): { type: "resize"; cols: number; rows
   return null;
 }
 
-export function terminalHandlers(app: App) {
+export function terminalHandlers() {
   return {
     async open(ws: ServerWebSocket<TerminalData>) {
       try {
-        const container = app.docker.docker.getContainer(ws.data.boxId);
-        const exec = await container.exec({
-          Cmd: ["/bin/sh", "-c", "command -v bash >/dev/null && exec bash -l || exec sh -l"],
-          AttachStdin: true,
-          AttachStdout: true,
-          AttachStderr: true,
-          Tty: true,
-          Env: ["TERM=xterm-256color", "LANG=C.UTF-8"],
-          WorkingDir: "/workspace",
+        const exec = await ws.data.host.runtime.startExec(ws.data.boxId, {
+          cmd: ["/bin/sh", "-c", "command -v bash >/dev/null && exec bash -l || exec sh -l"],
+          env: ["TERM=xterm-256color", "LANG=C.UTF-8"],
+          workingDir: "/workspace",
         });
-        ws.data.execId = exec.id;
-        const stream = (await exec.start({ hijack: true, stdin: true, Tty: true })) as Duplex;
-        ws.data.stream = stream;
-        stream.on("data", (chunk: Buffer) => ws.send(chunk));
-        stream.on("end", () => ws.close(1000, "session ended"));
-        stream.on("error", () => ws.close(1011, "stream error"));
+        ws.data.exec = exec;
+        exec.stream.on("data", (chunk: Buffer) => ws.send(chunk));
+        exec.stream.on("end", () => ws.close(1000, "session ended"));
+        exec.stream.on("error", () => ws.close(1011, "stream error"));
         log.info("terminal.open", { box: ws.data.boxId.slice(0, 12) });
       } catch (e) {
         ws.send(`\r\nFailed to start terminal: ${e instanceof Error ? e.message : String(e)}\r\n`);
@@ -54,22 +46,19 @@ export function terminalHandlers(app: App) {
       }
     },
     message(ws: ServerWebSocket<TerminalData>, message: string | Buffer) {
-      const stream = ws.data.stream;
-      if (!stream) return;
+      const exec = ws.data.exec;
+      if (!exec) return;
       const text = typeof message === "string" ? message : message.toString("utf8");
       const ctrl = parseControl(text);
-      if (ctrl && ws.data.execId) {
-        app.docker.docker
-          .getExec(ws.data.execId)
-          .resize({ h: ctrl.rows, w: ctrl.cols })
-          .catch(() => {});
+      if (ctrl) {
+        exec.resize({ cols: ctrl.cols, rows: ctrl.rows }).catch(() => {});
         return;
       }
-      stream.write(message);
+      exec.stream.write(message);
     },
     close(ws: ServerWebSocket<TerminalData>) {
-      ws.data.stream?.end();
-      ws.data.stream?.destroy();
+      ws.data.exec?.stream.end();
+      ws.data.exec?.stream.destroy();
       log.info("terminal.close", { box: ws.data.boxId.slice(0, 12) });
     },
   };

@@ -37,18 +37,22 @@
 - `scripts/restart.sh` 改为通过服务自身的配置加载逻辑读取 `PORT` 与密钥位置（此前只读取 `.env` 中的 `PORT`），启动后提示密钥保存位置，但不输出密钥本身。
 - 登录页说明访问密钥的来源（`.env` 或 `DATA_DIR/access_key`）。
 - xterm.js 与 addon-fit 改为随仓库提供（`web/vendor/`，附 SHA-256 校验测试），不再从 jsDelivr CDN 加载；网页终端可在离线或内网环境中使用（#4）。
+- 内部重构：业务代码通过窄的 `Runtime` 接口访问容器引擎，Docker 实现集中在 `src/docker/`；单机部署注册为隐式的 `local` 主机。API、响应与界面不变。
 
 ### 工程化
 - 新增 `.github/dependabot.yml`：每周检查 npm 依赖（Bun）、GitHub Actions 与 Docker 基础镜像（根目录 `Dockerfile` 与 `templates/base`）的更新；GitHub Actions 的小版本与补丁版本更新合并为一个 PR。
 - `package.json` 的 `engines.bun` 最低版本要求由 `>=1.2.0` 提高为 `>=1.4.3`，README 中的版本要求同步。
 - 所有 GitHub Actions 引用固定到完整 commit SHA，并以注释保留版本号，升级由 Dependabot 提出。
 - 发布工作流的镜像构建与 GitHub Release 步骤显式依赖 CI 检查（`checks`），检查不通过时不会推送镜像，也不会创建 Release。
+- 新增 `FakeRuntime` 与基于它的单元测试，覆盖 Box 创建 / 删除、快照与模板提升、路由校验与错误映射、终端升级和主机指标。新增架构测试：只有 `src/docker/` 可以引入 Docker SDK，只有 `src/docker/` 与组合根可以引用 Docker 适配器。
+- 新增可选的真实引擎集成测试 `tests/docker-runtime.test.ts`，设置 `MINIBOX_TEST_DOCKER=1` 时运行。
 
 ### 修复
 - 自动生成访问密钥时不再整体重写 `.env`。此前会把 `.env` 改写为只剩 `ACCESS_KEY`、`PORT`、`HOST` 三项，其他配置随之丢失。现在任何情况下都不修改 `.env`。
 
 ### 文档
 - README 与 README-zh 说明数据目录、访问密钥的位置与优先级、Docker 数据卷的用法，以及 `.env.example` 中的 `DATA_DIR` 配置项。
+- 新增 `docs/runtime.md`，说明 `Runtime` 接口、错误分类与 HTTP 映射、Host 模型，以及如何新增后端。
 
 ### 升级说明
 - 已有部署无需操作：`.env` 中的 `ACCESS_KEY` 照常生效，`.env` 不再被改写。

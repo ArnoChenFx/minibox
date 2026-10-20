@@ -1,3 +1,4 @@
+import { RuntimeError } from "../runtime";
 import { type Msg, msg } from "./messages";
 
 export type ErrorCode =
@@ -42,26 +43,25 @@ export const badRequest = (message: string | Msg, details?: unknown) =>
 export const notFound = (message: string | Msg) => new AppError(404, "not_found", message);
 export const conflict = (message: string | Msg) => new AppError(409, "conflict", message);
 
-interface DockerLikeError {
-  statusCode?: number;
-  code?: string;
-  json?: { message?: string } | null;
-  message?: string;
+function fromRuntimeError(e: RuntimeError): AppError {
+  switch (e.kind) {
+    case "not_found":
+      return new AppError(404, "not_found", msg("docker_not_found", { detail: e.detail }));
+    case "conflict":
+      return new AppError(409, "conflict", msg("docker_conflict", { detail: e.detail }));
+    case "invalid":
+      return new AppError(400, "docker_error", e.detail);
+    case "unavailable":
+      return new AppError(503, "docker_unavailable", msg("docker_unavailable"));
+    case "engine":
+      return new AppError(502, "docker_error", msg("docker_error", { detail: e.detail }));
+  }
 }
 
-/** Normalise anything thrown (AppError, dockerode error, generic Error) into an AppError. */
+/** Normalise anything thrown (AppError, RuntimeError, unexpected Error) into an AppError. */
 export function toAppError(e: unknown): AppError {
   if (e instanceof AppError) return e;
-  const d = (e ?? {}) as DockerLikeError;
-  if (d.code === "ENOENT" || d.code === "ECONNREFUSED" || d.code === "EACCES") {
-    return new AppError(503, "docker_unavailable", msg("docker_unavailable"));
-  }
-  const message = d.json?.message || d.message || msg("unknown_error").text;
-  if (typeof d.statusCode === "number") {
-    if (d.statusCode === 404) return new AppError(404, "not_found", msg("docker_not_found", { detail: message }));
-    if (d.statusCode === 409) return new AppError(409, "conflict", msg("docker_conflict", { detail: message }));
-    if (d.statusCode >= 400 && d.statusCode < 500) return new AppError(400, "docker_error", message);
-    return new AppError(502, "docker_error", msg("docker_error", { detail: message }));
-  }
+  if (e instanceof RuntimeError) return fromRuntimeError(e);
+  const message = e instanceof Error && e.message ? e.message : msg("unknown_error").text;
   return new AppError(500, "internal", message);
 }
