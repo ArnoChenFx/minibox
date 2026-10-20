@@ -26,7 +26,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 
 - Agent 很容易把环境弄乱：随手全局安装、做到一半的构建、残留进程。放进 Box 里就不会污染宿主机，一键即可重建、快照或删除。
 - 托管沙箱很好用，但有时你更想用自己的硬件和网络，也不想按分钟计费。
-- 更重的自托管方案（基于 Firecracker 的沙箱、Coder、Kubernetes Operator）对个人来说太重。MiniBox 只是一个和本机 Docker Engine 通信的 Bun 进程，**不需要数据库**，所有状态都保存在 Docker 的标签、镜像和数据卷中。
+- 更重的自托管方案（基于 Firecracker 的沙箱、Coder、Kubernetes Operator）对个人来说太重。MiniBox 只是一个和本机 Docker Engine 通信的 Bun 进程，**不需要数据库服务**。Box 的状态保存在 Docker 的标签、镜像和数据卷中，MiniBox 自身的少量文件保存在[数据目录](#数据目录)里。
 
 ## 功能
 
@@ -57,6 +57,8 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 更多截图见 [`docs/screenshots`](docs/screenshots)。
 
 ## 架构
+
+### 当前架构（v0.3）
 
 ```mermaid
 flowchart LR
@@ -94,6 +96,66 @@ flowchart LR
 
 （`minibox` 是默认的 `LABEL_PREFIX`，所有名称和标签都随前缀变化。）
 
+### 目标架构（规划中）
+
+> [!NOTE]
+> 规划中的设计，尚未实现。完整设计与取舍见 [`docs/design.md`](docs/design.md)。
+
+```mermaid
+flowchart LR
+  subgraph Clients["客户端"]
+    UI["控制台"]
+    AG["MCP 客户端<br/>（AI Agent）"]
+    CLI["minibox CLI"]
+  end
+  subgraph Control["控制端 · Bun"]
+    API["REST · OpenAPI · /mcp"]
+    EXE["操作注册表<br/>鉴权与审计钩子"]
+    RT["WS 终端 → tmux<br/>预览代理"]
+    BUS["事件总线 · SSE"]
+    BG["任务 · reconciler<br/>采样 · 空闲休眠"]
+    DATA[("DATA_DIR<br/>规格 · 事件 · 令牌")]
+    HR["HostRegistry"]
+  end
+  subgraph Hosts["计算宿主机 · 每台一个 Runtime"]
+    RN["Runtime<br/>unix socket · ssh / tcp+TLS"]
+    D["Docker Engine"]
+    B["Box 容器<br/>dev 用户"]
+    H["辅助容器<br/>文件 · NFS 目录 · restic"]
+  end
+  subgraph Storage["存储池 · local / nfs / path"]
+    V[("Volume<br/>workspace · home · tools · cache")]
+    CK[("检查点仓库<br/>restic")]
+  end
+  UI --> API
+  UI --> RT
+  BUS -. SSE .-> UI
+  AG --> API
+  CLI --> API
+  API --> EXE
+  RT --> EXE
+  RT --> HR
+  EXE --> DATA
+  EXE --> BUS
+  EXE --> HR
+  BG --> BUS
+  BG --> DATA
+  BG --> HR
+  HR --> RN
+  RN --> D
+  D --> B & H
+  B --- V
+  H --- V
+  H -. 备份 .-> CK
+```
+
+- **Box** = `DATA_DIR` 中的规格 + 一个容器。容器标签只保存创建后不可变的部分。
+- **Volume** 属于某个存储池，而不属于某个 Box。`cache` 卷留在本地池，不进入检查点。
+- **检查点** = Box 规格 + 各卷的快照（restic）+ 可选的系统层。
+- **辅助容器**是短生命周期的，负责文件操作、创建 NFS 目录和运行 restic。
+- Box 以非 root 的 `dev` 用户运行，并使用「标准」或「严格」两个安全档位之一。
+- MiniBox Agent 与存储节点角色不在主路线上，因此图中未画。
+
 ## 环境要求
 
 - 装有 Docker Engine 的 Linux 宿主机（宿主机指标读取自 `/proc`）
@@ -115,16 +177,16 @@ bun run build:template
 bun start
 ```
 
-如果 `ACCESS_KEY` 为空，首次启动时会自动生成一个 64 位十六进制密钥并写入 `.env`（权限 600）：
+如果环境变量和 `.env` 中都没有设置 `ACCESS_KEY`，首次启动时会自动生成一个 64 位十六进制密钥，并保存到 `DATA_DIR/access_key`（权限 600，默认为 `./data/access_key`）。`.env` 永远不会被修改：
 
 ```bash
-grep ACCESS_KEY .env
+cat data/access_key
 ```
 
 浏览器打开 <http://127.0.0.1:3920>，输入密钥登录。
 
 > [!TIP]
-> 自动生成密钥时，`.env` 会被重写为只包含 `ACCESS_KEY`、`PORT` 和 `HOST` 三项。其他配置请在首次启动之后再填写，或者事先自己在 `.env` 里写好密钥（例如 `openssl rand -hex 32`）。
+> 想自己指定密钥，就在 `.env` 里设置 `ACCESS_KEY`（例如 `openssl rand -hex 32`）。`.env` 或环境变量中的密钥始终优先于自动生成的密钥；早期版本写入 `.env` 的密钥照常生效。
 
 ### 后台运行
 
@@ -135,7 +197,7 @@ scripts/restart.sh              # 包含隧道
 scripts/restart.sh --no-tunnel  # 只启动服务
 ```
 
-服务输出写入项目根目录的 `server.log`（已在 git 中忽略）。
+服务输出写入项目根目录的 `server.log`（已在 git 中忽略）。脚本还会报告访问密钥的保存位置，但不会输出密钥本身。
 
 有 systemd 时，推荐写一个服务单元执行 `bun /path/to/minibox/src/server.ts`。
 
@@ -183,28 +245,32 @@ docker run -d --name minibox --restart unless-stopped \
   -p 127.0.0.1:3920:3920 \
   -e ACCESS_KEY="$(openssl rand -hex 32)" \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v minibox-data:/data \
   ghcr.io/arnochenfx/minibox:latest
 ```
 
 - MiniBox 通过宿主机的 Docker Engine 管理 Box，**必须**挂载 Docker Socket（`-v /var/run/docker.sock:/var/run/docker.sock`）。Box 会作为宿主机上的同级容器创建，而不是在 MiniBox 容器内部。
-- 请务必传入 `ACCESS_KEY`，否则会在容器内随机生成，重建容器后就丢失了（`docker logs minibox` 只显示前 4 位）。
+- 挂载一个数据卷到 `/data`（`-v minibox-data:/data`）。它保存[数据目录](#数据目录)，包括自动生成的访问密钥，因此重建容器后状态不会丢失。没有数据卷的话，删除容器时这些状态也会丢失。
+- 如果没有传入 `ACCESS_KEY`，用 `docker exec minibox cat /data/access_key` 读取自动生成的密钥。`docker logs` 只显示前 4 位。
+- 从把自动生成的密钥写入 `/app/.env` 的旧镜像升级：该文件位于旧容器内，重建容器时会丢失。请在旧容器运行时用 `docker exec minibox grep '^ACCESS_KEY=' /app/.env` 把密钥取出来，再通过 `-e ACCESS_KEY=...` 传入。
 - 容器内监听 `0.0.0.0:3920`（`HOST=0.0.0.0`）；如上所示只发布到宿主机的 `127.0.0.1`，远程访问请走 HTTPS。
 - 镜像标签：`X.Y.Z`、`X.Y` 和 `latest`（`1.0.0-rc.1` 这类预发布版本只打完整版本号标签）。
 - 本地构建：`docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
 
 ## 配置
 
-优先级：进程环境变量 > `.env` 文件 > 默认值。参考 [`.env.example`](.env.example)。
+优先级：进程环境变量 > `.env` 文件 > 默认值。访问密钥还会回退到 `DATA_DIR/access_key`。参考 [`.env.example`](.env.example)。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `ACCESS_KEY` | 首次启动自动生成 | 控制台与 API 的访问密钥 |
+| `ACCESS_KEY` | 自动生成到 `DATA_DIR/access_key` | 控制台与 API 的访问密钥。MiniBox 不会把它写入 `.env` |
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `PORT` | `3920` | 监听端口 |
 | `TRUST_PROXY` | `false` | 信任你自己运行的反向代理设置的 `X-Forwarded-For`、`X-Forwarded-Proto` 和 `X-Forwarded-Host`。**只有代理会在每个请求上覆盖或剥离这些头，并且 MiniBox 只能经由该代理访问时才设为 `true`。** OpenTunnel 等不添加这些头的隧道应保持关闭（见[远程访问](#远程访问)） |
 | `ALLOWED_ORIGINS` | 空 | 本 MiniBox 的公网来源（完整的 `https://` 地址），逗号分隔，例如 `https://minibox.example.com`。**代理改写了 `Host` 时需要设置**（nginx 默认如此），否则从该地址发出的登录和终端请求会返回 `403`。OpenTunnel 会保留 `Host`，此时可选，设置也无害 |
 | `COOKIE_SECURE` | `false` | 始终为会话 Cookie 加上 `Secure` 标记。浏览器登录时会带上 `https://` Origin，已足以加上该标记，通常无需设置。只在 HTTPS 下使用：浏览器会丢弃明文 HTTP 收到的 `Secure` Cookie |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
+| `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
 | `BASE_TEMPLATE` | `<前缀>-template:base` | 新建 Box 的默认模板镜像 |
 | `METRICS_INTERVAL_MS` | `3000` | 宿主机采样间隔（毫秒） |
@@ -213,6 +279,19 @@ docker run -d --name minibox --restart unless-stopped \
 | `MINIBOX_VERSION` | 来自 git / `package.json` | 覆盖显示的版本号（发布镜像中自动设置） |
 
 > `bun run build:template` 固定打 `minibox-template:base` 标签。如果改了 `LABEL_PREFIX` 或 `BASE_TEMPLATE`，请改在控制台「模板 → 构建基础模板」中构建，它会使用配置的标签。
+
+## 数据目录
+
+MiniBox 把自己管理的状态保存在 `DATA_DIR` 里。它是一个普通文件目录，而不是数据库服务，请和其他数据一起备份。相对路径相对于项目根目录解析，`~/` 会展开为你的主目录。
+
+| 路径 | 权限 | 内容 |
+|---|---|---|
+| `access_key` | `600` | 环境变量和 `.env` 中都没有设置时自动生成的访问密钥 |
+| `boxes/` | `700` | Box 规格（现在创建，后续功能使用） |
+| `exec/` | `700` | `exec` 命令的输出（现在创建，后续功能使用） |
+| `secrets/` | `700` | 密钥值与仓库密钥（现在创建，后续功能使用） |
+
+MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写入 `.env`。如果 `DATA_DIR` 丢失，且 `.env` 和环境变量中也没有设置密钥，下次启动会生成新的访问密钥，所有人都需要用新密钥登录。如果你依赖当前密钥，请备份 `access_key`，或在 `.env` 中设置 `ACCESS_KEY`。
 
 ## API 参考
 
@@ -274,7 +353,7 @@ docker run -d --name minibox --restart unless-stopped \
 ### 示例
 
 ```bash
-KEY=$(grep ACCESS_KEY .env | cut -d= -f2)
+KEY=$(grep '^ACCESS_KEY=' .env | cut -d= -f2)   # 若由 MiniBox 生成密钥，也可以用 KEY=$(cat data/access_key)
 curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"name":"agent-dev","cpus":2,"memoryMb":4096}' http://127.0.0.1:3920/api/boxes
 
@@ -289,7 +368,8 @@ minibox/
 ├── src/
 │   ├── server.ts            # 入口：Bun.serve、静态资源、WebSocket 升级、优雅退出
 │   ├── app.ts               # 应用上下文（配置、Docker、监控、操作记录）
-│   ├── config.ts            # 环境变量 / .env 配置、密钥生成
+│   ├── config.ts            # 环境变量 / .env 配置、访问密钥优先级
+│   ├── data-dir.ts          # DATA_DIR 布局与密钥文件（600）
 │   ├── auth.ts              # 密钥校验、Cookie、登录限流
 │   ├── labels.ts            # Docker 标签键与解析
 │   ├── activity.ts          # 最近操作记录
@@ -346,8 +426,9 @@ bun run check      # 以上全部，与 CI 一致
 
 MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。对外暴露前请务必阅读。
 
-- **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 已在 `.gitignore` 中忽略，不要提交它。
-- **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以请使用 `openssl rand -hex 32` 生成的长随机密钥。更换密钥：修改 `.env` 中的 `ACCESS_KEY` 后重启服务，现有会话立即失效。
+- **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 和 `data/` 已在 `.gitignore` 中忽略，不要提交它们。
+- **容器以 root 运行。** 容器需要使用 Docker Socket，而 Docker Socket 等同于 root。要缩小这部分权限，可以在 Socket 前放一个只转发 MiniBox 所需 Docker API 的 Socket 代理，并把 `DOCKER_SOCKET` 指向代理的 Unix Socket；也可以让 MiniBox 连接 rootless Docker 或 Podman 的 Socket。
+- **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以请使用 `openssl rand -hex 32` 生成的长随机密钥。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务，现有会话立即失效。
 - **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。写请求必须声明 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外），这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
 - **严格的内容安全策略（CSP）。** 脚本只会从 MiniBox 自身加载（`script-src 'self'`），页面没有内联脚本，且禁止被嵌入 iframe（`frame-ancestors 'none'`）。通过 HTTPS 访问（直接访问、请求带有 `https://` Origin，或在 `TRUST_PROXY=true` 时经由代理）的请求还会带上 `Strict-Transport-Security`，有效期一年，不包含子域名。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
@@ -359,13 +440,63 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 ## 路线图
 
-完整的产品与架构设计见 [`docs/design.md`](docs/design.md)，实施路线与任务拆分见 [#20](https://github.com/ArnoChenFx/minibox/issues/20)。
+完整的产品与架构设计见 [`docs/design.md`](docs/design.md)，实施路线与任务拆分见 [#20](https://github.com/ArnoChenFx/minibox/issues/20)。规划中的工作按里程碑分组，有对应 issue 的项目都会链接过去。
 
-- [ ] **空闲自动休眠**：一段时间没有 exec / 终端活动就停止 Box，下次请求时自动唤醒
-- [ ] **工作区备份**：随快照一起导出 / 恢复 `/workspace` 数据卷
-- [ ] **面向 Agent 的接口**：文件读写、流式执行命令，并在此之上提供 MCP 服务
-- [ ] **宿主机侧密钥注入**：API Key 只保存在宿主机上，由出站代理注入，而不是写进 Box 的环境变量
-- [ ] **声明式模板与预热池**：用仓库中的 Dockerfile 声明模板，并预先启动 Box 以实现秒开
+### M0 · 地基
+
+顺序：第一个 PR 整理已写好的 #1 #3 #4 改动，然后并行推进 #32 #6 #18，最后是 #22。
+
+- [ ] [#1](https://github.com/ArnoChenFx/minibox/issues/1) 登录限流：只有开启 `TRUST_PROXY` 才信任代理头
+- [ ] [#3](https://github.com/ArnoChenFx/minibox/issues/3) WebSocket 与写接口的 Origin 校验
+- [ ] [#4](https://github.com/ArnoChenFx/minibox/issues/4) CSP / HSTS，xterm.js 改为本地托管
+- [ ] [#32](https://github.com/ArnoChenFx/minibox/issues/32) Runtime / Host 抽象（隐式 `local`，行为不变）
+- [ ] [#6](https://github.com/ArnoChenFx/minibox/issues/6) `DATA_DIR` 作为控制端状态目录；自动生成的访问密钥不再写入 `.env`
+- [x] [#18](https://github.com/ArnoChenFx/minibox/issues/18) Dependabot、固定 action 的 commit SHA、Bun ≥ 1.4.3 下限，以及 `main` 分支保护
+- [ ] [#22](https://github.com/ArnoChenFx/minibox/issues/22) 统一生成 REST / OpenAPI / MCP / CLI 的操作注册表
+
+### M1 · 模板、规格、审计与令牌
+
+- [ ] [#27](https://github.com/ArnoChenFx/minibox/issues/27) 基础模板：非 root 用户 `dev`、tmux、挂载点约定
+- [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」与「严格」两个安全档位
+- [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
+- [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
+- [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
+- [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与 TTL
+- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
+
+### M2 · 存储与 Agent 接口
+
+- [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volume 与存储池（`local` / `nfs` / `path`）
+- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI
+- [ ] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
+- [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) 通过 SSE 推送 Box 状态与资源占用，取代轮询
+- [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS 部署指南
+
+### M3 · 核心价值
+
+- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) 基于 restic 的检查点：派生、回滚与保留策略
+- [ ] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Box 内 dev server 的端口预览
+- [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) 创建时或运行中可选装 Agent CLI
+
+### M4 · 多宿主机与优化
+
+- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) 多宿主机（仅 SSH / TLS 直连）
+- [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) 空闲自动休眠与按需唤醒
+- [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) 模板增强与预热池
+
+### 贯穿各里程碑
+
+- [ ] [#26](https://github.com/ArnoChenFx/minibox/issues/26) 控制台改版，逐页落地
+- [ ] [#19](https://github.com/ArnoChenFx/minibox/issues/19) Docker 层与路由的集成测试
+- [ ] [#7](https://github.com/ArnoChenFx/minibox/issues/7) 低危安全加固
+
+### 后续，待评估
+
+不在主路线上，动手前需要先单独评估范围。
+
+- [#28](https://github.com/ArnoChenFx/minibox/issues/28) MiniBox Agent 框架：配对、mTLS 与出站通道
+- [#29](https://github.com/ArnoChenFx/minibox/issues/29) 存储节点角色：NAS 与 Linux 存储服务器上的目录、配额与快照
+- 宿主机侧密钥注入：API Key 只保存在宿主机上，不写入 Box 的环境变量（暂无对应 issue）
 
 ## 许可证
 

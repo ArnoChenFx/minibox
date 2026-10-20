@@ -3,6 +3,7 @@ import type { Server } from "bun";
 import { type App, createApp } from "./app";
 import { isAuthorized, isSecureRequest, proxyHeaderWarner } from "./auth";
 import { loadConfig } from "./config";
+import { accessKeyPath } from "./data-dir";
 import { getBox } from "./docker/boxes";
 import { guardRequest } from "./guard";
 import { AppError } from "./lib/errors";
@@ -106,6 +107,7 @@ export function startServer(app: App): Server<TerminalData> {
 if (import.meta.main) {
   const cfg = loadConfig();
   setLogLevel(cfg.logLevel);
+  if (cfg.accessKeySource === "generated") log.info("access_key.generated", { path: accessKeyPath(cfg.dataDir) });
   const version = resolveVersion();
   const app = createApp(cfg, version);
   app.monitor.start();
@@ -115,6 +117,8 @@ if (import.meta.main) {
     version,
     bun: Bun.version,
     docker: cfg.dockerSocket,
+    dataDir: cfg.dataDir,
+    accessKeySource: cfg.accessKeySource,
     keyPrefix: `${cfg.accessKey.slice(0, 4)}…`,
   });
 

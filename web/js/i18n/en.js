@@ -53,7 +53,7 @@ export default {
   "login.submit": "Sign in",
   "login.verifying": "Verifying…",
   "login.note":
-    "The access key is stored in the <code>.env</code> file in the server's project directory (<code>ACCESS_KEY</code>). You stay signed in on this browser for 30 days.",
+    "The access key is set by <code>ACCESS_KEY</code> in the server's <code>.env</code> file. If MiniBox generated it, it is in <code>DATA_DIR/access_key</code>. You stay signed in on this browser for 30 days.",
   "login.keyRequired": "Please enter the access key.",
   "api.network": "Can't reach the server. Check your connection and try again.",
   "api.sessionExpired": "Your session has expired. Please sign in again.",

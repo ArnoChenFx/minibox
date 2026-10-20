@@ -26,7 +26,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 
 - Agents make a mess: random global installs, half-finished builds, stray processes. A box keeps that off your host and can be reset, snapshotted or deleted in one click.
 - Hosted sandboxes are great, but sometimes you want your own hardware, your own network and zero per-minute billing.
-- Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database**, all state lives in Docker labels, images and volumes.
+- Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database server**. Box state lives in Docker labels, images and volumes, and MiniBox keeps its own small files in a [data directory](#data-directory).
 
 ## Features
 
@@ -57,6 +57,8 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 More in [`docs/screenshots`](docs/screenshots).
 
 ## Architecture
+
+### Current (v0.3)
 
 ```mermaid
 flowchart LR
@@ -94,6 +96,66 @@ flowchart LR
 
 (`minibox` is the default `LABEL_PREFIX`; all names and labels follow the prefix.)
 
+### Target architecture (planned)
+
+> [!NOTE]
+> Planned, not implemented yet. The full design and its rationale are in [`docs/design.md`](docs/design.md) (in Chinese).
+
+```mermaid
+flowchart LR
+  subgraph Clients
+    UI["Console"]
+    AG["MCP clients<br/>(AI agents)"]
+    CLI["minibox CLI"]
+  end
+  subgraph Control["Control plane · Bun"]
+    API["REST · OpenAPI · /mcp"]
+    EXE["Operation registry<br/>auth and audit hooks"]
+    RT["WS terminal → tmux<br/>preview proxy"]
+    BUS["Event bus · SSE"]
+    BG["Tasks · reconciler<br/>sampler · idle sleep"]
+    DATA[("DATA_DIR<br/>specs · events · tokens")]
+    HR["HostRegistry"]
+  end
+  subgraph Hosts["Compute hosts · one Runtime per host"]
+    RN["Runtime<br/>unix socket · ssh / tcp+TLS"]
+    D["Docker Engine"]
+    B["Box containers<br/>dev user"]
+    H["Helper containers<br/>files · NFS dirs · restic"]
+  end
+  subgraph Storage["Storage pools · local / nfs / path"]
+    V[("Volumes<br/>workspace · home · tools · cache")]
+    CK[("Checkpoint repository<br/>restic")]
+  end
+  UI --> API
+  UI --> RT
+  BUS -. SSE .-> UI
+  AG --> API
+  CLI --> API
+  API --> EXE
+  RT --> EXE
+  RT --> HR
+  EXE --> DATA
+  EXE --> BUS
+  EXE --> HR
+  BG --> BUS
+  BG --> DATA
+  BG --> HR
+  HR --> RN
+  RN --> D
+  D --> B & H
+  B --- V
+  H --- V
+  H -. backup .-> CK
+```
+
+- **Box** = a spec in `DATA_DIR` plus one container. Container labels hold only what cannot change after creation.
+- **Volume** belongs to a storage pool, not to a box. `cache` volumes stay on the local pool and are excluded from checkpoints.
+- **Checkpoint** = box spec + volume snapshots (restic) + an optional system layer.
+- **Helper containers** are short-lived. They serve file operations, create NFS directories and run restic.
+- Boxes run as the non-root `dev` user under one of two security profiles, `standard` or `strict`.
+- The MiniBox Agent and storage-node roles are not on the main path, so they are not drawn.
+
 ## Requirements
 
 - Linux host with Docker Engine (the server reads `/proc` for host metrics)
@@ -115,16 +177,16 @@ bun run build:template
 bun start
 ```
 
-If `ACCESS_KEY` is empty, MiniBox generates a random 64-character hex key on first start and writes it to `.env` (mode `600`):
+If no `ACCESS_KEY` is set in the environment or in `.env`, MiniBox generates a random 64-character hex key on first start and stores it in `DATA_DIR/access_key` (mode `600`; `./data/access_key` by default). `.env` is never modified:
 
 ```bash
-grep ACCESS_KEY .env
+cat data/access_key
 ```
 
 Open <http://127.0.0.1:3920> and sign in with that key.
 
 > [!TIP]
-> When the key is auto-generated, `.env` is rewritten with only `ACCESS_KEY`, `PORT` and `HOST`. Set your other options after the first start, or put a key into `.env` yourself (e.g. `openssl rand -hex 32`).
+> To choose the key yourself, set `ACCESS_KEY` in `.env` (e.g. `openssl rand -hex 32`). A key from `.env` or the environment always takes precedence over the generated one, and keys that earlier versions wrote into `.env` keep working.
 
 ### Running in the background
 
@@ -135,7 +197,7 @@ scripts/restart.sh              # include the tunnel
 scripts/restart.sh --no-tunnel  # server only
 ```
 
-Server output goes to `server.log` in the project root (git-ignored).
+Server output goes to `server.log` in the project root (git-ignored). The script also reports where the access key is stored, never the key itself.
 
 With systemd, a simple service unit running `bun /path/to/minibox/src/server.ts` is the recommended setup.
 
@@ -183,28 +245,32 @@ docker run -d --name minibox --restart unless-stopped \
   -p 127.0.0.1:3920:3920 \
   -e ACCESS_KEY="$(openssl rand -hex 32)" \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v minibox-data:/data \
   ghcr.io/arnochenfx/minibox:latest
 ```
 
 - MiniBox manages boxes through the host's Docker Engine, so the Docker socket **must** be mounted (`-v /var/run/docker.sock:/var/run/docker.sock`). Boxes are created as sibling containers on the host, not inside the MiniBox container.
-- Always pass `ACCESS_KEY`; otherwise a random key is generated inside the container and lost on recreation (`docker logs minibox` shows only its first 4 characters).
+- Mount a volume at `/data` (`-v minibox-data:/data`). It holds the [data directory](#data-directory), including a generated access key, so state survives container re-creation. Without it, that state is lost when the container is removed.
+- If you don't pass `ACCESS_KEY`, read the generated key with `docker exec minibox cat /data/access_key`. `docker logs` shows only its first 4 characters.
+- Upgrading from an image that generated its key into `/app/.env`: that file lives in the old container and is lost when the container is re-created. Copy the key out first, while the old container is running, with `docker exec minibox grep '^ACCESS_KEY=' /app/.env`, then pass it as `-e ACCESS_KEY=...`.
 - Inside the container MiniBox listens on `0.0.0.0:3920` (`HOST=0.0.0.0`); publish it on `127.0.0.1` as above and use HTTPS for remote access.
 - Tags: `X.Y.Z`, `X.Y` and `latest` (pre-releases such as `1.0.0-rc.1` only get their exact tag).
 - Build locally: `docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
 
 ## Configuration
 
-Precedence: process environment > `.env` file > defaults. See [`.env.example`](.env.example).
+Precedence: process environment > `.env` file > defaults. The access key also falls back to `DATA_DIR/access_key`. See [`.env.example`](.env.example).
 
 | Variable | Default | Description |
 |---|---|---|
-| `ACCESS_KEY` | generated on first start | Access key for the dashboard and API |
+| `ACCESS_KEY` | generated into `DATA_DIR/access_key` | Access key for the dashboard and API. MiniBox never writes it to `.env` |
 | `HOST` | `127.0.0.1` | Listen address |
 | `PORT` | `3920` | Listen port |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` from a reverse proxy you run in front of MiniBox. **Only behind a proxy that overwrites or strips them on every request**, and only when MiniBox is reachable through that proxy alone. Leave `false` for OpenTunnel and other tunnels that add no such headers (see [Remote access](#remote-access)) |
 | `ALLOWED_ORIGINS` | empty | This MiniBox's public origin(s), full `https://` addresses, comma-separated, e.g. `https://minibox.example.com`. **Needed when a proxy rewrites `Host`** (nginx does by default); without it, login and terminal requests from that address get `403`. Optional with OpenTunnel, which keeps `Host`, and harmless there |
 | `COOKIE_SECURE` | `false` | Always set the `Secure` flag on the session cookie. Usually unnecessary: browsers send an `https://` Origin on login, which already sets it. Only use over HTTPS, because browsers drop `Secure` cookies from plain HTTP |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
+| `DATA_DIR` | `./data` (`/data` in the image) | State directory, see [Data directory](#data-directory) |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
 | `BASE_TEMPLATE` | `<prefix>-template:base` | Default template image for new boxes |
 | `METRICS_INTERVAL_MS` | `3000` | Host metrics sampling interval (ms) |
@@ -213,6 +279,19 @@ Precedence: process environment > `.env` file > defaults. See [`.env.example`](.
 | `MINIBOX_VERSION` | from git / `package.json` | Override the displayed version (set automatically in release images) |
 
 > `bun run build:template` always tags `minibox-template:base`. If you change `LABEL_PREFIX` or `BASE_TEMPLATE`, build the base template from the dashboard (Templates → Build base template) instead, which uses the configured tag.
+
+## Data directory
+
+MiniBox keeps the state it owns in `DATA_DIR`. It is a directory of plain files, not a database server, so include it in your backups. Relative paths resolve from the project root, and `~/` expands to your home directory.
+
+| Path | Mode | Contents |
+|---|---|---|
+| `access_key` | `600` | Access key generated when none is set in the environment or `.env` |
+| `boxes/` | `700` | Box specifications (created now, used by later features) |
+| `exec/` | `700` | Output of `exec` commands (created now, used by later features) |
+| `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
+
+MiniBox creates these directories at startup and tightens looser modes. It never writes `.env`. If `DATA_DIR` is lost and no key is set in `.env` or the environment, the next start generates a new access key, so everyone has to sign in with it. Keep a copy of `access_key`, or set `ACCESS_KEY` in `.env`, if you rely on the current one.
 
 ## API reference
 
@@ -274,7 +353,7 @@ Only images carrying MiniBox labels can be deleted through the API.
 ### Example
 
 ```bash
-KEY=$(grep ACCESS_KEY .env | cut -d= -f2)
+KEY=$(grep '^ACCESS_KEY=' .env | cut -d= -f2)   # or: KEY=$(cat data/access_key) if MiniBox generated it
 curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"name":"agent-dev","cpus":2,"memoryMb":4096}' http://127.0.0.1:3920/api/boxes
 
@@ -289,7 +368,8 @@ minibox/
 ├── src/
 │   ├── server.ts            # Entry: Bun.serve, static files, WebSocket upgrade, graceful shutdown
 │   ├── app.ts               # App context (config, Docker, monitor, activity log)
-│   ├── config.ts            # Env / .env loading, key generation
+│   ├── config.ts            # Env / .env loading, access key precedence
+│   ├── data-dir.ts          # DATA_DIR layout and secret files (600)
 │   ├── auth.ts              # Key check, cookies, login throttle
 │   ├── labels.ts            # Docker label keys and parsers
 │   ├── activity.ts          # Recent-operations log
@@ -346,8 +426,9 @@ The [release workflow](.github/workflows/release.yml) then runs the same CI chec
 
 MiniBox is built for **one trusted user on their own machine**. Please read this before exposing it.
 
-- **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` is git-ignored — keep it that way.
-- **The access key is the only guard.** There are no user accounts, and a leaked key means full access. The key is compared in constant time. Login limiting only refuses wrong keys: a correct key always signs in, even while wrong keys are refused. Wrong keys are refused after 10 failures per client address (IPv6 addresses per /64) or 50 from all addresses together, within 5 minutes. The limiter does not stop guessing, because every key is still checked, so use a long random key such as `openssl rand -hex 32`. To rotate it, change `ACCESS_KEY` in `.env` and restart; existing sessions stop working immediately.
+- **The Docker socket is root.** MiniBox controls Docker through its socket, so anyone holding the access key can effectively run anything on the host as root. Treat the key like a root password. `.env` and `data/` are git-ignored — keep them that way.
+- **The container runs as root**, because it needs the Docker socket, which is root-equivalent. To narrow that, put a socket proxy that forwards only the Docker API calls MiniBox uses in front of the socket, and point `DOCKER_SOCKET` at the proxy's Unix socket. Or run MiniBox against a rootless Docker or Podman socket.
+- **The access key is the only guard.** There are no user accounts, and a leaked key means full access. The key is compared in constant time. Login limiting only refuses wrong keys: a correct key always signs in, even while wrong keys are refused. Wrong keys are refused after 10 failures per client address (IPv6 addresses per /64) or 50 from all addresses together, within 5 minutes. The limiter does not stop guessing, because every key is still checked, so use a long random key such as `openssl rand -hex 32`. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; existing sessions stop working immediately.
 - **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin listed in `ALLOWED_ORIGINS`. Requests without an `Origin` header (scripts using `Authorization: Bearer`) are accepted. Writes must declare `Content-Type: application/json` unless they carry neither a body nor a `Content-Type`, which also blocks HTML form posts. The session cookie is `SameSite=Strict`, so a link from another website may ask you to sign in once more.
 - **Strict Content-Security-Policy.** Scripts load only from MiniBox itself (`script-src 'self'`), the pages have no inline scripts, and MiniBox can't be framed (`frame-ancestors 'none'`). Requests that arrive over HTTPS (directly, with an `https://` Origin, or through a proxy when `TRUST_PROXY=true`) also get `Strict-Transport-Security` for one year, without `includeSubDomains`.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
@@ -359,13 +440,63 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 
 ## Roadmap
 
-The full product and architecture design (in Chinese) is in [`docs/design.md`](docs/design.md); the implementation plan is tracked in [#20](https://github.com/ArnoChenFx/minibox/issues/20).
+The full product and architecture design (in Chinese) is in [`docs/design.md`](docs/design.md); the implementation plan is tracked in [#20](https://github.com/ArnoChenFx/minibox/issues/20). Planned work is grouped into milestones. Items link to their issues where one exists.
 
-- [ ] **Idle auto-sleep** — stop boxes after a period without exec / terminal activity and wake them on the next request
-- [ ] **Workspace backup** — export / restore `/workspace` volumes alongside snapshots
-- [ ] **Agent-facing API** — file read/write, streaming exec, and an MCP server on top
-- [ ] **Host-side secret injection** — keep API keys on the host and inject them via an egress proxy instead of box env vars
-- [ ] **Declarative templates & warm pool** — templates from Dockerfiles in the repo, plus pre-started boxes for instant creation
+### M0 · Foundations
+
+Order: the first PR bundles the changes already written for #1, #3 and #4. Then #32, #6 and #18 run in parallel, and #22 comes last.
+
+- [ ] [#1](https://github.com/ArnoChenFx/minibox/issues/1) Login rate limiting: proxy headers are trusted only with `TRUST_PROXY`
+- [ ] [#3](https://github.com/ArnoChenFx/minibox/issues/3) Origin checks for WebSocket and write endpoints
+- [ ] [#4](https://github.com/ArnoChenFx/minibox/issues/4) CSP and HSTS; self-host xterm.js instead of the CDN
+- [ ] [#32](https://github.com/ArnoChenFx/minibox/issues/32) Runtime / Host abstraction (implicit `local`, no behavior change)
+- [ ] [#6](https://github.com/ArnoChenFx/minibox/issues/6) `DATA_DIR` for control-plane state; the generated access key moves out of `.env`
+- [x] [#18](https://github.com/ArnoChenFx/minibox/issues/18) Dependabot, pinned action SHAs, a Bun ≥ 1.4.3 floor and branch protection on `main`
+- [ ] [#22](https://github.com/ArnoChenFx/minibox/issues/22) One operation registry that generates REST, OpenAPI, MCP and CLI
+
+### M1 · Templates, specs, audit and tokens
+
+- [ ] [#27](https://github.com/ArnoChenFx/minibox/issues/27) Base template: non-root `dev` user, tmux and mount-point conventions
+- [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box hardening with `standard` and `strict` security profiles
+- [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
+- [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
+- [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
+- [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and TTL
+- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) Revocable session tokens instead of the raw access key in cookies
+
+### M2 · Storage and agent interface
+
+- [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volumes and storage pools (`local`, `nfs`, `path`)
+- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) Exec and file API for agents, with an MCP server and CLI
+- [ ] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux sessions with human takeover
+- [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) Stream box state and resource usage over SSE instead of polling
+- [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS setup guide
+
+### M3 · Core value
+
+- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) Checkpoints with restic: fork, rollback and retention
+- [ ] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Port preview for dev servers running inside boxes
+- [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) Optional agent CLI install at creation or at runtime
+
+### M4 · Multi-host and optimization
+
+- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) Multi-host support over SSH or TLS
+- [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) Idle auto-sleep with on-demand wake
+- [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) Template enhancements and warm pool
+
+### Across all milestones
+
+- [ ] [#26](https://github.com/ArnoChenFx/minibox/issues/26) Console redesign, shipped page by page
+- [ ] [#19](https://github.com/ArnoChenFx/minibox/issues/19) Integration tests for the Docker layer and routes
+- [ ] [#7](https://github.com/ArnoChenFx/minibox/issues/7) Low-risk security hardening
+
+### Later / under evaluation
+
+Not on the main path. Each needs a scope review before work starts.
+
+- [#28](https://github.com/ArnoChenFx/minibox/issues/28) MiniBox Agent framework: pairing, mTLS and an outbound channel
+- [#29](https://github.com/ArnoChenFx/minibox/issues/29) Storage-node role for NAS and Linux storage servers: directories, quotas, snapshots
+- Host-side secret injection: keep API keys on the host instead of in box environment variables (no tracking issue yet)
 
 ## License
 
