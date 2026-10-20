@@ -66,3 +66,15 @@ export const volumeName = (prefix: string, box: string) => `${prefix}-ws-${box}`
 
 /** Container names from the Docker API have a leading slash. */
 export const stripSlash = (name: string | undefined) => (name ?? "").replace(/^\//, "");
+
+/**
+ * Quote a value for a Dockerfile `LABEL` line (the `changes` of `docker commit`). Backslash, double quote and dollar
+ * sign are escaped so the value is taken literally; an unescaped `$VAR` would expand from the image's environment.
+ * Control characters are refused, since a newline would start a new instruction.
+ */
+export function quoteLabelValue(value: string): string {
+  if (/\p{Cc}/u.test(value)) throw new Error("label values must not contain control characters");
+  return `"${value.replace(/["\\$]/g, "\\$&")}"`;
+}
+
+export const labelChange = (key: string, value: string): string => `LABEL ${key}=${quoteLabelValue(value)}`;

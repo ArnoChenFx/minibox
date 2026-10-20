@@ -28,6 +28,7 @@
 - 启动时检查访问密钥强度。短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符）的密钥会记录 `auth.weak_key` 警告。警告不包含密钥或其长度，服务仍正常启动。
 - `server.started` 启动日志不再输出 `keyPrefix`（访问密钥的前 4 位）。启动日志与 `docker logs` 中不会出现密钥的任何部分。
 - 基础模板的 `dev` 用户拥有无密码 `sudo`，Box 内的 root 可以改动该 Box 及其工作区卷。默认的「标准」安全档位不设置 `no-new-privileges`，否则 `sudo` 会失效；不带 `sudo` 的「严格」档位归入 #5。
+- `scripts/restart.sh` 不再对 Docker Socket 执行 `chmod 666`，此前任何本地用户都能以 root 等同权限访问 Docker。现在每次运行都把 Socket 的属组设为执行者的主组、权限设为 `660`，服务进程无需重新登录即可使用 Docker；主组以外的账户（包括 `docker` 组成员）在脚本运行后无法访问该 Socket。该脚本定位为单用户沙箱的便利脚本，README 已说明。
 
 ### 新增
 - 数据目录 `DATA_DIR`（默认 `./data`，Docker 镜像中为 `/data`）。目录权限 700；启动时创建 `boxes/`、`exec/`、`secrets/` 子目录，供后续功能使用。
@@ -47,6 +48,7 @@
 - 基础模板不再保留镜像自带的 `node` 用户（uid 1000），由 `dev` 使用该 uid。
 - 基础模板描述改为「Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · 非 root 用户 dev」，网页端构建与 `bun run build:template` 使用同一描述。
 - Box 详情页的终端标题栏不再固定显示 `root@`，改为 `<名称>: /workspace`，因为新建 Box 以 `dev` 运行，旧 Box 仍为 root。
+- `scripts/restart.sh` 启动 `dockerd` 与 OpenTunnel 时改为追加写入 `/tmp/dockerd.log` 与 `/tmp/opentunnel.log`，每次启动写入一行 `---` 分隔标记，不再清空上一次的诊断信息。
 
 ### 工程化
 - 新增 `.github/dependabot.yml`：每周检查 npm 依赖（Bun）、GitHub Actions 与 Docker 基础镜像（根目录 `Dockerfile` 与 `templates/base`）的更新；GitHub Actions 的小版本与补丁版本更新合并为一个 PR。
@@ -59,6 +61,7 @@
 
 ### 修复
 - 自动生成访问密钥时不再整体重写 `.env`。此前会把 `.env` 改写为只剩 `ACCESS_KEY`、`PORT`、`HOST` 三项，其他配置随之丢失。现在任何情况下都不修改 `.env`。
+- 模板描述与快照标签的值统一转义（反斜杠、双引号、美元符号按字面保存），并拒绝控制字符。此前 `$VAR` 会从镜像环境展开进标签，反斜杠后接换行会把后续文字并入标签。`POST /api/snapshots/:ref/promote` 的 `description` 含换行或其他控制字符时返回 400（`description_invalid`）；描述去除首尾空格，只含空格的描述视为未填写。
 
 ### 文档
 - README 与 README-zh 说明数据目录、访问密钥的位置与优先级、Docker 数据卷的用法，以及 `.env.example` 中的 `DATA_DIR` 配置项。

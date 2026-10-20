@@ -1,4 +1,5 @@
 import type { HostCtx } from "../host/registry";
+import { labelChange } from "../labels";
 import { log } from "../lib/logger";
 import { getBox } from "./boxes";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
@@ -25,12 +26,12 @@ export async function createSnapshot(
     author: "minibox",
     pause: true,
     changes: [
-      `LABEL ${k.snapshot}=true`,
-      `LABEL ${k.template}=false`,
-      `LABEL ${k.snapshotOf}=${box.name}`,
-      `LABEL ${k.templateName}=${name ?? box.name}`,
-      `LABEL ${k.templateDesc}="Snapshot of box ${box.name}"`,
-      `LABEL ${k.created}=${new Date().toISOString()}`,
+      labelChange(k.snapshot, "true"),
+      labelChange(k.template, "false"),
+      labelChange(k.snapshotOf, box.name),
+      labelChange(k.templateName, name ?? box.name),
+      labelChange(k.templateDesc, `Snapshot of box ${box.name}`),
+      labelChange(k.created, new Date().toISOString()),
       'CMD ["sleep","infinity"]',
     ],
   });

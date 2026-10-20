@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import type { HostCtx } from "../host/registry";
+import { labelChange } from "../labels";
 import { notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
@@ -30,11 +31,11 @@ export async function promoteSnapshot(
       repo,
       tag: name,
       changes: [
-        `LABEL ${k.template}=true`,
-        `LABEL ${k.snapshot}=false`,
-        `LABEL ${k.templateName}=${name}`,
-        `LABEL ${k.templateDesc}="${(description ?? `Promoted from a snapshot of box ${source}`).replace(/"/g, "'")}"`,
-        `LABEL ${k.created}=${new Date().toISOString()}`,
+        labelChange(k.template, "true"),
+        labelChange(k.snapshot, "false"),
+        labelChange(k.templateName, name),
+        labelChange(k.templateDesc, description ?? `Promoted from a snapshot of box ${source}`),
+        labelChange(k.created, new Date().toISOString()),
         'CMD ["sleep","infinity"]',
       ],
     });
