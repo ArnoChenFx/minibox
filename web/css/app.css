@@ -845,6 +845,26 @@ input[type="range"] {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.segmented.segmented-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.advanced {
+  margin-top: 16px;
+}
+.advanced > summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  user-select: none;
+}
+.advanced > summary:hover {
+  color: var(--text);
+}
+.advanced[open] > summary {
+  margin-bottom: 12px;
+}
 
 .option-list {
   display: flex;
