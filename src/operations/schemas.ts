@@ -57,6 +57,36 @@ export const OkSchema = z.object({
   ok: z.literal(true),
 });
 
+/** One recorded event. `seq` is the cursor: pass it back as `cursor` to read the page before it. */
+export const EventSchema = z.object({
+  seq: z.number().int(),
+  id: z.string(),
+  ts: z.number().int(),
+  durationMs: z.number(),
+  status: z.enum(["started", "ok", "error", "denied"]),
+  op: z.string(),
+  kind: z.enum(["read", "write", "destructive"]),
+  tier: z.enum(["audit", "activity"]),
+  count: z.number().int(),
+  principal: z.object({ type: z.string(), id: z.string(), name: z.string() }),
+  source: z.enum(["ui", "rest", "mcp", "cli", "scheduler", "system"]),
+  hostId: z.string(),
+  summary: z.string(),
+  target: z.object({ kind: z.string(), id: z.string().optional(), name: z.string() }).optional(),
+  detail: z.unknown().optional(),
+  run: z.string().optional(),
+  parentId: z.string().optional(),
+  ref: z
+    .object({ execId: z.string().optional(), outputRef: z.string().optional(), taskId: z.string().optional() })
+    .optional(),
+  error: z.object({ code: z.string(), status: z.number().int() }).optional(),
+});
+
+export const EventPageSchema = z.object({
+  events: z.array(EventSchema),
+  nextCursor: z.number().int().nullable(),
+});
+
 /** The body of every error response, see `errorResponse()` in lib/http.ts. */
 export const ErrorSchema = z.object({
   error: z.object({

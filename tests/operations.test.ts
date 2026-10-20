@@ -38,6 +38,7 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.build": () => ({}),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
+  "events.list": () => ({ op: "box.create" }),
 };
 
 function opNamed(name: string): Operation {
@@ -52,7 +53,7 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
   runtime.seedImage(TEMPLATE_REF, { [keys.template]: "true", [keys.templateName]: "gold" });
-  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest" };
+  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
   return { app, runtime, ctx };
 }
 
@@ -116,7 +117,7 @@ describe("registry definitions", () => {
     expect(registryProblems(OPERATIONS)).toEqual([]);
   });
 
-  test("the registry holds the box, snapshot and template operations in scope", () => {
+  test("the registry holds the box, snapshot, template and event operations in scope", () => {
     expect(OPERATIONS.map((op) => op.name)).toEqual(Object.keys(SAMPLES));
   });
 
@@ -383,6 +384,46 @@ describe("snapshot and template operations", () => {
       target: { kind: "template", name: TEMPLATE_REF },
     });
     expect(app.activity.list()[0]).toMatchObject({ action: "template.delete", target: TEMPLATE_REF, ok: true });
+  });
+});
+
+describe("event log", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("every registered operation leaves one stored event when it succeeds", async () => {
+    for (const operation of OPERATIONS) {
+      const sample = SAMPLES[operation.name];
+      if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
+      const { app, ctx } = appWith();
+      const boxId = await withBox(app, ctx);
+      const before = app.events.head();
+      await app.operations.run(operation.name, ctx, sample(boxId));
+      expect(app.events.after(before, {}, 10).map((event) => [event.op, event.status])).toEqual([
+        [operation.name, "ok"],
+      ]);
+    }
+  });
+
+  test("every registered operation leaves one stored event when it is refused", async () => {
+    for (const operation of OPERATIONS) {
+      const { app, ctx } = appWith({ authorize: () => false });
+      await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
+      expect(app.events.after(0, {}, 10).map((event) => [event.op, event.status])).toEqual([
+        [operation.name, "denied"],
+      ]);
+    }
+  });
+
+  test("every registered operation leaves one stored event whatever its input", async () => {
+    for (const operation of OPERATIONS) {
+      const { app, ctx } = appWith();
+      await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
+      expect(app.events.after(0, {}, 10).map((event) => event.op)).toEqual([operation.name]);
+    }
   });
 });
 

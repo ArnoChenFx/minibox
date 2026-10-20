@@ -17,13 +17,19 @@ const GB = 1024 ** 3;
 /** A fixed host, so capacity errors do not depend on the machine running the scenario. */
 const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as HostMetrics;
 
-/** Replaces values that differ between runs: container and image ids, timestamps and snapshot stamps. */
+/**
+ * Replaces values that differ between runs: container and image ids, timestamps, snapshot stamps and event ids. Event
+ * clock values become 0 rather than a placeholder, so each body is still JSON that the OpenAPI schema check can read.
+ */
 export function normalize(text: string): string {
   return text
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/[0-9a-f]{64}/g, "<id>")
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<time>")
-    .replace(/-\d{8}-\d{6}/g, "-<stamp>");
+    .replace(/-\d{8}-\d{6}/g, "-<stamp>")
+    .replace(/"id":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"id":"<ulid>"')
+    .replace(/"ts":\d+/g, '"ts":0')
+    .replace(/"durationMs":\d+/g, '"durationMs":0');
 }
 
 function boxId(json: Record<string, unknown> | null): string {
@@ -257,6 +263,17 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("list snapshots after delete", "GET", "/api/snapshots");
     await send("activity feed", "GET", "/api/activity");
     await send("final box list", "GET", "/api/boxes");
+
+    await send("events without a key", "GET", "/api/events", { authed: false });
+    await send("events from another site", "GET", "/api/events", { origin: "https://evil.example" });
+    const newest = await send("events of box creation", "GET", "/api/events?op=box.create&limit=2");
+    await send(
+      "older events of box creation",
+      "GET",
+      `/api/events?op=box.create&limit=2&cursor=${newest.json?.nextCursor}`,
+    );
+    await send("events with limit 0", "GET", "/api/events?limit=0");
+    await send("events of alpha that failed", "GET", "/api/events?box=alpha&status=error");
   } finally {
     server.stop(true);
     app.throttle.stop();

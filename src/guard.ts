@@ -5,6 +5,9 @@ import { msg } from "./lib/messages";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+/** Reads of the event log, which also need the origin check: they are the audit trail, not public data. */
+const CHECKED_READS = new Set(["/api/events", "/api/events/stream"]);
+
 export type GuardPolicy = Pick<Config, "allowedOrigins" | "trustProxy">;
 
 /**
@@ -36,13 +39,15 @@ function requestHosts(req: Request, trustProxy: boolean): string[] {
 }
 
 /**
- * Refuses cross-site WebSocket upgrades and API writes, which a third-party page could trigger
- * with the browser's cookies.
+ * Refuses cross-site WebSocket upgrades, API writes and reads of the event log, which a third-party page could
+ * trigger with the browser's cookies.
  */
 export function guardRequest(req: Request, policy: GuardPolicy): void {
+  const { pathname } = new URL(req.url);
   const websocket = req.headers.get("upgrade")?.toLowerCase() === "websocket";
-  const apiWrite = new URL(req.url).pathname.startsWith("/api/") && !SAFE_METHODS.has(req.method);
-  if (!websocket && !apiWrite) return;
+  const apiWrite = pathname.startsWith("/api/") && !SAFE_METHODS.has(req.method);
+  const eventRead = req.method === "GET" && CHECKED_READS.has(pathname);
+  if (!websocket && !apiWrite && !eventRead) return;
   if (!isSameOriginRequest(req, policy)) throw new AppError(403, "forbidden", msg("origin_forbidden"));
   if (apiWrite) requireJsonBody(req);
 }

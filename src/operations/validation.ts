@@ -94,7 +94,7 @@ export function addFailure(ctx: z.RefinementCtx, failure: Failure): void {
  * One legacy check as a zod schema. The input side accepts anything, so that every problem surfaces as the legacy
  * message rather than as a zod message; the meta describes the accepted shape for OpenAPI and MCP.
  */
-function field<T>(check: (value: unknown) => Checked<T>, meta: Meta) {
+export function field<T>(check: (value: unknown) => Checked<T>, meta: Meta) {
   return z
     .unknown()
     .transform((value, ctx) => {

@@ -1,5 +1,6 @@
 import type { z } from "zod";
 
+import type { EventReader } from "../events/store";
 import type { EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
 
@@ -25,6 +26,8 @@ export interface OperationContext {
   readonly run?: string;
   /** The event of the operation that started this one, when an operation triggers another. */
   readonly parentId?: string;
+  /** The event log, for operations that read it. Adapters pass the app's store. */
+  readonly events: EventReader;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */

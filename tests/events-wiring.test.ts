@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createApp } from "../src/app";
+import { scopedFilter } from "../src/events/scope";
 import type { StoredEvent } from "../src/events/store";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY, testConfig } from "./support/app";
@@ -24,7 +25,7 @@ function setup(overrides: Parameters<typeof createTestApp>[0] = {}, hooks: Param
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
-  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest" };
+  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
   return { app, runtime, ctx };
 }
 
@@ -102,7 +103,7 @@ describe("the event store on disk", () => {
       const app = createApp(testConfig({ dataDir, accessKey: TEST_KEY }), "0.0.0-test", {
         runtime: new FakeRuntime(),
       });
-      const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest" };
+      const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
       await app.operations.run("box.list", ctx, {});
       app.events.append({
         id: "01TESTTESTTESTTESTTESTTEST",
@@ -143,5 +144,17 @@ describe("retention", () => {
 
     app.retention.run(Date.now() + 2.5 * DAY);
     expect(app.events.list({}, { limit: 10 }).events).toEqual([]);
+  });
+});
+
+describe("the scope hook", () => {
+  test("the owner's reads carry no limits of their own", () => {
+    expect(scopedFilter({ box: "alpha", op: "box.create" }, OWNER)).toEqual({ box: "alpha", op: "box.create" });
+  });
+
+  test("a principal type without a visibility rule is refused rather than widened", () => {
+    expect(() => scopedFilter({}, { type: "token", id: "t1", name: "ci" })).toThrow(
+      "no event visibility is defined for principal type token",
+    );
   });
 });

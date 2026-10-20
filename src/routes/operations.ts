@@ -7,7 +7,7 @@ import type { Operation, Principal, RestBinding } from "../operations/types";
 import { type Handler, type Route, route } from "./router";
 
 /** Until scoped tokens (#13) exist, every REST request acts as the owner. */
-const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
+export const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 
 /** The `run` a request belongs to, or `undefined` when it does not send `X-Minibox-Run`. */
 export function runOf(req: Request): string | undefined {
@@ -34,7 +34,7 @@ function handlerFor(operation: Operation, binding: RestBinding): Handler {
     const body = binding.body ? asObject(await readJson(req)) : {};
     const result = await app.operations.run(
       operation.name,
-      { host, principal: OWNER, source: "rest", run },
+      { host, principal: OWNER, source: "rest", run, events: app.events },
       inputOf(binding, url, params, body),
     );
     return json(result, binding.status ?? 200);

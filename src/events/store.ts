@@ -213,6 +213,9 @@ function toEvent(row: Row): StoredEvent {
   };
 }
 
+/** The part of the store that operations may use to read the log. Writes happen only through the audit hook. */
+export type EventReader = Pick<EventStore, "list">;
+
 /**
  * The events database: one SQLite file in WAL mode. Every event is redacted before it is written, so secrets never
  * reach the file. Paging runs newest first by `seq`, which is also the cursor the event stream resumes from.
