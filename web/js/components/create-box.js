@@ -1,15 +1,16 @@
 import { api, enc } from "../lib/api.js";
 import { $$, esc } from "../lib/dom.js";
 import { bytes, gbOrMb } from "../lib/format.js";
+import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { getTemplates, hostNow, refreshHost } from "../lib/store.js";
 import { nameError, openDialog, toast } from "../lib/ui.js";
 
 const PRESETS = [
-  { id: "small", label: "小型", cpus: 2, memoryMb: 4096 },
-  { id: "medium", label: "中型", cpus: 4, memoryMb: 8192 },
-  { id: "large", label: "大型", cpus: 8, memoryMb: 16384 },
-  { id: "custom", label: "自定义" },
+  { id: "small", label: "cb.small", cpus: 2, memoryMb: 4096 },
+  { id: "medium", label: "cb.medium", cpus: 4, memoryMb: 8192 },
+  { id: "large", label: "cb.large", cpus: 8, memoryMb: 16384 },
+  { id: "custom", label: "cb.custom" },
 ];
 
 /**
@@ -35,11 +36,11 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     cpus: initial.cpus ?? Math.min(2, maxCpu),
     memoryMb: initial.memoryMb ?? 2048,
     preset: initial.id,
-    template: templates.find((t) => t.ref === template)?.ref ?? templates[0]?.ref ?? "",
+    template: templates.find((tp) => tp.ref === template)?.ref ?? templates[0]?.ref ?? "",
   };
 
   const templatePicker = snapshot
-    ? `<div class="option" aria-checked="true"><span class="avatar">${icon("camera")}</span><span class="meta"><strong>${esc(snapshot)}</strong><span>从快照创建，包含快照时的完整环境</span></span></div>`
+    ? `<div class="option" aria-checked="true"><span class="avatar">${icon("camera")}</span><span class="meta"><strong>${esc(snapshot)}</strong><span>${t("cb.fromSnapshotHint")}</span></span></div>`
     : templates.length
       ? `<div class="option-list" role="radiogroup" id="cbTemplates">${templates
           .map(
@@ -51,33 +52,33 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
               <span class="subtle num">${bytes(t.size)}</span></div>`,
           )
           .join("")}</div>`
-      : `<div class="callout warn">${icon("alert")}<span>当前没有可用模板。请先到 <a href="#/templates">模板</a> 页构建基础模板。</span></div>`;
+      : `<div class="callout warn">${icon("alert")}<span>${t("cb.noTemplates")}</span></div>`;
 
   const { root, close } = openDialog({
-    title: snapshot ? "从快照创建 Box" : "创建 Box",
-    description: "Box 是一个独立的 Docker 容器，工作区 /workspace 保存在专属数据卷中。",
+    title: snapshot ? t("cb.titleSnapshot") : t("cb.title"),
+    description: t("cb.desc"),
     iconName: "box",
     wide: true,
     body: `
-      <div class="field"><label class="label" for="cbName">名称</label>
-        <input class="input" id="cbName" placeholder="例如 agent-dev" autocomplete="off" autofocus />
-        <div class="help">用于识别 Box，创建后不可修改。可使用字母、数字、点、下划线和连字符。</div>
+      <div class="field"><label class="label" for="cbName">${t("cb.name")}</label>
+        <input class="input" id="cbName" placeholder="${t("cb.namePlaceholder")}" autocomplete="off" autofocus />
+        <div class="help">${t("cb.nameHelp")}</div>
         <div class="error-text" id="cbNameErr"></div></div>
-      <div class="field"><span class="label">${snapshot ? "来源快照" : "模板"}</span>${templatePicker}</div>
-      <div class="field"><span class="label">规格 <span class="subtle">宿主机 ${maxCpu} 核 · ${gbOrMb(maxMem * 1024 * 1024)}</span></span>
+      <div class="field"><span class="label">${snapshot ? t("cb.sourceSnapshot") : t("cb.template")}</span>${templatePicker}</div>
+      <div class="field"><span class="label">${t("cb.size")} <span class="subtle">${t("cb.hostCap", { cores: maxCpu, mem: gbOrMb(maxMem * 1024 * 1024) })}</span></span>
         <div class="segmented" id="cbPresets">${PRESETS.map(
           (
             p,
-          ) => `<button type="button" class="seg" data-preset="${p.id}" aria-pressed="${p.id === state.preset}" ${p.id !== "custom" && !fits(p) ? 'disabled title="超出宿主机容量"' : ""}>
-            <strong>${p.label}</strong><span>${p.id === "custom" ? "按需调整" : `${p.cpus} 核 · ${p.memoryMb / 1024} GB`}</span></button>`,
+          ) => `<button type="button" class="seg" data-preset="${p.id}" aria-pressed="${p.id === state.preset}" ${p.id !== "custom" && !fits(p) ? `disabled title="${t("cb.overHost")}"` : ""}>
+            <strong>${t(p.label)}</strong><span>${p.id === "custom" ? t("cb.customHint") : t("cb.presetSpec", { cpus: p.cpus, gb: p.memoryMb / 1024 })}</span></button>`,
         ).join("")}</div></div>
-      <div class="field"><span class="label">CPU <span class="subtle">核</span></span>
+      <div class="field"><span class="label">CPU <span class="subtle">${t("unit.coresShort")}</span></span>
         <div class="slider-row"><input type="range" id="cbCpuR" min="0.5" max="${maxCpu}" step="0.5" /><input class="input" id="cbCpu" type="number" min="0.1" max="${maxCpu}" step="0.1" /></div></div>
-      <div class="field"><span class="label">内存 <span class="subtle">MB</span></span>
+      <div class="field"><span class="label">${t("cb.memory")} <span class="subtle">MB</span></span>
         <div class="slider-row"><input type="range" id="cbMemR" min="256" max="${maxMem}" step="256" /><input class="input" id="cbMem" type="number" min="128" max="${maxMem}" step="128" /></div>
         <div class="error-text" id="cbResErr"></div></div>
       <div id="cbCapacity"></div>`,
-    footer: `<button class="btn" data-close>取消</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}创建并启动</button>`,
+    footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
 
   const q = (s) => root.querySelector(s);
@@ -91,9 +92,9 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   };
   const validateRes = () => {
     let err = "";
-    if (!(state.cpus >= 0.1 && state.cpus <= maxCpu)) err = `CPU 须在 0.1 到 ${maxCpu} 核之间。`;
+    if (!(state.cpus >= 0.1 && state.cpus <= maxCpu)) err = t("cb.cpuRange", { max: maxCpu });
     else if (!(Number.isInteger(state.memoryMb) && state.memoryMb >= 128 && state.memoryMb <= maxMem))
-      err = `内存须为 128 到 ${maxMem} 之间的整数（MB）。`;
+      err = t("cb.memRange", { max: maxMem });
     q("#cbResErr").textContent = err;
     const h = hostNow();
     if (h && !err) {
@@ -102,8 +103,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       const over = cpuAfter > h.cpu.cores || memAfter > h.memory.total;
       q("#cbCapacity").innerHTML =
         `<div class="callout ${over ? "warn" : "info"}">${icon(over ? "alert" : "info")}<span>
-        创建后运行中 Box 的配额合计：CPU ${+cpuAfter.toFixed(2)} / ${h.cpu.cores} 核，内存 ${gbOrMb(memAfter)} / ${bytes(h.memory.total)}。
-        ${over ? "已超过宿主机容量，高负载时 Box 之间会互相争抢资源。" : ""}</span></div>`;
+        ${t("cb.capacity", { cpu: +cpuAfter.toFixed(2), cores: h.cpu.cores, mem: gbOrMb(memAfter), total: bytes(h.memory.total) })}
+        ${over ? t("cb.capacityOver") : ""}</span></div>`;
     }
     return !err;
   };
@@ -146,7 +147,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
 
   const submit = async () => {
     const name = q("#cbName").value.trim();
-    const nErr = nameError(name, "Box 名称");
+    const nErr = nameError(name, "boxName");
     if (nErr) {
       q("#cbName").classList.add("invalid");
       q("#cbNameErr").textContent = nErr;
@@ -157,19 +158,19 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     if (!snapshot && !state.template) return;
     const btn = q("#cbSubmit");
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>正在创建…';
+    btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
     try {
       const body = { name, cpus: state.cpus, memoryMb: state.memoryMb };
       const res = snapshot
         ? await api(`/api/snapshots/${enc(snapshot)}/boxes`, { method: "POST", body })
         : await api("/api/boxes", { method: "POST", body: { ...body, template: state.template } });
       close();
-      toast("Box 已创建", { message: `${res.box.name} 正在运行。` });
+      toast(t("cb.created"), { message: t("cb.createdText", { name: res.box.name }) });
       refreshHost();
       onCreated?.(res.box);
     } catch (e) {
       btn.disabled = false;
-      btn.innerHTML = `${icon("play")}创建并启动`;
+      btn.innerHTML = `${icon("play")}${t("cb.submit")}`;
       if (e.details?.field === "name") {
         q("#cbName").classList.add("invalid");
         q("#cbNameErr").textContent = e.message;

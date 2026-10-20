@@ -6,6 +6,7 @@ import { getBox } from "./docker/boxes";
 import { AppError } from "./lib/errors";
 import { errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
+import { msg } from "./lib/messages";
 import { routes } from "./routes";
 import { matchRoute } from "./routes/router";
 import { serveFile } from "./static";
@@ -17,10 +18,10 @@ const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
 
 async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
   const m = matchRoute(routes, req.method, url.pathname);
-  if (m === null) throw new AppError(404, "not_found", "接口不存在。");
-  if (m === "method_not_allowed") throw new AppError(405, "method_not_allowed", "不支持该请求方法。");
+  if (m === null) throw new AppError(404, "not_found", msg("api_not_found"));
+  if (m === "method_not_allowed") throw new AppError(405, "method_not_allowed", msg("method_not_allowed"));
   if (!m.route.public && !isAuthorized(req, app.cfg.accessKey)) {
-    throw new AppError(401, "unauthorized", "未登录或访问密钥无效。");
+    throw new AppError(401, "unauthorized", msg("unauthorized"));
   }
   return m.route.handler({ app, req, url, params: m.params, server: server as Server<unknown> });
 }
@@ -60,11 +61,11 @@ export function startServer(app: App): Server<TerminalData> {
       try {
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-          if (!isAuthorized(req, app.cfg.accessKey)) throw new AppError(401, "unauthorized", "未登录或访问密钥无效。");
+          if (!isAuthorized(req, app.cfg.accessKey)) throw new AppError(401, "unauthorized", msg("unauthorized"));
           const box = await getBox(app.docker, decodeURIComponent(tm[1] ?? ""));
-          if (!box.running) throw new AppError(409, "conflict", "Box 未运行，无法打开终端。");
+          if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
           if (server.upgrade(req, { data: { boxId: box.id } })) return undefined;
-          throw new AppError(400, "bad_request", "WebSocket 升级失败。");
+          throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
         res = url.pathname.startsWith("/api/")
           ? await handleApi(app, req, url, server)

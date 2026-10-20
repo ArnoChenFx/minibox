@@ -1,4 +1,5 @@
 import { AppError, toAppError } from "./errors";
+import { msg } from "./messages";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "x-content-type-options": "nosniff",
@@ -20,9 +21,13 @@ export function json(data: unknown, status = 200, headers: Record<string, string
 
 export function errorResponse(e: unknown): Response {
   const err = toAppError(e);
-  const body: { error: { code: string; message: string; details?: unknown } } = {
+  const body: {
+    error: { code: string; message: string; key?: string; params?: unknown; details?: unknown };
+  } = {
     error: { code: err.code, message: err.message },
   };
+  if (err.key) body.error.key = err.key;
+  if (err.params) body.error.params = err.params;
   if (err.details !== undefined) body.error.details = err.details;
   return json(body, err.status);
 }
@@ -34,7 +39,7 @@ export async function readJson(req: Request): Promise<unknown> {
   try {
     return JSON.parse(text);
   } catch {
-    throw new AppError(400, "bad_request", "请求体不是合法的 JSON。");
+    throw new AppError(400, "bad_request", msg("invalid_json"));
   }
 }
 

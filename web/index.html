@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MiniBox</title>
-  <meta name="description" content="MiniBox：为 AI Agent 准备的个人开发环境" />
+  <meta name="description" content="MiniBox: personal dev environments for AI agents" />
   <meta name="theme-color" content="#4F46E5" />
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
   <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png" />
@@ -17,32 +17,39 @@
       document.documentElement.dataset.theme = t;
     })();
   </script>
+  <script>
+    (() => {
+      var l = localStorage.getItem("minibox.lang");
+      if (l !== "en" && l !== "zh-CN") l = /^zh/i.test(navigator.language || "") ? "zh-CN" : "en";
+      document.documentElement.lang = l;
+    })();
+  </script>
   <link rel="stylesheet" href="/css/app.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
 </head>
 <body>
   <div class="shell" id="shell">
-    <aside class="sidebar" aria-label="主导航">
-      <a class="brand" href="#/overview" aria-label="MiniBox 首页"><img data-logo src="/assets/logo.svg" alt="MiniBox" /></a>
+    <aside class="sidebar" aria-label="Main navigation" data-i18n-attr="aria-label:nav.main">
+      <a class="brand" href="#/overview" aria-label="MiniBox home" data-i18n-attr="aria-label:nav.home"><img data-logo src="/assets/logo.svg" alt="MiniBox" /></a>
       <nav class="nav" id="nav">
-        <a href="#/overview" data-nav="overview"><span data-icon="dashboard"></span>概览</a>
-        <div class="nav-section">资源</div>
-        <a href="#/boxes" data-nav="boxes"><span data-icon="box"></span>Box<span class="count" id="navBoxCount"></span></a>
-        <a href="#/snapshots" data-nav="snapshots"><span data-icon="camera"></span>快照</a>
-        <a href="#/templates" data-nav="templates"><span data-icon="layers"></span>模板</a>
-        <div class="nav-section">系统</div>
-        <a href="#/settings" data-nav="settings"><span data-icon="settings"></span>设置</a>
+        <a href="#/overview" data-nav="overview"><span data-icon="dashboard"></span><span data-i18n="nav.overview">Overview</span></a>
+        <div class="nav-section" data-i18n="nav.resources">Resources</div>
+        <a href="#/boxes" data-nav="boxes"><span data-icon="box"></span><span data-i18n="nav.boxes">Boxes</span><span class="count" id="navBoxCount"></span></a>
+        <a href="#/snapshots" data-nav="snapshots"><span data-icon="camera"></span><span data-i18n="nav.snapshots">Snapshots</span></a>
+        <a href="#/templates" data-nav="templates"><span data-icon="layers"></span><span data-i18n="nav.templates">Templates</span></a>
+        <div class="nav-section" data-i18n="nav.system">System</div>
+        <a href="#/settings" data-nav="settings"><span data-icon="settings"></span><span data-i18n="nav.settings">Settings</span></a>
       </nav>
-      <div class="sidebar-foot" id="sidebarFoot">MiniBox</div>
+      <div class="sidebar-foot"><span id="sidebarVersion">MiniBox</span><span id="sidebarLang"></span></div>
     </aside>
     <div class="main">
       <header class="topbar">
-        <button class="icon-btn menu-btn" id="menuBtn" aria-label="打开导航"><span data-icon="menu"></span></button>
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open navigation" data-i18n-attr="aria-label:shell.openNav"><span data-icon="menu"></span></button>
         <div class="crumbs" id="crumbs"></div>
         <div class="spacer"></div>
-        <a class="pill hide-sm" id="hostPill" href="#/overview" title="宿主机状态"><span class="dot"></span><span id="hostPillText">正在连接…</span></a>
-        <button class="icon-btn" id="themeBtn" aria-label="切换主题" title="切换浅色 / 深色"></button>
-        <button class="icon-btn" id="logoutBtn" aria-label="退出登录" title="退出登录"><span data-icon="logout"></span></button>
+        <a class="pill hide-sm" id="hostPill" href="#/overview" title="Host status" data-i18n-attr="title:shell.hostStatus"><span class="dot"></span><span id="hostPillText" data-i18n="common.connecting">Connecting…</span></a>
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme" title="Switch light / dark" data-i18n-attr="aria-label:shell.toggleTheme;title:shell.toggleThemeTitle"></button>
+        <button class="icon-btn" id="logoutBtn" aria-label="Sign out" title="Sign out" data-i18n-attr="aria-label:shell.logout;title:shell.logout"><span data-icon="logout"></span></button>
       </header>
       <main class="content" id="view" tabindex="-1"></main>
     </div>

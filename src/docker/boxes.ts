@@ -2,6 +2,7 @@ import type Docker from "dockerode";
 import { containerName, parseBoxLabels, stripSlash, volumeName } from "../labels";
 import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
+import { msg } from "../lib/messages";
 import type { CreateBoxInput } from "../lib/validation";
 import { type DockerCtx, ignore304 } from "./client";
 import { type BoxStats, getContainerStats } from "./stats";
@@ -48,10 +49,10 @@ export async function getBox(ctx: DockerCtx, id: string): Promise<Box> {
   try {
     info = await ctx.docker.getContainer(id).inspect();
   } catch (e) {
-    if ((e as { statusCode?: number }).statusCode === 404) throw notFound("找不到该 Box。");
+    if ((e as { statusCode?: number }).statusCode === 404) throw notFound(msg("box_not_found"));
     throw e;
   }
-  if (!parseBoxLabels(info.Config?.Labels, ctx.keys).isBox) throw notFound("找不到该 Box。");
+  if (!parseBoxLabels(info.Config?.Labels, ctx.keys).isBox) throw notFound(msg("box_not_found"));
   return toBox(ctx, info);
 }
 
@@ -77,14 +78,14 @@ async function ensureImage(ctx: DockerCtx, image: string): Promise<void> {
   try {
     await ctx.docker.getImage(image).inspect();
   } catch {
-    throw badRequest(`模板镜像 ${image} 不存在，请先在「模板」页构建或选择其他模板。`, { field: "template" });
+    throw badRequest(msg("template_image_missing", { image }), { field: "template" });
   }
 }
 
 export async function createBox(ctx: DockerCtx, input: CreateBoxInput & { templateLabel?: string }): Promise<Box> {
   const image = input.image ?? ctx.baseTemplateTag;
   const existing = await listBoxes(ctx);
-  if (existing.some((b) => b.name === input.name)) throw conflict(`名为「${input.name}」的 Box 已存在。`);
+  if (existing.some((b) => b.name === input.name)) throw conflict(msg("box_exists", { name: input.name }));
   await ensureImage(ctx, image);
 
   const volume = volumeName(ctx.prefix, input.name);

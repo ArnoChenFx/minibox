@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>登录 · MiniBox</title>
-  <meta name="description" content="MiniBox：为 AI Agent 准备的个人开发环境" />
+  <title>Sign in · MiniBox</title>
+  <meta name="description" content="MiniBox: personal dev environments for AI agents" />
   <meta name="theme-color" content="#4F46E5" />
   <meta name="robots" content="noindex" />
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
@@ -17,6 +17,13 @@
       document.documentElement.dataset.theme = t;
     })();
   </script>
+  <script>
+    (() => {
+      var l = localStorage.getItem("minibox.lang");
+      if (l !== "en" && l !== "zh-CN") l = /^zh/i.test(navigator.language || "") ? "zh-CN" : "en";
+      document.documentElement.lang = l;
+    })();
+  </script>
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
@@ -24,30 +31,30 @@
     <section class="login-hero" aria-hidden="true">
       <img src="/assets/logo-dark.svg" alt="" style="height:30px;align-self:flex-start" />
       <div>
-        <h1>为 AI Agent 准备的<br />个人开发环境</h1>
-        <p class="lead">在自己的机器上一键创建隔离的 Box，统一管理生命周期、资源配额、快照与模板。</p>
+        <h1 data-i18n-html="login.heroTitle">Personal dev environments<br />for AI agents</h1>
+        <p class="lead" data-i18n="login.lead"></p>
         <ul>
-          <li data-icon="box">每个 Box 拥有独立的文件系统、进程与工作区数据卷</li>
-          <li data-icon="camera">快照保存完整环境，随时复制或提升为模板</li>
-          <li data-icon="activity">实时查看宿主机与每个 Box 的资源占用</li>
-          <li data-icon="terminal">浏览器内终端，无需额外配置 SSH</li>
+          <li data-icon="box"><span data-i18n="login.feat1"></span></li>
+          <li data-icon="camera"><span data-i18n="login.feat2"></span></li>
+          <li data-icon="activity"><span data-i18n="login.feat3"></span></li>
+          <li data-icon="terminal"><span data-i18n="login.feat4"></span></li>
         </ul>
       </div>
-      <div class="foot">MiniBox · 基于 Docker 与 Bun 构建</div>
+      <div class="foot" data-i18n="login.foot">MiniBox · Built with Docker and Bun</div>
     </section>
     <section class="login-panel">
-      <button class="icon-btn login-theme" id="themeBtn" aria-label="切换主题"></button>
+      <div class="login-tools"><span id="loginLang"></span><button class="icon-btn" id="themeBtn" aria-label="Toggle theme" data-i18n-attr="aria-label:shell.toggleTheme"></button></div>
       <form class="login-card" id="loginForm" novalidate>
         <img class="logo" data-logo src="/assets/logo.svg" alt="MiniBox" />
-        <h2>登录控制台</h2>
-        <p class="sub">请输入访问密钥以继续。</p>
+        <h2 data-i18n="login.heading">Sign in to the console</h2>
+        <p class="sub" data-i18n="login.sub">Enter your access key to continue.</p>
         <div class="field">
-          <label class="label" for="key">访问密钥</label>
-          <div class="input-group"><span data-icon="key"></span><input class="input" id="key" name="key" type="password" autocomplete="current-password" placeholder="粘贴 64 位访问密钥" autofocus required /></div>
+          <label class="label" for="key" data-i18n="login.keyLabel">Access key</label>
+          <div class="input-group"><span data-icon="key"></span><input class="input" id="key" name="key" type="password" autocomplete="current-password" placeholder="Paste the 64-character access key" data-i18n-attr="placeholder:login.keyPlaceholder" autofocus required /></div>
           <div class="error-text" id="err" role="alert"></div>
         </div>
-        <button class="btn btn-primary btn-block" id="submit" type="submit">登录</button>
-        <p class="note">访问密钥保存在服务器项目目录的 <code>.env</code> 文件中（<code>ACCESS_KEY</code>）。登录状态在本浏览器保留 30 天。</p>
+        <button class="btn btn-primary btn-block" id="submit" type="submit" data-i18n="login.submit">Sign in</button>
+        <p class="note" data-i18n-html="login.note"></p>
       </form>
     </section>
   </div>

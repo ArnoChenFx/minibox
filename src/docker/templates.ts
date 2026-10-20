@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { notFound } from "../lib/errors";
 import { log } from "../lib/logger";
+import { msg } from "../lib/messages";
 import type { DockerCtx } from "./client";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 
@@ -21,7 +22,7 @@ export async function promoteSnapshot(
     .catch(() => null);
   const labels = info?.Config?.Labels;
   const isSnapshot = labels?.[ctx.keys.snapshot] === "true";
-  if (!labels || !isSnapshot) throw notFound("找不到该快照。");
+  if (!labels || !isSnapshot) throw notFound(msg("snapshot_not_found"));
   const k = ctx.keys;
   const source = labels[k.snapshotOf] ?? ref;
   const tmp = await ctx.docker.createContainer({ Image: ref, Cmd: ["true"] });
@@ -34,7 +35,7 @@ export async function promoteSnapshot(
         `LABEL ${k.template}=true`,
         `LABEL ${k.snapshot}=false`,
         `LABEL ${k.templateName}=${name}`,
-        `LABEL ${k.templateDesc}="${(description ?? `由快照提升（来源 Box：${source}）`).replace(/"/g, "'")}"`,
+        `LABEL ${k.templateDesc}="${(description ?? `Promoted from a snapshot of box ${source}`).replace(/"/g, "'")}"`,
         `LABEL ${k.created}=${new Date().toISOString()}`,
         'CMD ["sleep","infinity"]',
       ],
@@ -51,7 +52,7 @@ export async function deleteTemplate(ctx: DockerCtx, ref: string): Promise<void>
     // Allowed, but it can be rebuilt from templates/base.
     log.warn("template.base_deleted", { ref });
   }
-  await removeLabeledImage(ctx, ref, ctx.keys.template, "模板");
+  await removeLabeledImage(ctx, ref, ctx.keys.template, "template_not_found");
 }
 
 let building: Promise<{ ref: string; output: string }> | null = null;

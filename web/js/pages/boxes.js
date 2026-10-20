@@ -3,6 +3,7 @@ import { openCreateBox } from "../components/create-box.js";
 import { api } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
 import { cpus, gbOrMb, mem, pct, relTime } from "../lib/format.js";
+import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { emptyState, skeletonRows, stateBadge, toastError, usageBar } from "../lib/ui.js";
 
@@ -11,15 +12,15 @@ export function render(view) {
   let filter = "";
   view.innerHTML = `
     <div class="page-head">
-      <div><h1>Box</h1><p>每个 Box 是一个独立的开发环境，可供 Agent 通过终端或 API 使用。</p></div>
+      <div><h1>${t("nav.boxes")}</h1><p>${t("bx.subtitle")}</p></div>
       <div class="page-actions">
-        <div class="input-group hide-sm" style="width:220px">${icon("search")}<input class="input" id="bxSearch" placeholder="搜索名称或模板" /></div>
-        <button class="btn" data-action="refresh" title="刷新">${icon("refresh")}刷新</button>
-        <button class="btn btn-primary" data-action="create">${icon("plus")}创建 Box</button>
+        <div class="input-group hide-sm" style="width:220px">${icon("search")}<input class="input" id="bxSearch" placeholder="${t("bx.search")}" /></div>
+        <button class="btn" data-action="refresh" title="${t("common.refresh")}">${icon("refresh")}${t("common.refresh")}</button>
+        <button class="btn btn-primary" data-action="create">${icon("plus")}${t("box.create")}</button>
       </div>
     </div>
     <div class="card"><div class="table-wrap"><table class="table">
-      <thead><tr><th>名称</th><th>状态</th><th class="hide-sm">模板</th><th class="hide-sm">配额</th><th>CPU</th><th>内存</th><th class="hide-sm">创建时间</th><th style="text-align:right">操作</th></tr></thead>
+      <thead><tr><th>${t("bx.colName")}</th><th>${t("bx.colState")}</th><th class="hide-sm">${t("bx.colTemplate")}</th><th class="hide-sm">${t("bx.colQuota")}</th><th>CPU</th><th>${t("bx.colMem")}</th><th class="hide-sm">${t("bx.colCreated")}</th><th style="text-align:right">${t("bx.colActions")}</th></tr></thead>
       <tbody id="bxBody">${skeletonRows(3, 8)}</tbody>
     </table></div></div>`;
 
@@ -33,14 +34,14 @@ export function render(view) {
     if (!boxes.length) {
       body.innerHTML = `<tr><td colspan="8">${emptyState({
         iconName: "box",
-        title: "还没有 Box",
-        text: "Box 是一个带独立工作区的容器。选择模板和规格即可在几秒内创建。",
-        action: `<button class="btn btn-primary" data-action="create">${icon("plus")}创建第一个 Box</button>`,
+        title: t("bx.empty"),
+        text: t("bx.emptyText"),
+        action: `<button class="btn btn-primary" data-action="create">${icon("plus")}${t("bx.createFirst")}</button>`,
       })}</td></tr>`;
       return;
     }
     if (!list.length) {
-      body.innerHTML = `<tr><td colspan="8">${emptyState({ iconName: "search", title: "没有匹配的 Box", text: `没有名称或模板包含「${esc(filter)}」的 Box。` })}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="8">${emptyState({ iconName: "search", title: t("bx.noMatch"), text: t("bx.noMatchText", { q: esc(filter) }) })}</td></tr>`;
       return;
     }
     body.innerHTML = list
@@ -66,7 +67,7 @@ export function render(view) {
       boxes = (await api("/api/boxes")).boxes;
       draw();
     } catch (e) {
-      body.innerHTML = `<tr><td colspan="8">${emptyState({ iconName: "alert", title: "无法加载 Box 列表", text: esc(e.message) })}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="8">${emptyState({ iconName: "alert", title: t("bx.loadFailed"), text: esc(e.message) })}</td></tr>`;
     }
   };
 
@@ -90,7 +91,7 @@ export function render(view) {
     delete: (el) => deleteBox(find(el.dataset.id)).then((ok) => ok && load()),
   });
 
-  load().catch((e) => toastError("加载失败", e));
-  const t = setInterval(load, 5000);
-  return () => clearInterval(t);
+  load().catch((e) => toastError(t("bx.loadFailedToast"), e));
+  const timer = setInterval(load, 5000);
+  return () => clearInterval(timer);
 }

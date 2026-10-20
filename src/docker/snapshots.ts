@@ -29,7 +29,7 @@ export async function createSnapshot(
       `LABEL ${k.template}=false`,
       `LABEL ${k.snapshotOf}=${box.name}`,
       `LABEL ${k.templateName}=${name ?? box.name}`,
-      `LABEL ${k.templateDesc}="Box ${box.name} 的快照"`,
+      `LABEL ${k.templateDesc}="Snapshot of box ${box.name}"`,
       `LABEL ${k.created}=${new Date().toISOString()}`,
       'CMD ["sleep","infinity"]',
     ],
@@ -40,6 +40,6 @@ export async function createSnapshot(
 }
 
 export async function deleteSnapshot(ctx: DockerCtx, ref: string): Promise<void> {
-  await removeLabeledImage(ctx, ref, ctx.keys.snapshot, "快照");
+  await removeLabeledImage(ctx, ref, ctx.keys.snapshot, "snapshot_not_found");
   log.info("snapshot.deleted", { ref });
 }

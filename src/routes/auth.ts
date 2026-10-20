@@ -2,6 +2,7 @@ import { clearSessionCookie, isAuthorized, isSecureRequest, safeEqual, sessionCo
 import { AppError } from "../lib/errors";
 import { json, readJson } from "../lib/http";
 import { log } from "../lib/logger";
+import { msg } from "../lib/messages";
 import { asObject } from "../lib/validation";
 import { type Route, route } from "./router";
 
@@ -16,14 +17,14 @@ export const authRoutes: Route[] = [
     async ({ app, req, server }) => {
       const ip = clientIp(req, server.requestIP(req)?.address);
       if (app.throttle.isBlocked(ip)) {
-        throw new AppError(429, "too_many_requests", "尝试次数过多，请 5 分钟后再试。");
+        throw new AppError(429, "too_many_requests", msg("too_many_attempts"));
       }
       const body = asObject(await readJson(req));
       const key = typeof body.key === "string" ? body.key.trim() : "";
       if (!key || !safeEqual(key, app.cfg.accessKey)) {
         app.throttle.fail(ip);
         log.warn("auth.login_failed", { ip });
-        throw new AppError(401, "unauthorized", "访问密钥不正确。");
+        throw new AppError(401, "unauthorized", msg("wrong_key"));
       }
       app.throttle.reset(ip);
       log.info("auth.login", { ip });

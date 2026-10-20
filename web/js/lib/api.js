@@ -1,3 +1,15 @@
+import { has, t } from "./i18n.js";
+
+/** Translate a server error `{ code, message, key?, params? }` into the UI language. */
+function serverMessage(err, status) {
+  if (err.key && has(`err.${err.key}`)) {
+    const params = { ...err.params };
+    if (typeof params.label === "string" && has(`label.${params.label}`)) params.label = t(`label.${params.label}`);
+    return t(`err.${err.key}`, params);
+  }
+  return err.message ?? t("api.httpError", { status });
+}
+
 export class ApiError extends Error {
   constructor(status, code, message, details) {
     super(message);
@@ -20,7 +32,7 @@ export async function api(path, { method = "GET", body, signal } = {}) {
     });
   } catch (e) {
     if (e.name === "AbortError") throw e;
-    throw new ApiError(0, "network", "无法连接服务器，请检查网络后重试。");
+    throw new ApiError(0, "network", t("api.network"));
   }
   const text = await res.text();
   let data = null;
@@ -31,16 +43,11 @@ export async function api(path, { method = "GET", body, signal } = {}) {
   }
   if (res.status === 401 && !path.startsWith("/api/auth/")) {
     location.href = "/login";
-    throw new ApiError(401, "unauthorized", "登录已失效，请重新登录。");
+    throw new ApiError(401, "unauthorized", t("api.sessionExpired"));
   }
   if (!res.ok) {
     const err = data?.error ?? {};
-    throw new ApiError(
-      res.status,
-      err.code ?? "http_error",
-      err.message ?? `请求失败（HTTP ${res.status}）`,
-      err.details,
-    );
+    throw new ApiError(res.status, err.code ?? "http_error", serverMessage(err, res.status), err.details);
   }
   return data;
 }

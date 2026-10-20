@@ -47,7 +47,7 @@ export function terminalHandlers(app: App) {
         stream.on("error", () => ws.close(1011, "stream error"));
         log.info("terminal.open", { box: ws.data.boxId.slice(0, 12) });
       } catch (e) {
-        ws.send(`\r\n终端启动失败：${e instanceof Error ? e.message : String(e)}\r\n`);
+        ws.send(`\r\nFailed to start terminal: ${e instanceof Error ? e.message : String(e)}\r\n`);
         ws.close(1011, "exec failed");
       }
     },

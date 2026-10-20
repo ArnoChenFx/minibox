@@ -1,4 +1,5 @@
 import { $, el, esc } from "./dom.js";
+import { lang, t } from "./i18n.js";
 import { icon } from "./icons.js";
 
 // ---------- Toasts ----------
@@ -46,7 +47,7 @@ export function openDialog({
       <div class="dialog-head">
         ${iconName ? `<div class="dialog-icon ${tone}">${icon(iconName, "icon-lg")}</div>` : ""}
         <div><h2 id="dlg-title-${openCount}">${esc(title)}</h2>${description ? `<p>${description}</p>` : ""}</div>
-        <button class="icon-btn" data-close aria-label="关闭">${icon("x")}</button>
+        <button class="icon-btn" data-close aria-label="${t("common.close")}">${icon("x")}</button>
       </div>
       ${body ? `<div class="dialog-body">${body}</div>` : ""}
       ${footer ? `<div class="dialog-foot">${footer}</div>` : ""}
@@ -83,7 +84,7 @@ export function openDialog({
 }
 
 /** Promise-based confirm dialog. Resolves to false, or to { checked } when confirmed. */
-export function confirmDialog({ title, message, confirmText = "确认", danger = false, checkbox }) {
+export function confirmDialog({ title, message, confirmText = t("common.confirm"), danger = false, checkbox }) {
   return new Promise((resolve) => {
     let result = false;
     const { root, close } = openDialog({
@@ -94,7 +95,7 @@ export function confirmDialog({ title, message, confirmText = "确认", danger =
       body: checkbox
         ? `<label class="checkbox"><input type="checkbox" id="cfm-check" /> <span>${checkbox.label}${checkbox.help ? `<div class="help">${checkbox.help}</div>` : ""}</span></label>`
         : "",
-      footer: `<button class="btn" data-close>取消</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="cfm-ok">${esc(confirmText)}</button>`,
+      footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="cfm-ok">${esc(confirmText)}</button>`,
       onClose: () => resolve(result),
     });
     root.querySelector("#cfm-ok").addEventListener("click", () => {
@@ -112,7 +113,7 @@ export function promptDialog({
   placeholder = "",
   value = "",
   help = "",
-  confirmText = "确定",
+  confirmText = t("common.ok"),
   iconName = "info",
   validate,
 }) {
@@ -125,7 +126,7 @@ export function promptDialog({
       body: `<div class="field"><label class="label" for="pd-input">${esc(label)}</label>
         <input class="input" id="pd-input" placeholder="${esc(placeholder)}" value="${esc(value)}" autocomplete="off" autofocus />
         ${help ? `<div class="help">${help}</div>` : ""}<div class="error-text" id="pd-err"></div></div>`,
-      footer: `<button class="btn" data-close>取消</button><button class="btn btn-primary" id="pd-ok">${esc(confirmText)}</button>`,
+      footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="pd-ok">${esc(confirmText)}</button>`,
       onClose: () => resolve(result),
     });
     const input = root.querySelector("#pd-input");
@@ -172,16 +173,18 @@ export function skeletonRows(n = 3, cols = 5) {
 }
 
 const STATE = {
-  running: ["badge-success", "运行中"],
-  exited: ["", "已停止"],
-  created: ["", "已创建"],
-  paused: ["badge-warning", "已暂停"],
-  restarting: ["badge-warning", "重启中"],
-  removing: ["badge-warning", "删除中"],
-  dead: ["badge-danger", "异常"],
+  running: "badge-success",
+  exited: "",
+  created: "",
+  paused: "badge-warning",
+  restarting: "badge-warning",
+  removing: "badge-warning",
+  dead: "badge-danger",
 };
 export function stateBadge(state) {
-  const [cls, label] = STATE[state] ?? ["", state ?? "未知"];
+  const known = state in STATE;
+  const cls = known ? STATE[state] : "";
+  const label = known ? t(`state.${state}`) : (state ?? t("common.unknown"));
   return `<span class="badge ${cls}"><span class="dot"></span>${esc(label)}</span>`;
 }
 
@@ -192,5 +195,9 @@ export function usageBar(label, percent, right, extra = "") {
 }
 
 export const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
-export const nameError = (v, what = "名称") =>
-  !v ? `请输入${what}。` : NAME_RE.test(v) ? "" : `${what}只能包含字母、数字、点、下划线和连字符，须以字母或数字开头。`;
+/** Client-side name validation. `what` is a label key (label.*). */
+export const nameError = (v, what = "name") => {
+  const label = t(`label.${what}`);
+  if (!v) return t("ui.nameRequired", { what: lang === "en" ? label.charAt(0).toLowerCase() + label.slice(1) : label });
+  return NAME_RE.test(v) ? "" : t("ui.nameInvalid", { what: label });
+};

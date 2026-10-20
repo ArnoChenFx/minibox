@@ -7,6 +7,7 @@ import { type CpuTimes, cpuPercent, parseMeminfo, parseProcStat } from "./procfs
 
 export interface DiskUsage {
   mount: string;
+  /** Stable id translated by the UI: "root" | "docker" | "root+docker". */
   label: string;
   total: number;
   used: number;
@@ -154,12 +155,12 @@ export class HostMonitor {
     const d = await this.dockerInfo();
     const { boxes, ...docker } = d;
     const cpus = os.cpus();
-    const disks = [disk("/", "系统盘")];
+    const disks = [disk("/", "root")];
     if (docker.rootDir) {
-      const dd = disk(docker.rootDir, "Docker 数据");
+      const dd = disk(docker.rootDir, "docker");
       // Only list separately when on a different filesystem.
       if (dd && disks[0] && dd.total !== disks[0].total) disks.push(dd);
-      else if (dd && disks[0]) disks[0].label = "系统盘（含 Docker 数据）";
+      else if (dd && disks[0]) disks[0].label = "root+docker";
     }
     const load = os.loadavg();
     return {
@@ -170,7 +171,7 @@ export class HostMonitor {
       uptimeSec: Math.round(os.uptime()),
       cpu: {
         cores: cpus.length,
-        model: cpus[0]?.model?.trim() ?? "未知",
+        model: cpus[0]?.model?.trim() ?? "Unknown",
         usagePercent: this.lastCpu,
         load: [load[0] ?? 0, load[1] ?? 0, load[2] ?? 0].map((n) => Math.round(n * 100) / 100) as [
           number,

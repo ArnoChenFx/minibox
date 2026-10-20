@@ -3,6 +3,7 @@ import * as boxes from "../docker/boxes";
 import { createSnapshot } from "../docker/snapshots";
 import { AppError } from "../lib/errors";
 import { json, readJson } from "../lib/http";
+import { msg } from "../lib/messages";
 import {
   asObject,
   type CreateBoxInput,
@@ -20,13 +21,13 @@ export const DEFAULT_RESOURCES = { cpus: 2, memoryMb: 4096 };
 export async function assertCapacity(app: App, res: { cpus?: number; memoryMb?: number }): Promise<void> {
   const host = await app.monitor.snapshot();
   if (res.cpus !== undefined && res.cpus > host.cpu.cores) {
-    throw new AppError(422, "insufficient_capacity", `CPU 核数超出宿主机上限（${host.cpu.cores} 核）。`, {
+    throw new AppError(422, "insufficient_capacity", msg("cpu_over_host", { cores: host.cpu.cores }), {
       field: "cpus",
     });
   }
   if (res.memoryMb !== undefined && res.memoryMb * 1024 * 1024 > host.memory.total) {
     const gb = (host.memory.total / 1024 ** 3).toFixed(1);
-    throw new AppError(422, "insufficient_capacity", `内存超出宿主机上限（${gb} GB）。`, { field: "memoryMb" });
+    throw new AppError(422, "insufficient_capacity", msg("memory_over_host", { gb }), { field: "memoryMb" });
   }
 }
 
@@ -91,7 +92,7 @@ export const boxRoutes: Route[] = [
   route("POST", "/api/boxes/:id/snapshots", async ({ app, params, req }) => {
     const id = params.id ?? "";
     const body = asObject(await readJson(req));
-    const name = optionalName(body.name, "name", "快照名称");
+    const name = optionalName(body.name, "name", "snapshotName");
     const boxName = await nameOf(app, id);
     return json(
       { snapshot: await tracked(app, "snapshot.create", boxName, () => createSnapshot(app.docker, id, name)) },

@@ -20,7 +20,7 @@ export const imageRoutes: Route[] = [
   route("POST", "/api/snapshots/:ref/promote", async ({ app, params, req }) => {
     const ref = params.ref ?? "";
     const body = asObject(await readJson(req));
-    const name = validateName(body.name, "name", "模板名称");
+    const name = validateName(body.name, "name", "templateName");
     const description = typeof body.description === "string" ? body.description.slice(0, 200) : undefined;
     return json(
       {

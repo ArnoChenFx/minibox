@@ -1,6 +1,7 @@
 import type Docker from "dockerode";
 import { parseImageLabels } from "../labels";
 import { notFound } from "../lib/errors";
+import { msg } from "../lib/messages";
 import type { DockerCtx } from "./client";
 
 export interface ImageItem {
@@ -36,13 +37,18 @@ export async function listImagesByLabel(ctx: DockerCtx, label: string): Promise<
 }
 
 /** Remove an image only if it carries the given MiniBox label (refuse to delete arbitrary images). */
-export async function removeLabeledImage(ctx: DockerCtx, ref: string, label: string, what: string): Promise<void> {
+export async function removeLabeledImage(
+  ctx: DockerCtx,
+  ref: string,
+  label: string,
+  notFoundKey: "snapshot_not_found" | "template_not_found",
+): Promise<void> {
   let info: Docker.ImageInspectInfo;
   try {
     info = await ctx.docker.getImage(ref).inspect();
   } catch {
-    throw notFound(`找不到该${what}。`);
+    throw notFound(msg(notFoundKey));
   }
-  if (info.Config?.Labels?.[label] !== "true") throw notFound(`找不到该${what}。`);
+  if (info.Config?.Labels?.[label] !== "true") throw notFound(msg(notFoundKey));
   await ctx.docker.getImage(ref).remove({ force: true });
 }

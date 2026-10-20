@@ -2,18 +2,19 @@ import { deleteBox, editResources, lifecycle, snapshotBox } from "../components/
 import { openCreateBox } from "../components/create-box.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
-import { bytes, cpus, dateTime, gbOrMb, mem, pct, relTime, shortId } from "../lib/format.js";
+import { bytes, cpus, dateTime, duration, gbOrMb, mem, pct, shortId } from "../lib/format.js";
+import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { sparkline } from "../lib/sparkline.js";
 import { emptyState, stateBadge, toastError, usageBar } from "../lib/ui.js";
 
 const TABS = [
-  ["overview", "概览", "dashboard"],
-  ["terminal", "终端", "terminal"],
-  ["logs", "日志", "logs"],
-  ["resources", "资源", "sliders"],
-  ["snapshots", "快照", "camera"],
+  ["overview", "bd.tabOverview", "dashboard"],
+  ["terminal", "bd.tabTerminal", "terminal"],
+  ["logs", "bd.tabLogs", "logs"],
+  ["resources", "bd.tabResources", "sliders"],
+  ["snapshots", "bd.tabSnapshots", "camera"],
 ];
 
 export function render(view, id, tab = "overview") {
@@ -30,15 +31,15 @@ export function render(view, id, tab = "overview") {
       <div><h1>${esc(box.name)} ${stateBadge(box.state)}</h1>
         <div class="meta mono">${esc(shortId(box.id))} · ${esc(box.image)} · ${cpus(box.cpus)} / ${mem(box.memory)}</div></div>
       <div class="page-actions">
-        ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}停止</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}启动</button>`}
-        <button class="btn" data-action="restart">${icon("restart")}重启</button>
-        <button class="btn" data-action="snapshot">${icon("camera")}创建快照</button>
-        <button class="btn" data-action="delete" title="删除 Box">${icon("trash")}删除</button>
+        ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}${t("act.stop")}</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}${t("act.start")}</button>`}
+        <button class="btn" data-action="restart">${icon("restart")}${t("act.restart")}</button>
+        <button class="btn" data-action="snapshot">${icon("camera")}${t("act.snapshot")}</button>
+        <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
     </div>
     <div class="tabs" role="tablist">${TABS.map(
       ([k, label, ic]) =>
-        `<a class="tab" role="tab" aria-selected="${k === tab}" href="#/boxes/${enc(box.id)}/${k}">${icon(ic)}${label}</a>`,
+        `<a class="tab" role="tab" aria-selected="${k === tab}" href="#/boxes/${enc(box.id)}/${k}">${icon(ic)}${t(label)}</a>`,
     ).join("")}</div>
     <div id="tabBody"></div>`;
 
@@ -61,14 +62,14 @@ export function render(view, id, tab = "overview") {
     } catch (e) {
       view.innerHTML = emptyState({
         iconName: "alert",
-        title: e.status === 404 ? "找不到该 Box" : "无法加载 Box",
-        text: e.status === 404 ? "它可能已被删除。" : esc(e.message),
-        action: `<a class="btn" href="#/boxes">${icon("arrowLeft")}返回 Box 列表</a>`,
+        title: e.status === 404 ? t("bd.notFound") : t("bd.loadFailed"),
+        text: e.status === 404 ? t("bd.maybeDeleted") : esc(e.message),
+        action: `<a class="btn" href="#/boxes">${icon("arrowLeft")}${t("bd.back")}</a>`,
       });
       return;
     }
     if (disposed) return;
-    setCrumbs([{ label: "Box", href: "#/boxes" }, box.name]);
+    setCrumbs([{ label: t("nav.boxes"), href: "#/boxes" }, box.name]);
     document.title = `${box.name} · MiniBox`;
     view.innerHTML = header();
     tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), { box: () => box, refreshBox, history, rerender });
@@ -107,51 +108,50 @@ const TAB_RENDER = {
       root.innerHTML = `
         <div class="grid grid-3">
           <div class="card metric"><div class="metric-top"><span>CPU</span>${icon("cpu")}</div>
-            <div class="metric-value">${s ? pct(s.cpuPercent) : "—"}<small>配额 ${cpus(b.cpus)}</small></div>
-            <div style="margin-top:auto">${s ? usageBar("相对配额", b.cpus ? s.cpuPercent / b.cpus : s.cpuPercent, b.cpus ? pct(s.cpuPercent / b.cpus, 0) : "") : '<span class="subtle">Box 未运行</span>'}</div></div>
-          <div class="card metric"><div class="metric-top"><span>内存</span>${icon("memory")}</div>
-            <div class="metric-value">${s ? gbOrMb(s.memUsage) : "—"}<small>配额 ${mem(b.memory)}</small></div>
-            <div style="margin-top:auto">${s ? usageBar("相对配额", s.memPercent, pct(s.memPercent, 0), "mem") : '<span class="subtle">Box 未运行</span>'}</div></div>
-          <div class="card metric"><div class="metric-top"><span>运行时长</span>${icon("clock")}</div>
-            <div class="metric-value" style="font-size:20px">${b.running && b.startedAt ? relTime(b.startedAt).replace("前", "") : "未运行"}</div>
-            <div class="metric-sub">${b.startedAt ? `最近启动于 ${dateTime(b.startedAt)}` : "尚未启动"}</div></div>
+            <div class="metric-value">${s ? pct(s.cpuPercent) : "—"}<small>${t("bd.quota", { v: cpus(b.cpus) })}</small></div>
+            <div style="margin-top:auto">${s ? usageBar(t("bd.relQuota"), b.cpus ? s.cpuPercent / b.cpus : s.cpuPercent, b.cpus ? pct(s.cpuPercent / b.cpus, 0) : "") : `<span class="subtle">${t("bd.notRunning")}</span>`}</div></div>
+          <div class="card metric"><div class="metric-top"><span>${t("ov.memory")}</span>${icon("memory")}</div>
+            <div class="metric-value">${s ? gbOrMb(s.memUsage) : "—"}<small>${t("bd.quota", { v: mem(b.memory) })}</small></div>
+            <div style="margin-top:auto">${s ? usageBar(t("bd.relQuota"), s.memPercent, pct(s.memPercent, 0), "mem") : `<span class="subtle">${t("bd.notRunning")}</span>`}</div></div>
+          <div class="card metric"><div class="metric-top"><span>${t("bd.uptime")}</span>${icon("clock")}</div>
+            <div class="metric-value" style="font-size:20px">${b.running && b.startedAt ? duration((Date.now() - new Date(b.startedAt).getTime()) / 1000) : t("bd.stopped")}</div>
+            <div class="metric-sub">${b.startedAt ? t("bd.lastStarted", { t: dateTime(b.startedAt) }) : t("bd.neverStarted")}</div></div>
         </div>
-        <div class="card" style="margin-top:16px"><div class="card-head"><h3>基本信息</h3></div><div class="card-body"><dl class="kv">
-          <dt>名称</dt><dd>${esc(b.name)}</dd>
-          <dt>容器 ID</dt><dd class="mono">${esc(b.id)}</dd>
-          <dt>镜像</dt><dd class="mono">${esc(b.image)}</dd>
-          <dt>模板</dt><dd class="mono">${esc(b.template || "—")}</dd>
-          <dt>工作区</dt><dd><span class="mono">/workspace</span> <span class="subtle">→ 数据卷</span> <span class="mono">${esc(b.volume)}</span></dd>
-          <dt>创建时间</dt><dd>${dateTime(b.createdAt)}</dd>
-          <dt>命令行接入</dt><dd><code>docker exec -it ${esc(`minibox-${b.name}`)} bash</code></dd>
+        <div class="card" style="margin-top:16px"><div class="card-head"><h3>${t("bd.info")}</h3></div><div class="card-body"><dl class="kv">
+          <dt>${t("bd.name")}</dt><dd>${esc(b.name)}</dd>
+          <dt>${t("bd.containerId")}</dt><dd class="mono">${esc(b.id)}</dd>
+          <dt>${t("bd.image")}</dt><dd class="mono">${esc(b.image)}</dd>
+          <dt>${t("bd.template")}</dt><dd class="mono">${esc(b.template || "—")}</dd>
+          <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume)}</span></dd>
+          <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
+          <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(`minibox-${b.name}`)} bash</code></dd>
         </dl></div></div>`;
     };
     draw();
-    const t = setInterval(
+    const timer = setInterval(
       () =>
         refreshBox()
           .then(draw)
           .catch(() => {}),
       3000,
     );
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   },
 
   terminal(root, { box }) {
     const b = box();
     if (!b.running) {
-      root.innerHTML = `<div class="card">${emptyState({ iconName: "terminal", title: "Box 未运行", text: "启动 Box 后即可在浏览器中打开终端。", action: `<button class="btn btn-primary" data-action="start">${icon("play")}启动 Box</button>` })}</div>`;
+      root.innerHTML = `<div class="card">${emptyState({ iconName: "terminal", title: t("bd.notRunning"), text: t("bd.termNotRunningText"), action: `<button class="btn btn-primary" data-action="start">${icon("play")}${t("bd.startBox")}</button>` })}</div>`;
       return null;
     }
     root.innerHTML = `<div class="terminal-frame">
       <div class="terminal-bar"><span class="lights"><i></i><i></i><i></i></span><span class="mono">root@${esc(b.name)}: /workspace</span>
-        <span class="status" id="tStatus"><span class="dot"></span><span id="tStatusText">正在连接…</span></span>
-        <button class="btn btn-ghost btn-sm" id="tReconnect" style="color:#a1a1aa">${icon("refresh")}重新连接</button></div>
+        <span class="status" id="tStatus"><span class="dot"></span><span id="tStatusText">${t("common.connecting")}</span></span>
+        <button class="btn btn-ghost btn-sm" id="tReconnect" style="color:#a1a1aa">${icon("refresh")}${t("bd.reconnect")}</button></div>
       <div class="terminal" id="term"></div></div>
-      <p class="help" style="margin-top:8px">会话使用 bash 登录 Shell；离开此页面即断开，后台进程请使用 nohup 或 tmux 保持。</p>`;
+      <p class="help" style="margin-top:8px">${t("bd.termHelp")}</p>`;
     if (!window.Terminal) {
-      root.querySelector("#term").innerHTML =
-        '<div class="callout danger">终端组件加载失败，请检查能否访问 cdn.jsdelivr.net。</div>';
+      root.querySelector("#term").innerHTML = `<div class="callout danger">${t("bd.termLoadFailed")}</div>`;
       return null;
     }
     let ws;
@@ -176,12 +176,12 @@ const TAB_RENDER = {
       ws = new WebSocket(`${proto}//${location.host}/api/boxes/${enc(b.id)}/terminal`);
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
-        setStatus(true, "已连接");
+        setStatus(true, t("bd.connected"));
         ws.send(JSON.stringify({ type: "resize", cols: xterm.cols, rows: xterm.rows }));
         xterm.focus();
       };
       ws.onmessage = (ev) => xterm.write(typeof ev.data === "string" ? ev.data : new Uint8Array(ev.data));
-      ws.onclose = () => setStatus(false, "已断开");
+      ws.onclose = () => setStatus(false, t("bd.disconnected"));
     };
     const dataSub = xterm.onData((d) => ws?.readyState === 1 && ws.send(d));
     const resizeSub = xterm.onResize(
@@ -204,28 +204,28 @@ const TAB_RENDER = {
   },
 
   logs(root, { box }) {
-    root.innerHTML = `<div class="card"><div class="card-head"><h3>容器日志</h3>
-      <div class="row"><select class="select" id="lTail" style="width:auto;height:30px"><option value="200">最近 200 行</option><option value="1000">最近 1000 行</option><option value="5000">最近 5000 行</option></select>
-      <label class="checkbox" style="align-items:center"><input type="checkbox" id="lAuto" style="accent-color:var(--accent);margin:0" checked />自动刷新</label>
-      <button class="btn btn-sm" id="lRefresh">${icon("refresh")}刷新</button></div></div>
-      <pre class="logs" id="lView">正在加载…</pre></div>
-      <p class="help" style="margin-top:8px">显示容器主进程的标准输出与标准错误。终端中执行的命令输出不会出现在这里。</p>`;
+    root.innerHTML = `<div class="card"><div class="card-head"><h3>${t("bd.logs")}</h3>
+      <div class="row"><select class="select" id="lTail" style="width:auto;height:30px">${[200, 1000, 5000].map((n) => `<option value="${n}">${t("bd.lastLines", { n })}</option>`).join("")}</select>
+      <label class="checkbox" style="align-items:center"><input type="checkbox" id="lAuto" style="accent-color:var(--accent);margin:0" checked />${t("bd.autoRefresh")}</label>
+      <button class="btn btn-sm" id="lRefresh">${icon("refresh")}${t("common.refresh")}</button></div></div>
+      <pre class="logs" id="lView">${t("common.loading")}</pre></div>
+      <p class="help" style="margin-top:8px">${t("bd.logsHelp")}</p>`;
     const view = root.querySelector("#lView");
     const load = async () => {
       try {
         const { logs } = await api(`/api/boxes/${enc(box().id)}/logs?tail=${root.querySelector("#lTail").value}`);
         const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 40;
-        view.textContent = logs || "暂无日志输出。";
+        view.textContent = logs || t("bd.noLogs");
         if (atBottom) view.scrollTop = view.scrollHeight;
       } catch (e) {
-        view.textContent = `加载日志失败：${e.message}`;
+        view.textContent = t("bd.logsFailed", { msg: e.message });
       }
     };
     root.querySelector("#lRefresh").addEventListener("click", load);
     root.querySelector("#lTail").addEventListener("change", load);
     load().then(() => (view.scrollTop = view.scrollHeight));
-    const t = setInterval(() => root.querySelector("#lAuto").checked && load(), 4000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => root.querySelector("#lAuto").checked && load(), 4000);
+    return () => clearInterval(timer);
   },
 
   resources(root, { box, refreshBox, history }) {
@@ -233,37 +233,37 @@ const TAB_RENDER = {
       const b = box();
       const s = b.stats;
       root.innerHTML = `<div class="grid grid-2">
-        <div class="card"><div class="card-head"><h3>资源配额</h3><button class="btn btn-sm" data-action="resources">${icon("sliders")}调整配额</button></div>
+        <div class="card"><div class="card-head"><h3>${t("bd.quotaTitle")}</h3><button class="btn btn-sm" data-action="resources">${icon("sliders")}${t("bd.adjust")}</button></div>
           <div class="card-body"><dl class="kv">
-            <dt>CPU 上限</dt><dd>${cpus(b.cpus)}</dd>
-            <dt>内存上限</dt><dd>${mem(b.memory)}</dd>
-            <dt>交换空间</dt><dd>禁用（与内存上限相同）</dd>
-            <dt>重启策略</dt><dd>除非手动停止，否则自动重启</dd>
-          </dl><div class="callout" style="margin-top:16px">${icon("info")}<span>配额通过 <code>docker update</code> 热更新，运行中的 Box 无需重启即可生效。</span></div></div></div>
-        <div class="card"><div class="card-head"><h3>实时用量</h3><span class="hint">相对配额，每 3 秒采样</span></div>
+            <dt>${t("bd.cpuLimit")}</dt><dd>${cpus(b.cpus)}</dd>
+            <dt>${t("bd.memLimit")}</dt><dd>${mem(b.memory)}</dd>
+            <dt>${t("bd.swap")}</dt><dd>${t("bd.swapValue")}</dd>
+            <dt>${t("bd.restartPolicy")}</dt><dd>${t("bd.restartValue")}</dd>
+          </dl><div class="callout" style="margin-top:16px">${icon("info")}<span>${t("bd.hotUpdate")}</span></div></div></div>
+        <div class="card"><div class="card-head"><h3>${t("bd.liveUsage")}</h3><span class="hint">${t("bd.liveHint")}</span></div>
           <div class="card-body stack">${
             s
-              ? `<div><div class="bar-label"><span>CPU ${pct(s.cpuPercent)}</span><span>${b.cpus ? `${pct(s.cpuPercent / b.cpus, 0)} / 配额` : ""}</span></div>${sparkline(
+              ? `<div><div class="bar-label"><span>CPU ${pct(s.cpuPercent)}</span><span>${b.cpus ? t("bd.ofQuota", { p: pct(s.cpuPercent / b.cpus, 0) }) : ""}</span></div>${sparkline(
                   history.map((h) => h.cpu),
                   { color: "var(--chart-cpu)", id: "bcpu", height: 56 },
                 )}</div>
-                 <div><div class="bar-label"><span>内存 ${gbOrMb(s.memUsage)}</span><span>${pct(s.memPercent, 0)} / ${bytes(s.memLimit)}</span></div>${sparkline(
+                 <div><div class="bar-label"><span>${t("ov.memory")} ${gbOrMb(s.memUsage)}</span><span>${pct(s.memPercent, 0)} / ${bytes(s.memLimit)}</span></div>${sparkline(
                    history.map((h) => h.mem),
                    { color: "var(--chart-mem)", id: "bmem", height: 56 },
                  )}</div>`
-              : emptyState({ iconName: "activity", title: "暂无实时数据", text: "Box 未运行。" })
+              : emptyState({ iconName: "activity", title: t("bd.noLive"), text: t("bd.notRunningShort") })
           }</div></div></div>`;
       root.querySelectorAll(".spark").forEach((sv) => (sv.style.height = "56px"));
     };
     draw();
-    const t = setInterval(
+    const timer = setInterval(
       () =>
         refreshBox()
           .then(draw)
           .catch(() => {}),
       3000,
     );
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   },
 
   snapshots(root, { box }) {
@@ -272,27 +272,27 @@ const TAB_RENDER = {
     api("/api/snapshots")
       .then(({ snapshots }) => {
         const list = snapshots.filter((s) => s.source === box().name);
-        root.innerHTML = `<div class="card"><div class="card-head"><h3>此 Box 的快照</h3><button class="btn btn-sm btn-primary" data-action="snapshot">${icon("camera")}创建快照</button></div>
+        root.innerHTML = `<div class="card"><div class="card-head"><h3>${t("bd.boxSnapshots")}</h3><button class="btn btn-sm btn-primary" data-action="snapshot">${icon("camera")}${t("act.snapshot")}</button></div>
         ${
           list.length
-            ? `<div class="table-wrap"><table class="table"><thead><tr><th>快照</th><th>大小</th><th>创建时间</th><th style="text-align:right">操作</th></tr></thead><tbody>${list
+            ? `<div class="table-wrap"><table class="table"><thead><tr><th>${t("bd.colSnapshot")}</th><th>${t("bd.colSize")}</th><th>${t("bd.created")}</th><th style="text-align:right">${t("bx.colActions")}</th></tr></thead><tbody>${list
                 .map(
                   (
                     s,
                   ) => `<tr><td><span class="mono">${esc(s.ref)}</span></td><td class="num">${bytes(s.size)}</td><td class="subtle">${dateTime(s.createdAt)}</td>
-                  <td><div class="actions"><button class="btn btn-sm" data-action="from-snapshot" data-ref="${esc(s.ref)}">${icon("plus")}从此创建 Box</button></div></td></tr>`,
+                  <td><div class="actions"><button class="btn btn-sm" data-action="from-snapshot" data-ref="${esc(s.ref)}">${icon("plus")}${t("bd.createFrom")}</button></div></td></tr>`,
                 )
                 .join("")}</tbody></table></div>`
             : emptyState({
                 iconName: "camera",
-                title: "还没有快照",
-                text: "快照会保存 Box 当前的系统环境（已安装的软件和配置），可用于快速复制环境。",
+                title: t("bd.noSnapshots"),
+                text: t("bd.noSnapshotsText"),
               })
         }</div>`;
       })
       .catch((e) => {
-        root.innerHTML = emptyState({ iconName: "alert", title: "无法加载快照", text: esc(e.message) });
-        toastError("加载快照失败", e);
+        root.innerHTML = emptyState({ iconName: "alert", title: t("bd.snapLoadFailed"), text: esc(e.message) });
+        toastError(t("bd.snapLoadFailedToast"), e);
       });
     return null;
   },
