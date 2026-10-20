@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
@@ -53,3 +54,30 @@ jobs:
           done
           docker logs minibox-ci
           exit 1
+      - name: Base template builds for linux/amd64 and linux/arm64
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: templates/base
+          platforms: linux/amd64,linux/arm64
+          push: false
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=base-template
+          cache-to: type=gha,mode=max,scope=base-template
+      - name: Base template box checks on linux/amd64
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: templates/base
+          platforms: linux/amd64
+          load: true
+          tags: minibox-template:base
+          cache-from: type=gha,scope=base-template
+      - run: scripts/check-box-image.sh minibox-template:base
+      - name: Base template box checks on linux/arm64 (emulated)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: templates/base
+          platforms: linux/arm64
+          load: true
+          tags: minibox-template:base-arm64
+          cache-from: type=gha,scope=base-template
+      - run: PLATFORM=linux/arm64 scripts/check-box-image.sh minibox-template:base-arm64

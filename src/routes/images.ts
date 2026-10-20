@@ -1,6 +1,6 @@
 import { tracked } from "../activity";
 import { json, readJson } from "../lib/http";
-import { asObject, validateName } from "../lib/validation";
+import { asObject, validateDescription, validateName } from "../lib/validation";
 import * as snapshots from "../services/snapshots";
 import * as templates from "../services/templates";
 import { type Route, route } from "./router";
@@ -16,7 +16,7 @@ export const imageRoutes: Route[] = [
     const ref = params.ref ?? "";
     const body = asObject(await readJson(req));
     const name = validateName(body.name, "name", "templateName");
-    const description = typeof body.description === "string" ? body.description.slice(0, 200) : undefined;
+    const description = validateDescription(body.description);
     return json(
       {
         template: await tracked(app.activity, "template.promote", name, () =>

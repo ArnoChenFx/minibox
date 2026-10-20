@@ -42,3 +42,13 @@ export function validateName(value: unknown, field = "name", label: LabelKey = "
   if (!checked.ok) throw badRequest(checked.failure.message, { field });
   return checked.value;
 }
+
+const DESCRIPTION_MAX = 200;
+
+/** Optional one-line description. Control characters are refused, newlines above all: they would start a new Dockerfile instruction. */
+export function validateDescription(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (/\p{Cc}/u.test(value)) throw badRequest(msg("description_invalid"), { field: "description" });
+  const v = value.trim();
+  return v ? [...v].slice(0, DESCRIPTION_MAX).join("") : undefined;
+}

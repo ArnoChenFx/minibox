@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Restart MiniBox on a host without systemd: ensure dockerd, restart the Bun server, ensure the tunnel.
 # Usage: scripts/restart.sh [--no-tunnel]
+#
+# Single-user sandbox convenience, not a deployment script. It starts dockerd with sudo and gives the Docker socket to
+# your primary group (mode 660), so every member of that group can use Docker. Docker access is root-equivalent, so do
+# not use this on a shared host.
+# Logs are appended to, never truncated.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,13 +15,25 @@ LOG="$ROOT/server.log"
 CONFIG="$(bun -e 'const { loadConfig } = await import("./src/config.ts"); const { accessKeyPath } = await import("./src/data-dir.ts"); const c = loadConfig(); console.log([c.port, c.accessKeySource, accessKeyPath(c.dataDir)].join("\t"));')"
 IFS=$'\t' read -r PORT KEY_SOURCE KEY_FILE <<<"$CONFIG"
 
+# Socket access goes to the caller's primary group (mode 660). That group is already in this shell's credentials, so the
+# server started below reaches Docker without a re-login. A new supplementary group (docker) would not apply here.
+grant_docker_socket() {
+  sudo chgrp "$(id -gn)" /var/run/docker.sock && sudo chmod 660 /var/run/docker.sock
+}
+
 # 1. Docker daemon
 if ! docker info >/dev/null 2>&1; then
-  echo "[restart] starting dockerd"
-  setsid sudo nohup dockerd --host=unix:///var/run/docker.sock > /tmp/dockerd.log 2>&1 < /dev/null &
-  for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sudo chmod 666 /var/run/docker.sock 2>/dev/null || true; sleep 1; done
-  sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+  if sudo docker info >/dev/null 2>&1; then
+    echo "[restart] dockerd is already running; giving this user the socket"
+  else
+    echo "[restart] starting dockerd"
+    # Markers are best effort: a log this user cannot write must not stop the restart.
+    printf -- '--- %s dockerd start\n' "$(date -Is)" >> /tmp/dockerd.log || true
+    setsid sudo nohup dockerd --host=unix:///var/run/docker.sock >> /tmp/dockerd.log 2>&1 < /dev/null &
+  fi
+  for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; grant_docker_socket 2>/dev/null || true; sleep 1; done
 fi
+grant_docker_socket || echo "[restart] could not give the Docker socket to group $(id -gn); check sudo" >&2
 docker info --format 'docker {{.ServerVersion}}' 
 
 # 2. Base template (first run only)
@@ -44,7 +61,8 @@ esac
 if [[ "${1:-}" != "--no-tunnel" ]] && command -v opentunnel >/dev/null; then
   if ! pgrep -f "opentunnel (serve|up)" >/dev/null; then
     echo "[restart] starting opentunnel"
-    setsid nohup opentunnel serve > /tmp/opentunnel.log 2>&1 < /dev/null &
+    printf -- '--- %s opentunnel start\n' "$(date -Is)" >> /tmp/opentunnel.log || true
+    setsid nohup opentunnel serve >> /tmp/opentunnel.log 2>&1 < /dev/null &
     sleep 2
   fi
   opentunnel status || true

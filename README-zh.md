@@ -34,8 +34,9 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 |---|---|
 | Box 生命周期 | 创建、启动、停止、重启、删除；删除时可选择保留或一并删除工作区数据卷 |
 | 资源配额 | 按预设（小型 2 核 4 GB / 中型 4 核 8 GB / 大型 8 核 16 GB）或自定义设置 CPU、内存，并按宿主机容量校验；运行中可热更新（`docker update`） |
+| Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行，并可无密码使用 `sudo`；Web 终端与 `docker exec` 默认以 `dev` 进入。见[基础模板](#基础模板) |
 | 快照 | 基于 `docker commit` 保存 Box 的系统环境，可从快照创建新 Box，或提升为模板 |
-| 模板 | 内置基础模板（Debian 12 · Node.js 24 · Python 3 · git · build-essential），以及由快照提升的自定义模板 |
+| 模板 | 内置基础模板（Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应 |
@@ -92,7 +93,7 @@ flowchart LR
   D --- I
 ```
 
-- **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`，重启策略 `unless-stopped`）。`/workspace` 挂载在独立数据卷 `minibox-ws-<名称>`。
+- **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`，重启策略 `unless-stopped`）。`/workspace` 挂载在独立数据卷 `minibox-ws-<名称>`。容器以非 root 用户 `dev` 运行（见[基础模板](#基础模板)）。
 - **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`。
 - **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。
 - 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 随仓库放在 [`web/vendor/`](web/vendor/README.md)，控制台不会从 CDN 加载任何代码。
@@ -200,7 +201,9 @@ scripts/restart.sh              # 包含隧道
 scripts/restart.sh --no-tunnel  # 只启动服务
 ```
 
-服务输出写入项目根目录的 `server.log`（已在 git 中忽略）。脚本还会报告访问密钥的保存位置，但不会输出密钥本身。
+服务输出写入项目根目录的 `server.log`（已在 git 中忽略），每次启动追加写入。脚本还会报告访问密钥的保存位置，但不会输出密钥本身。`/tmp/dockerd.log` 与 `/tmp/opentunnel.log` 同样是追加写入的，脚本每次启动对应服务时写入一行 `---` 分隔标记。
+
+`restart.sh` 是单用户沙箱的便利脚本。运行后，Docker Socket 的属组设为你的主组、权限为 `660`，因此它启动的服务无需重新登录即可使用 Docker。该主组的成员都能使用 Docker。Socket 同一时间只属于一个组：最后运行脚本的账户所在的主组保留访问，其他账户（包括 `docker` 组的成员）无法访问。Docker 访问等同于 root 权限，请勿在共享主机上使用该脚本。
 
 有 systemd 时，推荐写一个服务单元执行 `bun /path/to/minibox/src/server.ts`。
 
@@ -282,6 +285,41 @@ docker run -d --name minibox --restart unless-stopped \
 | `MINIBOX_VERSION` | 来自 git / `package.json` | 覆盖显示的版本号（发布镜像中自动设置） |
 
 > `bun run build:template` 固定打 `minibox-template:base` 标签。如果改了 `LABEL_PREFIX` 或 `BASE_TEMPLATE`，请改在控制台「模板 → 构建基础模板」中构建，它会使用配置的标签。
+
+## 基础模板
+
+内置模板（[`templates/base/Dockerfile`](templates/base/Dockerfile)）是新建 Box 的起始镜像。它遵循以下约定：
+
+| 方面 | 约定 |
+|---|---|
+| 用户 | `dev`，uid/gid 为 `1000`。Box 以镜像默认用户启动，因此 Web 终端与 `docker exec` 默认以 `dev` 进入。`sudo` 无需密码，且仅限 Box 内 |
+| 挂载点 | `/workspace`（工作区卷）、`/home/dev`（主目录）、`/opt/minibox/tools`（共享且只读的工具，其 `bin` 在 `PATH` 中）、`/home/dev/.cache`（缓存）。在 [#24](https://github.com/ArnoChenFx/minibox/issues/24) 实现数据卷挂载之前，它们是镜像里的普通目录 |
+| 缓存 | `XDG_CACHE_HOME`、`npm_config_cache`、`PIP_CACHE_DIR` 与 `YARN_CACHE_FOLDER` 指向 `/home/dev/.cache` 下。`NPM_CONFIG_PREFIX` 为 `/home/dev/.npm-global`，因此 `npm install -g` 无需 root |
+| 标签 | `minibox.template.user`、`minibox.template.uid` 与 `minibox.template.gid` 记录该约定，便于校验其他模板 |
+
+内置工具：`tmux`、`jq`、`ripgrep`、`openssh-client`、`unzip`、`less`、`vim-tiny` 与 `sudo`，以及 `git`、`curl`、`python3`、`build-essential` 与 `procps`。
+
+**所有模板使用同一个 uid。** 共享同一卷的 Box，只有其模板的 uid 与 gid 一致，才能正常读写。Node 镜像自带的 `node` 用户占用了 uid 1000。模板会删除该用户而不是改名，让 `dev` 使用这个 uid，避免两个账户共用一个 uid。如需使用其他 uid，请在 `docker build` 中传入 `--build-arg DEV_UID=<uid> --build-arg DEV_GID=<gid>`；此时与该镜像共享数据的每个模板和卷都必须使用相同的值。
+
+**从 root 版模板升级。**
+
+- 已有的 Box 继续以旧模板的 root 用户运行，不会改名，也不会重建。
+- 从旧快照或旧模板创建的 Box，沿用该镜像的用户；在本次改动之前制作的镜像，用户是 root。
+- 新 Box 如果复用了旧 Box 留下的工作区卷（删除旧 Box 时保留了卷），卷内 `/workspace` 属主为 root，`dev` 无法写入。在 Box 运行时执行一次即可修复：
+
+  ```bash
+  docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace
+  ```
+
+  或者在卷没有被使用时，用一次性容器对它执行：
+
+  ```bash
+  docker run --rm --user root -v minibox-ws-<名称>:/workspace minibox-template:base chown -R 1000:1000 /workspace
+  ```
+
+  MiniBox 暂不自动执行。对整个工作区递归 `chown` 可能耗时很长，并且会改动你没有要求改动的数据，因此这件事归入 [#24](https://github.com/ArnoChenFx/minibox/issues/24) 的存储工作一起处理。
+
+用 Docker 检查镜像：执行 `bun run build:template` 后，运行 `bun run check:template`（或 `scripts/check-box-image.sh <镜像>`）。它会检查用户、uid、`sudo`、工具、挂载点、缓存变量、登录 Shell 的 `PATH`，并检查两个共享同一卷的容器能否读写它。CI 会对 `linux/amd64` 执行检查，并在模拟环境下对 `linux/arm64` 执行检查。
 
 ## 数据目录
 
@@ -400,6 +438,7 @@ minibox/
 ├── tests/                   # bun test 单元测试；support/ 含 FakeRuntime 与测试辅助
 ├── scripts/restart.sh       # 无 systemd 环境的重启脚本
 ├── scripts/export-openapi.ts # 写入 docs/openapi.json（bun run openapi）
+├── scripts/check-box-image.sh  # 基础模板的 Docker 检查（CI 中检查 amd64 与 arm64）
 ├── Dockerfile               # 发布镜像（oven/bun，多架构）
 ├── .github/workflows/release.yml  # tag → 镜像 + GitHub Release
 └── docs/
@@ -420,6 +459,7 @@ bun run typecheck  # TypeScript 严格模式类型检查（tsc --noEmit）
 bun test           # 单元测试（不需要 Docker）
 bun run check      # 以上全部，与 CI 一致
 bun run openapi    # 由操作注册表重新生成 docs/openapi.json
+bun run build:template && bun run check:template  # 基础模板检查（需要 Docker）
 ```
 
 格式化使用 [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html)（`.oxfmtrc.json`），代码检查使用 [oxlint](https://oxc.rs/docs/guide/usage/linter.html)（`.oxlintrc.json`）。[CI](.github/workflows/ci.yml) 会在每次推送到 `main` 和每个 Pull Request 时运行 `fmt:check`、`lint`、`typecheck` 和 `bun test`，并做一次 Docker 构建冒烟测试（启动镜像并访问 `/login`）。
@@ -453,8 +493,9 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **远程访问请使用 HTTPS。** 通过 HTTPS 访问（或请求带有 `https://` Origin，浏览器登录时会带上）时，登录 Cookie 会带上 `Secure` 标记；`COOKIE_SECURE=1` 可强制加上。默认情况下 MiniBox 忽略 `X-Forwarded-For`、`X-Forwarded-Proto` 和 `X-Forwarded-Host`，因此经过反向代理访问时，所有访问者共享代理的地址来计算登录限流。只有当前面的代理会覆盖这些头，并且 MiniBox 只能经由该代理访问时，才设置 `TRUST_PROXY=true`：开启后 MiniBox 取 `X-Forwarded-For` 的最后一项（由代理追加的那一项），并同样信任另外两个头；关闭时这些头被忽略，伪造它们没有任何效果。
 - **公开隧道可以被发现。** 隧道域名（例如 OpenTunnel 的 `*.opentunnel.xyz`）可能出现在公开的证书透明度日志里，也可能被猜到，而且 OpenTunnel 本身不提供认证。这相当于把控制台直接放在公网上，只靠访问密钥保护；流量还会经过隧道的中继服务器。条件允许时优先使用私有网络（如 Tailscale）或带认证的反向代理，不用时把隧道关掉。
 - **这是容器隔离，不是安全沙箱。** Box 与宿主机共享内核，适合运行你自己的 Agent，**不适合运行不可信的第三方代码**，那种场景请使用 gVisor 或基于 microVM 的沙箱。不要把 Docker Socket 或宿主机敏感目录挂进 Box。
+- **Box 拥有无密码 `sudo`。** Box 内的 `dev` 用户可以提升为 root，而 Box 内的 root 可以改动 Box 以及其工作区卷中的任何内容。容器仍使用 Docker 默认的 capability 集合，而不是特权容器。不带 `sudo` 的严格档位已规划在 [#5](https://github.com/ArnoChenFx/minibox/issues/5) 中。
 - **快照不包含 `/workspace`。** `docker commit` 不会保存挂载的数据卷，重要代码请用 git 同步或单独备份数据卷。
-- `scripts/restart.sh` 可能会用 `sudo` 启动 `dockerd`，并对 Docker Socket 执行 `chmod 666`，方便非 root 用户访问。这在单用户沙箱里很方便，但放宽了权限，用在其他环境前请先检查脚本。
+- `scripts/restart.sh` 是单用户沙箱的便利脚本。它可能会用 `sudo` 启动 `dockerd`，然后把 Docker Socket 的属组设为你的主组、权限设为 `660`，只有该主组的成员（通常只有你）和 root 能使用 Docker。但 Docker 访问等同于 root 权限，用在其他环境前请先检查脚本。
 
 ## 路线图
 
@@ -474,7 +515,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 ### M1 · 模板、规格、审计与令牌
 
-- [ ] [#27](https://github.com/ArnoChenFx/minibox/issues/27) 基础模板：非 root 用户 `dev`、tmux、挂载点约定
+- [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) 基础模板：非 root 用户 `dev`、tmux、挂载点约定
 - [ ] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」与「严格」两个安全档位
 - [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
 - [ ] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线

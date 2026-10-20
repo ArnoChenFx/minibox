@@ -25,6 +25,7 @@ export const MESSAGES = {
   not_boolean: "{field} must be a boolean.",
   template_required: "Please choose a template.",
   image_ref_invalid: "Invalid image reference.",
+  description_invalid: "Description must be a single line without control characters, such as line breaks or tabs.",
   resources_required: "Provide at least one of cpus or memoryMb.",
   docker_unavailable:
     "Cannot connect to the Docker daemon. Make sure Docker is running and the current user can access it.",

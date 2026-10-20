@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { containerName, labelKeys, parseBoxLabels, parseImageLabels, stripSlash, volumeName } from "../src/labels";
+import {
+  containerName,
+  labelChange,
+  labelKeys,
+  parseBoxLabels,
+  parseImageLabels,
+  quoteLabelValue,
+  stripSlash,
+  volumeName,
+} from "../src/labels";
 
 const keys = labelKeys("minibox");
 
@@ -32,5 +41,16 @@ describe("labels", () => {
     expect(containerName("minibox", "a")).toBe("minibox-a");
     expect(volumeName("minibox", "a")).toBe("minibox-ws-a");
     expect(stripSlash("/minibox-a")).toBe("minibox-a");
+  });
+
+  test("label values are double-quoted, with backslash, quote and dollar escaped", () => {
+    expect(quoteLabelValue('say "hi" C:\\tmp $HOME')).toBe('"say \\"hi\\" C:\\\\tmp \\$HOME"');
+    expect(labelChange("minibox.template", "true")).toBe('LABEL minibox.template="true"');
+  });
+
+  test("label values with control characters are refused, so they cannot start a new instruction", () => {
+    for (const bad of ["a\nENV X=1", 'a\nCMD ["sh"]', "a\rb", "a\tb", "a\u0000b", "a\u007fb"]) {
+      expect(() => labelChange("minibox.template.description", bad)).toThrow("control characters");
+    }
   });
 });

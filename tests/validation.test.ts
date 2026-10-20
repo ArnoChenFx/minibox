@@ -1,20 +1,23 @@
 import { describe, expect, test } from "bun:test";
 
 import { AppError } from "../src/lib/errors";
+import { validateDescription } from "../src/lib/validation";
 import { boxCreate, boxDelete, boxList, boxLogs, boxResources } from "../src/operations/boxes";
 import { snapshotCreate, snapshotFork } from "../src/operations/snapshots";
 import type { Operation } from "../src/operations/types";
 
-/** The error an input is rejected with. Fails the test when the input is accepted. */
-function rejection(op: Operation, raw: unknown): AppError {
+/** The error a call is refused with. Fails the test when the call succeeds. */
+function refusal(call: () => unknown): AppError {
   try {
-    op.parse(raw);
+    call();
   } catch (e) {
     if (e instanceof AppError) return e;
     throw e;
   }
   throw new Error("expected the input to be rejected");
 }
+
+const rejection = (op: Operation, raw: unknown): AppError => refusal(() => op.parse(raw));
 
 function expectValidation(op: Operation, raw: unknown, field?: string): AppError {
   const error = rejection(op, raw);
@@ -135,5 +138,27 @@ describe("query parameters", () => {
     expect(boxList.parse({})).toMatchObject({ stats: true });
     expect(boxList.parse({ stats: "false" })).toMatchObject({ stats: false });
     expect(boxList.parse({ stats: "0" })).toMatchObject({ stats: true });
+  });
+});
+
+describe("description", () => {
+  test("keeps one-line text, including quotes, backslashes and dollar signs", () => {
+    expect(validateDescription('say "hi" C:\\tmp $HOME')).toBe('say "hi" C:\\tmp $HOME');
+  });
+  test("missing or blank means no description; text is trimmed and capped at 200 characters", () => {
+    expect(validateDescription(undefined)).toBeUndefined();
+    expect(validateDescription("   ")).toBeUndefined();
+    expect(validateDescription("  demo  ")).toBe("demo");
+    expect(validateDescription("é".repeat(300))).toHaveLength(200);
+  });
+  test("refuses newlines and other control characters, with the field named", () => {
+    for (const bad of ["ok\nENV X=1", 'ok\r\nCMD ["sh"]', "tab\there", "nul\u0000", "trailing\n"]) {
+      const error = refusal(() => validateDescription(bad));
+      expect(error.status).toBe(400);
+      expect(error.details).toEqual({ field: "description" });
+    }
+  });
+  test("the refusal carries a translatable key", () => {
+    expect(refusal(() => validateDescription("a\nb"))).toMatchObject({ key: "description_invalid" });
   });
 });

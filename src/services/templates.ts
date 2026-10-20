@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import type { HostCtx } from "../host/registry";
+import { labelChange } from "../labels";
 import { notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
@@ -8,7 +9,7 @@ import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images"
 
 export const listTemplates = (host: HostCtx): Promise<ImageItem[]> => listImagesByLabel(host, host.keys.template);
 
-const BASE_DESCRIPTION = "Debian 12 · Node.js 24 · Python 3 · git · build-essential";
+export const BASE_DESCRIPTION = "Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root dev user";
 
 /** Re-tag a snapshot image as a template by committing a throwaway container with template labels. */
 export async function promoteSnapshot(
@@ -30,11 +31,11 @@ export async function promoteSnapshot(
       repo,
       tag: name,
       changes: [
-        `LABEL ${k.template}=true`,
-        `LABEL ${k.snapshot}=false`,
-        `LABEL ${k.templateName}=${name}`,
-        `LABEL ${k.templateDesc}="${(description ?? `Promoted from a snapshot of box ${source}`).replace(/"/g, "'")}"`,
-        `LABEL ${k.created}=${new Date().toISOString()}`,
+        labelChange(k.template, "true"),
+        labelChange(k.snapshot, "false"),
+        labelChange(k.templateName, name),
+        labelChange(k.templateDesc, description ?? `Promoted from a snapshot of box ${source}`),
+        labelChange(k.created, new Date().toISOString()),
         'CMD ["sleep","infinity"]',
       ],
     });

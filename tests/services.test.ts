@@ -198,9 +198,9 @@ describe("snapshots", () => {
       pause: true,
       author: "minibox",
       changes: expect.arrayContaining([
-        `LABEL ${keys.snapshot}=true`,
-        `LABEL ${keys.snapshotOf}=alpha`,
-        `LABEL ${keys.templateName}=nightly`,
+        `LABEL ${keys.snapshot}="true"`,
+        `LABEL ${keys.snapshotOf}="alpha"`,
+        `LABEL ${keys.templateName}="nightly"`,
         'CMD ["sleep","infinity"]',
       ]),
     });
@@ -244,10 +244,10 @@ describe("templates", () => {
       repo: "mbtest-template",
       tag: "gold",
       changes: expect.arrayContaining([
-        `LABEL ${keys.template}=true`,
-        `LABEL ${keys.snapshot}=false`,
-        `LABEL ${keys.templateName}=gold`,
-        `LABEL ${keys.templateDesc}="a 'quoted' description"`,
+        `LABEL ${keys.template}="true"`,
+        `LABEL ${keys.snapshot}="false"`,
+        `LABEL ${keys.templateName}="gold"`,
+        `LABEL ${keys.templateDesc}="a \\"quoted\\" description"`,
       ]),
     });
     expect(runtime.containers.size).toBe(1);

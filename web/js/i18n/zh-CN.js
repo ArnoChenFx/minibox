@@ -74,6 +74,7 @@ export default {
   "err.not_boolean": "{field} 必须是布尔值。",
   "err.template_required": "请选择模板。",
   "err.image_ref_invalid": "镜像引用格式不正确。",
+  "err.description_invalid": "描述只能是单行文本，不能包含换行、制表符等控制字符。",
   "err.resources_required": "请至少提供 cpus 或 memoryMb 其中一项。",
   "err.docker_unavailable": "无法连接 Docker 守护进程，请确认 Docker 已启动且当前用户有权限访问。",
   "err.docker_not_found": "资源不存在：{detail}",
@@ -322,7 +323,8 @@ export default {
   "tp.build": "构建基础模板",
   "tp.loadFailed": "无法加载模板",
   "tp.empty": "还没有模板",
-  "tp.emptyText": "构建内置的基础模板（Debian 12 · Node.js 24 · Python 3 · git），首次构建约需 1–3 分钟。",
+  "tp.emptyText":
+    "构建内置的基础模板（Debian 12 · Node.js 24 · Python 3 · git · tmux · 非 root 用户 dev），首次构建约需 1–3 分钟。",
   "tp.builtin": "内置",
   "tp.custom": "自定义",
   "tp.noDesc": "无描述",
