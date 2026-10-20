@@ -149,9 +149,26 @@ opentunnel up
 # → https://minibox.<你的 ID>.opentunnel.xyz
 ```
 
-如果前面的代理或隧道会设置 `X-Forwarded-For` 和 `X-Forwarded-Proto`，请设置 `TRUST_PROXY=true`，这样登录限流按真实客户端计数，Cookie 也会带上 `Secure` 标记。
+> **从旧版本升级、并且已经通过隧道或反向代理访问？请先读这一段。** 有两项设置决定代理后面的登录是否正常：
+>
+> 1. **如果代理或隧道会设置 `X-Forwarded-For` 和 `X-Forwarded-Proto`，请设置 `TRUST_PROXY=true`。** 不设置时，代理后面的所有访问者共享同一个登录限流计数，登录 Cookie 也不再带上 `Secure` 标记。只有当 MiniBox 只能经由该代理访问（保持 `HOST=127.0.0.1`），并且代理会追加或覆盖 `X-Forwarded-For`、而不是原样透传客户端自带的值时，才应开启。
+> 2. **如果代理或隧道把 `Host` 改写成了上游地址，请设置 `ALLOWED_ORIGINS=https://你的公网地址`。** 否则从公网地址发出的登录和终端请求会返回 `403`，登录页会提示该请求的 Origin 不在 `ALLOWED_ORIGINS` 中。nginx 默认会改写 `Host`，除非配置了 `proxy_set_header Host $host;`。
+>
+> 如果日志中出现 `proxy.headers_ignored`，说明收到了代理头，但 `TRUST_PROXY` 未开启。如果这是你自己控制的代理，请按上面设置。
 
-MiniBox 还会拒绝来自其他网站的请求：浏览器的 `Origin` 必须与请求到达时的 `Host` 一致。有些代理会把 `Host` 改写成上游地址（nginx 默认如此，除非配置了 `proxy_set_header Host $host;`），这时登录页会提示「已拦截：该请求来自其他站点」。请让代理透传 `Host`，或者在 `ALLOWED_ORIGINS` 中填写公网地址，例如 `ALLOWED_ORIGINS=https://minibox.example.com`。
+MiniBox 还会拒绝来自其他网站的请求：浏览器的 `Origin` 必须与请求到达时的 `Host` 一致，或列在 `ALLOWED_ORIGINS` 中。如果代理把公网 `Host` 原样透传，nginx 的 `server` 配置可以这样写：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3920;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
 
 对外暴露之前，请先阅读[安全须知](#安全须知)。
 
@@ -182,8 +199,8 @@ docker run -d --name minibox --restart unless-stopped \
 | `ACCESS_KEY` | 首次启动自动生成 | 控制台与 API 的访问密钥 |
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `PORT` | `3920` | 监听端口 |
-| `TRUST_PROXY` | `false` | 信任你自己运行的反向代理或隧道设置的 `X-Forwarded-For` / `X-Forwarded-Proto`（以及 `X-Forwarded-Host`）。直接访问时保持关闭（见[安全须知](#安全须知)） |
-| `ALLOWED_ORIGINS` | 空 | 额外允许调用 API 和打开终端的浏览器来源，逗号分隔，例如 `https://minibox.example.com`。仅在代理改写了 `Host` 时需要 |
+| `TRUST_PROXY` | `false` | 信任你自己运行的反向代理或隧道设置的 `X-Forwarded-For` / `X-Forwarded-Proto`（以及 `X-Forwarded-Host`）。**前面有这类代理时设为 `true`**，否则登录限流与 `Secure` Cookie 都不正确；客户端直连时保持关闭（见[远程访问](#远程访问)） |
+| `ALLOWED_ORIGINS` | 空 | 本 MiniBox 的公网来源（完整的 `https://` 地址），逗号分隔，例如 `https://minibox.example.com`。**代理或隧道改写了 `Host` 时必须设置**，否则从该地址发出的登录和终端请求会返回 `403` |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
 | `BASE_TEMPLATE` | `<前缀>-template:base` | 新建 Box 的默认模板镜像 |
@@ -196,7 +213,7 @@ docker run -d --name minibox --restart unless-stopped \
 
 ## API 参考
 
-请求与响应均为 JSON。除标注**公开**的接口外，都需要登录 Cookie（由 `/api/auth/login` 写入）或 `Authorization: Bearer <ACCESS_KEY>` 请求头。带请求体的请求必须使用 `Content-Type: application/json`（其他类型返回 `415`），来自其他网站的浏览器请求返回 `403`。
+请求与响应均为 JSON。除标注**公开**的接口外，都需要登录 Cookie（由 `/api/auth/login` 写入）或 `Authorization: Bearer <ACCESS_KEY>` 请求头。写请求必须使用 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外；其他声明的类型返回 `415`），来自其他网站的浏览器请求返回 `403`。
 
 出错时返回对应的 HTTP 状态码和统一结构：
 
@@ -328,10 +345,10 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 - **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 已在 `.gitignore` 中忽略，不要提交它。
 - **访问密钥是唯一门禁。** 没有用户体系。登录失败按客户端地址限流（5 分钟内最多 10 次，IPv6 按 /64 计），密钥比对是恒定时间的，但密钥一旦泄露就等于完全失守。更换密钥：修改 `.env` 中的 `ACCESS_KEY` 后重启服务，现有会话立即失效。
-- **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。带请求体的写请求必须是 JSON，这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
+- **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。写请求必须声明 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外），这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
 - **严格的内容安全策略（CSP）。** 脚本只会从 MiniBox 自身加载（`script-src 'self'`），页面没有内联脚本，且禁止被嵌入 iframe（`frame-ancestors 'none'`）。通过 HTTPS 访问（直接访问，或在 `TRUST_PROXY=true` 时经由代理）的请求还会带上 `Strict-Transport-Security`，有效期一年，不包含子域名。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
-- **远程访问请使用 HTTPS。** 通过 HTTPS 访问时登录 Cookie 会带上 `Secure` 标记。默认情况下 MiniBox 忽略 `X-Forwarded-For` 和 `X-Forwarded-Proto`，因此经过反向代理访问时，所有访问者共享代理的地址来计算登录限流。只有当前面的代理由你控制并会设置这些头时，才设置 `TRUST_PROXY=true`：开启后 MiniBox 取 `X-Forwarded-For` 的最后一项（由代理追加的那一项）；关闭时客户端可以伪造这些头来绕过登录限流。
+- **远程访问请使用 HTTPS。** 通过 HTTPS 访问时登录 Cookie 会带上 `Secure` 标记。默认情况下 MiniBox 忽略 `X-Forwarded-For` 和 `X-Forwarded-Proto`，因此经过反向代理访问时，所有访问者共享代理的地址来计算登录限流。只有当前面的代理由你控制、会设置这些头，并且 MiniBox 只能经由该代理访问时，才设置 `TRUST_PROXY=true`：开启后 MiniBox 取 `X-Forwarded-For` 的最后一项（由代理追加的那一项）；关闭时客户端可以伪造这些头来绕过登录限流。
 - **公开隧道可以被发现。** 隧道域名（例如 OpenTunnel 的 `*.opentunnel.xyz`）可能出现在公开的证书透明度日志里，也可能被猜到，而且 OpenTunnel 本身不提供认证。这相当于把控制台直接放在公网上，只靠访问密钥保护；流量还会经过隧道的中继服务器。条件允许时优先使用私有网络（如 Tailscale）或带认证的反向代理，不用时把隧道关掉。
 - **这是容器隔离，不是安全沙箱。** Box 与宿主机共享内核，适合运行你自己的 Agent，**不适合运行不可信的第三方代码**，那种场景请使用 gVisor 或基于 microVM 的沙箱。不要把 Docker Socket 或宿主机敏感目录挂进 Box。
 - **快照不包含 `/workspace`。** `docker commit` 不会保存挂载的数据卷，重要代码请用 git 同步或单独备份数据卷。

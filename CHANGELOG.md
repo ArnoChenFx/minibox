@@ -4,11 +4,19 @@
 
 ## [Unreleased]
 
+### 升级必读（经隧道或反向代理访问的部署）
+- 通过隧道或反向代理访问 MiniBox 的部署，升级后请先检查以下两项设置，否则登录或终端可能失败：
+  - **`TRUST_PROXY=true`**：代理或隧道会设置 `X-Forwarded-For` / `X-Forwarded-Proto` 时开启。未开启时，代理后面的所有访问者共享同一个登录限流计数，登录 Cookie 也不再带上 `Secure` 标记。只有当 MiniBox 只能经由该代理访问（保持 `HOST=127.0.0.1`），并且代理会追加或覆盖 `X-Forwarded-For` 时才应开启（#1）。
+  - **`ALLOWED_ORIGINS=https://你的公网地址`**：代理或隧道改写了 `Host` 时必须设置。nginx 默认会改写 `Host`，除非配置 `proxy_set_header Host $host;`。未设置时，从公网地址发出的登录与终端请求返回 `403`，登录页会提示该请求的 Origin 不在 `ALLOWED_ORIGINS` 中（#3）。
+- 收到代理头而 `TRUST_PROXY` 未开启时，日志会输出一条 `proxy.headers_ignored` 警告（每个进程一次），说明需要设置的项目（#1）。
+- 登录 Cookie 由 `SameSite=Lax` 改为 `SameSite=Strict`：从其他网站打开的控制台链接，可能需要重新登录一次（#3）。
+- 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
+
 ### 安全
 - 登录限流不再信任请求头 `X-Forwarded-For`：默认按真实连接地址计数，伪造该头无法绕过限流（#1）。新增配置 `TRUST_PROXY`（默认 `false`），仅在由你控制的反向代理之后设置为 `true`，此时读取 `X-Forwarded-For` 的最后一项与 `X-Forwarded-Proto`。
 - 登录限流按客户端地址计数，IPv6 按 /64 归并；失败记录表设置容量上限并定期清理过期项，大量伪造地址无法撑大内存（#1）。
 - WebSocket 终端升级请求，以及 `/api/` 下的 POST / PATCH / DELETE，要求浏览器的 `Origin` 与请求的 `Host` 同源（或列在新配置 `ALLOWED_ORIGINS` 中），否则返回 `403`。不带 `Origin` 的请求（如使用 `Authorization: Bearer` 的脚本）不受影响（#3）。
-- 带请求体的 API 写请求必须是 `application/json`，否则返回 `415`，HTML 表单提交无法触发写操作（#3）。
+- API 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`，HTML 表单提交无法触发写操作（#3）。
 - 登录 Cookie 由 `SameSite=Lax` 改为 `SameSite=Strict`（#3）。
 - 增加 `Content-Security-Policy`：脚本只从同源加载（`script-src 'self'`），页面不再使用内联脚本，且禁止被其他页面嵌入（`frame-ancestors 'none'`）（#4）。
 - 通过 HTTPS 访问时（直接访问，或 `TRUST_PROXY=true` 时经代理识别）发送 `Strict-Transport-Security`（一年，不含子域名）（#4）。
@@ -16,11 +24,6 @@
 
 ### 变更
 - xterm.js 与 addon-fit 改为随仓库提供（`web/vendor/`，附 SHA-256 校验测试），不再从 jsDelivr CDN 加载；网页终端可在离线或内网环境中使用（#4）。
-
-### 变更（升级注意）
-- 经反向代理或隧道访问、且未设置 `TRUST_PROXY=true` 时：所有访问者共享代理的地址进行登录限流，登录 Cookie 也不再因代理的 `X-Forwarded-Proto` 自动带上 `Secure`。升级后请按需设置 `TRUST_PROXY=true`。
-- 代理或隧道改写了 `Host` 头（例如 nginx 默认的 `proxy_set_header Host $proxy_host`）时，浏览器的 `Origin` 不再匹配，登录和控制台写操作会返回 `403`。请让代理透传 `Host`（nginx 中使用 `proxy_set_header Host $host;`），或设置 `ALLOWED_ORIGINS=https://你的域名`（#3）。
-- 从其他网站打开控制台链接时，浏览器不再携带登录 Cookie，可能需要重新登录一次（#3）。
 
 ### 工程化
 - 新增 `.github/dependabot.yml`：每周检查 npm 依赖（Bun）、GitHub Actions 与 Docker 基础镜像（根目录 `Dockerfile` 与 `templates/base`）的更新；GitHub Actions 的小版本与补丁版本更新合并为一个 PR。
