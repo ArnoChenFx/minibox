@@ -12,7 +12,7 @@ const ERROR_RESPONSES: Record<string, string> = {
   "400": "Invalid input, or a malformed X-Minibox-Run header.",
   "401": "Not signed in, or the access key is invalid.",
   "403": "Refused: a cross-site write, or an operation this credential may not run.",
-  "404": "No box has this id or name.",
+  "404": "The box, snapshot or template named in the path does not exist.",
   "409": "The name is already taken.",
   "415": "The request declares a body that is not JSON.",
   "422": "The box would exceed the host's CPU or memory.",
@@ -83,7 +83,7 @@ function requestBody(op: Operation, binding: RestBinding): JsonSchema | undefine
 
 function errorResponses(op: Operation, binding: RestBinding): Record<string, JsonSchema> {
   const codes = new Set(["401", "403", "500", "502", "503", "400"]);
-  if (binding.path.includes(":id")) codes.add("404");
+  if (pathParams(binding).length > 0) codes.add("404");
   if (op.conflicts) codes.add("409");
   if (binding.method !== "GET") codes.add("415");
   if (op.precondition) codes.add("422");
@@ -147,7 +147,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
       title: "MiniBox API",
       version,
       description:
-        "Generated from the operation registry. It covers the operations migrated so far: boxes and snapshots of boxes. Other routes keep their existing behaviour and are not listed yet.",
+        "Generated from the operation registry: boxes, snapshots and templates. Sign-in, host and activity routes are not listed yet.",
       license: { name: "MIT" },
     },
     tags,

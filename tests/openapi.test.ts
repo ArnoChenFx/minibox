@@ -75,7 +75,13 @@ describe("OpenAPI document", () => {
       "box.resources",
       "box.stats",
       "snapshot.create",
+      "snapshot.delete",
       "snapshot.fork",
+      "snapshot.list",
+      "template.build",
+      "template.delete",
+      "template.list",
+      "template.promote",
     ]);
   });
 

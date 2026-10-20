@@ -31,6 +31,32 @@ export const SnapshotSchema = z.object({
   source: z.string(),
 });
 
+/** A snapshot or template image, as the image list shows it. */
+export const ImageSchema = z.object({
+  id: z.string(),
+  ref: z.string(),
+  tags: z.array(z.string()),
+  name: z.string(),
+  description: z.string().nullable(),
+  source: z.string().nullable(),
+  createdAt: z.string(),
+  size: z.number(),
+});
+
+export const PromotedTemplateSchema = z.object({
+  ref: z.string(),
+  name: z.string(),
+});
+
+export const BuildResultSchema = z.object({
+  ref: z.string(),
+  output: z.string(),
+});
+
+export const OkSchema = z.object({
+  ok: z.literal(true),
+});
+
 /** The body of every error response, see `errorResponse()` in lib/http.ts. */
 export const ErrorSchema = z.object({
   error: z.object({

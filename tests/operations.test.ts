@@ -17,6 +17,7 @@ import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
+const TEMPLATE_REF = "mbtest-template:gold";
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** One valid input for each operation, given the id of a box that exists; see `withBox`. */
@@ -29,8 +30,14 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "box.resources": (id) => ({ id, cpus: 1 }),
   "box.logs": (id) => ({ id, tail: 10 }),
   "box.stats": (id) => ({ id }),
+  "snapshot.list": () => ({}),
   "snapshot.create": (id) => ({ id, name: "nightly" }),
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
+  "snapshot.delete": () => ({ ref: SNAPSHOT_REF }),
+  "template.list": () => ({}),
+  "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
+  "template.build": () => ({}),
+  "template.delete": () => ({ ref: TEMPLATE_REF }),
 };
 
 function opNamed(name: string): Operation {
@@ -44,6 +51,7 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
+  runtime.seedImage(TEMPLATE_REF, { [keys.template]: "true", [keys.templateName]: "gold" });
   const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest" };
   return { app, runtime, ctx };
 }
@@ -108,7 +116,7 @@ describe("registry definitions", () => {
     expect(registryProblems(OPERATIONS)).toEqual([]);
   });
 
-  test("the registry holds the box and box-snapshot operations in scope", () => {
+  test("the registry holds the box, snapshot and template operations in scope", () => {
     expect(OPERATIONS.map((op) => op.name)).toEqual(Object.keys(SAMPLES));
   });
 
@@ -332,6 +340,49 @@ describe("executor", () => {
     const id = await withBox(app, ctx);
     await app.operations.run("box.action", ctx, { id, action: "stop" });
     expect(app.activity.list()[0]).toMatchObject({ action: "box.stop", target: "alpha", ok: true });
+  });
+});
+
+describe("snapshot and template operations", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("a template name is checked with the template label and reported on the name field", async () => {
+    const { app, ctx } = appWith();
+    const error = await rejectionOf(
+      app.operations.run("template.promote", ctx, { ref: SNAPSHOT_REF, name: "bad name!" }),
+    );
+    expect(error).toMatchObject({
+      status: 400,
+      key: "name_invalid",
+      params: { label: "templateName" },
+      details: { field: "name" },
+    });
+  });
+
+  test("a missing snapshot or template is a 404 with its own key", async () => {
+    const { app, ctx } = appWith();
+    const snapshot = await rejectionOf(app.operations.run("snapshot.delete", ctx, { ref: "missing:1" }));
+    const template = await rejectionOf(app.operations.run("template.delete", ctx, { ref: "missing:1" }));
+    expect(snapshot).toMatchObject({ status: 404, key: "snapshot_not_found" });
+    expect(template).toMatchObject({ status: 404, key: "template_not_found" });
+  });
+
+  test("deleting an image names it as the target in the audit event and the activity feed", async () => {
+    const events: AuditEvent[] = [];
+    const { app, ctx } = appWith({ audit: (event) => events.push(event) });
+    await app.operations.run("template.delete", ctx, { ref: TEMPLATE_REF });
+    expect(events[0]).toMatchObject({
+      op: "template.delete",
+      kind: "destructive",
+      status: "ok",
+      summary: `Delete a template: ${TEMPLATE_REF}`,
+      target: { kind: "template", name: TEMPLATE_REF },
+    });
+    expect(app.activity.list()[0]).toMatchObject({ action: "template.delete", target: TEMPLATE_REF, ok: true });
   });
 });
 
