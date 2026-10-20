@@ -4,7 +4,7 @@ import { connect } from "node:net";
 import type { Server } from "bun";
 
 import { type App, createApp } from "../src/app";
-import { COOKIE_NAME } from "../src/auth";
+import { COOKIE_NAME, LoginLimiter, type LoginLimits } from "../src/auth";
 import { type Config, loadConfig } from "../src/config";
 import { setLogLevel } from "../src/lib/logger";
 import { startServer } from "../src/server";
@@ -22,8 +22,9 @@ function testConfig(env: Record<string, string> = {}): Config {
 async function withServer(
   env: Record<string, string>,
   fn: (ctx: { base: string; app: App }) => Promise<void>,
+  limits: Partial<LoginLimits> = {},
 ): Promise<void> {
-  const app = createApp(testConfig(env), "test");
+  const app = createApp(testConfig(env), "test", new LoginLimiter({ penaltyMs: 0, ...limits }));
   const server: Server<TerminalData> = startServer(app);
   try {
     await fn({ base: `http://127.0.0.1:${server.port}`, app });
@@ -72,14 +73,31 @@ function upgradeStatus(port: number, headers: Record<string, string>): Promise<n
 }
 
 describe("login rate limit (end to end)", () => {
+  test("after 10 wrong keys from one address, a further wrong key is refused with 429", async () => {
+    await withServer({}, async ({ base }) => {
+      for (let i = 0; i < 10; i++) expect((await login(base, "wrong")).status).toBe(401);
+      expect((await login(base, "wrong")).status).toBe(429);
+    });
+  });
+
+  test("behind one shared address, a correct key still signs in while wrong keys are refused", async () => {
+    await withServer({}, async ({ base }) => {
+      for (let i = 0; i < 10; i++) await login(base, "wrong");
+      expect((await login(base, "wrong")).status).toBe(429);
+      const res = await login(base, KEY);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("set-cookie")).toStartWith(`${COOKIE_NAME}=`);
+    });
+  });
+
   test("forged X-Forwarded-For cannot reset the failure count when no proxy is trusted", async () => {
     await withServer({ TRUST_PROXY: "false" }, async ({ base }) => {
       for (let i = 0; i < 10; i++) {
         const res = await login(base, "wrong", { "x-forwarded-for": `198.51.100.${i + 1}` });
         expect(res.status).toBe(401);
       }
-      const blocked = await login(base, KEY, { "x-forwarded-for": "192.0.2.250" });
-      expect(blocked.status).toBe(429);
+      expect((await login(base, "wrong", { "x-forwarded-for": "192.0.2.250" })).status).toBe(429);
+      expect((await login(base, KEY, { "x-forwarded-for": "192.0.2.251" })).status).toBe(200);
     });
   });
 
@@ -88,8 +106,9 @@ describe("login rate limit (end to end)", () => {
       for (let i = 0; i < 10; i++) {
         expect((await login(base, "wrong", { "x-forwarded-for": "198.51.100.1" })).status).toBe(401);
       }
-      expect((await login(base, KEY, { "x-forwarded-for": "198.51.100.1" })).status).toBe(429);
-      expect((await login(base, KEY, { "x-forwarded-for": "198.51.100.2" })).status).toBe(200);
+      expect((await login(base, "wrong", { "x-forwarded-for": "198.51.100.1" })).status).toBe(429);
+      expect((await login(base, "wrong", { "x-forwarded-for": "198.51.100.2" })).status).toBe(401);
+      expect((await login(base, KEY, { "x-forwarded-for": "198.51.100.1" })).status).toBe(200);
     });
   });
 
@@ -98,8 +117,35 @@ describe("login rate limit (end to end)", () => {
       for (let i = 0; i < 10; i++) {
         expect((await login(base, "wrong", { "x-forwarded-for": `10.9.9.${i}, 198.51.100.7` })).status).toBe(401);
       }
-      expect((await login(base, KEY, { "x-forwarded-for": "10.1.1.1, 198.51.100.7" })).status).toBe(429);
+      expect((await login(base, "wrong", { "x-forwarded-for": "10.1.1.1, 198.51.100.7" })).status).toBe(429);
     });
+  });
+
+  test("the total cap refuses wrong keys across rotating X-Forwarded-For addresses under TRUST_PROXY", async () => {
+    await withServer(
+      { TRUST_PROXY: "true" },
+      async ({ base }) => {
+        for (let i = 1; i <= 3; i++) {
+          expect((await login(base, "wrong", { "x-forwarded-for": `198.51.100.${i}` })).status).toBe(401);
+        }
+        expect((await login(base, "wrong", { "x-forwarded-for": "198.51.100.200" })).status).toBe(429);
+        expect((await login(base, KEY, { "x-forwarded-for": "198.51.100.201" })).status).toBe(200);
+      },
+      { total: 3 },
+    );
+  });
+
+  test("a refused wrong key is held for the penalty before its 429", async () => {
+    await withServer(
+      {},
+      async ({ base }) => {
+        for (let i = 0; i < 10; i++) await login(base, "wrong");
+        const started = performance.now();
+        expect((await login(base, "wrong")).status).toBe(429);
+        expect(performance.now() - started).toBeGreaterThanOrEqual(90);
+      },
+      { penaltyMs: 100 },
+    );
   });
 });
 

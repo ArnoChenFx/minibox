@@ -7,6 +7,7 @@ import {
   extractKey,
   isAuthorized,
   isSecureRequest,
+  LoginLimiter,
   LoginThrottle,
   parseCookies,
   proxyHeaderWarner,
@@ -172,6 +173,71 @@ describe("login throttle", () => {
       expect(t.isBlocked("new", 1500)).toBe(false);
     } finally {
       t.stop();
+    }
+  });
+});
+
+describe("login limiter", () => {
+  test("refuses an address after its own limit, and a success clears only that address", () => {
+    const l = new LoginLimiter({ perAddress: 2, total: 100 });
+    try {
+      l.recordFailure("a", 0);
+      l.recordFailure("a", 0);
+      expect(l.refuses("a", 1)).toBe(true);
+      expect(l.refuses("b", 1)).toBe(false);
+      l.recordSuccess("a");
+      expect(l.refuses("a", 1)).toBe(false);
+    } finally {
+      l.stop();
+    }
+  });
+
+  test("the total applies to addresses that have never failed", () => {
+    const l = new LoginLimiter({ perAddress: 100, total: 2 });
+    try {
+      l.recordFailure("a", 0);
+      l.recordFailure("b", 0);
+      expect(l.refuses("c", 1)).toBe(true);
+    } finally {
+      l.stop();
+    }
+  });
+
+  test("a success does not clear the total", () => {
+    const l = new LoginLimiter({ perAddress: 100, total: 2 });
+    try {
+      l.recordFailure("a", 0);
+      l.recordFailure("b", 0);
+      l.recordSuccess("b");
+      expect(l.refuses("c", 1)).toBe(true);
+    } finally {
+      l.stop();
+    }
+  });
+
+  test("address churn cannot evict the total", () => {
+    const l = new LoginLimiter({ perAddress: 100, total: 2, maxEntries: 2 });
+    try {
+      l.recordFailure("a", 0);
+      l.recordFailure("b", 0);
+      for (let i = 0; i < 10; i++) l.recordFailure(`churn-${i}`, 1);
+      expect(l.refuses("fresh", 2)).toBe(true);
+    } finally {
+      l.stop();
+    }
+  });
+
+  test("a refused key is not held when there is no penalty or no waiting slot", async () => {
+    const none = new LoginLimiter({ penaltyMs: 0 });
+    const full = new LoginLimiter({ penaltyMs: 60_000, maxPenalties: 0 });
+    try {
+      const started = performance.now();
+      await none.delayRefusal();
+      await full.delayRefusal();
+      expect(performance.now() - started).toBeLessThan(1000);
+    } finally {
+      none.stop();
+      full.stop();
     }
   });
 });

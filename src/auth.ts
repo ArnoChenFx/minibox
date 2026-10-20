@@ -201,3 +201,74 @@ export class LoginThrottle {
     this.timer = null;
   }
 }
+
+export interface LoginLimits {
+  /** Wrong keys one client address may send per window before its wrong keys are refused. */
+  perAddress: number;
+  /** Wrong keys from all addresses together per window before every further wrong key is refused. */
+  total: number;
+  windowMs: number;
+  /** How long a refused wrong key is held before its 429 is sent. */
+  penaltyMs: number;
+  /** Refused wrong keys held at once; past this, they are answered without waiting. */
+  maxPenalties: number;
+  maxEntries: number;
+}
+
+const DEFAULT_LIMITS: LoginLimits = {
+  perAddress: 10,
+  total: 50,
+  windowMs: 5 * 60_000,
+  penaltyMs: 1000,
+  maxPenalties: 16,
+  maxEntries: 10_000,
+};
+
+const ALL_ADDRESSES = "*";
+
+/**
+ * Limits wrong access keys only. The caller checks the key before asking whether to refuse, so a correct key always
+ * signs in, even while its address or every address is blocked. Refusals do not stop guesses from being checked, so
+ * the key's strength is what resists brute force. The total has its own table, so address churn cannot evict it.
+ */
+export class LoginLimiter {
+  private readonly limits: LoginLimits;
+  private readonly byAddress: LoginThrottle;
+  private readonly overall: LoginThrottle;
+  private waiting = 0;
+
+  constructor(overrides: Partial<LoginLimits> = {}) {
+    this.limits = { ...DEFAULT_LIMITS, ...overrides };
+    this.byAddress = new LoginThrottle(this.limits.perAddress, this.limits.windowMs, this.limits.maxEntries);
+    this.overall = new LoginThrottle(this.limits.total, this.limits.windowMs, 1);
+  }
+
+  refuses(address: string, now = Date.now()): boolean {
+    return this.byAddress.isBlocked(address, now) || this.overall.isBlocked(ALL_ADDRESSES, now);
+  }
+
+  recordFailure(address: string, now = Date.now()): void {
+    this.byAddress.fail(address, now);
+    this.overall.fail(ALL_ADDRESSES, now);
+  }
+
+  recordSuccess(address: string): void {
+    this.byAddress.reset(address);
+  }
+
+  /** Holds a refused wrong key before its 429 is sent. Past maxPenalties waiting, it is sent at once. */
+  async delayRefusal(): Promise<void> {
+    if (this.limits.penaltyMs <= 0 || this.waiting >= this.limits.maxPenalties) return;
+    this.waiting++;
+    try {
+      await new Promise((resolve) => setTimeout(resolve, this.limits.penaltyMs));
+    } finally {
+      this.waiting--;
+    }
+  }
+
+  stop(): void {
+    this.byAddress.stop();
+    this.overall.stop();
+  }
+}

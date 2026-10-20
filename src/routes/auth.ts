@@ -20,19 +20,21 @@ export const authRoutes: Route[] = [
     "/api/auth/login",
     async ({ app, req, server }) => {
       const ip = rateLimitKey(clientAddress(req, server.requestIP(req)?.address, app.cfg.trustProxy));
-      if (app.throttle.isBlocked(ip)) {
-        throw new AppError(429, "too_many_requests", msg("too_many_attempts"));
-      }
       const body = asObject(await readJson(req));
       const key = typeof body.key === "string" ? body.key.trim() : "";
-      if (!key || !safeEqual(key, app.cfg.accessKey)) {
-        app.throttle.fail(ip);
-        log.warn("auth.login_failed", { ip });
-        throw new AppError(401, "unauthorized", msg("wrong_key"));
+      if (key && safeEqual(key, app.cfg.accessKey)) {
+        app.throttle.recordSuccess(ip);
+        log.info("auth.login", { ip });
+        return json({ ok: true }, 200, { "set-cookie": sessionCookie(key, isSecureRequest(req, app.cfg.trustProxy)) });
       }
-      app.throttle.reset(ip);
-      log.info("auth.login", { ip });
-      return json({ ok: true }, 200, { "set-cookie": sessionCookie(key, isSecureRequest(req, app.cfg.trustProxy)) });
+      const refused = app.throttle.refuses(ip);
+      app.throttle.recordFailure(ip);
+      log.warn("auth.login_failed", { ip, refused });
+      if (refused) {
+        await app.throttle.delayRefusal();
+        throw new AppError(429, "too_many_requests", msg("too_many_attempts"));
+      }
+      throw new AppError(401, "unauthorized", msg("wrong_key"));
     },
     { public: true },
   ),
