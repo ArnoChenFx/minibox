@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { parseDotenv } from "../src/config";
-import { demuxLogs } from "../src/docker/boxes";
+import { demuxLogs } from "../src/docker/logs";
 import { snapshotTag } from "../src/docker/snapshots";
 import { cpuPercent, parseCpuMax, parseMeminfo, parseProcStat } from "../src/host/procfs";
 import { AppError, toAppError } from "../src/lib/errors";
