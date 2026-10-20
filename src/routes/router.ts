@@ -1,6 +1,7 @@
 import type { Server } from "bun";
 
 import type { App } from "../app";
+import type { Caller } from "../auth";
 import type { HostCtx } from "../host/registry";
 
 export interface RouteCtx {
@@ -10,6 +11,8 @@ export interface RouteCtx {
   url: URL;
   params: Record<string, string>;
   server: Server<unknown>;
+  /** `null` when the request is not signed in. Only public routes are reached in that case. */
+  caller: Caller | null;
 }
 
 export type Handler = (ctx: RouteCtx) => Promise<Response> | Response;

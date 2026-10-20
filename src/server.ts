@@ -1,7 +1,14 @@
 import type { Server } from "bun";
 
 import { type App, createApp } from "./app";
-import { isAuthorized, isSecureRequest, isWeakAccessKey, MIN_ACCESS_KEY_LENGTH, proxyHeaderWarner } from "./auth";
+import {
+  authenticate,
+  clearLegacyKeyCookie,
+  isSecureRequest,
+  isWeakAccessKey,
+  MIN_ACCESS_KEY_LENGTH,
+  proxyHeaderWarner,
+} from "./auth";
 import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
 import { guardRequest } from "./guard";
@@ -26,7 +33,8 @@ async function handleApi(app: App, req: Request, url: URL, server: Server<Termin
   const m = matchRoute(routes, req.method, url.pathname);
   if (m === null) throw new AppError(404, "not_found", msg("api_not_found"));
   if (m === "method_not_allowed") throw new AppError(405, "method_not_allowed", msg("method_not_allowed"));
-  if (!m.route.public && !isAuthorized(req, app.cfg.accessKey)) {
+  const caller = authenticate(req, app.cfg.accessKey, app.sessions);
+  if (!m.route.public && caller === null) {
     throw new AppError(401, "unauthorized", msg("unauthorized"));
   }
   return m.route.handler({
@@ -36,6 +44,7 @@ async function handleApi(app: App, req: Request, url: URL, server: Server<Termin
     url,
     params: m.params,
     server: server as Server<unknown>,
+    caller,
   });
 }
 
@@ -44,7 +53,7 @@ const redirect = (location: string) => new Response(null, { status: 302, headers
 
 async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
   const path = url.pathname;
-  const authed = isAuthorized(req, app.cfg.accessKey);
+  const authed = authenticate(req, app.cfg.accessKey, app.sessions) !== null;
   if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) {
     const file = await serveFile(app.cfg.webDir, path === "/favicon.ico" ? "/assets/favicon-32.png" : path);
     if (file) return file;
@@ -52,7 +61,10 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
   }
   if (path === "/login") {
     if (authed) return redirect("/");
-    return (await serveFile(app.cfg.webDir, "/login.html")) ?? new Response("Not Found", { status: 404 });
+    const page = await serveFile(app.cfg.webDir, "/login.html");
+    if (!page) return new Response("Not Found", { status: 404 });
+    page.headers.append("set-cookie", clearLegacyKeyCookie());
+    return page;
   }
   if (path === "/" || path === "/index.html") {
     if (!authed) return redirect("/login");
@@ -62,7 +74,7 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
 }
 
 export function startServer(app: App): Server<TerminalData> {
-  const term = terminalHandlers();
+  const term = terminalHandlers(app.sessions);
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
   );
@@ -79,11 +91,13 @@ export function startServer(app: App): Server<TerminalData> {
         guardRequest(req, app.cfg);
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-          if (!isAuthorized(req, app.cfg.accessKey)) throw new AppError(401, "unauthorized", msg("unauthorized"));
+          const caller = authenticate(req, app.cfg.accessKey, app.sessions);
+          if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
           const host = app.hosts.get();
           const box = await getBox(host, decodeURIComponent(tm[1] ?? ""));
           if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
-          if (server.upgrade(req, { data: { boxId: box.id, host } })) return undefined;
+          const data: TerminalData = { boxId: box.id, host, sessionId: caller.sessionId };
+          if (server.upgrade(req, { data })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
         res = url.pathname.startsWith("/api/")
@@ -161,6 +175,7 @@ async function boot(): Promise<void> {
     app.monitor.stop();
     app.retention.stop();
     app.throttle.stop();
+    app.sessions.stop();
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);

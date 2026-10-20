@@ -4,6 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { setLogLevel } from "../src/lib/logger";
 import { MAX_SESSIONS, SessionStore, type SessionStoreOptions } from "../src/sessions";
 
 const KEY = "k".repeat(64);
@@ -30,11 +31,13 @@ beforeEach(() => {
   };
   spyOn(console, "log").mockImplementation(capture);
   spyOn(console, "error").mockImplementation(capture);
+  setLogLevel("info");
 });
 
 afterEach(() => {
   for (const store of opened) store.stop();
   mock.restore();
+  setLogLevel("error");
   rmSync(dir, { recursive: true, force: true });
 });
 

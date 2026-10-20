@@ -219,7 +219,14 @@ const TAB_RENDER = {
       sock.addEventListener("message", (ev) =>
         xterm.write(typeof ev.data === "string" ? ev.data : new Uint8Array(ev.data)),
       );
-      sock.addEventListener("close", () => sock === ws && setStatus(false, t("bd.disconnected")));
+      sock.addEventListener("close", (ev) => {
+        if (sock !== ws) return;
+        if (ev.code === 1008) {
+          location.href = "/login";
+          return;
+        }
+        setStatus(false, t("bd.disconnected"));
+      });
     };
     const dataSub = xterm.onData((d) => ws?.readyState === 1 && ws.send(d));
     const resizeSub = xterm.onResize(

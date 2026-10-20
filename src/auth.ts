@@ -1,8 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 
-export const COOKIE_NAME = "minibox_key";
-const MAX_AGE = 60 * 60 * 24 * 30;
+import type { SessionStore } from "./sessions";
+
+export const COOKIE_NAME = "minibox_session";
+/** The cookie that used to hold the raw access key. It is never read, only cleared. */
+export const LEGACY_KEY_COOKIE = "minibox_key";
 
 export function safeEqual(a: string, b: string): boolean {
   const ba = Buffer.from(a);
@@ -28,19 +31,26 @@ export function parseCookies(header: string | null): Record<string, string> {
   return out;
 }
 
-/** Extract an access key from `Authorization: Bearer` or the session cookie. */
-export function extractKey(req: Request): string | null {
+/** Who a request acts for. `sessionId` is `null` for a bearer request, which carries the access key itself. */
+export interface Caller {
+  sessionId: string | null;
+}
+
+/**
+ * Resolves a request to its caller, or `null` when it is not signed in. A request with an `Authorization: Bearer`
+ * header is judged by that header alone, so a wrong key cannot fall back to a cookie. Otherwise the session cookie
+ * must hold a live session token. Resolving a session counts as use, which renews it under sliding renewal.
+ */
+export function authenticate(req: Request, accessKey: string, sessions: SessionStore): Caller | null {
   const auth = req.headers.get("authorization");
   if (auth && /^bearer\s+/i.test(auth)) {
     const key = auth.replace(/^bearer\s+/i, "").trim();
-    return key || null;
+    return key !== "" && safeEqual(key, accessKey) ? { sessionId: null } : null;
   }
-  return parseCookies(req.headers.get("cookie"))[COOKIE_NAME] || null;
-}
-
-export function isAuthorized(req: Request, accessKey: string): boolean {
-  const key = extractKey(req);
-  return key !== null && safeEqual(key, accessKey);
+  const token = parseCookies(req.headers.get("cookie"))[COOKIE_NAME];
+  if (!token) return null;
+  const session = sessions.touch(token);
+  return session ? { sessionId: session.id } : null;
 }
 
 export const MIN_ACCESS_KEY_LENGTH = 20;
@@ -156,12 +166,17 @@ function expandIPv6(ip: string): number[] | null {
   return [...toHextets(head), ...Array.from({ length: missing }, () => 0), ...toHextets(tail)];
 }
 
-export function sessionCookie(key: string, secure: boolean): string {
-  return `${COOKIE_NAME}=${encodeURIComponent(key)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${MAX_AGE}${secure ? "; Secure" : ""}`;
+export function sessionCookie(token: string, opts: { secure: boolean; maxAgeSeconds: number }): string {
+  const secure = opts.secure ? "; Secure" : "";
+  return `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${opts.maxAgeSeconds}${secure}`;
 }
 
 export function clearSessionCookie(): string {
   return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
+}
+
+export function clearLegacyKeyCookie(): string {
+  return `${LEGACY_KEY_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
 }
 
 /**
