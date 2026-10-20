@@ -43,6 +43,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
 | Logs | Main-process output with selectable line count and auto-refresh |
 | Access control | Single access key via HttpOnly cookie or `Authorization: Bearer`; login rate limiting per IP |
+| Languages | English and Simplified Chinese; switch from the sidebar footer, the login page or Settings. Defaults to the browser language and is remembered per browser |
 | UI | Light / dark theme (follows the system, manual toggle), responsive layout, empty states, skeleton loaders, toasts, confirmation for destructive actions |
 
 ## Screenshots
