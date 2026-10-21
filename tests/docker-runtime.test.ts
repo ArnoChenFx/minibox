@@ -58,6 +58,8 @@ const EXPECTED_STATE: Record<BoxProfile, { capBnd: string; noNewPrivs: string }>
   relaxed: { capBnd: "00000000a80425fb", noNewPrivs: "0" },
 };
 
+const shortImageId = (id: string) => id.replace(/^sha256:/, "").slice(0, 12);
+
 async function waitUntil(check: () => Promise<boolean>, what: string, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!(await check())) {
@@ -957,6 +959,61 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
           .getVolume(plain)
           .remove()
           .catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a box that runs its template tag is rebuilt onto the image the tag names after the tag moves",
+    async () => {
+      const restore = silenceLogs();
+      const repo = `${prefix}-template`;
+      const tag = `${repo}:moving`;
+      try {
+        await docker.getImage(IMAGE).tag({ repo, tag: "moving" });
+        const box = await boxes.createBox(host, { name: "moving", image: tag, cpus: 0.5, memoryMb: 64 });
+        const before = (await runtime.inspectContainer(box.id)).imageId;
+
+        await runtime.commitContainer(box.id, {
+          repo,
+          tag: "moving",
+          pause: true,
+          changes: [`LABEL ${prefix}.moved=true`],
+        });
+        const moved = (await runtime.inspectImage(tag)).id;
+        expect(moved).not.toBe(before);
+
+        const preview = await rejectionOf(rebuildBox(host, box.id, box.revision, { template: tag }, false));
+        expect(preview).toMatchObject({
+          status: 409,
+          key: "rebuild_confirm_required",
+          details: {
+            preview: {
+              changes: expect.arrayContaining([
+                {
+                  field: "template",
+                  from: `${tag} (${shortImageId(before)})`,
+                  to: `${tag} (${shortImageId(moved)})`,
+                },
+              ]),
+            },
+          },
+        });
+        expect((await runtime.inspectContainer(box.id)).imageId).toBe(before);
+
+        const rebuilt = await rebuildBox(host, box.id, box.revision, { template: tag }, true);
+        expect(rebuilt).toMatchObject({ template: tag, image: tag, running: true, drift: [] });
+        expect((await runtime.inspectContainer(rebuilt.id)).imageId).toBe(moved);
+        expect(host.specs.read(box.boxId)?.template).toEqual({ ref: tag, image: tag, digest: moved });
+
+        const again = await rejectionOf(rebuildBox(host, rebuilt.boxId, rebuilt.revision, { template: tag }, true));
+        expect(again).toMatchObject({ status: 400, key: "rebuild_empty" });
+
+        await boxes.deleteBox(host, rebuilt.id, true);
+      } finally {
+        await runtime.removeImage(tag, { force: true }).catch(() => {});
         restore();
       }
     },

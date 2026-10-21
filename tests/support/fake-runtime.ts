@@ -292,6 +292,17 @@ export class FakeRuntime implements Runtime {
     return id;
   }
 
+  /**
+   * Points `ref` at a new image, as a rebuilt template does. The image the tag named before keeps its ID and any
+   * container that runs it. Seeding does not record a call.
+   */
+  moveTag(ref: string, labels: Record<string, string> = {}): string {
+    const image: FakeImage = { id: newImageId(), tags: [], labels: { ...labels }, createdAt: now(), size: 1024 };
+    this.images.set(image.id, image);
+    this.tag(image, normalizeRef(ref));
+    return image.id;
+  }
+
   /** A network that is created again gets a new ID, which containers that ran on the old one still point at. */
   seedNetwork(name: string, options: Record<string, string> = {}, driver = "bridge"): void {
     this.networks.set(name, { id: newNetworkId(), name, driver, options: { ...options } });

@@ -331,7 +331,7 @@ export const boxRebuild = defineOperation({
     toolset: "rebuild",
     name: "rebuild_box",
     description:
-      "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). Pass expectedRevision, the box's current revision.",
+      "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). A box whose template is a tag follows the tag: when the tag names another image, the preview lists it as a template change, and a confirmed rebuild runs the box on that image. Pass expectedRevision, the box's current revision.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.rebuild", target: (_input, box) => box.name },

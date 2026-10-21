@@ -8,10 +8,11 @@ import {
   type ContainerInfo,
   type CreateContainerSpec,
   type ImageDetails,
+  isRuntimeError,
   RuntimeError,
 } from "../runtime";
 import { pushHistory } from "../specs/history";
-import { planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
+import { type MovedTag, planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxRecovery, BoxSpec } from "../specs/types";
 import { assertRebuildAttachments } from "./attachments";
@@ -46,7 +47,7 @@ export async function rebuildBox(
     if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
 
     const previous = structuredClone(spec);
-    const planned = planRebuild(host.prefix, spec, request);
+    const planned = planRebuild(host.prefix, spec, request, await movedTag(host, spec));
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
     await assertRebuildAttachments(host, spec, planned.mounts, planned.network);
 
@@ -94,6 +95,25 @@ async function inspectOld(host: HostCtx, id: string): Promise<ContainerInfo> {
     if (e instanceof RuntimeError && e.kind === "not_found") throw notFound(msg("box_not_found"));
     throw e;
   }
+}
+
+/**
+ * The image a tag-tracking box's tag names now, when the box's container runs a different one. A box tracks its
+ * template when the template is the image it was created from (`ref` equals `image`). A snapshot box is labelled
+ * `snapshot:<ref>`, so it stays on its snapshot. A tag that no longer exists is not a move.
+ */
+async function movedTag(host: HostCtx, spec: BoxSpec): Promise<MovedTag | null> {
+  if (spec.template.ref !== spec.template.image) return null;
+  let tagged: ImageDetails;
+  try {
+    tagged = await host.runtime.inspectImage(spec.template.image);
+  } catch (e) {
+    if (isRuntimeError(e, "not_found")) return null;
+    throw e;
+  }
+  const running = await inspectOld(host, spec.containerId);
+  if (running.imageId === tagged.id) return null;
+  return { tag: spec.template.image, from: running.imageId, to: tagged.id };
 }
 
 /**
@@ -200,11 +220,21 @@ function canon(mounts: { volume: string; path: string; mode: string }[]): string
   return JSON.stringify(rows);
 }
 
-async function assertFresh(host: HostCtx, id: string, image: string, planned: PlannedRebuild): Promise<void> {
+/**
+ * A rebuild that sets the template also checks the image id. A tag can move between the inspect and the create, and the
+ * spec must not record a digest the container does not run.
+ */
+async function assertFresh(
+  host: HostCtx,
+  id: string,
+  template: BoxSpec["template"],
+  planned: PlannedRebuild,
+): Promise<void> {
   const info = await host.runtime.inspectContainer(id);
   const problems: string[] = [];
   if (info.running) problems.push("running");
-  if (info.image !== image) problems.push("image");
+  if (info.image !== template.image) problems.push("image");
+  if (planned.templateRef !== null && info.imageId !== template.digest) problems.push("image id");
   if (info.network !== planned.network) problems.push("network");
   const actual = info.mounts.map((mount) => ({ volume: mount.source, path: mount.target, mode: mount.mode }));
   if (canon(actual) !== canon(planned.mounts)) problems.push("mounts");
@@ -317,7 +347,7 @@ async function swap(
     }
     const created = await host.runtime.createContainer(containerSpec(host, previous, planned, template, scratch));
     state.createdId = created.id;
-    await assertFresh(host, created.id, template.image, planned);
+    await assertFresh(host, created.id, template, planned);
     writeNext(host, previous, planned, template, created.id, request);
     state.specWritten = true;
     if (state.wasRunning) {

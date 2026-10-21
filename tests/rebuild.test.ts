@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import type { Server } from "bun";
 
@@ -39,6 +39,16 @@ beforeEach(() => {
 
 const newBox = (name: string) => boxes.createBox(host, { name, cpus: 1, memoryMb: 256 });
 const formal = (id: string) => `mbtest-${id}`;
+const short = (id: string) => id.replace(/^sha256:/, "").slice(0, 12);
+
+/** The template changes a refused rebuild previews. Fails unless the call is refused for want of confirm. */
+async function previewChanges(promise: Promise<unknown>): Promise<{ field: string; from: string; to: string }[]> {
+  const error = await rejectionOf(promise);
+  expect(error).toBeInstanceOf(AppError);
+  if (!(error instanceof AppError)) throw new Error("expected AppError");
+  expect(error).toMatchObject({ status: 409, code: "confirmation_required", key: "rebuild_confirm_required" });
+  return (error.details as { preview: { changes: { field: string; from: string; to: string }[] } }).preview.changes;
+}
 
 describe("rebuild preview", () => {
   test("a change without confirm returns the docker diff and does not create a container", async () => {
@@ -318,6 +328,114 @@ describe("rebuild swap", () => {
     expect(recovered.containerName).toBe(formal(rebuilt.boxId));
     expect(runtime.containers.get(recovered.id)?.name).toBe(formal(rebuilt.boxId));
     expect(runtime.callsTo("renameContainer")).toHaveLength(renames);
+  });
+});
+
+describe("rebuild onto a moved tag", () => {
+  test("a moved tag is a template change in the preview, and nothing is created", async () => {
+    const box = await newBox("alpha");
+    const running = runtime.containers.get(box.id)?.imageId ?? "";
+    const moved = runtime.moveTag(host.baseTemplateTag);
+    const creates = runtime.callsTo("createContainer").length;
+
+    const changes = await previewChanges(
+      rebuildBox(host, box.id, box.revision, { template: host.baseTemplateTag }, false),
+    );
+    expect(changes).toContainEqual({
+      field: "template",
+      from: `${host.baseTemplateTag} (${short(running)})`,
+      to: `${host.baseTemplateTag} (${short(moved)})`,
+    });
+    expect(runtime.callsTo("createContainer")).toHaveLength(creates);
+    expect(runtime.containers.get(box.id)?.running).toBe(true);
+    expect(host.specs.read(box.boxId)?.template.digest).toBe(running);
+  });
+
+  test("confirm runs the new container from the moved image and keeps the tag as the template", async () => {
+    const box = await newBox("alpha");
+    const moved = runtime.moveTag(host.baseTemplateTag);
+
+    const rebuilt = await rebuildBox(host, box.boxId, box.revision, { template: host.baseTemplateTag }, true);
+
+    expect(rebuilt.template).toBe(host.baseTemplateTag);
+    expect(rebuilt.image).toBe(host.baseTemplateTag);
+    expect(rebuilt.revision).toBe(2);
+    expect(rebuilt.drift).toEqual([]);
+    expect(runtime.containers.get(rebuilt.id)?.imageId).toBe(moved);
+    expect(runtime.containers.get(rebuilt.id)?.labels[keys.digest]).toBe(moved);
+    expect(runtime.containers.has(box.id)).toBe(false);
+    expect(host.specs.read(box.boxId)?.template).toEqual({
+      ref: host.baseTemplateTag,
+      image: host.baseTemplateTag,
+      digest: moved,
+    });
+  });
+
+  test("once the box runs the moved image, the same request is rebuild_empty", async () => {
+    const box = await newBox("alpha");
+    runtime.moveTag(host.baseTemplateTag);
+    const rebuilt = await rebuildBox(host, box.boxId, box.revision, { template: host.baseTemplateTag }, true);
+
+    const again = await rejectionOf(
+      rebuildBox(host, rebuilt.boxId, rebuilt.revision, { template: host.baseTemplateTag }, true),
+    );
+    expect(again).toMatchObject({ status: 400, key: "rebuild_empty" });
+    expect(host.specs.read(box.boxId)?.revision).toBe(2);
+  });
+
+  test("a template named in the request is the change, and the moved tag is not listed", async () => {
+    const box = await newBox("alpha");
+    runtime.moveTag(host.baseTemplateTag);
+    runtime.seedImage("other:1");
+
+    const changes = await previewChanges(rebuildBox(host, box.id, box.revision, { template: "other:1" }, false));
+    expect(changes.filter((change) => change.field === "template")).toEqual([
+      { field: "template", from: host.baseTemplateTag, to: "other:1" },
+    ]);
+  });
+
+  test("a tag that was removed is not a move, so the same request changes nothing", async () => {
+    const box = await newBox("alpha");
+    await runtime.removeImage(host.baseTemplateTag, { force: true });
+
+    const error = await rejectionOf(rebuildBox(host, box.id, box.revision, { template: host.baseTemplateTag }, true));
+    expect(error).toMatchObject({ status: 400, key: "rebuild_empty" });
+    expect(runtime.containers.get(box.id)?.running).toBe(true);
+    expect(host.specs.read(box.boxId)?.revision).toBe(1);
+  });
+
+  test("a box made from a snapshot follows no tag, so a moved snapshot tag changes nothing", async () => {
+    const snapshot = "mbtest-snap:nightly";
+    runtime.seedImage(snapshot, { [keys.snapshot]: "true" });
+    const box = await boxes.createBox(host, {
+      name: "alpha",
+      image: snapshot,
+      templateLabel: `snapshot:${snapshot}`,
+      cpus: 1,
+      memoryMb: 256,
+    });
+    runtime.moveTag(snapshot, { [keys.snapshot]: "true" });
+
+    const error = await rejectionOf(rebuildBox(host, box.id, box.revision, { template: `snapshot:${snapshot}` }, true));
+    expect(error).toMatchObject({ status: 400, key: "rebuild_empty" });
+    expect(runtime.callsTo("createContainer")).toHaveLength(1);
+  });
+
+  test("a tag that moves again while the new container is created is refused and rolled back", async () => {
+    const box = await newBox("alpha");
+    runtime.moveTag(host.baseTemplateTag);
+    const create = runtime.createContainer.bind(runtime);
+    spyOn(runtime, "createContainer").mockImplementationOnce(async (spec) => {
+      runtime.moveTag(host.baseTemplateTag);
+      return create(spec);
+    });
+
+    const error = await rejectionOf(rebuildBox(host, box.id, box.revision, { template: host.baseTemplateTag }, true));
+    expect(error).toMatchObject({ status: 502, key: "docker_error" });
+    expect(runtime.containers.size).toBe(1);
+    expect(runtime.containers.get(box.id)?.running).toBe(true);
+    expect(host.specs.read(box.boxId)?.containerId).toBe(box.id);
+    expect(host.specs.read(box.boxId)?.revision).toBe(1);
   });
 });
 

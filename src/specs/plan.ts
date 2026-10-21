@@ -23,10 +23,23 @@ export interface RebuildChange {
   to: string;
 }
 
+/**
+ * A tag-tracking box whose tag now names another image. `from` is the image its container runs and `to` is the image
+ * the tag names. The service finds it by reading the engine, so the planner itself does no I/O.
+ */
+export interface MovedTag {
+  tag: string;
+  from: string;
+  to: string;
+}
+
 export interface PlannedRebuild {
   /** Fields that differ. Empty when the request leaves the rebuild inputs as they are. */
   changes: RebuildChange[];
-  /** Set only when the template ref changes. The image is checked before a container is created. */
+  /**
+   * Set when the template ref changes or a tag-tracking box follows its tag to a new image. The image is checked
+   * before a container is created.
+   */
   templateRef: string | null;
   mounts: BoxMount[];
   env: BoxEnv[];
@@ -71,15 +84,33 @@ function canonEnv(env: BoxEnv[]): string {
   return JSON.stringify(rows);
 }
 
+/** The first twelve hex digits of an image ID, as `docker images` shows it. */
+const shortImageId = (id: string): string => id.replace(/^sha256:/, "").slice(0, 12);
+
 /**
  * The rebuild a request would perform. Mounts, env, network and profile stay as they are when omitted.
- * The container is renamed to `<prefix>-<id>` only when something else changes (decision D6).
+ * The container is renamed to `<prefix>-<id>` only when something else changes (decision D6). A moved tag is a
+ * template change, unless the request names another template: that template is the one rebuilt onto.
  */
-export function planRebuild(prefix: string, spec: BoxSpec, request: RebuildRequest): PlannedRebuild {
+export function planRebuild(
+  prefix: string,
+  spec: BoxSpec,
+  request: RebuildRequest,
+  moved: MovedTag | null = null,
+): PlannedRebuild {
   const changes: RebuildChange[] = [];
-  const templateRef =
+  const requestedRef =
     request.template !== undefined && request.template !== spec.template.ref ? request.template : null;
-  if (templateRef !== null) changes.push({ field: "template", from: spec.template.ref, to: templateRef });
+  if (requestedRef !== null) {
+    changes.push({ field: "template", from: spec.template.ref, to: requestedRef });
+  } else if (moved) {
+    changes.push({
+      field: "template",
+      from: `${moved.tag} (${shortImageId(moved.from)})`,
+      to: `${moved.tag} (${shortImageId(moved.to)})`,
+    });
+  }
+  const templateRef = requestedRef ?? moved?.tag ?? null;
 
   const mounts = request.mounts ?? spec.mounts;
   if (request.mounts !== undefined && canonMounts(request.mounts) !== canonMounts(spec.mounts)) {
