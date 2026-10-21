@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { readdirSync, statSync } from "node:fs";
 
 import type { Server } from "bun";
@@ -7,6 +7,7 @@ import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
 import type { LabelKeys } from "../src/labels";
 import { AppError } from "../src/lib/errors";
+import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
@@ -354,5 +355,51 @@ describe("drift and the reconciler", () => {
     expect((await runtime.inspectContainer(id)).restart).toBe("no");
     expect(host.specs.read(report.restartReset[0] ?? "")?.revision).toBe(1);
     expect(runtime.containers.get(id)?.labels[keys.id]).toBeUndefined();
+  });
+
+  test("a box that fails to start is reported and logged, and the boxes after it still start", async () => {
+    const first = await newBox("alpha");
+    const second = await newBox("beta");
+    await runtime.stopContainer(first.id, { timeoutSec: 1 });
+    await runtime.stopContainer(second.id, { timeoutSec: 1 });
+    runtime.fail("startContainer", new RuntimeError("engine", "image was removed", "image was removed"));
+    const errors = spyOn(console, "error");
+    errors.mockClear();
+
+    const report = await reconcileHost(host);
+
+    expect(report.failed).toEqual([{ id: first.boxId, error: "image was removed" }]);
+    expect(report.started).toEqual([second.boxId]);
+    expect((await boxes.getBox(host, first.boxId)).running).toBe(false);
+    expect((await boxes.getBox(host, second.boxId)).running).toBe(true);
+    const logged = errors.mock.calls.map((args) => JSON.parse(String(args[0])) as Record<string, unknown>);
+    expect(logged).toContainEqual(
+      expect.objectContaining({ msg: "box.reconcile_box_failed", id: first.boxId, error: "image was removed" }),
+    );
+  });
+
+  test("a container that cannot be claimed is reported, and the containers after it are still claimed", async () => {
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-broken",
+      labels: { [keys.box]: "true", [keys.name]: "broken" },
+    });
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-legacy",
+      labels: { [keys.box]: "true", [keys.name]: "legacy" },
+    });
+    const write = host.specs.write.bind(host.specs);
+    host.specs.write = (spec) => {
+      if (spec.containerName === "mbtest-broken") throw new Error("disk full");
+      write(spec);
+    };
+
+    const report = await reconcileHost(host);
+
+    expect(report.failed).toEqual([{ id: "mbtest-broken", error: "disk full" }]);
+    expect(report.claimed).toHaveLength(1);
+    expect(host.specs.findByName("legacy")?.containerName).toBe("mbtest-legacy");
+    expect(host.specs.findByName("broken")).toBeNull();
   });
 });
