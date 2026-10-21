@@ -108,9 +108,25 @@ describe("bundled catalog", () => {
     expect(new Set(catalog.map((entry) => entry.category))).toEqual(new Set(TOOL_CATEGORIES));
   });
 
-  test("retired entries are gone", () => {
-    expect(findCatalogEntry(catalog, "aider")).toBeUndefined();
-    expect(findCatalogEntry(catalog, "gemini")).toBeUndefined();
+  test("the bundled catalog is exactly the reviewed list, so an addition or removal shows up in review", () => {
+    expect(catalog.map((entry) => entry.id).toSorted()).toEqual([
+      "antigravity",
+      "bun",
+      "claude-code",
+      "codex",
+      "fx",
+      "grok",
+      "herdr",
+      "luvus",
+      "oh-my-pi",
+      "opencode",
+      "pi-agent",
+      "qoder",
+      "rust",
+      "tailscale",
+      "uv",
+      "zig",
+    ]);
   });
 
   test("only the root-only installer is flagged needsRoot", () => {
@@ -144,7 +160,6 @@ describe("bundled catalog", () => {
     const summary = catalogSummary(emptyDataDir());
     expect(summary.find((item) => item.id === "claude-code")).toMatchObject({ category: "agents", needsRoot: false });
     expect(summary.find((item) => item.id === "tailscale")).toMatchObject({ category: "networking", needsRoot: true });
-    expect(summary.find((item) => item.id === "aider")).toBeUndefined();
   });
 });
 

@@ -127,7 +127,6 @@ describe("installed detection", () => {
       needsRoot: true,
       installed: false,
     });
-    expect(toolRow(listed.json, "aider")).toBeUndefined();
   });
 
   test("detection finds a tool in the box's own image, with its home and tools volumes read-only and no network", async () => {
