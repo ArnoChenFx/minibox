@@ -1552,6 +1552,8 @@ describe.skipIf(!enabled)("the box cache against a real engine", () => {
         await quiesce(reader.sampler);
         // Boxes that earlier tests left running are in the cache too, so the totals count from what it already holds.
         const known = reader.sampler.boxes({ withStats: false }).length;
+        // A read of usage after an idle sampler samples once; the listings after it are served from that sample.
+        await reader.sampler.sampleNow();
         counter.reset();
         for (let tab = 0; tab < 10; tab++) await boxes.listBoxes(reader, { withStats: true });
         expect(engineReads()).toBe(0);
