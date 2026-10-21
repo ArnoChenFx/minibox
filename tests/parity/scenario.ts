@@ -276,7 +276,18 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("delete a missing box", "DELETE", "/api/boxes/missing");
     await send("delete restored with its volume", "DELETE", `/api/boxes/${restored}?deleteVolume=true`);
     await send("delete restored-2", "DELETE", `/api/boxes/${restoredWithTemplate}`);
-    await send("delete alpha, keeping its volume", "DELETE", `/api/boxes/${alpha}`);
+    runtime.seedDiff(alpha, [{ path: "/etc/motd", kind: "modified" }]);
+    await send("rebuild alpha without confirm", "POST", `/api/boxes/${alpha}/rebuild`, {
+      body: JSON.stringify({ profile: "strict" }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(alphaRev) },
+    });
+    const rebuilt = await send("rebuild alpha", "POST", `/api/boxes/${alpha}/rebuild`, {
+      body: JSON.stringify({ profile: "strict", confirm: true }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(alphaRev) },
+    });
+    await send("delete alpha, keeping its volume", "DELETE", `/api/boxes/${boxId(rebuilt.json)}`);
 
     await send("delete nightly snapshot", "DELETE", `/api/snapshots/${encodeURIComponent(nightly)}`);
     await send("list snapshots after delete", "GET", "/api/snapshots");

@@ -266,6 +266,27 @@
                               "additionalProperties": false
                             }
                           },
+                          "env": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                },
+                                "secretRef": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
                           "stats": {
                             "anyOf": [
                               {
@@ -324,7 +345,8 @@
                           "containerName",
                           "drift",
                           "recovery",
-                          "mounts"
+                          "mounts",
+                          "env"
                         ],
                         "additionalProperties": false
                       }
@@ -686,6 +708,27 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -714,7 +757,8 @@
                         "containerName",
                         "drift",
                         "recovery",
-                        "mounts"
+                        "mounts",
+                        "env"
                       ],
                       "additionalProperties": false
                     }
@@ -758,7 +802,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken.",
+            "description": "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1069,6 +1113,27 @@
                             "additionalProperties": false
                           }
                         },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "stats": {
                           "anyOf": [
                             {
@@ -1128,6 +1193,7 @@
                         "drift",
                         "recovery",
                         "mounts",
+                        "env",
                         "stats"
                       ],
                       "additionalProperties": false
@@ -1478,6 +1544,35 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "template": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used."
+                  },
+                  "mounts": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "description": "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. Stage 1 still creates one workspace volume; this does not create a volume pool."
+                  },
+                  "env": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "description": "Environment entries that replace the box's env list. Each entry is { name, value? , secretRef? } and needs a value or a secretRef. secretRef is stored and not injected yet. Omitted, the current env stays. Values are not written to container labels."
+                  },
+                  "network": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "Docker network the rebuilt container joins. Omitted, the current network stays. The host box network is created when missing. Any other network must already exist."
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "strict",
+                      "relaxed"
+                    ],
+                    "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
                   }
                 }
               }
@@ -1694,6 +1789,27 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -1722,7 +1838,8 @@
                         "containerName",
                         "drift",
                         "recovery",
-                        "mounts"
+                        "mounts",
+                        "env"
                       ],
                       "additionalProperties": false
                     }
@@ -1776,7 +1893,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken.",
+            "description": "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2106,6 +2223,27 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -2134,7 +2272,8 @@
                         "containerName",
                         "drift",
                         "recovery",
-                        "mounts"
+                        "mounts",
+                        "env"
                       ],
                       "additionalProperties": false
                     }
@@ -2478,6 +2617,27 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -2506,7 +2666,8 @@
                         "containerName",
                         "drift",
                         "recovery",
-                        "mounts"
+                        "mounts",
+                        "env"
                       ],
                       "additionalProperties": false
                     }
@@ -2850,6 +3011,27 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -2878,7 +3060,8 @@
                         "containerName",
                         "drift",
                         "recovery",
-                        "mounts"
+                        "mounts",
+                        "env"
                       ],
                       "additionalProperties": false
                     }
@@ -3262,6 +3445,27 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -3290,7 +3494,8 @@
                         "containerName",
                         "drift",
                         "recovery",
-                        "mounts"
+                        "mounts",
+                        "env"
                       ],
                       "additionalProperties": false
                     }
@@ -3418,6 +3623,485 @@
         "x-scope": "box:write",
         "x-async": false,
         "x-cli": "box resize"
+      }
+    },
+    "/api/boxes/{id}/rebuild": {
+      "post": {
+        "operationId": "box.rebuild",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Rebuild a box from its spec",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "The box's current revision: a positive integer, a quoted entity tag, or a weak tag. Missing is 428 precondition_required. A stale revision is 412 precondition_failed.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used."
+                  },
+                  "mounts": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "description": "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. Stage 1 still creates one workspace volume; this does not create a volume pool."
+                  },
+                  "env": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "description": "Environment entries that replace the box's env list. Each entry is { name, value? , secretRef? } and needs a value or a secretRef. secretRef is stored and not injected yet. Omitted, the current env stays. Values are not written to container labels."
+                  },
+                  "network": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "Docker network the rebuilt container joins. Omitted, the current network stays. The host box network is created when missing. Any other network must already exist."
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "strict",
+                      "relaxed"
+                    ],
+                    "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "box": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "image": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
+                        "cpus": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "memory": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "volume": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "boxId",
+                        "name",
+                        "state",
+                        "status",
+                        "running",
+                        "image",
+                        "template",
+                        "profile",
+                        "network",
+                        "cpus",
+                        "memory",
+                        "pids",
+                        "createdAt",
+                        "startedAt",
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts",
+                        "env"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "box"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot or template named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The If-Match revision is not the box's current revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required and was not sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "box:write",
+        "x-async": false,
+        "x-cli": "box rebuild",
+        "x-mcp": {
+          "name": "rebuild_box",
+          "toolset": "core"
+        }
       }
     },
     "/api/boxes/{id}/logs": {
@@ -4322,6 +5006,27 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -4350,7 +5055,8 @@
                         "containerName",
                         "drift",
                         "recovery",
-                        "mounts"
+                        "mounts",
+                        "env"
                       ],
                       "additionalProperties": false
                     }
@@ -4404,7 +5110,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken.",
+            "description": "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {

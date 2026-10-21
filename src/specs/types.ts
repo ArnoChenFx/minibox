@@ -82,13 +82,28 @@ export interface BoxSpec {
    * (decision D8).
    */
   restart: "no";
-  /** Docker name. Claim does not change it. A rebuild (not this slice) is what renames it to `<prefix>-<id>`. */
+  /**
+   * Docker name. Claim does not change it (decision D6). A rebuild renames it to `<prefix>-<id>`.
+   * An in-place rename still follows the box name.
+   */
   containerName: string;
   containerId: string;
   revision: number;
   createdAt: string;
   updatedAt: string;
   recovery: BoxRecovery | null;
+  /**
+   * Previous revisions, newest first. Files written before history existed omit this;
+   * readers treat that as an empty list.
+   */
+  history: SpecSnapshot[];
+}
+
+/** One stored revision, without its own history, so the file does not nest. */
+export interface SpecSnapshot {
+  revision: number;
+  at: string;
+  spec: Omit<BoxSpec, "history">;
 }
 
 export interface BoxDrift {

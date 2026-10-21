@@ -36,14 +36,22 @@ function mountsFromLabel(value: string | undefined): BoxMount[] | null {
  * A label that is not a legal box name is historical text and is kept even when the suffix is a short legal token.
  * Snapshot labels are built from this name, so dropping it would hide quotes, dollars, and newlines.
  */
-export function nameFromContainer(prefix: string, containerName: string, labelName: string | null): string {
+export function nameFromContainer(
+  prefix: string,
+  containerName: string,
+  labelName: string | null,
+  labelId?: string | null,
+): string {
   const head = `${prefix}-`;
   const suffix = containerName.startsWith(head) ? containerName.slice(head.length) : "";
   const suffixOk = suffix.length > 0 && NAME_RE.test(suffix);
   const labelOk = !!labelName && NAME_RE.test(labelName);
+  // A rebuild names the container `<prefix>-<id>`. That suffix is the stable id, not the box name.
+  const suffixIsId = suffixOk && !!labelId && suffix === labelId && isBoxId(suffix);
   if (labelName && !labelOk) return labelName;
-  if (suffixOk) return suffix;
+  if (suffixOk && !suffixIsId) return suffix;
   if (labelOk && labelName) return labelName;
+  if (suffixOk) return suffix;
   throw new ClaimError(`cannot derive a box name from container ${containerName}`);
 }
 
@@ -77,7 +85,7 @@ export function specFromContainer(host: HostCtx, info: ContainerInfo, now: strin
   const keys = host.keys;
   const parsed = host.keys;
   const labelName = labels[parsed.name]?.trim() || null;
-  const name = nameFromContainer(host.prefix, info.name, labelName);
+  const name = nameFromContainer(host.prefix, info.name, labelName, labels[keys.id] ?? null);
   const createdBy = labels[keys.createdBy]?.trim() || null;
   const digest = labels[keys.digest]?.trim() || info.imageId || null;
   const labeledMounts = mountsFromLabel(labels[keys.mounts]);
@@ -122,6 +130,7 @@ export function specFromContainer(host: HostCtx, info: ContainerInfo, now: strin
     createdAt: labels[keys.created]?.trim() || info.created,
     updatedAt: now,
     recovery: { source, at: now, needsReset, observedRestart: info.restart },
+    history: [],
   };
 }
 

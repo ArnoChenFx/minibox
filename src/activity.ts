@@ -1,3 +1,5 @@
+import { AppError } from "./lib/errors";
+
 /** In-memory ring buffer of recent user operations, shown on the overview page. */
 export interface ActivityEntry {
   t: string;
@@ -33,6 +35,8 @@ export async function tracked<T>(
     activity.add({ action, target, ok: true });
     return result;
   } catch (e) {
+    // A preview is a refusal, not a failed rebuild. The audit log still records it.
+    if (e instanceof AppError && e.code === "confirmation_required") throw e;
     activity.add({ action, target, ok: false, message: e instanceof Error ? e.message : String(e) });
     throw e;
   }

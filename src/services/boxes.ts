@@ -14,8 +14,9 @@ import {
 } from "../runtime";
 import { ClaimError, ensureSpec } from "../specs/claim";
 import { detectDrift } from "../specs/drift";
+import { pushHistory } from "../specs/history";
 import { newBoxId, revisionMismatch } from "../specs/revision";
-import type { BoxMount, BoxRecovery, BoxSpec, DesiredState } from "../specs/types";
+import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState } from "../specs/types";
 
 export interface CreateBoxInput {
   name: string;
@@ -74,6 +75,8 @@ export interface Box {
   drift: { field: string; expected: string; actual: string }[];
   recovery: BoxRecovery | null;
   mounts: BoxMount[];
+  /** Plain values and secret references. A secret reference is stored and not injected. */
+  env: BoxEnv[];
   stats?: ContainerStats | null;
 }
 
@@ -114,6 +117,7 @@ function project(host: HostCtx, spec: BoxSpec, info: ContainerInfo): Box {
     drift: detectDrift(spec, info),
     recovery: spec.recovery,
     mounts: spec.mounts,
+    env: spec.env,
   };
 }
 
@@ -243,6 +247,7 @@ async function setDesired(host: HostCtx, boxId: string, desired: DesiredState): 
       lifecycle: { ...spec.lifecycle, desired },
       revision: spec.revision + 1,
       updatedAt: new Date().toISOString(),
+      history: pushHistory(spec),
     });
   });
 }
@@ -333,6 +338,7 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
       createdAt: now,
       updatedAt: now,
       recovery: null,
+      history: [],
     };
     host.specs.write(spec);
     return created.id;
@@ -470,6 +476,7 @@ export async function updateBox(host: HostCtx, ref: string, revision: number, pa
         recovery: clearNeedsReset(spec, patch),
         revision: spec.revision + 1,
         updatedAt: new Date().toISOString(),
+        history: pushHistory(spec),
       });
     } catch (e) {
       if (renamed) {

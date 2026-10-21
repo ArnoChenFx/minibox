@@ -29,6 +29,7 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "box.action": (id) => ({ id, action: "stop" }),
   "box.resources": (id) => ({ id, cpus: 1, expectedRevision: "1" }),
   "box.update": (id) => ({ id, idleTimeoutSec: 120, expectedRevision: "1" }),
+  "box.rebuild": (id) => ({ id, profile: "strict", confirm: true, expectedRevision: "1" }),
   "box.logs": (id) => ({ id, tail: 10 }),
   "box.stats": (id) => ({ id }),
   "snapshot.list": () => ({}),
@@ -525,6 +526,7 @@ describe("projections", () => {
       "delete_box",
       "box_action",
       "update_box",
+      "rebuild_box",
     ]);
     expect(mcpTools(OPERATIONS, ["storage"])).toEqual([]);
   });
@@ -544,6 +546,7 @@ describe("projections", () => {
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });
     expect(tools.get("get_box")?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false });
     expect(tools.get("delete_box")?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
+    expect(tools.get("rebuild_box")?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
   });
 
   test("CLI commands come from the registry, with the operation kind", () => {

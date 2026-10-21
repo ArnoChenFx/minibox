@@ -1200,6 +1200,23 @@ input[type="range"] {
 .dialog.wide {
   width: min(640px, 100%);
 }
+.rebuild-mounts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rebuild-mount {
+  display: grid;
+  grid-template-columns: 1fr 1fr 88px auto;
+  gap: 8px;
+  align-items: center;
+}
+.rebuild-preview pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  margin: 4px 0 0;
+}
 .dialog-head {
   display: flex;
   align-items: flex-start;
@@ -1467,6 +1484,9 @@ input[type="range"] {
 }
 @media (max-width: 560px) {
   .grid-4 {
+    grid-template-columns: 1fr;
+  }
+  .rebuild-mount {
     grid-template-columns: 1fr;
   }
 }
