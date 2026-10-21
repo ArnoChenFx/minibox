@@ -19,6 +19,7 @@ import { Executor, type ExecutorHooks, logAudit, ownerOnly, type AuditEvent } fr
 import { OPERATIONS } from "./operations/registry";
 import { OWNER } from "./routes/operations";
 import type { Runtime } from "./runtime";
+import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { SessionStore } from "./sessions";
@@ -45,6 +46,7 @@ export interface App {
   outputs: OutputStore;
   execs: ExecManager;
   terminals: TerminalService;
+  containers: ContainerWatch;
   mcpSessions: McpSessions;
   bus: Bus<AppTopics>;
   retention: RetentionJob;
@@ -141,6 +143,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     outputMaxBytes: cfg.eventOutputMaxMb * MB,
   });
   const audit = deps.hooks?.audit ?? recordAudit(events, bus);
+  const recordNote = recordNoteWith(audit);
   return {
     cfg,
     hosts,
@@ -150,9 +153,10 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     outputs,
     execs,
     terminals: new TerminalService({
-      record: recordNoteWith(audit),
+      record: recordNote,
       takeoverIdleMs: cfg.takeoverIdleSec * 1000,
     }),
+    containers: new ContainerWatch(hosts, recordNote),
     mcpSessions: new McpSessions(),
     bus,
     retention,
