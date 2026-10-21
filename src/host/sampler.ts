@@ -1,4 +1,4 @@
-import { untilAborted } from "../lib/abort";
+import { sleep, untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
 import { type ContainerInfo, type ContainerStats, isRuntimeError, type RuntimeEvent } from "../runtime";
 import { liveBox, projectBox } from "../services/box-view";
@@ -7,6 +7,7 @@ import { ClaimError, ensureSpec } from "../specs/claim";
 import type { SpecChange } from "../specs/store";
 import type { BoxSpec } from "../specs/types";
 import { type BoxSample, type LinkState, type LiveSink, NO_LIVE, type StatSample } from "./live";
+import { LogFollows } from "./log-follow";
 import type { HostCtx } from "./registry";
 
 /** Container actions that can change how a box looks. Exec, attach and the like leave the box as it was. */
@@ -103,18 +104,6 @@ function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(done, ms);
-    function done() {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", done);
-      resolve();
-    }
-    signal.addEventListener("abort", done, { once: true });
-  });
-}
-
 /** Resolves once `promise` settles, or after `ms`, whichever comes first. The promise itself is left to finish. */
 function waitUpTo(promise: Promise<unknown>, ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -194,12 +183,20 @@ export class HostSampler {
   private changes = 0;
   /** True while a re-list's listing is in flight, so that one listing at a time runs. */
   private relisting = false;
+  /** The log of each box a subscriber reads. One follow per box serves every subscriber. See `LogFollows`. */
+  readonly logs: LogFollows;
 
   constructor(
     private readonly currentHost: () => HostCtx,
     private readonly options: SamplerOptions,
     private readonly sink: LiveSink = NO_LIVE,
-  ) {}
+  ) {
+    this.logs = new LogFollows({
+      runtime: () => this.currentHost().runtime,
+      target: (boxId) => this.logTarget(boxId),
+      ready: () => this.ready(),
+    });
+  }
 
   isStarted(): boolean {
     return this.started;
@@ -244,6 +241,7 @@ export class HostSampler {
     this.rings.clear();
     this.failures = 0;
     this.setState("down", "stopped");
+    this.logs.stop();
   }
 
   /**
@@ -810,6 +808,7 @@ export class HostSampler {
     } else {
       if (!this.specs.delete(change.id)) return;
       this.rings.delete(change.id);
+      this.logs.close(change.id);
     }
     this.reconcile();
   }
@@ -836,12 +835,21 @@ export class HostSampler {
       this.shown.delete(boxId);
       this.sink.publish("box", { hostId, op: "remove", boxId, containerId: previous.containerId });
     }
+    this.logs.changed();
   }
 
   private setState(state: LinkState, error: string | null): void {
     if (this.state === state) return;
     this.state = state;
     this.sink.publish("link", { hostId: this.currentHost().host.id, state, error, at: new Date().toISOString() });
+    this.logs.changed();
+  }
+
+  /** The container a box's log is followed in, or `null` when the cache holds none for the box. */
+  private logTarget(boxId: string): { containerId: string; running: boolean } | null {
+    const spec = this.specs.get(boxId);
+    const info = spec ? this.containerOf(spec) : undefined;
+    return info ? { containerId: info.id, running: info.running } : null;
   }
 
   /** The spec a container belongs to, by container id or, as the claim does, by name. */
