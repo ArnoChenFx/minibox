@@ -72,6 +72,7 @@ async function undoCreated(host: HostCtx, record: VolumeRecord): Promise<void> {
 /**
  * The four role mounts for a new box. Workspace reuses a leftover `prefix-ws-<name>` volume when one exists.
  * Tools is one independent volume per pool, mounted read-only. Cache stays on the local pool unless a role override says otherwise.
+ * A role in `restored` mounts the volume that already holds its data, so a fork keeps what the checkpoint captured.
  * Without `changes`, a failure removes what this call created before it is thrown.
  */
 export async function provisionDefaultMounts(
@@ -79,10 +80,11 @@ export async function provisionDefaultMounts(
   box: { id: string; name: string; createdBy: string | null },
   known: Set<string>,
   changes?: VolumeChanges,
+  restored: ReadonlyMap<VolumeRole, VolumeRecord> = new Map(),
 ): Promise<BoxMount[]> {
   const own = changes ?? new VolumeChanges();
   try {
-    return await host.volumes.exclusive(() => provisionDefaultMountsLocked(host, box, known, own));
+    return await host.volumes.exclusive(() => provisionDefaultMountsLocked(host, box, known, own, restored));
   } catch (e) {
     if (!changes) await own.rollback();
     throw e;
@@ -94,11 +96,18 @@ async function provisionDefaultMountsLocked(
   box: { id: string; name: string; createdBy: string | null },
   known: Set<string>,
   changes: VolumeChanges,
+  restored: ReadonlyMap<VolumeRole, VolumeRecord>,
 ): Promise<BoxMount[]> {
   const plans = defaultRolePlans(host, box);
   const mounts: BoxMount[] = [];
   const chown: string[] = [];
   for (const plan of plans) {
+    const kept = restored.get(plan.role);
+    if (kept) {
+      await assertVolumesPresent(host, [kept.engineName]);
+      mounts.push(mountFor(plan.role, kept.engineName));
+      continue;
+    }
     if (plan.role === "workspace") {
       const legacy = await adoptLegacyWorkspace(host, box.name, box.id, box.createdBy, changes);
       if (legacy) {
@@ -133,6 +142,41 @@ export async function createIndependentVolume(
   const own = changes ?? new VolumeChanges();
   try {
     return await host.volumes.exclusive(() => createIndependentLocked(host, input, known, own));
+  } catch (e) {
+    if (!changes) await own.rollback();
+    throw e;
+  }
+}
+
+/**
+ * An empty volume that one box owns, for data a checkpoint restores into it. It is not chowned: the restore writes the
+ * owners the snapshot recorded. Without `changes`, a failure removes what this call created before it is thrown.
+ */
+export async function createOwnedVolume(
+  host: HostCtx,
+  input: { name: string; role: VolumeRole; ownerBoxId: string; createdBy: string | null },
+  known: Set<string>,
+  changes?: VolumeChanges,
+): Promise<VolumeRecord> {
+  const own = changes ?? new VolumeChanges();
+  try {
+    return await host.volumes.exclusive(async () => {
+      const pool = resolvePool(host, { role: input.role });
+      const created = await materialize(
+        host,
+        {
+          name: freeName(host, input.name, pool.name),
+          pool: pool.name,
+          role: input.role,
+          ownership: "owned",
+          ownerBoxId: input.ownerBoxId,
+          createdBy: input.createdBy,
+        },
+        known,
+        own,
+      );
+      return created.record;
+    });
   } catch (e) {
     if (!changes) await own.rollback();
     throw e;

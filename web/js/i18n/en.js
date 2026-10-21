@@ -151,6 +151,7 @@ export default {
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   "err.box_exists": "A box named “{name}” already exists.",
+  "err.box_id_taken": "Box id {id} is already in use.",
   "err.box_network_conflict":
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
   "err.volume_reserved": "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",

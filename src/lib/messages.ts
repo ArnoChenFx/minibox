@@ -102,6 +102,7 @@ export const MESSAGES = {
   template_image_missing:
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   box_exists: "A box named “{name}” already exists.",
+  box_id_taken: "Box id {id} is already in use.",
   box_network_conflict:
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
   volume_reserved: "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",
