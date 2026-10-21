@@ -78,15 +78,15 @@ describe("t", () => {
         })`,
       ),
     ).toEqual({
-      filled: "alpha was deleted, but its workspace volume was not removed",
-      unfilled: "{name} was deleted, but its workspace volume was not removed",
-      otherParam: "{name} was deleted, but its workspace volume was not removed",
+      filled: "alpha was deleted, but some of its volumes were not removed",
+      unfilled: "{name} was deleted, but some of its volumes were not removed",
+      otherParam: "{name} was deleted, but some of its volumes were not removed",
     });
   });
 
   test("uses the Chinese dictionary for zh-CN", () => {
     expect(inBrowser({ saved: "zh-CN" }, `i18n.t("ba.deletedVolumeFailed", { name: "alpha" })`)).toBe(
-      "alpha 已删除，但工作区数据卷未能删除",
+      "alpha 已删除，但部分数据卷未能删除",
     );
   });
 

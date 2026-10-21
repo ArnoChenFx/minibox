@@ -56,6 +56,25 @@ async function post(
   });
 }
 
+interface ToolReply {
+  result: { isError?: boolean; structuredContent: Record<string, unknown> };
+}
+
+async function openSession(base: string, toolsets: string): Promise<string> {
+  const init = await post(
+    base,
+    rpc(1, "initialize", { protocolVersion: "2025-03-26", capabilities: {} }),
+    {},
+    `/mcp?toolsets=${toolsets}`,
+  );
+  return init.headers.get("mcp-session-id") ?? "";
+}
+
+async function callTool(base: string, session: string, name: string, args: unknown): Promise<ToolReply> {
+  const res = await post(base, rpc(2, "tools/call", { name, arguments: args }), { "mcp-session-id": session });
+  return (await res.json()) as ToolReply;
+}
+
 describe("MCP", () => {
   let restoreLogs: () => void;
   beforeEach(() => {
@@ -185,7 +204,21 @@ describe("MCP", () => {
       expect(await badSet.json()).toMatchObject({ error: { code: "validation_failed", retryable: false } });
 
       const storage = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=storage");
-      expect(((await storage.json()) as { result: { tools: unknown[] } }).result.tools).toEqual([]);
+      expect(
+        ((await storage.json()) as { result: { tools: { name: string }[] } }).result.tools
+          .map((t) => t.name)
+          .toSorted(),
+      ).toEqual([
+        "attach_volume",
+        "create_volume",
+        "delete_volume",
+        "detach_volume",
+        "get_volume",
+        "list_pools",
+        "list_volumes",
+        "measure_volume",
+        "replace_pools",
+      ]);
 
       const rebuild = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=rebuild");
       expect(
@@ -233,5 +266,114 @@ describe("MCP", () => {
     } finally {
       env.stop();
     }
+  });
+
+  describe("storage toolset", () => {
+    test("the storage toolset is not served by default, and its writes are refused until confirm is true", async () => {
+      const env = setup();
+      try {
+        const listed = await post(env.base, rpc(1, "tools/list"));
+        const names = ((await listed.json()) as { result: { tools: { name: string }[] } }).result.tools.map(
+          (tool) => tool.name,
+        );
+        expect(names).not.toContain("create_volume");
+
+        const off = await callTool(env.base, await openSession(env.base, "core"), "create_volume", { name: "notes" });
+        expect(off.result).toMatchObject({
+          isError: true,
+          structuredContent: { code: "validation_failed", message: expect.stringContaining("storage toolset") },
+        });
+
+        const session = await openSession(env.base, "core,storage");
+        const refused = await callTool(env.base, session, "create_volume", { name: "notes" });
+        expect(refused.result).toMatchObject({
+          isError: true,
+          structuredContent: {
+            code: "confirmation_required",
+            retryable: false,
+            details: { preview: { action: "create_volume", name: "notes", pool: "local", ownership: "independent" } },
+          },
+        });
+        expect(env.app.hosts.get().volumes.list()).toEqual([]);
+
+        const created = await callTool(env.base, session, "create_volume", { name: "notes", confirm: true });
+        expect(created.result.isError).toBeUndefined();
+        expect(created.result.structuredContent).toMatchObject({ volume: { name: "notes", ownership: "independent" } });
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("attach_volume over MCP rebuilds the box, so it needs confirm and an expected revision", async () => {
+      const env = setup();
+      try {
+        const box = (await env.app.operations.run("box.create", env.ctx, {
+          name: "alpha",
+          cpus: 1,
+          memoryMb: 256,
+        })) as {
+          box: { id: string; boxId: string };
+        };
+        const notes = (await env.app.operations.run("volume.create", env.ctx, { name: "notes", confirm: true })) as {
+          volume: { id: string };
+        };
+        const session = await openSession(env.base, "core,storage");
+        const attach = { id: notes.volume.id, box: box.box.id, path: "/srv/notes", mode: "ro", expectedRevision: "1" };
+        const before = env.app.hosts.get().specs.read(box.box.boxId)?.mounts;
+
+        const preview = await callTool(env.base, session, "attach_volume", attach);
+        expect(preview.result).toMatchObject({
+          isError: true,
+          structuredContent: {
+            code: "confirmation_required",
+            details: { preview: { containerName: { from: "mbtest-alpha", to: `mbtest-${box.box.boxId}` } } },
+          },
+        });
+        expect(env.app.hosts.get().specs.read(box.box.boxId)?.mounts).toEqual(before);
+        expect(env.runtime.containers.get(box.box.id)?.name).toBe("mbtest-alpha");
+
+        const applied = await callTool(env.base, session, "attach_volume", { ...attach, confirm: true });
+        expect(applied.result.isError).toBeUndefined();
+        expect(applied.result.structuredContent).toMatchObject({
+          box: {
+            boxId: box.box.boxId,
+            revision: 2,
+            containerName: `mbtest-${box.box.boxId}`,
+            mounts: expect.arrayContaining([expect.objectContaining({ path: "/srv/notes", mode: "ro" })]),
+          },
+        });
+        expect(env.runtime.containers.get(box.box.id)).toBeUndefined();
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("update_box refuses the MiniBox data volume, so no mount is added", async () => {
+      const env = setup();
+      try {
+        const box = (await env.app.operations.run("box.create", env.ctx, {
+          name: "alpha",
+          cpus: 1,
+          memoryMb: 256,
+        })) as {
+          box: { id: string; boxId: string };
+        };
+        const session = await openSession(env.base, "core");
+        const before = env.app.hosts.get().specs.read(box.box.boxId)?.mounts;
+        const refused = await callTool(env.base, session, "update_box", {
+          id: box.box.id,
+          mounts: [...(before ?? []), { volume: "minibox-data", path: "/data", mode: "ro" }],
+          expectedRevision: "1",
+        });
+        expect(refused.result).toMatchObject({
+          isError: true,
+          structuredContent: { code: "forbidden", message: expect.stringContaining("minibox-data") },
+        });
+        expect(env.app.hosts.get().specs.read(box.box.boxId)?.mounts).toEqual(before);
+        expect(env.runtime.containers.get(box.box.id)?.name).toBe("mbtest-alpha");
+      } finally {
+        env.stop();
+      }
+    });
   });
 });

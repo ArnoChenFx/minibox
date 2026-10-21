@@ -33,7 +33,7 @@ export async function deleteBox(box) {
     confirmText: t("ba.deleteConfirm"),
     danger: true,
     checkbox: {
-      label: t("ba.deleteVolume", { volume: esc(box.volume) }),
+      label: t("ba.deleteVolume"),
       help: t("ba.deleteVolumeHelp"),
     },
   });
@@ -43,7 +43,7 @@ export async function deleteBox(box) {
     if (r.volumeError) {
       toast(t("ba.deletedVolumeFailed", { name: box.name }), {
         type: "error",
-        message: t("ba.deleteVolumeFailedHint", { volume: box.volume, detail: r.volumeError }),
+        message: t("ba.deleteVolumeFailedHint", { detail: r.volumeError }),
       });
     } else {
       toast(t("ba.deleted"), {
@@ -225,7 +225,8 @@ function rebuildBody(root, box) {
   return body;
 }
 
-function showPreview(root, preview) {
+/** The HTML for a rebuild preview: the planned changes, the writable layer, what is kept and what is lost. */
+export function rebuildPreviewHtml(preview) {
   const changes = (preview.changes ?? [])
     .map((change) => `${t(`rebuild.field.${change.field}`)}: ${change.from} → ${change.to}`)
     .join("\n");
@@ -236,14 +237,18 @@ function showPreview(root, preview) {
   const loses = (preview.loses ?? []).map((name) => t(`rebuild.lose.${name}`)).join(", ");
   const name = preview.containerName ?? { from: "", to: "" };
   const revision = preview.revision ?? { current: "", next: "" };
-  root.querySelector("#rbPreview").hidden = false;
-  root.querySelector("#rbPreview").innerHTML = `<strong>${esc(t("rb.previewTitle"))}</strong>
+  return `<div class="rebuild-preview"><strong>${esc(t("rb.previewTitle"))}</strong>
     <div class="help" style="margin-top:8px">${esc(t("rb.changes"))}</div><pre class="mono">${esc(changes || "—")}</pre>
     <div class="help">${esc(t("rb.diff"))}</div><pre class="mono">${esc(diff)}</pre>
     <div class="help">${esc(t("rb.keeps"))}: ${esc(keeps)}</div>
     <div class="help">${esc(t("rb.loses"))}: ${esc(loses)}</div>
     <div class="help">${esc(t("rb.containerName"))}: <span class="mono">${esc(name.from)} → ${esc(name.to)}</span></div>
-    <div class="help">${esc(t("rb.revision"))}: ${esc(String(revision.current))} → ${esc(String(revision.next))}</div>`;
+    <div class="help">${esc(t("rb.revision"))}: ${esc(String(revision.current))} → ${esc(String(revision.next))}</div></div>`;
+}
+
+function showPreview(root, preview) {
+  root.querySelector("#rbPreview").hidden = false;
+  root.querySelector("#rbPreview").innerHTML = rebuildPreviewHtml(preview);
   root.querySelector("#rbApply").hidden = false;
 }
 
@@ -280,7 +285,7 @@ export function openRebuild(box) {
         <button type="button" class="btn" id="rbAddMount">${esc(t("rb.addMount"))}</button>
         <div class="help">${esc(t("rb.mountsHelp"))}</div></div>
       <div class="error-text" id="rbErr"></div>
-      <div class="rebuild-preview" id="rbPreview" hidden></div>`,
+      <div id="rbPreview" hidden></div>`,
     footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button>
       <button class="btn btn-primary" id="rbPreviewBtn">${esc(t("rb.preview"))}</button>
       <button class="btn btn-danger" id="rbApply" hidden>${esc(t("rb.apply"))}</button>`,

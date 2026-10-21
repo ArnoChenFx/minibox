@@ -126,7 +126,7 @@ describe("rebuild swap", () => {
     expect(rebuilt.containerName).toBe(formal(box.boxId));
     expect(rebuilt.profile).toBe("strict");
     expect(rebuilt.revision).toBe(2);
-    expect(rebuilt.volume).toBe("mbtest-ws-alpha");
+    expect(rebuilt.volume).toBe(box.volume);
     expect(rebuilt.running).toBe(true);
     expect(rebuilt.drift).toEqual([]);
     expect(rebuilt.env).toEqual([]);
@@ -139,11 +139,11 @@ describe("rebuild swap", () => {
     expect(container?.labels[keys.name]).toBe("alpha");
     expect(container?.labels[keys.profile]).toBe("strict");
     expect(container?.spec.restart).toBe("no");
-    expect(container?.spec.mounts).toEqual([{ source: "mbtest-ws-alpha", target: "/workspace", mode: "rw" }]);
+    expect(container?.spec.mounts).toContainEqual({ source: box.volume, target: "/workspace", mode: "rw" });
     expect(container?.cpus).toBe(1);
     expect(container?.memoryBytes).toBe(256 * MB);
     expect(container?.pidsLimit).toBe(1024);
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
 
     const spec = host.specs.read(box.boxId);
     expect(spec?.history).toHaveLength(1);
@@ -157,6 +157,8 @@ describe("rebuild swap", () => {
 
   test("a failed start restores the old container, the spec and a volume this attempt created", async () => {
     const box = await newBox("alpha");
+    const volumesBefore = [...runtime.volumes.keys()].toSorted();
+    const recordsBefore = host.volumes.list().map((volume) => volume.id);
     runtime.fail("startContainer", new RuntimeError("engine", "boom", "boom"));
     const error = await rejectionOf(
       rebuildBox(
@@ -166,7 +168,7 @@ describe("rebuild swap", () => {
         {
           profile: "strict",
           mounts: [
-            { volume: "mbtest-ws-alpha", path: "/workspace", mode: "rw" },
+            { volume: box.volume, path: "/workspace", mode: "rw" },
             { volume: "extra", path: "/data", mode: "ro" },
           ],
         },
@@ -183,8 +185,10 @@ describe("rebuild swap", () => {
     expect(host.specs.read(box.boxId)?.revision).toBe(1);
     expect(host.specs.read(box.boxId)?.profile).toBe("standard");
     expect(host.specs.read(box.boxId)?.containerId).toBe(box.id);
-    expect(runtime.volumes.has("extra")).toBe(false);
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(host.volumes.resolve("extra", host.host.id)).toBeNull();
+    expect([...runtime.volumes.keys()].toSorted()).toEqual(volumesBefore);
+    expect(host.volumes.list().map((volume) => volume.id)).toEqual(recordsBefore);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
   test("a network other than the box network is refused before the swap starts", async () => {
@@ -217,20 +221,25 @@ describe("rebuild swap", () => {
       true,
     );
 
+    const extra = host.volumes.resolve("extra", host.host.id);
+    if (!extra) throw new Error("expected a record for extra");
+    expect(extra).toMatchObject({ name: "extra", ownership: "independent", role: null, engineName: extra.id });
     expect(rebuilt.template).toBe("other:1");
     expect(rebuilt.image).toBe("other:1");
     expect(rebuilt.network).toBe("mbtest-boxes");
-    expect(rebuilt.mounts).toEqual([{ volume: "extra", path: "/data", mode: "ro" }]);
+    expect(rebuilt.mounts.map(({ volume, path, mode }) => ({ volume, path, mode }))).toEqual([
+      { volume: extra.engineName, path: "/data", mode: "ro" },
+    ]);
     expect(rebuilt.env).toEqual([
       { name: "FOO", value: "bar" },
       { name: "TOKEN", secretRef: "vault" },
     ]);
     expect(rebuilt.drift).toEqual([]);
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
-    expect(runtime.volumes.has("extra")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
+    expect(runtime.volumes.has(extra.engineName)).toBe(true);
     const container = runtime.containers.get(rebuilt.id);
     expect(container?.spec.env).toEqual(["FOO=bar"]);
-    expect(container?.spec.mounts).toEqual([{ source: "extra", target: "/data", mode: "ro" }]);
+    expect(container?.spec.mounts).toEqual([{ source: extra.engineName, target: "/data", mode: "ro" }]);
     expect(JSON.stringify(container?.labels)).not.toContain("bar");
     expect(JSON.stringify(container?.labels)).not.toContain("vault");
   });

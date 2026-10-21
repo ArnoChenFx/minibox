@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { type Exchange, runParityScenario } from "./parity/scenario";
 
 // Regenerated when the HTTP contract changes on purpose. Error bodies include retryable, and hint when one is set.
-// Exec routes are part of the transcript (Refs #9). `bx_…` ids are normalized to <boxId> and exec ids to ex_<ulid>.
+// Volumes and pools (#24) and exec routes (Refs #9) are part of the transcript. `bx_…` ids are normalized to <boxId>,
+// `vol_…` ids to <volumeId> and exec ids to ex_<ulid>.
 // Do not refresh this file for a change that should stay compatible.
 const TRANSCRIPT = join(import.meta.dir, "fixtures", "parity-transcript.json");
 

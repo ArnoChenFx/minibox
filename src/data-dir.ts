@@ -21,7 +21,7 @@ export const DIR_MODE = 0o700;
 /** Mode for files that hold secrets. */
 export const SECRET_FILE_MODE = 0o600;
 /** Subdirectories created under DATA_DIR at startup. Other paths in docs/design.md arrive with their features. */
-export const DATA_SUBDIRS = ["boxes", "exec", "secrets"] as const;
+export const DATA_SUBDIRS = ["boxes", "exec", "secrets", "volumes"] as const;
 
 /** Unset means `<root>/data`. Relative paths resolve from `root`; a leading `~/` expands to `home`. */
 export function resolveDataDir(value: string | undefined, root: string, home = homedir()): string {

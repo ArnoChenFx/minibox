@@ -52,7 +52,7 @@ export function render(view) {
         const cpuP = s && b.cpus ? s.cpuPercent / b.cpus : s?.cpuPercent;
         return `<tr class="clickable" data-action="open" data-id="${esc(b.id)}">
           <td><div class="name-cell"><span class="avatar">${icon("box")}</span><div class="truncate"><strong>${esc(b.name)}</strong><span class="subtle mono">${esc(b.id.slice(0, 12))}</span></div></div></td>
-          <td>${stateBadge(b.state)}</td>
+          <td>${stateBadge(b.state)}${b.storage?.status === "unreachable" ? ` <span class="badge badge-danger">${esc(t("vol.unreachable"))}</span>` : ""}</td>
           <td class="hide-sm"><span class="tag truncate" title="${esc(b.template)}">${esc(b.template.replace(/^minibox-template:/, "") || "—")}</span></td>
           <td class="hide-sm num nowrap">${cpus(b.cpus)} · ${mem(b.memory)}</td>
           <td>${s ? usageBar("", cpuP, pct(s.cpuPercent)) : '<span class="subtle">—</span>'}</td>

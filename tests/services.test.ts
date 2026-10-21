@@ -45,8 +45,8 @@ describe("createBox", () => {
       cpus: 1,
       memory: 256 * MB,
       template: host.baseTemplateTag,
-      volume: "mbtest-ws-alpha",
     });
+    expect(box.volume).toMatch(/^vol_/);
     const container = runtime.containers.get(box.id);
     expect(container?.spec).toMatchObject({
       name: "mbtest-alpha",
@@ -59,14 +59,39 @@ describe("createBox", () => {
       memoryBytes: 256 * MB,
       swapBytes: 256 * MB,
       init: true,
-      mounts: [{ source: "mbtest-ws-alpha", target: "/workspace" }],
     });
-    expect(runtime.volumes.get("mbtest-ws-alpha")?.labels).toEqual({ [keys.box]: "true", [keys.name]: "alpha" });
+    expect(container?.spec.mounts?.map((mount) => ({ target: mount.target, mode: mount.mode }))).toEqual([
+      { target: "/workspace", mode: "rw" },
+      { target: "/home/dev", mode: "rw" },
+      { target: "/opt/minibox/tools", mode: "ro" },
+      { target: "/home/dev/.cache", mode: "rw" },
+    ]);
+    expect(runtime.volumes.get(box.volume)?.labels).toMatchObject({
+      [keys.box]: "true",
+      [keys.volume]: "true",
+      [keys.name]: "alpha-workspace",
+      [keys.role]: "workspace",
+      [keys.pool]: "local",
+    });
     expect(runtime.ops()).toEqual([
       "inspectImage",
       "ensureBridgeNetwork",
       "inspectVolume",
+      "inspectVolume",
+      "info",
+      "diskUsage",
       "createVolume",
+      "inspectVolume",
+      "createVolume",
+      "inspectVolume",
+      "createVolume",
+      "inspectVolume",
+      "createVolume",
+      "runHelper",
+      "inspectVolume",
+      "inspectVolume",
+      "inspectVolume",
+      "inspectVolume",
       "createContainer",
       "startContainer",
       "inspectContainer",
@@ -78,8 +103,9 @@ describe("createBox", () => {
       name: "mbtest-ws-alpha",
       labels: { [keys.box]: "true", [keys.name]: "alpha" },
     });
-    await newBox("alpha");
-    expect(runtime.callsTo("createVolume")).toHaveLength(0);
+    const box = await newBox("alpha");
+    expect(box.volume).toBe("mbtest-ws-alpha");
+    expect(runtime.callsTo("createVolume").map((call) => call.args[0])).not.toContain("mbtest-ws-alpha");
   });
 
   test("a duplicate name is a conflict and creates nothing", async () => {
@@ -262,13 +288,15 @@ describe("deleteBox", () => {
     const ops = runtime.ops();
     expect(ops.indexOf("removeContainer")).toBeLessThan(ops.indexOf("removeVolume"));
     expect(runtime.containers.size).toBe(0);
-    expect(runtime.volumes.size).toBe(0);
+    const left = [...runtime.volumes.values()].filter((volume) => volume.labels[keys.role] === "tools");
+    expect(left).toHaveLength(1);
+    expect(runtime.volumes.has(box.volume)).toBe(false);
   });
 
   test("keeps the workspace volume unless asked to delete it", async () => {
     const box = await newBox("alpha");
     expect(await boxes.deleteBox(host, box.id, false)).toEqual({ name: "alpha", volumeDeleted: false });
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
   test("a failed volume removal is reported without failing the request", async () => {
@@ -281,7 +309,7 @@ describe("deleteBox", () => {
       volumeError: "device busy",
     });
     expect(runtime.containers.size).toBe(0);
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
   test("a volume still mounted elsewhere is kept and the engine's reason is returned", async () => {
@@ -289,22 +317,64 @@ describe("deleteBox", () => {
     runtime.seedContainer({
       image: host.baseTemplateTag,
       name: "other",
-      mounts: [{ source: "mbtest-ws-alpha", target: "/data" }],
+      mounts: [{ source: box.volume, target: "/data" }],
     });
 
     expect(await boxes.deleteBox(host, box.id, true)).toEqual({
       name: "alpha",
       volumeDeleted: false,
-      volumeError: "remove mbtest-ws-alpha: volume is in use",
+      volumeError: `remove ${box.volume}: volume is in use`,
     });
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
   test("a volume that is already gone counts as deleted", async () => {
     const box = await newBox("alpha");
-    runtime.volumes.delete("mbtest-ws-alpha");
+    runtime.volumes.delete(box.volume);
 
     expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+  });
+
+  test("a workspace with no record is never removed, even when its volume is asked for", async () => {
+    const box = await newBox("alpha");
+    const workspace = host.volumes.findByEngine(host.host.id, box.volume);
+    if (!workspace) throw new Error("the workspace has no record");
+    host.volumes.remove(workspace.id);
+
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(runtime.callsTo("removeVolume").map((call) => call.args[0])).not.toContain(box.volume);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
+  });
+
+  test("a volume another box owns is kept, even when the box being deleted still mounts it", async () => {
+    const alpha = await newBox("alpha");
+    const beta = await newBox("beta");
+    const alphaSpec = host.specs.read(alpha.boxId);
+    const betaSpec = host.specs.read(beta.boxId);
+    if (!alphaSpec || !betaSpec) throw new Error("both boxes need a spec");
+    const workspace = alphaSpec.mounts.find((mount) => mount.path === "/workspace");
+    if (!workspace) throw new Error("alpha has no workspace mount");
+    host.specs.write({ ...alphaSpec, mounts: alphaSpec.mounts.filter((mount) => mount.path !== "/workspace") });
+    host.specs.write({ ...betaSpec, mounts: [...betaSpec.mounts, workspace] });
+
+    expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "beta", volumeDeleted: true });
+    expect(runtime.callsTo("removeVolume").map((call) => call.args[0])).not.toContain(alpha.volume);
+    expect(runtime.volumes.has(alpha.volume)).toBe(true);
+    expect(host.volumes.findByEngine(host.host.id, alpha.volume)).toMatchObject({
+      ownership: "owned",
+      ownerBoxId: alpha.boxId,
+    });
+  });
+
+  test("an owned record with no owner is never removed", async () => {
+    const box = await newBox("alpha");
+    const workspace = host.volumes.findByEngine(host.host.id, box.volume);
+    if (!workspace) throw new Error("the workspace has no record");
+    host.volumes.write({ ...workspace, ownerBoxId: null });
+
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(runtime.volumes.has(box.volume)).toBe(true);
+    expect(host.volumes.read(workspace.id)).toMatchObject({ ownership: "owned", ownerBoxId: null });
   });
 
   test("containers without the MiniBox label are never removed", async () => {

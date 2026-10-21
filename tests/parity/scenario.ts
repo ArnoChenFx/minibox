@@ -23,6 +23,7 @@ const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as Host
  */
 export function normalize(text: string): string {
   return text
+    .replace(/vol_[0-9a-z]+/g, "<volumeId>")
     .replace(/bx_[0-9a-z]+/g, "<boxId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
@@ -333,6 +334,48 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("list snapshots after delete", "GET", "/api/snapshots");
     await send("activity feed", "GET", "/api/activity");
     await send("final box list", "GET", "/api/boxes");
+
+    const gammaRes = await post("create gamma for volumes", "/api/boxes", { name: "gamma", cpus: 1, memoryMb: 256 });
+    const gamma = boxId(gammaRes.json);
+    const gammaRev = (gammaRes.json?.box as { revision?: number } | undefined)?.revision ?? 1;
+    await send("list pools", "GET", "/api/pools");
+    await send("list volumes", "GET", "/api/volumes");
+    await send("get gamma workspace", "GET", "/api/volumes/gamma-workspace");
+    await send("create spare volume without confirm", "POST", "/api/volumes", {
+      body: JSON.stringify({ name: "spare" }),
+      contentType: JSON_TYPE,
+    });
+    const spare = await post("create spare volume", "/api/volumes", { name: "spare", confirm: true });
+    const spareId = String((spare.json?.volume as { id?: string } | undefined)?.id ?? "");
+    await send("measure spare", "POST", `/api/volumes/${spareId}/usage`);
+    await send("attach spare without confirm", "POST", `/api/volumes/${spareId}/attach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", mode: "ro" }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(gammaRev) },
+    });
+    const attached = await send("attach spare read-only", "POST", `/api/volumes/${spareId}/attach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", mode: "ro", confirm: true }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(gammaRev) },
+    });
+    const attachedRevision = (attached.json?.box as { revision?: number } | undefined)?.revision ?? 1;
+    await send("detach spare", "POST", `/api/volumes/${spareId}/detach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", confirm: true }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(attachedRevision) },
+    });
+    await send("delete spare volume without confirm", "DELETE", `/api/volumes/${spareId}`);
+    await send("delete spare volume", "DELETE", `/api/volumes/${spareId}?confirm=true`);
+    const pools = [{ name: "local", backend: "local", default: true }];
+    await send("replace pools without confirm", "PUT", "/api/pools", {
+      body: JSON.stringify({ pools }),
+      contentType: JSON_TYPE,
+    });
+    await send("replace pools", "PUT", "/api/pools", {
+      body: JSON.stringify({ pools, confirm: true }),
+      contentType: JSON_TYPE,
+    });
+    await send("delete gamma", "DELETE", `/api/boxes/${gamma}`);
 
     await send("events without a key", "GET", "/api/events", { authed: false });
     await send("events from another site", "GET", "/api/events", { origin: "https://evil.example" });

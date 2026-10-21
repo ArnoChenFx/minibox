@@ -207,11 +207,13 @@ async function callTool(
     return toolResult(id, result, false, headers);
   } catch (e) {
     const err = toAppError(e);
-    return toolResult(
-      id,
-      { code: err.code, message: err.message, hint: err.hint ?? null, retryable: err.retryable },
-      true,
-      headers,
-    );
+    const payload = {
+      code: err.code,
+      message: err.message,
+      hint: err.hint ?? null,
+      retryable: err.retryable,
+      ...(err.details === undefined ? {} : { details: err.details }),
+    };
+    return toolResult(id, payload, true, headers);
   }
 }

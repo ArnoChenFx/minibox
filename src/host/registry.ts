@@ -3,6 +3,7 @@ import type { Config } from "../config";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
 import { SpecStore } from "../specs/store";
+import { VolumeStore } from "../volumes/store";
 import { type LiveSink, NO_LIVE } from "./live";
 import { HostMonitor } from "./metrics";
 import { HostSampler } from "./sampler";
@@ -41,17 +42,20 @@ export interface HostCtx {
   sampler: HostSampler;
   /** Control-plane spec store. One store is shared by every host; files live under `DATA_DIR/boxes`. */
   specs: SpecStore;
+  /** Control-plane volume and pool store. One store is shared by every host; files live under `DATA_DIR`. */
+  volumes: VolumeStore;
 }
 
 /**
  * Single-machine installs get one implicit host with the configured Docker socket.
- * `specs` defaults to a store for `cfg.dataDir`. Pass one store when several hosts share a control plane.
+ * `specs` and `volumes` default to stores for `cfg.dataDir`. Pass one of each when several hosts share a control plane.
  * `live` receives the host's live frames (box state, samples, host metrics, link state).
  */
 export function createLocalHost(
   cfg: Config,
   runtime: Runtime,
   specs: SpecStore = new SpecStore(cfg.dataDir),
+  volumes: VolumeStore = new VolumeStore(cfg.dataDir),
   live: LiveSink = NO_LIVE,
 ): HostCtx {
   const ctx: HostCtx = {
@@ -78,6 +82,7 @@ export function createLocalHost(
     monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory, live),
     sampler: new HostSampler(() => ctx, { intervalMs: cfg.metricsIntervalMs, history: cfg.metricsHistory }, live),
     specs,
+    volumes,
   };
   return ctx;
 }

@@ -1,13 +1,41 @@
 import type { HostCtx } from "../host/registry";
-import { volumeName } from "../labels";
 import type { ContainerInfo } from "../runtime";
 import { detectDrift } from "../specs/drift";
-import type { BoxSpec } from "../specs/types";
-import type { Box } from "./boxes";
+import type { BoxMount, BoxSpec } from "../specs/types";
+import { poolsUsed } from "../volumes/engine";
+import type { Box, BoxMountView } from "./boxes";
 
-function workspaceVolume(host: HostCtx, spec: BoxSpec): string {
+function workspaceVolume(spec: BoxSpec): string {
   const workspace = spec.mounts.find((mount) => mount.path === "/workspace");
-  return workspace?.volume ?? volumeName(host.prefix, spec.createdName);
+  return workspace?.volume ?? "";
+}
+
+function mountViews(host: HostCtx, mounts: BoxMount[]): BoxMountView[] {
+  return mounts.map((mount) => {
+    const volume = host.volumes.findByEngine(host.host.id, mount.volume);
+    return {
+      ...mount,
+      volumeId: volume?.id ?? null,
+      volumeName: volume?.name ?? null,
+      role: volume?.role ?? null,
+      pool: volume?.pool ?? null,
+    };
+  });
+}
+
+function storageOf(host: HostCtx, spec: BoxSpec): Box["storage"] {
+  const names = poolsUsed(host, spec.mounts);
+  if (names.length === 0) return { status: "ok", pools: [] };
+  const pools = names.map((name) => {
+    const known = host.volumes.healthOf(host.host.id, name);
+    return { name, status: known?.status ?? ("unknown" as const) };
+  });
+  const status = pools.some((pool) => pool.status === "unreachable")
+    ? "unreachable"
+    : pools.some((pool) => pool.status === "unknown")
+      ? "unknown"
+      : "ok";
+  return { status, pools };
 }
 
 /**
@@ -36,7 +64,7 @@ export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): B
     pids: info.pidsLimit,
     createdAt: spec.createdAt,
     startedAt: info.startedAt,
-    volume: workspaceVolume(host, spec),
+    volume: workspaceVolume(spec),
     revision: spec.revision,
     desired: spec.lifecycle.desired,
     idleTimeoutSec: spec.lifecycle.idleTimeoutSec,
@@ -46,7 +74,8 @@ export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): B
     containerName: info.name,
     drift: detectDrift(spec, info),
     recovery: spec.recovery,
-    mounts: spec.mounts,
+    mounts: mountViews(host, spec.mounts),
     env: spec.env,
+    storage: storageOf(host, spec),
   };
 }

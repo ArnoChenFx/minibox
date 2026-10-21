@@ -7,11 +7,13 @@ import { snapshotOperations } from "./snapshots";
 import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
 import type { Operation } from "./types";
+import { volumeOperations } from "./volumes";
 
 /** Every operation the API serves. REST routes, OpenAPI, MCP tools and CLI commands are all derived from this list. */
 export const OPERATIONS: readonly Operation[] = [
   ...boxOperations,
   ...execOperations,
+  ...volumeOperations,
   ...sessionOperations,
   ...snapshotOperations,
   ...templateOperations,
