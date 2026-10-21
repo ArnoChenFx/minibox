@@ -254,6 +254,18 @@ const updateRule: Rule = async (check) => {
   }
 };
 
+/** File API: volume must be visible; writes also need a writable volume (tools stays owner-only). */
+const volumeFileWriteRule: Rule = async ({ principal, host, resolved }) => {
+  const view = resolved as { id: string; name: string } | undefined;
+  const record = view ? host.volumes.resolve(view.id, host.host.id) : null;
+  if (!view || !record || !volumeVisible(principal, record, specViews(host.specs.list()))) {
+    throw refusal("volume_not_granted", { volume: view?.name ?? "" });
+  }
+  if (!volumeWritable(principal, record, specViews(host.specs.list()))) {
+    throw refusal("volume_write_forbidden", { volume: view.name });
+  }
+};
+
 const volumeRule: Rule = async ({ principal, host, resolved }) => {
   const view = resolved as { id: string; name: string } | undefined;
   const record = view ? host.volumes.resolve(view.id, host.host.id) : null;
@@ -331,6 +343,12 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["exec.get", execRule],
   ["exec.kill", execRule],
   ["exec.output", execRule],
+  ["files.read", volumeRule],
+  ["files.write", volumeFileWriteRule],
+  ["files.list", volumeRule],
+  ["files.copy", volumeFileWriteRule],
+  ["files.download", volumeRule],
+  ["files.upload", volumeFileWriteRule],
   ["events.list", noAccess],
   ["tool.catalog", noAccess],
   [

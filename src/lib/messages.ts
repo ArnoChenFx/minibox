@@ -242,6 +242,23 @@ export const MESSAGES = {
   tool_ids_invalid: "tools must be an array of catalog ids (letters, digits and hyphens), at most 32 entries.",
   tool_version_invalid:
     "Tool version must be latest or a pin of letters, digits, dots, underscores, plus and hyphen (optional leading v), at most 64 characters.",
+  file_path_invalid: "File path must be at most 512 bytes, without NUL or line breaks.",
+  file_path_escape: "File path must stay inside the volume (no .. or absolute escape).",
+  file_symlink_loop: "Too many levels of symbolic links in the file path (more than {max}).",
+  file_not_found: "File or directory {path} was not found on the volume.",
+  file_is_directory: "{path} is a directory. Use list_files or download a tar archive.",
+  file_is_directory_hint: "Call list_files for listings, or GET /api/volumes/:id/files/archive for a tar.",
+  file_not_text: "File is not valid UTF-8. Read it again with encoding set to base64.",
+  file_not_text_hint: "Pass encoding base64 for binary files.",
+  file_content_invalid: "content must be a string within the size limit.",
+  file_content_too_large: "Content must be at most {max} bytes.",
+  file_encoding_invalid: "encoding must be utf-8 or base64.",
+  file_depth_range: "maxDepth must be an integer between 0 and {max}.",
+  file_limit_range: "limit must be an integer between 1 and {max}.",
+  file_list_failed: "Could not list files: {detail}",
+  file_copy_invalid: "from and to must be different paths inside the volume.",
+  file_copy_into_self: "Cannot copy a path into itself or a subdirectory of itself.",
+  file_copy_failed: "Could not copy files: {detail}",
   mcp_not_sse_hint: "Post JSON-RPC to /mcp. DELETE /mcp closes a session.",
 } as const;
 export type MessageKey = keyof typeof MESSAGES;

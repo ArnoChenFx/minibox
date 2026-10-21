@@ -358,7 +358,7 @@ export function allBoxViews(hosts: readonly { readonly specs: { list(): readonly
 
 /**
  * `exec` grants read and write on every mount of a box the token may use, so `files:*` only changes what a token
- * without `exec` can do. There is no file API yet; later operations call this instead of re-deciding.
+ * without `exec` can do. Volume file operations use the same rule via their `files:read` / `files:write` scopes.
  */
 export function fileAccess(principal: Subject, box: BoxView): { read: boolean; write: boolean } {
   if (principal.type === "owner") return { read: true, write: true };

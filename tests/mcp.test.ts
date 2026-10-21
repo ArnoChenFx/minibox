@@ -162,9 +162,12 @@ describe("MCP", () => {
         "exec",
         "exec_get",
         "exec_kill",
+        "read_file",
+        "write_file",
+        "list_files",
+        "copy_files",
       ]);
       expect(tools).not.toContain("rebuild_box");
-      expect(tools).not.toContain("read_file");
       expect(tools).not.toContain("get_activity");
 
       const call = await post(
@@ -250,7 +253,7 @@ describe("MCP", () => {
       expect(hiddenBody.result.isError).toBe(true);
       expect(hiddenBody.result.structuredContent.hint).toContain("core");
 
-      const unknown = await post(env.base, rpc(5, "tools/call", { name: "read_file", arguments: {} }));
+      const unknown = await post(env.base, rpc(5, "tools/call", { name: "get_activity", arguments: {} }));
       expect(unknown.status).toBe(200);
       expect(await unknown.json()).toMatchObject({ error: { code: -32602 } });
 
