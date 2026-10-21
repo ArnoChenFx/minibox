@@ -24,6 +24,33 @@ function field(label, inner) {
   return `<label class="field"><span>${esc(label)}</span>${inner}</label>`;
 }
 
+/** What saving the pools would change. `t()` does not escape, so the whole sentence is escaped once here. */
+function poolPreviewHtml(preview) {
+  const pools = preview.pools
+    .map((pool) => `${pool.name} · ${pool.backend}${pool.default ? ` · ${t("vol.defaultYes")}` : ""}`)
+    .join("\n");
+  return `<p class="help">${esc(t("vol.savePreviewNote"))}</p>
+    <div class="field"><span class="label">${esc(t("vol.savePreviewPools"))}</span><pre class="mono">${esc(pools)}</pre></div>
+    ${preview.added.length ? `<p>${esc(t("vol.savePreviewAdded", { names: preview.added.join(", ") }))}</p>` : ""}
+    ${preview.removed.length ? `<p>${esc(t("vol.savePreviewRemoved", { names: preview.removed.join(", ") }))}</p>` : ""}`;
+}
+
+/** Saves the pools. A replacement that would change the pool list is first refused with its preview, and sent again once the user confirms. */
+async function putPools(body) {
+  try {
+    return await api("/api/pools", { method: "PUT", body });
+  } catch (err) {
+    if (err.code !== "confirmation_required" || !err.details?.preview) throw err;
+    const ok = await confirmDialog({
+      title: t("vol.savePreviewTitle"),
+      body: poolPreviewHtml(err.details.preview),
+      confirmText: t("vol.save"),
+    });
+    if (!ok) return null;
+    return api("/api/pools", { method: "PUT", body: { ...body, confirm: true } });
+  }
+}
+
 function formDialog(title, body) {
   return new Promise((resolve) => {
     let settled = false;
@@ -149,25 +176,23 @@ export function render(view) {
   };
 
   const save = async () => {
-    const body = await api("/api/pools", {
-      method: "PUT",
-      body: {
-        pools: pools.map((pool) => ({
-          name: pool.name,
-          backend: pool.backend,
-          default: pool.default,
-          server: pool.server ?? undefined,
-          export: pool.export ?? undefined,
-          options: pool.options,
-          root: pool.root ?? undefined,
-          marker: pool.marker ?? undefined,
-        })),
-        roles: readRoles(),
-      },
+    const saved = await putPools({
+      pools: pools.map((pool) => ({
+        name: pool.name,
+        backend: pool.backend,
+        default: pool.default,
+        server: pool.server ?? undefined,
+        export: pool.export ?? undefined,
+        options: pool.options,
+        root: pool.root ?? undefined,
+        marker: pool.marker ?? undefined,
+      })),
+      roles: readRoles(),
     });
-    pools = body.pools;
-    roles = body.roles;
-    health = body.health;
+    if (!saved) return;
+    pools = saved.pools;
+    roles = saved.roles;
+    health = saved.health;
     toast(t("vol.saved"));
     draw();
   };
@@ -274,6 +299,7 @@ export function render(view) {
             name,
             pool: root.querySelector("#v-pool").value,
             role: root.querySelector("#v-role").value || null,
+            confirm: true,
           },
         });
         toast(t("vol.created"));
@@ -281,12 +307,12 @@ export function render(view) {
       } else if (action === "delete") {
         const ok = await confirmDialog({
           title: t("vol.deleteTitle"),
-          message: t("vol.deleteMessage", { name: target.dataset.name }),
+          message: esc(t("vol.deleteMessage", { name: target.dataset.name })),
           confirmText: t("vol.delete"),
           danger: true,
         });
         if (!ok) return;
-        await api(`/api/volumes/${enc(target.dataset.id)}`, { method: "DELETE" });
+        await api(`/api/volumes/${enc(target.dataset.id)}?confirm=true`, { method: "DELETE" });
         toast(t("vol.deleted"));
         await load();
       } else if (action === "measure") {

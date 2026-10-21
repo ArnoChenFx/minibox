@@ -173,6 +173,8 @@ export default {
   "err.mount_path_invalid": "Mount path {path} must be an absolute path without empty, . or .. segments.",
   "err.mount_duplicate": "Mount path {path} is listed more than once.",
   "err.mount_not_found": "No mount at {path}.",
+  "err.storage_confirm_required":
+    "This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.",
   "err.pool_not_found": "Storage pool {pool} was not found.",
   "err.pool_admin_forbidden": "This credential may not change storage pools.",
   "err.pool_backend_invalid": "Pool {pool} has an unknown backend.",
@@ -680,6 +682,12 @@ export default {
   "vol.save": "Save pools",
   "vol.saved": "Pools saved",
   "vol.saveFailed": "Could not save pools",
+  "vol.savePreviewTitle": "Save these storage pools?",
+  "vol.savePreviewPools": "Pools after the change",
+  "vol.savePreviewAdded": "New pools: {names}",
+  "vol.savePreviewRemoved": "Pools removed: {names}",
+  "vol.savePreviewNote":
+    "Nothing is saved until you confirm. A pool that still has volumes cannot be removed or change backend, and the server refuses that.",
   "vol.roleWorkspace": "Workspace",
   "vol.roleHome": "Home",
   "vol.roleTools": "Tools",

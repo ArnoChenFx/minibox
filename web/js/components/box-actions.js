@@ -225,7 +225,8 @@ function rebuildBody(root, box) {
   return body;
 }
 
-function showPreview(root, preview) {
+/** The HTML for a rebuild preview: the planned changes, the writable layer, what is kept and what is lost. */
+export function rebuildPreviewHtml(preview) {
   const changes = (preview.changes ?? [])
     .map((change) => `${t(`rebuild.field.${change.field}`)}: ${change.from} → ${change.to}`)
     .join("\n");
@@ -236,14 +237,18 @@ function showPreview(root, preview) {
   const loses = (preview.loses ?? []).map((name) => t(`rebuild.lose.${name}`)).join(", ");
   const name = preview.containerName ?? { from: "", to: "" };
   const revision = preview.revision ?? { current: "", next: "" };
-  root.querySelector("#rbPreview").hidden = false;
-  root.querySelector("#rbPreview").innerHTML = `<strong>${esc(t("rb.previewTitle"))}</strong>
+  return `<strong>${esc(t("rb.previewTitle"))}</strong>
     <div class="help" style="margin-top:8px">${esc(t("rb.changes"))}</div><pre class="mono">${esc(changes || "—")}</pre>
     <div class="help">${esc(t("rb.diff"))}</div><pre class="mono">${esc(diff)}</pre>
     <div class="help">${esc(t("rb.keeps"))}: ${esc(keeps)}</div>
     <div class="help">${esc(t("rb.loses"))}: ${esc(loses)}</div>
     <div class="help">${esc(t("rb.containerName"))}: <span class="mono">${esc(name.from)} → ${esc(name.to)}</span></div>
     <div class="help">${esc(t("rb.revision"))}: ${esc(String(revision.current))} → ${esc(String(revision.next))}</div>`;
+}
+
+function showPreview(root, preview) {
+  root.querySelector("#rbPreview").hidden = false;
+  root.querySelector("#rbPreview").innerHTML = rebuildPreviewHtml(preview);
   root.querySelector("#rbApply").hidden = false;
 }
 

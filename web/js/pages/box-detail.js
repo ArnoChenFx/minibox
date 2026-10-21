@@ -1,4 +1,11 @@
-import { deleteBox, editResources, lifecycle, openRebuild, snapshotBox } from "../components/box-actions.js";
+import {
+  deleteBox,
+  editResources,
+  lifecycle,
+  openRebuild,
+  rebuildPreviewHtml,
+  snapshotBox,
+} from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
@@ -231,18 +238,20 @@ async function attachVolume(box) {
   if (picked.mode === "rw" && others.length) {
     const ok = await confirmDialog({
       title: t("vol.sharedRwTitle"),
-      message: t("vol.sharedRwMessage", { name: volume?.name ?? picked.id }),
+      message: esc(t("vol.sharedRwMessage", { name: volume?.name ?? picked.id })),
       confirmText: t("vol.modeRw"),
       danger: true,
     });
     if (!ok) return null;
   }
   try {
-    const result = await api(`/api/volumes/${enc(picked.id)}/attach`, {
-      method: "POST",
-      body: { box: box.id, path: picked.path, mode: picked.mode },
-      headers: { "if-match": String(box.revision) },
-    });
+    const result = await sendRebuildingChange(
+      `/api/volumes/${enc(picked.id)}/attach`,
+      { box: box.id, path: picked.path, mode: picked.mode },
+      { "if-match": String(box.revision) },
+      { title: t("vol.attach"), message: esc(volume?.name ?? picked.id) },
+    );
+    if (!result) return null;
     toast(
       t("vol.attached"),
       result.warning === "shared_rw" ? { message: t("vol.sharedRwMessage", { name: volume?.name ?? "" }) } : {},
@@ -254,20 +263,36 @@ async function attachVolume(box) {
   }
 }
 
-async function detachMount(box, el) {
-  const ok = await confirmDialog({
-    title: t("vol.detach"),
-    message: el.dataset.path,
-    confirmText: t("vol.detach"),
-    danger: true,
-  });
-  if (!ok) return null;
+/**
+ * Attaches or detaches a volume, which rebuilds the box. The first request only returns the rebuild preview as a 409.
+ * The second one, with confirm, is sent after the user has seen that preview.
+ */
+async function sendRebuildingChange(url, body, headers, { title, message }) {
   try {
-    const result = await api(`/api/volumes/${enc(el.dataset.volume)}/detach`, {
-      method: "POST",
-      body: { box: box.id, path: el.dataset.path },
-      headers: { "if-match": String(box.revision) },
+    return await api(url, { method: "POST", body, headers });
+  } catch (err) {
+    if (err.code !== "confirmation_required" || !err.details?.preview) throw err;
+    const ok = await confirmDialog({
+      title,
+      message,
+      body: rebuildPreviewHtml(err.details.preview),
+      confirmText: t("rb.apply"),
+      danger: true,
     });
+    if (!ok) return null;
+    return api(url, { method: "POST", body: { ...body, confirm: true }, headers });
+  }
+}
+
+async function detachMount(box, el) {
+  try {
+    const result = await sendRebuildingChange(
+      `/api/volumes/${enc(el.dataset.volume)}/detach`,
+      { box: box.id, path: el.dataset.path },
+      { "if-match": String(box.revision) },
+      { title: t("vol.detach"), message: esc(el.dataset.path) },
+    );
+    if (!result) return null;
     toast(t("vol.detached"));
     return result.box;
   } catch (e) {
