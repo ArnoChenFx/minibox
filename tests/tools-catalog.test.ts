@@ -6,13 +6,7 @@ import { join } from "node:path";
 import { AppError } from "../src/lib/errors";
 import { desiredToolsOf, installEnv } from "../src/services/tools";
 import { findCatalogEntry, loadCatalog, parseCatalogEntry } from "../src/tools/catalog";
-import {
-  assertSafeToolVersion,
-  commandFor,
-  detectCommand,
-  packageSpec,
-  renderCommand,
-} from "../src/tools/commands";
+import { assertSafeToolVersion, commandFor, detectCommand, packageSpec, renderCommand } from "../src/tools/commands";
 import type { CatalogEntry } from "../src/tools/types";
 
 const sample: CatalogEntry = {

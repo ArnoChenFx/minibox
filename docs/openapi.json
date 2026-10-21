@@ -9975,10 +9975,11 @@
                   },
                   "version": {
                     "default": "latest",
-                    "description": "Desired package version, or latest.",
+                    "description": "Desired package version, or latest. Letters, digits, dots, underscores, plus and hyphen only (optional leading v).",
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 64
+                    "maxLength": 64,
+                    "pattern": "^(latest|v?[A-Za-z0-9][A-Za-z0-9._+-]{0,62})$"
                   }
                 },
                 "required": [
@@ -10178,10 +10179,11 @@
                   },
                   "version": {
                     "default": "latest",
-                    "description": "Desired package version, or latest.",
+                    "description": "Desired package version, or latest. Letters, digits, dots, underscores, plus and hyphen only (optional leading v).",
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 64
+                    "maxLength": 64,
+                    "pattern": "^(latest|v?[A-Za-z0-9][A-Za-z0-9._+-]{0,62})$"
                   }
                 },
                 "required": [

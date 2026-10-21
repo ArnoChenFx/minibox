@@ -34,17 +34,10 @@ const toolId = () =>
     .meta({ description: "Catalog tool id, such as claude-code." });
 
 const toolVersion = () =>
-  z
-    .string()
-    .trim()
-    .min(1)
-    .max(64)
-    .regex(TOOL_VERSION_RE, "tool version")
-    .default("latest")
-    .meta({
-      description:
-        "Desired package version, or latest. Letters, digits, dots, underscores, plus and hyphen only (optional leading v).",
-    });
+  z.string().trim().min(1).max(64).regex(TOOL_VERSION_RE, "tool version").default("latest").meta({
+    description:
+      "Desired package version, or latest. Letters, digits, dots, underscores, plus and hyphen only (optional leading v).",
+  });
 
 export const toolList = defineOperation({
   name: "tool.list",

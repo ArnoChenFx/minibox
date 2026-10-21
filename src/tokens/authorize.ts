@@ -332,6 +332,20 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["exec.kill", execRule],
   ["exec.output", execRule],
   ["events.list", noAccess],
+  ["tool.catalog", noAccess],
+  [
+    "tool.list",
+    async ({ principal, host, input }) => {
+      const id = typeof input.id === "string" ? input.id.trim() : "";
+      if (!id) return;
+      const box = await getBox(host, id);
+      assertBoxVisible(principal, boxViewOf(host, box));
+    },
+  ],
+  ["tool.install", boxRule],
+  ["tool.upgrade", boxRule],
+  ["tool.uninstall", boxRule],
+  ["tool.reconcile", boxRule],
 ]);
 
 /** Whether a token may reach an operation at all. The tests use it to hold every token-reachable operation to a rule. */
