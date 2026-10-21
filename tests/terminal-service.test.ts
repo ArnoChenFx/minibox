@@ -13,6 +13,7 @@ import {
   collectText,
   SESSIONS_PER_BOX_MAX,
   TerminalService,
+  VIEWER_ATTACHES_MAX,
 } from "../src/services/terminals";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import type { FakeExec } from "./support/fake-runtime";
@@ -623,21 +624,25 @@ describe("terminal service: attachments", () => {
     await human.close();
   });
 
-  test("a session takes at most 8 terminals at once, including a burst that starts together", async () => {
+  test("viewers take at most six of a session's eight terminals, including a burst that starts together", async () => {
     const env = setup();
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "mine", "ui");
 
     const attempts = await Promise.allSettled(
-      Array.from({ length: ATTACHES_PER_SESSION_MAX + 2 }, () =>
+      Array.from({ length: VIEWER_ATTACHES_MAX + 2 }, () =>
         env.terminals.attach(env.host, box, "mine", { source: "rest" }),
       ),
     );
     const opened = attempts.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
     const refused = attempts.flatMap((a) => (a.status === "rejected" ? [a.reason] : []));
-    expect(opened).toHaveLength(ATTACHES_PER_SESSION_MAX);
+    expect(opened).toHaveLength(VIEWER_ATTACHES_MAX);
     expect(refused).toHaveLength(2);
-    expect(refused[0]).toMatchObject({ status: 429, code: "too_many_requests", key: "session_attach_limit" });
+    expect(refused[0]).toMatchObject({
+      status: 429,
+      code: "too_many_requests",
+      key: "session_viewer_attach_limit",
+    });
     expect((refused[0] as AppError).hintKey).toBe("session_attach_limit_hint");
 
     await opened[0]?.close();
@@ -647,13 +652,45 @@ describe("terminal service: attachments", () => {
     for (const attachment of opened.slice(1)) await attachment.close();
   });
 
+  test("with the viewers' share full, the console still attaches and takes the session over, and the total holds", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "mine", "rest");
+    const held: Attachment[] = [];
+    for (let i = 0; i < VIEWER_ATTACHES_MAX; i++) {
+      held.push(await env.terminals.attach(env.host, box, "mine", { source: "rest" }));
+    }
+    expect(await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "rest" }))).toMatchObject({
+      status: 429,
+      key: "session_viewer_attach_limit",
+    });
+
+    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui" });
+    held.push(human);
+    expect(human.view()).toMatchObject({ controller: "agent", canTakeOver: true, canType: false });
+    expect(env.terminals.takeOver(human)).toBe(true);
+    expect(human.write("echo console\n")).toBe(true);
+    while (held.length < ATTACHES_PER_SESSION_MAX) {
+      held.push(await env.terminals.attach(env.host, box, "mine", { source: "ui" }));
+    }
+    expect(await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "ui" }))).toMatchObject({
+      status: 429,
+      key: "session_attach_limit",
+    });
+    expect(await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "rest" }))).toMatchObject({
+      status: 429,
+      key: "session_attach_limit",
+    });
+    for (const attachment of held) await attachment.close();
+  });
+
   test("the attach limit is per session, so another session can still be opened", async () => {
     const env = setup();
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "one", "ui");
     await env.terminals.start(env.host, box, "two", "ui");
     const held: Attachment[] = [];
-    for (let i = 0; i < ATTACHES_PER_SESSION_MAX; i++) {
+    for (let i = 0; i < VIEWER_ATTACHES_MAX; i++) {
       held.push(await env.terminals.attach(env.host, box, "one", { source: "rest" }));
     }
     await rejectionOf(env.terminals.attach(env.host, box, "one", { source: "rest" }));

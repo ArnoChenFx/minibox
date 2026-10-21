@@ -191,6 +191,7 @@ export default {
   "err.session_box_limit": "该 Box 已有 {max} 个会话。",
   "err.session_box_limit_hint": "关闭不再需要的会话，然后重试。",
   "err.session_attach_limit": "该会话已打开 {max} 个终端。",
+  "err.session_viewer_attach_limit": "只读查看者已在该会话上占用 {max} 个终端，其余 {reserved} 个留给控制台。",
   "err.session_attach_limit_hint": "关闭其中一个，然后重试。",
   "err.mcp_bearer_required": "MCP 需要 Authorization Bearer 访问密钥。",
   "err.mcp_bearer_hint": "请发送 Authorization: Bearer 和访问密钥。/mcp 不接受浏览器会话 Cookie。",

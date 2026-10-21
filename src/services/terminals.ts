@@ -6,7 +6,7 @@ import type { AuditNote, EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
-import { msg } from "../lib/messages";
+import { type Msg, msg } from "../lib/messages";
 import type { ExecSession } from "../runtime";
 import {
   appendedLines,
@@ -35,8 +35,12 @@ const HISTORY_LINES = READ_LINES_MAX * 2;
 const OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 /** Sessions one box may hold. Each is a tmux session with an entry here, so this bounds both. */
 export const SESSIONS_PER_BOX_MAX = 16;
-/** Terminals one session may have open at once. Each is a tmux client and an exec in the box. */
+/** Terminals one session may have open at once, from the console and viewers together. Each is a tmux client and an exec. */
 export const ATTACHES_PER_SESSION_MAX = 8;
+/** Terminals a session keeps free for the console, so viewers cannot fill it and lock the person out. */
+const CONSOLE_ATTACHES_RESERVED = 2;
+/** Terminals viewers (every caller but the console) may hold on one session at once. */
+export const VIEWER_ATTACHES_MAX = ATTACHES_PER_SESSION_MAX - CONSOLE_ATTACHES_RESERVED;
 
 const TMUX_TIMEOUT_MS = 10_000;
 const TMUX_ENV = ["TERM=xterm-256color", "LANG=C.UTF-8"];
@@ -137,8 +141,8 @@ interface Tracked {
   hostId: string;
   target: EventTarget;
   readonly attachments: Set<Attachment>;
-  /** Attaches that are starting. They count against ATTACHES_PER_SESSION_MAX before they are in `attachments`. */
-  opening: number;
+  /** Attaches that are starting, by kind. They count against the caps before they are in `attachments`. */
+  opening: Record<AttachKind, number>;
   snapshot: Snapshot | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -383,8 +387,9 @@ export class TerminalService {
     assertName(name);
     if (!box.running) throw this.stopped(box.id);
     const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
-    if (tracked.attachments.size + tracked.opening >= ATTACHES_PER_SESSION_MAX) throw attachLimitError();
-    tracked.opening += 1;
+    const kind = kindOf(options.source);
+    checkRoom(tracked, kind);
+    tracked.opening[kind] += 1;
     let exec: ExecSession;
     try {
       exec = await host.runtime.startExec(box.id, {
@@ -395,7 +400,7 @@ export class TerminalService {
         tty: true,
       });
     } finally {
-      tracked.opening -= 1;
+      tracked.opening[kind] -= 1;
     }
     const attachment = new Attachment(
       exec,
@@ -506,7 +511,7 @@ export class TerminalService {
       hostId,
       target,
       attachments: new Set(),
-      opening: 0,
+      opening: { console: 0, viewer: 0 },
       snapshot: null,
       idleTimer: null,
     };
@@ -628,14 +633,29 @@ function sessionLimitError(): AppError {
   });
 }
 
-function attachLimitError(): AppError {
-  return new AppError(
-    429,
-    "too_many_requests",
-    msg("session_attach_limit", { max: ATTACHES_PER_SESSION_MAX }),
-    undefined,
-    { hint: msg("session_attach_limit_hint") },
-  );
+/** The console is the only caller that may type. Every other caller attaches as a viewer, and shares only part of the session. */
+type AttachKind = "console" | "viewer";
+
+function kindOf(source: Source): AttachKind {
+  return source === "ui" ? "console" : "viewer";
+}
+
+/** Refuses a terminal that would pass the session's total, or the share of it that viewers may hold. */
+function checkRoom(tracked: Tracked, kind: AttachKind): void {
+  const held = { ...tracked.opening };
+  for (const attachment of tracked.attachments) held[kindOf(attachment.source)] += 1;
+  if (held.console + held.viewer >= ATTACHES_PER_SESSION_MAX) {
+    throw attachLimitError(msg("session_attach_limit", { max: ATTACHES_PER_SESSION_MAX }));
+  }
+  if (kind === "viewer" && held.viewer >= VIEWER_ATTACHES_MAX) {
+    throw attachLimitError(
+      msg("session_viewer_attach_limit", { max: VIEWER_ATTACHES_MAX, reserved: CONSOLE_ATTACHES_RESERVED }),
+    );
+  }
+}
+
+function attachLimitError(message: Msg): AppError {
+  return new AppError(429, "too_many_requests", message, undefined, { hint: msg("session_attach_limit_hint") });
 }
 
 function cursorOf(snapshot: Snapshot): string {

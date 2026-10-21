@@ -153,6 +153,8 @@ export const MESSAGES = {
   session_box_limit: "This box already has {max} sessions.",
   session_box_limit_hint: "Close a session you no longer need, then try again.",
   session_attach_limit: "This session already has {max} terminals open.",
+  session_viewer_attach_limit:
+    "Read-only viewers already have {max} terminals on this session, and {reserved} stay free for the console.",
   session_attach_limit_hint: "Close one of them, then try again.",
   mcp_bearer_required: "MCP requires an Authorization Bearer access key.",
   mcp_bearer_hint:

@@ -27,7 +27,7 @@ import type { Runtime } from "../src/runtime";
 import { startServer } from "../src/server";
 import { type Box, createBox, startBox, stopBox } from "../src/services/boxes";
 import { ContainerWatch } from "../src/services/container-watch";
-import { TerminalService } from "../src/services/terminals";
+import { TerminalService, VIEWER_ATTACHES_MAX } from "../src/services/terminals";
 import type { TerminalData } from "../src/ws/terminal";
 import { rejectionOf, TEST_KEY, testConfig } from "./support/app";
 
@@ -463,6 +463,49 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
 
       await bearer.close();
       await human.close();
+    },
+    LONG,
+  );
+
+  test(
+    "bearer viewers cannot fill a session: with their share full, the console still attaches, takes over and types",
+    async () => {
+      const cookie = await signIn();
+      const box = await newBox("crowd");
+      await app.terminals.start(host, box, "shared", "rest");
+      const viewers: Console[] = [];
+      for (let i = 0; i < VIEWER_ATTACHES_MAX; i++) {
+        const viewer = new Console(`/api/boxes/${box.id}/terminal?session=shared`, {
+          authorization: `Bearer ${TEST_KEY}`,
+        });
+        viewers.push(viewer);
+        await viewer.opened;
+        await waitFor(() => viewer.state() !== undefined, "a viewer's first state frame");
+      }
+
+      const refused = new Console(`/api/boxes/${box.id}/terminal?session=shared`, {
+        authorization: `Bearer ${TEST_KEY}`,
+      });
+      await refused.opened;
+      await waitFor(() => refused.frames("error").length === 1, "the refused viewer");
+      expect(refused.frames("error")[0]).toMatchObject({
+        error: { code: "too_many_requests", key: "session_viewer_attach_limit" },
+      });
+      await refused.closed;
+
+      const tab = consoleOn(box, "shared", cookie);
+      await tab.opened;
+      await waitFor(() => tab.state() !== undefined, "the console's first state frame");
+      expect(tab.state()).toMatchObject({ controller: "agent", canTakeOver: true, canType: false });
+      tab.control({ type: "takeover" });
+      await waitFor(() => tab.state()?.controller === "human", "the console's takeover");
+      tab.type("echo console-$((3+4))\n");
+      await waitFor(() => paneHas(box, "shared", "console-7"), "the console's line to run");
+      expect(await attachedClients(box)).toBe(VIEWER_ATTACHES_MAX + 1);
+
+      tab.ws.close(1000, "done");
+      for (const viewer of viewers) viewer.ws.close(1000, "done");
+      await Promise.all([tab.closed, ...viewers.map((viewer) => viewer.closed)]);
     },
     LONG,
   );
