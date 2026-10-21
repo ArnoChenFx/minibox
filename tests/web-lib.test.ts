@@ -4,7 +4,15 @@ import { join } from "node:path";
 
 import { ROOT } from "../src/config";
 import { validMountPath as serverValidMountPath } from "../src/volumes/mounts";
-import { canonicalMounts, validMountPath } from "../web/js/lib/mounts.js";
+import { ROLE_MOUNT, VOLUME_ROLES } from "../src/volumes/types";
+import {
+  canonicalMounts,
+  checkMountRows,
+  DEFAULT_MOUNTS,
+  isVolumeErrorKey,
+  validMountPath,
+  volumeChoices,
+} from "../web/js/lib/mounts.js";
 
 const LIB = join(ROOT, "web", "js", "lib");
 const I18N = join(ROOT, "web", "js", "i18n");
@@ -567,5 +575,85 @@ describe("mount lists", () => {
       canonicalMounts([{ volume: "a", path: "/a", mode: "rw" }]),
     );
     expect(canonicalMounts(null)).toBe("[]");
+  });
+
+  test("the default mounts are the role mounts the server provisions when a create names none", () => {
+    expect(DEFAULT_MOUNTS.map(({ role, path, mode }) => ({ role, path, mode }))).toEqual(
+      VOLUME_ROLES.map((role) => ({ role, ...ROLE_MOUNT[role] })),
+    );
+  });
+
+  test("a custom row needs a volume and a path the server accepts, once", () => {
+    expect(checkMountRows([{ volume: "", path: "/data", mode: "rw" }])).toEqual({ problem: { code: "volume" } });
+    expect(checkMountRows([{ volume: "vol_a", path: "data", mode: "rw" }])).toEqual({
+      problem: { code: "mount_path_invalid", path: "data" },
+    });
+    expect(
+      checkMountRows([
+        { volume: "vol_a", path: "/data", mode: "rw" },
+        { volume: "vol_b", path: "/data", mode: "ro" },
+      ]),
+    ).toEqual({ problem: { code: "mount_duplicate", path: "/data" } });
+  });
+
+  test("a valid custom list is sent as entered, and an empty list means a box with no mounts", () => {
+    expect(
+      checkMountRows([
+        { volume: "vol_a", path: "/data", mode: "rw" },
+        { volume: "vol_b", path: "/opt/tools", mode: "ro" },
+      ]),
+    ).toEqual({
+      mounts: [
+        { volume: "vol_a", path: "/data", mode: "rw" },
+        { volume: "vol_b", path: "/opt/tools", mode: "ro" },
+      ],
+    });
+    expect(checkMountRows([])).toEqual({ mounts: [] });
+  });
+
+  test("a volume another live box owns is listed but unavailable, and every other volume is available", () => {
+    const volumes = [
+      { id: "vol_1", name: "workspace", ownership: "owned", ownerBoxId: "bx_live", rwMounts: 1 },
+      { id: "vol_2", name: "orphan", ownership: "owned", ownerBoxId: "bx_gone", rwMounts: 0 },
+      { id: "vol_3", name: "shared", ownership: "independent", ownerBoxId: null, rwMounts: 2 },
+    ] as const;
+    expect(volumeChoices(volumes, new Set(["bx_live"]))).toEqual([
+      { id: "vol_1", name: "workspace", rwMounts: 1, disabled: true },
+      { id: "vol_2", name: "orphan", rwMounts: 0, disabled: false },
+      { id: "vol_3", name: "shared", rwMounts: 2, disabled: false },
+    ]);
+  });
+
+  test("volume and mount errors are the ones the Volumes section shows", () => {
+    expect(["volume_missing", "volume_in_use", "mount_path_invalid", "mount_invalid"].map(isVolumeErrorKey)).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(["box_exists", "template_image_missing", undefined].map(isVolumeErrorKey)).toEqual([false, false, false]);
+  });
+});
+
+describe("api error keys", () => {
+  test("a server error keeps its message key, so a dialog can tell a volume error from a name conflict", () => {
+    const seen = inBrowser<{ key: string; code: string; status: number; message: string }>(
+      { languages: ["en-US"] },
+      `await (async () => {
+        globalThis.fetch = async () =>
+          new Response(JSON.stringify({ error: { code: "conflict", message: "x", key: "volume_missing", params: { volume: "data" } } }), { status: 409 });
+        try {
+          await (await import(${JSON.stringify(join(LIB, "api.js"))})).api("/api/boxes", { method: "POST", body: {} });
+        } catch (e) {
+          return { key: e.key, code: e.code, status: e.status, message: e.message };
+        }
+      })()`,
+    );
+    expect(seen).toEqual({
+      key: "volume_missing",
+      code: "conflict",
+      status: 409,
+      message: expect.stringContaining("Volume data no longer exists"),
+    });
   });
 });

@@ -46,11 +46,11 @@ describe("rebuild preview", () => {
 });
 
 /** Loads the mount editor in a fresh process and renders one row. */
-function mountRowMarkup(mount: Record<string, string>): string {
+function mountRowMarkup(mount: Record<string, string>, options: Record<string, unknown> = {}): string {
   const script = [
     ...stubs,
     `const { mountRowHtml } = await import(${JSON.stringify(MOUNT_EDITOR)});`,
-    `console.log(JSON.stringify(mountRowHtml(${JSON.stringify(mount)})));`,
+    `console.log(JSON.stringify(mountRowHtml(${JSON.stringify(mount)}, ${JSON.stringify(options)})));`,
   ].join("\n");
   const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
   if (run.status !== 0) throw new Error(run.stderr);
@@ -64,6 +64,23 @@ describe("mount row", () => {
     expect(html).toContain('data-path value="/srv/&quot;x&quot;"');
     expect(html).toContain('<option value="ro" selected>');
     expect(html).toContain("data-remove-mount");
+  });
+
+  test("with volumes, the volume is a choice, and a volume another box owns cannot be picked", () => {
+    const html = mountRowMarkup(
+      { volume: "vol_2", path: "/data", mode: "rw" },
+      {
+        volumes: [
+          { id: "vol_1", name: "owned", disabled: true },
+          { id: "vol_2", name: "shared", disabled: false },
+        ],
+      },
+    );
+    expect(html).toContain('<select class="select" data-volume');
+    expect(html).toContain('<option value="">');
+    expect(html).toMatch(/<option value="vol_1"[^>]* disabled[^>]*>owned<\/option>/);
+    expect(html).toMatch(/<option value="vol_2"[^>]* selected[^>]*>shared<\/option>/);
+    expect(html).not.toMatch(/<option value="vol_2"[^>]* disabled/);
   });
 });
 
