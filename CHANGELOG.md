@@ -34,9 +34,11 @@
 - 新建 Box 默认加固：丢弃大部分 Linux capability（「标准」档位保留 Docker 默认能力集中的 11 项，去掉 `MKNOD`、`SETPCAP`、`SYS_CHROOT`），设置进程数上限与 ulimit（禁用 core dump，`nofile` 为 65536），并放在独立网络上，同一网络内的 Box 之间不能互相访问（#5）。
 - 出站（egress）策略与磁盘配额暂缓实现，不随 #5 交付。Box 的出站流量不做过滤，磁盘用量也没有上限（#5）。
 - `scripts/restart.sh` 不再对 Docker Socket 执行 `chmod 666`，此前任何本地用户都能以 root 等同权限访问 Docker。现在每次运行都把 Socket 的属组设为执行者的主组、权限设为 `660`，服务进程无需重新登录即可使用 Docker；主组以外的账户（包括 `docker` 组成员）在脚本运行后无法访问该 Socket。该脚本定位为单用户沙箱的便利脚本，README 已说明。
-- 创建 Box 与重建时，挂载和网络都要经过检查，这是设计文档 §9.2 在 `volume:attach` 授权（#13）落地前的过渡规则。`minibox-data`（保存访问密钥与会话）一律拒绝挂载；新挂载的卷必须带 MiniBox 标签（即由 MiniBox 创建），或尚不存在；新挂载的卷不能已被其它 Box 挂载；重建时网络只能是宿主机的 Box 网络，或 Box 当前已在使用的网络，`host`、`none` 与 `container:*` 始终拒绝。不符合时返回 `403`（错误码 `forbidden`），容器与规格都不变。
+- 创建 Box 与重建时，挂载和网络都要经过检查，这是设计文档 §9.2 在 `volume:attach` 授权（#13）落地前的过渡规则。`minibox-data`（保存访问密钥与会话）、池根卷 `<前缀>-pool-<池名>`、内部辅助卷，以及没有 MiniBox 标签的卷一律拒绝挂载。检查以卷记录为准：记录的所有者是另一个仍存在的 Box 时拒绝，因此别的 Box 的工作区不能被挂走；独立记录（例如共享工具卷）可以被多个 Box 挂载。尚不存在的名字只能新建为独立卷，且不能以 `<前缀>-ws-` 或 `<前缀>-pool-` 开头；记录或引擎卷已丢失时返回 `409 volume_missing`，不会静默重建。挂载卷需要 `volume:attach`，读写挂载、新建卷以及不带 `mounts` 的新建 Box 还需要 `volume:write`；`pool.replace` 需要 `pool:admin`。重建时网络只能是宿主机的 Box 网络，或 Box 当前已在使用的网络，`host`、`none` 与 `container:*` 始终拒绝。不符合时返回 `403`（错误码 `forbidden`），容器与规格都不变。
+- 卷的辅助容器（chown、池目录的创建与用量测量）不接入网络，根文件系统只读，丢弃全部能力后只加回所需的能力，禁止提权，限制内存与进程数，退出后由引擎删除（#24）。
 
 ### 新增
+- 数据卷与存储池（#24）：卷是独立对象，记录放在 `DATA_DIR/volumes`，并写明创建它的主机。Box 通过 `mounts` 挂载零到多个卷，每次挂载指定路径与读写模式。新建 Box 默认挂载工作区 `/workspace`、主目录 `/home/dev`、共享只读工具卷 `/opt/minibox/tools`（每个主机一只，名为 `<前缀>-tools-<主机 id>`）与本地缓存 `/home/dev/.cache`。存储池支持 `local`、`nfs` 与 `path` 三种后端：`PUT /api/pools` 替换配置，`GET /api/pools` 探测可达性；非本地池不可达时，启动、重启与创建返回 `503 docker_unavailable`。删除 Box 时 `deleteVolume=true` 只删除记录中所有者为本 Box、且没有其它 Box 挂载的卷。已有的 `<前缀>-ws-*` 卷会被识别为卷，不改名、不补标签。新增 `/api/volumes`、`/api/pools` 系列接口与控制台「卷」页面（中英文）。
 - 异步任务（#16）：模板构建与快照创建返回 `202` 和 `taskId`，进度经现有事件总线的 `task` 主题以 SSE（`GET /api/tasks/:id/events`）推送，不再把长请求挂在 `idleTimeout` 为 60 秒的连接上。任务状态和最近 64 KB 输出保存在 `DATA_DIR/tasks.db`；进程重启后，未完成的任务记为 `interrupted`。同一时间只能构建一个模板，每个 Box 同时只能提交一个快照。控制台顶栏有任务抽屉（中英文），可看实时日志并取消。Bun 的空闲计时从请求开始计算且不会被心跳延长，`server.timeout(req, 0)` 才会关掉它（见 `tests/long-work-routes.test.ts`）。
 - Box 规格写入 `DATA_DIR/boxes/<id>.json`（权限 600）。稳定 ID 形如 `bx_…`，与容器 ID 分开，名称全局唯一。已有 Box 在列出或读取时自动认领：不改容器名，也不改容器标签（D6，认领后的属主修正留给 #24）。`DATA_DIR` 丢失时从标签和 `inspect` 降级恢复；空闲超时、TTL、标签、工具、环境变量回到默认值，并在 `recovery.needsReset` 中标明需要重新设置。原地更新（CPU、内存、进程数、标签、空闲超时、TTL、重命名）走 `docker update` / `docker rename` 与规格文件，容器标签保持创建时的内容。请求须带 `If-Match: <revision>`；缺少该头返回 428，版本不一致返回 412。新建 Box 的重启策略为 `no`，启动时的协调器按期望状态 `running` 或 `stopped` 启动或停止，并把引擎上的重启策略改回 `no`（D8）。漂移比较 `inspect` 与规格，不自动改回资源或挂载。规格保留最近 20 个版本（Refs #23）。
 - `POST /api/boxes/:id/rebuild`：未带 `confirm: true` 时返回 `409 confirmation_required`，`preview` 包含可写层的 `docker diff` 和计划变更。确认后创建新容器（不启动）并校验镜像与配置，停旧容器并改名为 `-old`，把新容器改成正式名称后启动；成功则删除旧容器，失败则恢复旧容器并把规格回滚到上一版。认领仍不改名；重建会把容器名改为 `<前缀>-<id>`（D6）。保留挂载卷、稳定 ID、名称和最近 20 个规格版本；丢失未写入卷的可写层、运行中的进程（含 tmux）和容器 IP。`PATCH /api/boxes/:id` 若带上与当前不同的模板、挂载、环境变量、网络或安全档位，返回同一预览，且不应用同一请求里的原地字段。`secretRef` 只存储、不注入。第一阶段仍只在创建时准备一个工作区卷；显式增删挂载才会重建，不引入卷池（#24）。重建前检查点不在这一步（#11）（Refs #23）。
@@ -138,7 +140,7 @@
 - 若现有访问密钥短于 20 位或强度不足，升级后启动日志会出现 `auth.weak_key` 警告。服务不受影响；建议换成至少 20 位的随机字符（例如 `openssl rand -hex 32`）并重启。
 - 已构建的 `minibox-template:base` 仍是旧的 root 版本。在控制台「模板 → 构建基础模板」或运行 `bun run build:template` 重新构建后，新建 Box 才以 `dev` 运行。已有 Box 保持原样，不会改名或重建。
 - 新 Box 复用旧 Box 保留下来的工作区卷时，卷内 `/workspace` 仍属于 root，`dev` 无法写入。在该 Box 运行时执行一次 `docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace` 即可修复。MiniBox 暂不自动执行，详见 README「基础模板」。
-- 创建与重建时的挂载和网络检查（见「安全」）可能让之前成功的请求返回 `403`（错误码 `forbidden`）：挂载非 MiniBox 创建的卷、挂载已被其它 Box 使用的卷、挂载 `minibox-data`，或把网络改为既不是 Box 网络、也不是 Box 当前网络的网络。已有 Box 保持现有挂载与网络，只有改动这些字段时才受影响。需要在 Box 之间共享卷，请等待 `volume:attach` 授权（#13）落地。
+- 创建与重建时的挂载和网络检查（见「安全」）可能让之前成功的请求返回 `403`（错误码 `forbidden`）：挂载没有 MiniBox 标签的卷、挂载属于其它 Box 的卷、挂载 `minibox-data`，或把网络改为既不是 Box 网络、也不是 Box 当前网络的网络。已有 Box 保持现有挂载与网络，只有改动这些字段时才受影响。独立卷可以挂到多个 Box 上，工具卷因此照常共享。目前只有所有者，现有客户端不受 `volume:write` 影响；令牌（#13）落地后，读写挂载需要 `volume:write`。
 
 ## [0.3.0] - 2026-10-21
 

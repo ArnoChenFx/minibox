@@ -335,6 +335,7 @@ stateDiagram-v2
 
 - 创建 Box 时**自动新建**的卷标记为「随 Box 拥有」，删除时询问是否一并删除，**默认保留**（与现在一致）。
 - 显式创建或被多个 Box 共享的卷是「独立」的，删除 Box 永不带走。
+- 删除 Box 只删除记录中所有者为本 Box、且没有其它 Box 挂载的卷。没有记录的卷、所有者为空的记录、属于其它 Box 的记录，即使本 Box 的规格仍挂着它们，也不删除。
 - 无任何 Box 挂载的卷在库里标「未挂载」，并给出清理建议。
 
 ### 5.9 与其它特性的关系
@@ -359,7 +360,7 @@ stateDiagram-v2
 同一个 Volume 可同时挂载到多个 Box。**默认可读写，由用户负责**，每次挂载仍可单独选只读。
 
 - 界面补偿：把已被其它 Box 读写挂载的卷再挂载时提示风险；工具卷默认以只读方式挂给其它 Box。
-- 安全：挂载某卷等同于获得该卷的读权限，创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权（见 [9](#9-令牌与权限)）。
+- 安全：挂载某卷等同于获得该卷的读权限，创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权；读写挂载、新建卷以及新建 Box 自动创建的卷还需要 `volume:write`（见 [9](#9-令牌与权限)）。
 - 所有模板统一 uid/gid，否则共享卷会出现权限问题（见 [11](#11-工具目录与基础模板)）。
 - Docker 不管文件锁，并发写冲突由应用自己负责。
 
@@ -436,11 +437,12 @@ pools:
 - **NFS**：数据卷使用用户选项（通常 `hard`）。探测根卷 `<prefix>-pool-<pool>` 强制 `soft,timeo=10,retrans=1`，并在驱动选项变化时重建，避免死服务器挂起探测。已有数据卷保持创建时的选项。不要把 Docker data-root 搬到网络存储上。
 - **path**：辅助容器以只读方式绑定根目录，并 `test -f` 标记文件（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在则为不可达，不写入、不创建标记。
 - **能力**：由后端计算，用户不能设置。全部可共享；`snapshots`、`quota`、`clone` 为 false；只有 nfs 的 `crossHost` 为 true。无每卷配额。
-- **授权**：`volume:attach` 是第二次 `authorize()` 调用，带 `scope` 与卷资源。操作级调用的 `scope` 为空，钩子可以区分「能否执行操作」和「能否挂这只卷」。所有者与浏览器会话始终允许。令牌范围留到 #13。拒绝时审计状态为 `denied`。
+- **授权**：`volume:attach`、`volume:write` 与 `pool:admin` 各自是一次 `authorize()` 调用，带 `scope` 与资源：有记录的卷带 `id`，尚无记录的名字只带 `name`。操作级调用的 `scope` 为空，钩子可以区分「能否执行操作」和「能否挂这只卷」。`pool.replace` 在操作内单独检查 `pool:admin`，`volume:write` 不能代替它。读写挂载计为写入。所有者是目前唯一的主体，浏览器会话以所有者身份访问，因此始终允许。令牌范围留到 #13。拒绝时审计状态为 `denied`。
 - **位置**：池配置是控制面全局的（`DATA_DIR/pools.json`）。每条 Volume 记录带 `hostId`，挂到另一台主机上的卷会被拒绝。文件原子写入，模式 600，目录 700。损坏的池文件不覆盖，记 `pools.unreadable`，并按隐式本地池处理。
 - **失败的创建**：一次创建产生的容器、规格、卷记录、引擎卷与子目录，失败时按相反顺序撤销（`VolumeChanges`）。NFS 池根卷若是这次创建或其可达性探测首次建立的，同样撤销；池根卷原本就存在则保留。遗留的 `<prefix>-ws-*` 只恢复原来的记录，不删除引擎卷。引擎拒绝删除容器时，保留规格和卷，避免仍在使用的资源失去记录。
 - **工具卷与引擎名**：共享工具卷名为 `<prefix>-tools-<主机 id>`，同名检查只在同一主机内进行。已有的工具卷按记录复用，不论叫什么名字。引擎名若已被引擎中的其它卷占用，返回 409 `volume_engine_exists`：不接管，也不删除该卷。
 - **丢失的卷**：记录存在而引擎中已没有该卷时，启动、重启、创建、重建、挂载和测量都返回 409 `volume_missing`，不交给 Docker 自动建一个空卷（创建容器、启动容器和运行辅助容器时，Docker 都会自动创建缺失的命名卷）。检查在每次引擎调用之前进行；创建时在规格锁内再查一次。遗留的 `<prefix>-ws-*` 若有记录而引擎卷已不存在，同样拒绝，不另建新工作区。删除记录仍可用：引擎卷已不存在时视为已删除。列出卷时尚不标记 `missing`，留待后续。
+- **删除 Box**：`deleteVolume=true` 只删除记录中所有者为本 Box（`ownerBoxId` 相等）、且没有其它规格挂载它的卷，并在删除卷之前先删容器。没有记录的引擎卷即使仍被本 Box 的规格挂着也不删除，按名字回退删除的分支已经移除。引擎拒绝删除时保留记录，并以 `volumeError` 返回原因。
 - **辅助容器**：`runHelper` 的容器不接入网络，根文件系统只读，`/tmp` 是 16 MiB 的 tmpfs，丢掉全部能力，只加回调用方列出的能力，禁止提权，内存 256 MiB、进程数 64，由引擎在退出后删除（`AutoRemove`）。命名卷以 `NoCopy` 挂载，否则 Docker 会把镜像里的 `/mnt` 复制进空卷，覆盖刚 chown 的属主。池探测以 `1000:1000` 运行、不带能力，因此 path 池的挂载根若对该用户不可搜索，会被判为不可达（`unreachable`）。
 - **暂缓**：文件 API（#9）、restic 检查点（#11）、存储节点代理（#28 / #29）、每卷配额。更长的 NAS 部署说明仍是 #30。
 
@@ -624,7 +626,8 @@ Event
 ```text
 Token
 ├ scopes      box:read · box:write · box:delete · exec · files:read/write
-│             port:expose · checkpoint:create/restore · volume:attach · tool:install
+│             port:expose · checkpoint:create/restore · tool:install
+│             volume:read · volume:write · volume:attach · pool:admin
 ├ 资源范围     boxes:   created-by-me（默认）| 指定 ID/标签 | *
 │             volumes: 显式授予列表
 │             hosts:   允许的宿主机
@@ -644,12 +647,16 @@ Token
 
 - **`exec` 隐含该 Box 所有挂载卷的读写能力**，所以细分的 `files:*` 权限只对没有 `exec` 的令牌有意义。
 - **挂载某卷等于获得该卷的读权限**：创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权，否则 Agent 可以新建 Box 把别人的卷挂进去读走。
+- **写入也是权限（N5）**：读写挂载（`rw`）还需要 `volume:write`，只读的 `volume:attach` 不能让 Agent 写入别人的卷。新建卷需要 `volume:write`，不带 `mounts` 的新建 Box 会创建自己的工作区、主目录与缓存卷，因此也需要 `volume:write`。`box.update` 与 `box.rebuild` 的挂载变更同样检查。配额（§6.6）尚无后端，因此 rw 挂载暂不计入配额。
+- **存储池是管理员操作（N2）**：`pool.replace` 需要 `pool:admin`，`volume:write` 不能代替它。存储池决定之后所有新卷放在哪里，只有所有者可以修改。
 - **`volume:attach` 授权落地（#13）之前的过渡规则**：创建 Box、重建与挂载变更共用同一套检查（`src/services/attachments.ts` 的 `assertMountAllowed`），违反时在改动容器之前返回 `403 forbidden`，或 `409 volume_missing`。检查以 Volume 记录为准：引擎中带 MiniBox 标签、还没有记录的卷先被认领，再判断。
   - 一律拒绝，不论卷是否存在、是否已挂载：`minibox-data`（保存访问密钥与会话）、池根卷 `<prefix>-pool-<pool>`、带 `<prefix>.internal` 标签的辅助卷，以及没有 MiniBox 标签的卷。
   - 记录的所有者是另一个仍然存在的 Box（`owned`）时拒绝挂载，因此别的 Box 的工作区不能被挂走。独立记录（`independent`）可以被多个 Box 挂载，§6.2 的共享工具卷因此可用。所有者已删除的记录视为无主。
   - 记录存在、或 Box 已经挂载的卷，若引擎中已不存在，返回 `409 volume_missing`，不会静默重建：Docker 在容器创建或启动时会自动建一个同名空卷，那就等于悄悄替换了数据。
   - 不存在的名字可以新建为独立记录（引擎名为 `vol_…`，与 `volume.create` 一致），但以 `<prefix>-ws-` 或 `<prefix>-pool-` 开头的名字拒绝挂载，`vol_…` 形式的 id 没有记录时返回 `404 volume_not_found`。创建 Box 时的显式挂载只接受已有记录，因此优先使用已记录的卷。
   - Box 已经挂载的卷不做标签与所有权检查，所以只改其它字段的重建照常进行（上面一律拒绝的卷除外）。
+  - 挂载变更（创建、`box.update`、`box.rebuild`）只检查新增或改变的挂载：卷、路径、模式都与现有挂载相同的，视为保留，不再检查。新挂载需要 `volume:attach`，读写挂载还需要 `volume:write`；尚无记录的新名字需要 `volume:write`，因为它会被新建为独立卷。`volume.attach` 按同一规则检查；`volume.detach` 检查被卸下的那只卷的 `volume:attach`。
+  - 不带 `mounts` 的新建 Box 需要 `volume:write`。若采用了遗留的 `<prefix>-ws-<名称>` 工作区，它按读写挂载检查（`volume:attach` 与 `volume:write`）；复用已有的共享工具卷，需要对它的 `volume:attach`。
   - 网络只允许宿主机的 Box 网络（默认 `minibox-boxes`）和 Box 当前已在使用的网络，早于 Box 网络创建的 `bridge` Box 因此可以保持原样。`host`、`none` 与 `container:*` 始终拒绝。
 
 ### 9.3 浏览器会话
@@ -933,7 +940,7 @@ OpenTunnel 已在线上实测（tcpdump 验证）：隧道保留 `Host` 与 `Ori
 
 另有两条贯穿全文的约束：
 
-- `exec` 隐含该 Box 所有挂载卷的读写能力；挂载某卷需要 `volume:attach` 授权（见 [9.2](#92-必须写进文档与测试的安全约束)）。
+- `exec` 隐含该 Box 所有挂载卷的读写能力；挂载某卷需要 `volume:attach` 授权，读写挂载还需要 `volume:write`（见 [9.2](#92-必须写进文档与测试的安全约束)）。
 - 共享可写卷是横向移动通道：一个被攻破的 Box 可以改 `.bashrc`、git hook 或脚本，污染另一个 Box。默认可读写是产品决策，但界面要给出提示，工具卷默认只读。
 
 ---

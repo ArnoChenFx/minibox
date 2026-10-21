@@ -364,7 +364,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 省略 `mounts` 时，新建 Box 得到这四只。`"mounts": []` 表示一只都不挂。显式列表会替换默认值。同一只卷可以挂到多只 Box，每次单独选择读写或只读。第二次读写挂载是允许的，API 返回 `warning: "shared_rw"`；控制台会先询问。Docker 不提供文件锁。
 
-`DELETE /api/boxes/:id?deleteVolume=true` 只删除**没有被其他 Box 挂载的自有卷**（随该 Box 创建的工作区、主目录和缓存）。独立卷会留下，包括共享工具卷，以及在数据卷页面单独创建的卷。只有至少删除了一只自有卷时，`volumeDeleted` 才为 true。删除 Box 从不删除独立卷。
+`DELETE /api/boxes/:id?deleteVolume=true` 只删除**没有被其他 Box 挂载的自有卷**（随该 Box 创建的工作区、主目录和缓存）。独立卷会留下，包括共享工具卷，以及在数据卷页面单独创建的卷。没有记录的卷，或者属于其他 Box 的卷，即使本 Box 仍挂载着它们，也不会被删除。只有至少删除了一只自有卷时，`volumeDeleted` 才为 true。删除 Box 从不删除独立卷。
 
 新建的引擎卷名为 `vol_…`，并带标签 `minibox.volume=true`。已有的 `minibox-ws-*` 会在启动时、以及创建同名 Box 时被识别：MiniBox 写入所有权记录，不改名、不补标签、不删除。Docker 不能在卷创建之后追加标签。如果 `minibox-ws-<名称>` 已经存在，新建的同名 Box 会把它当作工作区，而不是再创建一只。
 
@@ -382,7 +382,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 `GET /api/pools` 探测可达性，并缓存 15 秒。`?refresh=true` 会重新探测。列出 Box 不会探测 NFS，因此在有东西探测之前，Box 的 `storage.status` 保持 `unknown`。Box 列表和详情只把 `unreachable` 标出来；`ok` 和 `unknown` 不单独提示。当非本地池不是 `reachable`（包括缺少基础模板镜像），或本地引擎探测本身失败时，启动、重启或创建 Box 返回 `503` `docker_unavailable`（消息键 `storage_unreachable`）。协调器记录 `reconcile.start_failed` 后继续，因此一只不可达的池不会让进程退出。剩余空间低于 5 GiB 或低于 10% 时 `lowSpace` 为 true。没有每卷配额。
 
-所有者和浏览器会话可以挂载任何卷。`volume:attach` 是对鉴权钩子的第二次调用，资源是这只卷，因此 [#13](https://github.com/ArnoChenFx/minibox/issues/13) 落地后可以把 Agent 令牌限制在这个范围上。在那之前，钩子允许所有者。能力标志（`shareable`、`snapshots`、`quota`、`clone`、`crossHost`）由后端计算：每个池都可共享，只有 NFS 的 `crossHost` 为 true，其余为 false。
+挂载卷需要对该卷的 `volume:attach`。读写挂载还需要 `volume:write`；创建卷也需要 `volume:write`，新建 Box 为自己创建的工作区、主目录和缓存同样如此。修改存储池列表需要 `pool:admin`，`volume:write` 不能代替它。每项检查都是对鉴权钩子的一次单独调用，有卷时资源是这只卷，因此 [#13](https://github.com/ArnoChenFx/minibox/issues/13) 落地后可以把 Agent 令牌限制在对应的范围上。在那之前，钩子只允许所有者（目前唯一的主体，浏览器会话也以所有者身份访问）。能力标志（`shareable`、`snapshots`、`quota`、`clone`、`crossHost`）由后端计算：每个池都可共享，只有 NFS 的 `crossHost` 为 true，其余为 false。
 
 ```bash
 # 把 NFS 导出设为默认池。除非覆盖 roles.cache，缓存仍在本地。
@@ -456,11 +456,11 @@ sudo touch /mnt/minibox/.minibox-mounted
 | `POST` | `/api/volumes` | 创建独立卷 `{ "name", "pool"?, "role"? }`。返回 `201`。基础模板镜像存在时，新建的本地卷会 chown 到 uid 1000 |
 | `GET` | `/api/volumes/:id` | 一只卷 |
 | `DELETE` | `/api/volumes/:id` | 删除没有被任何 Box 挂载的卷。仍被挂载时返回 `409` |
-| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode" }`。必须带该 Box 的 `If-Match`。会重建容器。`warning` 为 `shared_rw` 或 `null` |
-| `POST` | `/api/volumes/:id/detach` | `{ "box", "path" }`。必须带 `If-Match`。会重建容器 |
+| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode" }`。必须带该 Box 的 `If-Match`。会重建容器。`warning` 为 `shared_rw` 或 `null`。需要 `volume:attach`；`mode` 为 `rw` 时还需要 `volume:write` |
+| `POST` | `/api/volumes/:id/detach` | `{ "box", "path" }`。必须带 `If-Match`。会重建容器。需要 `volume:attach` |
 | `POST` | `/api/volumes/:id/usage` | 用辅助容器统计已用字节，并缓存在卷记录上 |
 | `GET` | `/api/pools?refresh=true` | 存储池、角色默认值与可达性。不可达的池会在结果里说明，列表本身不会失败 |
-| `PUT` | `/api/pools` | 整体替换 `{ "pools", "roles"? }`。如果省略，本地池会被补回 |
+| `PUT` | `/api/pools` | 整体替换 `{ "pools", "roles"? }`。如果省略，本地池会被补回。需要 `pool:admin` |
 
 重建会保留已挂载的卷、稳定 ID、Box 名称和最近 20 个规格版本。未写入卷的可写层、运行中的进程（包括 tmux）和容器 IP 会丢失。认领不改名；改成 `<LABEL_PREFIX>-<id>` 发生在重建时（决策 D6）。`secretRef` 只存储、不注入。第一阶段创建时仍只有一个工作区卷；增删挂载属于重建，不是卷池。重建前的检查点不在这一步。对外的容器 ID 会变，稳定 ID 和 Box 名称不变。重启策略保持 `no`。
 

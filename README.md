@@ -364,7 +364,7 @@ A volume is its own object. A box mounts zero or more of them. The console page 
 
 Omit `mounts` and a new box gets those four. `"mounts": []` creates a box with none. An explicit list replaces the defaults. The same volume can be mounted on several boxes, each read-write or read-only. A second read-write mount is allowed and the API returns `warning: "shared_rw"`; the console asks before doing it. Docker does not provide file locks.
 
-`DELETE /api/boxes/:id?deleteVolume=true` removes **owned** volumes that no other box mounts (the workspace, home and cache created with that box). Independent volumes, including the shared tools volume and anything created on the Volumes page, stay. `volumeDeleted` is true only when at least one owned volume was actually removed. Deleting a box never deletes an independent volume.
+`DELETE /api/boxes/:id?deleteVolume=true` removes **owned** volumes that no other box mounts (the workspace, home and cache created with that box). Independent volumes, including the shared tools volume and anything created on the Volumes page, stay. A volume with no record, or one that another box owns, is never removed, even when this box still mounts it. `volumeDeleted` is true only when at least one owned volume was actually removed. Deleting a box never deletes an independent volume.
 
 New engine volumes are named `vol_…` and labeled `minibox.volume=true`. An existing `minibox-ws-*` volume is recognized on startup and when a box of that name is created: MiniBox writes an ownership record and does not rename, relabel or delete it. Docker cannot add a label after a volume exists. A new box adopts `minibox-ws-<name>` as its workspace when that volume is already there, instead of creating a second one.
 
@@ -382,7 +382,7 @@ Changing mounts rebuilds the container. The new container is named `<prefix>-<bo
 
 `GET /api/pools` probes reachability and caches the result for 15 seconds. `?refresh=true` probes again. Listing boxes does not probe NFS, so a box's `storage.status` stays `unknown` until something probes. `unreachable` is what the box list and the box page call out; `ok` and `unknown` do not. Starting, restarting or creating a box returns `503` `docker_unavailable` (message key `storage_unreachable`) when a non-local pool is not `reachable`, including when the base template image is missing, and when the local engine probe itself fails. The reconciler logs `reconcile.start_failed` and continues, so one unreachable pool does not stop the process. Free space under 5 GiB or under 10% is `lowSpace`. There is no per-volume quota.
 
-The owner and a browser session may attach any volume. `volume:attach` is a second call to the authorize hook, with the volume as the resource, so agent tokens can be scoped to it when [#13](https://github.com/ArnoChenFx/minibox/issues/13) lands. Until then the hook admits the owner. Capabilities (`shareable`, `snapshots`, `quota`, `clone`, `crossHost`) are computed from the backend: every pool is shareable, only NFS is `crossHost`, and the rest are false.
+Mounting a volume needs `volume:attach` on that volume. A read-write mount also needs `volume:write`, and so does creating a volume, including the workspace, home and cache that a new box creates for itself. Changing the pool list needs `pool:admin`, and `volume:write` does not stand in for it. Each check is a separate call to the authorize hook, with the volume as the resource where there is one, so agent tokens can be scoped to them when [#13](https://github.com/ArnoChenFx/minibox/issues/13) lands. Until then the hook admits only the owner, the only principal today, which is also who a browser session acts as. Capabilities (`shareable`, `snapshots`, `quota`, `clone`, `crossHost`) are computed from the backend: every pool is shareable, only NFS is `crossHost`, and the rest are false.
 
 ```bash
 # Make an NFS export the default. Cache stays on local unless you override roles.cache.
@@ -456,11 +456,11 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 | `POST` | `/api/volumes` | Create an independent volume `{ "name", "pool"?, "role"? }`. `201`. A new local volume is chowned to uid 1000 when the base template image exists |
 | `GET` | `/api/volumes/:id` | One volume |
 | `DELETE` | `/api/volumes/:id` | Delete a volume no box mounts. A mounted volume is `409` |
-| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode" }`. Requires `If-Match` of the box. Rebuilds the container. `warning` is `shared_rw` or `null` |
-| `POST` | `/api/volumes/:id/detach` | `{ "box", "path" }`. Requires `If-Match`. Rebuilds the container |
+| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode" }`. Requires `If-Match` of the box. Rebuilds the container. `warning` is `shared_rw` or `null`. Needs `volume:attach`, and also `volume:write` when `mode` is `rw` |
+| `POST` | `/api/volumes/:id/detach` | `{ "box", "path" }`. Requires `If-Match`. Rebuilds the container. Needs `volume:attach` |
 | `POST` | `/api/volumes/:id/usage` | Measure used bytes with a helper container and cache them on the volume |
 | `GET` | `/api/pools?refresh=true` | Pools, role defaults and reachability. An unreachable pool is reported; the list itself does not fail |
-| `PUT` | `/api/pools` | Replace `{ "pools", "roles"? }`. The local pool is restored if omitted |
+| `PUT` | `/api/pools` | Replace `{ "pools", "roles"? }`. The local pool is restored if omitted. Needs `pool:admin` |
 
 A rebuild keeps mounted volumes, the stable id, the box name and the last 20 spec revisions. It drops the writable layer outside volumes, running processes (including tmux) and the container IP. Claim does not rename; the rename to `<LABEL_PREFIX>-<id>` happens on rebuild (decision D6). `secretRef` is stored and not injected. Stage 1 still creates one workspace volume; adding or removing a mount is a rebuild, not a volume pool. A checkpoint before rebuild is not part of this step. The public container id changes; the stable id and the box name do not. Restart policy stays `no`.
 
