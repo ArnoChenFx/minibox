@@ -218,7 +218,7 @@ flowchart LR
 - **`exec` 是一次性命令**：`{cmd | argv, cwd?, env?, timeoutSec?, stdin?, user?, background?}`，返回 `{execId, background, woke, status, exitCode, stdout, stderr, truncated, durationMs, outputRef, timedOut}`，其中 `status` 为 `running`、`exited` 或 `killed`。通过 `exec.inspect()` 取真实退出码；超时或 `exec_kill` 后在箱内终止整个进程树（见下）。
 - **输出上限**：接口内联每个流的头尾各约 16 KiB（合计约 32 KB）。超出部分用 `outputRef` 表示，`GET /api/execs/{execId}/output` 返回保存的窗口（每个流头尾各 64 KiB）。
 - **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, waitMs)` 长轮询（最长 25000 毫秒，不依赖客户端是否支持流式输出）；`exec_kill` 终止进程树。
-- **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。空闲超时与 TTL 仍是 #12，这里只做这一次启动。
+- **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。已到期 TTL 的 Box 不会被启动，返回 `409 box_ttl_expired`。空闲休眠与 TTL 的规则见 [5.10](#510-实现说明12)。
 - **默认用户**：非 root 用户 `dev`。工作目录默认 `/workspace`。
 - **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
 - **并发上限**：后台 exec 每个 Box 最多 8 个，全部 MiniBox 最多 64 个。超限的调用返回 `429`，且不会唤醒已停止的 Box（决策 47）。前台调用不计入。
@@ -330,7 +330,7 @@ Docker 不能给运行中的容器加挂载，所以「挂载共享卷」和「�
 stateDiagram-v2
   [*] --> provisioning
   provisioning --> running
-  running --> stopped: 手动 / 空闲休眠 / 宿主机重启
+  running --> stopped: 手动 / 空闲休眠 / TTL 到期 / 宿主机重启
   stopped --> running: 启动 / 自动唤醒
   running --> provisioning: 重建 / 装工具
   running --> error: 变更失败 / 配置漂移
@@ -354,6 +354,18 @@ stateDiagram-v2
 - **空闲休眠** = 期望状态改为 `stopped`，**不删容器**。`docker stop` 已释放 CPU 和内存，删容器只会多回收可写层磁盘，却丢掉装在可写层里的东西。删除容器仅用于重建与迁移。
 - **预热池**只对默认挂载有效：一旦需要额外挂载、换模板或改环境变量就要重建。
 - 环境变量里的密钥单独存储，**不写进容器标签**。
+
+### 5.10 实现说明（#12）
+
+- **心跳与持有。** `ActivityPulse` 在内存中按稳定的 `boxId` 记录每个 Box 的最近活动（决策 51）。`hold` 是引用计数的持有，有持有时 Box 不会因空闲休眠；释放时刷新心跳，因此空闲从释放时刻起算。
+- **休眠判定。** `LifecycleWatcher.isIdle` 要求：没有持有；没有打开的终端；没有运行中或正在进入的 exec；没有运行中的任务；心跳距今不少于空闲时长；最近的 CPU 采样严格低于 `BOX_IDLE_CPU_PERCENT`。没有 CPU 采样时不休眠。真正休眠前，判定在该 Box 的锁内再做一次（`stillIdle`），因此判定之后到达的请求会让 Box 保持唤醒，人为停止的 Box 不会被当作空闲休眠。
+- **每箱串行化。** 启动、唤醒、停止、休眠、重启与删除都经过 `BoxPower` 的每箱队列，并在锁内重新读取规格。
+- **唤醒。** `ensureRunning`（exec 与会话启动）唤醒任何已停止的 Box；`wakeIfSleeping`（终端 WebSocket 与预览）只唤醒休眠中的 Box，人为停止的 Box 仍返回 `409`（决策 52）。唤醒把期望状态改为 `running`，`revision` 加 1；若原因是 `idle` 或 `ttl`，记入 `box.wake`，`detail` 为 `{boxId, from}`。终端 WebSocket 唤醒后，tmux 会话已随容器停止而消失，附着会以 `session_not_found`（1011）关闭，Box 则保持运行。会话的读取、发送、关闭与列表不唤醒。
+- **TTL。** `ttlEndsAt` 用 `createdAt` 加上 `ttlSec` 得到到期时刻；缺失、非正或无法解析的值视为不限。到期后监视器以原因 `ttl` 停止 Box，不论活动情况，并记入 `box.ttl_expire`。`refuseExpired` 在启动、重启、重建与唤醒中拒绝到期的 Box（决策 53）。协调器遇到期望运行而已到期的 Box，会让它休眠，而不是启动它。
+- **多宿主机。** 终端与预览用 `locateBox` 查找 Box：先看规格归属的宿主机，再依次尝试其余宿主机，只跳过返回 404 的那一台。监视器与 TTL 检查逐台宿主机进行。
+- **任务结束。** `TaskManager` 在任务结束后调用 `onSettled`，服务端据此刷新该 Box 的心跳（决策 54）。
+- **中间帧。** 休眠与唤醒各会先发出一帧中间状态的 `box` 帧（期望状态已变，容器状态尚未刷新），最终状态由随后的帧给出。终端页可能因此闪过一瞬，之后显示正确的状态。
+- **已知限制。** 重建一个因空闲休眠（未到期）的 Box，会先启动容器再停止它。预览的流式响应体在读完或取消之前保持唤醒；上游失败时立即释放。文件接口未实现，其活动未计入（决策 56）。
 
 ---
 
@@ -1147,6 +1159,12 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | 48 | MCP 认证与审计 | `/mcp` 最初只用主访问密钥，文档写明它拥有完全的所有者权限；令牌（#13）实现后，`/mcp` 同时接受 Agent 令牌（见 §9.5）。错误的 Bearer 密钥计入登录限流。审计来源只由服务端决定：REST 与 CLI 记为 `rest`，MCP 记为 `mcp`。「严格」档位的 exec 只允许 `dev` 或 `1000`；其他档位允许 `root`，审计标记 `privileged` |
 | 49 | 存储写入确认 | `create_volume`、`delete_volume`、`replace_pools` 没有 `confirm: true` 时不改动任何内容，返回 `409 confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 沿用重建的确认。`delete_volume` 对已挂载的卷直接返回 `volume_mounted`，不生成预览。`measure_volume` 只刷新缓存的大小，不加确认。确认是防误操作的闸，不是权限；权限仍由 `volume:*` 与 `pool:admin` 决定 |
 | 50 | 存储工具集 | 卷与存储池工具放在非默认的 `storage` 工具集（`/mcp?toolsets=storage`），共 9 个。MCP 错误结果带上 `details`，代理因此能读到 `details.preview`。挂载与卸载经 `rebuildBox`，适用与 `rebuild_box` 相同的记录规则。设计目录中 `storage` 行列出的检查点工具仍未实现 |
+| 51 | 空闲计时的活动来源 | 活动心跳只存在内存中，不写入事件表，因为每次请求都会刷新它。计入：终端的输入、输出与关闭，以及打开中的 WebSocket；exec 从开始到结束；会话的启动、读取与发送；预览的 HTTP 请求、流式响应体与预览 WebSocket；箱内异步任务结束时。读取 Box 记录与统计不计入，否则只被监控页面查看的 Box 永远不会休眠 |
+| 52 | 唤醒的入口分工 | exec 与 `session_start` 唤醒任何已停止的 Box，与 §4.3 一致。终端 WebSocket 与端口预览只唤醒休眠中的 Box：人为停止的 Box 仍返回 `409`，因为人停下它是有意的。会话读取、发送、关闭与列表不唤醒，因为会话随容器结束，唤醒也救不回它们。唤醒审计为 `box.wake` |
+| 53 | TTL 对所有启动入口生效 | 到期的 Box 不能被启动、重启、重建、唤醒、exec、会话、终端或预览再次启动，统一返回 `409 box_ttl_expired`。重建与协调器也在其列：重建会启动新容器，协调器若启动到期的 Box 就绕过了 TTL。到期只停止 Box，不删除容器与卷；清除或延长 TTL 后即可再次启动 |
+| 54 | 任务结束计为活动 | 箱内异步任务运行期间保持 Box 唤醒。任务结束时也刷新心跳，因此空闲窗口从结束时刻起算，而不是从上一次请求起算，长任务刚结束不会立刻休眠 |
+| 55 | 重启后的空闲起点 | 心跳不持久化，重启后没有记录。空闲时长从监视开始时计起，而不是从创建时刻计起，否则一次重启会让所有 Box 同时休眠 |
+| 56 | 文件接口的活动 | 文件接口尚未实现（§4.4），因此它的活动不计入，列为 #9 与 #24 的剩余工作。实现时应把文件读写计入心跳 |
 
 ---
 

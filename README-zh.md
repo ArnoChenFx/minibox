@@ -280,13 +280,22 @@ docker run -d --name minibox --restart unless-stopped \
 
 ## 空闲休眠
 
-Box 可以在空闲时自行停止，并在下一次终端 / exec / 会话请求时唤醒（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。
+Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。
 
-- **休眠**把期望状态改为 `stopped`（原因 `idle`）并执行 `docker stop`，**不删除容器**（工作区卷保留）。
-- **空闲**条件：没有打开的 WebSocket 终端、没有后台 exec、没有针对该 Box 的运行中异步任务、活动心跳超过 N 秒无更新，且 CPU 低于 `BOX_IDLE_CPU_PERCENT`。
-- 活动心跳只存在内存中（不用事件表）。终端、exec、会话与端口预览请求会刷新心跳。
-- **TTL**（创建/更新时的 `ttlSec`）从创建时刻起算；到期后 MiniBox **停止**该 Box（不删除），原因记为 `ttl`。
-- 控制台在因空闲或 TTL 停止时显示「休眠中」，并展示最近活动时间。
+- **休眠**把期望状态改为 `stopped`（原因 `idle`）并执行 `docker stop`，**不删除容器**，工作区卷也保留。
+- **超时。** `BOX_IDLE_TIMEOUT_SEC` 是全局默认值，`0` 关闭空闲休眠。Box 的 `idleTimeoutSec` 可以覆盖它：`0` 表示该 Box 永不休眠，`null` 表示继承默认值。
+- **活动**是每个 Box 在内存中的心跳，不写入事件。以下操作计入：终端的输入、输出与关闭，以及打开的终端；exec 从开始到结束；会话的启动、读取与发送；端口预览请求（包括流式响应），以及预览 WebSocket 直到关闭；Box 上的异步任务结束时。读取 Box 记录或其统计不计入。文件访问在本服务中尚未提供（见 [#9](https://github.com/ArnoChenFx/minibox/issues/9)），因此也不计入。
+- **空闲**指以上都没有进行中，最近一次心跳距今不少于超时时长，且最近的 CPU 采样低于 `BOX_IDLE_CPU_PERCENT`。尚无 CPU 采样的 Box 保持唤醒。
+- **唤醒**取决于请求：
+  - `exec` 会启动任何已停止的 Box，与以前一样。唤醒记入该次 exec 的审计。
+  - `session_start`（REST、MCP 与 CLI）会启动任何已停止的 Box。
+  - 终端 WebSocket 与端口预览只唤醒处于休眠中的 Box。被人停止的 Box 返回 `409`，错误分别为 `terminal_not_running` 与 `preview_box_stopped`。
+  - 读取、发送、关闭或列出会话不会唤醒 Box。会话随容器结束，因此在休眠中的 Box 上打开终端会唤醒它，随后以 `session_not_found` 关闭。
+- **TTL**（创建/更新时的 `ttlSec`）是从创建时刻起算的绝对寿命。到期后 MiniBox **停止**该 Box（不删除），原因记为 `ttl`。已到期的 Box 不会再次启动：启动、重启、重建、exec、会话、终端与预览都会以 `409` 与 `box_ttl_expired` 拒绝。清除 TTL，或用 `PATCH /api/boxes/:id` 设置更晚的 TTL，然后再启动 Box。
+- **重启**不会让所有 Box 同时休眠：没有心跳的 Box 从 MiniBox 开始监视时起算空闲时间，而不是从创建时刻起算。
+- **多宿主机。** 终端与预览会在所有已注册的 Docker 主机上查找 Box，空闲监视也会检查每台主机。
+- 控制台在因空闲停止时显示「休眠中」，因 TTL 停止且已到期时显示「TTL 已到期」，并展示最近活动时间。终端页会说明 Box 未运行的原因，并为休眠中的 Box 提供唤醒按钮。
+- **已知限制。** 对因空闲而休眠（未到期）的 Box 执行重建时，容器会短暂启动后再停止。预览的响应体在读完或取消之前，会让 Box 保持唤醒。
 
 ## 端口预览
 
@@ -638,7 +647,7 @@ minibox mcp
 
 可以贴进 Agent 的 `AGENTS.md` 的中文说明：
 
-- 先 `list_boxes` 或 `create_box`。`exec` 会启动已停止的 Box，这会改变它的版本号（revision）。在发送 `expectedRevision` 的更新之前重新读取版本号。
+- 先 `list_boxes` 或 `create_box`。`exec` 会启动已停止的 Box，这会改变它的版本号（revision）；若该 Box 的 TTL 已到期，`exec` 不会启动它，而是返回 `box_ttl_expired`。在发送 `expectedRevision` 的更新之前重新读取版本号。
 - `argv` 不经过 shell，`cmd` 经 `/bin/sh -c`。默认用户 `dev`，默认目录 `/workspace`。严格 Box 只允许 `dev` 或 `1000` 作为用户。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep`。
 - 把密钥放在 `env` 里，不要放在 `argv` 或 `cmd` 中。审计日志会记录命令与 argv，但从不记录 env 的值。
 - 结果包含 `status`、`exitCode`、`stdout`、`stderr`、`truncated` 与 `durationMs`。非零退出码是程序自己的状态。
