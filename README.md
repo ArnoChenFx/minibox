@@ -299,6 +299,7 @@ A box can stop itself when it has been idle, and it wakes on demand ([#12](https
 - **Hosts.** Terminals and previews find a box on any registered Docker host, and the idle watcher checks every host.
 - The dashboard shows **Sleeping** for a box stopped for idle, and **TTL expired** for one past its TTL, with its last activity time. A terminal tab says why a box is not running, and offers to wake a sleeping one.
 - **Known limits.** Rebuilding a box that is asleep for idle (not expired) starts the container briefly and stops it again. A preview response keeps the box awake until it is read to the end or cancelled.
+  - **Detached sessions.** A session with no terminal attached does not keep its box awake. After the timeout with no session request, a quiet job in it ends when the box sleeps. Keep a terminal open, or run the job as a background exec, which counts as activity until it ends.
 
 
 ## Port preview
