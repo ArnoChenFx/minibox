@@ -262,6 +262,7 @@ export class FakeRuntime implements Runtime {
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
   private readonly interrupts = new Set<(error: RuntimeError) => void>();
   private execCount = 0;
+  private eventSeq = 0;
   /** The tmux server of each container. A `tmux` exec runs against it, and a box that stops loses it. */
   readonly tmux = new FakeTmux();
   /** When true, `tmux` is not installed: its commands exit 127, as a shell reports a missing program. */
@@ -391,12 +392,14 @@ export class FakeRuntime implements Runtime {
 
   /** The event the engine sends after a container change. Attributes carry the labels, as Docker's do. */
   private announce(action: string, c: FakeContainer): void {
+    this.eventSeq += 1;
     this.emitEvent({
       type: "container",
       action,
       id: c.id,
       attributes: { ...c.labels, name: c.name, image: c.spec.image },
       time: now(),
+      timeNano: Date.now() * 1_000_000 + this.eventSeq,
     });
   }
 

@@ -1,5 +1,4 @@
 import type { HostCtx, HostRegistry } from "../host/registry";
-import { log } from "../lib/logger";
 import { OWNER } from "../operations/types";
 import type { RuntimeEvent } from "../runtime";
 import type { RecordNote } from "./terminals";
@@ -11,59 +10,29 @@ const RECORDED: Readonly<Record<string, { readonly op: string; readonly summary:
   oom: { op: "container.oom", summary: "Container ran out of memory" },
 };
 
-export interface ContainerWatchOptions {
-  readonly retryMinMs?: number;
-  readonly retryMaxMs?: number;
-}
-
 /**
- * Turns the engine's events for MiniBox boxes into `container.*` activity. The stream is the engine's, so it also shows
- * what MiniBox did not ask for: a restart policy starting a box again, or the kernel killing it for memory. Events that
- * happen while the stream is down are not replayed.
+ * Turns the engine's events for MiniBox boxes into `container.*` activity. The events are the host sampler's, so each
+ * host keeps one engine subscription for the cache and for this watch alike. What MiniBox did not ask for is shown too:
+ * a restart policy starting a box again, or the kernel killing it for memory. The sampler delivers an event once, even
+ * when the engine replays it after a reconnect, so each change is recorded once.
  */
 export class ContainerWatch {
-  private controller: AbortController | null = null;
-  private readonly retryMinMs: number;
-  private readonly retryMaxMs: number;
+  private readonly unsubscribes: (() => void)[] = [];
 
   constructor(
     private readonly hosts: HostRegistry,
     private readonly record: RecordNote,
-    options: ContainerWatchOptions = {},
-  ) {
-    this.retryMinMs = options.retryMinMs ?? 1_000;
-    this.retryMaxMs = options.retryMaxMs ?? 30_000;
-  }
+  ) {}
 
   start(): void {
-    if (this.controller) return;
-    const controller = new AbortController();
-    this.controller = controller;
-    for (const host of this.hosts.list()) void this.follow(host, controller.signal);
+    if (this.unsubscribes.length > 0) return;
+    for (const host of this.hosts.list()) {
+      this.unsubscribes.push(host.sampler.subscribeEvents((event) => this.observe(host, event)));
+    }
   }
 
   stop(): void {
-    this.controller?.abort();
-    this.controller = null;
-  }
-
-  private async follow(host: HostCtx, signal: AbortSignal): Promise<void> {
-    let delay = this.retryMinMs;
-    while (!signal.aborted) {
-      try {
-        const events = host.runtime.events({ labels: { [host.keys.box]: "true" }, types: ["container"] }, signal);
-        for await (const event of events) {
-          delay = this.retryMinMs;
-          this.observe(host, event);
-        }
-      } catch (e) {
-        if (signal.aborted) return;
-        log.warn("container.watch_failed", { host: host.host.id, error: String(e), retryMs: delay });
-      }
-      if (signal.aborted) return;
-      await sleep(delay, signal);
-      delay = Math.min(delay * 2, this.retryMaxMs);
-    }
+    for (const unsubscribe of this.unsubscribes.splice(0)) unsubscribe();
   }
 
   private observe(host: HostCtx, event: RuntimeEvent): void {
@@ -78,16 +47,4 @@ export class ContainerWatch {
       target: { kind: "box", id: event.id, name },
     });
   }
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(done, ms);
-    function done(): void {
-      signal.removeEventListener("abort", done);
-      clearTimeout(timer);
-      resolve();
-    }
-    signal.addEventListener("abort", done, { once: true });
-  });
 }

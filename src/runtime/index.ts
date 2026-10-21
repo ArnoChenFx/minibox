@@ -254,6 +254,8 @@ export interface RuntimeEvent {
   id: string;
   attributes: Record<string, string>;
   time: string;
+  /** The engine's clock in nanoseconds. It tells an event the engine replays from a new one of the same action. */
+  timeNano: number;
 }
 
 export interface RuntimeInfo {

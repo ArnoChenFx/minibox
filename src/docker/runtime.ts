@@ -391,6 +391,7 @@ interface EngineEvent {
   Action: string;
   Actor: { ID: string; Attributes?: Record<string, string> };
   time: number;
+  timeNano?: number;
 }
 
 /**
@@ -415,6 +416,7 @@ async function* readEvents(stream: Readable, signal?: AbortSignal): AsyncGenerat
         id: ev.Actor.ID,
         attributes: ev.Actor.Attributes ?? {},
         time: new Date(ev.time * 1000).toISOString(),
+        timeNano: ev.timeNano ?? ev.time * 1_000_000_000,
       };
     }
   } finally {

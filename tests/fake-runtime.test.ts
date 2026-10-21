@@ -111,9 +111,9 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
       return "ended";
     })();
 
-    rt.emitEvent({ type: "container", action: "start", id: "a", attributes: labels, time: "t" });
-    rt.emitEvent({ type: "container", action: "stop", id: "b", attributes: {}, time: "t" });
-    rt.emitEvent({ type: "container", action: "die", id: "c", attributes: labels, time: "t" });
+    rt.emitEvent({ type: "container", action: "start", id: "a", attributes: labels, time: "t", timeNano: 1 });
+    rt.emitEvent({ type: "container", action: "stop", id: "b", attributes: {}, time: "t", timeNano: 2 });
+    rt.emitEvent({ type: "container", action: "die", id: "c", attributes: labels, time: "t", timeNano: 3 });
     await Bun.sleep(10);
     controller.abort();
 

@@ -39,6 +39,10 @@ const IDLE_INTERVAL_MS = 30_000;
 export const DEMAND_LEASE_MS = 5 * 60_000;
 /** A sample older than this is not reported. The idle cadence sits well inside it, so a leased sampler keeps it current. */
 const STALE_AFTER_MS = 60_000;
+/** How long a delivered event is remembered, so a replay of it after a reconnect is not delivered again. */
+const EVENT_MEMORY_MS = 60_000;
+/** Remembered events above this count are swept of the expired ones before a new one is remembered. */
+const EVENT_MEMORY_SWEEP = 1024;
 /** How often the containers are listed again, so a change the event stream never reported is caught up. */
 const RELIST_MS = 60_000;
 /** Longest a re-list waits for the engine's listing. A listing that is still pending past this is given up. */
@@ -177,6 +181,11 @@ export class HostSampler {
   private roundEndedAt = 0;
   /** Sampling is wanted until this time while no live subscriber watches. See `need`. */
   private needUntil = 0;
+  private readonly listeners = new Set<(event: RuntimeEvent) => void>();
+  /** The events delivered lately, by identity, with the time each one is remembered until. See `claim`. */
+  private readonly delivered = new Map<string, number>();
+  /** The second of the newest event delivered, so a new subscription resumes from there. Zero before any event. */
+  private cursor = 0;
   /** The round queued or running now, so the callers that ask meanwhile share it. */
   private pendingRound: Promise<void> | null = null;
   /** Ends the sample loop's current wait early, so it reads the cadence and the expedite flag again. */
@@ -225,6 +234,8 @@ export class HostSampler {
     this.expedited = false;
     this.needUntil = 0;
     this.roundEndedAt = 0;
+    this.delivered.clear();
+    this.cursor = 0;
     this.dirty.clear();
     this.stale.clear();
     this.containers.clear();
@@ -258,6 +269,17 @@ export class HostSampler {
       rounds = this.rounds;
       await Promise.all([queue, rounds]);
     } while (queue !== this.queue || rounds !== this.rounds);
+  }
+
+  /**
+   * Calls `listener` with each container event of this host, once, while the sampler runs. The events it sees are the
+   * ones the cache takes in, so a replay after a reconnect reaches it only the first time. Returns the way to stop.
+   */
+  subscribeEvents(listener: (event: RuntimeEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   /** The boxes the cache holds, projected as the list endpoint shows them, sorted by name. */
@@ -388,10 +410,12 @@ export class HostSampler {
     parent.addEventListener("abort", end, { once: true });
     let relist: ReturnType<typeof setInterval> | undefined;
     try {
-      // `since` makes the engine replay what it recorded from a second before, which covers the moment the subscription
-      // is still being established, so no change can fall between the subscription and the listing.
+      // `since` makes the engine replay what it recorded from the newest event delivered, or from a second before the
+      // first subscription. Each event is taken once (see `claim`), so the replay covers any change that fell between
+      // two subscriptions, and no change can fall between the subscription and the listing.
+      const since = this.cursor > 0 ? this.cursor : Math.floor(Date.now() / 1000) - 1;
       const events = host.runtime.events(
-        { labels: { [host.keys.box]: "true" }, types: ["container"], since: Math.floor(Date.now() / 1000) - 1 },
+        { labels: { [host.keys.box]: "true" }, types: ["container"], since },
         ctl.signal,
       );
       const streamed = this.consume(events);
@@ -415,11 +439,40 @@ export class HostSampler {
   }
 
   private onEvent(event: RuntimeEvent): void {
+    if (!this.claim(event)) return;
+    this.fanOut(event);
     const verb = event.action.split(":")[0]?.trim() ?? "";
     if (verb === "destroy") this.markDirty(event.id, "remove");
     else if (STATE_VERBS.has(verb)) this.markDirty(event.id, "refresh");
     else return;
     this.schedule();
+  }
+
+  /**
+   * Takes an event the first time it arrives. The engine replays events from the cursor after a reconnect, and an event
+   * already taken must not reach the cache or a listener twice. Returns false for a replay.
+   */
+  private claim(event: RuntimeEvent): boolean {
+    const now = Date.now();
+    const key = `${event.id}\n${event.action}\n${event.timeNano}`;
+    const until = this.delivered.get(key);
+    if (until !== undefined && until > now) return false;
+    if (this.delivered.size >= EVENT_MEMORY_SWEEP) {
+      for (const [seen, expires] of this.delivered) if (expires <= now) this.delivered.delete(seen);
+    }
+    this.delivered.set(key, now + EVENT_MEMORY_MS);
+    this.cursor = Math.max(this.cursor, Math.floor(event.timeNano / 1_000_000_000));
+    return true;
+  }
+
+  private fanOut(event: RuntimeEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (e) {
+        log.error("sampler.listener_failed", { host: this.currentHost().host.id, error: errorText(e) });
+      }
+    }
   }
 
   /** A removal outranks a refresh that was queued for the same container. */
