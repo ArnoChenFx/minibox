@@ -41,6 +41,7 @@ export function detectDrift(spec: BoxSpec, info: ContainerInfo): BoxDrift[] {
   push("image", spec.template.image, info.image);
   if (spec.template.digest) push("digest", spec.template.digest, info.imageId);
   push("mounts", canon(fromSpec(spec.mounts)), canon(fromInspect(info.mounts)));
+  push("network", spec.network, info.network);
   push("containerName", spec.containerName, info.name);
   return drift;
 }

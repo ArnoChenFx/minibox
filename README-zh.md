@@ -382,8 +382,9 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `GET` | `/api/boxes?stats=false` | 列表；除非 `stats=false`，否则附带运行中 Box 的实时占用 |
 | `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB |
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
-| `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。模板、挂载、环境变量和安全档位在重建实现前会被忽略 |
+| `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除；可选同时删除工作区数据卷 |
+| `POST` | `/api/boxes/:id/rebuild` | 重建 `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`。必须带 `If-Match`。未带 `confirm: true` 时返回 `409 confirmation_required`，`error.details.preview` 包含可写层的 docker diff 和计划变更。确认后创建新容器、换上并删除旧容器；失败则恢复旧容器和上一版规格。容器名改为 `<LABEL_PREFIX>-<id>` |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作。启动和停止会记下期望状态 |
 | `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"?, "pids"? }`。必须带 `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | 实时占用 |
@@ -392,6 +393,8 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket 终端；发送 `{"type":"resize","cols":N,"rows":N}` 调整窗口，其余消息作为输入 |
 
 `:id` 可以是容器 ID、容器名（`minibox-<名称>`）、稳定 ID（`bx_…`）或 Box 名称。会改动 Box 的请求必须带 `If-Match`，值为当前版本号（纯数字、带引号的实体标签，或弱标签）。缺少该头返回 `428 precondition_required`；版本过期返回 `412 precondition_failed`。限制：CPU 0.1–64 核，内存 128–262144 MB，进程数 1–1000000，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
+
+重建会保留已挂载的卷、稳定 ID、Box 名称和最近 20 个规格版本。未写入卷的可写层、运行中的进程（包括 tmux）和容器 IP 会丢失。认领不改名；改成 `<LABEL_PREFIX>-<id>` 发生在重建时（决策 D6）。`secretRef` 只存储、不注入。第一阶段创建时仍只有一个工作区卷；增删挂载属于重建，不是卷池。重建前的检查点不在这一步。对外的容器 ID 会变，稳定 ID 和 Box 名称不变。重启策略保持 `no`。
 
 ### 快照与模板
 
@@ -465,8 +468,8 @@ minibox/
 │   ├── static.ts            # 静态文件服务（防目录穿越）
 │   ├── runtime/             # Runtime 接口与 RuntimeError（引擎边界）
 │   ├── docker/              # Docker 适配器（唯一使用 dockerode）：runtime / errors / logs / stats
-│   ├── specs/               # Box 规格存储、认领、漂移与 If-Match 版本号
-│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / images / snapshots / templates / reconcile
+│   ├── specs/               # Box 规格存储、认领、漂移、历史与重建计划
+│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / rebuild / images / snapshots / templates / reconcile
 │   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostMonitor 采样
 │   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、范围钩子
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
@@ -578,7 +581,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 - [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) 基础模板：非 root 用户 `dev`、tmux、挂载点约定
 - [x] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」「严格」「宽松」三个安全档位，出站策略与磁盘配额暂缓
-- [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
+- [x] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与 TTL

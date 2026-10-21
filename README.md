@@ -382,8 +382,9 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 | `GET` | `/api/boxes?stats=false` | List boxes; live usage of running boxes is included unless `stats=false` |
 | `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB |
 | `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
-| `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. Template, mounts, env and profile are ignored until rebuild |
+| `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. `template`, `mounts`, `env`, `network` and `profile` are not applied in place: a difference returns `409 confirmation_required` with a preview and leaves the in-place fields unchanged |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete; optionally delete the workspace volume too |
+| `POST` | `/api/boxes/:id/rebuild` | Rebuild `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`. Requires `If-Match`. Without `confirm: true`, `409 confirmation_required` and `error.details.preview` (docker diff of the writable layer and the planned changes). With `confirm: true`, creates the new container, swaps it in, and deletes the old one; failure restores the old container and the previous spec revision. Renames the container to `<LABEL_PREFIX>-<id>` |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions. Start and stop record the desired state |
 | `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"?, "pids"? }`. Requires `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | Live usage |
@@ -392,6 +393,8 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket terminal. Send `{"type":"resize","cols":N,"rows":N}` to resize; any other message is stdin |
 
 `:id` is a container id, a container name (`minibox-<name>`), a stable box id (`bx_…`), or the box name. Updates that change a box require `If-Match` set to its current revision (a bare number, a quoted tag, or a weak tag). A missing header is `428 precondition_required`; a stale revision is `412 precondition_failed`. Limits: CPU 0.1–64, memory 128–262144 MB, process limit 1–1000000, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
+
+A rebuild keeps mounted volumes, the stable id, the box name and the last 20 spec revisions. It drops the writable layer outside volumes, running processes (including tmux) and the container IP. Claim does not rename; the rename to `<LABEL_PREFIX>-<id>` happens on rebuild (decision D6). `secretRef` is stored and not injected. Stage 1 still creates one workspace volume; adding or removing a mount is a rebuild, not a volume pool. A checkpoint before rebuild is not part of this step. The public container id changes; the stable id and the box name do not. Restart policy stays `no`.
 
 ### Snapshots & templates
 
@@ -465,8 +468,8 @@ minibox/
 │   ├── static.ts            # Static file serving (path-traversal safe)
 │   ├── runtime/             # Runtime interface and RuntimeError (the engine seam)
 │   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats
-│   ├── specs/               # Box spec store, claim, drift and If-Match revisions
-│   ├── services/            # Business logic on Runtime: boxes / images / snapshots / templates / reconcile
+│   ├── specs/               # Box spec store, claim, drift, history and rebuild plan
+│   ├── services/            # Business logic on Runtime: boxes / rebuild / images / snapshots / templates / reconcile
 │   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
 │   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, scope hook
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
@@ -578,7 +581,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 
 - [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) Base template: non-root `dev` user, tmux and mount-point conventions
 - [x] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box hardening with `standard`, `strict` and `relaxed` security profiles; outbound filtering and disk quotas are deferred
-- [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
+- [x] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and TTL

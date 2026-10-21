@@ -15,6 +15,12 @@ export const BoxMountSchema = z.object({
   mode: z.enum(["rw", "ro"]),
 });
 
+export const BoxEnvSchema = z.object({
+  name: z.string(),
+  value: z.string().optional(),
+  secretRef: z.string().optional(),
+});
+
 export const BoxDriftSchema = z.object({
   field: z.string(),
   expected: z.string(),
@@ -57,6 +63,8 @@ export const BoxSchema = z.object({
   drift: z.array(BoxDriftSchema),
   recovery: BoxRecoverySchema.nullable(),
   mounts: z.array(BoxMountSchema),
+  /** Plain values and secret references. A secret reference is stored and not injected. */
+  env: z.array(BoxEnvSchema),
 });
 
 export const BoxWithStatsSchema = BoxSchema.extend({

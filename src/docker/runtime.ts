@@ -6,6 +6,7 @@ import Docker from "dockerode";
 import { stripSlash } from "../labels";
 import {
   type CommitSpec,
+  type ContainerChange,
   type ContainerHardening,
   type ContainerInfo,
   type ContainerMount,
@@ -100,7 +101,9 @@ function applyHardening(hostConfig: Docker.HostConfig, hardening: ContainerHarde
 /** Only set the keys that are present: dockerode serialises `undefined` as an empty query parameter. */
 export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCreateOptions {
   const hostConfig: Docker.HostConfig = {};
-  if (spec.mounts) hostConfig.Binds = spec.mounts.map((m) => `${m.source}:${m.target}`);
+  if (spec.mounts) {
+    hostConfig.Binds = spec.mounts.map((m) => `${m.source}:${m.target}${m.mode === "ro" ? ":ro" : ""}`);
+  }
   if (spec.restart) hostConfig.RestartPolicy = { Name: spec.restart };
   if (spec.cpus !== undefined) hostConfig.NanoCpus = Math.round(spec.cpus * NANO_CPUS_PER_CPU);
   if (spec.memoryBytes !== undefined) hostConfig.Memory = spec.memoryBytes;
@@ -115,6 +118,7 @@ export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCrea
   if (spec.workingDir !== undefined) opts.WorkingDir = spec.workingDir;
   if (spec.hostname !== undefined) opts.Hostname = spec.hostname;
   if (spec.labels !== undefined) opts.Labels = spec.labels;
+  if (spec.env !== undefined) opts.Env = spec.env;
   if (Object.keys(hostConfig).length > 0) opts.HostConfig = hostConfig;
   return opts;
 }
@@ -136,6 +140,13 @@ function toCommitOptions(spec: CommitSpec): Record<string, unknown> {
   if (spec.author !== undefined) opts.author = spec.author;
   if (spec.pause !== undefined) opts.pause = spec.pause;
   return opts;
+}
+
+/** Docker kind 0 is a modification, 1 an addition and 2 a deletion. Anything else is reported as modified. */
+function toChange(change: { Path?: string; Kind?: number }): ContainerChange[] {
+  if (!change.Path) return [];
+  const kind = change.Kind === 1 ? "added" : change.Kind === 2 ? "deleted" : "modified";
+  return [{ path: change.Path, kind }];
 }
 
 export function toUpdateOptions(limits: ContainerUpdate): Record<string, unknown> {
@@ -280,6 +291,13 @@ export function createDockerRuntime(socketPath: string): Runtime {
     async containerLogs(id, { tail, timestamps }) {
       const out = await call(() => docker.getContainer(id).logs({ stdout: true, stderr: true, tail, timestamps }));
       return demuxLogs(Buffer.isBuffer(out) ? out : Buffer.from(String(out)));
+    },
+
+    async containerDiff(id) {
+      const changes = (await call(() => docker.getContainer(id).changes())) as
+        | { Path?: string; Kind?: number }[]
+        | null;
+      return changes ? changes.flatMap(toChange) : [];
     },
 
     async containerStats(id) {

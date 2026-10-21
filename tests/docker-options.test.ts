@@ -12,6 +12,23 @@ describe("toCreateOptions", () => {
     expect(toCreateOptions(base)).toEqual({ Image: "img:1" });
   });
 
+  test("env is passed through and a read-only mount appends :ro", () => {
+    expect(
+      toCreateOptions({
+        ...base,
+        env: ["FOO=bar"],
+        mounts: [
+          { source: "vol", target: "/data", mode: "ro" },
+          { source: "ws", target: "/workspace", mode: "rw" },
+        ],
+      }),
+    ).toEqual({
+      Image: "img:1",
+      Env: ["FOO=bar"],
+      HostConfig: { Binds: ["vol:/data:ro", "ws:/workspace"] },
+    });
+  });
+
   test("a network becomes NetworkMode", () => {
     expect(toCreateOptions({ ...base, network: "minibox-boxes" })).toEqual({
       Image: "img:1",

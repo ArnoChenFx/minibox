@@ -4,6 +4,7 @@ import { Duplex, Readable } from "node:stream";
 import {
   type BuildSpec,
   type CommitSpec,
+  type ContainerChange,
   type ContainerInfo,
   type ContainerStats,
   type ContainerUpdate,
@@ -43,6 +44,8 @@ export interface FakeContainer {
   /** Engine restart policy. Updates can set values create does not offer, such as `always`. */
   restart: string;
   logs: string;
+  /** Writable-layer changes returned by `containerDiff`. Empty unless a test seeds them. */
+  diff: ContainerChange[];
   /** ID of the network the container's endpoint points at. Null until the container first starts, as in the engine. */
   networkId: string | null;
 }
@@ -138,7 +141,11 @@ function toInfo(c: FakeContainer): ContainerInfo {
     memoryBytes: c.memoryBytes,
     pidsLimit: c.pidsLimit,
     restart: c.restart,
-    mounts: (c.spec.mounts ?? []).map((mount) => ({ source: mount.source, target: mount.target, mode: "rw" as const })),
+    mounts: (c.spec.mounts ?? []).map((mount) => ({
+      source: mount.source,
+      target: mount.target,
+      mode: mount.mode === "ro" ? ("ro" as const) : ("rw" as const),
+    })),
     network: c.spec.network ?? DEFAULT_NETWORK,
   };
 }
@@ -207,6 +214,11 @@ export class FakeRuntime implements Runtime {
       const inUse = [...this.containers.values()].some((c) => c.running && c.spec.network === name);
       if (!inUse) this.networks.delete(name);
     }
+  }
+
+  /** Writable-layer changes the next `containerDiff` returns. Seeding does not record a call. */
+  seedDiff(id: string, changes: ContainerChange[]): void {
+    this.getContainer(id).diff = changes.map((change) => ({ ...change }));
   }
 
   /** `null` limits model a box created without them (unlimited). */
@@ -301,6 +313,7 @@ export class FakeRuntime implements Runtime {
       pidsLimit: spec.hardening?.pidsLimit ?? null,
       restart: spec.restart ?? "no",
       logs: "",
+      diff: [],
       networkId: running ? this.networkIdOf(spec.network) : null,
     };
     this.containers.set(c.id, c);
@@ -395,6 +408,11 @@ export class FakeRuntime implements Runtime {
     if (limits.swapBytes !== undefined) c.swapBytes = limits.swapBytes;
     if (limits.pidsLimit !== undefined) c.pidsLimit = limits.pidsLimit;
     if (limits.restart !== undefined) c.restart = limits.restart;
+  }
+
+  async containerDiff(id: string): Promise<ContainerChange[]> {
+    this.enter("containerDiff", [id]);
+    return this.getContainer(id).diff.map((change) => ({ ...change }));
   }
 
   async containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string> {

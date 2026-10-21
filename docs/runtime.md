@@ -23,7 +23,7 @@
 `Runtime` 覆盖 MiniBox 需要的全部引擎能力：
 
 - 连通性：`ping`、`info`
-- 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`
+- 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerDiff`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`
 - exec：`startExec` 返回带 TTY 的会话，包含 `stream`、`resize()` 与 `inspect()`
 - 事件：`events`，按标签与类型过滤；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
@@ -40,6 +40,8 @@
 - 创建同名容器返回 `conflict`。调用方不先查询再创建，重名由引擎判定。
 - 提交容器时，容器标签与 `LABEL` 指令合并，指令优先。
 - `containerLogs` 返回去掉流帧头后的文本。
+- `containerDiff` 返回可写层变更。引擎的 `null`（没有变更）变成空列表。`added` 对应 kind 1，`deleted` 对应 kind 2，其余记为 `modified`。
+- `createContainer` 的 `env` 是 `NAME=value`，由引擎合并到镜像环境变量之上。挂载 `mode: "ro"` 会在绑定后追加 `:ro`；可写挂载不追加模式。
 - `listContainers` 跳过在列出与检查之间消失的容器。
 - `createContainer` 的 `hardening`（能力、`no-new-privileges`、进程数上限、ulimit、运行时）只覆盖请求中出现的字段，其余保持引擎默认值。
 - `ensureBridgeNetwork(name, { interContainerComm })` 在网络不存在时创建桥接网络。同名网络已存在但不是桥接网络，或容器间通信的设置不同，返回 `conflict`。

@@ -202,6 +202,32 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "containerDiff lists a file written in the writable layer",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-diff`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+      });
+      expect(await runtime.containerDiff(id)).toEqual([]);
+      await runtime.startContainer(id);
+      try {
+        const exec = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo hi > /tmp/mb-diff"],
+          env: [],
+          workingDir: "/",
+        });
+        await waitUntil(async () => !(await exec.inspect()).running, "the diff command to finish");
+        expect(await runtime.containerDiff(id)).toContainEqual({ path: "/tmp/mb-diff", kind: "added" });
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "exec runs under a TTY, accepts resize and reports the exit code",
     async () => {
       const { id } = await runtime.createContainer({

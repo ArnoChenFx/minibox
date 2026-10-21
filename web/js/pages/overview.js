@@ -15,6 +15,7 @@ const ACTION_ICON = {
   "box.stop": "stop",
   "box.restart": "restart",
   "box.resources": "sliders",
+  "box.rebuild": "refresh",
   "snapshot.create": "camera",
   "snapshot.delete": "trash",
   "template.promote": "upload",

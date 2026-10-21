@@ -54,6 +54,7 @@ describe("spec storage", () => {
     expect(box.recovery).toBeNull();
     expect(box.drift).toEqual([]);
     expect(box.mounts).toEqual([{ volume: "mbtest-ws-alpha", path: "/workspace", mode: "rw" }]);
+    expect(box.env).toEqual([]);
     expect(mode(host.specs.dir())).toBe(0o700);
     expect(mode(host.specs.pathFor(box.boxId))).toBe(0o600);
     expect(readdirSync(host.specs.dir()).some((name) => name.endsWith(".tmp"))).toBe(false);
@@ -192,6 +193,10 @@ describe("in-place updates", () => {
     expect(container?.name).toBe("mbtest-beta");
     expect(container?.spec.hostname).toBe("alpha");
     expect(labels[keys.name]).toBe("alpha");
+    const history = host.specs.read(box.boxId)?.history;
+    expect(history).toHaveLength(1);
+    expect(history?.[0]).toMatchObject({ revision: box.revision, spec: { name: "alpha" } });
+    expect(history?.[0]?.spec).not.toHaveProperty("history");
   });
 
   test("an idle timeout stays in the spec and does not call docker update", async () => {
@@ -229,19 +234,26 @@ describe("in-place updates", () => {
         error: { code: "precondition_required", key: "revision_required" },
       });
 
+      runtime.seedImage("other:1");
       const quoted = await fetch(`${base}/api/boxes/${box.id}`, {
         method: "PATCH",
         headers: { ...headers, "if-match": `W/"${box.revision}"` },
         body: JSON.stringify({ labels: { team: "lab" }, template: "other:1" }),
       });
-      expect(quoted.status).toBe(200);
-      const body = (await quoted.json()) as {
-        box: { revision: number; labels: Record<string, string>; image: string };
-      };
-      expect(body.box.labels).toEqual({ team: "lab" });
-      expect(body.box.image).toBe(host.baseTemplateTag);
-      expect(runtime.containers.get(box.id)?.labels[keys.template]).toBe(host.baseTemplateTag);
+      expect(quoted.status).toBe(409);
+      const denied = (await quoted.json()) as { error: { code: string; details?: { preview?: unknown } } };
+      expect(denied.error.code).toBe("confirmation_required");
+      expect(denied.error.details?.preview).toBeTruthy();
+      expect(runtime.callsTo("containerDiff").length).toBeGreaterThan(0);
+      expect(host.specs.read(box.boxId)?.labels).toEqual({});
       expect(runtime.containers.get(box.id)?.spec.image).toBe(host.baseTemplateTag);
+
+      const applied = await fetch(`${base}/api/boxes/${box.id}`, {
+        method: "PATCH",
+        headers: { ...headers, "if-match": String(box.revision) },
+        body: JSON.stringify({ labels: { team: "lab" } }),
+      });
+      expect(applied.status).toBe(200);
 
       const again = await fetch(`${base}/api/boxes/${box.id}/resources`, {
         method: "PATCH",
@@ -286,15 +298,20 @@ describe("drift and the reconciler", () => {
     const container = runtime.containers.get(box.id);
     if (!container) throw new Error("box missing");
     container.cpus = 3;
+    container.spec = { ...container.spec, network: "bridge" };
 
     const drifted = await boxes.getBox(host, box.id);
     expect(drifted.drift).toContainEqual({ field: "cpus", expected: "1", actual: "3" });
+    expect(drifted.drift).toContainEqual({ field: "network", expected: host.security.network, actual: "bridge" });
 
     const report = await reconcileHost(host);
     expect(report.started).toEqual([]);
     expect(report.stopped).toEqual([]);
     expect(runtime.containers.get(box.id)?.cpus).toBe(3);
-    expect((await boxes.getBox(host, box.id)).drift.map((item) => item.field)).toContain("cpus");
+    expect(runtime.containers.get(box.id)?.spec.network).toBe("bridge");
+    expect((await boxes.getBox(host, box.id)).drift.map((item) => item.field)).toEqual(
+      expect.arrayContaining(["cpus", "network"]),
+    );
   });
 
   test("a desired-running box is started and a desired-stopped box is stopped, without a revision bump", async () => {
