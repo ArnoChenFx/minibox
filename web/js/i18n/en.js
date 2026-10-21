@@ -207,6 +207,8 @@ export default {
     "Boxes from the base template include tmux. Rebuild the box from it, or install tmux inside the box.",
   "err.session_tmux_failed": "tmux failed: {detail}",
   "err.session_tmux_timeout": "tmux did not finish within {max} seconds.",
+  "err.session_viewer_tmux_old": "Read-only viewers need tmux 3.2 or later, and this box has tmux {version}.",
+  "err.session_viewer_tmux_old_hint": "Rebuild the box from the base template, or install tmux 3.2 or later inside it.",
   "err.session_box_limit": "This box already has {max} sessions.",
   "err.session_box_limit_hint": "Close a session you no longer need, then try again.",
   "err.session_attach_limit": "This session already has {max} terminals open.",

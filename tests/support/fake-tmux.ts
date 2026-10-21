@@ -98,11 +98,14 @@ function ok(stdout = ""): TmuxRun {
 export class FakeTmux {
   private readonly servers = new Map<string, Map<string, FakeSession>>();
   private nextSessionId = 0;
+  /** The number `tmux -V` reports. Tests set an older one to check that viewers are refused on it. */
+  version = "3.4";
 
   /** Runs `tmux <args>` inside container `containerId`. A leading `-u` is accepted and ignored. */
   run(containerId: string, argv: readonly string[]): TmuxRun {
     const args = argv[0] === "-u" ? argv.slice(1) : argv;
     const [command = "", ...rest] = args;
+    if (command === "-V") return ok(`tmux ${this.version}\n`);
     const sessions = this.servers.get(containerId);
     const parsed = parseArgs(command, rest);
     if (command === "new-session") return this.newSession(containerId, parsed);

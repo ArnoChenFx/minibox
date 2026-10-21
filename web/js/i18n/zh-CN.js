@@ -188,6 +188,8 @@ export default {
   "err.session_tmux_missing_hint": "基础模板已预装 tmux。请用它重建 Box，或在 Box 内安装 tmux。",
   "err.session_tmux_failed": "tmux 执行失败：{detail}",
   "err.session_tmux_timeout": "tmux 在 {max} 秒内没有完成。",
+  "err.session_viewer_tmux_old": "只读查看需要 tmux 3.2 或更高版本，该 Box 中的 tmux 为 {version}。",
+  "err.session_viewer_tmux_old_hint": "请基于基础模板重建 Box，或在 Box 内安装 tmux 3.2 或更高版本。",
   "err.session_box_limit": "该 Box 已有 {max} 个会话。",
   "err.session_box_limit_hint": "关闭不再需要的会话，然后重试。",
   "err.session_attach_limit": "该会话已打开 {max} 个终端。",

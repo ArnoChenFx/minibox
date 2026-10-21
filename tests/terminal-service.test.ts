@@ -699,6 +699,44 @@ describe("terminal service: attachments", () => {
     await other.close();
     for (const attachment of held) await attachment.close();
   });
+
+  test("a viewer is refused on tmux older than 3.2 and told the version, while the console still attaches", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "mine", "ui");
+    env.runtime.tmux.version = "3.1c";
+    const attachCommands = () =>
+      env.runtime
+        .callsTo("startExec")
+        .map((call) => (call.args[1] as { cmd: string[] }).cmd)
+        .filter((cmd) => cmd.includes("attach-session"));
+
+    const refused = await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "rest" }));
+    expect(refused).toMatchObject({
+      status: 409,
+      code: "conflict",
+      key: "session_viewer_tmux_old",
+      params: { version: "3.1c" },
+    });
+    expect((refused as AppError).hintKey).toBe("session_viewer_tmux_old_hint");
+    expect(attachCommands()).toEqual([]);
+
+    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui" });
+    expect(attachCommands()).toEqual([["tmux", "-u", "attach-session", "-t", "=mine"]]);
+    expect(await human.exec.inspect()).toMatchObject({ running: true });
+    await human.close();
+  });
+
+  test("a version tmux does not number is not refused, so the attach itself decides", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "mine", "ui");
+    env.runtime.tmux.version = "master";
+
+    const viewer = await env.terminals.attach(env.host, box, "mine", { source: "rest" });
+    expect(await viewer.exec.inspect()).toMatchObject({ running: true });
+    await viewer.close();
+  });
 });
 
 describe("terminal service: output and history", () => {

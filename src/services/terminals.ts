@@ -9,6 +9,7 @@ import { log } from "../lib/logger";
 import { type Msg, msg } from "../lib/messages";
 import type { ExecSession } from "../runtime";
 import {
+  acceptsIgnoreSize,
   appendedLines,
   classifyTmuxFailure,
   hexBytes,
@@ -20,6 +21,7 @@ import {
   paneTarget,
   parseProbe,
   parseSessionList,
+  parseTmuxVersion,
   type SessionIdentity,
   type SessionOrigin,
   sessionTarget,
@@ -388,6 +390,7 @@ export class TerminalService {
     if (!box.running) throw this.stopped(box.id);
     const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
     const kind = kindOf(options.source);
+    if (kind === "viewer") await this.requireViewerSupport(host, box.id);
     checkRoom(tracked, kind);
     tracked.opening[kind] += 1;
     let exec: ExecSession;
@@ -453,6 +456,22 @@ export class TerminalService {
 
   shutdown(): void {
     for (const tracked of this.tracked.values()) this.disarm(tracked);
+  }
+
+  /**
+   * A viewer attaches with `-f ignore-size`, which tmux 3.2 added. Older tmux rejects the flag, and attaching without it
+   * would let the viewer's size shrink the console's window, so such a box refuses viewers. An unreadable version is
+   * not refused.
+   */
+  private async requireViewerSupport(host: HostCtx, containerId: string): Promise<void> {
+    const run = await runTmux(host, containerId, ["-V"]);
+    if (run.code !== 0) throw this.failure(run, containerId, "");
+    const version = parseTmuxVersion(run.stdout);
+    if (version && !acceptsIgnoreSize(version)) {
+      throw conflict(msg("session_viewer_tmux_old", { version: version.text }), {
+        hint: msg("session_viewer_tmux_old_hint"),
+      });
+    }
   }
 
   private async probe(host: HostCtx, box: Box, name: string): Promise<SessionIdentity> {

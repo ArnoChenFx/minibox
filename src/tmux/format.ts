@@ -134,6 +134,26 @@ export function classifyTmuxFailure(code: number, stderr: string): TmuxFailure {
   return "failed";
 }
 
+/** A tmux version as `tmux -V` prints it. `text` keeps any letter suffix, such as `3.1c`. */
+export interface TmuxVersion {
+  readonly text: string;
+  readonly major: number;
+  readonly minor: number;
+}
+
+/** Reads the first line of `tmux -V`. An answer without a numbered version, such as `tmux master`, reads as no version. */
+export function parseTmuxVersion(stdout: string): TmuxVersion | null {
+  const [line = ""] = stdout.trim().split("\n");
+  const match = /^tmux (?:next-)?(\d+)\.(\d+)/.exec(line);
+  if (!match) return null;
+  return { text: line.slice("tmux ".length), major: Number(match[1]), minor: Number(match[2]) };
+}
+
+/** `attach-session -f ignore-size` needs tmux 3.2. Older tmux rejects the flag. */
+export function acceptsIgnoreSize(version: TmuxVersion): boolean {
+  return version.major > 3 || (version.major === 3 && version.minor >= 2);
+}
+
 /**
  * The lines of `next` that are new after `previous`. Finds the longest suffix of `previous` that lines up with the start
  * of `next`, so lines that scrolled out of history at the top are skipped. The last line of `previous` is the one being

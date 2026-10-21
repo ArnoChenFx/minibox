@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  acceptsIgnoreSize,
   appendedLines,
   classifyTmuxFailure,
   hexBytes,
@@ -12,6 +13,7 @@ import {
   paneTarget,
   parseProbe,
   parseSessionList,
+  parseTmuxVersion,
   sessionTarget,
 } from "../src/tmux/format";
 
@@ -171,6 +173,34 @@ describe("classifyTmuxFailure", () => {
 
   test("anything else is a plain failure", () => {
     expect(classifyTmuxFailure(1, "unknown key: Foo")).toBe("failed");
+  });
+});
+
+function ignoreSizeAccepted(stdout: string): boolean {
+  const version = parseTmuxVersion(stdout);
+  return version !== null && acceptsIgnoreSize(version);
+}
+
+describe("tmux version", () => {
+  test("reads the version from tmux -V, keeping a letter suffix and a development build's name", () => {
+    expect(parseTmuxVersion("tmux 3.4\n")).toEqual({ text: "3.4", major: 3, minor: 4 });
+    expect(parseTmuxVersion("tmux 3.1c")).toEqual({ text: "3.1c", major: 3, minor: 1 });
+    expect(parseTmuxVersion("tmux next-3.5\n")).toEqual({ text: "next-3.5", major: 3, minor: 5 });
+  });
+
+  test("an answer without a numbered version reads as no version", () => {
+    expect(parseTmuxVersion("")).toBeNull();
+    expect(parseTmuxVersion("sh: tmux: not found")).toBeNull();
+    expect(parseTmuxVersion("tmux master")).toBeNull();
+  });
+
+  test("ignore-size is accepted from tmux 3.2 on, and refused before it", () => {
+    expect(ignoreSizeAccepted("tmux 2.9a")).toBe(false);
+    expect(ignoreSizeAccepted("tmux 3.1c")).toBe(false);
+    expect(ignoreSizeAccepted("tmux 3.2")).toBe(true);
+    expect(ignoreSizeAccepted("tmux 3.2a")).toBe(true);
+    expect(ignoreSizeAccepted("tmux 3.3a")).toBe(true);
+    expect(ignoreSizeAccepted("tmux 4.0")).toBe(true);
   });
 });
 
