@@ -1293,7 +1293,7 @@ describe.skipIf(!enabled)("workspace root owner on create and rebuild against a 
       const counted = createLocalHost(cfg, counter.runtime, host.specs);
       let box: boxes.Box | undefined;
       try {
-        box = await boxes.createBox(counted, { name: "fresh", image: devTemplate, cpus: 0.5, memoryMb: 64 });
+        box = await boxes.createBox(counted, { name: "copy-up", image: devTemplate, cpus: 0.5, memoryMb: 64 });
         expect(counter.count("volumeRootOwner")).toBe(1);
         expect(counter.count("setVolumeRootOwner")).toBe(0);
         expect(await runtime.volumeRootOwner(box.id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
