@@ -1,8 +1,10 @@
 # Agents
 
-`POST /mcp` is a Streamable HTTP MCP server. Send `Authorization: Bearer` and the access key. A browser session cookie is refused. `GET /mcp` is not an event stream (`405`, `Allow: POST, DELETE`). `DELETE /mcp` closes the session named by `Mcp-Session-Id`. A wrong Bearer key counts toward the same login limit as a wrong login key, so after 10 failures from one address within 5 minutes the next one gets `429`.
+`POST /mcp` is a Streamable HTTP MCP server. Send `Authorization: Bearer` with the access key or an agent token. A browser session cookie is refused. `GET /mcp` is not an event stream (`405`, `Allow: POST, DELETE`). `DELETE /mcp` closes the session named by `Mcp-Session-Id`. A wrong Bearer key counts toward the same login limit as a wrong login key, so after 10 failures from one address within 5 minutes the next one gets `429`.
 
-> **Warning: `/mcp` authenticates with the main access key, which grants full owner access.** Any client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. There are no scoped tokens yet (#13). Give an agent the key only if you accept that, keep it out of prompts, logs and repositories, and change `ACCESS_KEY` if it leaks.
+An agent token is held to its scopes. `tools/list` offers it only the tools those scopes reach, and a call it may not make returns a tool error with the code `forbidden` and runs nothing. A session belongs to the principal that opened it, and it ends when that token is revoked.
+
+> **Warning: the main access key grants full owner access over `/mcp`.** Any client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Give an agent an agent token ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) rather than the key. Keep the key out of prompts, logs and repositories, and change `ACCESS_KEY` if it leaks.
 
 `?toolsets=` selects toolsets: `core`, `session`, `network`, `storage`, `tools`, `meta` and `rebuild`. The query wins over the session. The default is `core,meta`. `rebuild_box` is in the `rebuild` toolset, so it is not in the default list: use `/mcp?toolsets=rebuild`, or `/mcp?toolsets=core,meta,rebuild`, to enable it. The design catalog is 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, and the nine volume and pool tools in `storage` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `get_activity` and `task_wait` are not implemented yet. `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network`, `tools` and `meta` are accepted and add no tools for now. File tools are not implemented.
 
@@ -12,7 +14,7 @@ The `initialize` result includes the block below. [`README.md`](../README.md) in
 
 ## MiniBox
 
-Use the MiniBox MCP server (`/mcp`, Bearer access key) to work inside a box.
+Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work inside a box.
 
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
@@ -31,7 +33,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key) to work inside a box.
 
 ## Exec
 
-`exec` means the caller can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Mounting a volume needs `volume:attach` on that volume, and a read-write mount or a new volume also needs `volume:write`. The owner key holds every scope; scoped tokens (#13) are not built yet.
+`exec` means the caller can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Mounting a volume needs `volume:attach` on that volume, and a read-write mount or a new volume also needs `volume:write`. The owner key holds every scope. An agent token holds only the scopes it was created with (#13).
 
 A foreground call may set `timeoutSec` up to 55 seconds, which stays under the server's 60-second idle timeout. Longer commands use `background: true` with a larger `timeoutSec` (up to 3600) and `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and returns `timedOut: true`, with the exit code from `exec.inspect`, or 137 when the engine does not report one. If the stop fails, the exec stays `running`, a foreground call returns with `timedOut: true`, the stop is retried after a growing delay, and `exec_kill` can retry too.
 

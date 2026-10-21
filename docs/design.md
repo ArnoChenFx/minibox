@@ -616,7 +616,7 @@ Event
 - **写入失败**：审计写入失败只记录 `audit.failed`，不影响操作结果。
 - **存储**：`events.db` 使用 WAL、`synchronous=NORMAL`、`busy_timeout=5000`，并以 `PRAGMA user_version` 记录迁移版本。
 - **总线**：`src/lib/bus.ts` 是类型化的进程内总线，主题在 `AppTopics` 中声明。#16、#17 增加主题即可复用，不必另起通道。
-- **暂缓**：JSONL 导出（§8.5）；「清除该 Box 全部历史」（§8.3）；按令牌或按 Box 关闭输出采集（§8.6）；文件事件（文件 API 在 Volume #24 之后）；tmux 会话录制（`pipe-pane`，§8.7）；登录事件与按 IP 合并的登录失败（#2）；活动信号（§8.4，#17）；MCP `get_activity`（随 #9 的 MCP 服务）；凭据存储中的其他已知值（#13）。
+- **暂缓**：JSONL 导出（§8.5）；「清除该 Box 全部历史」（§8.3）；按令牌或按 Box 关闭输出采集（§8.6）；文件事件（文件 API 在 Volume #24 之后）；tmux 会话录制（`pipe-pane`，§8.7）；登录事件与按 IP 合并的登录失败（#2）；活动信号（§8.4，#17）；MCP `get_activity`（尚未实现）；凭据存储中的其他已知值（#13）。
 
 ### 8.10 实现说明（#16）
 
@@ -642,7 +642,8 @@ Event
 Token
 ├ scopes      box:read · box:write · box:delete · exec · files:read/write
 │             port:expose · checkpoint:create/restore · tool:install
-│             volume:read · volume:write · volume:attach · pool:admin
+│             volume:read · volume:write · volume:attach
+│             （pool:admin 只属于所有者，不是令牌可以持有的 scope）
 ├ 资源范围     boxes:   created-by-me（默认）| 指定 ID/标签 | *
 │             volumes: 显式授予列表
 │             hosts:   允许的宿主机
@@ -674,7 +675,7 @@ Token
   - 挂载变更（创建、`box.update`、`box.rebuild`）只检查新增或改变的挂载：卷、路径、模式都与现有挂载相同的，视为保留，不再检查。新挂载需要 `volume:attach`，读写挂载还需要 `volume:write`；尚无记录的新名字需要 `volume:write`，因为它会被新建为独立卷。`volume.attach` 按同一规则检查；`volume.detach` 检查被卸下的那只卷的 `volume:attach`。
   - 不带 `mounts` 的新建 Box 需要 `volume:write`。若采用了遗留的 `<prefix>-ws-<名称>` 工作区，它按读写挂载检查（`volume:attach` 与 `volume:write`）；复用已有的共享工具卷，需要对它的 `volume:attach`。
   - 网络只允许宿主机的 Box 网络（默认 `minibox-boxes`）和 Box 当前已在使用的网络，早于 Box 网络创建的 `bridge` Box 因此可以保持原样。`host`、`none` 与 `container:*` 始终拒绝。
-- **`/mcp` 目前认证使用主访问密钥**：在令牌（#13）实现之前，持有密钥的 MCP 客户端拥有全部所有者权限，包括以 root 执行 `exec`（非「严格」档）、`delete_box` 与 `rebuild_box`。README 与 `docs/agents.md` 必须写明这一点。错误的 Bearer 密钥与错误的登录密钥共享同一限流（`/api/`、`/mcp` 与终端）（决策 48）。
+- **`/mcp` 同时接受访问密钥与 Agent 令牌**：持有访问密钥的 MCP 客户端拥有全部所有者权限，包括以 root 执行 `exec`（非「严格」档）、`delete_box` 与 `rebuild_box`。令牌与密钥经同一条鉴权路径进入；`tools/list` 只列出其 scope 能到达的工具，调用无权的工具返回 `forbidden` 工具错误且不执行。README 与 `docs/agents.md` 必须写明这一点。错误的 Bearer 密钥与错误的登录密钥共享同一限流（`/api/`、`/mcp` 与终端）（决策 48）。
 ### 9.3 浏览器会话
 
 已实现（#2）。此前 Cookie 里直接存放原始 `ACCESS_KEY`，有效期 30 天，泄露即永久 root 且无法单独撤销。现在登录后签发随机会话令牌（32 字节，即 256 bit，来自 CSPRNG），Cookie 只保存该令牌；服务端在 `DATA_DIR/sessions.json` 中只保存其 SHA-256 哈希，以及创建时间、过期时间、最后活动时间、User-Agent 与地址，写入采用临时文件加重命名。登出立即作废；`ACCESS_KEY` 变更后，下次启动时全部会话失效（文件中保存的是密钥的 scrypt 校验值，用于检测变更）；绝对有效期由 `SESSION_TTL_DAYS` 决定（默认 30 天），`SESSION_IDLE_DAYS` 可选开启滑动过期；设置页提供会话列表，可撤销单个会话或「退出其他会话」。`Authorization: Bearer <ACCESS_KEY>` 保留，用于脚本。
@@ -691,10 +692,17 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - **授权**：仍是执行器上的 `authorize` 钩子，操作定义没有改。调用前检查 scope；输入合法且目标解析之后，再检查宿主机、卷、Box、TTL 和配额。直接读取范围外的已有 Box 返回 403，不存在的 Box 仍是 404。列表在处理函数里过滤，因为钩子只能拒绝整次调用。
 - **`exec`**：对令牌可见的 Box，`exec` 隐含其全部挂载的读写，所以 `files:*` 只对没有 `exec` 的令牌有意义。文件 API 还没有（#9）。终端要求 `exec` 且 Box 在范围内。
 - **卷**：创建 Box 总会挂上工作区卷。卷还不存在时，这是新建，不需要 `volume:attach`。卷已经存在时，这是挂载，必须对该卷有 `volume:attach`。请求里已经能写出的 `mounts`、`volumes`、`volume` 同样检查。卷对象和完整的挂载更新是 #24。
-- **TTL**：令牌带 `maxTtlSec` 时，省略 TTL 会把这个上限写入 `lifecycle.ttlSec`；显式 `null` 或更大的值返回 403。到点自动停止或删除是 #12，这里不实现。
-- **配额**：只统计 `createdBy` 是该令牌的 Box。`maxCpus` 和 `maxMemoryMb` 是这些 Box 的合计，因此也限制单个 Box。只改名称不会因为资源已经超限而被拒绝。速率限制是进程内的固定窗口，超出返回 429，不写入磁盘。
-- **吊销**：立即从查找表删除哈希。`?deleteCreated=true` 会删除该令牌创建的 Box 及其工作区卷。已打开的终端以关闭码 1008 结束，事件流同时结束。
-- **MCP**：设置页和 README 给出可粘贴的配置。`/mcp` 本身随 #9，目前还不提供。同一枚令牌已经可以用在 REST 的 `Authorization: Bearer` 上。
+- **TTL**：令牌带 `maxTtlSec` 时，省略或显式给出 `null` 都会把这个上限写入 `lifecycle.ttlSec`；大于上限的值返回 403（`quota_ttl`）。创建与更新都按此检查。到点自动停止或删除是 #12，这里不实现。
+- **配额**：统计 `createdBy` 是该令牌的 Box，跨所有宿主机。`maxCpus` 和 `maxMemoryMb` 是这些 Box 的合计，因此也限制单个 Box。只改名称不会因为资源已经超限而被拒绝。配额检查在按令牌串行的临界区内完成（N1），两个竞争的创建不能同时占用最后一个名额。速率限制是进程内的固定窗口，超出返回 429，不写入磁盘。
+- **吊销**：立即从查找表删除哈希。`?deleteCreated=true` 会删除该令牌创建的 Box 及其工作区卷，覆盖所有宿主机。删除是尽力而为的：无法删除的 Box 连同宿主机与原因列在响应的 `failedBoxes` 中，其余 Box 照常删除（N7）。已打开的终端以关闭码 1008 结束；事件流、任务进度流、SSE 实时流与该令牌的 MCP 会话同时结束，之后的请求返回 401。
+- **MCP**：设置页和 README 给出可粘贴的配置。`/mcp` 接受令牌，并与 REST 共用鉴权路径，每次调用都以令牌主体执行，因此同样经过 scope 与授权规则。会话绑定到打开它的主体，令牌吊销时结束；其他主体按会话 id 也读不到它。
+- **事件名称**：事件接口（列表与实时流）按 Box 名称匹配时，只计入该 Box 创建之后记录的事件（`createdAt`），因此同名的早先 Box 的事件不会泄露给后来的令牌。按 id 匹配不受此限制，重建替换容器 id 之后，事件仍按名称与创建时间匹配。已知限制：创建操作自己的事件以操作开始时间记录，早于 `createdAt`，所以在 Box 被重建后，授予令牌的 Box 的创建事件不再可见。这是失败关闭，只会少显示。
+- **任务**：任务列表、任务读取与任务进度流按任务的发起者，或其目标 Box 对令牌可见来判断；目标 Box 在所有宿主机上查找（T3）。
+- **模板与快照**：令牌只能从 `template=true` 的镜像与自己可见的快照创建、重建或派生；按 sha256 或镜像 id 引用时先解析再检查（T2）。`template.promote` 检查快照的所有者，`template.delete` 只允许所有者或模板的创建者，`template.build` 只允许所有者。
+- **卷**：挂载按卷记录判断（`ownerBoxId`、`createdBy`），而不按名称。池根卷对所有主体拒绝；令牌不能挂载其他令牌创建的卷，即使它的卷授权是 `all`。`pool:admin` 不是令牌可以持有的 scope，存储池管理只属于所有者。
+- **宿主机**：Box 没有记录宿主机时，只有 `all` 的宿主机授权才允许访问（失败关闭，N4）。
+- **活动**：`/api/activity` 只对所有者开放（路由默认 `OWNER_ONLY`）。令牌使用按范围过滤的 `/api/events`。
+- **会话与 exec**：`box:exec` 与 `box:session`（终端与会话 API）都映射到 `exec` scope，因为它们能在 Box 内执行命令。
 
 ---
 
