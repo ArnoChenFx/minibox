@@ -132,6 +132,22 @@ export const MESSAGES = {
   exec_output_missing: "No saved output for that exec.",
   exec_output_missing_hint:
     "Output is kept for a limited time. If the command is still running, call exec_get and try again.",
+  session_name_invalid:
+    "Session name must start with a letter or digit, use only letters, digits, dashes and underscores, and be at most 32 characters.",
+  session_keys_invalid: "keys must be 1 to {max} key names, such as Enter, Tab, C-c or a single character.",
+  session_text_invalid: "text must be a string of at most {max} bytes without NUL.",
+  session_input_required: "Provide exactly one of keys or text.",
+  session_lines_range: "lines must be an integer between 1 and {max}.",
+  session_since_invalid: "since must be the cursor that the previous session_read of this session returned.",
+  session_not_found_hint: "List the box's sessions, or start one with session_start.",
+  session_box_stopped_hint: "The box is stopped, which ends its sessions. Start the box, then call session_start.",
+  session_taken_over: "Session {name} is under human control, so input is refused.",
+  session_taken_over_hint:
+    "A person is working in this session. Read it with session_read and send again in a little while.",
+  session_tmux_missing: "This box does not have tmux, so sessions are unavailable.",
+  session_tmux_missing_hint:
+    "Boxes from the base template include tmux. Rebuild the box from it, or install tmux inside the box.",
+  session_tmux_failed: "tmux failed: {detail}",
   mcp_bearer_required: "MCP requires an Authorization Bearer access key.",
   mcp_bearer_hint:
     "Send the header Authorization: Bearer and the access key. A browser session cookie is not accepted on /mcp.",
