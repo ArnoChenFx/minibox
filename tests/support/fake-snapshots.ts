@@ -25,6 +25,10 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   readonly failBackupOf = new Set<string>();
   /** Backups and restores that have begun, held or not. A test waits on this to know a call reached the engine. */
   started = 0;
+  /** The size `usage` reports. Null reports the bytes of the snapshots held. */
+  reportedBytes: number | null = null;
+  /** Makes `usage` fail, as an engine that cannot be reached does. */
+  usageFails = false;
   private sequence = 0;
   private gate: { promise: Promise<void>; kind: EngineCall | null; blocked: number } | null = null;
 
@@ -89,5 +93,15 @@ export class FakeCheckpointEngine implements SnapshotEngine {
     if (!this.snapshots.delete(snapshotId)) {
       throw new RuntimeError("engine", `restic forget exited with status 1: no snapshot ${snapshotId}`);
     }
+  }
+
+  async usage(_host: HostCtx): Promise<{ bytes: number }> {
+    if (this.usageFails) throw new RuntimeError("engine", "restic stats exited with status 1");
+    if (this.reportedBytes !== null) return { bytes: this.reportedBytes };
+    let bytes = 0;
+    for (const snapshot of this.snapshots.values()) {
+      for (const entry of snapshot.files.values()) bytes += entry.content?.length ?? 0;
+    }
+    return { bytes };
   }
 }

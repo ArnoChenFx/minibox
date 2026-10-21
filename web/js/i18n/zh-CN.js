@@ -159,8 +159,9 @@ export default {
   "err.checkpoint_rollback_confirm":
     "回滚会先为当前数据拍摄一个检查点，然后把检查点路径上的卷替换为检查点数据的副本。被替换的卷会保留，直到你确认回滚（确认会删除它们）或撤销回滚。请发送 confirm: true 以继续。",
   "err.checkpoint_out_of_scope": "当前凭据不能使用该检查点。",
-  "err.checkpoint_held_by_rollback":
-    "检查点 {id} 是一次等待确认或撤销的回滚的安全点。请先确认或撤销该回滚，再删除它。",
+  "err.checkpoint_capacity_exceeded":
+    "检查点仓库已占用 {used} MB，达到或超过 {limit} MB 的上限。请先删除一些检查点再回滚：回滚会先拍摄一个安全检查点。",
+  "err.checkpoint_held_by_rollback": "检查点 {id} 是一次等待确认或撤销的回滚的安全点。请先确认或撤销该回滚，再删除它。",
   "err.rollback_pending": "Box {box} 有一次等待确认或撤销的回滚。请先确认或撤销它，再进行新的回滚。",
   "err.rollback_none": "Box {box} 没有等待确认或撤销的回滚。",
   "err.rollback_confirm_required":

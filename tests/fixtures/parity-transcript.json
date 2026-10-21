@@ -1790,5 +1790,13 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"rollback\":null}"
+  },
+  {
+    "step": "read the checkpoint repository usage",
+    "method": "GET",
+    "path": "/api/checkpoints/usage",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"bytes\":0,\"limitBytes\":null,\"state\":\"unlimited\",\"policy\":{\"keepLast\":20,\"keepDays\":30}}"
   }
 ]

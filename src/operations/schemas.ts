@@ -142,6 +142,14 @@ export const CheckpointSchema = z.object({
   updatedAt: z.string(),
 });
 
+/** The checkpoint repository's size against its limit. `limitBytes` is null when no limit is set. */
+export const CheckpointUsageSchema = z.object({
+  bytes: z.number(),
+  limitBytes: z.number().nullable(),
+  state: z.enum(["unlimited", "ok", "warning", "exceeded"]),
+  policy: z.object({ keepLast: z.number(), keepDays: z.number() }),
+});
+
 /** A volume a rollback replaced or restored, and the path the box mounts it at. */
 export const RollbackVolumeSchema = z.object({
   id: z.string(),

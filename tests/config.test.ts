@@ -285,6 +285,29 @@ describe("live stream cap", () => {
   });
 });
 
+describe("checkpoint retention and capacity", () => {
+  test("keeps 20 automatic checkpoints per box for 30 days, with no capacity limit, by default", () => {
+    expect(load({ ACCESS_KEY: KEY })).toMatchObject({
+      checkpointKeepLast: 20,
+      checkpointKeepDays: 30,
+      checkpointCapacityMb: 0,
+    });
+  });
+  test("CHECKPOINT_KEEP_LAST, CHECKPOINT_KEEP_DAYS and CHECKPOINT_CAPACITY_MB set the policy, and 0 days or 0 MB turn their bound off", () => {
+    expect(
+      load({
+        ACCESS_KEY: KEY,
+        CHECKPOINT_KEEP_LAST: "5",
+        CHECKPOINT_KEEP_DAYS: "0",
+        CHECKPOINT_CAPACITY_MB: "2048",
+      }),
+    ).toMatchObject({ checkpointKeepLast: 5, checkpointKeepDays: 0, checkpointCapacityMb: 2048 });
+  });
+  test.each(["0", "-3", "1.5", "many"])("CHECKPOINT_KEEP_LAST=%s falls back to the default", (value) => {
+    expect(load({ ACCESS_KEY: KEY, CHECKPOINT_KEEP_LAST: value })).toMatchObject({ checkpointKeepLast: 20 });
+  });
+});
+
 describe("terminal takeover", () => {
   test("a human's takeover returns to the agent after 300 seconds without input by default", () => {
     expect(load({ ACCESS_KEY: KEY })).toMatchObject({ takeoverIdleSec: 300 });

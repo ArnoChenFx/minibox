@@ -179,6 +179,8 @@ export default {
   "err.checkpoint_rollback_confirm":
     "Rolling back first takes a checkpoint of the current data, then replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The replaced volumes are kept until you confirm the rollback, which deletes them, or undo it. Send confirm: true to continue.",
   "err.checkpoint_out_of_scope": "This credential cannot use that checkpoint.",
+  "err.checkpoint_capacity_exceeded":
+    "The checkpoint repository holds {used} MB, at or above its limit of {limit} MB. Delete checkpoints before rolling back: a rollback takes a safety checkpoint first.",
   "err.checkpoint_held_by_rollback":
     "Checkpoint {id} is the safety point of a rollback that waits for its confirm or undo. Confirm or undo that rollback before deleting it.",
   "err.rollback_pending":

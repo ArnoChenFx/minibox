@@ -653,6 +653,7 @@ async function recordScenario(): Promise<Exchange[]> {
     const freed = await send("delete the safety checkpoint after confirm", "DELETE", `/api/checkpoints/${safety}`);
     await waitTask(base, freed.json);
     await send("read the rollback after confirm", "GET", rollbackAt(rolledAgain));
+    await send("read the checkpoint repository usage", "GET", "/api/checkpoints/usage");
   } finally {
     server.stop(true);
     app.throttle.stop();

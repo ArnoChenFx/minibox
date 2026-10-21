@@ -6,6 +6,7 @@ import { conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { getBox } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
+import { assertAutomaticAllowed, usageOf } from "../services/checkpoint-capacity";
 import {
   assertForkable,
   assertNotHeld,
@@ -39,7 +40,7 @@ import { assertWithinQuota, underQuota } from "../tokens/quota";
 import { assertCanCreateDefaultMounts, assertCanWrite } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
-import { BoxSchema, CheckpointSchema, OkSchema, PendingRollbackSchema } from "./schemas";
+import { BoxSchema, CheckpointSchema, CheckpointUsageSchema, OkSchema, PendingRollbackSchema } from "./schemas";
 import {
   boxId,
   boxName,
@@ -121,6 +122,24 @@ export const checkpointList = defineOperation({
       ),
     };
   },
+});
+
+/**
+ * Owner-only: the repository's size is a host figure, like the host metrics. The scope is one no token holds, so the
+ * route and the executor both refuse a token.
+ */
+export const checkpointUsage = defineOperation({
+  name: "checkpoint.usage",
+  tag: "checkpoints",
+  summary: "Read the checkpoint repository's size against its limit",
+  kind: "read",
+  scope: "checkpoint:usage",
+  async: false,
+  input: z.object({}),
+  output: CheckpointUsageSchema,
+  rest: [{ method: "GET", path: "/api/checkpoints/usage" }],
+  cli: "checkpoint usage",
+  run: async ({ host }) => usageOf(host),
 });
 
 export const checkpointGet = defineOperation({
@@ -299,6 +318,7 @@ export const boxRollback = defineOperation({
     const revision = requireRevision(input.expectedRevision);
     if (!input.confirm) throw rollbackConfirmation(await previewRollback(host, input.id, input.checkpoint, revision));
     await planRollback(host, input.id, input.checkpoint, revision);
+    await assertAutomaticAllowed(host);
   },
   exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
   activity: { action: () => "box.rollback", target: (_input, box) => box.name },
@@ -397,8 +417,10 @@ export const boxRollbackUndo = defineOperation({
   }),
 });
 
+/** `checkpointUsage` precedes `checkpointGet`: the router takes the first path that matches, and `usage` is not an id. */
 export const checkpointOperations = [
   checkpointList,
+  checkpointUsage,
   checkpointGet,
   checkpointCreate,
   checkpointFork,

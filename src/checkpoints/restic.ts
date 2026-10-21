@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { createSecretFile, ensureDataDir, readSecretFile } from "../data-dir";
 import type { HostCtx } from "../host/registry";
-import { HELPER_SECRETS_DIR, type HelperResult, type Mount, RuntimeError } from "../runtime";
-import type { BackupResult, SnapshotEngine } from "./engine";
+import { HELPER_SECRETS_DIR, type HelperResult, isRuntimeError, type Mount, RuntimeError } from "../runtime";
+import type { BackupResult, EngineUsage, SnapshotEngine } from "./engine";
 
 /** Pinned engine image. Its flags below follow restic 0.18. */
 export const RESTIC_IMAGE = "restic/restic:0.18.1";
@@ -87,6 +87,24 @@ export class ResticEngine implements SnapshotEngine {
       await this.ensureRepo(host, { create: false });
       const result = await this.run(host, { args: ["forget", snapshotId, "--prune"] });
       this.assertOk(host, result, "restic forget");
+    });
+  }
+
+  /** Reads the raw data size from the index. A repository that was never created is empty, and nothing is created here. */
+  usage(host: HostCtx): Promise<EngineUsage> {
+    return this.serial(host, async () => {
+      if (!(await repoVolumeExists(host))) return { bytes: 0 };
+      try {
+        await this.ensureRepo(host, { create: false });
+      } catch (e) {
+        if (isRuntimeError(e, "not_found")) return { bytes: 0 };
+        throw e;
+      }
+      const result = await this.run(host, { args: ["stats", "--mode", "raw-data", "--json"] });
+      this.assertOk(host, result, "restic stats");
+      const bytes = storedBytesOf(result.logs);
+      if (bytes === null) throw failure("restic stats printed no size", result);
+      return { bytes };
     });
   }
 
@@ -176,8 +194,31 @@ function repoVolume(host: HostCtx): string {
   return `${host.prefix}-checkpoints-${host.host.id}`;
 }
 
+async function repoVolumeExists(host: HostCtx): Promise<boolean> {
+  try {
+    await host.runtime.inspectVolume(repoVolume(host));
+    return true;
+  } catch (e) {
+    if (isRuntimeError(e, "not_found")) return false;
+    throw e;
+  }
+}
+
 async function assertVolume(host: HostCtx, volume: string): Promise<void> {
   await host.runtime.inspectVolume(volume);
+}
+
+/** The `total_size` that `stats --json` printed. The output may be indented, so the object is cut from its braces. */
+function storedBytesOf(logs: string): number | null {
+  const start = logs.indexOf("{");
+  const end = logs.lastIndexOf("}");
+  if (start < 0 || end < start) return null;
+  try {
+    const value = JSON.parse(logs.slice(start, end + 1)) as { total_size?: unknown };
+    return typeof value.total_size === "number" ? value.total_size : null;
+  } catch {
+    return null;
+  }
 }
 
 function assertSnapshotId(id: string): void {

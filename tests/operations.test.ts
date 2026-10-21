@@ -92,6 +92,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
   "snapshot.delete": () => ({ ref: SNAPSHOT_REF }),
   "checkpoint.list": () => ({}),
+  "checkpoint.usage": () => ({}),
   "checkpoint.get": () => ({ id: CHECKPOINT_PLACEHOLDER }),
   "checkpoint.create": (id) => ({ id }),
   "checkpoint.fork": () => ({ id: CHECKPOINT_PLACEHOLDER, name: "delta" }),

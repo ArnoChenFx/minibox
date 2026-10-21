@@ -25,6 +25,7 @@ import { VolumeChanges } from "../volumes/changes";
 import { createRestoredVolume, provisionDefaultMounts } from "../volumes/provision";
 import { ROLE_MOUNT, type VolumeRecord, type VolumeRole } from "../volumes/types";
 import { type Box, createBox, getBox, locked, refuseExpired, startLocked } from "./boxes";
+import { assertAutomaticAllowed } from "./checkpoint-capacity";
 import { holdVolumeBoxes } from "./files";
 import type { ImageItem } from "./images";
 import { rebuildBox } from "./rebuild";
@@ -204,13 +205,19 @@ export async function updateCheckpoint(host: HostCtx, id: string, patch: Checkpo
 }
 
 /**
- * Refuses to delete the safety checkpoint of a rollback that waits for its confirm or undo. That checkpoint is the only
- * copy of the data the rollback replaced, and a confirm deletes the replaced volumes.
+ * The safety checkpoints of rollbacks that wait for their confirm or undo. Each is the only copy of the data its rollback
+ * replaced, so it is never deleted, by hand or by retention.
+ */
+export function heldCheckpointIds(host: HostCtx): Set<string> {
+  return new Set(host.checkpoints.pendingRollbacks().map((pending) => pending.safetyCheckpointId));
+}
+
+/**
+ * Refuses to delete the safety checkpoint of a rollback that waits for its confirm or undo. A confirm deletes the
+ * replaced volumes, so that checkpoint is the last copy of their data.
  */
 export function assertNotHeld(host: HostCtx, id: string): void {
-  if (host.checkpoints.pendingRollbacks().some((pending) => pending.safetyCheckpointId === id)) {
-    throw conflict(msg("checkpoint_held_by_rollback", { id }));
-  }
+  if (heldCheckpointIds(host).has(id)) throw conflict(msg("checkpoint_held_by_rollback", { id }));
 }
 
 /**
@@ -737,6 +744,7 @@ async function restoreUnderLock(
 ): Promise<RollbackResult> {
   refuseExpired(host, boxId);
   const first = await planRollback(host, boxId, input.checkpoint, input.revision);
+  await assertAutomaticAllowed(host);
   progress?.log?.("Taking a safety checkpoint…\n");
   const safety = await backupBox(host, first.box, safetyInput(first.checkpoint), createdBy, progress, true);
   const plan = await planRollback(host, boxId, input.checkpoint, input.revision);
