@@ -56,16 +56,20 @@ export const snapshotFork = defineOperation({
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: (input, _box, result) => ({ kind: "box", id: result?.box.id, name: input.name }) },
-  run: async ({ host, principal }, input) => ({
-    box: await createBox(host, {
-      name: input.name,
-      image: input.ref.trim(),
-      cpus: input.cpus,
-      memoryMb: input.memoryMb,
-      profile: input.profile,
-      templateLabel: `snapshot:${input.ref}`,
-      createdBy: principal.type,
-    }),
+  run: async ({ host, principal, record }, input) => ({
+    box: await createBox(
+      host,
+      {
+        name: input.name,
+        image: input.ref.trim(),
+        cpus: input.cpus,
+        memoryMb: input.memoryMb,
+        profile: input.profile,
+        templateLabel: `snapshot:${input.ref}`,
+        createdBy: principal.type,
+      },
+      record,
+    ),
   }),
 });
 

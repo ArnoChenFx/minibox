@@ -37,6 +37,8 @@ const PREFIX_PATTERN = /^mbit[a-z0-9-]{3,40}$/;
 const prefix = process.env.MINIBOX_TEST_PREFIX ?? `mbit${Date.now().toString(36)}`;
 if (enabled && !PREFIX_PATTERN.test(prefix)) throw new Error(`MINIBOX_TEST_PREFIX must match ${PREFIX_PATTERN}`);
 const FIXTURE = `${prefix}-tmux:fixture`;
+/** An image with neither tmux nor a dev user, as a box from before the base template has. */
+const BARE_IMAGE = process.env.MINIBOX_TEST_IMAGE ?? "alpine:3.20";
 const owned = { [prefix]: "true" };
 const LONG = 90_000;
 /** The heartbeat closes a silent socket after the server's idle timeout, which is 30 seconds. */
@@ -292,6 +294,19 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       const recorded = app.events.list({ box: "refresh" }, { limit: 100 }).events;
       expect(recorded.map((event) => event.op)).toEqual(expect.arrayContaining(["terminal.open", "terminal.close"]));
       expect(JSON.stringify(recorded)).not.toContain("20+1");
+    },
+    LONG,
+  );
+
+  test(
+    "a box from an image without tmux or a dev user is refused with the image error",
+    async () => {
+      const bare = await createBox(host, { name: "bare", image: BARE_IMAGE, cpus: 0.5, memoryMb: 128 });
+      expect(await rejectionOf(app.terminals.start(host, bare, "work", "ui"))).toMatchObject({
+        status: 409,
+        code: "conflict",
+        key: "session_image_unsupported",
+      });
     },
     LONG,
   );

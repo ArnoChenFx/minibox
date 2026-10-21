@@ -7,13 +7,14 @@ import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { type Msg, msg } from "../lib/messages";
-import type { ExecSession } from "../runtime";
+import { type ExecSession, type ExecSpec, RuntimeError } from "../runtime";
 import {
   acceptsIgnoreSize,
   appendedLines,
   classifyTmuxFailure,
   hexBytes,
   isSessionName,
+  isUnrunnableExec,
   LIST_SESSIONS_FORMAT,
   ORIGIN_OPTION,
   PROBE_FORMAT,
@@ -395,7 +396,7 @@ export class TerminalService {
     tracked.opening[kind] += 1;
     let exec: ExecSession;
     try {
-      exec = await host.runtime.startExec(box.id, {
+      exec = await startInBox(host, box.id, {
         cmd: attachCommand(name, options.source),
         env: TMUX_ENV,
         workingDir: WORKDIR,
@@ -557,9 +558,7 @@ export class TerminalService {
   private failure(run: TmuxRun, containerId: string, name: string): AppError {
     const kind = classifyTmuxFailure(run.code, run.stderr);
     if (kind === "not_found" || kind === "no_server") return this.missingSession(containerId, name);
-    if (kind === "missing") {
-      return conflict(msg("session_tmux_missing"), { hint: msg("session_tmux_missing_hint") });
-    }
+    if (kind === "unrunnable") return unsupportedImage();
     const detail = run.stderr.trim().split("\n")[0] || `exit status ${run.code}`;
     return new AppError(502, "docker_error", msg("session_tmux_failed", { detail }));
   }
@@ -714,9 +713,33 @@ function takenOverError(name: string): AppError {
   );
 }
 
+/** The box's image cannot run sessions. Rebuilding onto the current base template is the fix, so this is a conflict. */
+function unsupportedImage(): AppError {
+  return conflict(msg("session_image_unsupported"), { hint: msg("session_image_unsupported_hint") });
+}
+
+/**
+ * Starts a command in the box. When the engine refuses to start it because the image lacks the program, the shell or
+ * the user, the error says what to do about the image rather than passing the engine's message on.
+ */
+async function startInBox(host: HostCtx, containerId: string, spec: ExecSpec): Promise<ExecSession> {
+  try {
+    return await host.runtime.startExec(containerId, spec);
+  } catch (e) {
+    if (
+      e instanceof RuntimeError &&
+      (e.kind === "engine" || e.kind === "invalid") &&
+      [e.message, e.detail].some(isUnrunnableExec)
+    ) {
+      throw unsupportedImage();
+    }
+    throw e;
+  }
+}
+
 /** Runs `tmux` in the box as `dev`, collects what it prints, and returns its status. */
 async function runTmux(host: HostCtx, containerId: string, args: readonly string[]): Promise<TmuxRun> {
-  const session = await host.runtime.startExec(containerId, {
+  const session = await startInBox(host, containerId, {
     cmd: ["tmux", "-u", ...args],
     env: TMUX_ENV,
     workingDir: "/",

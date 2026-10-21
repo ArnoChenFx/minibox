@@ -18,7 +18,7 @@ interface Browser {
  * Evaluates `expression` in a fresh process whose globals stand in for the browser. The i18n module reads the
  * language once, when it loads, so every scenario needs its own process. `i18n` and `format` are the loaded modules.
  */
-function inBrowser<T>(browser: Browser, expression: string): T {
+function inBrowser<T>(browser: Browser, expression: string, prelude: string[] = []): T {
   const store = browser.saved === undefined ? [] : [["minibox.lang", browser.saved]];
   const script = [
     `const store = new Map(${JSON.stringify(store)});`,
@@ -36,6 +36,7 @@ function inBrowser<T>(browser: Browser, expression: string): T {
     `const templateList = await import(${JSON.stringify(join(LIB, "template-list.js"))});`,
     `const en = (await import(${JSON.stringify(join(I18N, "en.js"))})).default;`,
     `const zh = (await import(${JSON.stringify(join(I18N, "zh-CN.js"))})).default;`,
+    ...prelude,
     `console.log(JSON.stringify(${expression}));`,
   ].join("\n");
   const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
@@ -501,6 +502,33 @@ describe("template search", () => {
       allTermsMustMatch: [],
       nothing: [],
       blank: 2,
+    });
+  });
+});
+
+describe("api errors", () => {
+  test("a failed request keeps the server's translated message and the hint that says what to do", () => {
+    const failure = {
+      error: {
+        code: "conflict",
+        message: "The server's English text.",
+        key: "session_image_unsupported",
+        hintKey: "session_image_unsupported_hint",
+      },
+    };
+    const error = inBrowser<{ message: string; hint: string; code: string; status: number }>(
+      { languages: ["en-US"] },
+      `await api.api("/api/boxes/alpha/sessions").then(() => null, (e) => ({ message: e.message, hint: e.hint, code: e.code, status: e.status }))`,
+      [
+        `globalThis.fetch = async () => new Response(${JSON.stringify(JSON.stringify(failure))}, { status: 409, headers: { "content-type": "application/json" } });`,
+        `const api = await import(${JSON.stringify(join(LIB, "api.js"))});`,
+      ],
+    );
+    expect(error).toEqual({
+      message: "This box's image is too old to run sessions: it lacks tmux or the dev user from the base template.",
+      hint: "Build the base template again, then rebuild this box onto the current base template.",
+      code: "conflict",
+      status: 409,
     });
   });
 });

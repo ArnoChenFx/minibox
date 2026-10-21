@@ -8,10 +8,12 @@ import {
   type ContainerInfo,
   type CreateContainerSpec,
   type ImageDetails,
+  isRuntimeError,
   RuntimeError,
+  type VolumeOwner,
 } from "../runtime";
 import { pushHistory } from "../specs/history";
-import { planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
+import { type MovedTag, planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, BoxRecovery, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
@@ -19,6 +21,7 @@ import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox } from "./boxes";
+import { alignVolumeRoot, type RecordNote, restoreVolumeRoot, writableWorkspaceVolume } from "./volume-owner";
 
 interface SwapState {
   createdId: string | null;
@@ -28,6 +31,8 @@ interface SwapState {
   started: boolean;
   wasRunning: boolean;
   changes: VolumeChanges;
+  /** The workspace root this attempt changed, with the owner it had. A rollback puts that owner back. */
+  aligned: { volume: string; owner: VolumeOwner; image: string } | null;
 }
 
 /**
@@ -41,6 +46,7 @@ export async function rebuildBox(
   revision: number,
   request: RebuildRequest,
   confirm: boolean,
+  record?: RecordNote,
 ): Promise<Box> {
   const box = await getBox(host, ref);
   await host.specs.exclusive(async () => {
@@ -50,7 +56,8 @@ export async function rebuildBox(
 
     const previous = structuredClone(spec);
     const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;
-    const planned = planRebuild(host.prefix, spec, named);
+    // An empty request is allowed: a moved tag alone is still a rebuild. rebuild_empty only when nothing changed.
+    const planned = planRebuild(host.prefix, spec, named, await movedTag(host, spec));
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
     await assertRebuildAttachments(host, spec, planned.mounts, planned.network);
 
@@ -65,7 +72,7 @@ export async function rebuildBox(
         preview: previewOf(spec, planned, diff),
       });
     }
-    await swap(host, previous, planned, template, request);
+    await swap(host, previous, planned, template, request, record);
   });
   await host.sampler.observe(box.id, host.specs.read(box.boxId)?.containerId ?? box.id);
   return getBox(host, box.boxId);
@@ -98,6 +105,25 @@ async function inspectOld(host: HostCtx, id: string): Promise<ContainerInfo> {
     if (e instanceof RuntimeError && e.kind === "not_found") throw notFound(msg("box_not_found"));
     throw e;
   }
+}
+
+/**
+ * The image a tag-tracking box's tag names now, when the box's container runs a different one. A box tracks its
+ * template when the template is the image it was created from (`ref` equals `image`). A snapshot box is labelled
+ * `snapshot:<ref>`, so it stays on its snapshot. A tag that no longer exists is not a move.
+ */
+async function movedTag(host: HostCtx, spec: BoxSpec): Promise<MovedTag | null> {
+  if (spec.template.ref !== spec.template.image) return null;
+  let tagged: ImageDetails;
+  try {
+    tagged = await host.runtime.inspectImage(spec.template.image);
+  } catch (e) {
+    if (isRuntimeError(e, "not_found")) return null;
+    throw e;
+  }
+  const running = await inspectOld(host, spec.containerId);
+  if (running.imageId === tagged.id) return null;
+  return { tag: spec.template.image, from: running.imageId, to: tagged.id };
 }
 
 /**
@@ -222,15 +248,25 @@ function canon(mounts: { volume: string; path: string; mode: string }[]): string
   return JSON.stringify(rows);
 }
 
-async function assertFresh(host: HostCtx, id: string, image: string, planned: PlannedRebuild): Promise<void> {
+/**
+ * A rebuild that sets the template also checks the image id. A tag can move between the inspect and the create, and the
+ * spec must not record a digest the container does not run. Returns what the engine reports for the container.
+ */
+async function assertFresh(
+  host: HostCtx,
+  id: string,
+  template: BoxSpec["template"],
+  planned: PlannedRebuild,
+): Promise<ContainerInfo> {
   const info = await host.runtime.inspectContainer(id);
   const problems: string[] = [];
   if (info.running) problems.push("running");
-  if (info.image !== image) problems.push("image");
+  if (info.image !== template.image) problems.push("image");
+  if (planned.templateRef !== null && info.imageId !== template.digest) problems.push("image id");
   if (info.network !== planned.network) problems.push("network");
   const actual = info.mounts.map((mount) => ({ volume: mount.source, path: mount.target, mode: mount.mode }));
   if (canon(actual) !== canon(planned.mounts)) problems.push("mounts");
-  if (problems.length === 0) return;
+  if (problems.length === 0) return info;
   throw new AppError(
     502,
     "docker_error",
@@ -270,7 +306,7 @@ function writeNext(
   });
 }
 
-async function undo(host: HostCtx, previous: BoxSpec, state: SwapState): Promise<void> {
+async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?: RecordNote): Promise<void> {
   const fail = async (fn: () => Promise<void>) => {
     try {
       await fn();
@@ -288,6 +324,10 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState): Promise
   }
   if (state.oldRenamed) {
     await fail(() => host.runtime.renameContainer(previous.containerId, previous.containerName));
+  }
+  if (state.aligned) {
+    const { volume, owner, image } = state.aligned;
+    await fail(() => restoreVolumeRoot(host, { volume, owner, image }, record));
   }
   if (state.oldStopped && state.wasRunning) {
     await fail(async () => {
@@ -313,6 +353,7 @@ async function swap(
   planned: PlannedRebuild,
   template: BoxSpec["template"],
   request: RebuildRequest,
+  record?: RecordNote,
 ): Promise<void> {
   const state: SwapState = {
     createdId: null,
@@ -322,6 +363,7 @@ async function swap(
     started: false,
     wasRunning: false,
     changes: new VolumeChanges(),
+    aligned: null,
   };
   const formal = planned.containerName;
   const scratch = `${formal}-new`;
@@ -342,12 +384,21 @@ async function swap(
     );
     const created = await host.runtime.createContainer(containerSpec(host, previous, resolved, template, scratch));
     state.createdId = created.id;
-    await assertFresh(host, created.id, template.image, resolved);
+    const fresh = await assertFresh(host, created.id, template, resolved);
     writeNext(host, previous, resolved, template, created.id, request);
     state.specWritten = true;
     if (state.wasRunning) {
       await host.runtime.stopContainer(previous.containerId, { timeoutSec: host.stopTimeoutSec });
       state.oldStopped = true;
+    }
+    const workspace = writableWorkspaceVolume(resolved.mounts);
+    if (workspace) {
+      const replaced = await alignVolumeRoot(
+        host,
+        { containerId: created.id, volume: workspace, image: fresh.imageId, labels: fresh.labels },
+        record,
+      );
+      if (replaced) state.aligned = { volume: workspace, owner: replaced, image: old.imageId };
     }
     await host.runtime.renameContainer(previous.containerId, oldAlias);
     state.oldRenamed = true;
@@ -367,7 +418,7 @@ async function swap(
       containerName: formal,
     });
   } catch (e) {
-    await undo(host, previous, state);
+    await undo(host, previous, state, record);
     throw e;
   }
 }

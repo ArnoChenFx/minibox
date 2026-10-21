@@ -261,13 +261,18 @@ const volumeAttach = defineOperation({
   run: async (ctx, input, volume) => {
     await assertCanAttach(ctx, volume);
     if (input.mode === "rw") await assertCanWrite(ctx, volume);
-    return attachVolume(ctx.host, volume.id, {
-      box: input.box,
-      path: input.path,
-      mode: input.mode,
-      revision: requireRevision(input.expectedRevision),
-      confirm: input.confirm,
-    });
+    return attachVolume(
+      ctx.host,
+      volume.id,
+      {
+        box: input.box,
+        path: input.path,
+        mode: input.mode,
+        revision: requireRevision(input.expectedRevision),
+        confirm: input.confirm,
+      },
+      ctx.record,
+    );
   },
 });
 
@@ -300,12 +305,17 @@ const volumeDetach = defineOperation({
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
   run: async (ctx, input, volume) => {
     await assertCanAttach(ctx, volume);
-    return detachVolume(ctx.host, volume.id, {
-      box: input.box,
-      path: input.path,
-      revision: requireRevision(input.expectedRevision),
-      confirm: input.confirm,
-    });
+    return detachVolume(
+      ctx.host,
+      volume.id,
+      {
+        box: input.box,
+        path: input.path,
+        revision: requireRevision(input.expectedRevision),
+        confirm: input.confirm,
+      },
+      ctx.record,
+    );
   },
 });
 

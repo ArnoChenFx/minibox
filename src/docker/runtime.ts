@@ -24,6 +24,7 @@ import {
   RuntimeError,
   type VolumeInfo,
 } from "../runtime";
+import { readFirstEntryOwner } from "./archive";
 import { toRuntimeError } from "./errors";
 import { demuxLogs } from "./logs";
 import { computeStats } from "./stats";
@@ -281,11 +282,23 @@ export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCrea
   if (spec.cmd !== undefined) opts.Cmd = spec.cmd;
   if (spec.workingDir !== undefined) opts.WorkingDir = spec.workingDir;
   if (spec.hostname !== undefined) opts.Hostname = spec.hostname;
+  if (spec.user !== undefined) opts.User = spec.user;
   if (spec.labels !== undefined) opts.Labels = spec.labels;
   if (spec.env !== undefined) opts.Env = spec.env;
-  if (spec.user !== undefined) opts.User = spec.user;
   if (Object.keys(hostConfig).length > 0) opts.HostConfig = hostConfig;
   return opts;
+}
+
+const ROOT_OWNER_MOUNT = "/minibox-volume";
+
+/**
+ * The helper could not be created or started. MiniBox built that container from its own settings, so the engine's
+ * refusal is an engine failure, whatever status it sent. An unreachable engine stays unavailable.
+ */
+function helperFailure(volume: string, e: unknown): RuntimeError {
+  if (isRuntimeError(e, "unavailable")) return e;
+  const reason = e instanceof RuntimeError ? e.detail : String(e);
+  return new RuntimeError("engine", `the chown helper for ${volume} could not run: ${reason}`, reason);
 }
 
 function bindOf(mount: Mount): string {
@@ -642,6 +655,38 @@ export function createDockerRuntime(socketPath: string): Runtime {
 
     async getArchive(id, path) {
       return call(async () => (await docker.getContainer(id).getArchive({ path })) as Readable);
+    },
+
+    async volumeRootOwner(containerId, path) {
+      const stream = await call(() => docker.getContainer(containerId).getArchive({ path }) as Promise<Readable>);
+      try {
+        return await readFirstEntryOwner(stream);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        throw new RuntimeError("engine", `could not read the owner of ${path} in ${containerId}: ${reason}`);
+      }
+    },
+
+    async setVolumeRootOwner(volume, owner, image) {
+      await call(() => docker.getVolume(volume).inspect());
+      // Inspecting first matters: a mount of a missing named volume makes the engine create it.
+      let result: { exitCode: number; logs: string };
+      try {
+        result = await runHelper(docker, {
+          image,
+          cmd: ["chown", `${owner.uid}:${owner.gid}`, ROOT_OWNER_MOUNT],
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts: [{ source: volume, target: ROOT_OWNER_MOUNT, mode: "rw" }],
+        });
+      } catch (e) {
+        throw helperFailure(volume, e);
+      }
+      if (result.exitCode !== 0) {
+        const output = result.logs.trim();
+        const suffix = output ? `: ${output}` : "";
+        throw new RuntimeError("engine", `chown of ${volume} exited with status ${result.exitCode}${suffix}`);
+      }
     },
 
     async startExec(containerId, spec) {
