@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { Server } from "bun";
 
 import { createDockerRuntime } from "../src/docker/runtime";
+import { isAbortError } from "../src/lib/abort";
 import type { Runtime } from "../src/runtime";
 import { rejectionOf } from "./support/app";
 
@@ -70,6 +71,13 @@ const inspectable: Record<string, { status: number; body: unknown }> = {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
+/** A one-shot stats payload: 20% of two CPUs, and 10% of a 1000-byte limit. */
+const ONE_SHOT_STATS = {
+  cpu_stats: { cpu_usage: { total_usage: 200 }, system_cpu_usage: 2000, online_cpus: 2 },
+  precpu_stats: { cpu_usage: { total_usage: 100 }, system_cpu_usage: 1000 },
+  memory_stats: { usage: 100, limit: 1000 },
+};
+
 /** Builds that the engine saw the client close, counted once per build. */
 let buildCloses = 0;
 
@@ -126,6 +134,14 @@ async function engine(req: Request): Promise<Response> {
       ]);
     }
     return json({ message: `No such container: ${id}` }, 404);
+  }
+  const stats = /^\/containers\/([^/]+)\/stats$/.exec(path);
+  if (req.method === "GET" && stats) {
+    if (stats[1] === "ok") return json(ONE_SHOT_STATS);
+    if (stats[1] === "hung") {
+      await new Promise<void>((resolve) => req.signal.addEventListener("abort", () => resolve(), { once: true }));
+      return new Response(null, { status: 499 });
+    }
   }
   if (req.method === "POST" && path === "/build") return slowBuild(req);
   if (req.method === "POST" && path === "/containers/create") {
@@ -205,6 +221,19 @@ describe("Docker adapter against a fake engine socket", () => {
       mounts: [],
       network: "bridge",
     });
+  });
+
+  test("a stats sample is read once from the engine, and a call whose signal aborts is cancelled", async () => {
+    expect(await runtime().containerStats("ok")).toEqual({
+      cpuPercent: 20,
+      memUsage: 100,
+      memLimit: 1000,
+      memPercent: 10,
+    });
+    expect(recorded.at(-1)).toMatchObject({ path: "/containers/ok/stats", search: "?stream=false" });
+
+    const error = await rejectionOf(runtime().containerStats("hung", { signal: AbortSignal.timeout(50) }));
+    expect(isAbortError(error)).toBe(true);
   });
 
   test("listing skips a container that vanished before it was inspected", async () => {

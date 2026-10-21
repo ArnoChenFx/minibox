@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
 import type { BoxFrame, LinkFrame, SampleFrame } from "../src/host/live";
-import { HostSampler } from "../src/host/sampler";
+import { HostSampler, type SamplerOptions } from "../src/host/sampler";
 import type { LabelKeys } from "../src/labels";
 import { RuntimeError } from "../src/runtime";
-import { createBox } from "../src/services/boxes";
+import { createBox, stopBox } from "../src/services/boxes";
 import { createTestApp, silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 
@@ -66,12 +66,12 @@ async function started(): Promise<HostSampler> {
 }
 
 /** A sampler with short reconnect delays, so a test does not wait out the production backoff. */
-function fastSampler(): HostSampler {
+function fastSampler(overrides: Partial<SamplerOptions> = {}): HostSampler {
   const host = app.hosts.get();
   host.sampler.stop();
   host.sampler = new HostSampler(
     () => host,
-    { intervalMs: 60_000, history: 10, backoffMinMs: 5, backoffMaxMs: 20 },
+    { intervalMs: 60_000, history: 10, backoffMinMs: 5, backoffMaxMs: 20, ...overrides },
     app.bus,
   );
   return host.sampler;
@@ -195,6 +195,51 @@ describe("resource samples", () => {
     expect(sampler.boxes({ withStats: true }).find((box) => box.name === "beta")?.stats).toBeNull();
     expect(sampleFrames).toHaveLength(12);
     expect(sampleFrames[0]?.boxes.map((box) => box.cpuPercent)).toEqual([1.5, 1.5]);
+  });
+
+  test("a stats call that hangs does not hold up a stop, and the cache shows the box stopped", async () => {
+    const id = seedBox("theta", true);
+    const sampler = fastSampler({ intervalMs: 100 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+
+    const hold = runtime.hold("containerStats");
+    try {
+      const round = sampler.sampleNow();
+      await waitFor(() => runtime.callsTo("containerStats").length === 2, "the held stats call");
+      const began = performance.now();
+      const box = await stopBox(app.hosts.get(), id);
+      expect(performance.now() - began).toBeLessThan(500);
+      expect(box.running).toBe(false);
+      expect(stateOf(sampler, "theta")).toBe(false);
+      await round;
+    } finally {
+      hold.release();
+    }
+  });
+
+  test("a stats call with no answer in time is a missed sample: the ring and the frames keep what they had", async () => {
+    seedBox("iota", true);
+    const sampler = fastSampler({ intervalMs: 100 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+    const boxId = sampler.boxes({ withStats: false })[0]?.boxId ?? "";
+    expect(sampler.historyOf(boxId)).toHaveLength(1);
+    sampleFrames = [];
+
+    const hold = runtime.hold("containerStats");
+    try {
+      await sampler.sampleNow();
+    } finally {
+      hold.release();
+    }
+    const signal = (runtime.callsTo("containerStats").at(-1)?.args[1] as { signal?: AbortSignal } | undefined)?.signal;
+    expect(signal?.aborted).toBe(true);
+    expect(sampler.historyOf(boxId)).toHaveLength(1);
+    expect(sampler.statsOf(boxId)).toMatchObject({ memUsage: 64 * MB });
+    expect(sampleFrames).toEqual([]);
   });
 });
 

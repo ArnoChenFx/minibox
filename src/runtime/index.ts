@@ -248,7 +248,8 @@ export interface Runtime {
   containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string>;
   /** Writable-layer changes (`docker diff`). An unchanged container returns an empty list. */
   containerDiff(id: string): Promise<ContainerChange[]>;
-  containerStats(id: string): Promise<ContainerStats>;
+  /** One sample of a container's usage. An aborted `signal` rejects with `AbortError` once the engine call is cancelled. */
+  containerStats(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerStats>;
   commitContainer(id: string, spec: CommitSpec): Promise<void>;
   /** Extracts a tar archive into `path`. Works on created containers that are not running. */
   putArchive(id: string, path: string, tar: Readable | Buffer): Promise<void>;

@@ -1,3 +1,4 @@
+import { untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
 import { type ContainerInfo, type ContainerStats, isRuntimeError, type RuntimeEvent } from "../runtime";
 import { projectBox } from "../services/box-view";
@@ -24,6 +25,8 @@ const STATE_VERBS = new Set([
   "health_status",
 ]);
 const STATS_CONCURRENCY = 8;
+/** Longest a stats call may take. A longer interval waits this long for a sample at most. */
+const STATS_TIMEOUT_MS = 5000;
 const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 
@@ -74,6 +77,12 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** A running box and the container a sample of it is taken from. */
+interface Target {
+  boxId: string;
+  containerId: string;
+}
+
 async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = [];
   let next = 0;
@@ -107,6 +116,8 @@ export class HostSampler {
   private readonly dirty = new Map<string, "refresh" | "remove">();
   private drainQueued = false;
   private queue: Promise<void> = Promise.resolve();
+  /** The sample rounds, in order. A round's stats calls run here, outside the queue, so a slow engine stalls no write. */
+  private rounds: Promise<void> = Promise.resolve();
   private abort: AbortController | null = null;
   private unsubscribe: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -167,9 +178,15 @@ export class HostSampler {
     return this.enqueue(() => this.drain());
   }
 
-  /** Resolves once every queued engine read and cache update has finished. */
-  settle(): Promise<void> {
-    return this.queue;
+  /** Resolves once every queued engine read, cache update and sample round has finished. */
+  async settle(): Promise<void> {
+    let queue: Promise<void>;
+    let rounds: Promise<void>;
+    do {
+      queue = this.queue;
+      rounds = this.rounds;
+      await Promise.all([queue, rounds]);
+    } while (queue !== this.queue || rounds !== this.rounds);
   }
 
   /** The boxes the cache holds, projected as the list endpoint shows them, sorted by name. */
@@ -227,7 +244,7 @@ export class HostSampler {
 
   /** Samples every running box now, as the timer does once per interval. */
   sampleNow(): Promise<void> {
-    return this.enqueue(() => this.round());
+    return this.sampleRound();
   }
 
   private async run(signal: AbortSignal): Promise<void> {
@@ -339,9 +356,7 @@ export class HostSampler {
     this.failures = 0;
     this.setState("live", null);
     this.reconcile();
-    void this.enqueue(() => this.round()).catch((e: unknown) =>
-      log.error("sampler.round_failed", { host: host.host.id, error: errorText(e) }),
-    );
+    void this.sampleRound();
   }
 
   /**
@@ -364,48 +379,90 @@ export class HostSampler {
     }
   }
 
+  /**
+   * Runs one sample round after the rounds before it. The targets are picked in the queue, so they follow every change
+   * queued before the round. The stats calls run outside the queue, and only the write of their results is queued again.
+   */
+  private sampleRound(): Promise<void> {
+    const run = this.rounds
+      .then(() => this.round())
+      .catch((e: unknown) =>
+        log.error("sampler.round_failed", { host: this.currentHost().host.id, error: errorText(e) }),
+      );
+    this.rounds = run;
+    return run;
+  }
+
   private async round(): Promise<void> {
-    if (!this.ready()) return;
-    const host = this.currentHost();
-    const targets: { boxId: string; containerId: string }[] = [];
+    const epoch = this.abort?.signal;
+    const targets = await this.enqueue(async () => this.runningBoxes());
+    if (!epoch || targets.length === 0) return;
+    const timeoutMs = Math.min(this.options.intervalMs, STATS_TIMEOUT_MS);
+    const samples = await mapLimit(targets, STATS_CONCURRENCY, (target) => this.sampleBox(target, epoch, timeoutMs));
+    await this.enqueue(async () => this.record(epoch, targets, samples));
+  }
+
+  /** The running boxes whose container the cache holds. Empty while the cache is not current. */
+  private runningBoxes(): Target[] {
+    if (!this.ready()) return [];
+    const targets: Target[] = [];
     for (const spec of this.specs.values()) {
       const info = this.containerOf(spec);
       if (info?.running) targets.push({ boxId: spec.id, containerId: info.id });
     }
-    const samples = await mapLimit(targets, STATS_CONCURRENCY, async (target) => {
-      try {
-        return { boxId: target.boxId, stats: await host.runtime.containerStats(target.containerId) };
-      } catch (e) {
-        if (!isRuntimeError(e, "not_found")) {
-          log.warn("sampler.stats_failed", { host: host.host.id, container: target.containerId, error: errorText(e) });
-        }
-        return null;
-      }
-    });
+    return targets;
+  }
+
+  /** One stats call. A call that has not answered by the timeout is a missed sample, not a failure of the round. */
+  private async sampleBox(target: Target, epoch: AbortSignal, timeoutMs: number): Promise<ContainerStats | null> {
+    const host = this.currentHost();
+    const deadline = AbortSignal.any([epoch, AbortSignal.timeout(timeoutMs)]);
+    try {
+      return await untilAborted(host.runtime.containerStats(target.containerId, { signal: deadline }), deadline);
+    } catch (e) {
+      if (epoch.aborted || isRuntimeError(e, "not_found")) return null;
+      log.warn("sampler.stats_failed", {
+        host: host.host.id,
+        container: target.containerId,
+        error: deadline.aborted ? `no answer within ${timeoutMs} ms` : errorText(e),
+      });
+      return null;
+    }
+  }
+
+  /** Writes the samples of a round into the rings and publishes them. A sample of a container that has since changed is dropped. */
+  private record(epoch: AbortSignal, targets: Target[], samples: (ContainerStats | null)[]): void {
+    if (this.abort?.signal !== epoch || !this.ready()) return;
+    const host = this.currentHost();
     const t = Date.now();
     const boxes: BoxSample[] = [];
     const keep = Math.max(1, this.options.history);
-    for (const sample of samples) {
-      if (!sample) continue;
-      const ring = this.rings.get(sample.boxId) ?? [];
-      ring.push({ t, ...sample.stats });
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      const stats = samples[index];
+      if (!target || !stats || !this.runsContainer(target)) continue;
+      const ring = this.rings.get(target.boxId) ?? [];
+      ring.push({ t, ...stats });
       if (ring.length > keep) ring.splice(0, ring.length - keep);
-      this.rings.set(sample.boxId, ring);
-      boxes.push({ boxId: sample.boxId, ...sample.stats });
+      this.rings.set(target.boxId, ring);
+      boxes.push({ boxId: target.boxId, ...stats });
     }
     if (boxes.length > 0) this.sink.publish("sample", { hostId: host.host.id, t, boxes });
+  }
+
+  /** True while the box still runs the container that a sample was taken from. */
+  private runsContainer(target: Target): boolean {
+    const spec = this.specs.get(target.boxId);
+    const info = spec ? this.containerOf(spec) : undefined;
+    return info?.id === target.containerId && info.running;
   }
 
   private scheduleRound(delay: number): void {
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.enqueue(() => this.round())
-        .catch((e: unknown) =>
-          log.error("sampler.round_failed", { host: this.currentHost().host.id, error: errorText(e) }),
-        )
-        .finally(() => {
-          if (this.started) this.scheduleRound(this.options.intervalMs);
-        });
+      void this.sampleRound().finally(() => {
+        if (this.started) this.scheduleRound(this.options.intervalMs);
+      });
     }, delay);
     this.timer.unref?.();
   }

@@ -470,8 +470,13 @@ export function createDockerRuntime(socketPath: string): Runtime {
       return parseChanges(await call(() => docker.getContainer(id).changes()));
     },
 
-    async containerStats(id) {
-      const raw = (await call(() => docker.getContainer(id).stats({ stream: false }))) as Docker.ContainerStats;
+    async containerStats(id, opts) {
+      // dockerode's typings omit abortSignal, which docker-modem forwards to the request. A missing key is left out
+      // because the query string would otherwise carry `abortSignal=`.
+      const options: { stream: false; abortSignal?: AbortSignal } = opts?.signal
+        ? { stream: false, abortSignal: opts.signal }
+        : { stream: false };
+      const raw = (await call(() => docker.getContainer(id).stats(options))) as Docker.ContainerStats;
       return computeStats(raw);
     },
 

@@ -541,8 +541,10 @@ export class FakeRuntime implements Runtime {
       .join("");
   }
 
-  async containerStats(id: string): Promise<ContainerStats> {
-    this.enter("containerStats", [id]);
+  async containerStats(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerStats> {
+    this.enter("containerStats", [id, opts]);
+    await this.gate("containerStats");
+    if (opts?.signal?.aborted) throw abortError();
     const memLimit = this.getContainer(id).memoryBytes ?? 1024 ** 3;
     return { cpuPercent: 1.5, memUsage: Math.round(memLimit / 4), memLimit, memPercent: 25 };
   }
