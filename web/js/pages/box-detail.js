@@ -19,6 +19,7 @@ import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
+import { connectCommands, setupCommands } from "../lib/ssh.js";
 import {
   boxState,
   confirmDialog,
@@ -120,6 +121,7 @@ export function render(view, id, tab = "overview") {
       <div class="page-actions">
         ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}${t("act.stop")}</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}${t("act.start")}</button>`}
         <button class="btn" data-action="restart">${icon("restart")}${t("act.restart")}</button>
+        <button class="btn" data-action="ssh">${icon("terminal")}${t("act.ssh")}</button>
         <button class="btn" data-action="snapshot">${icon("camera")}${t("act.snapshot")}</button>
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
@@ -220,6 +222,7 @@ export function render(view, id, tab = "overview") {
     start: (b) => lifecycle(box, "start", b).then(rerender),
     stop: (b) => lifecycle(box, "stop", b).then(rerender),
     restart: (b) => lifecycle(box, "restart", b).then(rerender),
+    ssh: () => openSshDialog(box),
     snapshot: () => snapshotBox(box).then((s) => s && tab === "snapshots" && rerender()),
     rebuild: async () => {
       try {
@@ -307,6 +310,38 @@ function mountsCard(box) {
         : `<div class="card-body"><p class="subtle">${t("vol.noMounts")}</p></div>`
     }</div>
     <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;
+}
+
+function sshStep(number, title, help, commands) {
+  return `<section class="ssh-step">
+    <div class="ssh-step-head"><span class="ssh-step-num">${number}</span><strong>${esc(title)}</strong></div>
+    <p class="help">${esc(help)}</p>
+    <div class="ssh-cmd"><pre class="token-snippet">${esc(commands)}</pre><button class="btn btn-sm" type="button" data-copy="${esc(commands)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button></div>
+  </section>`;
+}
+
+function openSshDialog(box) {
+  const { root } = openDialog({
+    title: t("bd.sshTitle"),
+    description: esc(t("bd.sshIntro")),
+    iconName: "terminal",
+    wide: true,
+    body: `<div class="ssh-steps">
+      ${sshStep(1, t("bd.sshSetup"), t("bd.sshSetupHelp"), setupCommands(location.origin))}
+      ${sshStep(2, t("bd.sshConnect"), t("bd.sshConnectHelp"), connectCommands(box.name))}
+    </div>`,
+    footer: `<button class="btn" data-close type="button">${t("common.close")}</button>`,
+  });
+  root.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-copy]");
+    if (!button) return;
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      toast(t("bd.sshCopied"));
+    } catch (err) {
+      toastError(t("bd.sshCopyFailed"), err);
+    }
+  });
 }
 
 async function attachVolume(box) {
