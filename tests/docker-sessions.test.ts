@@ -28,7 +28,7 @@ import type { Runtime } from "../src/runtime";
 import { startServer } from "../src/server";
 import { type Box, createBox, startBox, stopBox } from "../src/services/boxes";
 import { ContainerWatch } from "../src/services/container-watch";
-import { TerminalService, VIEWER_ATTACHES_MAX } from "../src/services/terminals";
+import { SESSIONS_PER_BOX_MAX, TerminalService, VIEWER_ATTACHES_MAX } from "../src/services/terminals";
 import type { TerminalData } from "../src/ws/terminal";
 import { rejectionOf, TEST_KEY, testConfig } from "./support/app";
 
@@ -611,6 +611,47 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       await waitFor(async () => (await runningExecs(box)) === 0, "the attach to be killed");
       expect(await attachedClients(box)).toBe(0);
       expect(await app.terminals.list(host, box)).toEqual([expect.objectContaining({ name: "abrupt" })]);
+    },
+    LONG,
+  );
+
+  test(
+    "a tmux client attached from outside MiniBox is an open terminal, and a detached session is not",
+    async () => {
+      const box = await newBox("outside");
+      await app.terminals.start(host, box, "outside", "rest");
+      expect(await app.terminals.hasAttachedClient(host, box.id)).toBe(false);
+
+      const external = await runtime.startExec(box.id, {
+        cmd: ["tmux", "-u", "attach-session", "-t", "=outside"],
+        env: ["TERM=xterm-256color", "LANG=C.UTF-8"],
+        workingDir: "/",
+        user: "dev",
+      });
+      try {
+        await waitFor(() => app.terminals.hasAttachedClient(host, box.id), "the outside client to be seen");
+        expect(await attachedClients(box)).toBe(1);
+      } finally {
+        await external.kill();
+      }
+      await waitFor(async () => !(await app.terminals.hasAttachedClient(host, box.id)), "the outside client to leave");
+    },
+    LONG,
+  );
+
+  test(
+    "sessions under names MiniBox cannot use fill the box's limit, and the list does not show them",
+    async () => {
+      const box = await newBox("crowded");
+      const names = ["my work", ...Array.from({ length: SESSIONS_PER_BOX_MAX - 1 }, (_, i) => `s${i + 1}`)];
+      await shell(box.id, names.map((name) => `tmux -u new-session -d -s '${name}' sh`).join(" && "));
+
+      expect(await rejectionOf(app.terminals.start(host, box, "extra", "rest"))).toMatchObject({
+        status: 429,
+        key: "session_box_limit",
+      });
+      const listed = (await app.terminals.list(host, box)).map((session) => session.name);
+      expect(listed.toSorted()).toEqual(names.slice(1).toSorted());
     },
     LONG,
   );

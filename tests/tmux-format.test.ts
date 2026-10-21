@@ -62,10 +62,16 @@ describe("session list", () => {
     ]);
   });
 
-  test("skips lines whose name or id is not valid", () => {
-    expect(parseSessionList("bad:name\t$1\t1\t0\tagent\n\n")).toEqual([]);
-    expect(parseSessionList("noid\t1\t1\t0\tagent")).toEqual([]);
-    expect(parseSessionList("noid\t\t1\t0\tagent")).toEqual([]);
+  test("keeps a session whose name MiniBox cannot use, so it still counts toward the box's limit", () => {
+    expect(parseSessionList("my work\t$1\t1750000000\t0\tagent\n")).toEqual([
+      { name: "my work", id: "$1", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
+    ]);
+  });
+
+  test("skips lines with no name or without a valid id", () => {
+    expect(parseSessionList("\t$1\t1750000000\t0\tagent\n\n")).toEqual([]);
+    expect(parseSessionList("noid\t1750000000\t1750000000\t0\tagent")).toEqual([]);
+    expect(parseSessionList("noid\t\t1750000000\t0\tagent")).toEqual([]);
   });
 
   test("an empty server prints nothing", () => {

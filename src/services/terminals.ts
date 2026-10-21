@@ -37,7 +37,10 @@ export const READ_LINES_MAX = 2000;
 const HISTORY_LINES = READ_LINES_MAX * 2;
 /** The most output one tmux command is read for. Past it the oldest bytes are dropped, so the newest screen still shows. */
 const OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
-/** Sessions one box may hold. Each is a tmux session with an entry here, so this bounds both. */
+/**
+ * Tmux sessions one box may hold. Every session tmux lists counts, including one made outside MiniBox and one whose name
+ * MiniBox cannot use, since those are the ones the list hides.
+ */
 export const SESSIONS_PER_BOX_MAX = 16;
 /** Terminals one session may have open at once, from the console and viewers together. Each is a tmux client and an exec. */
 export const ATTACHES_PER_SESSION_MAX = 8;
@@ -278,7 +281,10 @@ export class TerminalService {
 
   constructor(private readonly options: TerminalServiceOptions) {}
 
-  /** True when any WebSocket (or other) attach is open on this container. Exempts the box from idle sleep. */
+  /**
+   * True when MiniBox itself has a terminal open, or being opened, on this container. The idle check also asks
+   * `hasAttachedClient`, which sees terminals MiniBox did not open.
+   */
   hasOpenAttachment(containerId: string): boolean {
     for (const tracked of this.tracked.values()) {
       if (
@@ -299,11 +305,27 @@ export class TerminalService {
     return this.serialized(boxKey(box.id), async () => {
       const listed = await this.listTmux(host, box.id);
       this.forgetBox(box.id, new Set(listed.map((session) => session.name)));
-      return listed.map((session) => {
-        const tracked = this.track(host.host.id, box, session);
-        return { ...infoOf(tracked), createdAt: session.createdAt, attached: session.attached };
-      });
+      return listed
+        .filter((session) => isSessionName(session.name))
+        .map((session) => {
+          const tracked = this.track(host.host.id, box, session);
+          return { ...infoOf(tracked), createdAt: session.createdAt, attached: session.attached };
+        });
     });
+  }
+
+  /**
+   * True when a tmux client is attached to a session in the box: an open terminal, whoever opened it. That is MiniBox's
+   * console or viewer, or another client such as `docker exec -it <box> tmux attach` (#12). A box with no tmux, or no
+   * tmux server, has no client.
+   */
+  async hasAttachedClient(host: HostCtx, containerId: string): Promise<boolean> {
+    try {
+      return (await this.listTmux(host, containerId)).some((session) => session.attached > 0);
+    } catch (e) {
+      if (e instanceof AppError && e.key === "session_image_unsupported") return false;
+      throw e;
+    }
   }
 
   async start(

@@ -304,6 +304,76 @@ describe("terminal service: sessions", () => {
 
     expect(await env.terminals.start(env.host, other, "s1", "rest")).toMatchObject({ created: true });
   });
+
+  test("a session MiniBox cannot address still counts toward the limit, and the list does not show it", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    env.runtime.tmux.run(box.id, ["-u", "new-session", "-d", "-s", "my work", "--", "sh"]);
+    for (let i = 1; i < SESSIONS_PER_BOX_MAX; i++) {
+      await env.terminals.start(env.host, box, `s${i}`, "rest");
+    }
+
+    expect(await rejectionOf(env.terminals.start(env.host, box, "extra", "rest"))).toMatchObject({
+      status: 429,
+      key: "session_box_limit",
+    });
+    const names = (await env.terminals.list(env.host, box)).map((session) => session.name);
+    expect(names).toHaveLength(SESSIONS_PER_BOX_MAX - 1);
+    expect(names).not.toContain("my work");
+  });
+});
+
+describe("terminal service: attached clients", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("a box with no tmux server has no attached client", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+
+    expect(await env.terminals.hasAttachedClient(env.host, box.id)).toBe(false);
+  });
+
+  test("a terminal MiniBox opened is an attached client until it closes", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    const attachment = await env.terminals.attach(env.host, box, "work", { source: "rest", principal: OWNER });
+    expect(await env.terminals.hasAttachedClient(env.host, box.id)).toBe(true);
+
+    await attachment.close();
+    expect(await env.terminals.hasAttachedClient(env.host, box.id)).toBe(false);
+  });
+
+  test("a terminal opened from outside MiniBox counts, and a detached session does not", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    expect(await env.terminals.hasAttachedClient(env.host, box.id)).toBe(false);
+
+    const external = await env.runtime.startExec(box.id, {
+      cmd: ["tmux", "-u", "attach-session", "-t", "=work"],
+      env: ["TERM=xterm-256color"],
+      workingDir: "/",
+      user: "dev",
+      tty: true,
+    });
+    expect(await env.terminals.hasAttachedClient(env.host, box.id)).toBe(true);
+
+    await external.kill();
+    expect(await env.terminals.hasAttachedClient(env.host, box.id)).toBe(false);
+  });
+
+  test("a box whose image has no tmux has no attached client, and the check does not fail", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    env.runtime.tmuxMissing = true;
+
+    expect(await env.terminals.hasAttachedClient(env.host, box.id)).toBe(false);
+  });
 });
 
 describe("terminal service: reads", () => {
