@@ -1,5 +1,6 @@
 /**
- * Runs the real-engine integration tests (tests/docker-runtime.test.ts) against the local Docker engine.
+ * Runs the real-engine integration tests (tests/docker-runtime.test.ts and tests/docker-sessions.test.ts) against the
+ * local Docker engine, one file per process.
  *
  *   bun run test:docker
  *
@@ -60,20 +61,28 @@ async function preflight(): Promise<void> {
   }
 }
 
+const TEST_FILES = ["tests/docker-runtime.test.ts", "tests/docker-sessions.test.ts"];
+
+/** Runs each file in its own process, so each one's cleanup sees only what it made. The first failure is the status. */
 async function runTests(): Promise<number> {
-  const tests = Bun.spawn([process.execPath, "test", "tests/docker-runtime.test.ts"], {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      MINIBOX_TEST_DOCKER: "1",
-      MINIBOX_TEST_PREFIX: prefix,
-      MINIBOX_TEST_IMAGE: image,
-      DOCKER_SOCKET: socket,
-    },
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  return tests.exited;
+  let status = 0;
+  for (const file of TEST_FILES) {
+    const tests = Bun.spawn([process.execPath, "test", file], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        MINIBOX_TEST_DOCKER: "1",
+        MINIBOX_TEST_PREFIX: prefix,
+        MINIBOX_TEST_IMAGE: image,
+        DOCKER_SOCKET: socket,
+      },
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const code = await tests.exited;
+    if (code !== 0 && status === 0) status = code;
+  }
+  return status;
 }
 
 /** Removes everything this run labelled, containers first so that images and volumes are no longer in use. */
@@ -84,6 +93,7 @@ async function sweep(): Promise<void> {
   const images = [
     ...lines(await docker(["images", "-q", "--filter", `label=${prefix}.snapshot`])),
     ...lines(await docker(["images", "-q", "--filter", `label=${prefix}.template`])),
+    ...lines(await docker(["images", "-q", "--filter", `label=${prefix}`])),
   ];
   const uniqueImages = [...new Set(images)];
   if (uniqueImages.length > 0) await docker(["rmi", "-f", ...uniqueImages]);
