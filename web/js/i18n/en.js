@@ -146,6 +146,8 @@ export default {
   "err.wrong_key": "Incorrect access key.",
   "err.session_not_found": "Session not found.",
   "err.box_not_found": "Box not found.",
+  "err.box_ttl_expired": "The box's TTL has expired, so it cannot be started.",
+  "err.box_ttl_expired_hint": "Clear the TTL or set a later one, then start the box.",
   "err.snapshot_not_found": "Snapshot not found.",
   "err.template_not_found": "Template not found.",
   "err.template_image_missing":

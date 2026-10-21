@@ -6,6 +6,7 @@ import { msg } from "../src/lib/messages";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
+import { sleepBox } from "../src/services/boxes";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
@@ -23,6 +24,16 @@ function setup() {
     execs: app.execs,
   };
   return { app, runtime, ctx };
+}
+
+/** The stable `bx_…` id of a box, which the activity heartbeat is keyed on. */
+function boxIdOf(app: ReturnType<typeof setup>["app"], containerId: string): string {
+  const spec = app.hosts
+    .get()
+    .specs.list()
+    .find((candidate) => candidate.containerId === containerId);
+  if (!spec) throw new Error(`no spec for container ${containerId}`);
+  return spec.id;
 }
 
 async function createBox(
@@ -135,6 +146,78 @@ describe("exec", () => {
       hint: msg("exec_wake_failed_hint").text,
       retryable: false,
     });
+  });
+
+  test("an exec that wakes a sleeping box audits the wake under the exec, and an exec on a running box wakes nothing", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = { stdout: "", stderr: "", code: 0 };
+    const published: StoredEvent[] = [];
+    app.bus.subscribe("event", (event) => published.push(event));
+    const id = await createBox(app, ctx);
+    await sleepBox(app.hosts.get(), id, "idle");
+    published.length = 0;
+
+    const woken = (await app.operations.run("exec.run", ctx, { id, argv: ["true"] })) as { woke: boolean };
+    expect(woken.woke).toBe(true);
+    const run = published.find((event) => event.op === "exec.run");
+    expect(published.find((event) => event.op === "box.wake")).toMatchObject({
+      parentId: run?.id,
+      source: "rest",
+      detail: { from: "idle" },
+    });
+
+    published.length = 0;
+    const running = (await app.operations.run("exec.run", ctx, { id, argv: ["true"] })) as { woke: boolean };
+    expect(running.woke).toBe(false);
+    expect(published.some((event) => event.op === "box.wake")).toBe(false);
+  });
+
+  test("an exec counts as activity when it starts and when it ends", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const id = await createBox(app, ctx);
+    const boxId = boxIdOf(app, id);
+    const stale = Date.now() - 600_000;
+
+    app.pulse.touch(boxId, "exec", stale);
+    const started = (await app.operations.run("exec.run", ctx, {
+      id,
+      argv: ["sleep", "30"],
+      background: true,
+      timeoutSec: 30,
+    })) as { execId: string };
+    expect(app.pulse.lastAt(boxId)).toBeGreaterThan(Date.now() - 5_000);
+
+    app.pulse.touch(boxId, "exec", stale);
+    await app.operations.run("exec.kill", ctx, { execId: started.execId });
+    expect(app.pulse.lastAt(boxId)).toBeGreaterThan(Date.now() - 5_000);
+  });
+
+  test("an exec on a box whose TTL has expired is refused with 409, and starts nothing", async () => {
+    const { app, runtime, ctx } = setup();
+    const created = (await app.operations.run("box.create", ctx, {
+      name: "expiring",
+      cpus: 1,
+      memoryMb: 256,
+      ttlSec: 60,
+    })) as { box: { id: string } };
+    const id = created.box.id;
+    const host = app.hosts.get();
+    const spec = host.specs.findByName("expiring");
+    if (!spec) throw new Error("no spec for expiring");
+    host.specs.write({ ...spec, createdAt: new Date(Date.now() - 120_000).toISOString() });
+    expect(await sleepBox(host, id, "ttl")).toBe(true);
+    const starts = runtime.callsTo("startContainer").length;
+    const execs = runtime.callsTo("startExec").length;
+
+    const error = await rejectionOf(app.operations.run("exec.run", ctx, { id, argv: ["true"] }));
+    expect(error).toMatchObject({
+      status: 409,
+      key: "box_ttl_expired",
+      hint: msg("exec_wake_failed_hint").text,
+    });
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
+    expect(runtime.callsTo("startExec")).toHaveLength(execs);
   });
 
   test("keeps a head and a tail inline and the larger window behind outputRef", async () => {

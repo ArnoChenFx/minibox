@@ -8,7 +8,7 @@ import type { HostCtx } from "../host/registry";
 import { AppError, conflict, notFound, toAppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { type MessageKey, msg } from "../lib/messages";
-import { type Box, startBox } from "./boxes";
+import { type Box, ensureRunning } from "./boxes";
 import { EdgeBuffer, EXEC_INLINE_EDGE_BYTES } from "./exec-buffer";
 
 const MAX_LIVE = 200;
@@ -85,7 +85,10 @@ export interface ExecService {
 
 interface LiveExec {
   id: string;
+  /** Container id. The runtime and the run registry key on it. */
   boxId: string;
+  /** Stable box id (`bx_…`). The activity heartbeat keys on it. */
+  stableId: string;
   boxName: string;
   session: {
     stream: { write(chunk: string): void; end(): void };
@@ -178,6 +181,8 @@ export class ExecManager implements ExecService {
   private readonly live = new Map<string, LiveExec>();
   /** Background execs whose start is in progress, by box. They count against the limits before they are live. */
   private readonly starting = new Map<string, number>();
+  /** Runs in progress by container, from before the box is woken until the run returns. Foreground runs count too. */
+  private readonly entering = new Map<string, number>();
   private onActivity: ((boxId: string) => void) | undefined;
 
   constructor(
@@ -190,11 +195,11 @@ export class ExecManager implements ExecService {
     this.onActivity = handler;
   }
 
-  /** True when a background exec is running or starting on this container. Exempts the box from idle sleep. */
-  hasBackground(containerId: string): boolean {
-    if ((this.starting.get(containerId) ?? 0) > 0) return true;
+  /** True while an exec is starting or running on this container, foreground or background. Exempts the box from idle sleep. */
+  hasRunning(containerId: string): boolean {
+    if ((this.entering.get(containerId) ?? 0) > 0) return true;
     for (const item of this.live.values()) {
-      if (item.boxId === containerId && item.background && !item.settled) return true;
+      if (item.boxId === containerId && !item.settled) return true;
     }
     return false;
   }
@@ -206,23 +211,21 @@ export class ExecManager implements ExecService {
 
   async run(host: HostCtx, box: Box, input: ExecRunInput, record?: (note: AuditNote) => void): Promise<ExecRunResult> {
     const releaseSlot = input.background ? this.reserveBackground(box.id) : noop;
+    const leaveRun = this.enter(box.id);
     try {
-      let current = box;
-      let woke = false;
-      if (!box.running) {
-        try {
-          current = await startBox(host, box.boxId);
-          woke = true;
-        } catch (e) {
-          const err = toAppError(e);
-          const message = err.key ? msg(err.key as MessageKey, err.params) : err.message;
-          throw new AppError(err.status, err.code, message, err.details, {
-            hint: msg("exec_wake_failed_hint"),
-            retryable: err.retryable,
-          });
-        }
+      this.onActivity?.(box.boxId);
+      let current: Box;
+      let woke: boolean;
+      try {
+        ({ box: current, woke } = await ensureRunning(host, box.boxId, { record }));
+      } catch (e) {
+        const err = toAppError(e);
+        const message = err.key ? msg(err.key as MessageKey, err.params) : err.message;
+        throw new AppError(err.status, err.code, message, err.details, {
+          hint: msg("exec_wake_failed_hint"),
+          retryable: err.retryable,
+        });
       }
-      this.onActivity?.(current.boxId);
 
       const argv = input.argv ?? (input.cmd !== undefined ? ["/bin/sh", "-c", input.cmd] : undefined);
       if (!argv) throw new AppError(500, "internal", "exec was called without cmd or argv");
@@ -258,6 +261,7 @@ export class ExecManager implements ExecService {
       if (!input.background) await Promise.race([live.done, live.released]);
       return this.view(live);
     } finally {
+      leaveRun();
       releaseSlot();
     }
   }
@@ -319,6 +323,19 @@ export class ExecManager implements ExecService {
     return { execId, stdout: file.stdout, stderr: file.stderr, truncated, stdoutBytes, stderrBytes };
   }
 
+  /** Marks a run as in progress in this container. The returned function unmarks it. */
+  private enter(containerId: string): () => void {
+    this.entering.set(containerId, (this.entering.get(containerId) ?? 0) + 1);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      const left = (this.entering.get(containerId) ?? 1) - 1;
+      if (left > 0) this.entering.set(containerId, left);
+      else this.entering.delete(containerId);
+    };
+  }
+
   /**
    * Admits one background exec in `boxId`, or refuses with 429. The slot is taken before the box is woken, so a
    * refused request never starts a box. The returned function gives the slot back.
@@ -363,6 +380,7 @@ export class ExecManager implements ExecService {
     return {
       id: `ex_${ulid()}`,
       boxId: box.id,
+      stableId: box.boxId,
       boxName: box.name,
       session,
       stdout: new EdgeBuffer(OUTPUT_HEAD_TAIL_BYTES),
@@ -553,6 +571,7 @@ export class ExecManager implements ExecService {
       ref: { execId: live.id, outputRef },
       durationMs,
     });
+    this.onActivity?.(live.stableId);
     this.notify(live);
   }
 

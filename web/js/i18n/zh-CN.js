@@ -134,6 +134,8 @@ export default {
   "err.wrong_key": "访问密钥不正确。",
   "err.session_not_found": "找不到该会话。",
   "err.box_not_found": "找不到该 Box。",
+  "err.box_ttl_expired": "Box 的 TTL 已到期，无法启动。",
+  "err.box_ttl_expired_hint": "清除 TTL，或设置更晚的 TTL，然后再启动 Box。",
   "err.snapshot_not_found": "找不到该快照。",
   "err.template_not_found": "找不到该模板。",
   "err.template_image_missing": "模板镜像 {image} 不存在，请先在「模板」页构建或选择其他模板。",
