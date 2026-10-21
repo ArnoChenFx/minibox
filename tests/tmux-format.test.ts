@@ -152,4 +152,18 @@ describe("appendedLines", () => {
   test("a shorter snapshot that is a prefix of the old one resets", () => {
     expect(appendedLines(["a", "b"], ["a"])).toBeUndefined();
   });
+
+  test("the prompt line grows when a command is typed, and that line is returned in full", () => {
+    expect(appendedLines(["$ "], ["$ echo one", "one", "$ "])).toEqual(["$ echo one", "one", "$ "]);
+    expect(appendedLines(["$ echo one", "one", "$ "], ["$ echo one", "one", "$ echo two", "two", "$ "])).toEqual([
+      "$ echo two",
+      "two",
+      "$ ",
+    ]);
+  });
+
+  test("a last line that grew is returned in full, and the lines before it are not", () => {
+    expect(appendedLines(["a", "$ "], ["a", "$ ec"])).toEqual(["$ ec"]);
+    expect(appendedLines(["a", "$ "], ["a", "$ "])).toEqual([]);
+  });
 });

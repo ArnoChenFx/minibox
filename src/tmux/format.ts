@@ -94,31 +94,27 @@ export function classifyTmuxFailure(code: number, stderr: string): TmuxFailure {
 }
 
 /**
- * The lines of `next` that come after `previous`, found as the longest suffix of `previous` that is also a prefix of `next`.
- * Lines that scrolled out of history at the top are skipped on their own. Returns `undefined` when nothing lines up,
+ * The lines of `next` that are new after `previous`. Finds the longest suffix of `previous` that lines up with the start
+ * of `next`, so lines that scrolled out of history at the top are skipped. The last line of `previous` is the one being
+ * typed on, so it may have grown in `next`; then it is returned again in full. Returns `undefined` when nothing lines up,
  * which means the screen was cleared or redrawn and the reader should start over from the current window.
  */
 export function appendedLines(previous: readonly string[], next: readonly string[]): string[] | undefined {
   if (previous.length === 0) return [...next];
-  const overlap = longestOverlap(previous, next);
-  if (overlap === 0) return undefined;
-  return next.slice(overlap);
+  const tail = previous[previous.length - 1] ?? "";
+  for (let k = Math.min(previous.length, next.length); k >= 1; k--) {
+    if (!alignsAt(previous, next, k, tail)) continue;
+    const grown = next[k - 1] !== tail;
+    return next.slice(grown ? k - 1 : k);
+  }
+  return undefined;
 }
 
-/** Knuth-Morris-Pratt over lines: the longest prefix of `pattern` that ends `text`. */
-function longestOverlap(text: readonly string[], pattern: readonly string[]): number {
-  const m = pattern.length;
-  if (m === 0) return 0;
-  const border = Array.from({ length: m }, () => 0);
-  for (let i = 1, k = 0; i < m; i++) {
-    while (k > 0 && pattern[i] !== pattern[k]) k = border[k - 1] ?? 0;
-    if (pattern[i] === pattern[k]) k++;
-    border[i] = k;
+/** Whether the last `k` lines of `previous` match the first `k` of `next`, the final one allowed to have grown from `tail`. */
+function alignsAt(previous: readonly string[], next: readonly string[], k: number, tail: string): boolean {
+  const start = previous.length - k;
+  for (let i = 0; i < k - 1; i++) {
+    if (previous[start + i] !== next[i]) return false;
   }
-  let k = 0;
-  for (const line of text) {
-    while (k > 0 && (k === m || line !== pattern[k])) k = border[k - 1] ?? 0;
-    if (line === pattern[k]) k++;
-  }
-  return k;
+  return (next[k - 1] ?? "").startsWith(tail);
 }
