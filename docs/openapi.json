@@ -7963,6 +7963,16 @@
               }
             }
           },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "412": {
             "description": "The If-Match revision is not the box's current revision.",
             "content": {

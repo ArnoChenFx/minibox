@@ -278,6 +278,7 @@ const volumeDetach = defineOperation({
   kind: "write",
   scope: "volume:attach",
   async: false,
+  conflicts: true,
   input: z.object({
     id: z.string().meta({ description: "Volume id (vol_…) or volume name." }),
     box: boxId(),
