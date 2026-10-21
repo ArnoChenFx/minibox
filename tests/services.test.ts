@@ -86,12 +86,7 @@ describe("createBox", () => {
     const error = await rejectionOf(newBox("alpha"));
     expect(error).toBeInstanceOf(AppError);
     expect(error).toMatchObject({ status: 409, key: "box_exists", params: { name: "alpha" } });
-    expect(runtime.ops().slice(before)).toEqual([
-      "inspectImage",
-      "ensureBridgeNetwork",
-      "inspectVolume",
-      "createContainer",
-    ]);
+    expect(runtime.ops().slice(before)).toEqual([]);
     expect(runtime.containers.size).toBe(1);
   });
 
