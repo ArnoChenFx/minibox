@@ -38,7 +38,7 @@ import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData } from "./ws
 
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
-const SSH_PATH = /^\/api\/ssh\/([^/]+)$/;
+const SSH_PATH = /^\/api\/ssh\/(?!host-key$)([^/]+)$/;
 const PROXY_HINT =
   "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
@@ -53,6 +53,29 @@ function addressOf(app: App, req: Request, server: Pick<Server<unknown>, "reques
  */
 function callerOf(app: App, req: Request, server: Pick<Server<unknown>, "requestIP">): Promise<Caller | null> {
   return resolveCaller(req, callerGate(app), addressOf(app, req, server));
+}
+
+/**
+ * `GET /api/ssh/<box>`. A WebSocket upgrade carries one SSH connection. A plain GET only runs the same checks, so the
+ * CLI can print a refusal as an HTTP error. Returns undefined once the socket has been upgraded.
+ */
+async function sshRequest(
+  app: App,
+  req: Request,
+  server: Server<SocketData>,
+  ref: string,
+): Promise<Response | undefined> {
+  const caller = await callerOf(app, req, server);
+  if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
+  if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+    await app.ssh.probe(app.hosts.get(), ref, caller);
+    return new Response(null, { status: 204 });
+  }
+  const lease = await app.ssh.enter(app.hosts.get(), ref, caller);
+  const data: SshSocketData = { kind: "ssh", lease };
+  if (server.upgrade(req, { data })) return undefined;
+  lease.release();
+  throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
 }
 
 async function handleApi(app: App, req: Request, url: URL, server: Server<SocketData>): Promise<Response> {
@@ -157,16 +180,9 @@ export function startServer(app: App): Server<SocketData> {
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
         const sm = SSH_PATH.exec(url.pathname);
-        if (sm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-          const caller = await callerOf(app, req, server);
-          if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
-          const lease = await app.ssh.enter(app.hosts.get(), decodeURIComponent(sm[1] ?? ""), caller);
-          const data: SshSocketData = { kind: "ssh", lease };
-          if (server.upgrade(req, { data })) return undefined;
-          lease.release();
-          throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
-        }
-        if (isPreviewPath(url.pathname)) {
+        if (sm && req.method === "GET") {
+          res = await sshRequest(app, req, server, decodeURIComponent(sm[1] ?? ""));
+        } else if (isPreviewPath(url.pathname)) {
           // Path-mode preview: session cookie only (share links deferred). Proxied pages get CSP sandbox.
           if (sessionCaller(req, app.sessions) === null) {
             throw new AppError(401, "unauthorized", msg("preview_unauthorized"));

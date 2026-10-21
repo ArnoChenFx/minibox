@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 
 import type { Server } from "bun";
 import type { Client, ClientChannel, ConnectConfig } from "ssh2";
@@ -13,7 +12,7 @@ import { getBox, stopBox } from "../src/services/boxes";
 import type { SocketData } from "../src/ws/socket";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
-import { openShell, openSsh, runCommand } from "./support/ssh";
+import { fingerprintOf, openShell, openSsh, runCommand } from "./support/ssh";
 import { call, mint } from "./support/tokens";
 
 const AUTH = { authorization: `Bearer ${TEST_KEY}` };
@@ -126,10 +125,6 @@ const statusOf = async (path: string, headers?: Record<string, string>) => (awai
 
 const errorKeyOf = (attempt: Attempt) => (JSON.parse(attempt.body) as { error: { key: string } }).error.key;
 
-/** The SHA-256 fingerprint OpenSSH prints for a host key blob. */
-const fingerprintOf = (blob: Buffer) =>
-  `SHA256:${createHash("sha256").update(blob).digest("base64").replace(/=+$/, "")}`;
-
 const detailOf = (event: AuditEvent): Record<string, unknown> => event.detail as Record<string, unknown>;
 
 function refusals(type: string): AuditEvent[] {
@@ -222,6 +217,20 @@ describe("SSH handshake and scope", () => {
       },
     });
     expect(seen).toBe(app.ssh.hostKeyView().fingerprint);
+  });
+
+  test("a plain GET of the SSH path runs the same checks without waking the box", async () => {
+    const box = await makeBox("quebec");
+    await stopBox(app.hosts.get(), box.boxId, "idle");
+    const allowed = await fetch(`${base}/api/ssh/${box.name}`, { headers: AUTH });
+    expect(allowed.status).toBe(204);
+    expect((await getBox(app.hosts.get(), box.boxId)).running).toBe(false);
+    const sandbox = mint(app, { name: "probe-sandbox", preset: "sandboxed-agent", boxes: { type: "all" } });
+    const refused = await fetch(`${base}/api/ssh/${box.name}`, {
+      headers: { authorization: `Bearer ${sandbox.secret}` },
+    });
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: { key: string } }).error.key).toBe("ssh_forbidden");
   });
 
   test("a stopped box is started by the connection, and the wake is audited", async () => {

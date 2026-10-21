@@ -1,6 +1,11 @@
+import { createHash } from "node:crypto";
 import { Duplex } from "node:stream";
 
 import { Client, type ClientChannel, type ConnectConfig } from "ssh2";
+
+/** The SHA-256 fingerprint OpenSSH prints for a host key blob. */
+export const fingerprintOf = (blob: Buffer) =>
+  `SHA256:${createHash("sha256").update(blob).digest("base64").replace(/=+$/, "")}`;
 
 export interface SshOpened {
   readonly client: Client;

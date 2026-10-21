@@ -3,7 +3,7 @@ import type { HostCtx } from "../host/registry";
 import { AppError, forbidden } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { ActivityPulse } from "../services/activity-pulse";
-import { getBox } from "../services/boxes";
+import { type Box, getBox } from "../services/boxes";
 import type { RecordNote } from "../services/terminals";
 import { boxVisible, scopeAllowed, viewOfBox } from "../tokens/model";
 import { CommandTracker } from "./commands";
@@ -46,24 +46,24 @@ export class SshGateway {
   }
 
   async enter(host: HostCtx, ref: string, caller: Caller): Promise<SshLease> {
-    if (caller.sessionId !== null) throw new AppError(401, "unauthorized", msg("ssh_bearer_required"));
-    const { principal } = caller;
-    if (principal.type === "token" && !scopeAllowed(principal.grants, "box:ssh")) {
-      throw forbidden(msg("ssh_forbidden"), { hint: msg("ssh_forbidden_hint") });
-    }
-    const found = await getBox(host, ref);
-    if (principal.type === "token" && !boxVisible(principal, viewOfBox(found, host.host.id))) {
-      throw forbidden(msg("box_out_of_scope"));
-    }
-    const release = this.admit(found.boxId);
+    const { box, forward } = await this.authorize(host, ref, caller);
+    const release = this.admit(box.boxId);
     try {
-      const box = await awakeBox(host, found.boxId, this.options.record);
-      const forward = principal.type === "owner" || scopeAllowed(principal.grants, "port:expose");
-      return { target: { host, box, principal, source: "rest", forward }, release };
+      const awake = await awakeBox(host, box.boxId, this.options.record);
+      return { target: { host, box: awake, principal: caller.principal, source: "rest", forward }, release };
     } catch (error) {
       release();
       throw error;
     }
+  }
+
+  /**
+   * Runs the handshake's checks without waking the box or holding a slot. A plain GET of the SSH path calls it, so
+   * `minibox ssh-proxy` can print a refusal as an HTTP error before it opens the WebSocket.
+   */
+  async probe(host: HostCtx, ref: string, caller: Caller): Promise<void> {
+    const { box } = await this.authorize(host, ref, caller);
+    this.admit(box.boxId)();
   }
 
   connect(lease: SshLease, socket: FrameSocket): SshConnection {
@@ -78,6 +78,20 @@ export class SshGateway {
       },
       socket,
     );
+  }
+
+  private async authorize(host: HostCtx, ref: string, caller: Caller): Promise<{ box: Box; forward: boolean }> {
+    if (caller.sessionId !== null) throw new AppError(401, "unauthorized", msg("ssh_bearer_required"));
+    const { principal } = caller;
+    if (principal.type === "token" && !scopeAllowed(principal.grants, "box:ssh")) {
+      throw forbidden(msg("ssh_forbidden"), { hint: msg("ssh_forbidden_hint") });
+    }
+    const box = await getBox(host, ref);
+    if (principal.type === "token" && !boxVisible(principal, viewOfBox(box, host.host.id))) {
+      throw forbidden(msg("box_out_of_scope"));
+    }
+    const forward = principal.type === "owner" || scopeAllowed(principal.grants, "port:expose");
+    return { box, forward };
   }
 
   private admit(boxId: string): () => void {
