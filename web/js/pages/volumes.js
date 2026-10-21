@@ -261,14 +261,15 @@ export function render(view) {
     const [poolBody, volumeBody, boxBody] = await Promise.all([
       api("/api/pools?refresh=true"),
       api("/api/volumes"),
-      // The owner's name is only a label: without the box list, a mount of the owner still names it.
-      api("/api/boxes").catch(() => ({ boxes: [] })),
+      // The owner's name is only a label: without the box list, a mount of the owner still names it. Volumes name
+      // boxes by their stable boxId, not by the container id.
+      api("/api/boxes?stats=false").catch(() => ({ boxes: [] })),
     ]);
     pools = poolBody.pools;
     roles = { ...roles, ...poolBody.roles };
     health = poolBody.health;
     volumes = volumeBody.volumes;
-    boxNames = new Map(boxBody.boxes.map((box) => [box.id, box.name]));
+    boxNames = new Map(boxBody.boxes.map((box) => [box.boxId, box.name]));
     draw();
     drawVolumes();
   };
