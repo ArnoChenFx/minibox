@@ -1,5 +1,5 @@
 import { boxVisible, type BoxView, type TokenGrants } from "../tokens/model";
-import type { EventFilter, EventVisibility } from "./store";
+import type { EventFilter, EventVisibility, NamedBox } from "./store";
 
 /** A principal the event log can see. `grants` is set on agent tokens and absent on the owner. */
 export interface VisibilityPrincipal {
@@ -33,7 +33,7 @@ function visibilityFor(id: string, grants: TokenGrants, boxes: readonly BoxView[
   const hosts = grants.hosts.type === "all" ? null : [...grants.hosts.ids];
   if (grants.boxes.type === "all") return { principalId: id, boxes: null, hosts };
   const ids = new Set<string>();
-  const names = new Set<string>();
+  const names: NamedBox[] = [];
   // A grant by id still matches events after the box is gone, when it is no longer in the spec list.
   if (grants.boxes.type === "ids") {
     for (const item of grants.boxes.ids) ids.add(item);
@@ -41,10 +41,11 @@ function visibilityFor(id: string, grants: TokenGrants, boxes: readonly BoxView[
   for (const box of boxes) {
     if (!boxVisible({ type: "token", id, grants }, box)) continue;
     ids.add(box.boxId);
-    names.add(box.name);
     if (box.containerId !== undefined) ids.add(box.containerId);
+    const since = box.createdAt === undefined ? Number.NaN : Date.parse(box.createdAt);
+    if (Number.isFinite(since)) names.push({ name: box.name, since });
   }
-  return { principalId: id, boxes: { ids: [...ids], names: [...names] }, hosts };
+  return { principalId: id, boxes: { ids: [...ids], names }, hosts };
 }
 
 /** The filter for one read: the caller's filters, with the principal's limits applied over them. */

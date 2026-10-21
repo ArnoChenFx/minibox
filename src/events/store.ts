@@ -29,12 +29,23 @@ export interface EventFilter {
 }
 
 /**
+ * A box name a principal may read events under, from the moment that box was created. Box names are unique while a
+ * box holds them, so an event with the name at or after `since` is about that box, and an earlier box that used the
+ * name is left out.
+ */
+export interface NamedBox {
+  readonly name: string;
+  readonly since: number;
+}
+
+/**
  * Which events a non-owner may read. `boxes: null` means every event about a box, plus the principal's own events.
- * `hosts: null` means every host. An empty id list matches no box; the principal's own events still match.
+ * `hosts: null` means every host. An empty id list matches no box; the principal's own events still match. Boxes are
+ * matched by id first. A name is kept for events recorded under it, which hold the container id a rebuild replaces.
  */
 export interface EventVisibility {
   readonly principalId: string;
-  readonly boxes: { readonly ids: readonly string[]; readonly names: readonly string[] } | null;
+  readonly boxes: { readonly ids: readonly string[]; readonly names: readonly NamedBox[] } | null;
   readonly hosts: readonly string[] | null;
 }
 
@@ -203,21 +214,25 @@ function filterSql(filter: EventFilter): { sql: string; params: (string | number
 }
 
 /** `0` is a false condition, so an empty id list does not emit `IN ()`. */
-function inList(column: string, values: readonly string[], params: string[]): string {
+function inList(column: string, values: readonly string[], params: (string | number)[]): string {
   if (values.length === 0) return "0";
   params.push(...values);
   return `${column} IN (${values.map(() => "?").join(", ")})`;
 }
 
-function visibleSql(visible: EventVisibility): { sql: string; params: string[] } {
-  const params: string[] = [visible.principalId];
+function visibleSql(visible: EventVisibility): { sql: string; params: (string | number)[] } {
+  const params: (string | number)[] = [visible.principalId];
   let boxes: string;
   if (visible.boxes === null) {
     boxes = "target_kind = 'box'";
   } else {
     const ids = inList("target_id", visible.boxes.ids, params);
-    const names = inList("target_name", visible.boxes.names, params);
-    boxes = `target_kind = 'box' AND (${ids} OR ${names})`;
+    const names = visible.boxes.names.map(({ name, since }) => {
+      params.push(name, since);
+      return "(target_name = ? AND ts >= ?)";
+    });
+    const byName = names.length === 0 ? "0" : names.join(" OR ");
+    boxes = `target_kind = 'box' AND (${ids} OR ${byName})`;
   }
   const clauses = [`(principal_id = ? OR (${boxes}))`];
   if (visible.hosts !== null) clauses.push(inList("host_id", visible.hosts, params));
@@ -247,7 +262,8 @@ function matchesVisible(event: StoredEvent, visible: EventVisibility): boolean {
     aboutBox = target?.kind === "box";
   } else if (target?.kind === "box") {
     aboutBox =
-      (target.id !== undefined && visible.boxes.ids.includes(target.id)) || visible.boxes.names.includes(target.name);
+      (target.id !== undefined && visible.boxes.ids.includes(target.id)) ||
+      visible.boxes.names.some((named) => named.name === target.name && event.ts >= named.since);
   }
   if (!own && !aboutBox) return false;
   return visible.hosts === null || visible.hosts.includes(event.hostId);

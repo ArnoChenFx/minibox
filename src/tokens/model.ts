@@ -79,6 +79,8 @@ export interface BoxView {
   readonly createdBy: string | null;
   readonly labels: Record<string, string>;
   readonly hostId?: string;
+  /** ISO time the box was created, when the view comes from its spec. Events by name count from then on. */
+  readonly createdAt?: string;
 }
 
 /** A volume record as the grant rules see it. */
@@ -341,6 +343,7 @@ export function viewOfSpec(spec: BoxSpec): BoxView {
     createdBy: spec.createdBy,
     labels: spec.labels,
     hostId: spec.hostId,
+    createdAt: spec.createdAt,
   };
 }
 
