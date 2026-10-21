@@ -40,7 +40,8 @@
 - `createVolume` 对已存在的卷成功，并保留原有标签和驱动选项。第三个参数选择驱动，例如本地驱动配上 NFS 或 bind 选项。
 - `inspectVolume` 与 `listVolumes` 返回驱动名和驱动选项；引擎没有报告选项时 `options` 缺省。
 - 挂载的 `mode: "ro"` 会写成绑定串末尾的 `:ro`。`kind: "bind"` 表示宿主机路径，缺省表示命名卷。
-- `runHelper` 把短生命周期容器跑到结束并删除。它不接入 Box 网络。超时会杀掉容器并返回退出码 124。日志去掉流帧头。卷的 chown、NFS 子目录和池探测都用它，镜像是基础模板，用户是 `0:0`。
+- `runHelper` 把短生命周期容器跑到结束，返回时容器已被删除。容器不接入网络（`NetworkMode: none`），根文件系统只读，`/tmp` 是 16 MiB 的 tmpfs，丢掉全部能力，只加上调用方在 `capAdd` 里列出的能力，禁止提权，内存 256 MiB，进程数 64。容器带 `AutoRemove`，引擎在它退出后删除。超时会杀掉容器并返回退出码 124。日志去掉流帧头。镜像是基础模板。各用途只请求所需的权限：卷 chown（`0:0`，`CHOWN`）、NFS 与路径池的子目录（`0:0`，`CHOWN`、`DAC_OVERRIDE`）、删除空目录（`0:0`，`DAC_OVERRIDE`）、测量（`0:0`，`DAC_READ_SEARCH`）、池探测（`1000:1000`，无能力）。
+- 辅助容器的命名卷挂载带 `NoCopy`。没有它，Docker 会把镜像里挂载点的目录复制进空卷，并覆盖卷根的属主和权限：基础模板的 `/mnt` 是 `root:root 755`，已 chown 为 `1000:1000` 的空卷挂到 `/mnt` 上就会变回 root。箱子容器的挂载不带 `NoCopy`，首次使用时仍从镜像复制初始内容。
 - `diskUsage(path)` 返回该路径所在文件系统的总字节和空闲字节。Docker 适配器用 `statfs`。路径不存在时为 `not_found`。
 - 创建容器时，镜像标签与请求中的标签合并，请求中的标签优先。
 - 创建同名容器返回 `conflict`。调用方不先查询再创建，重名由引擎判定。
@@ -93,7 +94,7 @@
 
 ## 测试
 
-- `FakeRuntime`（`tests/support/fake-runtime.ts`）是内存实现，遵循服务层依赖的语义：名称与镜像冲突、`not_found`、被挂载的卷不能删除、标签合并。仍被容器使用的镜像，移除最后一个标签需要 `force`，强制移除后镜像成为悬空镜像。`createVolume` 保留已有卷的标签和驱动选项。`disk` 提供 `diskUsage` 的默认值。`helperHandler` 决定 `runHelper` 的退出码和日志；默认对 `du` 返回 `0`，对 `df` 和 `test -f` 返回可解析的一行。镜像不存在时 `runHelper` 为 `not_found`。只读挂载在 `inspect` 里仍是 `ro`。
+- `FakeRuntime`（`tests/support/fake-runtime.ts`）是内存实现，遵循服务层依赖的语义：名称与镜像冲突、`not_found`、被挂载的卷不能删除、标签合并。仍被容器使用的镜像，移除最后一个标签需要 `force`，强制移除后镜像成为悬空镜像。`createVolume` 保留已有卷的标签和驱动选项。`disk` 提供 `diskUsage` 的默认值。`helperHandler` 决定 `runHelper` 的退出码和日志；默认对 `du` 返回 `0`，对 `df` 和 `test -f` 返回可解析的一行。镜像不存在时 `runHelper` 为 `not_found`。缺失的命名卷像引擎一样，在创建、启动、重启和运行辅助容器时自动创建。只读挂载在 `inspect` 里仍是 `ro`。
   - 它记录每次调用（`calls`、`callsTo(op)`、`ops()`）。
   - `fail(op, error)` 让下一次该操作失败，`down = true` 模拟引擎不可达。
   - 网络有 ID，容器第一次启动时固定在当前网络的 ID 上。网络被删除并重建后，启动该容器返回 `not_found`，直到调用 `reattachNetwork`，与真实引擎一致。

@@ -204,6 +204,7 @@ export async function measureVolume(host: HostCtx, ref: string): Promise<VolumeV
   const result = await host.runtime.runHelper({
     image,
     user: "0:0",
+    capAdd: ["DAC_READ_SEARCH"],
     cmd: ["du", "-sb", "/mnt"],
     mounts: [{ source: volume.engineName, target: "/mnt" }],
     timeoutSec: 120,

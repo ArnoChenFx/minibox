@@ -17,7 +17,7 @@ import { join } from "node:path";
 import Docker from "dockerode";
 
 import { BOX_PROFILES, type BoxProfile } from "../src/box-profile";
-import { createDockerRuntime } from "../src/docker/runtime";
+import { createDockerRuntime, toHelperOptions } from "../src/docker/runtime";
 import { createLocalHost } from "../src/host/registry";
 import type { Runtime } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
@@ -658,6 +658,207 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       } finally {
         restore();
       }
+    },
+    LONG,
+  );
+
+  test(
+    "helpers return their output and exit code, and none is left behind",
+    async () => {
+      for (let i = 0; i < 5; i++) {
+        expect(await runtime.runHelper({ image: IMAGE, cmd: ["sh", "-c", `echo run-${i}`] })).toEqual({
+          exitCode: 0,
+          logs: `run-${i}\n`,
+        });
+      }
+      expect(await runtime.runHelper({ image: IMAGE, cmd: ["sh", "-c", "echo failed >&2; exit 3"] })).toEqual({
+        exitCode: 3,
+        logs: "failed\n",
+      });
+      expect(await runtime.runHelper({ image: IMAGE, cmd: ["sleep", "30"], timeoutSec: 1 })).toEqual({
+        exitCode: 124,
+        logs: "",
+      });
+      const leftover = (await docker.listContainers({ all: true })).filter((c) =>
+        c.Names.some((name) => name.startsWith("/mbxhlp")),
+      );
+      expect(leftover).toEqual([]);
+    },
+    LONG,
+  );
+
+  test(
+    "a helper has no network, a read-only root, only the capabilities it names, and cannot gain privileges",
+    async () => {
+      const probe = [
+        "awk '/^(CapBnd|CapEff|NoNewPrivs):/ {print $1, $2}' /proc/self/status",
+        "echo nics=$(ls /sys/class/net)",
+        "touch /rootfile 2>/dev/null && echo rootfs=writable || echo rootfs=read-only",
+        "touch /tmp/scratch 2>/dev/null && echo tmp=writable || echo tmp=read-only",
+        "echo pids=$(cat /sys/fs/cgroup/pids.max)",
+        "echo memory=$(cat /sys/fs/cgroup/memory.max)",
+      ].join("; ");
+      const root = await runtime.runHelper({
+        image: IMAGE,
+        user: "0:0",
+        capAdd: ["CHOWN"],
+        cmd: ["sh", "-c", probe],
+      });
+      expect(root.exitCode).toBe(0);
+      const lines = root.logs.split("\n");
+      for (const line of [
+        "CapBnd: 0000000000000001",
+        "CapEff: 0000000000000001",
+        "NoNewPrivs: 1",
+        "nics=lo",
+        "rootfs=read-only",
+        "tmp=writable",
+        "pids=64",
+        "memory=268435456",
+      ]) {
+        expect(lines).toContain(line);
+      }
+
+      const plain = await runtime.runHelper({ image: IMAGE, user: "1000:1000", cmd: ["sh", "-c", probe] });
+      expect(plain.logs).toContain("CapBnd: 0000000000000000");
+      expect(plain.logs).toContain("CapEff: 0000000000000000");
+    },
+    LONG,
+  );
+
+  test(
+    "a root helper without DAC_OVERRIDE cannot write into a directory owned by someone else, and CHOWN still works",
+    async () => {
+      const volume = `${prefix}-helper-owner`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const mounts = [{ source: volume, target: "/mnt" }];
+        const chown = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts,
+          cmd: ["chown", "1000:1000", "/mnt"],
+        });
+        expect(chown.exitCode).toBe(0);
+
+        const denied = await runtime.runHelper({ image: IMAGE, user: "0:0", mounts, cmd: ["mkdir", "/mnt/denied"] });
+        expect(denied.exitCode).not.toBe(0);
+        expect(denied.logs).toContain("Permission denied");
+
+        const allowed = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["DAC_OVERRIDE"],
+          mounts,
+          cmd: ["sh", "-c", "mkdir /mnt/allowed && rmdir /mnt/allowed"],
+        });
+        expect(allowed).toEqual({ exitCode: 0, logs: "" });
+        const owner = await runtime.runHelper({
+          image: IMAGE,
+          user: "1000:1000",
+          mounts,
+          cmd: ["stat", "-c", "%u:%g", "/mnt"],
+        });
+        expect(owner.logs.trim()).toBe("1000:1000");
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a helper that mounts an empty volume where the image has a directory leaves the volume's owner alone",
+    async () => {
+      const volume = `${prefix}-helper-nocopy`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const chown = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts: [{ source: volume, target: "/mnt/0" }],
+          cmd: ["chown", "1000:1000", "/mnt/0"],
+        });
+        expect(chown.exitCode).toBe(0);
+
+        // The image's /mnt is root-owned. Without NoCopy Docker would copy that over the still-empty volume here.
+        const seen = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          mounts: [{ source: volume, target: "/mnt" }],
+          cmd: ["stat", "-c", "%u:%g", "/mnt"],
+        });
+        expect(seen).toEqual({ exitCode: 0, logs: "1000:1000\n" });
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "measuring reads another owner's directory only with DAC_READ_SEARCH",
+    async () => {
+      const volume = `${prefix}-helper-measure`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const mounts = [{ source: volume, target: "/mnt" }];
+        const setup = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts,
+          cmd: ["sh", "-c", "mkdir /mnt/private && chmod 700 /mnt/private && chown 1000:1000 /mnt/private"],
+        });
+        expect(setup.exitCode).toBe(0);
+
+        const blind = await runtime.runHelper({ image: IMAGE, user: "0:0", mounts, cmd: ["du", "-sb", "/mnt"] });
+        expect(blind.exitCode).not.toBe(0);
+        const reading = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["DAC_READ_SEARCH"],
+          mounts,
+          cmd: ["du", "-sb", "/mnt"],
+        });
+        expect(reading.exitCode).toBe(0);
+        expect(reading.logs).toMatch(/^\d+\t\/mnt\n$/);
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "the engine removes a helper container by itself once it exits",
+    async () => {
+      const name = `mbxhlp${prefix.slice(-8)}auto`;
+      const exists = async (id: string) =>
+        docker
+          .getContainer(id)
+          .inspect()
+          .then(
+            () => true,
+            () => false,
+          );
+      const created = await docker.createContainer(toHelperOptions({ image: IMAGE, cmd: ["true"] }, name));
+      const container = docker.getContainer(created.id);
+      const exited = container.wait({ condition: "next-exit" });
+      await container.start();
+      await exited;
+      await waitUntil(async () => !(await exists(created.id)), "the engine to remove the exited helper");
     },
     LONG,
   );

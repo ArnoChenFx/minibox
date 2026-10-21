@@ -138,7 +138,10 @@ export interface HelperSpec {
   image: string;
   cmd: string[];
   mounts?: Mount[];
+  /** Numeric user, such as `0:0`. Absent keeps the image user. */
   user?: string;
+  /** Capabilities granted on top of none. A helper that changes ownership or reads other users' files names them. */
+  capAdd?: string[];
   timeoutSec?: number;
   labels?: Record<string, string>;
 }
@@ -289,8 +292,10 @@ export interface Runtime {
   createVolume(name: string, labels: Record<string, string>, opts?: VolumeCreateOptions): Promise<void>;
   removeVolume(name: string): Promise<void>;
   /**
-   * Runs a short-lived container to completion and removes it. A timeout kills the container and returns exit code 124.
-   * Used for chown, NFS directory setup and pool probes. The image is the base template (it runs as uid 1000 and has `find`).
+   * Runs a short-lived container to completion. It has no network, a read-only root filesystem with a small `/tmp`,
+   * no capabilities beyond `capAdd`, no privilege escalation, and fixed memory and process limits. The engine removes it
+   * when it exits, and this returns once it is gone. A timeout kills the container and returns exit code 124. Used for
+   * chown, NFS directory setup, pool probes and measuring. The image is the base template.
    */
   runHelper(spec: HelperSpec): Promise<HelperResult>;
   /** Bytes on the filesystem that holds `path`, as seen by this runtime's host. */

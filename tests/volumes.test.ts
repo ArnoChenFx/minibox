@@ -10,6 +10,7 @@ import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
 import { attachVolume, createVolume, getPools, listVolumes, measureVolume, savePools } from "../src/services/volumes";
 import { claimEngineVolumes } from "../src/volumes/engine";
+import { DEV_OWNER } from "../src/volumes/types";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 
@@ -476,5 +477,68 @@ describe("a volume the engine lost is refused, not recreated", () => {
     expect(runtime.volumes.size).toBe(0);
     expect(runtime.containers.size).toBe(0);
     expect(host.volumes.list().map((volume) => volume.engineName)).toEqual(["mbtest-ws-gone"]);
+  });
+});
+
+const helperSpecs = (text: string): HelperSpec[] =>
+  runtime
+    .callsTo("runHelper")
+    .map((call) => call.args[0] as HelperSpec)
+    .filter((spec) => spec.cmd.join(" ").includes(text));
+
+describe("helper containers ask only for what their command needs", () => {
+  const nasPools = [
+    { name: "local", backend: "local" as const },
+    {
+      name: "nas",
+      backend: "nfs" as const,
+      server: "192.168.1.10",
+      export: "/volume1/minibox",
+      options: ["nfsvers=4.1", "hard"],
+      default: true,
+    },
+  ];
+
+  test("a new local volume is handed to the box user by a root helper that holds CHOWN alone", async () => {
+    await newBox("alpha");
+    const chowns = helperSpecs("chown");
+    expect(chowns.length).toBeGreaterThan(0);
+    for (const spec of chowns) expect(spec).toMatchObject({ user: "0:0", capAdd: ["CHOWN"] });
+  });
+
+  test("directories on an NFS pool are made with CHOWN and DAC_OVERRIDE, and removed with DAC_OVERRIDE", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.fail("createContainer", new RuntimeError("engine", "boom", "boom"));
+    await rejectionOf(newBox("alpha"));
+
+    const made = helperSpecs("mkdir -p");
+    expect(made.length).toBeGreaterThan(0);
+    for (const spec of made) expect(spec).toMatchObject({ user: "0:0", capAdd: ["CHOWN", "DAC_OVERRIDE"] });
+    const removed = helperSpecs("rmdir");
+    expect(removed.length).toBeGreaterThan(0);
+    for (const spec of removed) expect(spec).toMatchObject({ user: "0:0", capAdd: ["DAC_OVERRIDE"] });
+  });
+
+  test("measuring reads other owners' directories with DAC_READ_SEARCH and nothing else", async () => {
+    const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    await measureVolume(host, notes.id);
+    const measured = helperSpecs("du -sb");
+    expect(measured).toHaveLength(1);
+    expect(measured[0]).toMatchObject({ user: "0:0", capAdd: ["DAC_READ_SEARCH"] });
+  });
+
+  test("pool probes run as the box user and hold no capability", async () => {
+    await savePools(host, [...nasPools, { name: "disk", backend: "path", root: "/mnt/disk" }], undefined);
+    const before = runtime.callsTo("runHelper").length;
+    await getPools(host, { force: true });
+    const probes = runtime
+      .callsTo("runHelper")
+      .slice(before)
+      .map((call) => call.args[0] as HelperSpec);
+    expect(probes.map((spec) => spec.cmd.join(" ")).filter((cmd) => cmd.includes("df -B1 -P"))).toHaveLength(2);
+    for (const spec of probes) {
+      expect(spec.user).toBe(DEV_OWNER);
+      expect(spec.capAdd).toBeUndefined();
+    }
   });
 });

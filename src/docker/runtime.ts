@@ -242,45 +242,115 @@ async function* readEvents(stream: Readable, signal?: AbortSignal): AsyncGenerat
   }
 }
 
+/** Memory and process limits for a helper. Each helper runs one short command, so both are small. */
+const HELPER_MEMORY_BYTES = 256 * 1024 * 1024;
+const HELPER_PIDS_LIMIT = 64;
+/** Scratch space for a helper's `/tmp`. Nothing is run from it. */
+const HELPER_TMPFS = "rw,noexec,nosuid,nodev,size=16m";
+
 /**
- * A short-lived container for chown, directory setup and pool probes. It is not attached to the box network.
- * A timeout kills it and reports exit code 124. The container is always removed.
+ * Helper mounts use the Mounts form, and named volumes are NoCopy. Without it Docker copies the image's directory at the
+ * target into an empty volume and takes that directory's owner and mode, so a helper at `/mnt` would reset a volume an
+ * earlier helper had chowned.
+ */
+function helperMountOf(mount: Mount): Docker.MountSettings {
+  const shared = { Target: mount.target, Source: mount.source, ReadOnly: mount.mode === "ro" };
+  if (mount.kind === "bind") return { ...shared, Type: "bind" };
+  // @types/dockerode also requires Labels and DriverConfig here; the engine accepts NoCopy alone.
+  return { ...shared, Type: "volume", VolumeOptions: { NoCopy: true } } as Docker.MountSettings;
+}
+
+/**
+ * The options for a helper container. It joins no network, has a read-only root filesystem and only the capabilities it
+ * names, cannot gain privileges, and is capped on memory and processes. AutoRemove lets the engine delete it on exit.
+ */
+export function toHelperOptions(spec: HelperSpec, name: string): Docker.ContainerCreateOptions {
+  const hostConfig: Docker.HostConfig = {
+    Mounts: (spec.mounts ?? []).map(helperMountOf),
+    NetworkMode: "none",
+    ReadonlyRootfs: true,
+    Tmpfs: { "/tmp": HELPER_TMPFS },
+    Memory: HELPER_MEMORY_BYTES,
+    MemorySwap: HELPER_MEMORY_BYTES,
+    AutoRemove: true,
+  };
+  applyHardening(hostConfig, {
+    capDrop: ["ALL"],
+    capAdd: spec.capAdd,
+    noNewPrivileges: true,
+    pidsLimit: HELPER_PIDS_LIMIT,
+  });
+  const opts: Docker.ContainerCreateOptions = { Image: spec.image, name, Cmd: spec.cmd, HostConfig: hostConfig };
+  if (spec.user !== undefined) opts.User = spec.user;
+  if (spec.labels !== undefined) opts.Labels = spec.labels;
+  return opts;
+}
+
+async function readAll(stream: AsyncIterable<Buffer | string>): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+/** Exit code of a helper that ran past its timeout and was killed. */
+const HELPER_TIMEOUT_EXIT = 124;
+/** Longest a helper is waited for to exit after a kill, or to be removed after it exited. */
+const HELPER_SETTLE_MS = 10_000;
+
+/** Resolves with the value, or with undefined when `ms` passes first. */
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  try {
+    return await Promise.race([promise, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function exitCodeOf(
+  container: Docker.Container,
+  exited: Promise<{ StatusCode?: number }>,
+  timeoutMs: number,
+): Promise<number> {
+  const status = await within(exited, timeoutMs);
+  if (status) return status.StatusCode ?? 1;
+  await container.kill().catch(() => undefined);
+  await within(exited, HELPER_SETTLE_MS).catch(() => undefined);
+  return HELPER_TIMEOUT_EXIT;
+}
+
+/**
+ * Runs a helper to completion. Output comes from an attach made before the container starts, and the exit is waited for
+ * before it starts too: AutoRemove deletes the container as soon as it exits, so neither can be read afterwards. Once it
+ * has started the engine removes it, even if this process goes away. Until then nothing does, so a failed start removes
+ * it here. Returns after the removal, so a volume the helper used can be removed straight after.
  */
 async function runHelper(docker: Docker, spec: HelperSpec): Promise<{ exitCode: number; logs: string }> {
   const name = `mbxhlp${randomBytes(4).toString("hex")}`;
-  const created = await call(() =>
-    docker.createContainer(
-      toCreateOptions({
-        image: spec.image,
-        name,
-        cmd: spec.cmd,
-        mounts: spec.mounts,
-        user: spec.user,
-        labels: spec.labels,
-      }),
-    ),
-  );
+  const created = await call(() => docker.createContainer(toHelperOptions(spec, name)));
   const container = docker.getContainer(created.id);
+  let started = false;
   try {
+    const attached = await call(() => container.attach({ stream: true, stdout: true, stderr: true }));
+    const output = readAll(attached).catch(() => Buffer.alloc(0));
+    const exited = call(() => container.wait({ condition: "next-exit" })) as Promise<{ StatusCode?: number }>;
+    exited.catch(() => undefined);
     await call(() => container.start());
-    const timeoutMs = (spec.timeoutSec ?? 30) * 1000;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const wait = container.wait() as Promise<{ StatusCode?: number }>;
-    const outcome = await new Promise<{ exitCode: number; timedOut: boolean }>((resolve, reject) => {
-      timer = setTimeout(() => {
-        void container.kill().catch(() => undefined);
-        resolve({ exitCode: 124, timedOut: true });
-      }, timeoutMs);
-      wait.then((status) => resolve({ exitCode: status.StatusCode ?? 1, timedOut: false }), reject);
-    }).finally(() => {
-      if (timer) clearTimeout(timer);
-    });
-    if (outcome.timedOut) await wait.catch(() => undefined);
-    const out = await container.logs({ stdout: true, stderr: true }).catch(() => Buffer.alloc(0));
-    const buf = Buffer.isBuffer(out) ? out : Buffer.from(String(out));
-    return { exitCode: outcome.exitCode, logs: demuxLogs(buf) };
-  } finally {
-    await container.remove({ force: true }).catch(() => undefined);
+    started = true;
+    const exitCode = await exitCodeOf(container, exited, (spec.timeoutSec ?? 30) * 1000);
+    const logs = demuxLogs(await output);
+    await within(
+      call(() => container.wait({ condition: "removed" })).catch(() => undefined),
+      HELPER_SETTLE_MS,
+    );
+    return { exitCode, logs };
+  } catch (e) {
+    if (started) await container.kill().catch(() => undefined);
+    else await container.remove({ force: true }).catch(() => undefined);
+    throw e;
   }
 }
 

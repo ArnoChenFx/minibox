@@ -63,6 +63,7 @@ export async function chownEngines(host: HostCtx, engines: string[], known: Set<
   const result = await host.runtime.runHelper({
     image: host.baseTemplateTag,
     user: "0:0",
+    capAdd: ["CHOWN"],
     // $1 is the owner; shift drops it so "$@" is only the mount points.
     cmd: ["sh", "-c", 'owner=$1; shift; chown -R "$owner" -- "$@"', "minibox", DEV_OWNER, ...args],
     mounts,
@@ -88,6 +89,7 @@ async function prepareSubdir(host: HostCtx, pool: StoragePool, subpath: string, 
   const result = await host.runtime.runHelper({
     image: host.baseTemplateTag,
     user: "0:0",
+    capAdd: ["CHOWN", "DAC_OVERRIDE"],
     cmd: ["sh", "-c", script, "minibox", `/mnt/${subpath}`, DEV_OWNER],
     mounts: [{ source, target: "/mnt", kind, mode: "rw" }],
     timeoutSec: 120,
@@ -195,6 +197,7 @@ async function removeEmptyDirectory(host: HostCtx, pool: StoragePool, subpath: s
   const result = await host.runtime.runHelper({
     image: host.baseTemplateTag,
     user: "0:0",
+    capAdd: ["DAC_OVERRIDE"],
     cmd: ["sh", "-c", 'rmdir -- "$1"', "minibox", `/mnt/${subpath}`],
     mounts: [{ source, target: "/mnt", kind, mode: "rw" }],
     timeoutSec: 120,

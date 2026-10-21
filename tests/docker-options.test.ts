@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type Docker from "dockerode";
 
-import { toContainerInfo, toCreateOptions } from "../src/docker/runtime";
+import { toContainerInfo, toCreateOptions, toHelperOptions } from "../src/docker/runtime";
 import type { CreateContainerSpec } from "../src/runtime";
 
 const base: CreateContainerSpec = { image: "img:1" };
@@ -87,6 +87,59 @@ describe("toCreateOptions", () => {
 
   test("a zero process limit is still sent, so it cannot be mistaken for no limit", () => {
     expect(toCreateOptions({ ...base, hardening: { pidsLimit: 0 } }).HostConfig).toEqual({ PidsLimit: 0 });
+  });
+});
+
+describe("toHelperOptions", () => {
+  test("a helper joins no network, has a read-only root and a small /tmp, and gets only the capabilities it names", () => {
+    const options = toHelperOptions(
+      {
+        image: "img:1",
+        cmd: ["chown", "1000:1000", "/mnt"],
+        user: "0:0",
+        capAdd: ["CHOWN"],
+        mounts: [{ source: "vol", target: "/mnt" }],
+        labels: { "mb.internal": "true" },
+      },
+      "mbxhlp00000001",
+    );
+    expect(options).toMatchObject({
+      Image: "img:1",
+      name: "mbxhlp00000001",
+      Cmd: ["chown", "1000:1000", "/mnt"],
+      User: "0:0",
+      Labels: { "mb.internal": "true" },
+      HostConfig: {
+        Mounts: [{ Type: "volume", Source: "vol", Target: "/mnt", VolumeOptions: { NoCopy: true } }],
+        NetworkMode: "none",
+        ReadonlyRootfs: true,
+        Tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=16m" },
+        Memory: 256 * 1024 * 1024,
+        MemorySwap: 256 * 1024 * 1024,
+        AutoRemove: true,
+        CapDrop: ["ALL"],
+        CapAdd: ["CHOWN"],
+        SecurityOpt: ["no-new-privileges:true"],
+        PidsLimit: 64,
+      },
+    });
+    expect(options.HostConfig).not.toHaveProperty("Binds");
+  });
+
+  test("a helper that names no user or capability keeps the image user and gets none", () => {
+    const options = toHelperOptions({ image: "img:1", cmd: ["true"] }, "mbxhlp00000002");
+    expect(options).not.toHaveProperty("User");
+    expect(options).not.toHaveProperty("Labels");
+    expect(options.HostConfig).not.toHaveProperty("CapAdd");
+    expect(options.HostConfig).toMatchObject({ CapDrop: ["ALL"], NetworkMode: "none", AutoRemove: true });
+  });
+
+  test("a read-only host path is a read-only bind and is not NoCopy", () => {
+    const options = toHelperOptions(
+      { image: "img:1", cmd: ["true"], mounts: [{ source: "/srv/pool", target: "/mnt", kind: "bind", mode: "ro" }] },
+      "mbxhlp00000003",
+    );
+    expect(options.HostConfig?.Mounts).toEqual([{ Type: "bind", Source: "/srv/pool", Target: "/mnt", ReadOnly: true }]);
   });
 });
 

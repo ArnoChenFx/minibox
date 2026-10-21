@@ -4,7 +4,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { RuntimeError, type VolumeInfo } from "../runtime";
 import { nfsDriverOpts, sameOptions } from "./pools";
-import type { PoolHealth, StoragePool } from "./types";
+import { DEV_OWNER, type PoolHealth, type StoragePool } from "./types";
 
 const PROBE_TTL_MS = 15_000;
 const LOW_FREE_BYTES = 5 * 1024 * 1024 * 1024;
@@ -116,7 +116,7 @@ async function probeRemote(host: HostCtx, pool: StoragePool): Promise<PoolHealth
       );
       const result = await host.runtime.runHelper({
         image,
-        user: "0:0",
+        user: DEV_OWNER,
         cmd: ["sh", "-c", "df -B1 -P /mnt"],
         mounts: [{ source: poolRootVolume(host.prefix, pool.name), target: "/mnt" }],
         timeoutSec: 20,
@@ -134,7 +134,7 @@ async function probeRemote(host: HostCtx, pool: StoragePool): Promise<PoolHealth
     const keys = host.keys;
     const result = await host.runtime.runHelper({
       image,
-      user: "0:0",
+      user: DEV_OWNER,
       cmd: ["sh", "-c", 'test -f -- "$1" && df -B1 -P /mnt', "minibox", `/mnt/${marker}`],
       mounts: [{ source: pool.root ?? "/", target: "/mnt", kind: "bind", mode: "ro" }],
       timeoutSec: 20,
