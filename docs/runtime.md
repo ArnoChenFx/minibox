@@ -42,7 +42,7 @@
 - `containerLogs` 返回去掉流帧头后的文本。
 - `containerDiff` 返回可写层变更。引擎的 `null`（没有变更）变成空列表。`added` 对应 kind 1，`deleted` 对应 kind 2，其余记为 `modified`。
 - `createContainer` 的 `env` 是 `NAME=value`，由引擎合并到镜像环境变量之上。挂载 `mode: "ro"` 会在绑定后追加 `:ro`；可写挂载不追加模式。
-- `buildImage` 可以带 `onLog`（每段输出回调一次）和 `signal`。取消时抛出 `AbortError`，而不是 `RuntimeError`，因此不会被映射成 502。`commitContainer` 的 `signal` 只在提交前和提交返回后检查；已经生成的镜像不回滚。
+- `buildImage` 可以带 `onLog`（每段输出回调一次）和 `signal`。取消时在引擎连接关闭后抛出 `AbortError`，而不是 `RuntimeError`，因此不会被映射成 502。引擎可能在连接关闭前一直构建，所以调用返回时，调用方才能认为这次构建已经结束。`commitContainer` 的 `signal` 只在提交前和提交返回后检查；已经生成的镜像不回滚。
 - `listContainers` 跳过在列出与检查之间消失的容器。
 - `createContainer` 的 `hardening`（能力、`no-new-privileges`、进程数上限、ulimit、运行时）只覆盖请求中出现的字段，其余保持引擎默认值。
 - `ensureBridgeNetwork(name, { interContainerComm })` 在网络不存在时创建桥接网络。同名网络已存在但不是桥接网络，或容器间通信的设置不同，返回 `conflict`。

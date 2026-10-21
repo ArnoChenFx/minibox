@@ -35,6 +35,14 @@ async function postBuild(
   };
 }
 
+async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error("the condition was not met in time");
+    await Bun.sleep(5);
+  }
+}
+
 const cookieFor = (token: string) => ({ cookie: `${COOKIE_NAME}=${token}` });
 
 async function openProgress(
@@ -116,6 +124,32 @@ describe("tasks", () => {
     }
   });
 
+  test("a cancelled build keeps the template lock until the engine call returns", async () => {
+    const held = runtime.hold("buildImage");
+    const server = serve(app);
+    try {
+      const { body } = await postBuild(server.base);
+      await waitFor(() => runtime.callsTo("buildImage").length === 1);
+      const cancel = await fetch(`${server.base}/api/tasks/${body.taskId}/cancel`, { method: "POST", headers: auth });
+      expect(cancel.status).toBe(200);
+
+      const second = await postBuild(server.base);
+      expect(second.status).toBe(409);
+      expect(second.body.error).toMatchObject({ key: "task_busy", details: { taskId: body.taskId } });
+
+      held.release();
+      await app.tasks.drain();
+      const third = await postBuild(server.base);
+      expect(third.status).toBe(202);
+      await app.tasks.drain();
+      expect(runtime.callsTo("buildImage")).toHaveLength(2);
+    } finally {
+      held.release();
+      await app.tasks.drain();
+      server.stop();
+    }
+  });
+
   test("one snapshot at a time per box, and a different box is not blocked", async () => {
     const keys = app.hosts.get().keys;
     runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
@@ -142,6 +176,63 @@ describe("tasks", () => {
     }
     const listed = (await app.operations.run("task.list", ctx, {})) as { tasks: { id: string; status: string }[] };
     expect(listed.tasks.every((task) => task.status === "succeeded")).toBe(true);
+  });
+
+  test("a cancelled snapshot keeps its box locked until the commit returns", async () => {
+    const keys = app.hosts.get().keys;
+    runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
+    const alpha = (await app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 })) as {
+      box: { id: string };
+    };
+    const held = runtime.hold("commitContainer");
+    try {
+      const first = (await app.operations.run("snapshot.create", ctx, { id: alpha.box.id, name: "one" })) as {
+        taskId: string;
+      };
+      await waitFor(() => runtime.callsTo("commitContainer").length === 1);
+      const cancelled = (await app.operations.run("task.cancel", ctx, { id: first.taskId })) as { status: string };
+      expect(cancelled.status).toBe("cancelled");
+
+      const busy = await rejectionOf(app.operations.run("snapshot.create", ctx, { id: alpha.box.id, name: "two" }));
+      expect(busy).toMatchObject({ status: 409, key: "task_busy", details: { taskId: first.taskId } });
+
+      held.release();
+      await app.tasks.drain();
+      const next = (await app.operations.run("snapshot.create", ctx, { id: alpha.box.id, name: "three" })) as {
+        taskId: string;
+      };
+      expect(next.taskId).not.toBe(first.taskId);
+    } finally {
+      held.release();
+      await app.tasks.drain();
+    }
+  });
+
+  test("a cancelled task whose engine call never returned frees its lock at the next start", async () => {
+    const dir = app.cfg.dataDir;
+    const held = runtime.hold("buildImage");
+    const { taskId } = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
+    await waitFor(() => runtime.callsTo("buildImage").length === 1);
+    await app.operations.run("task.cancel", ctx, { id: taskId });
+    app.tasks.crash();
+    held.release();
+
+    const restarted = createTestApp(
+      { dataDir: dir, labelPrefix: "mbtest" },
+      new (runtime.constructor as typeof FakeRuntime)(),
+    );
+    const nextCtx: OperationContext = {
+      host: restarted.app.hosts.get(),
+      principal: OWNER,
+      source: "rest",
+      events: restarted.app.events,
+    };
+    const task = (await restarted.app.operations.run("task.get", nextCtx, { id: taskId })) as { status: string };
+    expect(task.status).toBe("cancelled");
+    const again = (await restarted.app.operations.run("template.build", nextCtx, {})) as { taskId: string };
+    await restarted.app.tasks.drain();
+    const built = (await restarted.app.operations.run("task.get", nextCtx, { id: again.taskId })) as { status: string };
+    expect(built.status).toBe("succeeded");
   });
 
   test("the retained log is redacted and capped, and the task result is the operation output", async () => {

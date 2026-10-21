@@ -505,14 +505,16 @@ describe("templates", () => {
     expect(runtime.callsTo("buildImage")).toHaveLength(1);
   });
 
-  test("aborting a build rejects before the image is kept", async () => {
+  test("aborting a build rejects once the engine call returns, and no image is kept", async () => {
     const held = runtime.hold("buildImage");
+    const images = runtime.images.size;
     const controller = new AbortController();
     const pending = buildBaseTemplate(host, { signal: controller.signal, log: () => {} });
     controller.abort();
-    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     held.release();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(runtime.callsTo("buildImage")).toHaveLength(1);
+    expect(runtime.images.size).toBe(images);
   });
 
   test("the build spec points at the bundled base template with its labels", async () => {

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -70,6 +70,31 @@ const inspectable: Record<string, { status: number; body: unknown }> = {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
+/** Builds that the engine saw the client close, counted once per build. */
+let buildCloses = 0;
+
+/** A build that prints a line every few milliseconds until its connection closes. */
+async function slowBuild(req: Request): Promise<Response> {
+  await req.arrayBuffer();
+  const encoder = new TextEncoder();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(timer);
+    buildCloses += 1;
+  };
+  req.signal.addEventListener("abort", close, { once: true });
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      timer = setInterval(() => controller.enqueue(encoder.encode('{"stream":"Step 1/1\\n"}\n')), 10);
+    },
+    cancel: close,
+  });
+  return new Response(body, { headers: { "content-type": "application/json" } });
+}
+
 async function engine(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/v[\d.]+(?=\/)/, "");
@@ -102,6 +127,7 @@ async function engine(req: Request): Promise<Response> {
     }
     return json({ message: `No such container: ${id}` }, 404);
   }
+  if (req.method === "POST" && path === "/build") return slowBuild(req);
   if (req.method === "POST" && path === "/containers/create") {
     if (url.searchParams.get("name") === "taken") {
       return json({ message: 'Conflict. The container name "/taken" is already in use' }, 409);
@@ -249,6 +275,32 @@ describe("Docker adapter against a fake engine socket", () => {
       ["POST", "/containers/already/stop"],
     ]);
     expect(recorded[1]?.search).toBe("?t=12");
+  });
+
+  test("an aborted build rejects with AbortError, and the engine sees its connection close", async () => {
+    const context = mkdtempSync(join(dir, "context-"));
+    writeFileSync(join(context, "Dockerfile"), "FROM scratch\n");
+    const closes = buildCloses;
+    const controller = new AbortController();
+    let lines = 0;
+    const build = runtime().buildImage({
+      contextDir: context,
+      dockerfile: "Dockerfile",
+      tag: "minibox-test:aborted",
+      labels: {},
+      onLog: () => {
+        lines += 1;
+        if (lines === 2) controller.abort();
+      },
+      signal: controller.signal,
+    });
+
+    const error = await rejectionOf(build);
+
+    expect((error as Error).name).toBe("AbortError");
+    const closedSince = () => buildCloses > closes;
+    for (let i = 0; i < 400 && !closedSince(); i++) await Bun.sleep(5);
+    expect(closedSince()).toBe(true);
   });
 });
 

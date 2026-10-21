@@ -139,7 +139,7 @@ export interface BuildSpec {
   labels: Record<string, string>;
   /** Called with each chunk of build output as the engine produces it. */
   onLog?: (chunk: string) => void;
-  /** Aborts the build stream. The engine may keep building until that connection closes. */
+  /** Closes the build stream. The call rejects with `AbortError` once that connection has closed. */
   signal?: AbortSignal;
 }
 
@@ -245,7 +245,7 @@ export interface Runtime {
   removeImage(ref: string, opts: { force: boolean }): Promise<void>;
   /**
    * Resolves with the build log. `onLog` receives the same text as it arrives. An aborted `signal` rejects with
-   * `AbortError` rather than a RuntimeError.
+   * `AbortError` rather than a RuntimeError, once the connection to the engine has closed.
    */
   buildImage(spec: BuildSpec): Promise<string>;
 

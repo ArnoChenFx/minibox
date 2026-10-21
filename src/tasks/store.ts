@@ -58,6 +58,13 @@ const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (task_id, seq)
   );
   `,
+  `
+  ALTER TABLE tasks ADD COLUMN holds_lock INTEGER NOT NULL DEFAULT 0;
+  UPDATE tasks SET holds_lock = 1 WHERE status = 'running';
+  DROP INDEX tasks_one_running;
+  CREATE UNIQUE INDEX tasks_one_running ON tasks (exclusive_key)
+    WHERE holds_lock = 1 AND exclusive_key IS NOT NULL;
+  `,
 ];
 
 interface TaskRow {
@@ -171,8 +178,9 @@ export class TaskStore {
       this.db
         .query(
           `INSERT INTO tasks (id, op, status, host_id, summary, target_kind, target_id, target_name,
-            principal_type, principal_id, principal_name, source, run, parent_id, exclusive_key, created_at, updated_at)
-           VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            principal_type, principal_id, principal_name, source, run, parent_id, exclusive_key, holds_lock,
+            created_at, updated_at)
+           VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         )
         .run(
           id,
@@ -196,7 +204,7 @@ export class TaskStore {
     } catch (error) {
       if (!isUnique(error) || task.exclusiveKey === undefined) throw error;
       const existing = this.db
-        .query<{ id: string }, [string]>("SELECT id FROM tasks WHERE exclusive_key = ? AND status = 'running' LIMIT 1")
+        .query<{ id: string }, [string]>("SELECT id FROM tasks WHERE exclusive_key = ? AND holds_lock = 1 LIMIT 1")
         .get(task.exclusiveKey);
       if (!existing) throw error;
       return { ok: false, existingId: existing.id };
@@ -247,7 +255,7 @@ export class TaskStore {
 
   /**
    * Moves a running task to a terminal status. Returns false when it was no longer running, so a cancel and a
-   * completion cannot overwrite each other.
+   * completion cannot overwrite each other. The exclusive key stays taken until {@link TaskStore.releaseLock}.
    */
   finish(taskId: string, outcome: TaskOutcome, now = Date.now()): TaskStreamEvent | undefined {
     return this.db.transaction(() => {
@@ -285,25 +293,35 @@ export class TaskStore {
   }
 
   /**
-   * Marks every running task interrupted. Used at startup for tasks the previous process was still running,
-   * and on shutdown. Returns how many changed.
+   * Frees the exclusive key of a task whose background work has returned. A cancel leaves the key taken until then.
+   */
+  releaseLock(taskId: string): void {
+    this.db.run("UPDATE tasks SET holds_lock = 0 WHERE id = ?", [taskId]);
+  }
+
+  /**
+   * Marks every running task interrupted and frees every exclusive key. Used at startup, where the keys belong to
+   * the previous process, and on shutdown. Returns how many tasks changed.
    */
   interruptRunning(error: TaskError, now = Date.now()): number {
-    const changed = this.db.run(
-      `UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ?,
-         error_code = ?, error_status = ?, error_message = ?, error_key = ?, error_params = ?
-       WHERE status = 'running'`,
-      [
-        now,
-        now,
-        error.code,
-        error.status,
-        error.message,
-        error.key ?? null,
-        error.params === undefined ? null : JSON.stringify(error.params),
-      ],
-    ).changes;
-    return changed;
+    return this.db.transaction(() => {
+      const changed = this.db.run(
+        `UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ?,
+           error_code = ?, error_status = ?, error_message = ?, error_key = ?, error_params = ?
+         WHERE status = 'running'`,
+        [
+          now,
+          now,
+          error.code,
+          error.status,
+          error.message,
+          error.key ?? null,
+          error.params === undefined ? null : JSON.stringify(error.params),
+        ],
+      ).changes;
+      this.db.run("UPDATE tasks SET holds_lock = 0 WHERE holds_lock = 1");
+      return changed;
+    })();
   }
 
   get(id: string, options: { output: boolean }): TaskView | undefined {
@@ -324,13 +342,6 @@ export class TaskStore {
             )
             .all(filter.status, filter.limit);
     return rows.map((row) => this.toView(row, false));
-  }
-
-  /** The id of the running task that holds `exclusiveKey`, if any. */
-  runningId(exclusiveKey: string): string | undefined {
-    return this.db
-      .query<{ id: string }, [string]>("SELECT id FROM tasks WHERE exclusive_key = ? AND status = 'running' LIMIT 1")
-      .get(exclusiveKey)?.id;
   }
 
   /** Events with `seq` greater than `after`, oldest first. */

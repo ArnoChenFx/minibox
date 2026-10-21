@@ -424,7 +424,7 @@ Template builds and snapshot commits run as tasks. The POST returns `202` and `{
 | `POST` | `/api/tasks/:id/cancel` | Cancel a running task. A task that is not running gets `409` |
 | `GET` | `/api/tasks/:id/events` | SSE progress. Not an operation, so it is not in the OpenAPI document. `after` or `Last-Event-ID` resumes the cursor; a `reset` event means the log was trimmed |
 
-The log keeps the newest 64 KB. Older text is dropped and the view starts with a note that it did. Cancellation aborts a build's output stream. A snapshot commit that has already finished is not rolled back. After a restart, tasks that were still running are `interrupted` and are not resumed.
+The log keeps the newest 64 KB. Older text is dropped and the view starts with a note that it did. Cancellation aborts a build's output stream. A cancelled task still holds its template or box lock until its engine call returns, so a new request for the same target gets `409` until then. A snapshot commit that has already finished is not rolled back. After a restart, tasks that were still running are `interrupted` and are not resumed.
 
 Bun's HTTP idle timer is 60 seconds, measured from the start of the request, and response bytes do not extend it. Holding the build open on the POST would be cut off. The 202 returns before that, and the progress stream disables the timer (`server.timeout(req, 0)`) and sends a heartbeat every 15 seconds for proxies. The Tasks button in the top bar opens a drawer with the live log.
 

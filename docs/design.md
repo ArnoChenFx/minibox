@@ -589,9 +589,9 @@ Event
 - **受理**：`template.build` 与 `snapshot.create` 在校验、前置条件和解析通过后写入一条 `started` 审计事件（`ref.taskId`），立刻返回 `202` `{ "taskId" }`。领域结果（模板的 `{ ref }`、快照的 `{ snapshot }`）写在任务的 `result` 上，OpenAPI 用 `x-task-result` 标出。校验失败和互斥冲突不创建任务。
 - **进度**：日志和状态变更发布到总线主题 `task`，经 `GET /api/tasks/:id/events` 流出。这条 SSE 复用事件流的心跳、重放上限和 `reset`，不另建一套。它和事件流一样不进操作注册表。新连接不回放历史；界面先 `GET` 任务上保留的输出，再用 `after` 续上（浏览器的 `EventSource` 第一次请求带不上 `Last-Event-ID`）。
 - **存储**：`DATA_DIR/tasks.db`（WAL）。每个任务只保留最新 64 KB 日志，避免把构建输出写进一年期的审计库（审计明细还有 8 KB 上限）。
-- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`），每个 Box 同时只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。冲突返回 `409`，`details.taskId` 指向正在运行的任务。
-- **取消**：把任务标为 `cancelled` 并中止 `AbortSignal`。构建会关掉引擎的输出流。`docker commit` 无法干净地中途取消：开始前和返回后各检查一次；若提交已经完成，镜像留下，任务仍可以是 `cancelled`，不回滚。
-- **重启**：启动时把上次仍为 `running` 的任务标为 `interrupted`，不续跑。关闭时同样中止并标记。
+- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`），每个 Box 同时只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。冲突返回 `409`，`details.taskId` 指向持有锁的任务：正在运行的任务，或已取消但后台工作尚未返回的任务。
+- **取消**：把任务标为 `cancelled` 并中止 `AbortSignal`。构建关掉引擎的输出流，并在连接关闭后才返回（引擎在此之前可能仍在构建）。`docker commit` 无法中途取消：开始前和返回后各检查一次；若提交已经完成，镜像留下，任务仍可以是 `cancelled`，不回滚。互斥锁在后台工作返回之后才释放，所以取消后，同一主机或同一 Box 的新任务要等到引擎调用结束才能开始，期间返回 `409`。
+- **重启**：启动时把上次仍为 `running` 的任务标为 `interrupted`，不续跑，并释放所有互斥锁（包括已取消但工作未返回的任务持有的锁，持锁的进程已经不在了）。关闭时同样中止、标记并释放。
 - **空闲超时**：Bun 的 `idleTimeout` 从请求开始计算，按 4 秒进位，写出的字节（包括 SSE 心跳）不会延长它。只有 `server.timeout(req, 0)` 能关掉它。因此心跳只对付反向代理的 `proxy_read_timeout`，对付不了 Bun 自己。构建改为 202 之后，那条会被掐断的长连接不复存在；进度流显式关掉计时。`tests/idle-timeout.test.ts` 用 4 秒上限复现：静默处理和每秒心跳的流都会在约 4 秒被断开，`timeout 0` 可以撑过更长的等待。生产配置保持 60 秒。
 
 ---

@@ -412,9 +412,10 @@ export function createDockerRuntime(socketPath: string): Runtime {
           };
           const onAbort = () => {
             const closable = stream as { destroy?: () => void; cancel?: () => void };
+            // The engine keeps building until this connection closes, so the build has not ended before then.
+            stream.once("close", () => finish(abortError()));
             closable.destroy?.();
             closable.cancel?.();
-            finish(abortError());
           };
           if (spec.signal) spec.signal.addEventListener("abort", onAbort, { once: true });
           docker.modem.followProgress(
