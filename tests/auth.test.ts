@@ -1,13 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
+  authenticate,
+  clearLegacyKeyCookie,
+  clearSessionCookie,
   clientAddress,
   COOKIE_NAME,
-  clearSessionCookie,
-  extractKey,
-  isAuthorized,
   isSecureRequest,
   isWeakAccessKey,
+  LEGACY_KEY_COOKIE,
   LoginLimiter,
   LoginThrottle,
   parseCookies,
@@ -16,9 +20,14 @@ import {
   safeEqual,
   sessionCookie,
 } from "../src/auth";
+import { setLogLevel } from "../src/lib/logger";
+import { SessionStore } from "../src/sessions";
+
+setLogLevel("error");
 
 const KEY = "k".repeat(64);
 const req = (headers: Record<string, string>) => new Request("http://localhost/api/x", { headers });
+const cookieOnly = (cookie: string) => req({ cookie });
 
 describe("auth", () => {
   test("safeEqual", () => {
@@ -27,30 +36,23 @@ describe("auth", () => {
     expect(safeEqual("abc", "abcd")).toBe(false);
   });
 
-  test("extracts key from bearer header (case-insensitive)", () => {
-    expect(extractKey(req({ authorization: `Bearer ${KEY}` }))).toBe(KEY);
-    expect(extractKey(req({ authorization: `bearer   ${KEY}` }))).toBe(KEY);
-    expect(extractKey(req({ authorization: "Basic xyz" }))).toBeNull();
-  });
-
-  test("extracts key from cookie", () => {
-    expect(extractKey(req({ cookie: `a=1; ${COOKIE_NAME}=${KEY}; b=2` }))).toBe(KEY);
+  test("parseCookies reads and decodes name=value pairs", () => {
+    expect(parseCookies(`a=1; ${COOKIE_NAME}=abc; b=2`)).toMatchObject({ [COOKIE_NAME]: "abc", b: "2" });
     expect(parseCookies("x=%E4%B8%AD; bad")).toEqual({ x: "中" });
   });
 
-  test("isAuthorized", () => {
-    expect(isAuthorized(req({ authorization: `Bearer ${KEY}` }), KEY)).toBe(true);
-    expect(isAuthorized(req({ authorization: "Bearer wrong" }), KEY)).toBe(false);
-    expect(isAuthorized(req({}), KEY)).toBe(false);
+  test("the session cookie is named minibox_session, not minibox_key", () => {
+    expect(COOKIE_NAME).toBe("minibox_session");
+    expect(LEGACY_KEY_COOKIE).toBe("minibox_key");
   });
 
-  test("cookies are HttpOnly, SameSite=Strict and Secure only on https", () => {
-    expect(sessionCookie(KEY, true)).toContain("HttpOnly");
-    expect(sessionCookie(KEY, true)).toContain("SameSite=Strict");
-    expect(sessionCookie(KEY, true)).toContain("Secure");
-    expect(sessionCookie(KEY, false)).not.toContain("Secure");
-    expect(clearSessionCookie()).toContain("Max-Age=0");
-    expect(clearSessionCookie()).toContain("SameSite=Strict");
+  test("session cookies are HttpOnly, SameSite=Strict and Secure only when asked", () => {
+    const secure = sessionCookie("token", { secure: true, maxAgeSeconds: 2592000 });
+    expect(secure).toStartWith("minibox_session=token; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000");
+    expect(secure).toEndWith("; Secure");
+    expect(sessionCookie("token", { secure: false, maxAgeSeconds: 60 })).not.toContain("Secure");
+    expect(clearSessionCookie()).toBe("minibox_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+    expect(clearLegacyKeyCookie()).toBe("minibox_key=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
   });
 
   test("an https request URL is secure", () => {
@@ -67,6 +69,79 @@ describe("auth", () => {
     expect(isSecureRequest(req({ "x-forwarded-proto": "https" }), false)).toBe(false);
     expect(isSecureRequest(req({ "x-forwarded-proto": "https" }), true)).toBe(true);
     expect(isSecureRequest(req({ "x-forwarded-proto": "http" }), true)).toBe(false);
+  });
+});
+
+describe("authenticate", () => {
+  let dir: string;
+  let sessions: SessionStore;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "minibox-auth-"));
+    sessions = new SessionStore({ file: join(dir, "sessions.json"), accessKey: KEY, ttlMs: 60_000, idleMs: null });
+  });
+
+  afterAll(() => {
+    sessions.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a bearer header with the access key is a bearer caller", () => {
+    expect(authenticate(req({ authorization: `Bearer ${KEY}` }), KEY, sessions)).toEqual({ sessionId: null });
+    expect(authenticate(req({ authorization: `bearer   ${KEY}` }), KEY, sessions)).toEqual({ sessionId: null });
+  });
+
+  test("a wrong, empty or non-bearer header is not a caller", () => {
+    expect(authenticate(req({ authorization: "Bearer wrong" }), KEY, sessions)).toBeNull();
+    expect(authenticate(req({ authorization: "Bearer " }), KEY, sessions)).toBeNull();
+    expect(authenticate(req({ authorization: "Basic xyz" }), KEY, sessions)).toBeNull();
+    expect(authenticate(req({}), KEY, sessions)).toBeNull();
+  });
+
+  test("a live session token in the cookie is a session caller", () => {
+    const { token, session } = sessions.create({ userAgent: "test", ip: "127.0.0.1" });
+    expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, sessions)).toEqual({ sessionId: session.id });
+  });
+
+  test("an unknown token is not a caller", () => {
+    expect(authenticate(cookieOnly(`${COOKIE_NAME}=not-a-session`), KEY, sessions)).toBeNull();
+  });
+
+  test("the raw access key is not accepted from either cookie", () => {
+    expect(authenticate(cookieOnly(`${COOKIE_NAME}=${KEY}`), KEY, sessions)).toBeNull();
+    expect(authenticate(cookieOnly(`${LEGACY_KEY_COOKIE}=${KEY}`), KEY, sessions)).toBeNull();
+  });
+
+  test("a wrong bearer header does not fall back to a valid session cookie", () => {
+    const { token } = sessions.create({ userAgent: "test", ip: "127.0.0.1" });
+    const headers = { authorization: "Bearer wrong", cookie: `${COOKIE_NAME}=${token}` };
+    expect(authenticate(req(headers), KEY, sessions)).toBeNull();
+  });
+
+  test("a revoked session stops authenticating at once", () => {
+    const { token, session } = sessions.create({ userAgent: "test", ip: "127.0.0.1" });
+    expect(sessions.revoke(session.id, "test")).toBe(true);
+    expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, sessions)).toBeNull();
+  });
+
+  test("a session stops authenticating when its lifetime is over", () => {
+    let clock = 1_000_000;
+    const timed = new SessionStore({
+      file: join(dir, "timed.json"),
+      accessKey: KEY,
+      ttlMs: 60_000,
+      idleMs: null,
+      now: () => clock,
+    });
+    try {
+      const { token } = timed.create({ userAgent: "test", ip: "127.0.0.1" });
+      clock += 59_999;
+      expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, timed)).not.toBeNull();
+      clock += 1;
+      expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, timed)).toBeNull();
+    } finally {
+      timed.stop();
+    }
   });
 });
 

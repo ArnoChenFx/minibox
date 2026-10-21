@@ -713,6 +713,14 @@ table.table {
   justify-content: flex-end;
   gap: 2px;
 }
+.session-ua {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  max-width: 420px;
+}
 .num {
   font-variant-numeric: tabular-nums;
 }

@@ -38,6 +38,10 @@ export interface Config {
   boxPidsLimit: number;
   /** OCI runtime for boxes, such as `runsc` for gVisor. Null keeps the engine's default runtime. */
   containerRuntime: string | null;
+  /** Absolute lifetime of a browser session, counted from sign-in. */
+  sessionTtlMs: number;
+  /** Sliding renewal: a session also ends this long after its last use. `null` leaves sessions without it. */
+  sessionIdleMs: number | null;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -92,6 +96,21 @@ function parseOrigins(value: string | undefined): string[] {
       }
       return url.origin;
     });
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_SESSION_DAYS = 3650;
+export const DEFAULT_SESSION_TTL_MS = 30 * DAY_MS;
+
+/** Parses a day count such as `30` or `0.5`. Blank means unset. Out-of-range values stop startup rather than being guessed at. */
+function parseDays(value: string | undefined, name: string): number | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  const days = Number(raw);
+  if (!Number.isFinite(days) || days <= 0 || days > MAX_SESSION_DAYS) {
+    throw new Error(`${name} must be a number of days above 0 and at most ${MAX_SESSION_DAYS}, got "${raw}"`);
+  }
+  return days * DAY_MS;
 }
 
 const nonBlank = (value: string | undefined): string | undefined => value?.trim() || undefined;
@@ -164,6 +183,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     boxProfile: parseBoxProfile(get("BOX_PROFILE")),
     boxPidsLimit: parseBoxPidsLimit(get("BOX_PIDS_LIMIT")),
     containerRuntime: parseContainerRuntime(get("RUNTIME")),
+    sessionTtlMs: parseDays(get("SESSION_TTL_DAYS"), "SESSION_TTL_DAYS") ?? DEFAULT_SESSION_TTL_MS,
+    sessionIdleMs: parseDays(get("SESSION_IDLE_DAYS"), "SESSION_IDLE_DAYS"),
   };
 }
 

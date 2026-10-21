@@ -235,6 +235,35 @@ describe(".env is never written", () => {
   });
 });
 
+describe("browser session lifetime", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  test("defaults to 30 days from sign-in, with no sliding renewal", () => {
+    expect(load({ ACCESS_KEY: KEY })).toMatchObject({ sessionTtlMs: 30 * DAY, sessionIdleMs: null });
+  });
+  test("SESSION_TTL_DAYS and SESSION_IDLE_DAYS are read as days, fractions included", () => {
+    expect(load({ ACCESS_KEY: KEY, SESSION_TTL_DAYS: "7", SESSION_IDLE_DAYS: "0.5" })).toMatchObject({
+      sessionTtlMs: 7 * DAY,
+      sessionIdleMs: DAY / 2,
+    });
+  });
+  test("blank values fall back to the defaults", () => {
+    expect(load({ ACCESS_KEY: KEY, SESSION_TTL_DAYS: " ", SESSION_IDLE_DAYS: "" })).toMatchObject({
+      sessionTtlMs: 30 * DAY,
+      sessionIdleMs: null,
+    });
+  });
+  test("the longest allowed lifetime is 3650 days", () => {
+    expect(load({ ACCESS_KEY: KEY, SESSION_TTL_DAYS: "3650" }).sessionTtlMs).toBe(3650 * DAY);
+  });
+  test.each(["0", "-3", "abc", "3651", "Infinity"])("%s stops startup instead of being guessed at", (value) => {
+    expect(() => load({ ACCESS_KEY: KEY, SESSION_TTL_DAYS: value })).toThrow(
+      `SESSION_TTL_DAYS must be a number of days above 0 and at most 3650, got "${value}"`,
+    );
+    expect(() => load({ ACCESS_KEY: KEY, SESSION_IDLE_DAYS: value })).toThrow("SESSION_IDLE_DAYS must be a number");
+  });
+});
+
 describe("permissions", () => {
   test("DATA_DIR and its subdirectories are 700 and the key file is 600", () => {
     load();

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { createRedactor } from "../src/events/redact";
 import { EventStore, type StoredEvent } from "../src/events/store";
@@ -157,5 +157,27 @@ describe("eventStream", () => {
     const sse = open(h, { signal: controller.signal });
     expect(h.bus.listenerCount("event")).toBe(0);
     await expect(sse.next()).rejects.toThrow("the stream closed");
+  });
+
+  test("onEnd runs once when the signal aborts the stream", async () => {
+    const h = harness();
+    const controller = new AbortController();
+    const onEnd = mock(() => {});
+    const sse = open(h, { signal: controller.signal, onEnd });
+    await sse.next();
+    controller.abort();
+    await expect(sse.next()).rejects.toThrow("the stream closed");
+    await sse.close();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test("onEnd runs once when the reader cancels the stream", async () => {
+    const h = harness();
+    const onEnd = mock(() => {});
+    const sse = open(h, { onEnd });
+    await sse.next();
+    await sse.close();
+    await sse.close();
+    expect(onEnd).toHaveBeenCalledTimes(1);
   });
 });

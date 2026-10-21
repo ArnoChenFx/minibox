@@ -25,6 +25,8 @@ export interface EventStreamOptions {
   /** The `Last-Event-ID` of a reconnecting client: the sequence number of the last event it received. */
   readonly lastId?: number;
   readonly signal?: AbortSignal;
+  /** Runs once when the stream ends, whether the signal aborted or the reader cancelled. */
+  readonly onEnd?: () => void;
   readonly replayLimit?: number;
   readonly pendingLimit?: number;
   readonly heartbeatMs?: number;
@@ -80,6 +82,7 @@ export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Ar
     unsubscribe = undefined;
     clearInterval(heartbeat);
     signal?.removeEventListener("abort", stop);
+    options.onEnd?.();
     notify();
   };
 

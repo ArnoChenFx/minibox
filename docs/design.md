@@ -157,7 +157,7 @@ flowchart LR
 | `exec/` | exec 输出，单独存放，7 天且有总大小上限 |
 | `secrets/` | 环境变量里的密钥值、restic 仓库密钥；规格里只放引用 |
 | `access_key` | 自动生成的 `ACCESS_KEY`（权限 600）；MiniBox 不再改写 `.env` |
-| `tokens` / `sessions` | 令牌哈希、浏览器会话 |
+| `tokens` / `sessions.json` | 令牌哈希、浏览器会话（浏览器会话已实现，见 [9.3](#93-浏览器会话)） |
 | `hosts.json` / `pools.json` | 宿主机、存储节点、存储池配置与证书 |
 
 这是文件与 SQLite，不是外部数据库，「无需运维数据库」的定位不变。`DATA_DIR` 应定期备份到存储池。若 `DATA_DIR` 丢失，只能从存活容器做**降级恢复**（身份、挂载、当前资源可恢复，空闲超时、TTL、工具、环境变量等可变字段需重新设置，见 [5.2](#52-存储位置)）。
@@ -572,7 +572,7 @@ Event
 
 - **分档**：目前由种类与结果决定。非拒绝的读取进入「活动」档（30 天）；写操作（含删除）与被拒绝的调用进入「审计」档（1 年）。§8.3 中的 exec、文件写入、会话发送与终端开闭属于「活动」档，但这些操作尚未存在。它们落地（#9、#14）时需要显式声明档位，否则会按写操作归入审计档。
 - **合并**：§8.3 的「文件读取按主体 + Box + 每分钟合并」推广为所有非拒绝的读取：同一主体、同一操作、同一对象、相同结果、同一分钟内合并为一条，带 `count`。被合并的事件不再推送。
-- **SSE**：`id` 即事件序号（`seq`）。新连接先收到 `retry: 3000`，之后只收到连接后记录的事件。`Last-Event-ID` 之后最多重放 500 条，超出则发送 `event: reset`（`{"after": N}`），客户端改用 `GET /api/events` 补齐缺口，再继续接收流。未读取期间排队超过 1000 条消息时同样重置，并丢弃已排队未发送的帧。心跳为每 15 秒一条 `: keep-alive` 注释。
+- **SSE**：`id` 即事件序号（`seq`）。新连接先收到 `retry: 3000`，之后只收到连接后记录的事件。`Last-Event-ID` 之后最多重放 500 条，超出则发送 `event: reset`（`{"after": N}`），客户端改用 `GET /api/events` 补齐缺口，再继续接收流。未读取期间排队超过 1000 条消息时同样重置，并丢弃已排队未发送的帧。心跳为每 15 秒一条 `: keep-alive` 注释。以浏览器会话发起的流会在该会话结束（登出、撤销或到期）时关闭，与终端一致；Bearer 发起的流不绑定会话。
 - **列表是操作，流不是**：`events.list` 通过操作注册表定义（REST 为 `GET /api/events`），因此出现在 OpenAPI 中，读取日志本身也会被记录。SSE 流不是 JSON 请求与响应，不进入注册表，也不在 OpenAPI 中，但沿用同样的鉴权与同源检查。
 - **范围钩子**：`visibilityOf()`（`src/events/scope.ts`）决定主体能看到哪些事件。目前只有所有者，不加限制；其他主体类型会抛出错误，即失败关闭，直到 #13 为其定义范围。
 - **来源与预留字段**：`ui` 保留给控制台自身的会话（#2）；`started` 保留给长任务（#16）；`parentId` 与 `ref` 已在模型中，待重建流程（#23）、exec（#9）等调用方填写。目前都不会产生。
@@ -616,7 +616,7 @@ Token
 
 ### 9.3 浏览器会话
 
-现在 Cookie 里直接存放原始 `ACCESS_KEY`，有效期 30 天，泄露即永久 root 且无法单独撤销。改为登录后签发随机会话令牌（至少 256 bit），服务端保存其哈希、创建时间、最后活动时间；支持登出作废、绝对与滑动过期、设置页「会话列表 / 退出其他设备」。`Authorization: Bearer <ACCESS_KEY>` 保留，用于脚本。
+已实现（#2）。此前 Cookie 里直接存放原始 `ACCESS_KEY`，有效期 30 天，泄露即永久 root 且无法单独撤销。现在登录后签发随机会话令牌（32 字节，即 256 bit，来自 CSPRNG），Cookie 只保存该令牌；服务端在 `DATA_DIR/sessions.json` 中只保存其 SHA-256 哈希，以及创建时间、过期时间、最后活动时间、User-Agent 与地址，写入采用临时文件加重命名。登出立即作废；`ACCESS_KEY` 变更后，下次启动时全部会话失效（文件中保存的是密钥的 scrypt 校验值，用于检测变更）；绝对有效期由 `SESSION_TTL_DAYS` 决定（默认 30 天），`SESSION_IDLE_DAYS` 可选开启滑动过期；设置页提供会话列表，可撤销单个会话或「退出其他会话」。`Authorization: Bearer <ACCESS_KEY>` 保留，用于脚本。
 
 ### 9.4 暂缓：Box 内 Agent 的自访问
 
@@ -859,7 +859,7 @@ MiniBox 的前提是**一个可信用户在自己的机器上使用**。Docker S
 | 问题 | 对策 |
 | --- | --- |
 | 登录限流可通过伪造 `X-Forwarded-For` 绕过；限流 Map 可被撑爆 | 新增 `TRUST_PROXY`（默认关闭），仅在开启时读取代理头；`X-Forwarded-Proto` 同样受控；限流表加清理或容量上限 |
-| Cookie 存原始 `ACCESS_KEY` | 会话令牌，见 [9.3](#93-浏览器会话) |
+| Cookie 存原始 `ACCESS_KEY` | 已实现为会话令牌，见 [9.3](#93-浏览器会话) |
 | WebSocket 终端和写接口没有 Origin 校验 | 校验 `Origin`（或 `Sec-Fetch-Site`），写接口要求 `Content-Type: application/json`，Cookie 升级为 `SameSite=Strict`（需验证） |
 | 没有 CSP / HSTS；xterm.js 从 CDN 加载且无 SRI | xterm 打包进 `web/vendor/`，加严格 CSP，HTTPS 请求发送 HSTS；`innerHTML` 拼接逐步收敛到统一转义 |
 | Box 缺少加固 | 三个安全档位（见下），默认都带 `PidsLimit` 与 ulimit；模板用非 root；每个 Box 放在独立网络 `minibox-boxes`（关闭容器间通信），出站策略暂缓（见下）；可选 `RUNTIME=runsc`（gVisor）；磁盘配额待存储节点代理（已后移） |

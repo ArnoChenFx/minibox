@@ -65,6 +65,7 @@ export const MESSAGES = {
   too_many_attempts: "Too many attempts. Please try again in 5 minutes.",
   wrong_key: "Incorrect access key.",
   box_not_found: "Box not found.",
+  session_not_found: "Session not found.",
   snapshot_not_found: "Snapshot not found.",
   template_not_found: "Template not found.",
   template_image_missing:

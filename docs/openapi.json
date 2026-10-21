@@ -5637,7 +5637,7 @@
       "cookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "minibox_key",
+        "name": "minibox_session",
         "description": "Session cookie from POST /api/auth/login."
       }
     }

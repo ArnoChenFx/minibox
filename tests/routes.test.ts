@@ -31,6 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  app.sessions.stop();
   server.stop(true);
   restoreLogs();
 });

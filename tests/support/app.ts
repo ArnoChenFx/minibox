@@ -1,17 +1,23 @@
 import { spyOn } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { type App, createApp } from "../../src/app";
 import { DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT } from "../../src/box-profile";
-import { type Config, ROOT } from "../../src/config";
+import { type Config, DEFAULT_SESSION_TTL_MS, ROOT } from "../../src/config";
 import type { ExecutorHooks } from "../../src/operations/executor";
 import { FakeRuntime } from "./fake-runtime";
 
 export const TEST_KEY = "k".repeat(64);
 
-/** Config for tests: no real Docker socket, an ephemeral port, and a label prefix that cannot collide with a real install. */
+const DATA_ROOT = mkdtempSync(join(tmpdir(), "minibox-test-data-"));
+process.on("exit", () => rmSync(DATA_ROOT, { recursive: true, force: true }));
+
+/**
+ * Config for tests: no real Docker socket, an ephemeral port, and a label prefix that cannot collide with a real
+ * install. Each config gets a DATA_DIR of its own, so browser sessions never carry over between apps.
+ */
 export function testConfig(overrides: Partial<Config> = {}): Config {
   const labelPrefix = overrides.labelPrefix ?? "mbtest";
   return {
@@ -19,7 +25,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     port: 0,
     accessKey: TEST_KEY,
     accessKeySource: "env",
-    dataDir: "/nonexistent-minibox-test-data",
+    dataDir: mkdtempSync(join(DATA_ROOT, "app-")),
     dockerSocket: "/nonexistent-minibox-test.sock",
     labelPrefix,
     baseTemplateTag: `${labelPrefix}-template:base`,
@@ -38,6 +44,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     boxProfile: DEFAULT_BOX_PROFILE,
     boxPidsLimit: DEFAULT_PIDS_LIMIT,
     containerRuntime: null,
+    sessionTtlMs: DEFAULT_SESSION_TTL_MS,
+    sessionIdleMs: null,
     ...overrides,
   };
 }

@@ -41,7 +41,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应 |
 | 日志 | 查看容器主进程输出，支持行数选择与自动刷新 |
-| 访问控制 | 单一访问密钥，HttpOnly、`SameSite=Strict` Cookie 或 `Authorization: Bearer`；按客户端地址限制登录失败次数；拒绝跨站请求 |
+| 访问控制 | 单一访问密钥；登录时换取可撤销的会话令牌，保存在 HttpOnly、`SameSite=Strict` Cookie 中，或以 `Authorization: Bearer` 发送；按客户端地址限制登录失败次数；拒绝跨站请求 |
 | 多语言 | 英文与简体中文；点击右上角（控制台顶栏和登录页）的语言图标按钮即可切换，默认跟随浏览器语言，并在本浏览器记住选择 |
 | 界面 | 浅色 / 深色主题（跟随系统，可手动切换）、响应式布局、空状态、骨架屏、操作提示与危险操作确认 |
 
@@ -275,6 +275,8 @@ docker run -d --name minibox --restart unless-stopped \
 | `TRUST_PROXY` | `false` | 信任你自己运行的反向代理设置的 `X-Forwarded-For`、`X-Forwarded-Proto` 和 `X-Forwarded-Host`。**只有代理会在每个请求上覆盖或剥离这些头，并且 MiniBox 只能经由该代理访问时才设为 `true`。** OpenTunnel 等不添加这些头的隧道应保持关闭（见[远程访问](#远程访问)） |
 | `ALLOWED_ORIGINS` | 空 | 本 MiniBox 的公网来源（完整的 `https://` 地址），逗号分隔，例如 `https://minibox.example.com`。**代理改写了 `Host` 时需要设置**（nginx 默认如此），否则从该地址发出的登录和终端请求会返回 `403`。OpenTunnel 会保留 `Host`，此时可选，设置也无害 |
 | `COOKIE_SECURE` | `false` | 始终为会话 Cookie 加上 `Secure` 标记。浏览器登录时会带上 `https://` Origin，已足以加上该标记，通常无需设置。只在 HTTPS 下使用：浏览器会丢弃明文 HTTP 收到的 `Secure` Cookie |
+| `SESSION_TTL_DAYS` | `30` | 一次登录的有效期，从登录时起算，单位为天，大于 0 且至多 3650，可用小数。已登录的会话保持其创建时的有效期 |
+| `SESSION_IDLE_DAYS` | 留空（关闭） | 可选的滑动续期：会话在这么多天未被使用后也会结束。每个请求都算作使用，打开的终端里有输入也算。会话永远不会超过 `SESSION_TTL_DAYS` |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
 | `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
@@ -335,6 +337,7 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 | 路径 | 权限 | 内容 |
 |---|---|---|
 | `access_key` | `600` | 环境变量和 `.env` 中都没有设置时自动生成的访问密钥 |
+| `sessions.json` | `600` | 浏览器会话：令牌的 SHA-256 哈希（从不保存令牌本身）、登录与过期时间、最后活动时间、User-Agent 与地址，以及在访问密钥变更时用于结束全部会话的 scrypt 校验值 |
 | `boxes/` | `700` | 每个 Box 一个规格文件 `<id>.json`（权限 `600`）。可变状态写在这里；标签只是创建时的副本 |
 | `exec/` | `700` | `exec` 命令的输出（现在创建，后续功能使用） |
 | `secrets/` | `700` | 密钥值与仓库密钥（现在创建，后续功能使用） |
@@ -360,9 +363,12 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `POST` | `/api/auth/login` | **公开**。请求体 `{ "key": "..." }`，成功后写入 HttpOnly Cookie（30 天）。正确的密钥总能登录；错误的密钥在同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计）或全部地址合计 50 次后会被拒绝（`429`） |
-| `POST` | `/api/auth/logout` | **公开**。清除 Cookie |
+| `POST` | `/api/auth/login` | **公开**。请求体 `{ "key": "..." }`，成功后写入 HttpOnly 会话 Cookie（有效期由 `SESSION_TTL_DAYS` 决定，默认 30 天）；登录会结束该浏览器原有的会话。正确的密钥总能登录；错误的密钥在同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计）或全部地址合计 50 次后会被拒绝（`429`） |
+| `POST` | `/api/auth/logout` | **公开**。立即在服务端结束本浏览器的会话，并清除 Cookie |
 | `GET` | `/api/auth/session` | **公开**。返回 `{ "authenticated": boolean }` |
+| `GET` | `/api/auth/sessions` | 已登录的浏览器会话，按最近使用时间排序：`id`、`current`、`createdAt`、`lastSeenAt`、`userAgent`、`ip`。从不返回令牌 |
+| `DELETE` | `/api/auth/sessions/{id}` | 结束一个会话，包括本浏览器自身的会话（同时清除本浏览器的 Cookie）。未知 id 返回 `404` |
+| `POST` | `/api/auth/sessions/revoke-others` | 结束除本浏览器以外的全部会话。返回 `{ "ok": true, "revoked": n }` |
 | `GET` | `/api/health` | **公开**。返回 `{ "ok": true, "docker": boolean }`，Docker 不可用时为 503 |
 | `GET` | `/api/system` | 版本、运行时、非敏感配置与限制 |
 | `GET` | `/api/host/metrics` | 宿主机指标与历史采样 |
@@ -451,7 +457,8 @@ minibox/
 │   ├── app.ts               # 组合根：配置、Runtime、主机注册表、监控、操作记录
 │   ├── config.ts            # 环境变量 / .env 配置、访问密钥优先级
 │   ├── data-dir.ts          # DATA_DIR 布局与密钥文件（600）
-│   ├── auth.ts              # 密钥校验、Cookie、登录限流
+│   ├── auth.ts              # 调用方校验（Bearer 或会话）、会话 Cookie、登录限流
+│   ├── sessions.ts          # 浏览器会话：令牌哈希、过期、sessions.json 持久化
 │   ├── labels.ts            # Docker 标签键与解析
 │   ├── activity.ts          # 最近操作记录
 │   ├── static.ts            # 静态文件服务（防目录穿越）
@@ -522,7 +529,8 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 - **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 和 `data/` 已在 `.gitignore` 中忽略，不要提交它们。
 - **容器以 root 运行。** 容器需要使用 Docker Socket，而 Docker Socket 等同于 root。要缩小这部分权限，可以在 Socket 前放一个只转发 MiniBox 所需 Docker API 的 Socket 代理，并把 `DOCKER_SOCKET` 指向代理的 Unix Socket；也可以让 MiniBox 连接 rootless Docker 或 Podman 的 Socket。
-- **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以密钥的长度和随机性才是关键：请使用至少 20 位的随机字符，例如 `openssl rand -hex 32` 生成的密钥（自动生成的密钥为 64 位十六进制）。启动时，若密钥短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符），会记录 `auth.weak_key` 警告。MiniBox 仍会正常启动，已有部署不受影响。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务，现有会话立即失效。
+- **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以密钥的长度和随机性才是关键：请使用至少 20 位的随机字符，例如 `openssl rand -hex 32` 生成的密钥（自动生成的密钥为 64 位十六进制）。启动时，若密钥短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符），会记录 `auth.weak_key` 警告。MiniBox 仍会正常启动，已有部署不受影响。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务；使用新密钥启动时，全部浏览器会话随之结束。
+- **会话可以撤销。** 登录后密钥不会保存在浏览器里：Cookie 中是随机生成的 32 字节会话令牌，`DATA_DIR/sessions.json` 只保存它的 SHA-256 哈希，因此拿到该文件也无法用来伪造登录 Cookie。文件中还有一个用于检测密钥变更的 scrypt 校验值，所以访问密钥的强度依然重要。会话在登出、在设置页撤销、到期（`SESSION_TTL_DAYS`，默认 30 天）或访问密钥变更时结束；会话结束时，它打开的终端和事件流也会关闭。
 - **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。写请求必须声明 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外），这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
 - **严格的内容安全策略（CSP）。** 脚本只会从 MiniBox 自身加载（`script-src 'self'`），页面没有内联脚本，且禁止被嵌入 iframe（`frame-ancestors 'none'`）。通过 HTTPS 访问（直接访问、请求带有 `https://` Origin，或在 `TRUST_PROXY=true` 时经由代理）的请求还会带上 `Strict-Transport-Security`，有效期一年，不包含子域名。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
@@ -571,7 +579,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与 TTL
-- [ ] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
+- [x] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
 
 ### M2 · 存储与 Agent 接口
 

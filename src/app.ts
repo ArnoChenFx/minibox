@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ActivityLog } from "./activity";
 import { LoginLimiter } from "./auth";
 import type { Config } from "./config";
+import { sessionsPath } from "./data-dir";
 import { createDockerRuntime } from "./docker/runtime";
 import { OutputStore } from "./events/outputs";
 import { createRedactor, type Redactor } from "./events/redact";
@@ -14,6 +15,7 @@ import { Bus } from "./lib/bus";
 import { Executor, type ExecutorHooks, logAudit, ownerOnly, type AuditEvent } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
 import type { Runtime } from "./runtime";
+import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
 
 /** What the in-process bus carries. Later producers (task progress, box status) add their topics here. */
@@ -34,6 +36,7 @@ export interface App {
   retention: RetentionJob;
   operations: Executor;
   throttle: LoginLimiter;
+  sessions: SessionStore;
   version: string;
   startedAt: Date;
 }
@@ -45,6 +48,7 @@ export interface AppDeps {
   hooks?: Partial<ExecutorHooks>;
   /** The SQLite file of the event store. Defaults to `events.db` under DATA_DIR. Tests pass `:memory:`. */
   eventsPath?: string;
+  sessions?: SessionStore;
 }
 
 const MB = 1024 * 1024;
@@ -100,6 +104,14 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       },
     }),
     throttle: deps.throttle ?? new LoginLimiter(),
+    sessions:
+      deps.sessions ??
+      new SessionStore({
+        file: sessionsPath(cfg.dataDir),
+        accessKey: cfg.accessKey,
+        ttlMs: cfg.sessionTtlMs,
+        idleMs: cfg.sessionIdleMs,
+      }),
     version,
     startedAt: new Date(),
   };

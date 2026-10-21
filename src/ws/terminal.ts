@@ -3,11 +3,16 @@ import type { ServerWebSocket } from "bun";
 import type { HostCtx } from "../host/registry";
 import { log } from "../lib/logger";
 import type { ExecSession } from "../runtime";
+import type { SessionStore } from "../sessions";
 
 export interface TerminalData {
   boxId: string;
   host: HostCtx;
+  /** The browser session that opened the socket, or `null` for a bearer request. */
+  sessionId: string | null;
   exec?: ExecSession;
+  stopWatching?: () => void;
+  closed?: boolean;
 }
 
 /** Client → server control frame. Anything else is treated as stdin bytes. */
@@ -26,26 +31,44 @@ export function parseControl(data: string): { type: "resize"; cols: number; rows
   return null;
 }
 
-export function terminalHandlers() {
+/**
+ * The socket closes with 1008 when its browser session ends, so a revoked or expired session cannot keep a shell
+ * open. Typing counts as use of the session, so an active terminal is not signed out by sliding renewal.
+ */
+export function terminalHandlers(sessions: SessionStore) {
   return {
     async open(ws: ServerWebSocket<TerminalData>) {
+      const data = ws.data;
+      if (data.sessionId) {
+        data.stopWatching = sessions.watch(data.sessionId, () => {
+          data.closed = true;
+          ws.close(1008, "signed out");
+        });
+      }
+      if (data.closed) return;
       try {
-        const exec = await ws.data.host.runtime.startExec(ws.data.boxId, {
+        const exec = await data.host.runtime.startExec(data.boxId, {
           cmd: ["/bin/sh", "-c", "command -v bash >/dev/null && exec bash -l || exec sh -l"],
           env: ["TERM=xterm-256color", "LANG=C.UTF-8"],
           workingDir: "/workspace",
         });
-        ws.data.exec = exec;
+        if (data.closed) {
+          exec.stream.destroy();
+          return;
+        }
+        data.exec = exec;
         exec.stream.on("data", (chunk: Buffer) => ws.send(chunk));
         exec.stream.on("end", () => ws.close(1000, "session ended"));
         exec.stream.on("error", () => ws.close(1011, "stream error"));
-        log.info("terminal.open", { box: ws.data.boxId.slice(0, 12) });
+        log.info("terminal.open", { box: data.boxId.slice(0, 12) });
       } catch (e) {
+        if (data.closed) return;
         ws.send(`\r\nFailed to start terminal: ${e instanceof Error ? e.message : String(e)}\r\n`);
         ws.close(1011, "exec failed");
       }
     },
     message(ws: ServerWebSocket<TerminalData>, message: string | Buffer) {
+      if (ws.data.sessionId) sessions.touchId(ws.data.sessionId);
       const exec = ws.data.exec;
       if (!exec) return;
       const text = typeof message === "string" ? message : message.toString("utf8");
@@ -57,6 +80,8 @@ export function terminalHandlers() {
       exec.stream.write(message);
     },
     close(ws: ServerWebSocket<TerminalData>) {
+      ws.data.closed = true;
+      ws.data.stopWatching?.();
       ws.data.exec?.stream.end();
       ws.data.exec?.stream.destroy();
       log.info("terminal.close", { box: ws.data.boxId.slice(0, 12) });

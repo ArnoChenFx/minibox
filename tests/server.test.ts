@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,14 @@ import { join } from "node:path";
 import type { Server } from "bun";
 
 import { type App, createApp } from "../src/app";
-import { COOKIE_NAME, LoginLimiter, type LoginLimits } from "../src/auth";
+import {
+  clearLegacyKeyCookie,
+  clearSessionCookie,
+  COOKIE_NAME,
+  LEGACY_KEY_COOKIE,
+  LoginLimiter,
+  type LoginLimits,
+} from "../src/auth";
 import { type Config, loadConfig } from "../src/config";
 import { setLogLevel } from "../src/lib/logger";
 import { startServer, startupFields, warnIfWeakAccessKey } from "../src/server";
@@ -28,18 +35,26 @@ function testConfig(env: Record<string, string> = {}): Config {
   return { ...cfg, port: 0 };
 }
 
+/**
+ * Starts a server for `fn` and stops it afterwards. Each server gets its own DATA_DIR unless `env.DATA_DIR` names
+ * one, so sessions never leak between tests and a test can restart MiniBox over the same directory.
+ */
 async function withServer(
   env: Record<string, string>,
   fn: (ctx: { base: string; app: App }) => Promise<void>,
   limits: Partial<LoginLimits> = {},
 ): Promise<void> {
-  const app = createApp(testConfig(env), "test", { throttle: new LoginLimiter({ penaltyMs: 0, ...limits }) });
+  const dataDir = env.DATA_DIR ?? mkdtempSync(join(SANDBOX, "data-"));
+  const app = createApp(testConfig({ ...env, DATA_DIR: dataDir }), "test", {
+    throttle: new LoginLimiter({ penaltyMs: 0, ...limits }),
+  });
   const server: Server<TerminalData> = startServer(app);
   try {
     await fn({ base: `http://127.0.0.1:${server.port}`, app });
   } finally {
     app.throttle.stop();
     app.monitor.stop();
+    app.sessions.stop();
     server.stop(true);
   }
 }
@@ -50,6 +65,34 @@ const login = (base: string, key: string, headers: Record<string, string> = {}) 
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify({ key }),
   });
+
+/** The session token that a sign-in response sets, or an empty string when it sets none. */
+function sessionToken(res: Response): string {
+  const cookie = res.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE_NAME}=`)) ?? "";
+  return decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1).split(";")[0] ?? "");
+}
+
+async function signIn(base: string, headers: Record<string, string> = {}): Promise<string> {
+  const res = await login(base, KEY, { origin: base, ...headers });
+  expect(res.status).toBe(200);
+  return sessionToken(res);
+}
+
+const cookieFor = (token: string) => ({ cookie: `${COOKIE_NAME}=${token}` });
+/** A day count in the form SESSION_TTL_DAYS and SESSION_IDLE_DAYS take, for a span given in seconds. */
+const days = (seconds: number) => String(seconds / 86400);
+
+async function statusWith(base: string, token: string): Promise<number> {
+  return (await fetch(`${base}/api/auth/sessions`, { headers: cookieFor(token) })).status;
+}
+
+interface SessionList {
+  sessions: { id: string; current: boolean; userAgent: string; createdAt: string; lastSeenAt: string }[];
+}
+
+async function sessionList(base: string, token: string): Promise<SessionList> {
+  return (await fetch(`${base}/api/auth/sessions`, { headers: cookieFor(token) })).json() as Promise<SessionList>;
+}
 
 /** Sends a raw WebSocket handshake and resolves with the HTTP status the server answers with. */
 function upgradeStatus(port: number, headers: Record<string, string>): Promise<number> {
@@ -236,21 +279,235 @@ describe("cross-site protection (end to end)", () => {
 
   test("cross-site writes are refused even when the browser attaches the session cookie", async () => {
     await withServer({}, async ({ base }) => {
+      const token = await signIn(base);
       const res = await fetch(`${base}/api/auth/logout`, {
         method: "POST",
-        headers: { origin: CROSS_SITE, "content-type": "application/json", cookie: `${COOKIE_NAME}=${KEY}` },
+        headers: { origin: CROSS_SITE, "content-type": "application/json", ...cookieFor(token) },
         body: "{}",
       });
       expect(res.status).toBe(403);
+      expect(await statusWith(base, token)).toBe(200);
     });
   });
 
   test("a cross-site WebSocket upgrade is refused with 403 even with a valid session cookie", async () => {
     await withServer({}, async ({ base }) => {
       const port = Number(new URL(base).port);
-      const cookie = `${COOKIE_NAME}=${KEY}`;
-      expect(await upgradeStatus(port, { origin: CROSS_SITE, cookie })).toBe(403);
+      const token = await signIn(base);
+      expect(await upgradeStatus(port, { origin: CROSS_SITE, ...cookieFor(token) })).toBe(403);
       expect(await upgradeStatus(port, { origin: base })).toBe(401);
+    });
+  });
+});
+
+describe("browser sessions (end to end)", () => {
+  test("sign-in issues a random token of 32 bytes in a 30-day cookie, and the token is not the access key", async () => {
+    await withServer({}, async ({ base }) => {
+      const res = await login(base, KEY, { origin: base });
+      const token = sessionToken(res);
+      expect(Buffer.from(token, "base64url")).toHaveLength(32);
+      expect(token).not.toContain(KEY);
+      expect(res.headers.getSetCookie().join(";")).toContain("Max-Age=2592000");
+      expect(await statusWith(base, token)).toBe(200);
+    });
+  });
+
+  test("the access key is not accepted as a session cookie, and the bearer header still works", async () => {
+    await withServer({}, async ({ base }) => {
+      expect(await statusWith(base, KEY)).toBe(401);
+      const bearer = await fetch(`${base}/api/auth/sessions`, { headers: { authorization: `Bearer ${KEY}` } });
+      expect(bearer.status).toBe(200);
+    });
+  });
+
+  test("logout ends the session on the server at once, and clears the cookie", async () => {
+    await withServer({}, async ({ base }) => {
+      const token = await signIn(base);
+      const res = await fetch(`${base}/api/auth/logout`, {
+        method: "POST",
+        headers: { origin: base, "content-type": "application/json", ...cookieFor(token) },
+        body: "{}",
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.getSetCookie()).toContain(clearSessionCookie());
+      expect(await statusWith(base, token)).toBe(401);
+    });
+  });
+
+  test("the console opens for a signed-in browser and sends everyone else to sign in", async () => {
+    await withServer({}, async ({ base }) => {
+      const token = await signIn(base);
+      const page = await fetch(`${base}/`, { headers: cookieFor(token), redirect: "manual" });
+      expect(page.status).toBe(200);
+      const signedOut = await fetch(`${base}/`, { redirect: "manual" });
+      expect(signedOut.status).toBe(302);
+      expect(signedOut.headers.get("location")).toBe("/login");
+    });
+  });
+
+  test("a minibox_key cookie holding the access key is never honoured, and it is cleared", async () => {
+    await withServer({}, async ({ base }) => {
+      const legacy = { cookie: `${LEGACY_KEY_COOKIE}=${KEY}` };
+      expect((await fetch(`${base}/api/auth/sessions`, { headers: legacy })).status).toBe(401);
+      const page = await fetch(`${base}/login`, { headers: legacy });
+      expect(page.status).toBe(200);
+      expect(page.headers.getSetCookie()).toContain(clearLegacyKeyCookie());
+      const signedIn = await login(base, KEY, { origin: base, ...legacy });
+      expect(signedIn.headers.getSetCookie()).toContain(clearLegacyKeyCookie());
+    });
+  });
+
+  test("a session survives a restart over the same DATA_DIR, and the file holds no token", async () => {
+    const dataDir = mkdtempSync(join(SANDBOX, "restart-"));
+    let token = "";
+    await withServer({ DATA_DIR: dataDir }, async ({ base }) => {
+      token = await signIn(base);
+    });
+    const stored = readFileSync(join(dataDir, "sessions.json"), "utf8");
+    expect(stored).not.toContain(token);
+    expect(stored).not.toContain(KEY);
+    await withServer({ DATA_DIR: dataDir }, async ({ base }) => {
+      expect(await statusWith(base, token)).toBe(200);
+    });
+  });
+
+  test("changing ACCESS_KEY ends every session on the next start", async () => {
+    const dataDir = mkdtempSync(join(SANDBOX, "rekey-"));
+    const NEW_KEY = "n".repeat(64);
+    let token = "";
+    await withServer({ DATA_DIR: dataDir }, async ({ base }) => {
+      token = await signIn(base);
+    });
+    await withServer({ DATA_DIR: dataDir, ACCESS_KEY: NEW_KEY }, async ({ base }) => {
+      expect(await statusWith(base, token)).toBe(401);
+      expect((await login(base, KEY, { origin: base })).status).toBe(401);
+      expect((await login(base, NEW_KEY, { origin: base })).status).toBe(200);
+    });
+  });
+
+  test("the cookie lasts as long as SESSION_TTL_DAYS says, 30 days by default", async () => {
+    await withServer({}, async ({ base }) => {
+      const cookies = (await login(base, KEY, { origin: base })).headers.getSetCookie().join(";");
+      expect(cookies).toContain("Max-Age=2592000");
+    });
+    await withServer({ SESSION_TTL_DAYS: "2" }, async ({ base }) => {
+      const cookies = (await login(base, KEY, { origin: base })).headers.getSetCookie().join(";");
+      expect(cookies).toContain("Max-Age=172800");
+    });
+  });
+
+  test("SESSION_TTL_DAYS caps a session's life, and SESSION_IDLE_DAYS renews it only up to that cap", async () => {
+    await withServer({ SESSION_TTL_DAYS: days(3), SESSION_IDLE_DAYS: days(2) }, async ({ base }) => {
+      const token = await signIn(base);
+      await Bun.sleep(1000);
+      expect(await statusWith(base, token)).toBe(200);
+      await Bun.sleep(1000);
+      expect(await statusWith(base, token)).toBe(200);
+      await Bun.sleep(1500);
+      expect(await statusWith(base, token)).toBe(401);
+    });
+  }, 10_000);
+
+  test("the session list marks this browser, revoking one ends only that session, and an unknown id is a 404", async () => {
+    await withServer({}, async ({ base }) => {
+      const a = await signIn(base, { "user-agent": "Browser A" });
+      const b = await signIn(base, { "user-agent": "Browser B" });
+      const { sessions } = await sessionList(base, a);
+      expect(sessions.map((s) => s.userAgent).toSorted()).toEqual(["Browser A", "Browser B"]);
+      expect(sessions.filter((s) => s.current).map((s) => s.userAgent)).toEqual(["Browser A"]);
+
+      const bId = sessions.find((s) => s.userAgent === "Browser B")?.id ?? "";
+      const revoked = await fetch(`${base}/api/auth/sessions/${bId}`, { method: "DELETE", headers: cookieFor(a) });
+      expect(revoked.status).toBe(200);
+      expect(revoked.headers.getSetCookie()).toEqual([]);
+      expect(await statusWith(base, b)).toBe(401);
+      expect(await statusWith(base, a)).toBe(200);
+
+      const missing = await fetch(`${base}/api/auth/sessions/${"0".repeat(32)}`, {
+        method: "DELETE",
+        headers: cookieFor(a),
+      });
+      expect(missing.status).toBe(404);
+      expect(await missing.json()).toMatchObject({ error: { code: "not_found", key: "session_not_found" } });
+    });
+  });
+
+  test("sign out other sessions keeps this browser and reports how many it ended", async () => {
+    await withServer({}, async ({ base }) => {
+      const a = await signIn(base);
+      const b = await signIn(base);
+      const c = await signIn(base);
+      const res = await fetch(`${base}/api/auth/sessions/revoke-others`, {
+        method: "POST",
+        headers: { origin: base, "content-type": "application/json", ...cookieFor(a) },
+        body: "{}",
+      });
+      expect(await res.json()).toEqual({ ok: true, revoked: 2 });
+      expect(await statusWith(base, a)).toBe(200);
+      expect(await statusWith(base, b)).toBe(401);
+      expect(await statusWith(base, c)).toBe(401);
+    });
+  });
+
+  test("revoking the current session signs this browser out and clears its cookie", async () => {
+    await withServer({}, async ({ base }) => {
+      const token = await signIn(base);
+      const id = (await sessionList(base, token)).sessions[0]?.id ?? "";
+      const res = await fetch(`${base}/api/auth/sessions/${id}`, { method: "DELETE", headers: cookieFor(token) });
+      expect(res.status).toBe(200);
+      expect(res.headers.getSetCookie()).toContain(clearSessionCookie());
+      expect(await statusWith(base, token)).toBe(401);
+    });
+  });
+
+  test("signing in again while signed in replaces the earlier session", async () => {
+    await withServer({}, async ({ base }) => {
+      const first = await signIn(base);
+      const second = sessionToken(await login(base, KEY, { origin: base, ...cookieFor(first) }));
+      expect(second).not.toBe(first);
+      expect(await statusWith(base, first)).toBe(401);
+      expect(await statusWith(base, second)).toBe(200);
+    });
+  });
+
+  test("no token or access key reaches the logs, even at debug level", async () => {
+    const lines: string[] = [];
+    const capture = (line: unknown) => {
+      lines.push(String(line));
+    };
+    const errors = spyOn(console, "error").mockImplementation(capture);
+    const logs = spyOn(console, "log").mockImplementation(capture);
+    setLogLevel("debug");
+    let token = "";
+    try {
+      await withServer({}, async ({ base }) => {
+        token = await signIn(base);
+        await statusWith(base, token);
+        await login(base, "wrong-key-value", { origin: base });
+        await fetch(`${base}/api/auth/logout`, {
+          method: "POST",
+          headers: { origin: base, "content-type": "application/json", ...cookieFor(token) },
+          body: "{}",
+        });
+      });
+    } finally {
+      errors.mockRestore();
+      logs.mockRestore();
+      setLogLevel("error");
+    }
+    const text = lines.join("\n");
+    expect(text).toContain("auth.login");
+    expect(text).toContain("session.revoked");
+    expect(text).not.toContain(token);
+    expect(text).not.toContain(KEY);
+  });
+
+  test("a terminal upgrade with a session cookie gets past authentication, and a made-up cookie does not", async () => {
+    await withServer({}, async ({ base }) => {
+      const port = Number(new URL(base).port);
+      const token = await signIn(base);
+      expect(await upgradeStatus(port, { origin: base, ...cookieFor(token) })).not.toBe(401);
+      expect(await upgradeStatus(port, { origin: base, ...cookieFor("not-a-session") })).toBe(401);
     });
   });
 });
