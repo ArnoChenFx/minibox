@@ -747,6 +747,19 @@ table.table {
 .field + .field {
   margin-top: 16px;
 }
+/* In a grid the gap spaces the fields; a sibling margin would push every field after the first one down. */
+.form-grid {
+  align-items: start;
+}
+.form-grid > .field + .field {
+  margin-top: 0;
+}
+.section-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
 .label {
   font-size: 13px;
   font-weight: 500;
@@ -780,6 +793,36 @@ table.table {
   transition:
     border-color 0.12s,
     box-shadow 0.12s;
+}
+/* Native selects keep their keyboard and screen-reader behaviour; only the box is restyled to match .input. */
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+    linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position:
+    right 16px center,
+    right 11px center;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.select:hover:not(:disabled) {
+  border-color: var(--text-3);
+}
+.select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.select::-ms-expand {
+  display: none;
+}
+.select option {
+  background: var(--bg-elev);
+  color: var(--text);
 }
 .input:focus,
 .select:focus {

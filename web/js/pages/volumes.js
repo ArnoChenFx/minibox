@@ -21,7 +21,7 @@ const healthBadge = (status, low) => {
 };
 
 function field(label, inner) {
-  return `<label class="field"><span>${esc(label)}</span>${inner}</label>`;
+  return `<label class="field"><span class="label">${esc(label)}</span>${inner}</label>`;
 }
 
 /** What saving the pools would change. `t()` does not escape, so the whole sentence is escaped once here. */
@@ -106,7 +106,7 @@ export function render(view) {
           <td>${healthBadge(item?.status ?? "unknown", item?.lowSpace)}</td>
           <td class="num">${esc(free)}</td>
           <td>${item?.message ? `<span class="subtle">${esc(item.message)}</span>` : "—"}</td>
-          <td><button class="btn btn-sm" data-action="make-default" data-name="${esc(pool.name)}">${t("vol.defaultYes")}</button> ${remove}</td>
+          <td><div class="actions"><button class="btn btn-sm" data-action="make-default" data-name="${esc(pool.name)}">${t("vol.defaultYes")}</button>${remove}</div></td>
         </tr>`;
       })
       .join("");
@@ -133,10 +133,10 @@ export function render(view) {
           <td>${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>
           <td>${esc(mounts || "—")}</td>
           <td class="num">${volume.bytes == null ? "—" : esc(bytes(volume.bytes))}</td>
-          <td class="actions">
+          <td><div class="actions">
             <button class="btn btn-sm" data-action="measure" data-id="${esc(volume.id)}">${t("vol.measure")}</button>
             <button class="btn btn-sm" data-action="delete" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}">${t("vol.delete")}</button>
-          </td>
+          </div></td>
         </tr>`;
       })
       .join("");
@@ -147,7 +147,10 @@ export function render(view) {
           <thead><tr><th>${t("vol.colName")}</th><th>${t("vol.colBackend")}</th><th>${t("vol.colHealth")}</th><th>${t("vol.colFree")}</th><th></th><th></th></tr></thead>
           <tbody>${poolRows}</tbody>
         </table></div>
-        <div class="card-body"><h3>${t("vol.roles")}</h3><p class="help">${t("vol.cacheHint")}</p><div class="grid grid-2">${roleFields}</div></div>
+        <div class="card-body">
+          <div class="section-intro"><h3>${t("vol.roles")}</h3><p class="help">${t("vol.cacheHint")}</p></div>
+          <div class="grid grid-2 form-grid">${roleFields}</div>
+        </div>
       </div>
       <div class="card" style="margin-top:16px"><div class="card-head"><h3>${t("vol.volumes")}</h3></div>
         <div class="table-wrap"><table class="table">
