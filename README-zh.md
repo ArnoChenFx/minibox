@@ -36,6 +36,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | 模板 | 内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
+| 实时更新 | Box 状态、资源采样、宿主机指标与任务进度通过 `GET /api/events/stream`（SSE）推送。控制台只在事件流断开时轮询 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应。具名的 tmux 会话在刷新页面或连接断开后仍然保留。Agent 发起的会话默认只读，接管后才能输入 |
 | 活动 | Box 的历史记录：经由 MiniBox 执行的命令、容器启动 / 停止 / 内存溢出（OOM）事件，以及终端会话的开启与关闭。从不记录键入的内容。`docker logs` 保留在下方 |
 | 访问控制 | 单一访问密钥；登录时换取可撤销的会话令牌，保存在 HttpOnly、`SameSite=Strict` Cookie 中，或以 `Authorization: Bearer` 发送；按客户端地址限制登录失败次数；拒绝跨站请求 |
@@ -69,6 +70,8 @@ flowchart LR
     OPS[操作注册表<br/>鉴权 / 校验 / 审计]
     WS[WebSocket 终端]
     MON[HostMonitor<br/>/proc 采样]
+    SAMP[HostSampler<br/>盒子缓存 · 资源采样]
+    BUS[事件总线]
   end
   subgraph Host[宿主机]
     PROC[/proc · statfs/]
@@ -85,6 +88,13 @@ flowchart LR
   OPS -- Runtime --> D
   WS -- tmux attach / TTY --> D
   MON --> PROC
+  MON --> BUS
+  OPS -- 读取 --> SAMP
+  OPS --> BUS
+  SAMP -- inspect · stats --> D
+  D -- 容器事件 --> SAMP
+  SAMP --> BUS
+  BUS -- SSE --> UI
   D --> B1 & B2
   B1 & B2 --- V
   D --- I
@@ -94,6 +104,7 @@ flowchart LR
 - **会话** = Box 内以 `dev` 运行的一个具名 tmux 会话。网页终端附着到它；Agent 通过会话工具发送按键、读取屏幕。关闭页面只是断开附着，会话会一直运行，直到被关闭或 Box 停止（见[会话](#会话)）。
 - **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`。
 - **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。
+- **实时状态** = 每台主机一个 `HostSampler`。它根据引擎的容器事件保持盒子缓存最新，并每分钟重新列出一次容器，以补上事件流静默停止时漏掉的变化。有实时流打开时，每隔 `METRICS_INTERVAL_MS` 为每个运行中的 Box 采样，没有时每 30 秒一次（`METRICS_INTERVAL_MS` 更长时按它），并保留 `METRICS_HISTORY` 个采样点；同时把 Box、采样、链路与主机指标帧发布到事件总线。`GET /api/events/stream` 把它们转发给控制台，控制台只在事件流断开时轮询。实时帧只带环境变量的名称，不带值。同时打开的事件流与任务流不超过 `STREAM_MAX_CONNECTIONS`，超出的请求返回 `429`。采样只保存在内存中，从不写入事件日志。
 - 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 随仓库放在 [`web/vendor/`](web/vendor/README.md)，控制台不会从 CDN 加载任何代码。
 
 （`minibox` 是默认的 `LABEL_PREFIX`，所有名称和标签都随前缀变化。）
@@ -284,8 +295,9 @@ docker run -d --name minibox --restart unless-stopped \
 | `BOX_PIDS_LIMIT` | `1024` | 每个新建 Box 允许的最大进程数（正整数） |
 | `RUNTIME` | 引擎默认 | 新建 Box 使用的 OCI 运行时，例如 gVisor 的 `runsc`。该运行时必须已经安装在 Docker 引擎中 |
 | `STOP_TIMEOUT_SEC` | `3` | 停止或重启 Box 时，发送 SIGTERM 后等待退出的秒数，超时则强制结束。0 到 300 之间的整数 |
-| `METRICS_INTERVAL_MS` | `3000` | 宿主机采样间隔（毫秒） |
-| `METRICS_HISTORY` | `120` | 保留的采样点数量（默认间隔下约 6 分钟） |
+| `METRICS_INTERVAL_MS` | `3000` | 宿主机指标的间隔（毫秒）；有实时流打开时，也是每个 Box 资源采样的间隔。没有实时流时，Box 每 30 秒采样一次（`METRICS_INTERVAL_MS` 更长时按它）。请保持在 2000 以上：Docker 的统计调用需要 1 到 2 秒，超时仍未返回的调用记为缺失的采样 |
+| `METRICS_HISTORY` | `120` | 每台主机与每个 Box 保留的采样点数量（默认间隔下约 6 分钟） |
+| `STREAM_MAX_CONNECTIONS` | `256` | 同时打开的事件流与任务流上限，所有浏览器与客户端共用。超出的连接返回 `429`，控制台按逐渐增长的间隔重试。须为正整数 |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | 审计事件的保留天数：写操作、删除与被拒绝的调用。见[事件](#事件) |
 | `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | 活动事件的保留天数：命令执行、容器事件、终端会话与读取。同一分钟内的重复读取会合并 |
 | `EVENT_OUTPUT_RETENTION_DAYS` | `7` | 命令输出（`DATA_DIR/exec`）的保留天数。命令结束时 `exec` 会在这里写入头尾窗口 |
@@ -379,7 +391,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET` | `/api/boxes?stats=false` | 列表；除非 `stats=false`，否则附带运行中 Box 的实时占用 |
+| `GET` | `/api/boxes?stats=false` | 从主机的缓存列出 Box，缓存由引擎事件保持最新。缓存就绪时列表不调用引擎；除非 `stats=false`，否则运行中的 Box 附带最近一次采样 |
 | `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB |
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
@@ -387,8 +399,8 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `POST` | `/api/boxes/:id/rebuild` | 重建 `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`。必须带 `If-Match`。挂载或网络不被允许时返回 `403 forbidden`，不做任何改动：`minibox-data` 不能挂载；Box 尚未挂载的卷必须是 MiniBox 创建的（或尚不存在），且不能被其它 Box 挂载；网络只能是 Box 网络或 Box 当前已在使用的网络。未带 `confirm: true` 时返回 `409 confirmation_required`，`error.details.preview` 包含可写层的 docker diff 和计划变更。确认后创建新容器、换上并删除旧容器；失败则恢复旧容器和上一版规格。容器名改为 `<LABEL_PREFIX>-<id>` |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作。启动和停止会记下期望状态 |
 | `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"?, "pids"? }`。必须带 `If-Match` |
-| `GET` | `/api/boxes/:id/stats` | 实时占用 |
-| `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行） |
+| `GET` | `/api/boxes/:id/stats` | 最近一次占用（最新采样）。`?history=true` 另外返回最近的采样，按时间从早到晚排列 |
+| `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行）。同一 Box 与 tail 的引擎读取在两秒内共享 |
 | `POST` | `/api/boxes/:id/snapshots` | 开始创建快照 `{ "name"? }`。返回 `202` `{ "taskId" }` |
 | `GET` (WS) | `/api/boxes/:id/terminal?session=NAME` | 附着到具名会话的 WebSocket 终端（见[会话](#会话)）。二进制帧与其他文本帧是键入的输入。文本帧 `{"type":"takeover"}` 与 `{"type":"release"}` 用于接管与归还，`{"type":"resize","cols":N,"rows":N}` 调整窗口。只有浏览器会话能输入、接管或调整窗口；Bearer 调用者只能读取输出，输入会收到带 `terminal_read_only` 的 `forbidden` 错误帧，其调整窗口的消息会被忽略 |
 | `POST` | `/api/boxes/:id/exec` | 在 Box 里运行命令。请求体 `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`。`argv`（不经 shell）与 `cmd`（`/bin/sh -c`）只能提供一个。默认用户 `dev`，目录 `/workspace`，超时 30 秒；前台调用最长 55 秒，`background: true` 最长 3600 秒。已停止的 Box 会先启动，这会改变它的版本号。结果包含 `status`（`running`、`exited` 或 `killed`）、`exitCode`、`stdout`、`stderr`、`truncated`、`durationMs`、`timedOut` 与 `woke`。非零退出码是程序自己的状态。内联输出保留每个流头尾各约 16 KiB；`outputRef` 指向保存的窗口。「严格」档位下用户只能是 `dev` 或 `1000`；其他档位可以用 `root`，这类执行在审计中标记为 `privileged`。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep` |
@@ -456,9 +468,11 @@ Bun 的 HTTP 空闲计时从请求开始计算，上限 60 秒，响应内容不
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/events` | 事件，最新的在前。过滤条件：`box`（ID 或名称）、`principal`、`op`、`status`（`started`、`ok`、`error` 或 `denied`）、`run`、`since`（ISO 8601，例如 `2026-10-20T00:00:00Z`）。分页：`limit`（1–200，默认 50）与 `cursor`（上一页的 `nextCursor`）。返回 `{ "events": [...], "nextCursor": ... }`，最后一页的 `nextCursor` 为 `null` |
-| `GET` | `/api/events/stream` | 同样的过滤条件，以服务器推送事件（`text/event-stream`）的方式返回。见下文 |
+| `GET` | `/api/events/stream` | 同样的过滤条件，以服务器推送事件（`text/event-stream`）的方式返回。不带过滤条件时还携带实时状态。见下文 |
 
 事件流每条消息对应一个事件：`id` 为事件的序号，`data` 为 JSON 格式的事件。新连接只会收到连接之后记录的事件。断线重连的客户端会把最后收到的 `id` 放在 `Last-Event-ID` 中发回（浏览器会自动这样做），并收到它错过的事件，最多 500 条。如果错过的超过 500 条，或在未读取期间排队的消息超过 1000 条，流会改为发送 `event: reset`（`{"after": N}`）。客户端随后用相同的过滤条件读取 `GET /api/events`，沿 `nextCursor` 翻页直到遇到它收到的最后一个 `id`，然后继续接收事件流。同一事件可能既来自列表，也来自事件流，因此客户端应跳过已经拥有的序号。`reset` 消息不带 `id`，因此 `Last-Event-ID` 仍指向最后收到的事件。空闲时流每 15 秒发送一条 `: keep-alive` 注释，使代理不会断开连接。
+
+不带过滤条件的事件流还会携带控制台显示的实时状态。这些帧以 `event:` 命名且没有 `id:`，因此不会改变 `Last-Event-ID`：`sync` 给出每台主机的 Box 列表与链路状态，首先发送，并在 `reset` 之后再次发送；`box` 表示某个 Box 被新增、修改或删除；`sample` 携带运行中 Box 的资源采样，`host` 携带宿主机指标，`link` 表示主机的采样器是否已连接引擎，`task` 表示任务的状态变化。实时帧从不写入事件日志，因此高频采样不会在 `events.db` 中增加记录。
 
 事件在写入前会脱敏。访问密钥在出现的任何位置都会被替换；环境变量只记录变量名；名为 `password`、`token`、`secret` 或 `api_key` 等的字段值会被替换；常见凭据格式也会被替换：PEM 私钥、`Bearer` 令牌、URL 中的密码、JWT、`sk-` 密钥、GitHub 令牌、AWS 访问密钥、Slack 令牌和 Google API 密钥。这是尽力而为，不保证完整：未列出的格式，或被拆分到多个字段中的凭据，不会被识别。超过 8 KB 的 `detail` 会被替换为一条带大小的说明。
 
@@ -548,8 +562,8 @@ minibox/
 │   ├── tmux/                # tmux 命令行、会话名称，以及 tmux 输出的解析
 │   ├── mcp/                 # /mcp 上的 Streamable HTTP MCP
 │   ├── cli.ts               # 瘦客户端：box ls、exec、mcp 的 stdio 代理
-│   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostMonitor 采样
-│   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、范围钩子
+│   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostSampler（盒子缓存与采样）、HostMonitor
+│   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、实时帧、范围钩子
 │   ├── tasks/               # 任务库（SQLite）、管理器、走事件总线的进度流
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
 │   ├── routes/              # router、各组路由（auth / system / images）与操作的 REST 适配层

@@ -120,6 +120,48 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     expect(seen).toEqual(["start", "die"]);
   });
 
+  test("container changes emit the engine's events, and a stop of a stopped container emits nothing", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    const controller = new AbortController();
+    const seen: string[] = [];
+    const consumer = (async () => {
+      for await (const event of rt.events({ labels, types: ["container"] }, controller.signal)) {
+        seen.push(`${event.action}:${event.attributes.name}`);
+      }
+    })();
+
+    const { id } = await rt.createContainer({ image: "alpine:3.20", name: "mbtest-a", labels });
+    await rt.startContainer(id);
+    await rt.stopContainer(id, { timeoutSec: 1 });
+    await rt.stopContainer(id, { timeoutSec: 1 });
+    await rt.renameContainer(id, "mbtest-b");
+    await rt.updateContainer(id, { cpus: 2 });
+    await rt.removeContainer(id, { force: true });
+    await Bun.sleep(10);
+    controller.abort();
+    await consumer;
+
+    expect(seen).toEqual([
+      "create:mbtest-a",
+      "start:mbtest-a",
+      "die:mbtest-a",
+      "stop:mbtest-a",
+      "rename:mbtest-b",
+      "update:mbtest-b",
+      "destroy:mbtest-b",
+    ]);
+  });
+
+  test("interruptEvents ends an open stream with the error, as a dropped engine connection does", async () => {
+    const rt = new FakeRuntime();
+    const consumer = (async () => {
+      for await (const event of rt.events({ labels })) void event;
+    })();
+    rt.interruptEvents(new RuntimeError("unavailable", "connection reset"));
+    expect(await rejectionOf(consumer)).toMatchObject({ kind: "unavailable", message: "connection reset" });
+  });
+
   test("ensureBridgeNetwork creates an isolated network once and refuses networks with other settings", async () => {
     const rt = new FakeRuntime();
     await rt.ensureBridgeNetwork("boxes", { interContainerComm: false });

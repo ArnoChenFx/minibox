@@ -131,6 +131,8 @@ export default {
   "err.terminal_read_only": "This terminal is read-only. Take over the session in the console to type.",
   "err.ws_upgrade_failed": "WebSocket upgrade failed.",
   "err.too_many_attempts": "Too many attempts. Please try again in 5 minutes.",
+  "err.stream_limit":
+    "Too many live connections are open (at most {max}). Close a MiniBox tab or wait, then try again.",
   "err.wrong_key": "Incorrect access key.",
   "err.session_not_found": "Session not found.",
   "err.box_not_found": "Box not found.",

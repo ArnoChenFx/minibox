@@ -4272,6 +4272,15 @@
             }
           },
           {
+            "name": "history",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Also return the recent samples of the box, oldest first. Accepts true, false, 1 or 0. Defaults to false."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -4322,6 +4331,39 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cpuPercent": {
+                            "type": "number"
+                          },
+                          "memUsage": {
+                            "type": "number"
+                          },
+                          "memLimit": {
+                            "type": "number"
+                          },
+                          "memPercent": {
+                            "type": "number"
+                          },
+                          "t": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "cpuPercent",
+                          "memUsage",
+                          "memLimit",
+                          "memPercent",
+                          "t"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [

@@ -1,10 +1,12 @@
 import { actionButtons, deleteBox, lifecycle, snapshotBox } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
 import { api } from "../lib/api.js";
+import { applyBoxFrame, applySamples, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { cpus, gbOrMb, mem, pct, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { pollWhileDown, subscribe } from "../lib/live.js";
 import { emptyState, skeletonRows, stateBadge, toastError, usageBar } from "../lib/ui.js";
 
 export function render(view) {
@@ -91,7 +93,25 @@ export function render(view) {
     delete: (el) => deleteBox(find(el.dataset.id)).then((ok) => ok && load()),
   });
 
+  const offs = [
+    subscribe("sync", (frame) => {
+      const next = boxesOfSync(frame);
+      if (!next) return;
+      boxes = next;
+      draw();
+    }),
+    subscribe("box", (frame) => {
+      boxes = applyBoxFrame(boxes, frame);
+      draw();
+    }),
+    subscribe("sample", (frame) => {
+      if (applySamples(boxes, frame.boxes)) draw();
+    }),
+  ];
   load().catch((e) => toastError(t("bx.loadFailedToast"), e));
-  const timer = setInterval(load, 5000);
-  return () => clearInterval(timer);
+  const stopPolling = pollWhileDown(load, 5000);
+  return () => {
+    for (const off of offs) off();
+    stopPolling();
+  };
 }

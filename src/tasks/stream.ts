@@ -1,4 +1,5 @@
-import { HEARTBEAT_MS, PENDING_LIMIT, REPLAY_LIMIT, RETRY_MS } from "../events/stream";
+import { FrameBuffer } from "../events/frames";
+import { HEARTBEAT_MS, PENDING_BYTES, PENDING_LIMIT, REPLAY_LIMIT, RETRY_MS } from "../events/stream";
 import type { TaskStreamEvent } from "./types";
 
 const HEARTBEAT = ": keep-alive\n\n";
@@ -23,6 +24,7 @@ export interface TaskStreamOptions {
   readonly onEnd?: () => void;
   readonly replayLimit?: number;
   readonly pendingLimit?: number;
+  readonly pendingBytes?: number;
   readonly heartbeatMs?: number;
 }
 
@@ -32,14 +34,17 @@ const resetFrame = (after: number) => `event: reset\ndata: ${JSON.stringify({ af
 /**
  * Server-sent events for one task. The listener is attached before any replay, and a cursor already sent is not sent
  * again. A `reset` event means the client missed log the stream no longer has: it reads the task for the retained
- * output, then carries on. Heartbeats keep proxies from closing the stream; Bun's own idle timer is disabled by the
- * route (`server.timeout(req, 0)`), because writes do not extend it.
+ * output, then carries on. A slow client's queue is bounded by frames and by bytes, as the event stream's is. Heartbeats
+ * keep proxies from closing the stream; Bun's own idle timer is disabled by the route (`server.timeout(req, 0)`), because
+ * writes do not extend it.
  */
 export function taskStream(options: TaskStreamOptions): ReadableStream<Uint8Array> {
   const { taskId, store, signal } = options;
   const replayLimit = options.replayLimit ?? REPLAY_LIMIT;
-  const pendingLimit = options.pendingLimit ?? PENDING_LIMIT;
-  const frames: string[] = [];
+  const frames = new FrameBuffer({
+    frames: options.pendingLimit ?? PENDING_LIMIT,
+    bytes: options.pendingBytes ?? PENDING_BYTES,
+  });
   const sent = new Set<number>();
   let last = 0;
   let done = false;
@@ -53,21 +58,15 @@ export function taskStream(options: TaskStreamOptions): ReadableStream<Uint8Arra
     wake = undefined;
   };
 
-  const queue = (frame: string) => {
-    frames.push(frame);
-    notify();
-  };
-
   const queueEvent = (event: TaskStreamEvent) => {
     if (sent.has(event.seq)) return;
     sent.add(event.seq);
     last = Math.max(last, event.seq);
-    if (frames.length >= pendingLimit) {
-      frames.length = 0;
-      queue(resetFrame(last));
-      return;
+    if (!frames.push(eventFrame(event))) {
+      frames.clear();
+      frames.force(resetFrame(last));
     }
-    queue(eventFrame(event));
+    notify();
   };
 
   const onLive = (event: TaskStreamEvent) => {
@@ -88,33 +87,43 @@ export function taskStream(options: TaskStreamOptions): ReadableStream<Uint8Arra
 
   return new ReadableStream<Uint8Array>({
     start() {
-      unsubscribe = options.subscribe(onLive);
-      frames.push(`retry: ${RETRY_MS}\n\n`);
-      if (options.after !== undefined) {
-        const oldest = store.oldest(taskId);
-        const missed = store.after(taskId, options.after, replayLimit + 1);
-        if (oldest > options.after + 1 || missed.length > replayLimit) queue(resetFrame(store.head(taskId)));
-        else for (const event of missed) queueEvent(event);
+      try {
+        unsubscribe = options.subscribe(onLive);
+        frames.force(`retry: ${RETRY_MS}\n\n`);
+        if (options.after !== undefined) {
+          const oldest = store.oldest(taskId);
+          const missed = store.after(taskId, options.after, replayLimit + 1);
+          if (oldest > options.after + 1 || missed.length > replayLimit) frames.force(resetFrame(store.head(taskId)));
+          else for (const event of missed) queueEvent(event);
+        }
+        last = Math.max(last, store.head(taskId));
+        heartbeat = setInterval(() => {
+          if (frames.push(HEARTBEAT)) notify();
+        }, options.heartbeatMs ?? HEARTBEAT_MS);
+        heartbeat.unref();
+        if (signal?.aborted) stop();
+        else signal?.addEventListener("abort", stop);
+      } catch (e) {
+        stop();
+        throw e;
       }
-      last = Math.max(last, store.head(taskId));
-      heartbeat = setInterval(() => {
-        if (frames.length < pendingLimit) queue(HEARTBEAT);
-      }, options.heartbeatMs ?? HEARTBEAT_MS);
-      heartbeat.unref();
-      if (signal?.aborted) stop();
-      else signal?.addEventListener("abort", stop);
     },
     async pull(controller) {
-      if (frames.length === 0 && !done) {
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+      try {
+        if (frames.length === 0 && !done) {
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
+        }
+        if (done) {
+          if (!cancelled) controller.close();
+          return;
+        }
+        if (frames.length > 0) controller.enqueue(encoder.encode(frames.take(FRAMES_PER_CHUNK).join("")));
+      } catch (e) {
+        stop();
+        throw e;
       }
-      if (done) {
-        if (!cancelled) controller.close();
-        return;
-      }
-      if (frames.length > 0) controller.enqueue(encoder.encode(frames.splice(0, FRAMES_PER_CHUNK).join("")));
     },
     cancel() {
       cancelled = true;

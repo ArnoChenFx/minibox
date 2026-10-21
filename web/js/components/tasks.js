@@ -2,6 +2,7 @@ import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { has, t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { isLive, onLiveState, subscribe } from "../lib/live.js";
 import { invalidateTemplates } from "../lib/store.js";
 import { toastError } from "../lib/ui.js";
 
@@ -176,8 +177,9 @@ async function refresh() {
   schedule();
 }
 
+/** While the stream is up, status frames refresh the list. Polling covers only the time the stream is down. */
 function schedule() {
-  const want = open || tasks.some((task) => task.status === "running");
+  const want = (open || tasks.some((task) => task.status === "running")) && !isLive();
   if (!want) {
     if (timer) clearInterval(timer);
     timer = null;
@@ -213,8 +215,23 @@ export async function waitTask(taskId) {
     const task = await api(`/api/tasks/${enc(taskId)}`);
     if (task.status !== "running") return task;
     if (Date.now() > deadline) return task;
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await nextStatus(taskId, isLive() ? 5000 : 400);
   }
+}
+
+/** Resolves when the task reports a status change, or after `ms` when no frame came. */
+function nextStatus(taskId, ms) {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(fallback);
+      off();
+      resolve();
+    };
+    const fallback = setTimeout(done, ms);
+    const off = subscribe("task", (frame) => {
+      if (frame.taskId === taskId && frame.kind === "status") done();
+    });
+  });
 }
 
 async function cancelSelected() {
@@ -260,5 +277,9 @@ export function mountTasks() {
     if (item) void select(item.dataset.id);
   });
   document.querySelector("#tasksBtn")?.addEventListener("click", () => (open ? closeTasks() : openTasks()));
+  subscribe("task", (frame) => {
+    if (frame.kind === "status") void refresh();
+  });
+  onLiveState(schedule);
   void refresh();
 }

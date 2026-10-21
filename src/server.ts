@@ -205,6 +205,7 @@ async function boot(): Promise<void> {
       log.error("box.reconcile_failed", { host: host.host.id, error: String(e) });
     }
   }
+  for (const host of app.hosts.list()) host.sampler.start();
   app.monitor.start();
   app.retention.start();
   app.containers.start();
@@ -217,6 +218,7 @@ async function boot(): Promise<void> {
     stopping = true;
     log.info("server.stopping", { signal });
     app.monitor.stop();
+    for (const host of app.hosts.list()) host.sampler.stop();
     app.retention.stop();
     app.containers.stop();
     app.throttle.stop();

@@ -44,6 +44,8 @@ export interface Config {
   sessionTtlMs: number;
   /** Sliding renewal: a session also ends this long after its last use. `null` leaves sessions without it. */
   sessionIdleMs: number | null;
+  /** Event and task streams open at once, across all browsers and clients. A stream past this is refused with 429. */
+  streamMaxConnections: number;
   /** Seconds without input before a human's takeover of an agent's terminal session returns it to the agent. 0 keeps it until released. */
   takeoverIdleSec: number;
 }
@@ -198,6 +200,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     containerRuntime: parseContainerRuntime(get("RUNTIME")),
     sessionTtlMs: parseDays(get("SESSION_TTL_DAYS"), "SESSION_TTL_DAYS") ?? DEFAULT_SESSION_TTL_MS,
     sessionIdleMs: parseDays(get("SESSION_IDLE_DAYS"), "SESSION_IDLE_DAYS"),
+    streamMaxConnections: intOr(get("STREAM_MAX_CONNECTIONS"), 256),
     takeoverIdleSec: intInRange(get("SESSION_TAKEOVER_IDLE_SEC"), 300, 0, 86400),
   };
 }

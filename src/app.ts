@@ -8,8 +8,10 @@ import { createDockerRuntime } from "./docker/runtime";
 import { OutputStore } from "./events/outputs";
 import { createRedactor, type Redactor } from "./events/redact";
 import { RetentionJob } from "./events/retention";
+import { StreamSlots } from "./events/slots";
 import { EventStore, type StoredEvent } from "./events/store";
 import { ulid } from "./events/ulid";
+import type { LiveTopics } from "./host/live";
 import type { HostMonitor } from "./host/metrics";
 import { createLocalHost, HostRegistry } from "./host/registry";
 import { Bus } from "./lib/bus";
@@ -28,12 +30,19 @@ import { TaskManager } from "./tasks/manager";
 import { TaskStore } from "./tasks/store";
 import type { TaskStreamEvent } from "./tasks/types";
 
-/** What the in-process bus carries. Box status (#17) can add its topic here. */
+/**
+ * What the in-process bus carries. The audit log and live box state share it, so one subscriber sees both. Only `event`
+ * is written to the event store: the live topics are ephemeral and are never persisted.
+ */
 export type AppTopics = {
   /** A stored event. Reads merged into an earlier row of the same minute are not published again. */
   event: StoredEvent;
   /** A line of task output, or a task status change. The task stream and the UI subscribe to this. */
   task: TaskStreamEvent;
+  box: LiveTopics["box"];
+  sample: LiveTopics["sample"];
+  link: LiveTopics["link"];
+  host: LiveTopics["host"];
 };
 
 /** Shared application state passed to every route handler. */
@@ -54,6 +63,7 @@ export interface App {
   operations: Executor;
   throttle: LoginLimiter;
   sessions: SessionStore;
+  streams: StreamSlots;
   version: string;
   startedAt: Date;
 }
@@ -123,14 +133,14 @@ function openTaskStore(path: string): TaskStore {
 export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App {
   const hosts = new HostRegistry();
   const specs = new SpecStore(cfg.dataDir);
-  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs);
+  const bus = new Bus<AppTopics>();
+  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs, bus);
   hosts.add(local);
   const activity = new ActivityLog();
   const redactor = createRedactor({ knownSecrets: [cfg.accessKey] });
   const events = openEventStore(deps.eventsPath ?? join(cfg.dataDir, "events.db"), redactor);
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const execs = new ExecManager(outputs, (text) => redactor.text(text));
-  const bus = new Bus<AppTopics>();
   const tasks = new TaskManager(openTaskStore(join(cfg.dataDir, "tasks.db")), redactor, (event) =>
     bus.publish("task", event),
   );
@@ -178,6 +188,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
         ttlMs: cfg.sessionTtlMs,
         idleMs: cfg.sessionIdleMs,
       }),
+    streams: new StreamSlots(cfg.streamMaxConnections),
     version,
     startedAt: new Date(),
   };

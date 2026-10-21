@@ -199,6 +199,14 @@ async function ignore304(p: Promise<unknown>): Promise<void> {
 
 const labelFilter = (labels: Record<string, string>) => Object.entries(labels).map(([k, v]) => `${k}=${v}`);
 
+/**
+ * dockerode's typings omit `abortSignal`, which dockerode and docker-modem forward to the request. The key is left out
+ * when there is no signal, or the query string would carry `abortSignal=`.
+ */
+function withSignal<T extends object>(options: T, signal: AbortSignal | undefined): T {
+  return signal ? ({ ...options, abortSignal: signal } as T) : options;
+}
+
 /** The engine reports the default bridge as `default` in some API versions. */
 function networkOf(info: Docker.ContainerInspectInfo): string {
   const mode = info.HostConfig?.NetworkMode;
@@ -387,12 +395,16 @@ export function createDockerRuntime(socketPath: string): Runtime {
     }
   };
 
-  async function inspectListed(id: string, state: string): Promise<ContainerInfo | null> {
+  async function inspectListed(
+    id: string,
+    state: string,
+    signal: AbortSignal | undefined,
+  ): Promise<ContainerInfo | null> {
     const hit = inspected.get(id);
     if (hit && hit.state === state && Date.now() - hit.at < INSPECT_TTL_MS) return hit.info;
     const generation = changes;
     try {
-      const info = toContainerInfo(await call(() => docker.getContainer(id).inspect()));
+      const info = toContainerInfo(await call(() => docker.getContainer(id).inspect(withSignal({}, signal))));
       if (generation === changes) inspected.set(id, { state, at: Date.now(), info });
       return info;
     } catch (e) {
@@ -418,18 +430,21 @@ export function createDockerRuntime(socketPath: string): Runtime {
       };
     },
 
-    async listContainers({ labels }) {
-      const list = await call(() => docker.listContainers({ all: true, filters: { label: labelFilter(labels) } }));
+    async listContainers({ labels }, opts) {
+      const signal = opts?.signal;
+      const list = await call(() =>
+        docker.listContainers(withSignal({ all: true, filters: { label: labelFilter(labels) } }, signal)),
+      );
       const listed = new Set(list.map((c) => c.Id));
       for (const id of inspected.keys()) {
         if (!listed.has(id)) inspected.delete(id);
       }
-      const infos = await Promise.all(list.map((c) => inspectListed(c.Id, c.State)));
+      const infos = await Promise.all(list.map((c) => inspectListed(c.Id, c.State, signal)));
       return infos.filter((info): info is ContainerInfo => info !== null);
     },
 
-    async inspectContainer(id) {
-      return toContainerInfo(await call(() => docker.getContainer(id).inspect()));
+    async inspectContainer(id, opts) {
+      return toContainerInfo(await call(() => docker.getContainer(id).inspect(withSignal({}, opts?.signal))));
     },
 
     async createContainer(spec) {
@@ -470,8 +485,13 @@ export function createDockerRuntime(socketPath: string): Runtime {
       return parseChanges(await call(() => docker.getContainer(id).changes()));
     },
 
-    async containerStats(id) {
-      const raw = (await call(() => docker.getContainer(id).stats({ stream: false }))) as Docker.ContainerStats;
+    async containerStats(id, opts) {
+      // dockerode's typings omit abortSignal, which docker-modem forwards to the request. A missing key is left out
+      // because the query string would otherwise carry `abortSignal=`.
+      const options: { stream: false; abortSignal?: AbortSignal } = opts?.signal
+        ? { stream: false, abortSignal: opts.signal }
+        : { stream: false };
+      const raw = (await call(() => docker.getContainer(id).stats(options))) as Docker.ContainerStats;
       return computeStats(raw);
     },
 
@@ -543,7 +563,9 @@ export function createDockerRuntime(socketPath: string): Runtime {
       const filters: Record<string, string[]> = {};
       if (filter.labels) filters.label = labelFilter(filter.labels);
       if (filter.types) filters.type = filter.types;
-      const options = Object.keys(filters).length > 0 ? { filters } : {};
+      const options: { filters?: Record<string, string[]>; since?: number } = {};
+      if (Object.keys(filters).length > 0) options.filters = filters;
+      if (filter.since !== undefined) options.since = filter.since;
       const stream = (await call(() => docker.getEvents(options))) as Readable;
       yield* readEvents(stream, signal);
     },

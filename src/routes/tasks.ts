@@ -43,6 +43,7 @@ export const taskRoutes: Route[] = [
     const task = app.tasks.get(params.id ?? "", { output: false });
     if (!task) throw new AppError(404, "not_found", msg("task_not_found"));
     const after = cursorOf(req, url);
+    const release = app.streams.acquire();
     server.timeout(req, 0);
     // A browser that signs out or is revoked must stop receiving progress now, not at its next reconnect.
     const sessionEnded = new AbortController();
@@ -53,7 +54,10 @@ export const taskRoutes: Route[] = [
       subscribe: (listener) => app.bus.subscribe("task", listener),
       after,
       signal: AbortSignal.any([req.signal, sessionEnded.signal]),
-      onEnd: unwatch,
+      onEnd: () => {
+        unwatch?.();
+        release();
+      },
     });
     return new Response(stream, { headers: STREAM_HEADERS });
   }),

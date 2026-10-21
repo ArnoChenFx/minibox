@@ -220,6 +220,23 @@ export const statsFlag = () =>
     description: withDefault("Include current resource usage of running boxes. Send false to skip it.", true),
   }).default(true);
 
+function checkHistory(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null) return accept(false);
+  if (typeof value === "boolean") return accept(value);
+  if (value === "true" || value === "1") return accept(true);
+  if (value === "false" || value === "0") return accept(false);
+  return reject(msg("not_boolean", { field: "history" }), "history");
+}
+
+export const historyFlag = () =>
+  field(checkHistory, {
+    type: "boolean",
+    description: withDefault(
+      "Also return the recent samples of the box, oldest first. Accepts true, false, 1 or 0.",
+      false,
+    ),
+  }).default(false);
+
 function checkPids(value: unknown): Checked<number> {
   const n = toNumber(value);
   if (n === undefined || !Number.isInteger(n)) return reject(msg("not_a_number", { label: "pids" }), "pids");

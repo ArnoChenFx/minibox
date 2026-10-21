@@ -231,9 +231,13 @@ export interface Runtime {
   ping(): Promise<void>;
   info(): Promise<RuntimeInfo>;
 
-  /** Containers whose labels include every given key/value. Containers that disappear mid-list are skipped. */
-  listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]>;
-  inspectContainer(id: string): Promise<ContainerInfo>;
+  /**
+   * Containers whose labels include every given key/value. Containers that disappear mid-list are skipped. An aborted
+   * `signal` rejects with `AbortError` once the engine call is cancelled.
+   */
+  listContainers(filter: { labels: Record<string, string> }, opts?: { signal?: AbortSignal }): Promise<ContainerInfo[]>;
+  /** An aborted `signal` rejects with `AbortError` once the engine call is cancelled. */
+  inspectContainer(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerInfo>;
   createContainer(spec: CreateContainerSpec): Promise<{ id: string }>;
   /** Starting a running container succeeds. Fails with `not_found` while the container's network is missing. */
   startContainer(id: string): Promise<void>;
@@ -248,16 +252,20 @@ export interface Runtime {
   containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string>;
   /** Writable-layer changes (`docker diff`). An unchanged container returns an empty list. */
   containerDiff(id: string): Promise<ContainerChange[]>;
-  containerStats(id: string): Promise<ContainerStats>;
+  /** One sample of a container's usage. An aborted `signal` rejects with `AbortError` once the engine call is cancelled. */
+  containerStats(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerStats>;
   commitContainer(id: string, spec: CommitSpec): Promise<void>;
   /** Extracts a tar archive into `path`. Works on created containers that are not running. */
   putArchive(id: string, path: string, tar: Readable | Buffer): Promise<void>;
   /** Tar archive of `path`. Works on created containers that are not running. */
   getArchive(id: string, path: string): Promise<Readable>;
   startExec(containerId: string, spec: ExecSpec): Promise<ExecSession>;
-  /** Stops when the consumer stops iterating or `signal` aborts. */
+  /**
+   * Stops when the consumer stops iterating or `signal` aborts. `since` (Unix seconds) also yields the events the
+   * engine still holds from that time, so a subscriber that lists containers after subscribing misses nothing.
+   */
   events(
-    filter: { labels?: Record<string, string>; types?: string[] },
+    filter: { labels?: Record<string, string>; types?: string[]; since?: number },
     signal?: AbortSignal,
   ): AsyncIterable<RuntimeEvent>;
 
