@@ -2,12 +2,13 @@ import type { Config } from "../config";
 import type { HostCtx, HostRegistry } from "../host/registry";
 import { log } from "../lib/logger";
 import { OWNER } from "../operations/types";
+import { ttlExpired } from "../specs/lifetime";
 import type { BoxSpec } from "../specs/types";
 import type { TaskManager } from "../tasks/manager";
 
 export type { StopReason } from "../specs/types";
 import type { ActivityPulse } from "./activity-pulse";
-import { stopBox } from "./boxes";
+import { type Box, sleepBox } from "./boxes";
 import type { ExecManager } from "./exec";
 import type { RecordNote, TerminalService } from "./terminals";
 
@@ -33,17 +34,23 @@ export interface LifecycleReport {
 
 /**
  * Idle auto-sleep and TTL expiry (#12). Sleep sets desired state to `stopped` with reason idle/ttl and runs
- * `docker stop`; the container is kept. Wake is on-demand via start/exec/session.
+ * `docker stop`; the container is kept. Wake happens on demand, see `wakeIfSleeping` and `ensureRunning`.
  */
 export class LifecycleWatcher {
   private timer: ReturnType<typeof setInterval> | undefined;
   private busy = false;
   private readonly everyMs: number;
   private readonly now: () => number;
+  /**
+   * When this process started watching. A box with no heartbeat counts idle from here, not from its creation, so a
+   * restart does not put every box to sleep at the first pass.
+   */
+  private readonly watchedSince: number;
 
   constructor(private readonly options: LifecycleOptions) {
     this.everyMs = options.everyMs ?? options.cfg.lifecycleIntervalMs;
     this.now = options.now ?? Date.now;
+    this.watchedSince = this.now();
   }
 
   start(): void {
@@ -87,16 +94,22 @@ export class LifecycleWatcher {
     }
   }
 
-  /** Stops a box whose absolute TTL has elapsed. Prefers stop over delete (overnight decision for #12). */
+  /** Stops a box whose absolute TTL has elapsed. It stops rather than deletes, so the container and its volumes remain. */
   private async expireTtl(host: HostCtx, spec: BoxSpec, report: LifecycleReport): Promise<boolean> {
-    const ttl = spec.lifecycle.ttlSec;
-    if (ttl === null || ttl <= 0) return false;
-    const created = Date.parse(spec.createdAt);
-    if (!Number.isFinite(created)) return false;
-    if (this.now() - created < ttl * 1000) return false;
+    if (!ttlExpired(spec, this.now())) return false;
     if (spec.lifecycle.desired === "stopped" && spec.lifecycle.stopReason === "ttl") return true;
-    await this.sleep(host, spec, "ttl");
-    report.expired.push(spec.id);
+    if (await sleepBox(host, spec.id, "ttl")) {
+      report.expired.push(spec.id);
+      this.options.record(host.host.id, "system", OWNER, {
+        op: "box.ttl_expire",
+        kind: "write",
+        status: "ok",
+        summary: `Box TTL expired: ${spec.name}`,
+        target: { kind: "box", id: spec.containerId, name: spec.name },
+        detail: { boxId: spec.id, reason: "ttl" },
+      });
+      log.info("box.ttl_expired", { id: spec.id, name: spec.name, host: host.host.id });
+    }
     return true;
   }
 
@@ -107,37 +120,43 @@ export class LifecycleWatcher {
 
     const info = await host.runtime.inspectContainer(spec.containerId).catch(() => null);
     if (!info?.running) return;
-
-    if (this.options.terminals.hasOpenAttachment(spec.containerId)) return;
-    if (this.options.execs.hasBackground(spec.containerId)) return;
-    if (this.options.tasks.hasRunningForBox(spec.id, spec.containerId)) return;
-
-    const last = this.options.pulse.lastAt(spec.id) ?? Date.parse(spec.createdAt);
-    if (!Number.isFinite(last) || this.now() - last < idleSec * 1000) return;
+    if (!this.isIdle(info.id, spec.id, spec.createdAt, idleSec)) return;
 
     const cpu = host.sampler.statsOf(spec.id)?.cpuPercent;
     if (cpu == null) return;
     if (cpu >= this.options.cfg.boxIdleCpuPercent) return;
 
-    await this.sleep(host, spec, "idle");
+    const slept = await sleepBox(host, spec.id, "idle", (box) => this.stillIdleBox(box, idleSec));
+    if (!slept) return;
     report.slept.push(spec.id);
-  }
-
-  private async sleep(host: HostCtx, spec: BoxSpec, reason: "idle" | "ttl"): Promise<void> {
-    await stopBox(host, spec.id, reason);
     this.options.record(host.host.id, "system", OWNER, {
-      op: reason === "ttl" ? "box.ttl_expire" : "box.sleep",
+      op: "box.sleep",
       kind: "write",
       status: "ok",
-      summary: reason === "ttl" ? `Box TTL expired: ${spec.name}` : `Box slept (idle): ${spec.name}`,
+      summary: `Box slept (idle): ${spec.name}`,
       target: { kind: "box", id: spec.containerId, name: spec.name },
-      detail: { boxId: spec.id, reason },
+      detail: { boxId: spec.id, reason: "idle" },
     });
-    log.info(reason === "ttl" ? "box.ttl_expired" : "box.slept", {
-      id: spec.id,
-      name: spec.name,
-      host: host.host.id,
-    });
+    log.info("box.slept", { id: spec.id, name: spec.name, host: host.host.id });
+  }
+
+  /**
+   * Checked under the box's lock. A box a person stopped in the meantime is not put to sleep as idle, because that would
+   * turn a manual stop into a sleep that wakes on the next terminal or preview request.
+   */
+  private stillIdleBox(box: Box, idleSec: number): boolean {
+    if (!box.running || box.desired !== "running") return false;
+    return this.isIdle(box.id, box.boxId, box.createdAt, idleSec);
+  }
+
+  /** No hold, attachment, exec or task is using the box, and its last heartbeat is at least `idleSec` old. */
+  private isIdle(containerId: string, boxId: string, createdAt: string, idleSec: number): boolean {
+    if (this.options.pulse.isHeld(boxId)) return false;
+    if (this.options.terminals.hasOpenAttachment(containerId)) return false;
+    if (this.options.execs.hasRunning(containerId)) return false;
+    if (this.options.tasks.hasRunningForBox(boxId, containerId)) return false;
+    const last = this.options.pulse.lastAt(boxId) ?? Math.max(Date.parse(createdAt), this.watchedSince);
+    return Number.isFinite(last) && this.now() - last >= idleSec * 1000;
   }
 }
 

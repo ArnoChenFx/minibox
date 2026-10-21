@@ -96,6 +96,8 @@ export const MESSAGES = {
   stream_limit: "Too many live connections are open (at most {max}). Close a MiniBox tab or wait, then try again.",
   wrong_key: "Incorrect access key.",
   box_not_found: "Box not found.",
+  box_ttl_expired: "The box's TTL has expired, so it cannot be started.",
+  box_ttl_expired_hint: "Clear the TTL or set a later one, then start the box.",
   session_not_found: "Session not found.",
   snapshot_not_found: "Snapshot not found.",
   template_not_found: "Template not found.",
