@@ -787,4 +787,31 @@ describe("write, attach and pool scopes", () => {
     ).toMatchObject({ status: 403, key: "volume_attach_forbidden", params: { volume: "notes" } });
     expect(app.host.specs.read(box.boxId)?.mounts).toEqual(kept);
   });
+
+  test("a box update that adds a read-write mount needs volume:write, and a read-only one only returns the rebuild preview", async () => {
+    const app = guardedApp();
+    const box = await boxes.createBox(app.host, { name: "alpha", cpus: 1, memoryMb: 256 });
+    const notes = await createVolume(app.host, { name: "notes", role: null, createdBy: "owner" });
+    const kept = mountsOf(box);
+    const adding = (mode: "rw" | "ro") => ({
+      id: box.boxId,
+      mounts: [...kept, { volume: notes.id, path: "/srv/notes", mode }],
+      expectedRevision: "1",
+    });
+
+    app.deny("volume:write");
+    expect(await rejectionOf(app.run("box.update", adding("rw")))).toMatchObject({
+      status: 403,
+      key: "volume_write_forbidden",
+      params: { volume: "notes" },
+    });
+
+    app.allow();
+    expect(await rejectionOf(app.run("box.update", adding("ro")))).toMatchObject({
+      status: 409,
+      code: "confirmation_required",
+      details: { preview: { containerName: { to: `${app.host.prefix}-${box.boxId}` } } },
+    });
+    expect(app.host.specs.read(box.boxId)?.mounts).toEqual(kept);
+  });
 });
