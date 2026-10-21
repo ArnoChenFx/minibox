@@ -24,6 +24,13 @@ export interface LabelKeys {
   memory: string;
   pids: string;
   createdBy: string;
+  /** Set on engine volumes MiniBox created or recognized. Existing volumes cannot be relabelled. */
+  volume: string;
+  /** `workspace`, `home`, `tools` or `cache` when the volume was created for a role. */
+  role: string;
+  pool: string;
+  /** Probe and helper objects. Claim ignores them. */
+  internal: string;
 }
 
 export function labelKeys(prefix: string): LabelKeys {
@@ -44,6 +51,10 @@ export function labelKeys(prefix: string): LabelKeys {
     memory: `${prefix}.memory`,
     pids: `${prefix}.pids`,
     createdBy: `${prefix}.createdBy`,
+    volume: `${prefix}.volume`,
+    role: `${prefix}.role`,
+    pool: `${prefix}.pool`,
+    internal: `${prefix}.internal`,
   };
 }
 

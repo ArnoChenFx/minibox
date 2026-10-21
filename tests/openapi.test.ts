@@ -81,6 +81,8 @@ describe("OpenAPI document", () => {
       "exec.kill",
       "exec.output",
       "exec.run",
+      "pool.list",
+      "pool.replace",
       "session.close",
       "session.list",
       "session.read",
@@ -97,6 +99,13 @@ describe("OpenAPI document", () => {
       "template.delete",
       "template.list",
       "template.promote",
+      "volume.attach",
+      "volume.create",
+      "volume.delete",
+      "volume.detach",
+      "volume.get",
+      "volume.list",
+      "volume.usage",
     ]);
   });
 

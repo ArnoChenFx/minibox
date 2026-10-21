@@ -23,13 +23,14 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 
 - Agents make a mess: random global installs, half-finished builds, stray processes. A box keeps that off your host and can be reset, snapshotted or deleted in one click.
 - Hosted sandboxes are great, but sometimes you want your own hardware, your own network and zero per-minute billing.
-- Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database server**. Box state lives in Docker labels, images and volumes, and MiniBox keeps its own small files in a [data directory](#data-directory).
+- Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database server**. Images and volumes live in Docker. Specs, volume records and the event log live in a [data directory](#data-directory).
 
 ## Features
 
 | Area | What you get |
 |---|---|
-| Box lifecycle | Create, start, stop, restart, delete; on delete, keep or remove the workspace volume |
+| Box lifecycle | Create, start, stop, restart, delete; on delete, keep volumes or remove the ones that box owns |
+| Volumes | Independent volumes and storage pools (`local`, `nfs`, `path`). A new box mounts workspace, home, a shared read-only tools volume and a local cache. See [Volumes and storage pools](#volumes-and-storage-pools) |
 | Box user | Boxes run as the non-root `dev` user (uid/gid 1000); the web terminal and `docker exec` start as `dev`. Three [security profiles](#security-profiles) set what a box can do: `standard` (default) keeps passwordless `sudo`, and `strict` blocks escalation. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
 | Snapshots | Save a box's system environment via `docker commit`, create new boxes from a snapshot, or promote it to a template |
@@ -100,7 +101,7 @@ flowchart LR
   D --- I
 ```
 
-- **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`). The restart policy is `no`: a startup reconciler starts or stops the container to match the spec's desired state (`running` or `stopped`). The spec file under `DATA_DIR/boxes/` is the authority for mutable state. Container labels are written once, at create, and are not changed later. `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. The container runs as the non-root user `dev` (see [Base template](#base-template)).
+- **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`). The restart policy is `no`: a startup reconciler starts or stops the container to match the spec's desired state (`running` or `stopped`). The spec file under `DATA_DIR/boxes/` is the authority for mutable state. Container labels are written once, at create, and are not changed later. A new box mounts `/workspace`, `/home/dev`, a shared read-only `/opt/minibox/tools` and `/home/dev/.cache`. New volumes are named `vol_…`. An existing `minibox-ws-<name>` volume is reused as that box's workspace and is not renamed. Changing mounts rebuilds the container and renames it to `minibox-<box id>`; claiming a container does not rename it. The container runs as the non-root user `dev` (see [Base template](#base-template)).
 - **Session** = a named tmux session inside a box, run as `dev`. The web terminal attaches to it, and agents send keys and read the screen through the session tools. Closing the page only detaches, so the session keeps running until it is closed or the box stops (see [Sessions](#sessions)).
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
@@ -112,7 +113,7 @@ flowchart LR
 ### Target architecture (planned)
 
 > [!NOTE]
-> Exec, `/mcp` and the CLI client are implemented. Sessions, the preview proxy, tasks, volumes, checkpoints and helper containers in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
+> Storage pools and volumes, exec, `/mcp` and the CLI client are implemented. Sessions, the preview proxy, tasks, checkpoints, multi-host and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
 
 ```mermaid
 flowchart LR
@@ -314,7 +315,7 @@ The bundled template ([`templates/base/Dockerfile`](templates/base/Dockerfile)) 
 | Area | Convention |
 |---|---|
 | User | `dev`, uid/gid `1000`. A box starts the image's default user, so the web terminal and `docker exec` enter as `dev`. `sudo` needs no password, inside the box only. Under the `strict` profile it is installed but cannot escalate (see [Security profiles](#security-profiles)) |
-| Mount points | `/workspace` (workspace volume), `/home/dev` (home), `/opt/minibox/tools` (shared, read-only tools; its `bin` is on `PATH`), `/home/dev/.cache` (caches). Until volume support lands in [#24](https://github.com/ArnoChenFx/minibox/issues/24), these are plain directories in the image |
+| Mount points | `/workspace` (workspace volume, read-write), `/home/dev` (home, read-write), `/opt/minibox/tools` (one shared tools volume per pool, read-only; its `bin` is on `PATH`), `/home/dev/.cache` (cache, read-write, local pool). A new box mounts all four unless `mounts` says otherwise |
 | Caches | `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR` and `YARN_CACHE_FOLDER` point under `/home/dev/.cache`. `NPM_CONFIG_PREFIX` is `/home/dev/.npm-global`, so `npm install -g` works without root |
 | Labels | `minibox.template.user`, `minibox.template.uid` and `minibox.template.gid` record the convention, so other templates can be checked against it |
 
@@ -326,19 +327,20 @@ Tools: `tmux`, `jq`, `ripgrep`, `openssh-client`, `unzip`, `less`, `vim-tiny` an
 
 - Existing boxes keep running as root on the template they were created from. Nothing is renamed or rebuilt.
 - Boxes created from an older snapshot or template keep that image's user, which is root for images made before this change.
-- A new box that reuses a workspace volume from an older box (you kept the volume when you deleted that box) gets a root-owned `/workspace`, so `dev` can't write to it. Fix the ownership once, with the box running:
+- A new **local** volume is `chown -R 1000:1000` by a short-lived helper container from the base template image, running as root. If that image is not present, the chown is skipped and MiniBox logs `volume.chown_skipped`. NFS and path volumes must have their subdirectory created; chown there is best-effort, because `root_squash` often blocks it (the same log line, with the helper printing `MINIBOX_CHOWN_SKIPPED`).
+- An existing `minibox-ws-*` volume is recognized and **not** chowned. A new box that reuses one still gets a root-owned `/workspace` when that volume was created before this change, so `dev` can't write to it. Fix that volume once, with the box running:
 
   ```bash
   docker exec -u root minibox-<name> chown -R 1000:1000 /workspace
   ```
 
-  Or, while the volume is not in use, run a one-off container on it:
+  Or, while the volume is not in use:
 
   ```bash
   docker run --rm --user root -v minibox-ws-<name>:/workspace minibox-template:base chown -R 1000:1000 /workspace
   ```
 
-  MiniBox doesn't run this for you yet. A recursive `chown` over a whole workspace can take a long time and changes ownership of data you didn't ask to touch, so it belongs with the storage work in [#24](https://github.com/ArnoChenFx/minibox/issues/24).
+  A rebuild does not walk existing data. A recursive chown of a volume you already filled is still a one-shot you run yourself.
 
 Checking an image against Docker: after `bun run build:template`, run `bun run check:template` (or `scripts/check-box-image.sh <image>`). It checks the user, uid, `sudo`, tools, mount points, cache variables, the PATH of login shells, and that two containers sharing a volume can write to it. It also starts a container under each security profile and checks its capabilities, `no-new-privileges`, `sudo` and `ping`. CI runs it for `linux/amd64` and, under emulation, `linux/arm64`.
 
@@ -353,10 +355,60 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per exec. The in-memory record is dropped on restart; the file stays until retention removes it |
 | `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
+| `volumes/` | `700` | One volume record per file, `vol_….json` (mode `600`). The engine volume is not renamed when this file is written |
+| `pools.json` | `600` | Storage pools and the role-to-pool defaults. Missing means the implicit local pool; a corrupt file is left in place and treated as missing |
 | `events.db` (with `events.db-wal` and `events.db-shm` beside it) | inside `DATA_DIR` | Event log, SQLite in WAL mode. See [Events](#events) |
 | `tasks.db` (with `tasks.db-wal` and `tasks.db-shm` beside it) | inside `DATA_DIR` | Task status and the newest 64 KB of each task's output. See [Tasks](#tasks) |
 
 MiniBox creates these directories at startup and tightens looser modes. It never writes `.env`. If `DATA_DIR` is lost and no key is set in `.env` or the environment, the next start generates a new access key, so everyone has to sign in with it. Keep a copy of `access_key`, or set `ACCESS_KEY` in `.env`, if you rely on the current one. Stop MiniBox before copying `events.db` or `tasks.db`: in WAL mode, recent changes stay in the `-wal` file until SQLite checkpoints them, so the main file alone can be stale.
+
+## Volumes and storage pools
+
+A volume is its own object. A box mounts zero or more of them. The console page is **Volumes**. Records live under `DATA_DIR` and name the host that created the engine volume, so a later host does not have to assume there is only one Docker daemon.
+
+| Role | Default pool | Mount | Mode |
+|---|---|---|---|
+| `workspace` | default pool | `/workspace` | read-write |
+| `home` | default pool | `/home/dev` | read-write; treated as sensitive |
+| `tools` | default pool | `/opt/minibox/tools` | read-only; one shared independent volume per pool |
+| `cache` | **local** pool | `/home/dev/.cache` | read-write; left out of checkpoints |
+
+Omit `mounts` and a new box gets those four. `"mounts": []` creates a box with none. An explicit list replaces the defaults. The same volume can be mounted on several boxes, each read-write or read-only. A second read-write mount is allowed and the API returns `warning: "shared_rw"`; the console asks before doing it. Docker does not provide file locks.
+
+`DELETE /api/boxes/:id?deleteVolume=true` removes **owned** volumes that no other box mounts (the workspace, home and cache created with that box). Independent volumes, including the shared tools volume and anything created on the Volumes page, stay. A volume with no record, or one that another box owns, is never removed, even when this box still mounts it. `volumeDeleted` is true only when at least one owned volume was actually removed. Deleting a box never deletes an independent volume.
+
+New engine volumes are named `vol_…` and labeled `minibox.volume=true`. An existing `minibox-ws-*` volume is recognized on startup and when a box of that name is created: MiniBox writes an ownership record and does not rename, relabel or delete it. Docker cannot add a label after a volume exists. A new box adopts `minibox-ws-<name>` as its workspace when that volume is already there, instead of creating a second one.
+
+Changing mounts rebuilds the container. The new container is named `<prefix>-<box id>` (`minibox-bx_…` by default). Claim does not rename. The response carries the new container id; the stable box id (`bx_…`) still works in the API. The console follows the new id.
+
+### Pools
+
+`pools.json` holds the pool list. There is always a `local` pool, and its backend stays `local`. Exactly one pool is the default. A role set to `null` uses the rule: cache on the local pool, everything else on the default. Saving pools does not rewrite volumes that already exist. A pool that still has volumes cannot be removed or change backend (`409`, key `pool_in_use`).
+
+| Backend | What MiniBox does |
+|---|---|
+| `local` | A Docker local volume on this host. Do not move Docker's data-root onto network storage. `DATA_DIR` stays on the machine that runs MiniBox |
+| `nfs` | A Docker local volume with NFS options (`type=nfs`, `o=addr=<server>,<options>`, `device=:<export>/<volume id>`). A helper container creates the subdirectory on the export. **Data** volumes use the options you set, often `hard`. The **probe** mount is `soft,timeo=10,retrans=1` (your `hard`/`soft` is not copied onto it) so a dead server cannot hang the probe. Use NFS on a trusted network. A longer NAS guide is [#30](https://github.com/ArnoChenFx/minibox/issues/30) |
+| `path` | A bind of `<root>/<volume id>` through a Docker volume (`type=none`, `o=bind`). Before any write, a helper bind-mounts `root` read-only and checks that the marker file exists (default `.minibox-mounted`, a single file name). A missing marker is **storage unreachable**; MiniBox does not create the marker and does not write the local disk |
+
+`GET /api/pools` probes reachability and caches the result for 15 seconds. `?refresh=true` probes again. Listing boxes does not probe NFS, so a box's `storage.status` stays `unknown` until something probes. `unreachable` is what the box list and the box page call out; `ok` and `unknown` do not. Starting, restarting or creating a box returns `503` `docker_unavailable` (message key `storage_unreachable`) when a non-local pool is not `reachable`, including when the base template image is missing, and when the local engine probe itself fails. The reconciler logs `reconcile.start_failed` and continues, so one unreachable pool does not stop the process. Free space under 5 GiB or under 10% is `lowSpace`. There is no per-volume quota.
+
+Mounting a volume needs `volume:attach` on that volume. A read-write mount also needs `volume:write`, and so does creating a volume, including the workspace, home and cache that a new box creates for itself. Changing the pool list needs `pool:admin`, and `volume:write` does not stand in for it. Each check is a separate call to the authorize hook, with the volume as the resource where there is one, so agent tokens can be scoped to them when [#13](https://github.com/ArnoChenFx/minibox/issues/13) lands. Until then the hook admits only the owner, the only principal today, which is also who a browser session acts as. Capabilities (`shareable`, `snapshots`, `quota`, `clone`, `crossHost`) are computed from the backend: every pool is shareable, only NFS is `crossHost`, and the rest are false.
+
+```bash
+# Make an NFS export the default. Cache stays on local unless you override roles.cache.
+curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -X PUT -d '{"confirm":true,"pools":[
+    {"name":"local","backend":"local"},
+    {"name":"nas","backend":"nfs","server":"192.168.1.10","export":"/volume1/minibox","options":["nfsvers=4.1","hard","noatime"],"default":true}
+  ]}' http://127.0.0.1:3920/api/pools
+```
+
+Create the marker before using a path pool, on the mounted filesystem:
+
+```bash
+sudo touch /mnt/minibox/.minibox-mounted
+```
 
 ## API reference
 
@@ -392,11 +444,10 @@ Errors use a consistent shape and the matching HTTP status:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | List boxes from the host's cache, which the engine's events keep current. While the cache is current the list makes no engine call. Running boxes carry their latest sample unless `stats=false` |
-| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB |
+| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults |
 | `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. `template`, `mounts`, `env`, `network` and `profile` are not applied in place: a difference returns `409 confirmation_required` with a preview and leaves the in-place fields unchanged |
-| `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete; optionally delete the workspace volume too |
-| `POST` | `/api/boxes/:id/rebuild` | Rebuild `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`. Requires `If-Match`. A mount or network that is not allowed returns `403 forbidden` and changes nothing: `minibox-data` is refused; a volume the box does not mount yet must be MiniBox's own (or absent) and no other box may mount it; the network must be the box network or the one the box already uses. Without `confirm: true`, `409 confirmation_required` and `error.details.preview` (docker diff of the writable layer and the planned changes). With `confirm: true`, creates the new container, swaps it in, and deletes the old one; failure restores the old container and the previous spec revision. Renames the container to `<LABEL_PREFIX>-<id>` |
+| `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete the box. `deleteVolume=true` also deletes owned volumes that no other box mounts. Independent volumes stay |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions. Start and stop record the desired state |
 | `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"?, "pids"? }`. Requires `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | Latest usage, the newest sample. `?history=true` also returns the recent samples, oldest first |
@@ -408,7 +459,23 @@ Errors use a consistent shape and the matching HTTP status:
 | `GET` | `/api/execs/:execId/output` | Saved stdout and stderr (about 64 KiB from each end). Available after the in-memory record is gone, until retention deletes the file |
 | `POST` | `/api/execs/:execId/kill` | Kill a running exec and its process tree, from inside the box. The kill runs as `root` in the standard and relaxed profiles, and as the exec's user in the strict profile. An exec that has already exited returns `409`. If a process survives, or the exec does not end, the call returns `502` and the exec stays `running`, so the kill can be retried |
 
-`:id` is a container id, a container name (`minibox-<name>`), a stable box id (`bx_…`), or the box name. Updates that change a box require `If-Match` set to its current revision (a bare number, a quoted tag, or a weak tag). A missing header is `428 precondition_required`; a stale revision is `412 precondition_failed`. Limits: CPU 0.1–64, memory 128–262144 MB, process limit 1–1000000, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
+`:id` is a container id, a container name (`minibox-<name>`, or `minibox-<box id>` after a mount change), a stable box id (`bx_…`), or the box name. Updates that change a box require `If-Match` set to its current revision (a bare number, a quoted tag, or a weak tag). A missing header is `428 precondition_required`; a stale revision is `412 precondition_failed`. Limits: CPU 0.1–64, memory 128–262144 MB, process limit 1–1000000, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
+
+### Volumes and pools
+
+`:id` on a volume route is a volume id (`vol_…`) or its display name.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/volumes` | List volumes and which boxes mount them. Existing `minibox-ws-*` volumes are recognized |
+| `POST` | `/api/volumes` | Create an independent volume `{ "name", "pool"?, "role"?, "confirm"? }`. `201`. A new local volume is chowned to uid 1000 when the base template image exists. Without `"confirm": true` it is `409 confirmation_required` with `details.preview`, and nothing is created |
+| `GET` | `/api/volumes/:id` | One volume |
+| `DELETE` | `/api/volumes/:id?confirm=true` | Delete a volume no box mounts. A mounted volume is `409` (`volume_mounted`). Without `confirm=true` it is `409 confirmation_required` with `details.preview`, and nothing is deleted |
+| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode", "confirm"? }`. Requires `If-Match` of the box. Rebuilds the container. Without `"confirm": true` it returns `409 confirmation_required` with the rebuild preview and changes nothing. `warning` is `shared_rw` or `null`. Needs `volume:attach`, and also `volume:write` when `mode` is `rw` |
+| `POST` | `/api/volumes/:id/detach` | `{ "box", "path", "confirm"? }`. Requires `If-Match`. Rebuilds the container. Without `"confirm": true` it returns the rebuild preview as `409 confirmation_required`. Needs `volume:attach` |
+| `POST` | `/api/volumes/:id/usage` | Measure used bytes with a helper container and cache them on the volume |
+| `GET` | `/api/pools?refresh=true` | Pools, role defaults and reachability. An unreachable pool is reported; the list itself does not fail |
+| `PUT` | `/api/pools` | Replace `{ "pools", "roles"?, "confirm"? }`. The local pool is restored if omitted. Without `"confirm": true` it is `409 confirmation_required` with the pools that would be added and removed, and nothing is saved. Needs `pool:admin` |
 
 A rebuild keeps mounted volumes, the stable id, the box name and the last 20 spec revisions. It drops the writable layer outside volumes, running processes (including tmux) and the container IP. Claim does not rename; the rename to `<LABEL_PREFIX>-<id>` happens on rebuild (decision D6). `secretRef` is stored and not injected. Stage 1 still creates one workspace volume; adding or removing a mount is a rebuild, not a volume pool. A checkpoint before rebuild is not part of this step. The public container id changes; the stable id and the box name do not. Restart policy stays `no`.
 
@@ -506,7 +573,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 A foreground exec may use `timeoutSec` up to 55 seconds, because the server closes an idle connection after 60. Longer commands use `background: true` with a `timeoutSec` up to 3600, or `minibox exec --background --timeout SEC`, and are read with `GET /api/execs/:execId` (`waitMs` up to 25000) or `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and the CLI exits 124. If the stop fails, the exec keeps running with `status: running`. The stop is retried after a growing delay (1 s, then 2 s, 4 s, up to 30 s), and `POST /api/execs/:execId/kill` can retry at any time. Pass secrets in `env`, not in `cmd` or `argv`: the audit log records the command and argv (redacted as described under Events) and only the names of the `env` variables.
 
-`exec` can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Attaching a volume requires `volume:attach` ([#13](https://github.com/ArnoChenFx/minibox/issues/13), not enforced yet).
+`exec` can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Mounting a volume needs `volume:attach` on that volume, and a read-write mount or a new volume also needs `volume:write`. Changing storage pools needs `pool:admin`. The owner key holds every scope; scoped tokens ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) are not built yet.
 
 ## Agents
 
@@ -514,7 +581,7 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 > **Warning: `/mcp` authenticates with the main access key, which grants full owner access.** A client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Scoped tokens are not built yet ([#13](https://github.com/ArnoChenFx/minibox/issues/13)). Give an agent the key only if that is acceptable, and keep it out of prompts, logs and repositories.
 
-The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), `rebuild_box` in `rebuild`, and `session_start`, `session_send` and `session_read` in `session` (13 tools in total). `network`, `storage`, `tools` and `meta` are accepted and currently add no tools. File tools are not implemented; they follow Volume ([#24](https://github.com/ArnoChenFx/minibox/issues/24)). See [`docs/agents.md`](docs/agents.md).
+The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, and the nine volume and pool tools in `storage` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`) (22 tools in total when those toolsets are enabled). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network`, `tools` and `meta` are accepted and currently add no tools. File tools are not implemented; they follow Volume ([#24](https://github.com/ArnoChenFx/minibox/issues/24)). See [`docs/agents.md`](docs/agents.md).
 
 Build the CLI with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). It talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token.
 
@@ -543,6 +610,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key) to work inside a box.
 - A session started through MCP has origin agent. A person can take it over in the console. While they hold it, session_send fails with taken_over and retryable true: wait a little, read the session with session_read, and send again. session_read still works during a takeover.
 - session_read returns lines and a cursor. Pass the newest cursor as since to read only what is new. reset true means the screen was redrawn, and lines is the current window.
 - session_send takes keys (tmux names such as Enter, Tab, Escape or C-c) or text, but not both. The audit log keeps the counts, never the input.
+- The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
 - File tools are not available yet. The default toolsets are core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
 
 ## Project structure
@@ -562,7 +630,8 @@ minibox/
 │   ├── runtime/             # Runtime interface and RuntimeError (the engine seam)
 │   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats / proc
 │   ├── specs/               # Box spec store, claim, drift, history and rebuild plan
-│   ├── services/            # Business logic on Runtime: boxes / exec / rebuild / images / snapshots / templates / reconcile / terminals
+│   ├── volumes/             # Volume records, pool config, probes and engine claim
+│   ├── services/            # Business logic on Runtime: boxes / exec / volumes / rebuild / images / snapshots / templates / reconcile / terminals
 │   ├── tmux/                # tmux command lines, session names and parsing of tmux output
 │   ├── mcp/                 # Streamable HTTP MCP at /mcp
 │   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy
@@ -688,7 +757,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 
 ### M2 · Storage and agent interface
 
-- [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volumes and storage pools (`local`, `nfs`, `path`)
+- [x] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volumes and storage pools (`local`, `nfs`, `path`)
 - [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) Exec and file API for agents, with an MCP server and CLI. Exec, MCP and the CLI are in place; the file API remains, after Volume (#24)
 - [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux sessions with human takeover
 - [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) Stream box state and resource usage over SSE instead of polling

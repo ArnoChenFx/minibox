@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { statfsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { PassThrough, type Duplex, type Readable } from "node:stream";
 
@@ -6,7 +7,6 @@ import Docker from "dockerode";
 
 import { stripSlash } from "../labels";
 import { abortError, isAbortError } from "../lib/abort";
-import { log } from "../lib/logger";
 import {
   type CommitSpec,
   type ContainerChange,
@@ -15,11 +15,14 @@ import {
   type ContainerMount,
   type ContainerUpdate,
   type CreateContainerSpec,
+  type DiskUsage,
+  type HelperSpec,
   isRuntimeError,
+  type Mount,
   type Runtime,
   type RuntimeEvent,
   RuntimeError,
-  type VolumeOwner,
+  type VolumeInfo,
 } from "../runtime";
 import { readFirstEntryOwner } from "./archive";
 import { toRuntimeError } from "./errors";
@@ -265,9 +268,7 @@ function applyHardening(hostConfig: Docker.HostConfig, hardening: ContainerHarde
 /** Only set the keys that are present: dockerode serialises `undefined` as an empty query parameter. */
 export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCreateOptions {
   const hostConfig: Docker.HostConfig = {};
-  if (spec.mounts) {
-    hostConfig.Binds = spec.mounts.map((m) => `${m.source}:${m.target}${m.mode === "ro" ? ":ro" : ""}`);
-  }
+  if (spec.mounts) hostConfig.Binds = spec.mounts.map((mount) => bindOf(mount));
   if (spec.restart) hostConfig.RestartPolicy = { Name: spec.restart };
   if (spec.cpus !== undefined) hostConfig.NanoCpus = Math.round(spec.cpus * NANO_CPUS_PER_CPU);
   if (spec.memoryBytes !== undefined) hostConfig.Memory = spec.memoryBytes;
@@ -288,29 +289,7 @@ export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCrea
   return opts;
 }
 
-const HELPER_MOUNT = "/minibox-volume";
-
-/** The helper that chowns a volume root: root with CHOWN only, and no network. It has no box labels, so listings skip it. */
-function rootOwnerHelper(volume: string, owner: VolumeOwner, image: string): CreateContainerSpec {
-  return {
-    image,
-    cmd: ["chown", `${owner.uid}:${owner.gid}`, HELPER_MOUNT],
-    user: "0:0",
-    mounts: [{ source: volume, target: HELPER_MOUNT, mode: "rw" }],
-    network: "none",
-    hardening: { capDrop: ["ALL"], capAdd: ["CHOWN"], noNewPrivileges: true },
-  };
-}
-
-/** What the helper printed, as context for its failure. A failure to read it is not reported. */
-async function helperOutput(docker: Docker, id: string): Promise<string> {
-  try {
-    const out = await docker.getContainer(id).logs({ stdout: true, stderr: true });
-    return demuxLogs(Buffer.isBuffer(out) ? out : Buffer.from(String(out))).trim();
-  } catch {
-    return "";
-  }
-}
+const ROOT_OWNER_MOUNT = "/minibox-volume";
 
 /**
  * The helper could not be created or started. MiniBox built that container from its own settings, so the engine's
@@ -320,6 +299,25 @@ function helperFailure(volume: string, e: unknown): RuntimeError {
   if (isRuntimeError(e, "unavailable")) return e;
   const reason = e instanceof RuntimeError ? e.detail : String(e);
   return new RuntimeError("engine", `the chown helper for ${volume} could not run: ${reason}`, reason);
+}
+
+function bindOf(mount: Mount): string {
+  const mode = mount.mode === "ro" ? ":ro" : "";
+  return `${mount.source}:${mount.target}${mode}`;
+}
+
+function volumeInfo(info: {
+  Name: string;
+  Labels?: Record<string, string> | null;
+  Driver?: string;
+  Options?: Record<string, string> | null;
+}): VolumeInfo {
+  return {
+    name: info.Name,
+    labels: info.Labels ?? {},
+    driver: info.Driver,
+    options: info.Options ?? undefined,
+  };
 }
 
 /** An existing network can be used only if it is a bridge with the requested inter-container communication setting. */
@@ -412,6 +410,118 @@ async function* readEvents(stream: Readable, signal?: AbortSignal): AsyncGenerat
   } finally {
     signal?.removeEventListener("abort", stop);
     stop();
+  }
+}
+
+/** Memory and process limits for a helper. Each helper runs one short command, so both are small. */
+const HELPER_MEMORY_BYTES = 256 * 1024 * 1024;
+const HELPER_PIDS_LIMIT = 64;
+/** Scratch space for a helper's `/tmp`. Nothing is run from it. */
+const HELPER_TMPFS = "rw,noexec,nosuid,nodev,size=16m";
+
+/**
+ * Helper mounts use the Mounts form, and named volumes are NoCopy. Without it Docker copies the image's directory at the
+ * target into an empty volume and takes that directory's owner and mode, so a helper at `/mnt` would reset a volume an
+ * earlier helper had chowned.
+ */
+function helperMountOf(mount: Mount): Docker.MountSettings {
+  const shared = { Target: mount.target, Source: mount.source, ReadOnly: mount.mode === "ro" };
+  if (mount.kind === "bind") return { ...shared, Type: "bind" };
+  // @types/dockerode also requires Labels and DriverConfig here; the engine accepts NoCopy alone.
+  return { ...shared, Type: "volume", VolumeOptions: { NoCopy: true } } as Docker.MountSettings;
+}
+
+/**
+ * The options for a helper container. It joins no network, has a read-only root filesystem and only the capabilities it
+ * names, cannot gain privileges, and is capped on memory and processes. AutoRemove lets the engine delete it on exit.
+ */
+export function toHelperOptions(spec: HelperSpec, name: string): Docker.ContainerCreateOptions {
+  const hostConfig: Docker.HostConfig = {
+    Mounts: (spec.mounts ?? []).map(helperMountOf),
+    NetworkMode: "none",
+    ReadonlyRootfs: true,
+    Tmpfs: { "/tmp": HELPER_TMPFS },
+    Memory: HELPER_MEMORY_BYTES,
+    MemorySwap: HELPER_MEMORY_BYTES,
+    AutoRemove: true,
+  };
+  applyHardening(hostConfig, {
+    capDrop: ["ALL"],
+    capAdd: spec.capAdd,
+    noNewPrivileges: true,
+    pidsLimit: HELPER_PIDS_LIMIT,
+  });
+  const opts: Docker.ContainerCreateOptions = { Image: spec.image, name, Cmd: spec.cmd, HostConfig: hostConfig };
+  if (spec.user !== undefined) opts.User = spec.user;
+  if (spec.labels !== undefined) opts.Labels = spec.labels;
+  return opts;
+}
+
+async function readAll(stream: AsyncIterable<Buffer | string>): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+/** Exit code of a helper that ran past its timeout and was killed. */
+const HELPER_TIMEOUT_EXIT = 124;
+/** Longest a helper is waited for to exit after a kill, or to be removed after it exited. */
+const HELPER_SETTLE_MS = 10_000;
+
+/** Resolves with the value, or with undefined when `ms` passes first. */
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  try {
+    return await Promise.race([promise, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function exitCodeOf(
+  container: Docker.Container,
+  exited: Promise<{ StatusCode?: number }>,
+  timeoutMs: number,
+): Promise<number> {
+  const status = await within(exited, timeoutMs);
+  if (status) return status.StatusCode ?? 1;
+  await container.kill().catch(() => undefined);
+  await within(exited, HELPER_SETTLE_MS).catch(() => undefined);
+  return HELPER_TIMEOUT_EXIT;
+}
+
+/**
+ * Runs a helper to completion. Output comes from an attach made before the container starts, and the exit is waited for
+ * before it starts too: AutoRemove deletes the container as soon as it exits, so neither can be read afterwards. Once it
+ * has started the engine removes it, even if this process goes away. Until then nothing does, so a failed start removes
+ * it here. Returns after the removal, so a volume the helper used can be removed straight after.
+ */
+async function runHelper(docker: Docker, spec: HelperSpec): Promise<{ exitCode: number; logs: string }> {
+  const name = `mbxhlp${randomBytes(4).toString("hex")}`;
+  const created = await call(() => docker.createContainer(toHelperOptions(spec, name)));
+  const container = docker.getContainer(created.id);
+  let started = false;
+  try {
+    const attached = await call(() => container.attach({ stream: true, stdout: true, stderr: true }));
+    const output = readAll(attached).catch(() => Buffer.alloc(0));
+    const exited = call(() => container.wait({ condition: "next-exit" })) as Promise<{ StatusCode?: number }>;
+    exited.catch(() => undefined);
+    await call(() => container.start());
+    started = true;
+    const exitCode = await exitCodeOf(container, exited, (spec.timeoutSec ?? 30) * 1000);
+    const logs = demuxLogs(await output);
+    await within(
+      call(() => container.wait({ condition: "removed" })).catch(() => undefined),
+      HELPER_SETTLE_MS,
+    );
+    return { exitCode, logs };
+  } catch (e) {
+    if (started) await container.kill().catch(() => undefined);
+    else await container.remove({ force: true }).catch(() => undefined);
+    throw e;
   }
 }
 
@@ -559,27 +669,23 @@ export function createDockerRuntime(socketPath: string): Runtime {
 
     async setVolumeRootOwner(volume, owner, image) {
       await call(() => docker.getVolume(volume).inspect());
-      // Inspecting first matters: a bind of a missing named volume makes the engine create it.
-      const helper = await mutate(() =>
-        docker.createContainer(toCreateOptions(rootOwnerHelper(volume, owner, image))),
-      ).catch((e: unknown) => {
-        if (isRuntimeError(e, "not_found")) throw new RuntimeError("engine", `helper image ${image} is missing`);
-        throw helperFailure(volume, e);
-      });
+      // Inspecting first matters: a mount of a missing named volume makes the engine create it.
+      let result: { exitCode: number; logs: string };
       try {
-        await mutate(() => docker.getContainer(helper.id).start()).catch((e: unknown) => {
-          throw helperFailure(volume, e);
+        result = await runHelper(docker, {
+          image,
+          cmd: ["chown", `${owner.uid}:${owner.gid}`, ROOT_OWNER_MOUNT],
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts: [{ source: volume, target: ROOT_OWNER_MOUNT, mode: "rw" }],
         });
-        const { StatusCode } = (await call(() => docker.getContainer(helper.id).wait())) as { StatusCode: number };
-        if (StatusCode !== 0) {
-          const output = await helperOutput(docker, helper.id);
-          const suffix = output ? `: ${output}` : "";
-          throw new RuntimeError("engine", `chown of ${volume} exited with status ${StatusCode}${suffix}`);
-        }
-      } finally {
-        await mutate(() => docker.getContainer(helper.id).remove({ force: true })).catch((e: unknown) => {
-          log.warn("volume.chown_helper_not_removed", { container: helper.id, error: String(e) });
-        });
+      } catch (e) {
+        throw helperFailure(volume, e);
+      }
+      if (result.exitCode !== 0) {
+        const output = result.logs.trim();
+        const suffix = output ? `: ${output}` : "";
+        throw new RuntimeError("engine", `chown of ${volume} exited with status ${result.exitCode}${suffix}`);
       }
     },
 
@@ -706,15 +812,48 @@ export function createDockerRuntime(socketPath: string): Runtime {
 
     async inspectVolume(name) {
       const info = await call(() => docker.getVolume(name).inspect());
-      return { name: info.Name, labels: info.Labels ?? {} };
+      return volumeInfo(info);
     },
 
-    async createVolume(name, labels) {
-      await call(() => docker.createVolume({ Name: name, Labels: labels }));
+    async listVolumes() {
+      const listed = await call(() => docker.listVolumes());
+      return (listed.Volumes ?? []).map((info) => volumeInfo(info));
+    },
+
+    async createVolume(name, labels, opts) {
+      try {
+        await call(() =>
+          docker.createVolume({
+            Name: name,
+            Labels: labels,
+            Driver: opts?.driver,
+            DriverOpts: opts?.driverOpts,
+          }),
+        );
+      } catch (e) {
+        // An existing volume keeps the labels and options it was created with.
+        if (e instanceof RuntimeError && e.kind === "conflict") return;
+        throw e;
+      }
     },
 
     async removeVolume(name) {
       await call(() => docker.getVolume(name).remove());
+    },
+
+    async runHelper(spec) {
+      return runHelper(docker, spec);
+    },
+
+    async diskUsage(path): Promise<DiskUsage> {
+      try {
+        const stat = statfsSync(path);
+        return { totalBytes: stat.blocks * stat.bsize, freeBytes: stat.bavail * stat.bsize };
+      } catch (e) {
+        const code = typeof e === "object" && e !== null && "code" in e ? String(e.code) : "";
+        if (code === "ENOENT") throw new RuntimeError("not_found", `path not found: ${path}`);
+        throw new RuntimeError("engine", e instanceof Error ? e.message : String(e));
+      }
     },
 
     async ensureBridgeNetwork(name, { interContainerComm }) {

@@ -27,6 +27,13 @@ const recorded: Recorded[] = [];
 /** Bodies of the container creates the adapter sent. */
 const createBodies: Record<string, unknown>[] = [];
 
+/** Each request as `METHOD path`, with a wait's condition after it, so the order of a helper's calls can be checked. */
+const trailOf = (requests: Recorded[]): string[] =>
+  requests.map((r) => {
+    const condition = new URLSearchParams(r.search).get("condition");
+    return condition ? `${r.method} ${r.path} ${condition}` : `${r.method} ${r.path}`;
+  });
+
 /** The archive the engine sends for a container's path, keyed by container id. */
 const ARCHIVES: Record<string, Buffer> = {
   "tar-owned": archive(entry({ name: "workspace/", type: "5", uid: 1000, gid: 1000 })),
@@ -222,9 +229,9 @@ async function engine(req: Request): Promise<Response> {
     const body = ARCHIVES[id];
     return body ? new Response(body) : json({ message: `No such container: ${id}` }, 404);
   }
-  const logsOf = /^\/containers\/([^/]+)\/logs$/.exec(path);
-  if (req.method === "GET" && logsOf) {
-    return new Response(helperLog("chown: boom\n"));
+  const attachTo = /^\/containers\/([^/]+)\/attach$/.exec(path);
+  if (req.method === "POST" && attachTo) {
+    return new Response(attachTo[1] === "helper-fail" ? helperLog("chown: boom\n") : null);
   }
   const removal = /^\/containers\/([^/]+)$/.exec(path);
   if (req.method === "DELETE" && removal) return new Response(null, { status: 204 });
@@ -565,40 +572,51 @@ describe("Docker adapter volume root owner", () => {
     expect(await rejectionOf(runtime().volumeRootOwner("tar-empty", "/workspace"))).toMatchObject({ kind: "engine" });
   });
 
-  test("setting the owner creates a helper that can only chown the volume root, then removes it", async () => {
+  test("setting the owner runs a helper that can only chown the volume root, and the engine removes it", async () => {
     recorded.length = 0;
     createBodies.length = 0;
     await runtime().setVolumeRootOwner("mbx-alpha-workspace", { uid: 1000, gid: 1000 }, "helper:ok");
 
-    expect(createBodies).toEqual([
+    expect(createBodies).toMatchObject([
       {
         Image: "helper:ok",
         Cmd: ["chown", "1000:1000", "/minibox-volume"],
         User: "0:0",
         HostConfig: {
-          Binds: ["mbx-alpha-workspace:/minibox-volume"],
+          Mounts: [
+            {
+              Type: "volume",
+              Source: "mbx-alpha-workspace",
+              Target: "/minibox-volume",
+              ReadOnly: false,
+              VolumeOptions: { NoCopy: true },
+            },
+          ],
           CapDrop: ["ALL"],
           CapAdd: ["CHOWN"],
           SecurityOpt: ["no-new-privileges:true"],
           NetworkMode: "none",
+          ReadonlyRootfs: true,
+          AutoRemove: true,
         },
       },
     ]);
-    expect(recorded.map((r) => `${r.method} ${r.path}`)).toEqual([
+    expect(trailOf(recorded)).toEqual([
       "GET /volumes/mbx-alpha-workspace",
       "POST /containers/create",
+      "POST /containers/helper-ok/attach",
+      "POST /containers/helper-ok/wait next-exit",
       "POST /containers/helper-ok/start",
-      "POST /containers/helper-ok/wait",
-      "DELETE /containers/helper-ok",
+      "POST /containers/helper-ok/wait removed",
     ]);
   });
 
-  test("a helper whose chown fails reports what it printed, and is removed all the same", async () => {
+  test("a helper whose chown fails reports what it printed, and waits for the engine to remove it", async () => {
     recorded.length = 0;
     expect(
       await rejectionOf(runtime().setVolumeRootOwner("mbx-alpha-workspace", { uid: 1000, gid: 1000 }, "helper:fail")),
     ).toMatchObject({ kind: "engine", detail: "chown of mbx-alpha-workspace exited with status 1: chown: boom" });
-    expect(recorded.at(-1)).toMatchObject({ method: "DELETE", path: "/containers/helper-fail" });
+    expect(trailOf(recorded).at(-1)).toBe("POST /containers/helper-fail/wait removed");
   });
 
   test("a helper the engine refuses to start is an engine error, not a bad request, and it is removed", async () => {
@@ -624,6 +642,6 @@ describe("Docker adapter volume root owner", () => {
       await rejectionOf(
         runtime().setVolumeRootOwner("mbx-alpha-workspace", { uid: 1000, gid: 1000 }, "missing:latest"),
       ),
-    ).toMatchObject({ kind: "engine", detail: "helper image missing:latest is missing" });
+    ).toMatchObject({ kind: "engine", detail: "No such image: missing:latest" });
   });
 });

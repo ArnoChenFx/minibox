@@ -127,6 +127,27 @@ export const boxName = () =>
       "Box name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed.",
   });
 
+export const volumeName = () =>
+  field((value) => checkName(value, "name"), {
+    ...NAME_META,
+    description:
+      "Volume name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed.",
+  });
+
+function checkRefresh(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null || value === "") return accept(false);
+  if (value === true || value === "true" || value === "1") return accept(true);
+  if (value === false || value === "false" || value === "0") return accept(false);
+  return reject(msg("not_boolean", { field: "refresh" }), "refresh");
+}
+
+/** Query flag. `true` or `1` probes pools again instead of using the short cache. */
+export const refreshFlag = () =>
+  field(checkRefresh, {
+    type: "boolean",
+    description: withDefault("Probe storage pools again instead of using the cached result.", false),
+  }).default(false);
+
 export const snapshotName = () =>
   field(
     (value): Checked<string | undefined> =>
@@ -447,7 +468,7 @@ export const rebuildMounts = () =>
     type: "array",
     maxItems: MOUNT_MAX,
     description:
-      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A volume the box does not mount yet must have been created by MiniBox or must not exist (MiniBox creates it), and no other box may mount it. The data volume minibox-data is refused.",
+      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A recorded volume can be mounted by several boxes unless another box owns it. A new or changed mount needs volume:attach on its volume, and a read-write one also needs volume:write. A name that does not exist yet creates a standalone volume, which needs volume:write. Refused: minibox-data, volumes without the MiniBox label, internal helper volumes, pool roots, volumes another box owns, and names that start with the label prefix followed by -ws- or -pool-.",
   }).optional();
 
 export const rebuildEnv = () =>
@@ -471,6 +492,13 @@ export const confirmFlag = () =>
     type: "boolean",
     description:
       "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false.",
+  }).default(false);
+
+export const storageConfirmFlag = () =>
+  field(checkConfirm, {
+    type: "boolean",
+    description:
+      "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false.",
   }).default(false);
 
 /**

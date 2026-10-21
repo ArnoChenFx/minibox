@@ -1,7 +1,7 @@
 import { type BoxProfile, hardeningFor } from "../box-profile";
 import type { StatSample } from "../host/live";
 import type { HostCtx } from "../host/registry";
-import { containerName, parseBoxLabels, volumeName } from "../labels";
+import { containerName, parseBoxLabels } from "../labels";
 import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
@@ -18,10 +18,16 @@ import {
 import { ClaimError, ensureSpec } from "../specs/claim";
 import { pushHistory } from "../specs/history";
 import { newBoxId, revisionMismatch } from "../specs/revision";
-import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState } from "../specs/types";
-import { assertMountAllowed, inspectVolumeOrNull } from "./attachments";
+import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState, MountMode } from "../specs/types";
+import { VolumeChanges } from "../volumes/changes";
+import { assertVolumesPresent, poolsUsed, trackPoolRoots } from "../volumes/engine";
+import { assertPoolsReachable } from "../volumes/health";
+import { validMountPath } from "../volumes/mounts";
+import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
+import type { VolumeRecord, VolumeRole } from "../volumes/types";
+import { assertMountAllowed, mountTarget } from "./attachments";
 import { projectBox } from "./box-view";
-import { alignVolumeRoot, type RecordNote } from "./volume-owner";
+import { alignVolumeRoot, type RecordNote, writableWorkspaceVolume } from "./volume-owner";
 
 export interface CreateBoxInput {
   name: string;
@@ -32,6 +38,11 @@ export interface CreateBoxInput {
   profile?: BoxProfile;
   /** Principal that created the box. Defaults to `owner` until scoped tokens exist. */
   createdBy?: string;
+  /**
+   * Engine mounts to use instead of the four role volumes. `volume` is a volume id or name.
+   * An empty list creates a box with no mounts.
+   */
+  mounts?: BoxMount[];
 }
 
 export interface BoxUpdate {
@@ -79,10 +90,22 @@ export interface Box {
   containerName: string;
   drift: { field: string; expected: string; actual: string }[];
   recovery: BoxRecovery | null;
-  mounts: BoxMount[];
+  mounts: BoxMountView[];
   /** Plain values and secret references. A secret reference is stored and not injected. */
   env: BoxEnv[];
+  /** `unreachable` when a pool backing a mount could not be probed. The engine state stays in `state`. */
+  storage: {
+    status: "ok" | "unreachable" | "unknown";
+    pools: { name: string; status: "reachable" | "unreachable" | "unknown" }[];
+  };
   stats?: ContainerStats | null;
+}
+
+export interface BoxMountView extends BoxMount {
+  volumeId: string | null;
+  volumeName: string | null;
+  role: VolumeRole | null;
+  pool: string | null;
 }
 
 const MB = 1024 * 1024;
@@ -203,11 +226,36 @@ async function ensureImage(host: HostCtx, image: string): Promise<ImageDetails> 
   }
 }
 
-/** Creates the workspace volume, or reuses one an earlier box with the same name left behind. */
-async function ensureWorkspaceVolume(host: HostCtx, name: string, labels: Record<string, string>): Promise<void> {
-  const existing = await inspectVolumeOrNull(host, name);
-  assertMountAllowed(host, null, name, existing);
-  if (!existing) await host.runtime.createVolume(name, labels);
+function assertMountList(mounts: BoxMount[]): void {
+  const paths = new Set<string>();
+  for (const mount of mounts) {
+    if (!validMountPath(mount.path)) throw badRequest(msg("mount_path_invalid", { path: mount.path }));
+    if (mount.mode !== "rw" && mount.mode !== "ro") throw badRequest(msg("mount_path_invalid", { path: mount.path }));
+    if (paths.has(mount.path)) throw badRequest(msg("mount_duplicate", { path: mount.path }));
+    paths.add(mount.path);
+  }
+}
+
+function resolveMounts(host: HostCtx, mounts: BoxMount[]): BoxMount[] {
+  assertMountList(mounts);
+  return mounts.map((mount) => {
+    const volume = host.volumes.resolve(mount.volume, host.host.id);
+    if (!volume || volume.hostId !== host.host.id) throw notFound(msg("volume_not_found", { volume: mount.volume }));
+    return { volume: volume.engineName, path: mount.path, mode: mount.mode };
+  });
+}
+
+/** Explicit mounts name recorded volumes, and each one must pass the attachment rules a new box is held to. */
+async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[]): Promise<BoxMount[]> {
+  const resolved = resolveMounts(host, mounts);
+  for (const mount of resolved) {
+    assertMountAllowed(host, null, mount.volume, await mountTarget(host, mount.volume));
+  }
+  return resolved;
+}
+
+function engineMounts(mounts: BoxMount[]): { source: string; target: string; mode: MountMode }[] {
+  return mounts.map((mount) => ({ source: mount.volume, target: mount.path, mode: mount.mode }));
 }
 
 /** Boxes share one bridge network with inter-container communication off. A network that differs is never reused. */
@@ -248,11 +296,61 @@ async function setDesired(host: HostCtx, boxId: string, desired: DesiredState): 
   });
 }
 
+/** What one create attempt has made so far, so a failed attempt can take it back. */
+interface CreateAttempt {
+  boxId: string | null;
+  containerId: string | null;
+  changes: VolumeChanges;
+}
+
 export async function createBox(
   host: HostCtx,
   input: CreateBoxInput & { templateLabel?: string },
   record?: RecordNote,
 ): Promise<Box> {
+  const attempt: CreateAttempt = { boxId: null, containerId: null, changes: new VolumeChanges() };
+  let containerId: string;
+  try {
+    containerId = await buildBox(host, input, attempt, record);
+  } catch (e) {
+    await undoCreate(host, attempt);
+    throw e;
+  }
+  return getBox(host, containerId);
+}
+
+/**
+ * Takes back a failed create in dependency order: the container, then the spec, then the volumes it made. If the engine
+ * keeps the container, its spec and volumes stay too, so nothing still in use is left without a record.
+ */
+async function undoCreate(host: HostCtx, attempt: CreateAttempt): Promise<void> {
+  const containerId = attempt.containerId;
+  if (containerId) {
+    try {
+      await host.runtime.removeContainer(containerId, { force: true });
+    } catch (e) {
+      if (!isRuntimeError(e, "not_found")) {
+        log.warn("box.create_rollback_failed", { container: containerId, error: String(e) });
+        return;
+      }
+    }
+  }
+  if (attempt.boxId) {
+    try {
+      host.specs.remove(attempt.boxId);
+    } catch (e) {
+      log.warn("box.create_rollback_failed", { id: attempt.boxId, error: String(e) });
+    }
+  }
+  await attempt.changes.rollback();
+}
+
+async function buildBox(
+  host: HostCtx,
+  input: CreateBoxInput & { templateLabel?: string },
+  attempt: CreateAttempt,
+  record?: RecordNote,
+): Promise<string> {
   const { runtime, keys, prefix, security } = host;
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
 
@@ -261,20 +359,24 @@ export async function createBox(
   const details = await ensureImage(host, image);
   await ensureBoxNetwork(host);
 
-  const volume = volumeName(prefix, input.name);
+  let id = newBoxId();
+  for (let tries = 0; tries < 5 && host.specs.read(id); tries++) id = newBoxId();
+  if (host.specs.read(id)) throw conflict(msg("box_claim_failed", { detail: "could not allocate a box id" }));
+  attempt.boxId = id;
+  const createdBy = input.createdBy ?? "owner";
+  const known = new Set<string>([image]);
+  const mounts = input.mounts
+    ? await resolveCreateMounts(host, input.mounts)
+    : await provisionDefaultMounts(host, { id, name: input.name, createdBy }, known, attempt.changes);
+  await trackPoolRoots(host, poolsUsed(host, mounts), attempt.changes);
+  await assertPoolsReachable(host, poolsUsed(host, mounts));
 
   const containerId = await host.specs.exclusive(async () => {
     if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
-    await ensureWorkspaceVolume(host, volume, { [keys.box]: "true", [keys.name]: input.name });
-    let id = newBoxId();
-    for (let attempt = 0; attempt < 5 && host.specs.read(id); attempt++) id = newBoxId();
-    if (host.specs.read(id)) throw conflict(msg("box_claim_failed", { detail: "could not allocate a box id" }));
     const now = new Date().toISOString();
     const memoryBytes = input.memoryMb * MB;
     const pids = security.pidsLimit;
-    const createdBy = input.createdBy ?? "owner";
     const ref = input.templateLabel ?? image;
-    const mounts: BoxMount[] = [{ volume, path: "/workspace", mode: "rw" }];
     const name = containerName(prefix, input.name);
     const resources = { cpus: input.cpus, memoryBytes, pids };
     const labels: Record<string, string> = {
@@ -291,15 +393,19 @@ export async function createBox(
       [keys.pids]: String(pids),
       [keys.createdBy]: createdBy,
     };
+    await assertVolumesPresent(
+      host,
+      mounts.map((mount) => mount.volume),
+    );
     const created = await runtime
       .createContainer({
         name,
         image,
         cmd: ["sleep", "infinity"],
-        workingDir: "/workspace",
+        workingDir: mounts.some((mount) => mount.path === "/workspace") ? "/workspace" : "/",
         hostname: input.name.slice(0, 63),
         labels,
-        mounts: [{ source: volume, target: "/workspace" }],
+        mounts: engineMounts(mounts),
         restart: "no",
         cpus: input.cpus,
         memoryBytes,
@@ -313,17 +419,14 @@ export async function createBox(
         if (isRuntimeError(e, "conflict")) throw conflict(msg("box_exists", { name: input.name }));
         throw e;
       });
-    try {
+    attempt.containerId = created.id;
+    const workspace = writableWorkspaceVolume(mounts);
+    if (workspace) {
       await alignVolumeRoot(
         host,
-        { containerId: created.id, volume, image: details.id, labels: details.labels },
+        { containerId: created.id, volume: workspace, image: details.id, labels: details.labels },
         record,
       );
-    } catch (e) {
-      await runtime.removeContainer(created.id, { force: true }).catch((cleanup: unknown) => {
-        log.warn("box.create_rollback_failed", { container: created.id, error: String(cleanup) });
-      });
-      throw e;
     }
     const spec: BoxSpec = {
       version: 1,
@@ -358,11 +461,23 @@ export async function createBox(
   await runtime.startContainer(containerId);
   await host.sampler.observe(containerId);
   log.info("box.created", { name: input.name, image, profile, cpus: input.cpus, memoryMb: input.memoryMb });
-  return getBox(host, containerId);
+  return containerId;
+}
+
+/** Start and restart refuse a box whose pool is unreachable or whose volume is gone, instead of letting Docker recreate it. */
+async function ensureRunningStorage(host: HostCtx, box: Box): Promise<void> {
+  const spec = host.specs.read(box.boxId);
+  const mounts = spec?.mounts ?? box.mounts;
+  await assertPoolsReachable(host, poolsUsed(host, mounts));
+  await assertVolumesPresent(
+    host,
+    mounts.map((mount) => mount.volume),
+  );
 }
 
 export async function startBox(host: HostCtx, ref: string): Promise<Box> {
   const box = await getBox(host, ref);
+  await ensureRunningStorage(host, box);
   await attachToBoxNetwork(host, box);
   await host.runtime.startContainer(box.id);
   await setDesired(host, box.boxId, "running");
@@ -380,6 +495,7 @@ export async function stopBox(host: HostCtx, ref: string): Promise<Box> {
 
 export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   const box = await getBox(host, ref);
+  await ensureRunningStorage(host, box);
   await attachToBoxNetwork(host, box);
   await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await setDesired(host, box.boxId, "running");
@@ -396,28 +512,53 @@ export interface DeleteBoxResult {
 
 export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolean): Promise<DeleteBoxResult> {
   const box = await getBox(host, ref);
+  const spec = host.specs.read(box.boxId);
+  const mounted = (spec?.mounts ?? [])
+    .map((mount) => host.volumes.findByEngine(host.host.id, mount.volume))
+    .filter((volume): volume is VolumeRecord => volume !== null);
   await host.specs.exclusive(async () => {
     await host.runtime.removeContainer(box.id, { force: true });
     host.specs.remove(box.boxId);
   });
   await host.sampler.observe(box.id);
   const result: DeleteBoxResult = { name: box.name, volumeDeleted: false };
-  if (deleteVolume) {
-    try {
-      await host.runtime.removeVolume(box.volume);
-      result.volumeDeleted = true;
-    } catch (e) {
-      // A volume that is already gone is the state the caller asked for.
-      if (isRuntimeError(e, "not_found")) {
-        result.volumeDeleted = true;
-      } else {
-        result.volumeError = e instanceof RuntimeError ? e.detail : e instanceof Error ? e.message : String(e);
-        log.warn("box.volume_remove_failed", { volume: box.volume, error: String(e) });
-      }
-    }
-  }
+  if (deleteVolume) await removeOwnedVolumes(host, box.boxId, mounted, result);
   log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
   return result;
+}
+
+/**
+ * Removes the volumes this box owns that no other box mounts. Only a record that names this box as owner is removed.
+ * A volume with no record, or one owned by another box, is never touched. Failures are reported, not thrown.
+ */
+async function removeOwnedVolumes(
+  host: HostCtx,
+  boxId: string,
+  mounted: VolumeRecord[],
+  result: DeleteBoxResult,
+): Promise<void> {
+  const remaining = host.specs.list();
+  let removed = 0;
+  for (const volume of mounted) {
+    if (volume.ownership !== "owned" || volume.ownerBoxId !== boxId) continue;
+    if (remaining.some((other) => other.mounts.some((mount) => mount.volume === volume.engineName))) continue;
+    const outcome = await removeEngine(host, volume.engineName);
+    if (outcome.status === "failed") {
+      result.volumeError ??= outcome.detail;
+      continue;
+    }
+    host.volumes.remove(volume.id);
+    removed += 1;
+  }
+  result.volumeDeleted = removed > 0 && result.volumeError === undefined;
+}
+
+/** The spec behind a box reference. Missing containers are a 404, same as `getBox`. */
+export async function readSpec(host: HostCtx, ref: string): Promise<BoxSpec> {
+  const box = await getBox(host, ref);
+  const spec = host.specs.read(box.boxId);
+  if (!spec) throw notFound(msg("box_not_found"));
+  return spec;
 }
 
 function hasUpdate(patch: BoxUpdate): boolean {

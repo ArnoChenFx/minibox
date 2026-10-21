@@ -2,7 +2,7 @@
 
 本文说明 MiniBox 与容器引擎之间的边界：`Runtime` 接口、错误契约、Host 模型、如何新增后端，以及测试中 fake 与真实引擎的用法。对应 [#32](https://github.com/ArnoChenFx/minibox/issues/32)，多宿主机的其余部分见 [#21](https://github.com/ArnoChenFx/minibox/issues/21)，整体设计见 [design.md](design.md)。
 
-这一阶段不改变行为：单机部署只注册一台隐式的 `local` 主机，API、响应与界面与之前相同。
+单机部署只注册一台隐式的 `local` 主机。卷与存储池（#24）在这个接口上增加了 `listVolumes`、带驱动选项的 `createVolume`、`runHelper` 和 `diskUsage`。业务代码仍然只通过 `Runtime` 与 `HostCtx` 访问引擎。
 
 ## 分层
 
@@ -10,7 +10,8 @@
 | --- | --- |
 | `src/runtime/index.ts` | `Runtime` 接口、数据类型与 `RuntimeError`，不依赖任何 SDK |
 | `src/docker/` | Docker 适配器（`runtime.ts`、`errors.ts`、`logs.ts`、`stats.ts`），唯一使用 dockerode 的代码 |
-| `src/services/` | 业务逻辑：boxes、images、snapshots、templates，只通过 `Runtime` 与 `HostCtx` 访问引擎 |
+| `src/services/` | 业务逻辑：boxes、volumes、images、snapshots、templates，只通过 `Runtime` 与 `HostCtx` 访问引擎 |
+| `src/volumes/` | 卷记录、存储池、探测与引擎卷认领。文件在 `DATA_DIR`，不在引擎里 |
 | `src/host/` | `registry.ts`（Host、HostCtx、HostRegistry）、`sampler.ts`（HostSampler：盒子缓存与资源采样）、`live.ts`（实时帧类型）、`metrics.ts`（HostMonitor）、`procfs.ts` |
 | `src/routes/`、`src/ws/` | HTTP 与 WebSocket 入口 |
 | `src/lib/errors.ts` | 把 `RuntimeError` 映射为 HTTP 响应 |
@@ -27,7 +28,8 @@
 - exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。所有 exec（包括交互终端）都经一层 `/bin/sh` 包装运行，包装 shell 的参数中，`minibox-exec` 之后紧跟一个随机令牌。`kill()` 在容器内执行一段 POSIX `sh` 脚本：「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本通过 `/proc/*/cmdline` 找到包装 shell。`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选 pid，每个候选同样要核对命令行。之后沿 `/proc/<pid>/stat` 的父进程号收集进程；包装 shell 自己是会话或进程组首进程时，同一会话与进程组中的进程也一并收集。每个进程先用 `SIGSTOP` 冻结，并等待其停止后才继续扫描，直到一次扫描不再发现新进程（最多 5 轮）。然后逐个 `SIGKILL`，包装 shell 最后结束。脚本退出码：0 表示全部结束；1 表示有进程无法发信号（脚本恢复其余进程并退出），或有进程存活（其余进程保持冻结，以便重试）；2 表示找不到包装 shell。`kill()` 只有在 Docker 报告 exec 已结束后才算成功，否则抛出 `engine` 错误，exec 仍在运行，可以再次调用。exec 已结束时 `kill()` 直接返回。交互终端的 `kill()` 同样可用，以 exec 的用户（`dev`）执行：Web 终端断开时用它结束其中的 tmux attach 进程；tmux 服务器不在这棵进程树里，会话因此保留。这一层要求容器里有 `/bin/sh`、`cat`、`rm` 与 `sleep`（`sleep` 需支持小数秒）。
 - 事件：`events`，按标签与类型过滤；`since`（Unix 秒）让引擎补发该时间之后记录的事件，订阅者因此可以在订阅之后再列出容器而不漏掉变化；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
-- 卷：`inspectVolume`、`createVolume`、`removeVolume`、`volumeRootOwner`、`setVolumeRootOwner`
+- 卷：`inspectVolume`、`listVolumes`、`createVolume`、`removeVolume`、`volumeRootOwner`、`setVolumeRootOwner`
+- 辅助容器与磁盘：`runHelper`、`diskUsage`
 - 网络：`ensureBridgeNetwork`、`reattachNetwork`
 
 实现需要满足以下语义，业务代码依赖这些约定：
@@ -35,9 +37,14 @@
 - `startContainer` 对运行中的容器成功，`stopContainer` 对已停止的容器成功。
 - 运行中的容器只有 `removeContainer(id, { force: true })` 才能删除。
 - 仍被容器挂载的卷不能删除，`removeVolume` 返回 `conflict`。
-- `createVolume` 对已存在的卷成功，并保留原有标签。
+- `createVolume` 对已存在的卷成功，并保留原有标签和驱动选项。第三个参数选择驱动，例如本地驱动配上 NFS 或 bind 选项。
+- `inspectVolume` 与 `listVolumes` 返回驱动名和驱动选项；引擎没有报告选项时 `options` 缺省。
+- 挂载的 `mode: "ro"` 会写成绑定串末尾的 `:ro`。`kind: "bind"` 表示宿主机路径，缺省表示命名卷。
+- `runHelper` 把短生命周期容器跑到结束，返回时容器已被删除。容器不接入网络（`NetworkMode: none`），根文件系统只读，`/tmp` 是 16 MiB 的 tmpfs，丢掉全部能力，只加上调用方在 `capAdd` 里列出的能力，禁止提权，内存 256 MiB，进程数 64。容器带 `AutoRemove`，引擎在它退出后删除。超时会杀掉容器并返回退出码 124。日志去掉流帧头。镜像是基础模板。各用途只请求所需的权限：卷 chown（`0:0`，`CHOWN`）、NFS 与路径池的子目录（`0:0`，`CHOWN`、`DAC_OVERRIDE`）、删除空目录（`0:0`，`DAC_OVERRIDE`）、测量（`0:0`，`DAC_READ_SEARCH`）、池探测（`1000:1000`，无能力）。
+- 辅助容器的命名卷挂载带 `NoCopy`。没有它，Docker 会把镜像里挂载点的目录复制进空卷，并覆盖卷根的属主和权限：基础模板的 `/mnt` 是 `root:root 755`，已 chown 为 `1000:1000` 的空卷挂到 `/mnt` 上就会变回 root。箱子容器的挂载不带 `NoCopy`，首次使用时仍从镜像复制初始内容。
+- `diskUsage(path)` 返回该路径所在文件系统的总字节和空闲字节。Docker 适配器用 `statfs`。路径不存在时为 `not_found`。
 - `volumeRootOwner(id, path)` 读取容器内 `path` 目录的属主，经由 archive 接口完成，容器可以是已创建但未启动的。`path` 不存在时返回 `not_found`。
-- `setVolumeRootOwner(volume, owner, image)` 用 `image` 创建并启动一个辅助容器，只把卷的根目录 `chown` 为 `uid:gid`，不递归。辅助容器以 `root` 运行，丢弃全部能力只保留 `CHOWN`，设置 `no-new-privileges`，不联网，结束后删除。卷不存在时返回 `not_found`，且不创建辅助容器：bind 挂载会自动创建缺失的卷，所以先检查卷。镜像不存在、辅助容器无法启动或 `chown` 失败时返回 `engine`。
+- `setVolumeRootOwner(volume, owner, image)` 用 `runHelper` 运行一个辅助容器，只把卷的根目录 `chown` 为 `uid:gid`，不递归。辅助容器以 `0:0` 运行，只加上 `CHOWN`，不联网，结束后删除。卷不存在时返回 `not_found`，且不运行辅助容器：挂载缺失的命名卷会让引擎创建它，所以先检查卷。镜像不存在、辅助容器无法启动或 `chown` 失败时返回 `engine`。
 - 卷的根目录属主由 Docker 决定：卷为空时，挂载会把镜像中挂载点的内容与属主复制进卷；卷已有内容后，之后的挂载不再改变根目录的属主。
 - 创建容器时，镜像标签与请求中的标签合并，请求中的标签优先。
 - 创建同名容器返回 `conflict`。调用方不先查询再创建，重名由引擎判定。
@@ -75,7 +82,7 @@
 ## Host 模型
 
 - `Host` 为 `{ id, name, kind, endpoint, labels, status }`。`probeHost()` 调用 `ping` 后把 `status` 记为 `online` 或 `offline`，`/api/health` 使用它。
-- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, stopTimeoutSec, templatesDir, security, monitor, sampler, specs }`。services 的函数接收 `HostCtx`，而不是 host id。`stopTimeoutSec` 来自 `STOP_TIMEOUT_SEC`（默认 3，允许 0 到 300），停止与重启 Box 时传给 `stopContainer` 与 `restartContainer`。`specs` 是控制面共享的一份规格存储（`DATA_DIR/boxes`），不是每个引擎一份。
+- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, stopTimeoutSec, templatesDir, security, monitor, sampler, specs, volumes }`。services 的函数接收 `HostCtx`，而不是 host id。`stopTimeoutSec` 来自 `STOP_TIMEOUT_SEC`（默认 3，允许 0 到 300），停止与重启 Box 时传给 `stopContainer` 与 `restartContainer`。`specs` 与 `volumes` 都是控制面共享的一份存储（`DATA_DIR/boxes`、`DATA_DIR/volumes` 与 `DATA_DIR/pools.json`），不是每个引擎一份。每条卷记录自己带 `hostId`。
 - `ContainerInfo` 还包含 `imageId`、`pidsLimit`、`restart` 与 `mounts`。`updateContainer` 可以改 CPU、内存、swap、进程数上限和重启策略，且不会重建容器，也不会改标签。
 - `HostRegistry` 的 `add()` 对重复 id 抛错；`get(hostId = "local")` 对未知 id 抛错。
 
@@ -105,7 +112,7 @@
 
 ## 测试
 
-- `FakeRuntime`（`tests/support/fake-runtime.ts`）是内存实现，遵循服务层依赖的语义：名称与镜像冲突、`not_found`、被挂载的卷不能删除、标签合并。仍被容器使用的镜像，移除最后一个标签需要 `force`，强制移除后镜像成为悬空镜像。
+- `FakeRuntime`（`tests/support/fake-runtime.ts`）是内存实现，遵循服务层依赖的语义：名称与镜像冲突、`not_found`、被挂载的卷不能删除、标签合并。仍被容器使用的镜像，移除最后一个标签需要 `force`，强制移除后镜像成为悬空镜像。`createVolume` 保留已有卷的标签和驱动选项。`disk` 提供 `diskUsage` 的默认值。`helperHandler` 决定 `runHelper` 的退出码和日志；默认对 `du` 返回 `0`，对 `df` 和 `test -f` 返回可解析的一行。镜像不存在时 `runHelper` 为 `not_found`。缺失的命名卷像引擎一样，在创建、启动、重启和运行辅助容器时自动创建。只读挂载在 `inspect` 里仍是 `ro`。
   - 它记录每次调用（`calls`、`callsTo(op)`、`ops()`）。
   - `fail(op, error)` 让下一次该操作失败，`down = true` 模拟引擎不可达。
   - 网络有 ID，容器第一次启动时固定在当前网络的 ID 上。网络被删除并重建后，启动该容器返回 `not_found`，直到调用 `reattachNetwork`，与真实引擎一致。

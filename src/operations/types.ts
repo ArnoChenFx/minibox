@@ -12,12 +12,22 @@ export type Kind = "read" | "write" | "destructive";
 
 export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild";
 
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** Who is calling. Only the owner exists until scoped tokens (#13) add other principals. */
 export interface Principal {
   readonly type: "owner";
   readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * A volume named in a volume scope check. Agent tokens will narrow this when #13 lands. `id` is absent for a name that
+ * has no record yet, which a create or a mount of a new name passes.
+ */
+export interface VolumeResource {
+  readonly kind: "volume";
+  readonly id?: string;
   readonly name: string;
 }
 
@@ -41,6 +51,11 @@ export interface OperationContext {
   readonly terminals?: TerminalService;
   /** Records an audit event parented to this operation. Exec uses it for start, finish and kill. */
   record?(note: AuditNote): void;
+  /**
+   * Asks the authorize hook again for one scope and resource. The executor fills this in.
+   * Absent in tests that call a service directly; those callers are already inside the process.
+   */
+  authorize?(request: { scope: string; resource?: VolumeResource }): boolean | Promise<boolean>;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */

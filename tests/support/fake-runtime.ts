@@ -15,11 +15,16 @@ import {
   type ExecSpec,
   type ExecStatus,
   type ImageDetails,
+  type DiskUsage,
+  type HelperResult,
+  type HelperSpec,
   type ImageSummary,
+  type Mount,
   type Runtime,
   type RuntimeEvent,
   type RuntimeInfo,
   RuntimeError,
+  type VolumeCreateOptions,
   type VolumeInfo,
   type VolumeOwner,
 } from "../../src/runtime";
@@ -151,6 +156,18 @@ function echoStream(onWrite?: (chunk: Buffer) => void): Duplex {
   return stream;
 }
 
+function defaultHelper(spec: HelperSpec): HelperResult {
+  const cmd = spec.cmd.join(" ");
+  if (cmd.includes("du")) return { exitCode: 0, logs: "0\t/mnt\n" };
+  if (cmd.includes("df") || cmd.includes("test -f")) {
+    return {
+      exitCode: 0,
+      logs: "Filesystem 1B-blocks Used Available Use% Mounted\nfake 100000000000 1 80000000000 1% /mnt\n",
+    };
+  }
+  return { exitCode: 0, logs: "" };
+}
+
 /** Collects stdin and does not echo it. Command exec closes this when it has finished writing. */
 function stdinStream(onWrite: (chunk: Buffer) => void): Duplex {
   return new Duplex({
@@ -220,6 +237,10 @@ export class FakeRuntime implements Runtime {
   down = false;
   /** Output returned by the next and later builds. */
   buildLog = "Successfully built fake\n";
+  /** Bytes reported by `diskUsage`. Tests shrink `freeBytes` to exercise the low-space flag. */
+  disk: DiskUsage = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
+  /** Answers `runHelper`. The default pretends `df`, `du` and `chown` succeeded. */
+  helperHandler: (spec: HelperSpec) => HelperResult = defaultHelper;
   /**
    * Output of the next non-TTY exec. The default is a successful empty command, which is what `true` does.
    * `null` leaves the command running until `kill()`, which is how tests model `sleep`.
@@ -388,6 +409,17 @@ export class FakeRuntime implements Runtime {
     return this.containers.get(idOrName) ?? [...this.containers.values()].find((c) => c.name === idOrName);
   }
 
+  /**
+   * As the engine does, a named volume that a container or helper mounts is created when it is missing. A bind mount
+   * (`kind: "bind"`, or a source that is an absolute path) names a host path and never creates a volume.
+   */
+  private ensureVolumes(mounts: Mount[] | undefined): void {
+    for (const mount of mounts ?? []) {
+      const named = mount.kind !== "bind" && !mount.source.startsWith("/");
+      if (named && !this.volumes.has(mount.source)) this.volumes.set(mount.source, { name: mount.source, labels: {} });
+    }
+  }
+
   private getContainer(idOrName: string): FakeContainer {
     const c = this.findContainer(idOrName);
     if (!c) throw new RuntimeError("not_found", `No such container: ${idOrName}`);
@@ -507,6 +539,7 @@ export class FakeRuntime implements Runtime {
     if (spec.name !== undefined && this.findContainer(spec.name)) {
       throw new RuntimeError("conflict", `Conflict. The container name "/${spec.name}" is already in use`);
     }
+    this.ensureVolumes(spec.mounts);
     const limits = {
       cpus: spec.cpus ?? null,
       memoryBytes: spec.memoryBytes ?? null,
@@ -521,6 +554,7 @@ export class FakeRuntime implements Runtime {
     this.enter("startContainer", [id]);
     const c = this.getContainer(id);
     if (!c.running) {
+      this.ensureVolumes(c.spec.mounts);
       this.attach(c);
       c.running = true;
       c.startedAt = now();
@@ -541,6 +575,7 @@ export class FakeRuntime implements Runtime {
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("restartContainer", [id, opts]);
     const c = this.getContainer(id);
+    this.ensureVolumes(c.spec.mounts);
     this.attach(c);
     this.tmux.stop(c.id);
     c.running = true;
@@ -910,13 +945,34 @@ export class FakeRuntime implements Runtime {
     this.enter("inspectVolume", [name]);
     const volume = this.volumes.get(name);
     if (!volume) throw new RuntimeError("not_found", `get ${name}: no such volume`);
-    return { name: volume.name, labels: { ...volume.labels } };
+    return {
+      name: volume.name,
+      labels: { ...volume.labels },
+      driver: volume.driver,
+      options: volume.options ? { ...volume.options } : undefined,
+    };
   }
 
-  /** Like Docker, creating an existing volume succeeds and keeps the original labels. */
-  async createVolume(name: string, labels: Record<string, string>): Promise<void> {
-    this.enter("createVolume", [name, labels]);
-    if (!this.volumes.has(name)) this.volumes.set(name, { name, labels: { ...labels } });
+  async listVolumes(): Promise<VolumeInfo[]> {
+    this.enter("listVolumes", []);
+    return [...this.volumes.values()].map((volume) => ({
+      name: volume.name,
+      labels: { ...volume.labels },
+      driver: volume.driver,
+      options: volume.options ? { ...volume.options } : undefined,
+    }));
+  }
+
+  /** Like Docker, creating an existing volume succeeds and keeps the original labels and driver options. */
+  async createVolume(name: string, labels: Record<string, string>, opts?: VolumeCreateOptions): Promise<void> {
+    this.enter("createVolume", [name, labels, opts]);
+    if (this.volumes.has(name)) return;
+    this.volumes.set(name, {
+      name,
+      labels: { ...labels },
+      driver: opts?.driver,
+      options: opts?.driverOpts ? { ...opts.driverOpts } : undefined,
+    });
   }
 
   async removeVolume(name: string): Promise<void> {
@@ -926,6 +982,18 @@ export class FakeRuntime implements Runtime {
     if (inUse) throw new RuntimeError("conflict", `remove ${name}: volume is in use`);
     this.volumes.delete(name);
     this.volumeOwners.delete(name);
+  }
+
+  async runHelper(spec: HelperSpec): Promise<HelperResult> {
+    this.enter("runHelper", [spec]);
+    this.getImage(spec.image);
+    this.ensureVolumes(spec.mounts);
+    return this.helperHandler(spec);
+  }
+
+  async diskUsage(path: string): Promise<DiskUsage> {
+    this.enter("diskUsage", [path]);
+    return { totalBytes: this.disk.totalBytes, freeBytes: this.disk.freeBytes };
   }
 
   async ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void> {

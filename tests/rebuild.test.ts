@@ -137,7 +137,7 @@ describe("rebuild swap", () => {
     expect(rebuilt.containerName).toBe(formal(box.boxId));
     expect(rebuilt.profile).toBe("strict");
     expect(rebuilt.revision).toBe(2);
-    expect(rebuilt.volume).toBe("mbtest-ws-alpha");
+    expect(rebuilt.volume).toBe(box.volume);
     expect(rebuilt.running).toBe(true);
     expect(rebuilt.drift).toEqual([]);
     expect(rebuilt.env).toEqual([]);
@@ -150,11 +150,11 @@ describe("rebuild swap", () => {
     expect(container?.labels[keys.name]).toBe("alpha");
     expect(container?.labels[keys.profile]).toBe("strict");
     expect(container?.spec.restart).toBe("no");
-    expect(container?.spec.mounts).toEqual([{ source: "mbtest-ws-alpha", target: "/workspace", mode: "rw" }]);
+    expect(container?.spec.mounts).toContainEqual({ source: box.volume, target: "/workspace", mode: "rw" });
     expect(container?.cpus).toBe(1);
     expect(container?.memoryBytes).toBe(256 * MB);
     expect(container?.pidsLimit).toBe(1024);
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
 
     const spec = host.specs.read(box.boxId);
     expect(spec?.history).toHaveLength(1);
@@ -168,6 +168,8 @@ describe("rebuild swap", () => {
 
   test("a failed start restores the old container, the spec and a volume this attempt created", async () => {
     const box = await newBox("alpha");
+    const volumesBefore = [...runtime.volumes.keys()].toSorted();
+    const recordsBefore = host.volumes.list().map((volume) => volume.id);
     runtime.fail("startContainer", new RuntimeError("engine", "boom", "boom"));
     const error = await rejectionOf(
       rebuildBox(
@@ -177,7 +179,7 @@ describe("rebuild swap", () => {
         {
           profile: "strict",
           mounts: [
-            { volume: "mbtest-ws-alpha", path: "/workspace", mode: "rw" },
+            { volume: box.volume, path: "/workspace", mode: "rw" },
             { volume: "extra", path: "/data", mode: "ro" },
           ],
         },
@@ -194,8 +196,10 @@ describe("rebuild swap", () => {
     expect(host.specs.read(box.boxId)?.revision).toBe(1);
     expect(host.specs.read(box.boxId)?.profile).toBe("standard");
     expect(host.specs.read(box.boxId)?.containerId).toBe(box.id);
-    expect(runtime.volumes.has("extra")).toBe(false);
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(host.volumes.resolve("extra", host.host.id)).toBeNull();
+    expect([...runtime.volumes.keys()].toSorted()).toEqual(volumesBefore);
+    expect(host.volumes.list().map((volume) => volume.id)).toEqual(recordsBefore);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
   test("a network other than the box network is refused before the swap starts", async () => {
@@ -228,20 +232,25 @@ describe("rebuild swap", () => {
       true,
     );
 
+    const extra = host.volumes.resolve("extra", host.host.id);
+    if (!extra) throw new Error("expected a record for extra");
+    expect(extra).toMatchObject({ name: "extra", ownership: "independent", role: null, engineName: extra.id });
     expect(rebuilt.template).toBe("other:1");
     expect(rebuilt.image).toBe("other:1");
     expect(rebuilt.network).toBe("mbtest-boxes");
-    expect(rebuilt.mounts).toEqual([{ volume: "extra", path: "/data", mode: "ro" }]);
+    expect(rebuilt.mounts.map(({ volume, path, mode }) => ({ volume, path, mode }))).toEqual([
+      { volume: extra.engineName, path: "/data", mode: "ro" },
+    ]);
     expect(rebuilt.env).toEqual([
       { name: "FOO", value: "bar" },
       { name: "TOKEN", secretRef: "vault" },
     ]);
     expect(rebuilt.drift).toEqual([]);
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
-    expect(runtime.volumes.has("extra")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
+    expect(runtime.volumes.has(extra.engineName)).toBe(true);
     const container = runtime.containers.get(rebuilt.id);
     expect(container?.spec.env).toEqual(["FOO=bar"]);
-    expect(container?.spec.mounts).toEqual([{ source: "extra", target: "/data", mode: "ro" }]);
+    expect(container?.spec.mounts).toEqual([{ source: extra.engineName, target: "/data", mode: "ro" }]);
     expect(JSON.stringify(container?.labels)).not.toContain("bar");
     expect(JSON.stringify(container?.labels)).not.toContain("vault");
   });
@@ -548,13 +557,11 @@ describe("rebuild aligns the workspace root", () => {
   const DEV_LABELS = { "minibox.template.uid": "1000", "minibox.template.gid": "1000" };
   const ROOT = { uid: 0, gid: 0 };
   const DEV = { uid: 1000, gid: 1000 };
-  const WORKSPACE = "mbtest-ws-alpha";
-
   /** A box from a dev template whose workspace root is owned by root, as a volume left by an earlier box is. */
   async function rootOwnedBox() {
     runtime.seedImage("dev:1", DEV_LABELS);
     const box = await boxes.createBox(host, { name: "alpha", cpus: 1, memoryMb: 256, image: "dev:1" });
-    runtime.seedVolumeOwner(WORKSPACE, ROOT);
+    runtime.seedVolumeOwner(box.volume, ROOT);
     return box;
   }
 
@@ -570,7 +577,7 @@ describe("rebuild aligns the workspace root", () => {
     expect(ops.indexOf("volumeRootOwner")).toBeGreaterThan(ops.indexOf("stopContainer"));
     expect(ops.indexOf("setVolumeRootOwner")).toBeGreaterThan(ops.indexOf("volumeRootOwner"));
     expect(ops.indexOf("renameContainer")).toBeGreaterThan(ops.indexOf("setVolumeRootOwner"));
-    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(DEV);
+    expect(runtime.volumeOwners.get(box.volume)).toEqual(DEV);
     expect(notes.map((note) => [note.op, note.status])).toEqual([["volume.chown", "ok"]]);
   });
 
@@ -588,12 +595,12 @@ describe("rebuild aligns the workspace root", () => {
 
     expect(error).toMatchObject({ kind: "engine" });
     expect(runtime.callsTo("setVolumeRootOwner").map((call) => call.args)).toEqual([
-      [WORKSPACE, DEV, newImage],
-      [WORKSPACE, ROOT, oldImage],
+      [box.volume, DEV, newImage],
+      [box.volume, ROOT, oldImage],
     ]);
     const ops = runtime.ops().slice(before);
     expect(ops.lastIndexOf("setVolumeRootOwner")).toBeLessThan(ops.lastIndexOf("startContainer"));
-    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(ROOT);
+    expect(runtime.volumeOwners.get(box.volume)).toEqual(ROOT);
     expect(runtime.containers.get(box.id)).toMatchObject({ name: "mbtest-alpha", running: true });
     expect(host.specs.read(box.boxId)).toMatchObject({ revision: 1, containerId: box.id });
     expect(notes.map((note) => note.op)).toEqual(["volume.chown", "volume.chown_undo"]);
@@ -610,7 +617,7 @@ describe("rebuild aligns the workspace root", () => {
 
     expect(error).toMatchObject({ kind: "engine" });
     expect(runtime.callsTo("setVolumeRootOwner")).toHaveLength(1);
-    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(ROOT);
+    expect(runtime.volumeOwners.get(box.volume)).toEqual(ROOT);
     expect(runtime.containers.get(box.id)).toMatchObject({ name: "mbtest-alpha", running: true });
     const owned = [...runtime.containers.values()].filter((c) => c.labels[keys.id] === box.boxId);
     expect(owned.map((c) => c.id)).toEqual([box.id]);
@@ -626,14 +633,14 @@ describe("rebuild aligns the workspace root", () => {
       host,
       box.boxId,
       box.revision,
-      { mounts: [{ volume: WORKSPACE, path: "/workspace", mode: "ro" }] },
+      { mounts: [{ volume: box.volume, path: "/workspace", mode: "ro" }] },
       true,
     );
 
     const ops = runtime.ops().slice(before);
     expect(ops).not.toContain("volumeRootOwner");
     expect(ops).not.toContain("setVolumeRootOwner");
-    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(ROOT);
+    expect(runtime.volumeOwners.get(box.volume)).toEqual(ROOT);
   });
 
   test("a rebuild from a template that names no owner reads and changes no workspace root", async () => {

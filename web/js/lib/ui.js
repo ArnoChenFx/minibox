@@ -83,8 +83,15 @@ export function openDialog({
   return { root: overlay, close };
 }
 
-/** Promise-based confirm dialog. Resolves to false, or to { checked } when confirmed. */
-export function confirmDialog({ title, message, confirmText = t("common.confirm"), danger = false, checkbox }) {
+/** Promise-based confirm dialog. `message` and `body` are HTML. Resolves to false, or to { checked } when confirmed. */
+export function confirmDialog({
+  title,
+  message,
+  body = "",
+  confirmText = t("common.confirm"),
+  danger = false,
+  checkbox,
+}) {
   return new Promise((resolve) => {
     let result = false;
     const { root, close } = openDialog({
@@ -94,7 +101,7 @@ export function confirmDialog({ title, message, confirmText = t("common.confirm"
       tone: danger ? "danger" : "",
       body: checkbox
         ? `<label class="checkbox"><input type="checkbox" id="cfm-check" /> <span>${checkbox.label}${checkbox.help ? `<div class="help">${checkbox.help}</div>` : ""}</span></label>`
-        : "",
+        : body,
       footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="cfm-ok">${esc(confirmText)}</button>`,
       onClose: () => resolve(result),
     });

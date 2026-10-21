@@ -15,10 +15,12 @@ import * as overview from "./pages/overview.js";
 import * as settings from "./pages/settings.js";
 import * as snapshots from "./pages/snapshots.js";
 import * as templates from "./pages/templates.js";
+import * as volumes from "./pages/volumes.js";
 
 const ROUTES = [
   { re: /^\/overview$/, page: overview, nav: "overview", crumbs: ["nav.overview"] },
   { re: /^\/boxes$/, page: boxes, nav: "boxes", crumbs: ["nav.boxes"] },
+  { re: /^\/volumes$/, page: volumes, nav: "volumes", crumbs: ["nav.volumes"] },
   { re: /^\/boxes\/([^/]+)(?:\/(\w+))?$/, page: boxDetail, nav: "boxes", crumbs: ["nav.boxes"] },
   { re: /^\/snapshots$/, page: snapshots, nav: "snapshots", crumbs: ["nav.snapshots"] },
   { re: /^\/templates$/, page: templates, nav: "templates", crumbs: ["nav.templates"] },

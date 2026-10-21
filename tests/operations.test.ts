@@ -38,6 +38,28 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "exec.get": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "exec.kill": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "exec.output": () => ({ execId: `ex_${"0".repeat(26)}` }),
+  "volume.list": () => ({}),
+  "volume.get": () => ({ id: "alpha-workspace" }),
+  "volume.create": () => ({ name: "extra", confirm: true }),
+  "volume.delete": () => ({ id: "spare", confirm: true }),
+  "volume.attach": (id) => ({
+    id: "spare",
+    box: id,
+    path: "/srv/data",
+    mode: "ro",
+    confirm: true,
+    expectedRevision: "1",
+  }),
+  "volume.detach": (id) => ({
+    id: "alpha-workspace",
+    box: id,
+    path: "/workspace",
+    confirm: true,
+    expectedRevision: "1",
+  }),
+  "volume.usage": () => ({ id: "spare" }),
+  "pool.list": () => ({}),
+  "pool.replace": () => ({ pools: [{ name: "local", backend: "local", default: true }], confirm: true }),
   "session.list": (id) => ({ id }),
   "session.start": (id) => ({ id, name: "work" }),
   "session.read": (id) => ({ id, name: "work", lines: 10 }),
@@ -124,6 +146,7 @@ async function withBox(app: App, ctx: OperationContext): Promise<string> {
   const { box } = (await app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 })) as {
     box: { id: string };
   };
+  await app.operations.run("volume.create", ctx, { name: "spare", confirm: true });
   return box.id;
 }
 
@@ -180,7 +203,7 @@ describe("registry definitions", () => {
     expect(registryProblems(OPERATIONS)).toEqual([]);
   });
 
-  test("the registry holds the box, exec, snapshot, template, task and event operations in scope", () => {
+  test("the samples name every registry operation, in registry order", () => {
     expect(OPERATIONS.map((op) => op.name)).toEqual(Object.keys(SAMPLES));
   });
 
@@ -418,7 +441,10 @@ describe("executor", () => {
     expect(app.activity.list()).toEqual([]);
 
     await withBox(app, ctx);
-    expect(app.activity.list()).toEqual([expect.objectContaining({ action: "box.create", target: "alpha", ok: true })]);
+    expect(app.activity.list()).toEqual([
+      expect.objectContaining({ action: "volume.create", target: "spare", ok: true }),
+      expect.objectContaining({ action: "box.create", target: "alpha", ok: true }),
+    ]);
 
     const duplicate = await rejectionOf(
       app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 }),
@@ -671,7 +697,21 @@ describe("projections", () => {
       "exec_get",
       "exec_kill",
     ]);
-    expect(mcpTools(OPERATIONS, ["storage"])).toEqual([]);
+    expect(
+      mcpTools(OPERATIONS, ["storage"])
+        .map((tool) => tool.name)
+        .toSorted(),
+    ).toEqual([
+      "attach_volume",
+      "create_volume",
+      "delete_volume",
+      "detach_volume",
+      "get_volume",
+      "list_pools",
+      "list_volumes",
+      "measure_volume",
+      "replace_pools",
+    ]);
   });
 
   test("rebuild_box is outside the default toolsets and only in the rebuild toolset", () => {
@@ -691,6 +731,7 @@ describe("projections", () => {
       "cpus",
       "memoryMb",
       "profile",
+      "mounts",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });

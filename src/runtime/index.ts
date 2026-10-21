@@ -42,6 +42,8 @@ export interface Mount {
   target: string;
   /** Absent means writable, which is the engine default. */
   mode?: "rw" | "ro";
+  /** `bind` is a host path. Absent means a named volume. Both use the engine's bind string. */
+  kind?: "volume" | "bind";
 }
 
 /** One writable-layer change from `docker diff`. `modified` is the engine's kind 0, `added` is 1, `deleted` is 2. */
@@ -85,8 +87,6 @@ export interface CreateContainerSpec {
   cmd?: string[];
   workingDir?: string;
   hostname?: string;
-  /** Container user as `name`, `uid` or `uid:gid`. Absent keeps the image's user. */
-  user?: string;
   labels?: Record<string, string>;
   mounts?: Mount[];
   /** `NAME=value` entries merged over the image environment. Secrets are not passed here. */
@@ -99,6 +99,8 @@ export interface CreateContainerSpec {
   /** Network name. Absent means the engine's default bridge. */
   network?: string;
   hardening?: ContainerHardening;
+  /** Numeric user, such as `0:0` for a root helper. Absent keeps the image user. */
+  user?: string;
 }
 
 export interface ImageSummary {
@@ -117,6 +119,36 @@ export interface ImageDetails {
 export interface VolumeInfo {
   name: string;
   labels: Record<string, string>;
+  driver?: string;
+  /** Driver options. Absent when the engine did not report any. */
+  options?: Record<string, string>;
+}
+
+export interface VolumeCreateOptions {
+  driver?: string;
+  driverOpts?: Record<string, string>;
+}
+
+export interface HelperResult {
+  exitCode: number;
+  logs: string;
+}
+
+export interface HelperSpec {
+  image: string;
+  cmd: string[];
+  mounts?: Mount[];
+  /** Numeric user, such as `0:0`. Absent keeps the image user. */
+  user?: string;
+  /** Capabilities granted on top of none. A helper that changes ownership or reads other users' files names them. */
+  capAdd?: string[];
+  timeoutSec?: number;
+  labels?: Record<string, string>;
+}
+
+export interface DiskUsage {
+  totalBytes: number;
+  freeBytes: number;
 }
 
 /** Numeric owner of a file or directory. */
@@ -303,8 +335,22 @@ export interface Runtime {
   buildImage(spec: BuildSpec): Promise<string>;
 
   inspectVolume(name: string): Promise<VolumeInfo>;
-  createVolume(name: string, labels: Record<string, string>): Promise<void>;
+  listVolumes(): Promise<VolumeInfo[]>;
+  /**
+   * Creating an existing volume succeeds and keeps its labels and driver options.
+   * `opts` selects a driver, for example the local driver with NFS or bind options.
+   */
+  createVolume(name: string, labels: Record<string, string>, opts?: VolumeCreateOptions): Promise<void>;
   removeVolume(name: string): Promise<void>;
+  /**
+   * Runs a short-lived container to completion. It has no network, a read-only root filesystem with a small `/tmp`,
+   * no capabilities beyond `capAdd`, no privilege escalation, and fixed memory and process limits. The engine removes it
+   * when it exits, and this returns once it is gone. A timeout kills the container and returns exit code 124. Used for
+   * chown, NFS directory setup, pool probes and measuring. The image is the base template.
+   */
+  runHelper(spec: HelperSpec): Promise<HelperResult>;
+  /** Bytes on the filesystem that holds `path`, as seen by this runtime's host. */
+  diskUsage(path: string): Promise<DiskUsage>;
 
   /**
    * Creates a bridge network named `name` if it does not exist. An existing network must be a bridge whose

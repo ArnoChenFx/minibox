@@ -18,7 +18,7 @@ import { join } from "node:path";
 import Docker from "dockerode";
 
 import { BOX_PROFILES, type BoxProfile } from "../src/box-profile";
-import { createDockerRuntime } from "../src/docker/runtime";
+import { createDockerRuntime, toHelperOptions } from "../src/docker/runtime";
 import { OutputStore } from "../src/events/outputs";
 import { createRedactor } from "../src/events/redact";
 import { createLocalHost } from "../src/host/registry";
@@ -29,7 +29,9 @@ import { ExecManager } from "../src/services/exec";
 import { rebuildBox } from "../src/services/rebuild";
 import { createSnapshot, deleteSnapshot } from "../src/services/snapshots";
 import { deleteTemplate, promoteSnapshot } from "../src/services/templates";
+import { attachVolume, createVolume, measureVolume } from "../src/services/volumes";
 import type { RebuildRequest } from "../src/specs/plan";
+import type { BoxMount } from "../src/specs/types";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
@@ -66,6 +68,20 @@ async function waitUntil(check: () => Promise<boolean>, what: string, timeoutMs 
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     await Bun.sleep(100);
   }
+}
+
+async function volumeExists(name: string): Promise<boolean> {
+  return docker
+    .getVolume(name)
+    .inspect()
+    .then(
+      () => true,
+      () => false,
+    );
+}
+
+async function boxIds(): Promise<string[]> {
+  return (await runtime.listContainers({ labels: owned })).map((c) => c.id).toSorted();
 }
 
 async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T | "timeout"> {
@@ -744,8 +760,9 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       const restore = silenceLogs();
       try {
         const alpha = await boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 });
-        expect(alpha).toMatchObject({ running: true, volume: `${prefix}-ws-a` });
-        expect(await runtime.inspectVolume(`${prefix}-ws-a`)).toMatchObject({ name: `${prefix}-ws-a` });
+        expect(alpha).toMatchObject({ running: true });
+        expect(alpha.volume).toMatch(/^vol_/);
+        expect(await runtime.inspectVolume(alpha.volume)).toMatchObject({ name: alpha.volume });
         expect(
           await rejectionOf(boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 })),
         ).toMatchObject({ status: 409, key: "box_exists" });
@@ -769,7 +786,7 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "a", volumeDeleted: true });
         expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "b", volumeDeleted: true });
         expect(await rejectionOf(runtime.inspectContainer(alpha.id))).toMatchObject({ kind: "not_found" });
-        expect(await rejectionOf(runtime.inspectVolume(`${prefix}-ws-a`))).toMatchObject({ kind: "not_found" });
+        expect(await rejectionOf(runtime.inspectVolume(alpha.volume))).toMatchObject({ kind: "not_found" });
 
         await deleteSnapshot(host, ref);
         await deleteTemplate(host, promoted.ref);
@@ -925,7 +942,7 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       const managed = `${prefix}-extra`;
       try {
         const box = await boxes.createBox(host, { name: "guard", image: IMAGE, cpus: 0.5, memoryMb: 64 });
-        const workspace = { volume: `${prefix}-ws-guard`, path: "/workspace", mode: "rw" as const };
+        const workspace = { volume: box.volume, path: "/workspace", mode: "rw" as const };
         await docker.createVolume({ Name: plain });
 
         const refused = (request: RebuildRequest) => rejectionOf(rebuildBox(host, box.id, box.revision, request, true));
@@ -1016,6 +1033,367 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         await runtime.removeImage(tag, { force: true }).catch(() => {});
         restore();
       }
+    },
+    LONG,
+  );
+
+  test(
+    "another box's workspace, the data volume, pool roots and reserved names are refused on the real engine",
+    async () => {
+      const restore = silenceLogs();
+      const pool = `${prefix}-pool-nfs`;
+      const absent = `${prefix}-pool-absent`;
+      const fresh = `${prefix}-ws-fresh`;
+      try {
+        const alpha = await boxes.createBox(host, { name: "owner-a", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const beta = await boxes.createBox(host, { name: "owner-b", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        await docker.createVolume({ Name: pool, Labels: { ...owned, [host.keys.internal]: "true" } });
+        const attempt = (mounts: BoxMount[]) => rejectionOf(rebuildBox(host, beta.id, beta.revision, { mounts }, true));
+
+        expect(await attempt([{ volume: alpha.volume, path: "/workspace", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_in_use",
+          params: { volume: "owner-a-workspace" },
+        });
+        expect(await attempt([{ volume: "minibox-data", path: "/data", mode: "ro" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: "minibox-data" },
+        });
+        expect(await attempt([{ volume: pool, path: "/pool", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: pool },
+        });
+        expect(await attempt([{ volume: absent, path: "/pool", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: absent },
+        });
+        expect(await attempt([{ volume: fresh, path: "/fresh", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: fresh },
+        });
+
+        expect(await volumeExists(absent)).toBe(false);
+        expect(await volumeExists(fresh)).toBe(false);
+        expect((await runtime.inspectContainer(beta.id)).running).toBe(true);
+        expect(host.specs.read(beta.boxId)?.revision).toBe(beta.revision);
+        await boxes.deleteBox(host, alpha.id, true);
+        await boxes.deleteBox(host, beta.id, true);
+      } finally {
+        await docker
+          .getVolume(pool)
+          .remove()
+          .catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "deleting a box removes the volumes it owns and keeps the shared tools volume and another box's volumes",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const alpha = await boxes.createBox(host, { name: "del-alpha", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const beta = await boxes.createBox(host, { name: "del-beta", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const toolsOf = (boxId: string) =>
+          host.specs.read(boxId)?.mounts.find((mount) => mount.path === "/opt/minibox/tools")?.volume ?? "";
+        const tools = toolsOf(alpha.boxId);
+        expect(toolsOf(beta.boxId)).toBe(tools);
+        const owned = (host.specs.read(alpha.boxId)?.mounts ?? [])
+          .map((mount) => mount.volume)
+          .filter((name) => name !== tools);
+        expect(owned).toHaveLength(3);
+
+        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "del-alpha", volumeDeleted: true });
+        for (const name of owned) expect(await volumeExists(name)).toBe(false);
+        expect(host.volumes.findByEngine(host.host.id, alpha.volume)).toBeNull();
+        expect(await volumeExists(tools)).toBe(true);
+        expect(await volumeExists(beta.volume)).toBe(true);
+
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "del-beta", volumeDeleted: true });
+        expect(await volumeExists(beta.volume)).toBe(false);
+        expect(await volumeExists(tools)).toBe(true);
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a create the engine refuses leaves no volume, record, container or spec behind",
+    async () => {
+      const restore = silenceLogs();
+      const broken = { ...host, security: { ...host.security, runtime: `${prefix}-missing-runtime` } };
+      const volumeNames = async () =>
+        ((await docker.listVolumes({ filters: { label: [`${prefix}=true`] } })).Volumes ?? [])
+          .map((volume) => volume.Name)
+          .toSorted();
+      const recordIds = () =>
+        host.volumes
+          .list()
+          .map((volume) => volume.id)
+          .toSorted();
+      try {
+        const volumesBefore = await volumeNames();
+        const recordsBefore = recordIds();
+        const boxesBefore = await boxIds();
+
+        const error = await rejectionOf(
+          boxes.createBox(broken, { name: "rollback", image: IMAGE, cpus: 0.5, memoryMb: 64 }),
+        );
+        expect(error).toBeInstanceOf(Error);
+        expect(await volumeNames()).toEqual(volumesBefore);
+        expect(recordIds()).toEqual(recordsBefore);
+        expect(await boxIds()).toEqual(boxesBefore);
+        expect(host.specs.findByName("rollback")).toBeNull();
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a standalone volume the engine lost is refused by measure and attach, and the engine does not recreate it",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const box = await boxes.createBox(host, { name: "gone-owner", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const notes = await createVolume(host, { name: `${prefix}-notes`, role: null, createdBy: "owner" });
+        expect(await volumeExists(notes.engineName)).toBe(true);
+        await runtime.removeVolume(notes.engineName);
+
+        expect(await rejectionOf(measureVolume(host, notes.id))).toMatchObject({
+          status: 409,
+          key: "volume_missing",
+          params: { volume: notes.name },
+        });
+        expect(await volumeExists(notes.engineName)).toBe(false);
+
+        expect(
+          await rejectionOf(
+            attachVolume(host, notes.id, {
+              box: box.boxId,
+              path: "/srv/notes",
+              mode: "rw",
+              revision: box.revision,
+              confirm: true,
+            }),
+          ),
+        ).toMatchObject({ status: 409, key: "volume_missing", params: { volume: notes.name } });
+        expect(await volumeExists(notes.engineName)).toBe(false);
+        expect((await runtime.inspectContainer(box.id)).running).toBe(true);
+        await boxes.deleteBox(host, box.id, true);
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "helpers return their output and exit code, and none is left behind",
+    async () => {
+      for (let i = 0; i < 5; i++) {
+        expect(await runtime.runHelper({ image: IMAGE, cmd: ["sh", "-c", `echo run-${i}`] })).toEqual({
+          exitCode: 0,
+          logs: `run-${i}\n`,
+        });
+      }
+      expect(await runtime.runHelper({ image: IMAGE, cmd: ["sh", "-c", "echo failed >&2; exit 3"] })).toEqual({
+        exitCode: 3,
+        logs: "failed\n",
+      });
+      expect(await runtime.runHelper({ image: IMAGE, cmd: ["sleep", "30"], timeoutSec: 1 })).toEqual({
+        exitCode: 124,
+        logs: "",
+      });
+      const leftover = (await docker.listContainers({ all: true })).filter((c) =>
+        c.Names.some((name) => name.startsWith("/mbxhlp")),
+      );
+      expect(leftover).toEqual([]);
+    },
+    LONG,
+  );
+
+  test(
+    "a helper has no network, a read-only root, only the capabilities it names, and cannot gain privileges",
+    async () => {
+      const probe = [
+        "awk '/^(CapBnd|CapEff|NoNewPrivs):/ {print $1, $2}' /proc/self/status",
+        "echo nics=$(ls /sys/class/net)",
+        "touch /rootfile 2>/dev/null && echo rootfs=writable || echo rootfs=read-only",
+        "touch /tmp/scratch 2>/dev/null && echo tmp=writable || echo tmp=read-only",
+        "echo pids=$(cat /sys/fs/cgroup/pids.max)",
+        "echo memory=$(cat /sys/fs/cgroup/memory.max)",
+      ].join("; ");
+      const root = await runtime.runHelper({
+        image: IMAGE,
+        user: "0:0",
+        capAdd: ["CHOWN"],
+        cmd: ["sh", "-c", probe],
+      });
+      expect(root.exitCode).toBe(0);
+      const lines = root.logs.split("\n");
+      for (const line of [
+        "CapBnd: 0000000000000001",
+        "CapEff: 0000000000000001",
+        "NoNewPrivs: 1",
+        "nics=lo",
+        "rootfs=read-only",
+        "tmp=writable",
+        "pids=64",
+        "memory=268435456",
+      ]) {
+        expect(lines).toContain(line);
+      }
+
+      const plain = await runtime.runHelper({ image: IMAGE, user: "1000:1000", cmd: ["sh", "-c", probe] });
+      expect(plain.logs).toContain("CapBnd: 0000000000000000");
+      expect(plain.logs).toContain("CapEff: 0000000000000000");
+    },
+    LONG,
+  );
+
+  test(
+    "a root helper without DAC_OVERRIDE cannot write into a directory owned by someone else, and CHOWN still works",
+    async () => {
+      const volume = `${prefix}-helper-owner`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const mounts = [{ source: volume, target: "/mnt" }];
+        const chown = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts,
+          cmd: ["chown", "1000:1000", "/mnt"],
+        });
+        expect(chown.exitCode).toBe(0);
+
+        const denied = await runtime.runHelper({ image: IMAGE, user: "0:0", mounts, cmd: ["mkdir", "/mnt/denied"] });
+        expect(denied.exitCode).not.toBe(0);
+        expect(denied.logs).toContain("Permission denied");
+
+        const allowed = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["DAC_OVERRIDE"],
+          mounts,
+          cmd: ["sh", "-c", "mkdir /mnt/allowed && rmdir /mnt/allowed"],
+        });
+        expect(allowed).toEqual({ exitCode: 0, logs: "" });
+        const owner = await runtime.runHelper({
+          image: IMAGE,
+          user: "1000:1000",
+          mounts,
+          cmd: ["stat", "-c", "%u:%g", "/mnt"],
+        });
+        expect(owner.logs.trim()).toBe("1000:1000");
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a helper that mounts an empty volume where the image has a directory leaves the volume's owner alone",
+    async () => {
+      const volume = `${prefix}-helper-nocopy`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const chown = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts: [{ source: volume, target: "/mnt/0" }],
+          cmd: ["chown", "1000:1000", "/mnt/0"],
+        });
+        expect(chown.exitCode).toBe(0);
+
+        // The image's /mnt is root-owned. Without NoCopy Docker would copy that over the still-empty volume here.
+        const seen = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          mounts: [{ source: volume, target: "/mnt" }],
+          cmd: ["stat", "-c", "%u:%g", "/mnt"],
+        });
+        expect(seen).toEqual({ exitCode: 0, logs: "1000:1000\n" });
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "measuring reads another owner's directory only with DAC_READ_SEARCH",
+    async () => {
+      const volume = `${prefix}-helper-measure`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const mounts = [{ source: volume, target: "/mnt" }];
+        const setup = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts,
+          cmd: ["sh", "-c", "mkdir /mnt/private && chmod 700 /mnt/private && chown 1000:1000 /mnt/private"],
+        });
+        expect(setup.exitCode).toBe(0);
+
+        const blind = await runtime.runHelper({ image: IMAGE, user: "0:0", mounts, cmd: ["du", "-sb", "/mnt"] });
+        expect(blind.exitCode).not.toBe(0);
+        const reading = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["DAC_READ_SEARCH"],
+          mounts,
+          cmd: ["du", "-sb", "/mnt"],
+        });
+        expect(reading.exitCode).toBe(0);
+        expect(reading.logs).toMatch(/^\d+\t\/mnt\n$/);
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "the engine removes a helper container by itself once it exits",
+    async () => {
+      const name = `mbxhlp${prefix.slice(-8)}auto`;
+      const exists = async (id: string) =>
+        docker
+          .getContainer(id)
+          .inspect()
+          .then(
+            () => true,
+            () => false,
+          );
+      const created = await docker.createContainer(toHelperOptions({ image: IMAGE, cmd: ["true"] }, name));
+      const container = docker.getContainer(created.id);
+      const exited = container.wait({ condition: "next-exit" });
+      await container.start();
+      await exited;
+      await waitUntil(async () => !(await exists(created.id)), "the engine to remove the exited helper");
     },
     LONG,
   );
