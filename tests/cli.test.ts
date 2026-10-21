@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Duplex } from "node:stream";
+
+import { Client } from "ssh2";
 
 import { runCli } from "../src/cli";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
+import { fingerprintOf, runCommand } from "./support/ssh";
+import { mint } from "./support/tokens";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 
@@ -13,9 +21,13 @@ interface Io {
   err: string;
   stdout(text: string): void;
   stderr(text: string): void;
+  stdoutBytes(bytes: Uint8Array): void;
+  stdinBytes(): AsyncIterable<Uint8Array>;
 }
 
-function io(): Io {
+async function* noBytes(): AsyncGenerator<Uint8Array> {}
+
+function io(stdin: AsyncIterable<Uint8Array> = noBytes()): Io {
   const sink: Io = {
     out: "",
     err: "",
@@ -25,12 +37,43 @@ function io(): Io {
     stderr(text) {
       sink.err += text;
     },
+    stdoutBytes() {},
+    stdinBytes: () => stdin,
   };
   return sink;
 }
 
 async function* lines(rows: string[]): AsyncGenerator<string> {
   for (const row of rows) yield row;
+}
+
+/** Bytes an SSH client writes, read by `ssh-proxy` as they arrive. */
+function byteQueue() {
+  const chunks: Uint8Array[] = [];
+  let finished = false;
+  let wake: (() => void) | null = null;
+  const notify = () => {
+    wake?.();
+    wake = null;
+  };
+  return {
+    push(chunk: Uint8Array) {
+      chunks.push(chunk);
+      notify();
+    },
+    end() {
+      finished = true;
+      notify();
+    },
+    async *read(): AsyncGenerator<Uint8Array> {
+      for (;;) {
+        const next = chunks.shift();
+        if (next) yield next;
+        else if (finished) return;
+        else await new Promise<void>((resolve) => (wake = resolve));
+      }
+    },
+  };
 }
 
 function serve() {
@@ -229,6 +272,159 @@ describe("CLI", () => {
       const sink = io();
       expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
       expect(sink.err.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("CLI SSH commands", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("ssh-proxy and ssh-config reject a missing or extra argument before they reach the server", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    for (const argv of [
+      ["ssh-proxy"],
+      ["ssh-proxy", "--append"],
+      ["ssh-proxy", "alpha", "beta"],
+      ["ssh-proxy", ".minibox"],
+    ]) {
+      const sink = io();
+      expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
+      expect(sink.err).toContain("ssh-proxy needs one box name");
+    }
+    const unknown = io();
+    expect(await runCli(["ssh-config", "--force"], env, unknown, lines([]))).toBe(2);
+    expect(unknown.err).toContain("Unknown option --force");
+  });
+
+  test("ssh-config prints the managed block and the host key it pins", async () => {
+    const env = serve();
+    try {
+      const printed = io();
+      expect(await runCli(["ssh-config"], env.env, printed, lines([]))).toBe(0);
+      expect(printed.out).toContain("Host *.minibox\n  User dev\n  ProxyCommand minibox ssh-proxy %h\n");
+      expect(printed.out).toContain("StrictHostKeyChecking yes");
+      expect(printed.out).toContain(`*.minibox ${env.app.ssh.hostKeyView().publicKey}`);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("ssh-config --append puts its block above the user's config, pins the key, and rewrites its own block", async () => {
+    const env = serve();
+    const home = mkdtempSync(join(tmpdir(), "minibox-home-"));
+    try {
+      const sshDir = join(home, ".ssh");
+      mkdirSync(sshDir);
+      writeFileSync(join(sshDir, "config"), "Host github.com\n  User git\n");
+      const homeEnv = { ...env.env, HOME: home };
+      const first = io();
+      expect(await runCli(["ssh-config", "--append"], homeEnv, first, lines([]))).toBe(0);
+      expect(first.out).toContain(`Pinned ${env.app.ssh.hostKeyView().fingerprint}`);
+      expect(await runCli(["ssh-config", "--append"], homeEnv, io(), lines([]))).toBe(0);
+
+      const config = readFileSync(join(sshDir, "config"), "utf8");
+      expect(config.startsWith("# BEGIN minibox ssh-config\nHost *.minibox\n")).toBe(true);
+      expect(config.split("# BEGIN minibox ssh-config")).toHaveLength(2);
+      expect(config.endsWith("\nHost github.com\n  User git\n")).toBe(true);
+      expect(readFileSync(join(sshDir, "minibox_known_hosts"), "utf8")).toBe(
+        `*.minibox ${env.app.ssh.hostKeyView().publicKey}\n`,
+      );
+
+      const fresh = mkdtempSync(join(tmpdir(), "minibox-home-"));
+      try {
+        expect(await runCli(["ssh-config", "--append"], { ...env.env, HOME: fresh }, io(), lines([]))).toBe(0);
+        expect(statSync(join(fresh, ".ssh")).mode & 0o777).toBe(0o700);
+        expect(statSync(join(fresh, ".ssh", "config")).mode & 0o777).toBe(0o600);
+        expect(statSync(join(fresh, ".ssh", "minibox_known_hosts")).mode & 0o777).toBe(0o600);
+      } finally {
+        rmSync(fresh, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      env.stop();
+    }
+  });
+
+  test("ssh-config tells a token without box:ssh what it needs", async () => {
+    const env = serve();
+    try {
+      const sandbox = mint(env.app, { name: "sandbox", preset: "sandboxed-agent", boxes: { type: "all" } });
+      const refused = io();
+      expect(await runCli(["ssh-config"], { ...env.env, MINIBOX_ACCESS_KEY: sandbox.secret }, refused, lines([]))).toBe(
+        1,
+      );
+      expect(refused.err).toContain("A token needs the box:ssh scope to set up SSH.");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("ssh-proxy prints the server's refusal and does not open the WebSocket", async () => {
+    const env = serve();
+    try {
+      await env.app.operations.run("box.create", env.ctx, { name: "alpha", cpus: 1, memoryMb: 256 });
+      const ops = mint(env.app, { name: "ops", scopes: ["box:ssh"] });
+      const refused = io();
+      const code = await runCli(
+        ["ssh-proxy", "alpha.minibox"],
+        { ...env.env, MINIBOX_ACCESS_KEY: ops.secret },
+        refused,
+        lines([]),
+      );
+      expect(code).toBe(1);
+      expect(refused.err).toContain("This credential cannot use that box.");
+      expect(env.runtime.execs).toHaveLength(0);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("ssh-proxy carries an SSH client to the box: an exec runs as dev and its status comes back", async () => {
+    const env = serve();
+    const upstream = byteQueue();
+    const transport = new Duplex({
+      read() {},
+      write(chunk: Buffer, _encoding, callback) {
+        upstream.push(chunk);
+        callback();
+      },
+      final(callback) {
+        upstream.end();
+        callback();
+      },
+      destroy(error, callback) {
+        upstream.end();
+        callback(error);
+      },
+    });
+    try {
+      await env.app.operations.run("box.create", env.ctx, { name: "alpha", cpus: 1, memoryMb: 256 });
+      env.runtime.execScript = { stdout: "over the proxy\n", stderr: "", code: 4 };
+      const proxyIo = io(upstream.read());
+      proxyIo.stdoutBytes = (bytes) => transport.push(Buffer.from(bytes));
+      const proxied = runCli(["ssh-proxy", "alpha.minibox"], env.env, proxyIo, lines([]));
+
+      const client = new Client();
+      const ready = new Promise<void>((resolve, reject) => {
+        client.once("ready", resolve);
+        client.once("error", reject);
+      });
+      client.connect({
+        sock: transport,
+        username: "dev",
+        hostVerifier: (key: Buffer) => fingerprintOf(key) === env.app.ssh.hostKeyView().fingerprint,
+      });
+      await ready;
+      expect(await runCommand(client, "echo hi")).toEqual({ stdout: "over the proxy\n", stderr: "", code: 4 });
+      expect(env.runtime.execs.at(-1)?.spec.user).toBe("dev");
+      client.end();
+      expect(await proxied).toBe(0);
+    } finally {
+      env.stop();
     }
   });
 });
