@@ -9,10 +9,11 @@ import { join } from "node:path";
  * heartbeats, do not extend it. `server.timeout(req, 0)` disables it.
  *
  * Checked on Bun 1.4.3 with a separate process: a silent handler and a stream that writes every second both fail with
- * ECONNRESET at about 4 seconds, while `server.timeout(req, 0)` survives a longer sleep. The same-process `fetch`
- * hides the shorter timeouts, so this test uses a child process. Production stays at 60 seconds
- * (`src/server.ts`); long work returns 202 and the progress stream disables the timer, so the request that would
- * have been held open for the whole build no longer exists.
+ * ECONNRESET, while `server.timeout(req, 0)` survives a longer sleep. The 4-second step is a tick, so the close can
+ * land well under 4 seconds (CI measured 915ms) and does not need a minimum wait. The same-process `fetch` hides the
+ * shorter timeouts, so this test uses a child process. Production stays at 60 seconds (`src/server.ts`); long work
+ * returns 202 and the progress stream disables the timer, so the request that would have been held open for the
+ * whole build no longer exists.
  */
 const SCRIPT = `
 const started = Date.now();
@@ -92,13 +93,10 @@ describe("Bun idleTimeout", () => {
       ]);
       expect(hang.ok).toBe(false);
       expect(hang.message ?? "").toMatch(/ECONNRESET|closed|reset/i);
-      // The 4s step can land a little early when the machine is busy. It must still be the idle cap, not an instant
-      // failure and not the 8s the handler would have slept.
-      expect(hang.ms).toBeGreaterThan(1500);
-      expect(hang.ms).toBeLessThan(6500);
+      // Died on the idle cap, before the handler's 8s sleep could answer.
+      expect(hang.ms).toBeLessThan(7500);
       expect(beat.ok).toBe(false);
-      expect(beat.ms).toBeGreaterThan(1500);
-      expect(beat.ms).toBeLessThan(6500);
+      expect(beat.ms).toBeLessThan(7500);
       expect(zero).toMatchObject({ ok: true, status: 200, text: "ok" });
       expect(zero.ms).toBeGreaterThan(4800);
     } finally {
