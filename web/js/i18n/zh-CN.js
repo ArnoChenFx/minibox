@@ -186,6 +186,7 @@ export default {
   "err.session_tmux_missing": "该 Box 没有 tmux，无法使用会话。",
   "err.session_tmux_missing_hint": "基础模板已预装 tmux。请用它重建 Box，或在 Box 内安装 tmux。",
   "err.session_tmux_failed": "tmux 执行失败：{detail}",
+  "err.session_tmux_timeout": "tmux 在 {max} 秒内没有完成。",
   "err.mcp_bearer_required": "MCP 需要 Authorization Bearer 访问密钥。",
   "err.mcp_bearer_hint": "请发送 Authorization: Bearer 和访问密钥。/mcp 不接受浏览器会话 Cookie。",
   "err.mcp_toolset_invalid": "未知的 MCP 工具集。",

@@ -21,6 +21,7 @@ import {
   RuntimeError,
   type VolumeInfo,
 } from "../../src/runtime";
+import { FakeTmux, type TmuxClient, type TmuxRun } from "./fake-tmux";
 
 export type Op = keyof Runtime;
 
@@ -220,6 +221,10 @@ export class FakeRuntime implements Runtime {
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
   private execCount = 0;
+  /** The tmux server of each container. A `tmux` exec runs against it, and a box that stops loses it. */
+  readonly tmux = new FakeTmux();
+  /** When true, `tmux` is not installed: its commands exit 127, as a shell reports a missing program. */
+  tmuxMissing = false;
 
   /**
    * Holds the next calls to `op` until `release`. `buildImage` reports its log before waiting. A held call does not
@@ -438,13 +443,16 @@ export class FakeRuntime implements Runtime {
 
   async stopContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("stopContainer", [id, opts]);
-    this.getContainer(id).running = false;
+    const c = this.getContainer(id);
+    c.running = false;
+    this.tmux.stop(c.id);
   }
 
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("restartContainer", [id, opts]);
     const c = this.getContainer(id);
     this.attach(c);
+    this.tmux.stop(c.id);
     c.running = true;
     c.startedAt = now();
   }
@@ -456,6 +464,7 @@ export class FakeRuntime implements Runtime {
       throw new RuntimeError("conflict", `You cannot remove a running container ${c.id}. Stop it or force removal.`);
     }
     this.containers.delete(c.id);
+    this.tmux.stop(c.id);
   }
 
   async renameContainer(id: string, name: string): Promise<void> {
@@ -532,6 +541,7 @@ export class FakeRuntime implements Runtime {
     const c = this.getContainer(containerId);
     if (!c.running) throw new RuntimeError("conflict", `Container ${c.id} is not running`);
     const tty = spec.tty !== false;
+    if (spec.cmd[0] === "tmux") return this.startTmux(c.id, spec, tty);
     const stdinChunks: Buffer[] = [];
     const stream = tty
       ? echoStream((chunk) => stdinChunks.push(chunk))
@@ -598,6 +608,95 @@ export class FakeRuntime implements Runtime {
         session.exit(script.code);
       }, 0);
     }
+    return session;
+  }
+
+  /**
+   * A `tmux` exec. A command exec (`tty: false`) runs once against the emulated server and exits with its status. A TTY
+   * exec attaches a client to the session it names: the session's output goes to the stream, and what is written to the
+   * stream is typed into the session. Ending the exec detaches the client, as a killed attach does in the box.
+   */
+  private startTmux(containerId: string, spec: ExecSpec, tty: boolean): FakeExec {
+    const argv = spec.cmd.slice(1);
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const exitHooks: (() => void)[] = [];
+    const typed: Buffer[] = [];
+    let status: ExecStatus = { running: true, exitCode: null, pid: null };
+    const finish = (code: number) => {
+      if (!status.running) return;
+      status = { running: false, exitCode: code, pid: null };
+      for (const hook of exitHooks) hook();
+      if (!stdout.writableEnded) stdout.end();
+      if (!stderr.writableEnded) stderr.end();
+      if (tty) stream.push(null);
+    };
+    let stream: Duplex = new PassThrough();
+    if (tty) {
+      const name = (argv[argv.indexOf("-t") + 1] ?? "").replace(/^=/, "").replace(/:.*$/, "");
+      stream = new Duplex({
+        read() {},
+        write: (chunk: Buffer, _encoding, callback) => {
+          typed.push(Buffer.from(chunk));
+          this.tmux.type(containerId, name, Buffer.from(chunk).toString("utf8"));
+          callback();
+        },
+      });
+      const client: TmuxClient = {
+        output: (text) => stream.push(Buffer.from(text)),
+        end: () => finish(0),
+      };
+      if (this.tmux.attach(containerId, name, client)) {
+        exitHooks.push(() => this.tmux.detach(containerId, name, client));
+      } else {
+        stream.push(Buffer.from(`can't find session: ${name}\r\n`));
+        finish(1);
+      }
+    } else {
+      const run: TmuxRun = this.tmuxMissing
+        ? { code: 127, stdout: "", stderr: "sh: tmux: not found\n" }
+        : this.tmux.run(containerId, argv);
+      setTimeout(() => {
+        if (run.stdout) stdout.write(run.stdout);
+        if (run.stderr) stderr.write(run.stderr);
+        finish(run.code);
+      }, 0);
+    }
+    const session: FakeExec = {
+      id: `exec-${++this.execCount}`,
+      stream,
+      stdout,
+      stderr,
+      spec,
+      containerId,
+      sizes: [],
+      killed: false,
+      async resize(size) {
+        session.sizes.push(size);
+      },
+      async inspect() {
+        return status;
+      },
+      async kill() {
+        if (status.running) {
+          session.killed = true;
+          finish(137);
+        }
+      },
+      print(text) {
+        stream.push(Buffer.from(text));
+      },
+      printStderr(text) {
+        stderr.write(text);
+      },
+      stdin() {
+        return Buffer.concat(typed).toString("utf8");
+      },
+      exit(code = 0) {
+        finish(code);
+      },
+    };
+    this.execs.push(session);
     return session;
   }
 

@@ -205,6 +205,7 @@ export default {
   "err.session_tmux_missing_hint":
     "Boxes from the base template include tmux. Rebuild the box from it, or install tmux inside the box.",
   "err.session_tmux_failed": "tmux failed: {detail}",
+  "err.session_tmux_timeout": "tmux did not finish within {max} seconds.",
   "err.mcp_bearer_required": "MCP requires an Authorization Bearer access key.",
   "err.mcp_bearer_hint":
     "Send the header Authorization: Bearer and the access key. A browser session cookie is not accepted on /mcp.",
