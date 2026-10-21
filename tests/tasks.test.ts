@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
+import { COOKIE_NAME } from "../src/auth";
 import type { OperationContext } from "../src/operations/types";
 import { startServer } from "../src/server";
 import { TASK_LOG_MAX_BYTES, TASK_LOG_OMITTED } from "../src/tasks/store";
@@ -32,6 +33,19 @@ async function postBuild(
     status: res.status,
     body: (await res.json()) as { taskId?: string; error?: { key?: string; details?: { taskId?: string } } },
   };
+}
+
+const cookieFor = (token: string) => ({ cookie: `${COOKIE_NAME}=${token}` });
+
+async function openProgress(
+  base: string,
+  taskId: string | undefined,
+  headers: Record<string, string>,
+): Promise<SseReader> {
+  const res = await fetch(`${base}/api/tasks/${taskId}/events`, { headers });
+  expect(res.status).toBe(200);
+  if (!res.body) throw new Error("the stream has no body");
+  return new SseReader(res.body.getReader());
 }
 
 describe("tasks", () => {
@@ -194,6 +208,59 @@ describe("tasks", () => {
     } finally {
       held.release();
       await reader?.close();
+      await app.tasks.drain();
+      server.stop();
+    }
+  });
+
+  test("the progress stream ends when the browser session that opened it is revoked, and another session keeps receiving", async () => {
+    const held = runtime.hold("buildImage");
+    const server = serve(app);
+    const revoked = app.sessions.create({ userAgent: "test", ip: "127.0.0.1" });
+    const kept = app.sessions.create({ userAgent: "test", ip: "127.0.0.1" });
+    let ended: SseReader | undefined;
+    let live: SseReader | undefined;
+    try {
+      const { body } = await postBuild(server.base);
+      ended = await openProgress(server.base, body.taskId, cookieFor(revoked.token));
+      live = await openProgress(server.base, body.taskId, cookieFor(kept.token));
+      await ended.next();
+      await live.next();
+
+      const res = await fetch(`${server.base}/api/auth/sessions/${revoked.session.id}`, {
+        method: "DELETE",
+        headers: auth,
+      });
+      expect(res.status).toBe(200);
+      await ended.untilEnd();
+
+      held.release();
+      const status = await live.until((frame) => (frame.data as { kind?: string } | undefined)?.kind === "status");
+      expect(status.data).toMatchObject({ kind: "status", status: "succeeded" });
+    } finally {
+      held.release();
+      await ended?.close();
+      await live?.close();
+      await app.tasks.drain();
+      server.stop();
+    }
+  });
+
+  test("the progress stream ends when the browser session that opened it expires", async () => {
+    const held = runtime.hold("buildImage");
+    const server = serve(app);
+    const session = app.sessions.create({ userAgent: "test", ip: "127.0.0.1" });
+    let stream: SseReader | undefined;
+    try {
+      const { body } = await postBuild(server.base);
+      stream = await openProgress(server.base, body.taskId, cookieFor(session.token));
+      await stream.next();
+
+      app.sessions.sweep(session.session.expiresAt);
+      await stream.untilEnd();
+    } finally {
+      held.release();
+      await stream?.close();
       await app.tasks.drain();
       server.stop();
     }
