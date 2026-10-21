@@ -134,6 +134,40 @@ function matchesEvent(event: RuntimeEvent, filter: { labels?: Record<string, str
   return filter.labels === undefined || matchesLabels(event.attributes, filter.labels);
 }
 
+/** The complete lines of `text`, without their newlines. A final partial line is kept. */
+function linesOf(text: string): string[] {
+  if (text === "") return [];
+  const lines = text.split("\n");
+  if (text.endsWith("\n")) lines.pop();
+  return lines;
+}
+
+const FAKE_LOG_EPOCH_MS = Date.UTC(2026, 9, 21, 12);
+
+/** The time the fake stamps the line at `index` of a container's log with: one second per line. */
+export function fakeStampMs(index: number): number {
+  return FAKE_LOG_EPOCH_MS + index * 1000;
+}
+
+/** The RFC 3339 stamp with nanoseconds that the engine prefixes a line with, for the line at `index`. */
+export function fakeStamp(index: number): string {
+  return new Date(fakeStampMs(index)).toISOString().replace(".000Z", ".000000000Z");
+}
+
+/** A line of a container's log, numbered by its place in the log. */
+interface LogLine {
+  index: number;
+  text: string;
+}
+
+/** An open `followLogs`. `wake` resumes it to read what changed, `ended` marks a stopped container, `failure` ends it. */
+interface LogFollow {
+  readonly container: string;
+  ended: boolean;
+  failure: RuntimeError | undefined;
+  wake: (() => void) | undefined;
+}
+
 /** The `LABEL key=value` lines of a commit or build, as Docker would store them. */
 function labelsFromChanges(changes: string[]): Record<string, string> {
   const labels: Record<string, string> = {};
@@ -285,7 +319,9 @@ export class FakeRuntime implements Runtime {
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
   private readonly interrupts = new Set<(error: RuntimeError) => void>();
+  private readonly logFollows = new Set<LogFollow>();
   private execCount = 0;
+  private eventSeq = 0;
   /** The tmux server of each container. A `tmux` exec runs against it, and a box that stops loses it. */
   readonly tmux = new FakeTmux();
   /** When true, `tmux` is not installed: its commands exit 127, as a shell reports a missing program. */
@@ -452,12 +488,14 @@ export class FakeRuntime implements Runtime {
 
   /** The event the engine sends after a container change. Attributes carry the labels, as Docker's do. */
   private announce(action: string, c: FakeContainer): void {
+    this.eventSeq += 1;
     this.emitEvent({
       type: "container",
       action,
       id: c.id,
       attributes: { ...c.labels, name: c.name, image: c.spec.image },
       time: now(),
+      timeNano: Date.now() * 1_000_000 + this.eventSeq,
     });
   }
 
@@ -640,6 +678,7 @@ export class FakeRuntime implements Runtime {
     c.paused = false;
     this.announce("die", c);
     this.announce("stop", c);
+    this.endLogFollows(c.id);
   }
 
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
@@ -651,6 +690,7 @@ export class FakeRuntime implements Runtime {
     c.running = true;
     c.startedAt = now();
     this.announce("restart", c);
+    this.endLogFollows(c.id);
   }
 
   async pauseContainer(id: string): Promise<void> {
@@ -679,6 +719,7 @@ export class FakeRuntime implements Runtime {
     this.containers.delete(c.id);
     this.tmux.stop(c.id);
     this.announce("destroy", c);
+    this.endLogFollows(c.id);
   }
 
   async renameContainer(id: string, name: string): Promise<void> {
@@ -713,6 +754,81 @@ export class FakeRuntime implements Runtime {
       .logs.split(/(?<=\n)/)
       .slice(-opts.tail)
       .join("");
+  }
+
+  /**
+   * The tail, then the lines `appendLogs` writes, as the engine streams them. Each line is numbered by its place in the
+   * log, and carries the stamp `fakeStampMs` gives that number when `timestamps` is set. `since` filters after `tail`,
+   * as the engine does, so a tail of lines before `since` yields nothing.
+   */
+  async *followLogs(
+    id: string,
+    opts: { tail: number; timestamps: boolean; since?: Date; signal?: AbortSignal },
+  ): AsyncGenerator<string> {
+    this.enter("followLogs", [id, opts]);
+    const c = this.getContainer(id);
+    const { signal } = opts;
+    let seen = c.logs.lastIndexOf("\n") + 1;
+    const complete = linesOf(c.logs.slice(0, seen));
+    let index = complete.length;
+    const head = opts.tail > 0 ? complete.slice(-opts.tail) : [];
+    const queue: LogLine[] = head.map((text, k) => ({ index: index - head.length + k, text }));
+    const follow: LogFollow = { container: c.id, ended: !c.running, failure: undefined, wake: undefined };
+    const abort = () => follow.wake?.();
+    this.logFollows.add(follow);
+    signal?.addEventListener("abort", abort);
+    try {
+      for (;;) {
+        if (signal?.aborted) return;
+        if (follow.failure) throw follow.failure;
+        const next = queue.shift();
+        if (next !== undefined) {
+          if (opts.since === undefined || fakeStampMs(next.index) >= opts.since.getTime()) {
+            yield opts.timestamps ? `${fakeStamp(next.index)} ${next.text}` : next.text;
+          }
+          continue;
+        }
+        const fresh = c.logs.slice(seen);
+        const cut = follow.ended ? fresh.length : fresh.lastIndexOf("\n") + 1;
+        if (cut > 0) {
+          seen += cut;
+          for (const text of linesOf(fresh.slice(0, cut))) queue.push({ index: index++, text });
+          continue;
+        }
+        if (follow.ended) return;
+        await new Promise<void>((resolve) => {
+          follow.wake = resolve;
+        });
+        follow.wake = undefined;
+      }
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      this.logFollows.delete(follow);
+    }
+  }
+
+  /** Writes `text` to the container's log as it runs. Open follows read the lines it completes. */
+  appendLogs(id: string, text: string): void {
+    const c = this.getContainer(id);
+    c.logs += text;
+    for (const follow of this.logFollows) if (follow.container === c.id) follow.wake?.();
+  }
+
+  /** Ends every open `followLogs` with `error`, as a dropped engine connection does. */
+  interruptLogs(error: RuntimeError): void {
+    for (const follow of this.logFollows) {
+      follow.failure = error;
+      follow.wake?.();
+    }
+  }
+
+  /** A container that stops or is removed ends its follows, as the engine closes the log stream then. */
+  private endLogFollows(containerId: string): void {
+    for (const follow of this.logFollows) {
+      if (follow.container !== containerId) continue;
+      follow.ended = true;
+      follow.wake?.();
+    }
   }
 
   async containerStats(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerStats> {

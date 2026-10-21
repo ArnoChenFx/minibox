@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,14 +43,17 @@ const ARCHIVES: Record<string, Buffer> = {
   "tar-empty": Buffer.alloc(1024),
 };
 
-/** The output of a helper that exits non-zero, in the multiplexed framing the engine uses for a non-TTY log. */
-const helperLog = (text: string): Buffer => {
+/** One log frame in the multiplexed framing the engine uses for a non-TTY container: stream kind, zeros, size. */
+const logFrame = (kind: 1 | 2, text: string): Buffer => {
   const payload = Buffer.from(text);
   const header = Buffer.alloc(8);
-  header[0] = 2;
+  header[0] = kind;
   header.writeUInt32BE(payload.length, 4);
   return Buffer.concat([header, payload]);
 };
+
+/** The output of a helper that exits non-zero, in the multiplexed framing the engine uses for a non-TTY log. */
+const helperLog = (text: string): Buffer => logFrame(2, text);
 
 const RUNNING = {
   Id: "ok",
@@ -151,6 +155,56 @@ async function slowBuild(req: Request): Promise<Response> {
   return new Response(body, { headers: { "content-type": "application/json" } });
 }
 
+/** Closes of followed log requests by the client, counted once per request. */
+let logCloses = 0;
+
+/**
+ * A followed log as the engine streams it. "live" sends three lines in one frame and keeps the response open until the
+ * client closes it. "split" breaks a line across two frames and ends. Any other container sends one line and ends.
+ */
+function followedLogs(req: Request, id: string): Response {
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    logCloses += 1;
+  };
+  req.signal.addEventListener("abort", close, { once: true });
+  const frames: Record<string, Buffer[]> = {
+    live: [logFrame(1, "one\ntwo\nthr")],
+    split: [logFrame(1, "one\ntw"), logFrame(2, "o\n")],
+  };
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const frame of frames[id] ?? [logFrame(1, "last\n")]) controller.enqueue(frame);
+      if (id !== "live") controller.close();
+    },
+    cancel: close,
+  });
+  return new Response(body);
+}
+
+/** One HTTP chunk of a chunked response: its size in hex, the bytes, and the line break that ends it. */
+const httpChunk = (bytes: Buffer): Buffer =>
+  Buffer.concat([Buffer.from(`${bytes.length.toString(16)}\r\n`), bytes, Buffer.from("\r\n")]);
+
+/**
+ * A raw engine for responses a Bun response cannot express: one that drops the connection before it answers, or part
+ * of the way through a chunked stream. `respond` gets each connection.
+ */
+async function rawEngine(
+  name: string,
+  respond: (socket: Socket) => void,
+): Promise<{ path: string; close(): Promise<void> }> {
+  const path = join(dir, name);
+  const engine = createServer(respond);
+  await new Promise<void>((resolve) => engine.listen(path, resolve));
+  return {
+    path,
+    close: () => new Promise<void>((resolve) => engine.close(() => resolve())),
+  };
+}
+
 /** Two events for "ok", one JSON object per line as the engine streams them, and then the stream ends. */
 function eventsStream(): Response {
   const events = [
@@ -171,6 +225,13 @@ async function engine(req: Request): Promise<Response> {
     return json(listed.map((id) => ({ Id: id, Names: [`/${id}`], Labels: {}, State: listStates[id] ?? "running" })));
   }
   if (req.method === "GET" && path === "/events") return eventsStream();
+  const logs = /^\/containers\/([^/]+)\/logs$/.exec(path);
+  if (req.method === "GET" && logs) {
+    const id = logs[1] ?? "";
+    if (id === "gone") return json({ message: "No such container: gone" }, 404);
+    if (url.searchParams.get("follow") === "true") return followedLogs(req, id);
+    return new Response("");
+  }
   const inspect = /^\/containers\/([^/]+)\/json$/.exec(path);
   if (req.method === "GET" && inspect) {
     if (inspect[1] === "hung") return hang(req);
@@ -452,7 +513,90 @@ describe("Docker adapter against a fake engine socket", () => {
     expect(JSON.parse(query.get("filters") ?? "null")).toEqual({ label: ["minibox=true"], type: ["container"] });
     expect(seen).toEqual(["start ok 2023-11-14T22:13:20.000Z", "die ok 2023-11-14T22:13:21.000Z"]);
   });
+
+  test("a followed log asks for the tail and timestamps, and yields a line split across frames when the stream ends", async () => {
+    const before = recorded.length;
+    expect(await drain(runtime().followLogs("split", { tail: 5, timestamps: true }))).toEqual(["one", "two"]);
+
+    const request = recorded.slice(before).find((r) => r.path === "/containers/split/logs");
+    const query = new URLSearchParams(request?.search);
+    expect(query.get("follow")).toBe("true");
+    expect(query.get("tail")).toBe("5");
+    expect(query.get("timestamps")).toBe("true");
+    expect(query.get("stdout")).toBe("true");
+    expect(query.get("stderr")).toBe("true");
+    expect(query.has("since")).toBe(false);
+  });
+
+  test("a followed log passes since as Unix seconds with milliseconds, which the engine reads as a time", async () => {
+    const before = recorded.length;
+    await drain(runtime().followLogs("split", { tail: 5, timestamps: true, since: new Date(1_792_603_165_085) }));
+
+    const request = recorded.slice(before).find((r) => r.path === "/containers/split/logs");
+    expect(new URLSearchParams(request?.search).get("since")).toBe("1792603165.085");
+  });
+
+  test("an abort ends a followed log without the lines already buffered, and the engine sees its request close", async () => {
+    const closes = logCloses;
+    const controller = new AbortController();
+    const seen: string[] = [];
+    for await (const line of runtime().followLogs("live", { tail: 0, timestamps: false, signal: controller.signal })) {
+      seen.push(line);
+      controller.abort();
+    }
+
+    expect(seen).toEqual(["one"]);
+    const closedSince = () => logCloses > closes;
+    for (let i = 0; i < 400 && !closedSince(); i++) await Bun.sleep(5);
+    expect(closedSince()).toBe(true);
+  });
+
+  test("a followed log of a missing container is not_found", async () => {
+    expect(await rejectionOf(drain(runtime().followLogs("gone", { tail: 1, timestamps: false })))).toMatchObject({
+      kind: "not_found",
+    });
+  });
+
+  test("a connection the engine drops before it answers a followed log is unavailable", async () => {
+    const engine = await rawEngine("dropped.sock", (socket) => socket.destroy());
+    try {
+      const followed = createDockerRuntime(engine.path).followLogs("any", { tail: 1, timestamps: false });
+      expect(await rejectionOf(drain(followed))).toMatchObject({ kind: "unavailable" });
+    } finally {
+      await engine.close();
+    }
+  });
+
+  test("a connection that drops mid-stream yields the lines it had, then fails as unavailable", async () => {
+    const engine = await rawEngine("cut.sock", (socket) => {
+      socket.write(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.docker.raw-stream\r\nTransfer-Encoding: chunked\r\n\r\n",
+      );
+      socket.write(httpChunk(logFrame(1, "one\ntw")));
+      socket.write(httpChunk(logFrame(2, "o\nthr")));
+      setTimeout(() => socket.destroy(), 20);
+    });
+    const seen: string[] = [];
+    try {
+      const followed = createDockerRuntime(engine.path).followLogs("any", { tail: 0, timestamps: false });
+      const failure = await rejectionOf(
+        (async () => {
+          for await (const line of followed) seen.push(line);
+        })(),
+      );
+      expect(failure).toMatchObject({ kind: "unavailable" });
+    } finally {
+      await engine.close();
+    }
+    expect(seen).toEqual(["one", "two"]);
+  });
 });
+
+async function drain(lines: AsyncIterable<string>): Promise<string[]> {
+  const out: string[] = [];
+  for await (const line of lines) out.push(line);
+  return out;
+}
 
 const inspects = (id: string) =>
   recorded.filter((r) => r.method === "GET" && r.path === `/containers/${id}/json`).length;

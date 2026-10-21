@@ -38,10 +38,10 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Templates | Bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
-| Live updates | Box state, resource samples, host metrics and task progress are pushed on `GET /api/events/stream` (SSE). The console polls only while the stream is down |
+| Live updates | Box state, resource samples, host metrics, task progress and box logs are pushed over SSE (`GET /api/events/stream`, `GET /api/boxes/:id/logs/stream`). The console polls only while a stream is down |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window. Named tmux sessions survive a page refresh or a dropped connection. An agent's session opens read-only until you take it over |
 | Activity | Per-box history: commands run through MiniBox, container start, stop and out-of-memory events, and terminal sessions opened and closed. Keystrokes are never recorded. `docker logs` stays below it |
-| Logs | Main-process output with selectable line count and auto-refresh |
+| Logs | Main-process output with selectable line count, streamed live while auto-refresh is on |
 | Access control | Single access key, exchanged at sign-in for a revocable session token in an HttpOnly, `SameSite=Strict` cookie, or sent as `Authorization: Bearer`. Separate agent API tokens with scopes, created-by-me (or ids, tags, or every box), quotas and revoke. Login rate limiting per client address; cross-site requests refused |
 | Languages | English and Simplified Chinese; toggle with the language icon button in the top-right corner (console header and login page). Defaults to the browser language and is remembered per browser |
 | UI | Light / dark theme (follows the system, manual toggle), responsive layout, empty states, skeleton loaders, toasts, confirmation for destructive actions |
@@ -107,7 +107,7 @@ flowchart LR
 - **Session** = a named tmux session inside a box, run as `dev`. The web terminal attaches to it, and agents send keys and read the screen through the session tools. Closing the page only detaches, so the session keeps running until it is closed or the box stops (see [Sessions](#sessions)).
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
-- **Live state** = one `HostSampler` per host. It keeps the box cache current from the engine's container events, and lists the containers again every minute to catch a change a stalled event stream missed. It samples each running box into a ring of `METRICS_HISTORY` points once per `METRICS_INTERVAL_MS` while a stream is open, and every 30 seconds otherwise, or at `METRICS_INTERVAL_MS` if that is longer. It publishes box, sample, link and host frames on the event bus. `GET /api/events/stream` forwards them to the console, which polls only while the stream is down. Live frames carry environment variable names, never their values. At most `STREAM_MAX_CONNECTIONS` event and task streams are open at once, and the next one gets `429`. Samples stay in memory and never reach the event log.
+- **Live state** = one `HostSampler` per host. It keeps the box cache current from the engine's container events, and lists the containers again every minute to catch a change a stalled event stream missed. It samples each running box into a ring of `METRICS_HISTORY` points once per `METRICS_INTERVAL_MS` while a stream is open. With no stream, it samples every 30 seconds (or at `METRICS_INTERVAL_MS` if that is longer), but only while someone has read the box's usage in the last five minutes. It publishes box, sample, link and host frames on the event bus. `GET /api/events/stream` forwards them to the console, which polls only while the stream is down. Each box's log is followed once per host and shared by all of its log streams, `GET /api/boxes/:id/logs/stream`. Live frames carry environment variable names, never their values. At most `STREAM_MAX_CONNECTIONS` event, task and log streams are open at once, and the next one gets `429`. Samples stay in memory and never reach the event log.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
 
 (`minibox` is the default `LABEL_PREFIX`; all names and labels follow the prefix.)
@@ -342,9 +342,9 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `BOX_PIDS_LIMIT` | `1024` | Maximum number of processes in each new box (a positive integer) |
 | `RUNTIME` | engine default | OCI runtime for new boxes, such as `runsc` (gVisor). The runtime must already be installed in the Docker engine |
 | `STOP_TIMEOUT_SEC` | `3` | Seconds a box gets to exit after SIGTERM before it is killed, used by stop and restart. Whole number from 0 to 300 |
-| `METRICS_INTERVAL_MS` | `3000` | Interval (ms) between host metrics samples, and between per-box resource samples while a live stream is open. Without one, boxes are sampled every 30 seconds, or at this interval if it is longer. Keep it above 2000: a Docker stats call takes 1 to 2 seconds, and a call still running at the timeout is a missed sample |
+| `METRICS_INTERVAL_MS` | `3000` | Interval (ms) between host metrics samples, and between per-box resource samples while a live stream is open. Without one, boxes are sampled every 30 seconds (or at this interval if it is longer) for five minutes after each read of their usage. Keep it above 2000: a Docker stats call takes 1 to 2 seconds, and a call still running at the timeout is a missed sample |
 | `METRICS_HISTORY` | `120` | Number of samples kept per host and per box (≈ 6 minutes at the default interval) |
-| `STREAM_MAX_CONNECTIONS` | `256` | Event and task streams open at once, across all browsers and clients. The next one gets `429`, and the console retries it with a growing delay. A positive whole number |
+| `STREAM_MAX_CONNECTIONS` | `256` | Event, task and log streams open at once, across all browsers and clients. The next one gets `429`, and the console retries it with a growing delay. A positive whole number |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
 | `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | Days to keep activity: command runs, container events, terminal sessions and reads. Repeated reads are merged per minute |
 | `EVENT_OUTPUT_RETENTION_DAYS` | `7` | Days to keep command output in `DATA_DIR/exec`. `exec` writes a head-and-tail window there when a command finishes |
@@ -553,6 +553,7 @@ Errors use a consistent shape and the matching HTTP status:
 | `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"?, "pids"? }`. Requires `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | Latest usage, the newest sample. `?history=true` also returns the recent samples, oldest first |
 | `GET` | `/api/boxes/:id/logs?tail=300` | Container logs (1–5000 lines). Engine reads are shared for two seconds per box and tail |
+| `GET` | `/api/boxes/:id/logs/stream?tail=300` | The same lines as a server-sent event stream: a `sync` frame with the newest lines, then a `line` frame for each new one. Not an operation, so it is not in the OpenAPI document |
 | `POST` | `/api/boxes/:id/snapshots` | Start a snapshot `{ "name"? }`. Returns `202` `{ "taskId" }` |
 | `GET` (WS) | `/api/boxes/:id/terminal?session=NAME` | WebSocket terminal attached to a named session (see [Sessions](#sessions)). Binary frames and other text frames are typed input. The text frames `{"type":"takeover"}` and `{"type":"release"}` take the session over and return it, and `{"type":"resize","cols":N,"rows":N}` resizes it. Only a browser session can type, take over or resize; a Bearer caller reads the output, its input gets a `forbidden` error frame with `terminal_read_only`, and its resize frames are ignored |
 | `POST` | `/api/boxes/:id/exec` | Run a command. Body `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`. Send exactly one of `argv` (no shell) or `cmd` (`/bin/sh -c`). Defaults: user `dev`, directory `/workspace`, timeout 30s. A foreground call takes at most 55s, and `background: true` takes up to 3600s. A stopped box is started, which changes its revision. The result includes `status` (`running`, `exited` or `killed`), `exitCode`, `stdout`, `stderr`, `truncated`, `durationMs`, `timedOut` and `woke`. A non-zero exit is the program's status. Inline output keeps about 16 KiB from each end of each stream; `outputRef` names the saved window. Under the `strict` profile only `dev` or `1000` may be the user; other profiles may use `root`, and those runs are marked `privileged` in the audit. The box needs `/bin/sh`, `cat`, `rm` and `sleep` |
@@ -656,6 +657,8 @@ The stream sends one message per event: `id` is the event's sequence number and 
 
 A stream without filters also carries the live state the console shows. These frames are named with `event:` and have no `id:`, so they never change `Last-Event-ID`. `sync` gives the box list and link state of every host. It is sent first, and again after a `reset`. `box` reports a box that was added, changed or removed. `sample` carries the resource samples of the running boxes, `host` the host metrics, `link` whether a host's sampler is connected to the engine, and `task` the status changes of tasks. Live frames are never written to the event log, so high-frequency samples add no rows to `events.db`.
 
+`GET /api/boxes/:id/logs/stream?tail=N` streams one box's log. It opens with `retry`, then a `sync` frame holding the newest `tail` lines (300 by default, at most 5000), and sends a `line` frame for each new line. When the container is replaced it sends a new `sync`, and when the box is removed it sends `closed` and ends. It needs the same scope and visibility as `GET /api/boxes/:id/logs`, and each open counts toward `STREAM_MAX_CONNECTIONS`. The console's log panel reads through this stream, and reads the log once every four seconds only while the stream is down.
+
 Events are redacted before they are written. The access key is replaced wherever it appears, environment variables are recorded by name only, values under keys such as `password`, `token`, `secret` or `api_key` are replaced, and common credential formats are replaced too: PEM private keys, `Bearer` tokens, passwords in URLs, JWTs, `sk-` keys, GitHub tokens, AWS access keys, Slack tokens and Google API keys. This is best effort and not a guarantee: a credential in a format not listed here, or one split across fields, is not caught. A `detail` over 8 KB is replaced by a note with its size.
 
 | Tier | What it holds | Default |
@@ -670,7 +673,7 @@ The owner, and an admin token whose scopes and resource limits were not narrowed
 
 ### OpenAPI
 
-The box, snapshot, checkpoint, template, task, event-list and agent-token routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. A `202` body is `{ "taskId" }`; the operation's own output is `x-task-result` and is stored on the task. Auth, system, host and activity routes, and the event and task streams, are not in it yet.
+The box, snapshot, checkpoint, template, task, event-list and agent-token routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. A `202` body is `{ "taskId" }`; the operation's own output is `x-task-result` and is stored on the task. Auth, system, host and activity routes, and the event, task and log streams, are not in it yet.
 
 ### Example
 
@@ -892,7 +895,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 - [x] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volumes and storage pools (`local`, `nfs`, `path`)
 - [x] [#9](https://github.com/ArnoChenFx/minibox/issues/9) Exec and file API for agents, with an MCP server and CLI. Exec, MCP, CLI and the volume file API (helper + archive) are in place
 - [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux sessions with human takeover
-- [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) Stream box state and resource usage over SSE instead of polling
+- [x] [#17](https://github.com/ArnoChenFx/minibox/issues/17) Stream box state and resource usage over SSE instead of polling
 - [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS setup guide
 
 ### M3 · Core value

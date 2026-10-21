@@ -279,6 +279,8 @@ export interface RuntimeEvent {
   id: string;
   attributes: Record<string, string>;
   time: string;
+  /** The engine's clock in nanoseconds. It tells an event the engine replays from a new one of the same action. */
+  timeNano: number;
 }
 
 export interface RuntimeInfo {
@@ -346,6 +348,18 @@ export interface Runtime {
   updateContainer(id: string, limits: ContainerUpdate): Promise<void>;
   /** Log text with any stream framing removed. */
   containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string>;
+  /**
+   * The lines a container writes: its last `tail` lines, then each line as it is written, with the engine's timestamps
+   * when `timestamps` is set. A line is yielded without its newline once the newline arrives. The iterator ends when the
+   * container stops or is removed, after yielding any final partial line, and a container that is not running yields
+   * its tail and ends at once. With `since`, lines stamped before it are left out; the engine takes `tail` before that
+   * filter, so the tail counts the lines it reads, and a line stamped at `since` is kept. An aborted `signal` ends the
+   * iterator without an error. A broken engine connection throws a RuntimeError of kind `unavailable`.
+   */
+  followLogs(
+    id: string,
+    opts: { tail: number; timestamps: boolean; since?: Date; signal?: AbortSignal },
+  ): AsyncIterable<string>;
   /** Writable-layer changes (`docker diff`). An unchanged container returns an empty list. */
   containerDiff(id: string): Promise<ContainerChange[]>;
   /** One sample of a container's usage. An aborted `signal` rejects with `AbortError` once the engine call is cancelled. */

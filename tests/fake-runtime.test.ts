@@ -2,10 +2,17 @@ import { describe, expect, test } from "bun:test";
 
 import { RuntimeError } from "../src/runtime";
 import { rejectionOf } from "./support/app";
-import { FakeRuntime } from "./support/fake-runtime";
+import { FakeRuntime, fakeStamp, fakeStampMs } from "./support/fake-runtime";
 
 const labels = { mbtest: "true" };
 const devTemplate = { "minibox.template.uid": "1000", "minibox.template.gid": "1000" };
+
+/** Every value of an async iterable, in order. */
+async function drain<T>(values: AsyncIterable<T>): Promise<T[]> {
+  const out: T[] = [];
+  for await (const value of values) out.push(value);
+  return out;
+}
 
 describe("FakeRuntime follows engine semantics the services rely on", () => {
   test("names are unique and missing objects are not_found", async () => {
@@ -135,9 +142,9 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
       return "ended";
     })();
 
-    rt.emitEvent({ type: "container", action: "start", id: "a", attributes: labels, time: "t" });
-    rt.emitEvent({ type: "container", action: "stop", id: "b", attributes: {}, time: "t" });
-    rt.emitEvent({ type: "container", action: "die", id: "c", attributes: labels, time: "t" });
+    rt.emitEvent({ type: "container", action: "start", id: "a", attributes: labels, time: "t", timeNano: 1 });
+    rt.emitEvent({ type: "container", action: "stop", id: "b", attributes: {}, time: "t", timeNano: 2 });
+    rt.emitEvent({ type: "container", action: "die", id: "c", attributes: labels, time: "t", timeNano: 3 });
     await Bun.sleep(10);
     controller.abort();
 
@@ -185,6 +192,85 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     })();
     rt.interruptEvents(new RuntimeError("unavailable", "connection reset"));
     expect(await rejectionOf(consumer)).toMatchObject({ kind: "unavailable", message: "connection reset" });
+  });
+
+  test("followLogs yields the tail, then each line as it is written, and a final partial line when the container stops", async () => {
+    const rt = new FakeRuntime();
+    const id = rt.seedContainer({ image: "alpine:3.20", running: true });
+    rt.appendLogs(id, "one\ntwo\nthree\n");
+    const follow = drain(rt.followLogs(id, { tail: 2, timestamps: false }));
+    rt.appendLogs(id, "four\nfi");
+    await Bun.sleep(5);
+    rt.appendLogs(id, "ve\nsix");
+    await Bun.sleep(5);
+    await rt.stopContainer(id, { timeoutSec: 1 });
+
+    expect(await follow).toEqual(["two", "three", "four", "five", "six"]);
+  });
+
+  test("followLogs of a container that is not running yields its tail and ends at once", async () => {
+    const rt = new FakeRuntime();
+    const id = rt.seedContainer({ image: "alpine:3.20" });
+    rt.appendLogs(id, "one\ntwo\n");
+
+    expect(await drain(rt.followLogs(id, { tail: 10, timestamps: false }))).toEqual(["one", "two"]);
+    expect(await drain(rt.followLogs(id, { tail: 1, timestamps: false }))).toEqual(["two"]);
+    expect(await drain(rt.followLogs(id, { tail: 0, timestamps: false }))).toEqual([]);
+  });
+
+  test("followLogs stamps each line as the engine does, and since keeps the lines stamped at or after it, past the tail", async () => {
+    const rt = new FakeRuntime();
+    const id = rt.seedContainer({ image: "alpine:3.20" });
+    rt.appendLogs(id, "one\ntwo\nthree\nfour\n");
+
+    const stamped = await drain(rt.followLogs(id, { tail: 2, timestamps: true }));
+    expect(stamped).toEqual([`${fakeStamp(2)} three`, `${fakeStamp(3)} four`]);
+    expect(stamped[0]).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+\.\d{9}Z three$/);
+
+    const since = new Date(fakeStampMs(1));
+    expect(await drain(rt.followLogs(id, { tail: 10, timestamps: true, since }))).toEqual([
+      `${fakeStamp(1)} two`,
+      `${fakeStamp(2)} three`,
+      `${fakeStamp(3)} four`,
+    ]);
+    expect(await drain(rt.followLogs(id, { tail: 2, timestamps: false, since: new Date(fakeStampMs(0)) }))).toEqual([
+      "three",
+      "four",
+    ]);
+    expect(await drain(rt.followLogs(id, { tail: 2, timestamps: false, since: new Date(fakeStampMs(3)) }))).toEqual([
+      "four",
+    ]);
+    expect(await drain(rt.followLogs(id, { tail: 1, timestamps: false, since: new Date(fakeStampMs(4)) }))).toEqual([]);
+  });
+
+  test("a followed log ends quietly when its signal aborts, and an interrupt ends it with the error", async () => {
+    const rt = new FakeRuntime();
+    const id = rt.seedContainer({ image: "alpine:3.20", running: true });
+    const controller = new AbortController();
+    const quiet = drain(rt.followLogs(id, { tail: 0, timestamps: false, signal: controller.signal }));
+    await Bun.sleep(5);
+    controller.abort();
+    expect(await quiet).toEqual([]);
+
+    const broken = drain(rt.followLogs(id, { tail: 0, timestamps: false }));
+    await Bun.sleep(5);
+    rt.interruptLogs(new RuntimeError("unavailable", "connection reset"));
+    expect(await rejectionOf(broken)).toMatchObject({ kind: "unavailable", message: "connection reset" });
+  });
+
+  test("a restart or removal ends the follows of its container, and a follow of a missing container is not_found", async () => {
+    const rt = new FakeRuntime();
+    const id = rt.seedContainer({ image: "alpine:3.20", running: true });
+    const restarted = drain(rt.followLogs(id, { tail: 0, timestamps: false }));
+    await rt.restartContainer(id, { timeoutSec: 1 });
+    expect(await restarted).toEqual([]);
+
+    const removed = drain(rt.followLogs(id, { tail: 0, timestamps: false }));
+    await rt.removeContainer(id, { force: true });
+    expect(await removed).toEqual([]);
+    expect(await rejectionOf(drain(rt.followLogs(id, { tail: 1, timestamps: false })))).toMatchObject({
+      kind: "not_found",
+    });
   });
 
   test("ensureBridgeNetwork creates an isolated network once and refuses networks with other settings", async () => {
