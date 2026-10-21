@@ -685,7 +685,7 @@
     "path": "/api/templates",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:gold\",\"tags\":[\"mbtest-template:gold\"],\"name\":\"gold\",\"description\":\"Gold image\",\"source\":\"alpha\",\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"createdAt\":\"<time>\",\"size\":1024}],\"baseTemplate\":\"mbtest-template:base\"}"
+    "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:gold\",\"tags\":[\"mbtest-template:gold\"],\"name\":\"gold\",\"description\":\"Gold image\",\"source\":\"alpha\",\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"createdAt\":\"<time>\",\"size\":1024}],\"baseTemplate\":\"mbtest-template:base\"}"
   },
   {
     "step": "delete gold",

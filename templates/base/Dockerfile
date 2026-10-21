@@ -7,7 +7,7 @@ ARG DEV_GID=1000
 
 LABEL minibox.template=true \
       minibox.template.name=base \
-      minibox.template.description="Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root dev user" \
+      minibox.template.description="Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user" \
       minibox.template.user=dev \
       minibox.template.uid="${DEV_UID}" \
       minibox.template.gid="${DEV_GID}"
