@@ -42,6 +42,8 @@ export interface Mount {
   target: string;
   /** Absent means writable, which is the engine default. */
   mode?: "rw" | "ro";
+  /** `bind` is a host path. Absent means a named volume. Both use the engine's bind string. */
+  kind?: "volume" | "bind";
 }
 
 /** One writable-layer change from `docker diff`. `modified` is the engine's kind 0, `added` is 1, `deleted` is 2. */
@@ -97,6 +99,8 @@ export interface CreateContainerSpec {
   /** Network name. Absent means the engine's default bridge. */
   network?: string;
   hardening?: ContainerHardening;
+  /** Numeric user, such as `0:0` for a root helper. Absent keeps the image user. */
+  user?: string;
 }
 
 export interface ImageSummary {
@@ -115,6 +119,33 @@ export interface ImageDetails {
 export interface VolumeInfo {
   name: string;
   labels: Record<string, string>;
+  driver?: string;
+  /** Driver options. Absent when the engine did not report any. */
+  options?: Record<string, string>;
+}
+
+export interface VolumeCreateOptions {
+  driver?: string;
+  driverOpts?: Record<string, string>;
+}
+
+export interface HelperResult {
+  exitCode: number;
+  logs: string;
+}
+
+export interface HelperSpec {
+  image: string;
+  cmd: string[];
+  mounts?: Mount[];
+  user?: string;
+  timeoutSec?: number;
+  labels?: Record<string, string>;
+}
+
+export interface DiskUsage {
+  totalBytes: number;
+  freeBytes: number;
 }
 
 export interface CommitSpec {
@@ -250,8 +281,20 @@ export interface Runtime {
   buildImage(spec: BuildSpec): Promise<string>;
 
   inspectVolume(name: string): Promise<VolumeInfo>;
-  createVolume(name: string, labels: Record<string, string>): Promise<void>;
+  listVolumes(): Promise<VolumeInfo[]>;
+  /**
+   * Creating an existing volume succeeds and keeps its labels and driver options.
+   * `opts` selects a driver, for example the local driver with NFS or bind options.
+   */
+  createVolume(name: string, labels: Record<string, string>, opts?: VolumeCreateOptions): Promise<void>;
   removeVolume(name: string): Promise<void>;
+  /**
+   * Runs a short-lived container to completion and removes it. A timeout kills the container and returns exit code 124.
+   * Used for chown, NFS directory setup and pool probes. The image is the base template (it runs as uid 1000 and has `find`).
+   */
+  runHelper(spec: HelperSpec): Promise<HelperResult>;
+  /** Bytes on the filesystem that holds `path`, as seen by this runtime's host. */
+  diskUsage(path: string): Promise<DiskUsage>;
 
   /**
    * Creates a bridge network named `name` if it does not exist. An existing network must be a bridge whose

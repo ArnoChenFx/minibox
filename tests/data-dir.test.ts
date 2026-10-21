@@ -56,7 +56,13 @@ describe("layout and secret files", () => {
   test("ensureDataDir creates the documented subdirectories with mode 700", () => {
     const dataDir = join(dir, "data");
     ensureDataDir(dataDir);
-    for (const path of [dataDir, join(dataDir, "boxes"), join(dataDir, "exec"), join(dataDir, "secrets")]) {
+    for (const path of [
+      dataDir,
+      join(dataDir, "boxes"),
+      join(dataDir, "exec"),
+      join(dataDir, "secrets"),
+      join(dataDir, "volumes"),
+    ]) {
       expect(mode(path)).toBe(0o700);
     }
   });
@@ -64,7 +70,7 @@ describe("layout and secret files", () => {
     const dataDir = join(dir, "data");
     ensureDataDir(dataDir);
     ensureDataDir(dataDir);
-    expect(readdirSync(dataDir).toSorted()).toEqual(["boxes", "exec", "secrets"]);
+    expect(readdirSync(dataDir).toSorted()).toEqual(["boxes", "exec", "secrets", "volumes"]);
   });
   test("ensureDataDir tightens a looser existing directory", () => {
     const dataDir = join(dir, "data");

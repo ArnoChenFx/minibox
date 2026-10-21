@@ -296,8 +296,9 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       const restore = silenceLogs();
       try {
         const alpha = await boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 });
-        expect(alpha).toMatchObject({ running: true, volume: `${prefix}-ws-a` });
-        expect(await runtime.inspectVolume(`${prefix}-ws-a`)).toMatchObject({ name: `${prefix}-ws-a` });
+        expect(alpha).toMatchObject({ running: true });
+        expect(alpha.volume).toMatch(/^vol_/);
+        expect(await runtime.inspectVolume(alpha.volume)).toMatchObject({ name: alpha.volume });
         expect(
           await rejectionOf(boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 })),
         ).toMatchObject({ status: 409, key: "box_exists" });
@@ -321,7 +322,7 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "a", volumeDeleted: true });
         expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "b", volumeDeleted: true });
         expect(await rejectionOf(runtime.inspectContainer(alpha.id))).toMatchObject({ kind: "not_found" });
-        expect(await rejectionOf(runtime.inspectVolume(`${prefix}-ws-a`))).toMatchObject({ kind: "not_found" });
+        expect(await rejectionOf(runtime.inspectVolume(alpha.volume))).toMatchObject({ kind: "not_found" });
 
         await deleteSnapshot(host, ref);
         await deleteTemplate(host, promoted.ref);

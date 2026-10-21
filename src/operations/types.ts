@@ -10,11 +10,18 @@ export type Kind = "read" | "write" | "destructive";
 
 export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta";
 
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** Who is calling. Only the owner exists until scoped tokens (#13) add other principals. */
 export interface Principal {
   readonly type: "owner";
+  readonly id: string;
+  readonly name: string;
+}
+
+/** A volume named in a `volume:attach` check. Agent tokens will narrow this when #13 lands. */
+export interface VolumeResource {
+  readonly kind: "volume";
   readonly id: string;
   readonly name: string;
 }
@@ -33,6 +40,11 @@ export interface OperationContext {
   readonly task?: TaskHandle;
   /** The task manager. The executor fills it in; task operations read it. */
   readonly tasks?: TaskReader;
+  /**
+   * Asks the authorize hook again for one scope and resource. The executor fills this in.
+   * Absent in tests that call a service directly; those callers are already inside the process.
+   */
+  authorize?(request: { scope: string; resource?: VolumeResource }): boolean | Promise<boolean>;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */

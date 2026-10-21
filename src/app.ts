@@ -21,6 +21,7 @@ import { SpecStore } from "./specs/store";
 import { TaskManager } from "./tasks/manager";
 import { TaskStore } from "./tasks/store";
 import type { TaskStreamEvent } from "./tasks/types";
+import { VolumeStore } from "./volumes/store";
 
 /** What the in-process bus carries. Box status (#17) can add its topic here. */
 export type AppTopics = {
@@ -90,7 +91,8 @@ function openTaskStore(path: string): TaskStore {
 export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App {
   const hosts = new HostRegistry();
   const specs = new SpecStore(cfg.dataDir);
-  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs);
+  const volumes = new VolumeStore(cfg.dataDir);
+  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs, volumes);
   hosts.add(local);
   const activity = new ActivityLog();
   const redactor = createRedactor({ knownSecrets: [cfg.accessKey] });

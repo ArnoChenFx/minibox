@@ -54,7 +54,13 @@ describe("spec storage", () => {
     expect(box.pids).toBe(1024);
     expect(box.recovery).toBeNull();
     expect(box.drift).toEqual([]);
-    expect(box.mounts).toEqual([{ volume: "mbtest-ws-alpha", path: "/workspace", mode: "rw" }]);
+    expect(box.mounts.map((mount) => ({ path: mount.path, mode: mount.mode, role: mount.role }))).toEqual([
+      { path: "/workspace", mode: "rw", role: "workspace" },
+      { path: "/home/dev", mode: "rw", role: "home" },
+      { path: "/opt/minibox/tools", mode: "ro", role: "tools" },
+      { path: "/home/dev/.cache", mode: "rw", role: "cache" },
+    ]);
+    expect(box.volume).toMatch(/^vol_/);
     expect(box.env).toEqual([]);
     expect(mode(host.specs.dir())).toBe(0o700);
     expect(mode(host.specs.pathFor(box.boxId))).toBe(0o600);
@@ -187,7 +193,7 @@ describe("in-place updates", () => {
       cpus: 2,
       pids: 256,
       revision: box.revision + 1,
-      volume: "mbtest-ws-alpha",
+      volume: box.volume,
       containerName: "mbtest-beta",
     });
     expect(container?.labels).toEqual(labels);

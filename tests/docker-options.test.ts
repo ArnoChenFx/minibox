@@ -8,6 +8,23 @@ import type { CreateContainerSpec } from "../src/runtime";
 const base: CreateContainerSpec = { image: "img:1" };
 
 describe("toCreateOptions", () => {
+  test("a read-only bind and a user are passed through", () => {
+    expect(
+      toCreateOptions({
+        ...base,
+        user: "0:0",
+        mounts: [
+          { source: "/data", target: "/mnt", kind: "bind", mode: "ro" },
+          { source: "vol", target: "/workspace" },
+        ],
+      }),
+    ).toEqual({
+      Image: "img:1",
+      User: "0:0",
+      HostConfig: { Binds: ["/data:/mnt:ro", "vol:/workspace"] },
+    });
+  });
+
   test("sends no HostConfig when nothing is set", () => {
     expect(toCreateOptions(base)).toEqual({ Image: "img:1" });
   });

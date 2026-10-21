@@ -9,6 +9,7 @@ import { startServer } from "../src/server";
 import * as boxes from "../src/services/boxes";
 import { rebuildBox } from "../src/services/rebuild";
 import type { BoxMount } from "../src/specs/types";
+import { claimEngineVolumes } from "../src/volumes/engine";
 import type { TerminalData } from "../src/ws/terminal";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
@@ -35,7 +36,15 @@ beforeEach(() => {
 
 const newBox = (name: string) => boxes.createBox(host, { name, cpus: 1, memoryMb: 256 });
 const managedLabels = (name: string) => ({ [keys.box]: "true", [keys.name]: name });
-const workspace = (name: string): BoxMount => ({ volume: `mbtest-ws-${name}`, path: "/workspace", mode: "rw" });
+const plainMounts = (mounts: BoxMount[]): BoxMount[] =>
+  mounts.map(({ volume, path, mode }) => ({ volume, path, mode }));
+
+/** The box's own workspace mount, as the engine names it. New boxes get `vol_…` engine names. */
+function workspaceOf(boxId: string): BoxMount {
+  const mount = specOf(boxId).mounts.find((item) => item.path === "/workspace");
+  if (!mount) throw new Error(`expected a workspace for ${boxId}`);
+  return mount;
+}
 
 function specOf(boxId: string) {
   const spec = host.specs.read(boxId);
@@ -69,8 +78,14 @@ describe("creating a box", () => {
   });
 
   test("a workspace volume that another box still mounts is refused", async () => {
-    const beta = await newBox("beta");
-    await boxes.updateBox(host, beta.boxId, beta.revision, { name: "gamma" });
+    runtime.volumes.set("mbtest-ws-beta", { name: "mbtest-ws-beta", labels: managedLabels("beta") });
+    await claimEngineVolumes(host);
+    await boxes.createBox(host, {
+      name: "gamma",
+      cpus: 1,
+      memoryMb: 256,
+      mounts: [{ volume: "mbtest-ws-beta", path: "/workspace", mode: "rw" }],
+    });
     const creates = runtime.callsTo("createContainer").length;
 
     const error = await rejectionOf(newBox("beta"));
@@ -116,10 +131,10 @@ describe("the data volume", () => {
       host,
       box.id,
       box.revision,
-      { profile: "strict", mounts: [workspace("alpha")] },
+      { profile: "strict", mounts: [workspaceOf(box.boxId)] },
       true,
     );
-    expect(fixed.mounts).toEqual([workspace("alpha")]);
+    expect(plainMounts(fixed.mounts)).toEqual([workspaceOf(box.boxId)]);
   });
 });
 
@@ -128,7 +143,7 @@ describe("other volumes", () => {
     const box = await newBox("alpha");
     runtime.volumes.set("pgdata", { name: "pgdata", labels: {} });
     const creates = runtime.callsTo("createContainer").length;
-    const mounts: BoxMount[] = [workspace("alpha"), { volume: "pgdata", path: "/data", mode: "rw" }];
+    const mounts: BoxMount[] = [workspaceOf(box.boxId), { volume: "pgdata", path: "/data", mode: "rw" }];
 
     const error = await rejectionOf(rebuildBox(host, box.id, box.revision, { mounts }, false));
     expect(error).toMatchObject({ status: 403, key: "volume_unmanaged", params: { volume: "pgdata" } });
@@ -137,23 +152,24 @@ describe("other volumes", () => {
     expect(runtime.volumes.get("pgdata")?.labels).toEqual({});
   });
 
-  test("a volume that another box mounts is refused", async () => {
-    await newBox("alpha");
+  test("a volume that another box owns is refused", async () => {
+    const alpha = await newBox("alpha");
     const beta = await newBox("beta");
     const creates = runtime.callsTo("createContainer").length;
+    const before = specOf(beta.boxId).mounts;
 
     const error = await rejectionOf(
       rebuildBox(
         host,
         beta.boxId,
         beta.revision,
-        { mounts: [{ volume: "mbtest-ws-alpha", path: "/shared", mode: "ro" }] },
+        { mounts: [{ volume: alpha.volume, path: "/shared", mode: "ro" }] },
         true,
       ),
     );
-    expect(error).toMatchObject({ status: 403, key: "volume_in_use", params: { volume: "mbtest-ws-alpha" } });
+    expect(error).toMatchObject({ status: 403, key: "volume_in_use", params: { volume: alpha.volume } });
     expect(runtime.callsTo("createContainer")).toHaveLength(creates);
-    expect(specOf(beta.boxId).mounts).toEqual([workspace("beta")]);
+    expect(specOf(beta.boxId).mounts).toEqual(before);
   });
 
   test("a labelled volume that no box mounts can be attached", async () => {
@@ -164,10 +180,13 @@ describe("other volumes", () => {
       host,
       box.id,
       box.revision,
-      { mounts: [workspace("alpha"), { volume: "archive", path: "/archive", mode: "ro" }] },
+      { mounts: [workspaceOf(box.boxId), { volume: "archive", path: "/archive", mode: "ro" }] },
       true,
     );
-    expect(rebuilt.mounts).toEqual([workspace("alpha"), { volume: "archive", path: "/archive", mode: "ro" }]);
+    expect(plainMounts(rebuilt.mounts)).toEqual([
+      workspaceOf(box.boxId),
+      { volume: "archive", path: "/archive", mode: "ro" },
+    ]);
     expect(runtime.containers.get(rebuilt.id)?.spec.mounts).toContainEqual({
       source: "archive",
       target: "/archive",
@@ -181,7 +200,7 @@ describe("other volumes", () => {
       host,
       box.id,
       box.revision,
-      { mounts: [workspace("alpha"), { volume: "scratch", path: "/scratch", mode: "rw" }] },
+      { mounts: [workspaceOf(box.boxId), { volume: "scratch", path: "/scratch", mode: "rw" }] },
       true,
     );
     expect(runtime.volumes.get("scratch")?.labels).toEqual(managedLabels("alpha"));
@@ -194,7 +213,7 @@ describe("other volumes", () => {
     host.specs.write({ ...spec, mounts: [...spec.mounts, { volume: "pgdata", path: "/data", mode: "rw" }] });
 
     const rebuilt = await rebuildBox(host, box.id, box.revision, { profile: "strict" }, true);
-    expect(rebuilt.mounts).toContainEqual({ volume: "pgdata", path: "/data", mode: "rw" });
+    expect(plainMounts(rebuilt.mounts)).toContainEqual({ volume: "pgdata", path: "/data", mode: "rw" });
   });
 });
 

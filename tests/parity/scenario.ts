@@ -23,6 +23,7 @@ const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as Host
  */
 export function normalize(text: string): string {
   return text
+    .replace(/vol_[0-9a-z]+/g, "<volumeId>")
     .replace(/bx_[0-9a-z]+/g, "<boxId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/[0-9a-f]{64}/g, "<id>")
@@ -314,6 +315,33 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("list snapshots after delete", "GET", "/api/snapshots");
     await send("activity feed", "GET", "/api/activity");
     await send("final box list", "GET", "/api/boxes");
+
+    const gammaRes = await post("create gamma for volumes", "/api/boxes", { name: "gamma", cpus: 1, memoryMb: 256 });
+    const gamma = boxId(gammaRes.json);
+    const gammaRev = (gammaRes.json?.box as { revision?: number } | undefined)?.revision ?? 1;
+    await send("list pools", "GET", "/api/pools");
+    await send("list volumes", "GET", "/api/volumes");
+    await send("get gamma workspace", "GET", "/api/volumes/gamma-workspace");
+    const spare = await post("create spare volume", "/api/volumes", { name: "spare" });
+    const spareId = String((spare.json?.volume as { id?: string } | undefined)?.id ?? "");
+    await send("measure spare", "POST", `/api/volumes/${spareId}/usage`);
+    const attached = await send("attach spare read-only", "POST", `/api/volumes/${spareId}/attach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", mode: "ro" }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(gammaRev) },
+    });
+    const attachedBox = attached.json?.box as { id?: string; revision?: number } | undefined;
+    const detached = await send("detach spare", "POST", `/api/volumes/${spareId}/detach`, {
+      body: JSON.stringify({ box: attachedBox?.id, path: "/srv/data" }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(attachedBox?.revision ?? "") },
+    });
+    await send("delete spare volume", "DELETE", `/api/volumes/${spareId}`);
+    await send("replace pools", "PUT", "/api/pools", {
+      body: JSON.stringify({ pools: [{ name: "local", backend: "local", default: true }] }),
+      contentType: JSON_TYPE,
+    });
+    await send("delete gamma", "DELETE", `/api/boxes/${boxId(detached.json)}`);
 
     await send("events without a key", "GET", "/api/events", { authed: false });
     await send("events from another site", "GET", "/api/events", { origin: "https://evil.example" });

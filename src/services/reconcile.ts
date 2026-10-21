@@ -3,6 +3,7 @@ import { log } from "../lib/logger";
 import type { ContainerInfo } from "../runtime";
 import { ClaimError, ensureSpec } from "../specs/claim";
 import type { BoxSpec } from "../specs/types";
+import { claimEngineVolumes } from "../volumes/engine";
 import { startBox, stopBox } from "./boxes";
 
 export interface ReconcileReport {
@@ -31,6 +32,7 @@ export interface ReconcileReport {
  */
 export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
   const report: ReconcileReport = { claimed: [], started: [], stopped: [], restartReset: [], missing: [], failed: [] };
+  await claimEngineVolumes(host);
   const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
   const seen = new Set<string>();
   const live: ContainerInfo[] = [];

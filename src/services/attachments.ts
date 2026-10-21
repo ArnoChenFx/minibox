@@ -3,6 +3,7 @@ import { forbidden } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { isRuntimeError, type VolumeInfo } from "../runtime";
 import type { BoxMount, BoxSpec } from "../specs/types";
+import { ownedByAnotherBox } from "../volumes/engine";
 
 /**
  * The volume the image mounts at `/data` (README: `-v minibox-data:/data`). It holds the access key and the sessions
@@ -25,7 +26,8 @@ export async function inspectVolumeOrNull(host: HostCtx, name: string): Promise<
 /**
  * Refuses a mount that `box` may not make (design §9.2). `box` is null while a box is being created. A volume the box
  * already mounts is kept, so only the data volume rule applies to it. `existing` is what the engine reports for the
- * volume, or null when MiniBox is about to create it.
+ * volume, or null when MiniBox is about to create it. A standalone volume may be mounted by several boxes; a volume
+ * owned by another live box may not.
  */
 export function assertMountAllowed(
   host: HostCtx,
@@ -36,7 +38,19 @@ export function assertMountAllowed(
   if (volume === DATA_VOLUME) throw forbidden(msg("volume_reserved", { volume }));
   if (box?.mounts.some((mount) => mount.volume === volume)) return;
   if (existing && existing.labels[host.keys.box] !== "true") throw forbidden(msg("volume_unmanaged", { volume }));
-  if (mountedByAnotherBox(host, box?.id ?? null, volume)) throw forbidden(msg("volume_in_use", { volume }));
+  if (ownedByAnotherBox(host, box?.id ?? null, volume)) throw forbidden(msg("volume_in_use", { volume }));
+}
+
+/**
+ * Maps each requested mount to the engine volume it names: the engine name of a recorded volume, or the name as given
+ * when no record exists (the engine check then decides, and a new name is created).
+ */
+export function engineRefs(host: HostCtx, mounts: BoxMount[]): BoxMount[] {
+  return mounts.map((mount) => {
+    const record = host.volumes.resolve(mount.volume, host.host.id);
+    if (!record || record.hostId !== host.host.id) return mount;
+    return { ...mount, volume: record.engineName };
+  });
 }
 
 /** Checks a rebuild's mounts and network before the preview is returned, so a refused request changes nothing. */
@@ -61,13 +75,4 @@ function assertNetworkAllowed(host: HostCtx, box: BoxSpec, network: string): voi
   if (SHARED_NETWORK.test(network)) throw forbidden(msg("network_reserved", { network }));
   if (network === host.security.network || network === box.network) return;
   throw forbidden(msg("network_not_managed", { network, managed: host.security.network }));
-}
-
-function mountedByAnotherBox(host: HostCtx, boxId: string | null, volume: string): boolean {
-  return host.specs
-    .list()
-    .some(
-      (spec) =>
-        spec.hostId === host.host.id && spec.id !== boxId && spec.mounts.some((mount) => mount.volume === volume),
-    );
 }

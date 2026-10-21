@@ -425,6 +425,21 @@ pools:
 
 详细的部署步骤见 issue #30 的文档。
 
+### 6.8 实现说明（#24）
+
+第一版实现与上文的差异如下。
+
+- **引擎名**：新建卷的 Docker 卷名就是卷 id（`vol_…`），显示名另存。Docker 不能在创建后补标签，所以已有的 `<prefix>-ws-*` 只写入所有权记录，不改名、不补标签、不 chown。认领容器也不改名。
+- **chown**：新建的本地卷用基础模板镜像的辅助容器（root，`0:0`）执行 `chown -R 1000:1000`，失败则创建失败。镜像不存在时跳过并记 `volume.chown_skipped`。NFS 与 path 必须先建子目录；chown 尽力而为（`root_squash` 常见，辅助容器打印 `MINIBOX_CHOWN_SKIPPED`）。重建不递归 chown 已有数据。遗留的 root 属主工作区仍用 README 中的一次性命令。
+- **重建改名**：挂载变更会重建容器，新容器名为 `<prefix>-<box id>`。失败则回滚名称，并在原先处于运行时重新启动旧容器，不写规格。界面在容器 id 变化后跳到新 id；稳定 box id 在 API 里仍然有效。
+- **探测**：池健康缓存在 `VolumeStore` 的内存里，15 秒。`GET /api/pools` 会探测（`refresh=true` 强制）。列出 Box 不探测 NFS，因此 `storage.status` 在探测前是 `unknown`；界面只把 `unreachable` 标成警告。启动、重启和创建在非本地池不是 `reachable`（含缺少基础镜像时的 `unknown`）时返回 503 `docker_unavailable`，消息键 `storage_unreachable`。本地池只有引擎探测失败才算不可达。协调器捕获该错误，记 `reconcile.start_failed` 后继续。
+- **NFS**：数据卷使用用户选项（通常 `hard`）。探测根卷 `<prefix>-pool-<pool>` 强制 `soft,timeo=10,retrans=1`，并在驱动选项变化时重建，避免死服务器挂起探测。已有数据卷保持创建时的选项。不要把 Docker data-root 搬到网络存储上。
+- **path**：辅助容器以只读方式绑定根目录，并 `test -f` 标记文件（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在则为不可达，不写入、不创建标记。
+- **能力**：由后端计算，用户不能设置。全部可共享；`snapshots`、`quota`、`clone` 为 false；只有 nfs 的 `crossHost` 为 true。无每卷配额。
+- **授权**：`volume:attach` 是第二次 `authorize()` 调用，带 `scope` 与卷资源。操作级调用的 `scope` 为空，钩子可以区分「能否执行操作」和「能否挂这只卷」。所有者与浏览器会话始终允许。令牌范围留到 #13。拒绝时审计状态为 `denied`。
+- **位置**：池配置是控制面全局的（`DATA_DIR/pools.json`）。每条 Volume 记录带 `hostId`，挂到另一台主机上的卷会被拒绝。文件原子写入，模式 600，目录 700。损坏的池文件不覆盖，记 `pools.unreadable`，并按隐式本地池处理。
+- **暂缓**：文件 API（#9）、restic 检查点（#11）、存储节点代理（#28 / #29）、每卷配额。更长的 NAS 部署说明仍是 #30。
+
 ---
 
 ## 7. Checkpoint 与备份

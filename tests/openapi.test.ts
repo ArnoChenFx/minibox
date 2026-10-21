@@ -77,6 +77,8 @@ describe("OpenAPI document", () => {
       "box.stats",
       "box.update",
       "events.list",
+      "pool.list",
+      "pool.replace",
       "snapshot.create",
       "snapshot.delete",
       "snapshot.fork",
@@ -88,6 +90,13 @@ describe("OpenAPI document", () => {
       "template.delete",
       "template.list",
       "template.promote",
+      "volume.attach",
+      "volume.create",
+      "volume.delete",
+      "volume.detach",
+      "volume.get",
+      "volume.list",
+      "volume.usage",
     ]);
   });
 

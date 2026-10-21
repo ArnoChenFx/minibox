@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import { statfsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import type { Duplex, Readable } from "node:stream";
 
@@ -13,10 +15,14 @@ import {
   type ContainerMount,
   type ContainerUpdate,
   type CreateContainerSpec,
+  type DiskUsage,
+  type HelperSpec,
   isRuntimeError,
+  type Mount,
   type Runtime,
   type RuntimeEvent,
   RuntimeError,
+  type VolumeInfo,
 } from "../runtime";
 import { toRuntimeError } from "./errors";
 import { demuxLogs } from "./logs";
@@ -103,9 +109,7 @@ function applyHardening(hostConfig: Docker.HostConfig, hardening: ContainerHarde
 /** Only set the keys that are present: dockerode serialises `undefined` as an empty query parameter. */
 export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCreateOptions {
   const hostConfig: Docker.HostConfig = {};
-  if (spec.mounts) {
-    hostConfig.Binds = spec.mounts.map((m) => `${m.source}:${m.target}${m.mode === "ro" ? ":ro" : ""}`);
-  }
+  if (spec.mounts) hostConfig.Binds = spec.mounts.map((mount) => bindOf(mount));
   if (spec.restart) hostConfig.RestartPolicy = { Name: spec.restart };
   if (spec.cpus !== undefined) hostConfig.NanoCpus = Math.round(spec.cpus * NANO_CPUS_PER_CPU);
   if (spec.memoryBytes !== undefined) hostConfig.Memory = spec.memoryBytes;
@@ -121,8 +125,28 @@ export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCrea
   if (spec.hostname !== undefined) opts.Hostname = spec.hostname;
   if (spec.labels !== undefined) opts.Labels = spec.labels;
   if (spec.env !== undefined) opts.Env = spec.env;
+  if (spec.user !== undefined) opts.User = spec.user;
   if (Object.keys(hostConfig).length > 0) opts.HostConfig = hostConfig;
   return opts;
+}
+
+function bindOf(mount: Mount): string {
+  const mode = mount.mode === "ro" ? ":ro" : "";
+  return `${mount.source}:${mount.target}${mode}`;
+}
+
+function volumeInfo(info: {
+  Name: string;
+  Labels?: Record<string, string> | null;
+  Driver?: string;
+  Options?: Record<string, string> | null;
+}): VolumeInfo {
+  return {
+    name: info.Name,
+    labels: info.Labels ?? {},
+    driver: info.Driver,
+    options: info.Options ?? undefined,
+  };
 }
 
 /** An existing network can be used only if it is a bridge with the requested inter-container communication setting. */
@@ -215,6 +239,48 @@ async function* readEvents(stream: Readable, signal?: AbortSignal): AsyncGenerat
   } finally {
     signal?.removeEventListener("abort", stop);
     stop();
+  }
+}
+
+/**
+ * A short-lived container for chown, directory setup and pool probes. It is not attached to the box network.
+ * A timeout kills it and reports exit code 124. The container is always removed.
+ */
+async function runHelper(docker: Docker, spec: HelperSpec): Promise<{ exitCode: number; logs: string }> {
+  const name = `mbxhlp${randomBytes(4).toString("hex")}`;
+  const created = await call(() =>
+    docker.createContainer(
+      toCreateOptions({
+        image: spec.image,
+        name,
+        cmd: spec.cmd,
+        mounts: spec.mounts,
+        user: spec.user,
+        labels: spec.labels,
+      }),
+    ),
+  );
+  const container = docker.getContainer(created.id);
+  try {
+    await call(() => container.start());
+    const timeoutMs = (spec.timeoutSec ?? 30) * 1000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const wait = container.wait() as Promise<{ StatusCode?: number }>;
+    const outcome = await new Promise<{ exitCode: number; timedOut: boolean }>((resolve, reject) => {
+      timer = setTimeout(() => {
+        void container.kill().catch(() => undefined);
+        resolve({ exitCode: 124, timedOut: true });
+      }, timeoutMs);
+      wait.then((status) => resolve({ exitCode: status.StatusCode ?? 1, timedOut: false }), reject);
+    }).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+    if (outcome.timedOut) await wait.catch(() => undefined);
+    const out = await container.logs({ stdout: true, stderr: true }).catch(() => Buffer.alloc(0));
+    const buf = Buffer.isBuffer(out) ? out : Buffer.from(String(out));
+    return { exitCode: outcome.exitCode, logs: demuxLogs(buf) };
+  } finally {
+    await container.remove({ force: true }).catch(() => undefined);
   }
 }
 
@@ -435,15 +501,48 @@ export function createDockerRuntime(socketPath: string): Runtime {
 
     async inspectVolume(name) {
       const info = await call(() => docker.getVolume(name).inspect());
-      return { name: info.Name, labels: info.Labels ?? {} };
+      return volumeInfo(info);
     },
 
-    async createVolume(name, labels) {
-      await call(() => docker.createVolume({ Name: name, Labels: labels }));
+    async listVolumes() {
+      const listed = await call(() => docker.listVolumes());
+      return (listed.Volumes ?? []).map((info) => volumeInfo(info));
+    },
+
+    async createVolume(name, labels, opts) {
+      try {
+        await call(() =>
+          docker.createVolume({
+            Name: name,
+            Labels: labels,
+            Driver: opts?.driver,
+            DriverOpts: opts?.driverOpts,
+          }),
+        );
+      } catch (e) {
+        // An existing volume keeps the labels and options it was created with.
+        if (e instanceof RuntimeError && e.kind === "conflict") return;
+        throw e;
+      }
     },
 
     async removeVolume(name) {
       await call(() => docker.getVolume(name).remove());
+    },
+
+    async runHelper(spec) {
+      return runHelper(docker, spec);
+    },
+
+    async diskUsage(path): Promise<DiskUsage> {
+      try {
+        const stat = statfsSync(path);
+        return { totalBytes: stat.blocks * stat.bsize, freeBytes: stat.bavail * stat.bsize };
+      } catch (e) {
+        const code = typeof e === "object" && e !== null && "code" in e ? String(e.code) : "";
+        if (code === "ENOENT") throw new RuntimeError("not_found", `path not found: ${path}`);
+        throw new RuntimeError("engine", e instanceof Error ? e.message : String(e));
+      }
     },
 
     async ensureBridgeNetwork(name, { interContainerComm }) {

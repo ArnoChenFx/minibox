@@ -127,6 +127,27 @@ export const boxName = () =>
       "Box name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed.",
   });
 
+export const volumeName = () =>
+  field((value) => checkName(value, "name"), {
+    ...NAME_META,
+    description:
+      "Volume name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed.",
+  });
+
+function checkRefresh(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null || value === "") return accept(false);
+  if (value === true || value === "true" || value === "1") return accept(true);
+  if (value === false || value === "false" || value === "0") return accept(false);
+  return reject(msg("not_boolean", { field: "refresh" }), "refresh");
+}
+
+/** Query flag. `true` or `1` probes pools again instead of using the short cache. */
+export const refreshFlag = () =>
+  field(checkRefresh, {
+    type: "boolean",
+    description: withDefault("Probe storage pools again instead of using the cached result.", false),
+  }).default(false);
+
 export const snapshotName = () =>
   field(
     (value): Checked<string | undefined> =>

@@ -14,7 +14,7 @@ import { pushHistory } from "../specs/history";
 import { planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxRecovery, BoxSpec } from "../specs/types";
-import { assertRebuildAttachments } from "./attachments";
+import { assertRebuildAttachments, engineRefs } from "./attachments";
 import { type Box, getBox } from "./boxes";
 
 interface SwapState {
@@ -46,7 +46,8 @@ export async function rebuildBox(
     if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
 
     const previous = structuredClone(spec);
-    const planned = planRebuild(host.prefix, spec, request);
+    const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;
+    const planned = planRebuild(host.prefix, spec, named);
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
     await assertRebuildAttachments(host, spec, planned.mounts, planned.network);
 

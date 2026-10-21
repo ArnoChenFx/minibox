@@ -12,16 +12,16 @@ const ERROR_RESPONSES: Record<string, string> = {
   "400": "Invalid input, or a malformed X-Minibox-Run header.",
   "401": "Not signed in, or the access key is invalid.",
   "403": "Refused: a cross-site write, or an operation this credential may not run.",
-  "404": "The box, snapshot, template or task named in the path does not exist.",
+  "404": "The box, snapshot, template, volume or pool named in the path does not exist.",
   "409":
-    "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+    "The name is already taken, this operation is already running, a volume is in use, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
   "415": "The request declares a body that is not JSON.",
   "412": "The If-Match revision is not the box's current revision.",
   "422": "The box would exceed the host's CPU or memory.",
   "428": "If-Match is required and was not sent.",
   "500": "Unexpected server error.",
   "502": "Docker returned an error.",
-  "503": "Docker is unavailable.",
+  "503": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
 };
 
 /** The OpenAPI operationId: the operation name, plus the fixed value that tells the bindings of one operation apart. */
@@ -169,7 +169,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
       title: "MiniBox API",
       version,
       description:
-        "Generated from the operation registry: boxes, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the event and task streams (GET /api/events/stream and GET /api/tasks/{id}/events, text/event-stream), are not listed yet.",
+        "Generated from the operation registry: boxes, volumes, storage pools, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the event and task streams (GET /api/events/stream and GET /api/tasks/{id}/events, text/event-stream), are not listed yet.",
       license: { name: "MIT" },
     },
     tags,

@@ -14,11 +14,15 @@ import {
   type ExecSpec,
   type ExecStatus,
   type ImageDetails,
+  type DiskUsage,
+  type HelperResult,
+  type HelperSpec,
   type ImageSummary,
   type Runtime,
   type RuntimeEvent,
   type RuntimeInfo,
   RuntimeError,
+  type VolumeCreateOptions,
   type VolumeInfo,
 } from "../../src/runtime";
 
@@ -129,6 +133,18 @@ function echoStream(): Duplex {
   return stream;
 }
 
+function defaultHelper(spec: HelperSpec): HelperResult {
+  const cmd = spec.cmd.join(" ");
+  if (cmd.includes("du")) return { exitCode: 0, logs: "0\t/mnt\n" };
+  if (cmd.includes("df") || cmd.includes("test -f")) {
+    return {
+      exitCode: 0,
+      logs: "Filesystem 1B-blocks Used Available Use% Mounted\nfake 100000000000 1 80000000000 1% /mnt\n",
+    };
+  }
+  return { exitCode: 0, logs: "" };
+}
+
 function toInfo(c: FakeContainer): ContainerInfo {
   return {
     id: c.id,
@@ -179,6 +195,10 @@ export class FakeRuntime implements Runtime {
   down = false;
   /** Output returned by the next and later builds. */
   buildLog = "Successfully built fake\n";
+  /** Bytes reported by `diskUsage`. Tests shrink `freeBytes` to exercise the low-space flag. */
+  disk: DiskUsage = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
+  /** Answers `runHelper`. The default pretends `df`, `du` and `chown` succeeded. */
+  helperHandler: (spec: HelperSpec) => HelperResult = defaultHelper;
 
   private readonly faults = new Map<Op, RuntimeError[]>();
   private readonly gates = new Map<Op, Promise<void>>();
@@ -593,13 +613,34 @@ export class FakeRuntime implements Runtime {
     this.enter("inspectVolume", [name]);
     const volume = this.volumes.get(name);
     if (!volume) throw new RuntimeError("not_found", `get ${name}: no such volume`);
-    return { name: volume.name, labels: { ...volume.labels } };
+    return {
+      name: volume.name,
+      labels: { ...volume.labels },
+      driver: volume.driver,
+      options: volume.options ? { ...volume.options } : undefined,
+    };
   }
 
-  /** Like Docker, creating an existing volume succeeds and keeps the original labels. */
-  async createVolume(name: string, labels: Record<string, string>): Promise<void> {
-    this.enter("createVolume", [name, labels]);
-    if (!this.volumes.has(name)) this.volumes.set(name, { name, labels: { ...labels } });
+  async listVolumes(): Promise<VolumeInfo[]> {
+    this.enter("listVolumes", []);
+    return [...this.volumes.values()].map((volume) => ({
+      name: volume.name,
+      labels: { ...volume.labels },
+      driver: volume.driver,
+      options: volume.options ? { ...volume.options } : undefined,
+    }));
+  }
+
+  /** Like Docker, creating an existing volume succeeds and keeps the original labels and driver options. */
+  async createVolume(name: string, labels: Record<string, string>, opts?: VolumeCreateOptions): Promise<void> {
+    this.enter("createVolume", [name, labels, opts]);
+    if (this.volumes.has(name)) return;
+    this.volumes.set(name, {
+      name,
+      labels: { ...labels },
+      driver: opts?.driver,
+      options: opts?.driverOpts ? { ...opts.driverOpts } : undefined,
+    });
   }
 
   async removeVolume(name: string): Promise<void> {
@@ -608,6 +649,17 @@ export class FakeRuntime implements Runtime {
     const inUse = [...this.containers.values()].some((c) => c.spec.mounts?.some((m) => m.source === name));
     if (inUse) throw new RuntimeError("conflict", `remove ${name}: volume is in use`);
     this.volumes.delete(name);
+  }
+
+  async runHelper(spec: HelperSpec): Promise<HelperResult> {
+    this.enter("runHelper", [spec]);
+    this.getImage(spec.image);
+    return this.helperHandler(spec);
+  }
+
+  async diskUsage(path: string): Promise<DiskUsage> {
+    this.enter("diskUsage", [path]);
+    return { totalBytes: this.disk.totalBytes, freeBytes: this.disk.freeBytes };
   }
 
   async ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void> {

@@ -7,7 +7,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { sparkline } from "../lib/sparkline.js";
-import { emptyState, stateBadge, toastError, usageBar } from "../lib/ui.js";
+import { confirmDialog, emptyState, openDialog, stateBadge, toast, toastError, usageBar } from "../lib/ui.js";
 
 function joined(names, translate) {
   return esc((names ?? []).map((name) => (translate ? t(`reset.${name}`) : name)).join(t("reset.sep")));
@@ -23,6 +23,15 @@ function specBanners(box) {
     const text = degraded ? t("bd.degradedText", { fields }) : t("bd.claimText", { fields });
     parts.push(
       `<div class="callout warn" style="margin-bottom:16px">${icon("alert")}<span><strong>${title}</strong> ${text}</span></div>`,
+    );
+  }
+  if (box.storage?.status === "unreachable") {
+    const pools = (box.storage.pools ?? [])
+      .filter((pool) => pool.status === "unreachable")
+      .map((pool) => pool.name)
+      .join(", ");
+    parts.push(
+      `<div class="callout danger" style="margin-bottom:16px">${icon("alert")}<span><strong>${t("vol.unreachable")}</strong> ${t("vol.storageUnreachable", { pools })}</span></div>`,
     );
   }
   if (box.drift?.length) {
@@ -121,6 +130,18 @@ export function render(view, id, tab = "overview") {
     resources: () => editResources(box, rerender),
     "from-snapshot": (b) =>
       openCreateBox({ snapshot: b.dataset.ref, onCreated: (nb) => (location.hash = `#/boxes/${nb.id}`) }),
+    "attach-volume": () =>
+      attachVolume(box).then((next) => {
+        if (!next) return;
+        if (next.id !== id) location.hash = `#/boxes/${enc(next.id)}`;
+        else rerender();
+      }),
+    "detach-mount": (el) =>
+      detachMount(box, el).then((next) => {
+        if (!next) return;
+        if (next.id !== id) location.hash = `#/boxes/${enc(next.id)}`;
+        else rerender();
+      }),
   });
 
   mount();
@@ -128,6 +149,131 @@ export function render(view, id, tab = "overview") {
     disposed = true;
     tabCleanup?.();
   };
+}
+
+const ROLE_LABEL = {
+  workspace: "vol.roleWorkspace",
+  home: "vol.roleHome",
+  tools: "vol.roleTools",
+  cache: "vol.roleCache",
+};
+
+function mountsCard(box) {
+  const rows = (box.mounts ?? [])
+    .map((mount) => {
+      const detach = mount.volumeId
+        ? `<button class="btn btn-sm" data-action="detach-mount" data-volume="${esc(mount.volumeId)}" data-path="${esc(mount.path)}">${t("vol.detach")}</button>`
+        : "";
+      return `<tr>
+        <td class="mono">${esc(mount.path)}</td>
+        <td>${esc(mount.volumeName || mount.volume)}</td>
+        <td>${mount.role ? esc(t(ROLE_LABEL[mount.role])) : "—"}</td>
+        <td>${esc(mount.mode)}</td>
+        <td>${esc(mount.pool || "—")}</td>
+        <td>${detach}</td>
+      </tr>`;
+    })
+    .join("");
+  return `<div class="card" style="margin-top:16px"><div class="card-head"><h3>${t("vol.mounts")}</h3>
+    <button class="btn btn-sm" data-action="attach-volume">${icon("plus")}${t("vol.attach")}</button></div>
+    <div class="table-wrap">${
+      rows
+        ? `<table class="table"><thead><tr><th>${t("vol.colPath")}</th><th>${t("vol.choose")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colMode")}</th><th>${t("vol.colPool")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : `<div class="card-body"><p class="subtle">${t("vol.noMounts")}</p></div>`
+    }</div>
+    <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;
+}
+
+async function attachVolume(box) {
+  let volumes = [];
+  try {
+    volumes = (await api("/api/volumes")).volumes;
+  } catch (e) {
+    toastError(t("vol.attachFailed"), e);
+    return null;
+  }
+  if (!volumes.length) {
+    toastError(t("vol.attachFailed"), { message: t("vol.none") });
+    return null;
+  }
+  const options = volumes
+    .map(
+      (volume) =>
+        `<option value="${esc(volume.id)}" data-role="${esc(volume.role ?? "")}">${esc(volume.name)}</option>`,
+    )
+    .join("");
+  const picked = await new Promise((resolve) => {
+    let value = null;
+    const { root, close } = openDialog({
+      title: t("vol.attach"),
+      onClose: () => resolve(value),
+      body: `<label class="field"><span>${t("vol.choose")}</span><select class="select" id="m-vol">${options}</select></label>
+        <label class="field"><span>${t("vol.pathLabel")}</span><input class="input" id="m-path" value="/srv/data" /></label>
+        <label class="field"><span>${t("vol.colMode")}</span><select class="select" id="m-mode"><option value="rw">${esc(t("vol.modeRw"))}</option><option value="ro">${esc(t("vol.modeRo"))}</option></select></label>`,
+      footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="m-ok">${t("vol.attach")}</button>`,
+    });
+    const vol = root.querySelector("#m-vol");
+    const mode = root.querySelector("#m-mode");
+    const applyDefault = () => {
+      const role = vol.selectedOptions[0]?.dataset.role;
+      if (role === "tools") mode.value = "ro";
+    };
+    vol.addEventListener("change", applyDefault);
+    applyDefault();
+    root.querySelector("#m-ok").addEventListener("click", () => {
+      value = { id: vol.value, path: root.querySelector("#m-path").value.trim(), mode: mode.value };
+      close();
+    });
+  });
+  if (!picked) return null;
+  const volume = volumes.find((item) => item.id === picked.id);
+  const others = (volume?.mounts ?? []).filter((mount) => mount.boxId !== box.boxId && mount.mode === "rw");
+  if (picked.mode === "rw" && others.length) {
+    const ok = await confirmDialog({
+      title: t("vol.sharedRwTitle"),
+      message: t("vol.sharedRwMessage", { name: volume?.name ?? picked.id }),
+      confirmText: t("vol.modeRw"),
+      danger: true,
+    });
+    if (!ok) return null;
+  }
+  try {
+    const result = await api(`/api/volumes/${enc(picked.id)}/attach`, {
+      method: "POST",
+      body: { box: box.id, path: picked.path, mode: picked.mode },
+      headers: { "if-match": String(box.revision) },
+    });
+    toast(
+      t("vol.attached"),
+      result.warning === "shared_rw" ? { message: t("vol.sharedRwMessage", { name: volume?.name ?? "" }) } : {},
+    );
+    return result.box;
+  } catch (e) {
+    toastError(t("vol.attachFailed"), e);
+    return null;
+  }
+}
+
+async function detachMount(box, el) {
+  const ok = await confirmDialog({
+    title: t("vol.detach"),
+    message: el.dataset.path,
+    confirmText: t("vol.detach"),
+    danger: true,
+  });
+  if (!ok) return null;
+  try {
+    const result = await api(`/api/volumes/${enc(el.dataset.volume)}/detach`, {
+      method: "POST",
+      body: { box: box.id, path: el.dataset.path },
+      headers: { "if-match": String(box.revision) },
+    });
+    toast(t("vol.detached"));
+    return result.box;
+  } catch (e) {
+    toastError(t("vol.detachFailed"), e);
+    return null;
+  }
 }
 
 const TAB_RENDER = {
@@ -160,11 +306,11 @@ const TAB_RENDER = {
           <dt>${t("bd.profile")}</dt><dd>${b.profile ? t(`profile.${b.profile}`) : t("bd.profileLegacy")}</dd>
           <dt>${t("bd.network")}</dt><dd class="mono">${esc(b.network)}</dd>
           <dt>${t("bd.env")}</dt><dd>${(b.env ?? []).length ? esc((b.env ?? []).map((item) => item.name).join(", ")) : t("bd.envNone")}</dd>
-          <dt>${t("bd.mounts")}</dt><dd>${(b.mounts ?? []).length ? (b.mounts ?? []).map((mount) => `<span class="mono">${esc(mount.path)}</span> <span class="subtle">${esc(mount.mode)}</span> <span class="mono">${esc(mount.volume)}</span>`).join("<br>") : "—"}</dd>
-          <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume)}</span></dd>
+          <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume || "—")}</span></dd>
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
           <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(b.containerName || `minibox-${b.name}`)} bash</code></dd>
-        </dl></div></div>`;
+        </dl></div></div>
+        ${mountsCard(b)}`;
     };
     draw();
     const timer = setInterval(

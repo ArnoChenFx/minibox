@@ -1,0 +1,338 @@
+import type { HostCtx } from "../host/registry";
+import { volumeName } from "../labels";
+import { badRequest, forbidden } from "../lib/errors";
+import { log } from "../lib/logger";
+import { msg } from "../lib/messages";
+import { RuntimeError, type VolumeInfo } from "../runtime";
+import type { BoxSpec } from "../specs/types";
+import { assertPoolsReachable, poolRootVolume } from "./health";
+import { nfsDriverOpts, pathDriverOpts, poolForRole } from "./pools";
+import type { StoragePool, VolumeOwnership, VolumeRecord, VolumeRole } from "./types";
+import { DEV_OWNER, LOCAL_POOL, ROLE_MOUNT } from "./types";
+
+export interface NewVolume {
+  name: string;
+  pool: string;
+  role: VolumeRole | null;
+  ownership: VolumeOwnership;
+  ownerBoxId: string | null;
+  createdBy: string | null;
+}
+
+function labelsFor(
+  host: HostCtx,
+  volume: Pick<VolumeRecord, "name" | "role" | "pool" | "ownership">,
+): Record<string, string> {
+  const keys = host.keys;
+  const labels: Record<string, string> = {
+    [keys.volume]: "true",
+    [keys.box]: "true",
+    [keys.name]: volume.name,
+    [keys.pool]: volume.pool,
+    [`${host.prefix}.ownership`]: volume.ownership,
+  };
+  if (volume.role) labels[keys.role] = volume.role;
+  return labels;
+}
+
+async function imageReady(host: HostCtx, known: Set<string>): Promise<boolean> {
+  if (known.has(host.baseTemplateTag)) return true;
+  try {
+    await host.runtime.inspectImage(host.baseTemplateTag);
+    known.add(host.baseTemplateTag);
+    return true;
+  } catch (e) {
+    if (e instanceof RuntimeError && e.kind === "not_found") return false;
+    throw e;
+  }
+}
+
+/**
+ * Hands a new local volume to uid 1000. NFS and path pools chown inside the directory helper instead:
+ * a squashed root cannot chown, and the mkdir helper already tried.
+ */
+export async function chownEngines(host: HostCtx, engines: string[], known: Set<string>): Promise<void> {
+  if (engines.length === 0) return;
+  if (!(await imageReady(host, known))) {
+    log.warn("volume.chown_skipped", { image: host.baseTemplateTag, count: engines.length });
+    return;
+  }
+  const mounts = engines.map((source, index) => ({ source, target: `/mnt/${index}` }));
+  const args = engines.map((_, index) => `/mnt/${index}`);
+  const result = await host.runtime.runHelper({
+    image: host.baseTemplateTag,
+    user: "0:0",
+    // $1 is the owner; shift drops it so "$@" is only the mount points.
+    cmd: ["sh", "-c", 'owner=$1; shift; chown -R "$owner" -- "$@"', "minibox", DEV_OWNER, ...args],
+    mounts,
+    timeoutSec: 120,
+    labels: { [host.keys.internal]: "true" },
+  });
+  if (result.exitCode !== 0) {
+    const detail = result.logs.trim().slice(0, 400) || String(result.exitCode);
+    throw badRequest(msg("volume_chown_failed", { detail }));
+  }
+}
+
+async function prepareSubdir(host: HostCtx, pool: StoragePool, subpath: string, known: Set<string>): Promise<void> {
+  if (!(await imageReady(host, known))) {
+    throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
+  }
+  const source = pool.backend === "nfs" ? poolRootVolume(host.prefix, pool.name) : (pool.root ?? "/");
+  const kind = pool.backend === "path" ? "bind" : "volume";
+  const script = [
+    'if ! mkdir -p -- "$1"; then exit 1; fi',
+    'if ! chown -R "$2" -- "$1"; then echo MINIBOX_CHOWN_SKIPPED; fi',
+  ].join("\n");
+  const result = await host.runtime.runHelper({
+    image: host.baseTemplateTag,
+    user: "0:0",
+    cmd: ["sh", "-c", script, "minibox", `/mnt/${subpath}`, DEV_OWNER],
+    mounts: [{ source, target: "/mnt", kind, mode: "rw" }],
+    timeoutSec: 120,
+    labels: { [host.keys.internal]: "true" },
+  });
+  if (result.exitCode !== 0) {
+    throw badRequest(
+      msg("volume_prepare_failed", { detail: result.logs.trim().slice(0, 400) || String(result.exitCode) }),
+    );
+  }
+  if (result.logs.includes("MINIBOX_CHOWN_SKIPPED")) {
+    log.warn("volume.chown_skipped", { pool: pool.name, subpath, reason: "chown failed, often root_squash" });
+  }
+}
+
+/** Creates the engine volume. Local volumes still need `chownEngines`; nfs and path are prepared here. */
+export async function createEngineVolume(
+  host: HostCtx,
+  pool: StoragePool,
+  volume: VolumeRecord,
+  known: Set<string>,
+): Promise<void> {
+  await assertPoolsReachable(host, [pool.name]);
+  const labels = labelsFor(host, volume);
+  if (pool.backend === "local") {
+    await host.runtime.createVolume(volume.engineName, labels);
+    return;
+  }
+  if (!volume.subpath) throw badRequest(msg("volume_prepare_failed", { detail: "missing subpath" }));
+  if (pool.backend === "nfs") {
+    const keys = host.keys;
+    await host.runtime.createVolume(
+      poolRootVolume(host.prefix, pool.name),
+      { [keys.volume]: "true", [keys.internal]: "true", [keys.pool]: pool.name },
+      { driver: "local", driverOpts: nfsDriverOpts(pool, null, true) },
+    );
+  }
+  await prepareSubdir(host, pool, volume.subpath, known);
+  const driverOpts =
+    pool.backend === "nfs" ? nfsDriverOpts(pool, volume.subpath, false) : pathDriverOpts(pool, volume.subpath);
+  await host.runtime.createVolume(volume.engineName, labels, { driver: "local", driverOpts });
+}
+
+export function blankRecord(host: HostCtx, input: NewVolume, id: string, now: string): VolumeRecord {
+  const file = host.volumes.readPools();
+  const pool = file.pools.find((item) => item.name === input.pool);
+  if (!pool) throw badRequest(msg("pool_not_found", { pool: input.pool }));
+  const remote = pool.backend !== "local";
+  return {
+    version: 1,
+    id,
+    name: input.name,
+    hostId: host.host.id,
+    pool: pool.name,
+    role: input.role,
+    ownership: input.ownership,
+    ownerBoxId: input.ownership === "owned" ? input.ownerBoxId : null,
+    sensitive: input.role === "home",
+    checkpoint: input.role !== "cache",
+    engineName: id,
+    subpath: remote ? id : null,
+    createdBy: input.createdBy,
+    createdAt: now,
+    updatedAt: now,
+    bytes: null,
+    bytesAt: null,
+  };
+}
+
+/**
+ * An existing `prefix-ws-*` volume becomes a Volume record. Docker cannot add a label after creation,
+ * so recognition is the record plus the name; volumes MiniBox creates carry `prefix.volume=true`.
+ */
+export function claimInfo(host: HostCtx, info: VolumeInfo, specs: BoxSpec[], now: string): VolumeRecord | null {
+  if (info.labels[host.keys.internal] === "true") return null;
+  const legacy = new RegExp(`^${host.prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-ws-.+$`).test(info.name);
+  const labeled = info.labels[host.keys.box] === "true" || info.labels[host.keys.volume] === "true";
+  if (!legacy && !labeled) return null;
+  if (host.volumes.findByEngine(host.host.id, info.name)) return null;
+
+  const users = specs.filter(
+    (spec) => spec.hostId === host.host.id && spec.mounts.some((mount) => mount.volume === info.name),
+  );
+  const roleLabel = info.labels[host.keys.role];
+  const role =
+    roleLabel === "workspace" || roleLabel === "home" || roleLabel === "tools" || roleLabel === "cache"
+      ? roleLabel
+      : legacy
+        ? "workspace"
+        : null;
+  const owned = users.length === 1 && role !== "tools";
+  const poolName = info.labels[host.keys.pool];
+  const pools = host.volumes.readPools();
+  const pool = poolName && pools.pools.some((item) => item.name === poolName) ? poolName : LOCAL_POOL;
+  const id = host.volumes.allocateId();
+  return {
+    version: 1,
+    id,
+    name: info.name,
+    hostId: host.host.id,
+    pool,
+    role,
+    ownership: owned ? "owned" : "independent",
+    ownerBoxId: owned ? (users[0]?.id ?? null) : null,
+    sensitive: role === "home",
+    checkpoint: role !== "cache",
+    engineName: info.name,
+    subpath: null,
+    createdBy: null,
+    createdAt: now,
+    updatedAt: now,
+    bytes: null,
+    bytesAt: null,
+  };
+}
+
+export async function claimEngineVolumes(host: HostCtx): Promise<number> {
+  const listed = await host.runtime.listVolumes();
+  const specs = host.specs.list();
+  const now = new Date().toISOString();
+  let claimed = 0;
+  await host.volumes.exclusive(async () => {
+    for (const info of listed) {
+      const record = claimInfo(host, info, specs, now);
+      if (!record) continue;
+      host.volumes.write(record);
+      claimed += 1;
+    }
+  });
+  return claimed;
+}
+
+/** True when a live box other than `boxId` mounts the engine volume, whatever its ownership. */
+export function mountedByAnotherBox(host: HostCtx, boxId: string | null, engineName: string): boolean {
+  return host.specs
+    .list()
+    .some(
+      (spec) => spec.hostId === host.host.id && spec.id !== boxId && spec.mounts.some((m) => m.volume === engineName),
+    );
+}
+
+/** True when the engine volume is owned by a live box other than `boxId`. An owner that no longer exists owns nothing. */
+export function ownedByAnotherBox(host: HostCtx, boxId: string | null, engineName: string): boolean {
+  const record = host.volumes.findByEngine(host.host.id, engineName);
+  if (!record || record.ownership !== "owned" || record.ownerBoxId === null || record.ownerBoxId === boxId)
+    return false;
+  return host.specs.read(record.ownerBoxId) !== null;
+}
+
+/**
+ * Uses a leftover `prefix-ws-<box>` volume as the workspace instead of creating a second one. MiniBox must have
+ * created it (the box label), and no other live box may mount or own it.
+ */
+export async function adoptLegacyWorkspace(
+  host: HostCtx,
+  boxName: string,
+  boxId: string,
+  createdBy: string | null,
+): Promise<VolumeRecord | null> {
+  const engineName = volumeName(host.prefix, boxName);
+  let info: VolumeInfo;
+  try {
+    info = await host.runtime.inspectVolume(engineName);
+  } catch (e) {
+    if (e instanceof RuntimeError && e.kind === "not_found") return null;
+    throw e;
+  }
+  if (info.labels[host.keys.box] !== "true") throw forbidden(msg("volume_unmanaged", { volume: engineName }));
+  if (mountedByAnotherBox(host, boxId, engineName) || ownedByAnotherBox(host, boxId, engineName)) {
+    throw forbidden(msg("volume_in_use", { volume: engineName }));
+  }
+  const now = new Date().toISOString();
+  const existing = host.volumes.findByEngine(host.host.id, engineName);
+  if (existing) {
+    if (existing.ownership === "owned" && existing.ownerBoxId === boxId) return existing;
+    const adopted: VolumeRecord = {
+      ...existing,
+      ownership: "owned",
+      ownerBoxId: boxId,
+      role: existing.role ?? "workspace",
+      updatedAt: now,
+    };
+    host.volumes.write(adopted);
+    return adopted;
+  }
+  const claimed = claimInfo(host, info, host.specs.list(), now);
+  if (!claimed) return null;
+  const record: VolumeRecord = {
+    ...claimed,
+    ownership: "owned",
+    ownerBoxId: boxId,
+    role: "workspace",
+    createdBy,
+    sensitive: false,
+    checkpoint: true,
+  };
+  host.volumes.write(record);
+  return record;
+}
+
+/** The independent tools volume for one pool on this host, if one already exists. */
+export function findSharedTools(host: HostCtx, poolName: string): VolumeRecord | null {
+  return (
+    host.volumes
+      .list()
+      .find(
+        (volume) =>
+          volume.role === "tools" &&
+          volume.pool === poolName &&
+          volume.hostId === host.host.id &&
+          volume.ownership === "independent",
+      ) ?? null
+  );
+}
+
+export function defaultRolePlans(
+  host: HostCtx,
+  box: { id: string; name: string; createdBy: string | null },
+): { role: VolumeRole; input: NewVolume; existing: VolumeRecord | null }[] {
+  const file = host.volumes.readPools();
+  const roles: VolumeRole[] = ["workspace", "home", "tools", "cache"];
+  return roles.map((role) => {
+    const pool = poolForRole(file, role);
+    const shared = role === "tools";
+    const existing = shared ? findSharedTools(host, pool.name) : null;
+    return {
+      role,
+      existing,
+      input: {
+        name: shared ? `${host.prefix}-tools` : `${box.name}-${role}`,
+        pool: pool.name,
+        role,
+        ownership: shared ? "independent" : "owned",
+        ownerBoxId: shared ? null : box.id,
+        createdBy: box.createdBy,
+      },
+    };
+  });
+}
+
+export function poolsUsed(host: HostCtx, mounts: { volume: string }[]): string[] {
+  const names = mounts.map((mount) => host.volumes.findByEngine(host.host.id, mount.volume)?.pool ?? LOCAL_POOL);
+  return [...new Set(names)];
+}
+
+export function mountFor(role: VolumeRole, engineName: string): { volume: string; path: string; mode: "rw" | "ro" } {
+  const point = ROLE_MOUNT[role];
+  return { volume: engineName, path: point.path, mode: point.mode };
+}

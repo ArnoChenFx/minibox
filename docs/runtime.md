@@ -2,7 +2,7 @@
 
 本文说明 MiniBox 与容器引擎之间的边界：`Runtime` 接口、错误契约、Host 模型、如何新增后端，以及测试中 fake 与真实引擎的用法。对应 [#32](https://github.com/ArnoChenFx/minibox/issues/32)，多宿主机的其余部分见 [#21](https://github.com/ArnoChenFx/minibox/issues/21)，整体设计见 [design.md](design.md)。
 
-这一阶段不改变行为：单机部署只注册一台隐式的 `local` 主机，API、响应与界面与之前相同。
+单机部署只注册一台隐式的 `local` 主机。卷与存储池（#24）在这个接口上增加了 `listVolumes`、带驱动选项的 `createVolume`、`runHelper` 和 `diskUsage`。业务代码仍然只通过 `Runtime` 与 `HostCtx` 访问引擎。
 
 ## 分层
 
@@ -10,7 +10,8 @@
 | --- | --- |
 | `src/runtime/index.ts` | `Runtime` 接口、数据类型与 `RuntimeError`，不依赖任何 SDK |
 | `src/docker/` | Docker 适配器（`runtime.ts`、`errors.ts`、`logs.ts`、`stats.ts`），唯一使用 dockerode 的代码 |
-| `src/services/` | 业务逻辑：boxes、images、snapshots、templates，只通过 `Runtime` 与 `HostCtx` 访问引擎 |
+| `src/services/` | 业务逻辑：boxes、volumes、images、snapshots、templates，只通过 `Runtime` 与 `HostCtx` 访问引擎 |
+| `src/volumes/` | 卷记录、存储池、探测与引擎卷认领。文件在 `DATA_DIR`，不在引擎里 |
 | `src/host/` | `registry.ts`（Host、HostCtx、HostRegistry）、`metrics.ts`（HostMonitor）、`procfs.ts` |
 | `src/routes/`、`src/ws/` | HTTP 与 WebSocket 入口 |
 | `src/lib/errors.ts` | 把 `RuntimeError` 映射为 HTTP 响应 |
@@ -27,7 +28,8 @@
 - exec：`startExec` 返回带 TTY 的会话，包含 `stream`、`resize()` 与 `inspect()`
 - 事件：`events`，按标签与类型过滤；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
-- 卷：`inspectVolume`、`createVolume`、`removeVolume`
+- 卷：`inspectVolume`、`listVolumes`、`createVolume`、`removeVolume`
+- 辅助容器与磁盘：`runHelper`、`diskUsage`
 - 网络：`ensureBridgeNetwork`、`reattachNetwork`
 
 实现需要满足以下语义，业务代码依赖这些约定：
@@ -35,7 +37,11 @@
 - `startContainer` 对运行中的容器成功，`stopContainer` 对已停止的容器成功。
 - 运行中的容器只有 `removeContainer(id, { force: true })` 才能删除。
 - 仍被容器挂载的卷不能删除，`removeVolume` 返回 `conflict`。
-- `createVolume` 对已存在的卷成功，并保留原有标签。
+- `createVolume` 对已存在的卷成功，并保留原有标签和驱动选项。第三个参数选择驱动，例如本地驱动配上 NFS 或 bind 选项。
+- `inspectVolume` 与 `listVolumes` 返回驱动名和驱动选项；引擎没有报告选项时 `options` 缺省。
+- 挂载的 `mode: "ro"` 会写成绑定串末尾的 `:ro`。`kind: "bind"` 表示宿主机路径，缺省表示命名卷。
+- `runHelper` 把短生命周期容器跑到结束并删除。它不接入 Box 网络。超时会杀掉容器并返回退出码 124。日志去掉流帧头。卷的 chown、NFS 子目录和池探测都用它，镜像是基础模板，用户是 `0:0`。
+- `diskUsage(path)` 返回该路径所在文件系统的总字节和空闲字节。Docker 适配器用 `statfs`。路径不存在时为 `not_found`。
 - 创建容器时，镜像标签与请求中的标签合并，请求中的标签优先。
 - 创建同名容器返回 `conflict`。调用方不先查询再创建，重名由引擎判定。
 - 提交容器时，容器标签与 `LABEL` 指令合并，指令优先。
@@ -71,7 +77,7 @@
 ## Host 模型
 
 - `Host` 为 `{ id, name, kind, endpoint, labels, status }`。`probeHost()` 调用 `ping` 后把 `status` 记为 `online` 或 `offline`，`/api/health` 使用它。
-- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, stopTimeoutSec, templatesDir, security, monitor, specs }`。services 的函数接收 `HostCtx`，而不是 host id。`stopTimeoutSec` 来自 `STOP_TIMEOUT_SEC`（默认 3，允许 0 到 300），停止与重启 Box 时传给 `stopContainer` 与 `restartContainer`。`specs` 是控制面共享的一份规格存储（`DATA_DIR/boxes`），不是每个引擎一份。
+- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, stopTimeoutSec, templatesDir, security, monitor, specs, volumes }`。services 的函数接收 `HostCtx`，而不是 host id。`stopTimeoutSec` 来自 `STOP_TIMEOUT_SEC`（默认 3，允许 0 到 300），停止与重启 Box 时传给 `stopContainer` 与 `restartContainer`。`specs` 与 `volumes` 都是控制面共享的一份存储（`DATA_DIR/boxes`、`DATA_DIR/volumes` 与 `DATA_DIR/pools.json`），不是每个引擎一份。每条卷记录自己带 `hostId`。
 - `ContainerInfo` 还包含 `imageId`、`pidsLimit`、`restart` 与 `mounts`。`updateContainer` 可以改 CPU、内存、swap、进程数上限和重启策略，且不会重建容器，也不会改标签。
 - `HostRegistry` 的 `add()` 对重复 id 抛错；`get(hostId = "local")` 对未知 id 抛错。
 
@@ -87,7 +93,7 @@
 
 ## 测试
 
-- `FakeRuntime`（`tests/support/fake-runtime.ts`）是内存实现，遵循服务层依赖的语义：名称与镜像冲突、`not_found`、被挂载的卷不能删除、标签合并。仍被容器使用的镜像，移除最后一个标签需要 `force`，强制移除后镜像成为悬空镜像。
+- `FakeRuntime`（`tests/support/fake-runtime.ts`）是内存实现，遵循服务层依赖的语义：名称与镜像冲突、`not_found`、被挂载的卷不能删除、标签合并。仍被容器使用的镜像，移除最后一个标签需要 `force`，强制移除后镜像成为悬空镜像。`createVolume` 保留已有卷的标签和驱动选项。`disk` 提供 `diskUsage` 的默认值。`helperHandler` 决定 `runHelper` 的退出码和日志；默认对 `du` 返回 `0`，对 `df` 和 `test -f` 返回可解析的一行。镜像不存在时 `runHelper` 为 `not_found`。只读挂载在 `inspect` 里仍是 `ro`。
   - 它记录每次调用（`calls`、`callsTo(op)`、`ops()`）。
   - `fail(op, error)` 让下一次该操作失败，`down = true` 模拟引擎不可达。
   - 网络有 ID，容器第一次启动时固定在当前网络的 ID 上。网络被删除并重建后，启动该容器返回 `not_found`，直到调用 `reattachNetwork`，与真实引擎一致。

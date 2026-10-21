@@ -13,6 +13,20 @@ export const BoxMountSchema = z.object({
   volume: z.string(),
   path: z.string(),
   mode: z.enum(["rw", "ro"]),
+  volumeId: z.string().nullable(),
+  volumeName: z.string().nullable(),
+  role: z.enum(["workspace", "home", "tools", "cache"]).nullable(),
+  pool: z.string().nullable(),
+});
+
+export const StorageStatusSchema = z.object({
+  status: z.enum(["ok", "unreachable", "unknown"]),
+  pools: z.array(
+    z.object({
+      name: z.string(),
+      status: z.enum(["reachable", "unreachable", "unknown"]),
+    }),
+  ),
 });
 
 export const BoxEnvSchema = z.object({
@@ -65,6 +79,8 @@ export const BoxSchema = z.object({
   mounts: z.array(BoxMountSchema),
   /** Plain values and secret references. A secret reference is stored and not injected. */
   env: z.array(BoxEnvSchema),
+  /** `unreachable` when a pool behind a mount could not be probed. The engine state stays in `state`. */
+  storage: StorageStatusSchema,
 });
 
 export const BoxWithStatsSchema = BoxSchema.extend({

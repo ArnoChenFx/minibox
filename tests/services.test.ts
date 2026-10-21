@@ -45,8 +45,8 @@ describe("createBox", () => {
       cpus: 1,
       memory: 256 * MB,
       template: host.baseTemplateTag,
-      volume: "mbtest-ws-alpha",
     });
+    expect(box.volume).toMatch(/^vol_/);
     const container = runtime.containers.get(box.id);
     expect(container?.spec).toMatchObject({
       name: "mbtest-alpha",
@@ -59,14 +59,31 @@ describe("createBox", () => {
       memoryBytes: 256 * MB,
       swapBytes: 256 * MB,
       init: true,
-      mounts: [{ source: "mbtest-ws-alpha", target: "/workspace" }],
     });
-    expect(runtime.volumes.get("mbtest-ws-alpha")?.labels).toEqual({ [keys.box]: "true", [keys.name]: "alpha" });
+    expect(container?.spec.mounts?.map((mount) => ({ target: mount.target, mode: mount.mode }))).toEqual([
+      { target: "/workspace", mode: "rw" },
+      { target: "/home/dev", mode: "rw" },
+      { target: "/opt/minibox/tools", mode: "ro" },
+      { target: "/home/dev/.cache", mode: "rw" },
+    ]);
+    expect(runtime.volumes.get(box.volume)?.labels).toMatchObject({
+      [keys.box]: "true",
+      [keys.volume]: "true",
+      [keys.name]: "alpha-workspace",
+      [keys.role]: "workspace",
+      [keys.pool]: "local",
+    });
     expect(runtime.ops()).toEqual([
       "inspectImage",
       "ensureBridgeNetwork",
       "inspectVolume",
+      "info",
+      "diskUsage",
       "createVolume",
+      "createVolume",
+      "createVolume",
+      "createVolume",
+      "runHelper",
       "createContainer",
       "startContainer",
       "inspectContainer",
@@ -78,8 +95,9 @@ describe("createBox", () => {
       name: "mbtest-ws-alpha",
       labels: { [keys.box]: "true", [keys.name]: "alpha" },
     });
-    await newBox("alpha");
-    expect(runtime.callsTo("createVolume")).toHaveLength(0);
+    const box = await newBox("alpha");
+    expect(box.volume).toBe("mbtest-ws-alpha");
+    expect(runtime.callsTo("createVolume").map((call) => call.args[0])).not.toContain("mbtest-ws-alpha");
   });
 
   test("a duplicate name is a conflict and creates nothing", async () => {
@@ -262,13 +280,15 @@ describe("deleteBox", () => {
     const ops = runtime.ops();
     expect(ops.indexOf("removeContainer")).toBeLessThan(ops.indexOf("removeVolume"));
     expect(runtime.containers.size).toBe(0);
-    expect(runtime.volumes.size).toBe(0);
+    const left = [...runtime.volumes.values()].filter((volume) => volume.labels[keys.role] === "tools");
+    expect(left).toHaveLength(1);
+    expect(runtime.volumes.has(box.volume)).toBe(false);
   });
 
   test("keeps the workspace volume unless asked to delete it", async () => {
     const box = await newBox("alpha");
     expect(await boxes.deleteBox(host, box.id, false)).toEqual({ name: "alpha", volumeDeleted: false });
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
   test("a failed volume removal is reported without failing the request", async () => {
@@ -281,7 +301,7 @@ describe("deleteBox", () => {
       volumeError: "device busy",
     });
     expect(runtime.containers.size).toBe(0);
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
   test("a volume still mounted elsewhere is kept and the engine's reason is returned", async () => {
@@ -289,20 +309,20 @@ describe("deleteBox", () => {
     runtime.seedContainer({
       image: host.baseTemplateTag,
       name: "other",
-      mounts: [{ source: "mbtest-ws-alpha", target: "/data" }],
+      mounts: [{ source: box.volume, target: "/data" }],
     });
 
     expect(await boxes.deleteBox(host, box.id, true)).toEqual({
       name: "alpha",
       volumeDeleted: false,
-      volumeError: "remove mbtest-ws-alpha: volume is in use",
+      volumeError: `remove ${box.volume}: volume is in use`,
     });
-    expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
   test("a volume that is already gone counts as deleted", async () => {
     const box = await newBox("alpha");
-    runtime.volumes.delete("mbtest-ws-alpha");
+    runtime.volumes.delete(box.volume);
 
     expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
   });

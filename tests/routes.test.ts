@@ -291,7 +291,8 @@ describe("box routes", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ name: "alpha", volumeDeleted: true });
     expect(runtime.containers.size).toBe(0);
-    expect(runtime.volumes.size).toBe(0);
+    expect([...runtime.volumes.values()].filter((volume) => volume.labels[keys.role] !== "tools")).toEqual([]);
+    expect([...runtime.volumes.values()].filter((volume) => volume.labels[keys.role] === "tools")).toHaveLength(1);
   });
 
   test("resources can be changed on a box", async () => {

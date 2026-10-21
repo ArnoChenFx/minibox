@@ -7,11 +7,23 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { TaskManager } from "../tasks/manager";
 import type { TaskError, TaskHandle } from "../tasks/types";
-import type { Operation, OperationContext, Principal } from "./types";
+import type { Operation, OperationContext, Principal, VolumeResource } from "./types";
 
 export interface AuthorizeRequest {
   readonly principal: Principal;
   readonly operation: Operation;
+  /** Set when an operation asks about one scope, such as `volume:attach`. Absent on the operation-level check. */
+  readonly scope?: string;
+  /** The volume the scope applies to, when the check is per volume. */
+  readonly resource?: VolumeResource;
+}
+
+/** Thrown by a handler when a later authorize() answer is false. The executor audits it as denied. */
+export class AuthorizationDenied extends Error {
+  constructor(readonly response: AppError) {
+    super(response.message);
+    this.name = "AuthorizationDenied";
+  }
 }
 
 /** One execution of an operation, as the audit hook receives it. Every execution yields exactly one. */
@@ -134,7 +146,17 @@ export class Executor {
     if (!operation) throw new Error(`unknown operation: ${name}`);
     const started = { ts: Date.now(), at: performance.now() };
     const id = ulid(started.ts);
-    const bound: OperationContext = { ...ctx, tasks: ctx.tasks ?? this.deps.tasks };
+    const bound: OperationContext = {
+      ...ctx,
+      tasks: ctx.tasks ?? this.deps.tasks,
+      authorize: (request) =>
+        this.deps.hooks.authorize({
+          principal: ctx.principal,
+          operation,
+          scope: request.scope,
+          resource: request.resource,
+        }),
+    };
     let denied = false;
     let input: Record<string, unknown> | undefined;
     let resolved: unknown;
@@ -151,9 +173,11 @@ export class Executor {
       if (operation.async) return await this.startAsync(operation, bound, parsed, resolved, started, id);
       result = await this.record(operation, parsed, resolved, () => operation.run(bound, parsed, resolved));
     } catch (e) {
-      const error = toAppError(e);
-      const status: EventStatus = denied ? "denied" : "error";
+      const refusal = e instanceof AuthorizationDenied;
+      const error = refusal ? e.response : toAppError(e);
+      const status: EventStatus = denied || refusal ? "denied" : "error";
       this.emit(eventOf(id, operation, bound, started, { status, input, resolved, error }));
+      if (refusal) throw e.response;
       throw e;
     }
     this.emit(eventOf(id, operation, bound, started, { status: "ok", input, resolved, result }));
@@ -232,7 +256,7 @@ export class Executor {
         }
         return;
       }
-      const error = toAppError(e);
+      const error = e instanceof AuthorizationDenied ? e.response : toAppError(e);
       if (
         tasks.finish(handle.id, {
           status: "failed",
