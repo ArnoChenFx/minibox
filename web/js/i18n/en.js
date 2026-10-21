@@ -1057,7 +1057,7 @@ export default {
   "bd.sshIntro": "Connect from your machine with an OpenSSH client. A stopped box starts when you connect.",
   "bd.sshSetup": "Set up once",
   "bd.sshSetupHelp":
-    "Run from a MiniBox checkout. It installs the minibox CLI into ~/.local/bin (keep that on your PATH) and writes ~/.ssh/config with this server's host key pinned. Use an access key, or a token with the box:ssh scope.",
+    "Run from a MiniBox checkout. It installs the minibox CLI into ~/.local/bin (keep that on your PATH) and writes ~/.ssh/config with this server's host key pinned. Export the two variables in every shell that runs ssh, since its ProxyCommand reads them. Use an access key, or a token with the box:ssh scope.",
   "bd.sshConnect": "Connect",
   "bd.sshConnectHelp": "scp and sftp work the same way. Forwarding a port with -L also needs the port:expose scope.",
   "bd.sshCopy": "Copy",

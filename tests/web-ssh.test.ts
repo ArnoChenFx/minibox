@@ -11,11 +11,13 @@ describe("SSH dialog commands", () => {
     expect(connectCommands("sshbox")).toBe("ssh sshbox.minibox\nscp ./file sshbox.minibox:/workspace/");
   });
 
-  test("the setup command points the CLI at the server the page was served from", () => {
+  test("the setup command exports the server and token the ProxyCommand reads, then writes the config", () => {
     expect(setupCommands("https://minibox.example")).toBe(
       [
         "bun run build:cli && mkdir -p ~/.local/bin && cp dist/minibox ~/.local/bin/minibox",
-        "MINIBOX_URL=https://minibox.example MINIBOX_ACCESS_KEY=<token> minibox ssh-config --append",
+        "export MINIBOX_URL=https://minibox.example",
+        "export MINIBOX_ACCESS_KEY=<token>",
+        "minibox ssh-config --append",
       ].join("\n"),
     );
   });

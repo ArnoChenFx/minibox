@@ -1000,7 +1000,7 @@ export default {
   "bd.sshIntro": "用本机的 OpenSSH 客户端连接。连接时会启动已停止的 Box。",
   "bd.sshSetup": "首次设置",
   "bd.sshSetupHelp":
-    "在 MiniBox 源码目录中运行。它把 minibox CLI 安装到 ~/.local/bin（需要在 PATH 中），并写入 ~/.ssh/config，固定本服务器的主机密钥。请使用访问密钥，或带 box:ssh 范围的令牌。",
+    "在 MiniBox 源码目录中运行。它把 minibox CLI 安装到 ~/.local/bin（需要在 PATH 中），并写入 ~/.ssh/config，固定本服务器的主机密钥。运行 ssh 的每个终端都要导出这两个变量，因为 ProxyCommand 会读取它们。请使用访问密钥，或带 box:ssh 范围的令牌。",
   "bd.sshConnect": "连接",
   "bd.sshConnectHelp": "scp 和 sftp 的用法相同。用 -L 转发端口还需要 port:expose 范围。",
   "bd.sshCopy": "复制",
