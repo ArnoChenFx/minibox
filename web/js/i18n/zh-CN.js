@@ -149,6 +149,8 @@ export default {
   "err.storage_unreachable": "存储池 {pool} 不可达：{detail}",
   "err.volume_not_found": "找不到卷 {volume}。",
   "err.volume_exists": "名为「{name}」的卷已存在。",
+  "err.volume_engine_exists":
+    "引擎中已有名为 {volume} 的卷，且不是 MiniBox 创建的，MiniBox 不会使用它。请删除该卷后重试。",
   "err.volume_mounted": "卷 {name} 正被 {box} 挂载。",
   "err.volume_delete_failed": "卷 {name} 无法删除：{detail}",
   "err.volume_attach_forbidden": "此凭据不能挂载卷 {volume}。",

@@ -117,6 +117,26 @@ export async function inspectVolumeOrNull(host: HostCtx, name: string): Promise<
  * Creates the engine volume for a record. Local volumes still need `chownEngines`; nfs and path are prepared here.
  * Every step that creates something registers its undo in `changes`, so a later failure removes it again.
  */
+/**
+ * Records the removal of each NFS pool root that does not exist yet. The reachability probe creates a missing root, so
+ * this runs before the probe, and a failed create then removes the root it caused.
+ */
+export async function trackPoolRoots(
+  host: HostCtx,
+  poolNames: Iterable<string>,
+  changes: VolumeChanges,
+): Promise<void> {
+  const file = host.volumes.readPools();
+  for (const name of new Set(poolNames)) {
+    const pool = file.pools.find((item) => item.name === name);
+    if (pool?.backend !== "nfs") continue;
+    const root = poolRootVolume(host.prefix, pool.name);
+    if ((await inspectVolumeOrNull(host, root)) === null) {
+      changes.add(`pool root ${root}`, () => removeEngineVolume(host, root));
+    }
+  }
+}
+
 export async function createEngineVolume(
   host: HostCtx,
   pool: StoragePool,
@@ -124,6 +144,7 @@ export async function createEngineVolume(
   known: Set<string>,
   changes: VolumeChanges,
 ): Promise<void> {
+  await trackPoolRoots(host, [pool.name], changes);
   await assertPoolsReachable(host, [pool.name]);
   const labels = labelsFor(host, volume);
   if (pool.backend === "local") {
@@ -134,14 +155,11 @@ export async function createEngineVolume(
   if (!subpath) throw badRequest(msg("volume_prepare_failed", { detail: "missing subpath" }));
   if (pool.backend === "nfs") {
     const keys = host.keys;
-    const root = poolRootVolume(host.prefix, pool.name);
-    const rootExisted = (await inspectVolumeOrNull(host, root)) !== null;
     await host.runtime.createVolume(
-      root,
+      poolRootVolume(host.prefix, pool.name),
       { [keys.volume]: "true", [keys.internal]: "true", [keys.pool]: pool.name },
       { driver: "local", driverOpts: nfsDriverOpts(pool, null, true) },
     );
-    if (!rootExisted) changes.add(`pool root ${root}`, () => removeEngineVolume(host, root));
   }
   await prepareSubdir(host, pool, subpath, known);
   changes.add(`directory ${subpath}`, () => removeEmptyDirectory(host, pool, subpath));
@@ -292,13 +310,15 @@ export function ownedByAnotherBox(host: HostCtx, boxId: string | null, engineNam
 
 /**
  * Uses a leftover `prefix-ws-<box>` volume as the workspace instead of creating a second one. MiniBox must have
- * created it (the box label), and no other live box may mount or own it.
+ * created it (the box label), and no other live box may mount or own it. `changes` puts the previous record back,
+ * or drops the new one, when the create that adopted the volume fails.
  */
 export async function adoptLegacyWorkspace(
   host: HostCtx,
   boxName: string,
   boxId: string,
   createdBy: string | null,
+  changes: VolumeChanges,
 ): Promise<VolumeRecord | null> {
   const engineName = volumeName(host.prefix, boxName);
   let info: VolumeInfo;
@@ -324,6 +344,7 @@ export async function adoptLegacyWorkspace(
       updatedAt: now,
     };
     host.volumes.write(adopted);
+    changes.add(`restore record ${existing.name}`, async () => host.volumes.write(existing));
     return adopted;
   }
   const claimed = claimInfo(host, info, host.specs.list(), now);
@@ -338,6 +359,7 @@ export async function adoptLegacyWorkspace(
     checkpoint: true,
   };
   host.volumes.write(record);
+  changes.add(`unrecord ${record.name}`, async () => host.volumes.remove(record.id));
   return record;
 }
 
@@ -370,7 +392,7 @@ export function defaultRolePlans(
       role,
       existing,
       input: {
-        name: shared ? `${host.prefix}-tools` : `${box.name}-${role}`,
+        name: shared ? `${host.prefix}-tools-${host.host.id}` : `${box.name}-${role}`,
         pool: pool.name,
         role,
         ownership: shared ? "independent" : "owned",

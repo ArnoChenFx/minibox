@@ -160,6 +160,8 @@ export default {
   "err.storage_unreachable": "Storage pool {pool} is unreachable: {detail}",
   "err.volume_not_found": "Volume {volume} was not found.",
   "err.volume_exists": "A volume named “{name}” already exists.",
+  "err.volume_engine_exists":
+    "The engine already has a volume named {volume} that MiniBox did not create, so MiniBox will not use it. Remove that volume and try again.",
   "err.volume_mounted": "Volume {name} is mounted by {box}.",
   "err.volume_delete_failed": "Volume {name} could not be deleted: {detail}",
   "err.volume_attach_forbidden": "This credential may not attach volume {volume}.",

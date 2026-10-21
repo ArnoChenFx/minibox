@@ -18,7 +18,8 @@ import { detectDrift } from "../specs/drift";
 import { pushHistory } from "../specs/history";
 import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState, MountMode } from "../specs/types";
-import { poolsUsed } from "../volumes/engine";
+import { VolumeChanges } from "../volumes/changes";
+import { poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { validMountPath } from "../volumes/mounts";
 import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
@@ -339,7 +340,56 @@ async function setDesired(host: HostCtx, boxId: string, desired: DesiredState): 
   });
 }
 
+/** What one create attempt has made so far, so a failed attempt can take it back. */
+interface CreateAttempt {
+  boxId: string | null;
+  containerId: string | null;
+  changes: VolumeChanges;
+}
+
 export async function createBox(host: HostCtx, input: CreateBoxInput & { templateLabel?: string }): Promise<Box> {
+  const attempt: CreateAttempt = { boxId: null, containerId: null, changes: new VolumeChanges() };
+  let containerId: string;
+  try {
+    containerId = await buildBox(host, input, attempt);
+  } catch (e) {
+    await undoCreate(host, attempt);
+    throw e;
+  }
+  return getBox(host, containerId);
+}
+
+/**
+ * Takes back a failed create in dependency order: the container, then the spec, then the volumes it made. If the engine
+ * keeps the container, its spec and volumes stay too, so nothing still in use is left without a record.
+ */
+async function undoCreate(host: HostCtx, attempt: CreateAttempt): Promise<void> {
+  const containerId = attempt.containerId;
+  if (containerId) {
+    try {
+      await host.runtime.removeContainer(containerId, { force: true });
+    } catch (e) {
+      if (!isRuntimeError(e, "not_found")) {
+        log.warn("box.create_rollback_failed", { container: containerId, error: String(e) });
+        return;
+      }
+    }
+  }
+  if (attempt.boxId) {
+    try {
+      host.specs.remove(attempt.boxId);
+    } catch (e) {
+      log.warn("box.create_rollback_failed", { id: attempt.boxId, error: String(e) });
+    }
+  }
+  await attempt.changes.rollback();
+}
+
+async function buildBox(
+  host: HostCtx,
+  input: CreateBoxInput & { templateLabel?: string },
+  attempt: CreateAttempt,
+): Promise<string> {
   const { runtime, keys, prefix, security } = host;
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
 
@@ -349,13 +399,15 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
   await ensureBoxNetwork(host);
 
   let id = newBoxId();
-  for (let attempt = 0; attempt < 5 && host.specs.read(id); attempt++) id = newBoxId();
+  for (let tries = 0; tries < 5 && host.specs.read(id); tries++) id = newBoxId();
   if (host.specs.read(id)) throw conflict(msg("box_claim_failed", { detail: "could not allocate a box id" }));
+  attempt.boxId = id;
   const createdBy = input.createdBy ?? "owner";
   const known = new Set<string>([image]);
   const mounts = input.mounts
     ? await resolveCreateMounts(host, input.mounts)
-    : await provisionDefaultMounts(host, { id, name: input.name, createdBy }, known);
+    : await provisionDefaultMounts(host, { id, name: input.name, createdBy }, known, attempt.changes);
+  await trackPoolRoots(host, poolsUsed(host, mounts), attempt.changes);
   await assertPoolsReachable(host, poolsUsed(host, mounts));
 
   const containerId = await host.specs.exclusive(async () => {
@@ -402,6 +454,7 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
         if (isRuntimeError(e, "conflict")) throw conflict(msg("box_exists", { name: input.name }));
         throw e;
       });
+    attempt.containerId = created.id;
     const spec: BoxSpec = {
       version: 1,
       id,
@@ -434,7 +487,7 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
 
   await runtime.startContainer(containerId);
   log.info("box.created", { name: input.name, image, profile, cpus: input.cpus, memoryMb: input.memoryMb });
-  return getBox(host, containerId);
+  return containerId;
 }
 
 async function ensureRunningStorage(host: HostCtx, box: Box): Promise<void> {

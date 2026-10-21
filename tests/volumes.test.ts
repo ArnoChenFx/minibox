@@ -1,14 +1,15 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { statSync } from "node:fs";
 
 import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { ExecutorHooks } from "../src/operations/executor";
 import type { OperationContext } from "../src/operations/types";
-import type { HelperSpec } from "../src/runtime";
+import { type HelperSpec, RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
 import { attachVolume, createVolume, getPools, listVolumes, savePools } from "../src/services/volumes";
+import { claimEngineVolumes } from "../src/volumes/engine";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 
@@ -228,5 +229,150 @@ describe("volumes and storage pools", () => {
     const report = await reconcileHost(host);
     expect(report.started).toEqual([]);
     expect(runtime.containers.get(box.id)?.running).toBe(false);
+  });
+});
+
+const managed = (name: string) => ({ [host.keys.box]: "true", [host.keys.name]: name });
+
+describe("a failed create gives back what it made", () => {
+  test("a failed container create removes every volume, record and the spec", async () => {
+    runtime.fail("createContainer", new RuntimeError("engine", "boom", "boom"));
+
+    expect(await rejectionOf(newBox("alpha"))).toMatchObject({ kind: "engine" });
+    expect(runtime.volumes.size).toBe(0);
+    expect(host.volumes.list()).toEqual([]);
+    expect(host.specs.findByName("alpha")).toBeNull();
+    expect(runtime.containers.size).toBe(0);
+  });
+
+  test("a failed start also removes the container it created", async () => {
+    runtime.fail("startContainer", new RuntimeError("engine", "boom", "boom"));
+
+    expect(await rejectionOf(newBox("alpha"))).toMatchObject({ kind: "engine" });
+    expect(runtime.containers.size).toBe(0);
+    expect(runtime.volumes.size).toBe(0);
+    expect(host.volumes.list()).toEqual([]);
+    expect(host.specs.findByName("alpha")).toBeNull();
+  });
+
+  const nasPool = [
+    { name: "local", backend: "local" as const },
+    {
+      name: "nas",
+      backend: "nfs" as const,
+      server: "192.168.1.10",
+      export: "/volume1/minibox",
+      options: ["nfsvers=4.1", "hard"],
+      default: true,
+    },
+  ];
+
+  test("an NFS pool's root and the subdirectories this create made are removed, and the directories by rmdir", async () => {
+    await savePools(host, nasPool, undefined);
+    runtime.volumes.delete("mbtest-pool-nas");
+    runtime.fail("createContainer", new RuntimeError("engine", "boom", "boom"));
+
+    await rejectionOf(newBox("alpha"));
+    expect(runtime.volumes.size).toBe(0);
+    expect(host.volumes.list()).toEqual([]);
+    const rmdirs = runtime
+      .callsTo("runHelper")
+      .map((call) => (call.args[0] as HelperSpec).cmd.join(" "))
+      .filter((cmd) => cmd.includes("rmdir"));
+    expect(rmdirs).toHaveLength(3);
+  });
+
+  test("an NFS pool root that was already there is kept when a create on that pool fails", async () => {
+    await savePools(host, nasPool, undefined);
+    expect(runtime.volumes.has("mbtest-pool-nas")).toBe(true);
+    runtime.fail("createContainer", new RuntimeError("engine", "boom", "boom"));
+
+    await rejectionOf(newBox("alpha"));
+    expect([...runtime.volumes.keys()]).toEqual(["mbtest-pool-nas"]);
+    expect(host.volumes.list()).toEqual([]);
+  });
+
+  test("a container the engine will not remove keeps its spec and volumes, so nothing in use loses its record", async () => {
+    runtime.fail("startContainer", new RuntimeError("engine", "boom", "boom"));
+    runtime.fail("removeContainer", new RuntimeError("engine", "busy", "busy"));
+
+    await rejectionOf(newBox("alpha"));
+    expect(runtime.containers.size).toBe(1);
+    expect(host.specs.findByName("alpha")).not.toBeNull();
+    expect(runtime.volumes.size).toBe(4);
+    expect(host.volumes.list()).toHaveLength(4);
+  });
+
+  test("a legacy workspace the box adopted gets its earlier record back", async () => {
+    runtime.volumes.set("mbtest-ws-kept", { name: "mbtest-ws-kept", labels: managed("kept") });
+    await claimEngineVolumes(host);
+    const before = host.volumes.resolve("mbtest-ws-kept", host.host.id);
+    runtime.fail("createContainer", new RuntimeError("engine", "boom", "boom"));
+
+    await rejectionOf(newBox("kept"));
+    expect(host.volumes.resolve("mbtest-ws-kept", host.host.id)).toEqual(before);
+    expect(runtime.volumes.has("mbtest-ws-kept")).toBe(true);
+  });
+
+  test("a legacy workspace with no record loses the one the attempt added, and the engine volume stays", async () => {
+    runtime.volumes.set("mbtest-ws-plain", { name: "mbtest-ws-plain", labels: managed("plain") });
+    runtime.fail("createContainer", new RuntimeError("engine", "boom", "boom"));
+
+    await rejectionOf(newBox("plain"));
+    expect(host.volumes.list().some((volume) => volume.engineName === "mbtest-ws-plain")).toBe(false);
+    expect(runtime.volumes.has("mbtest-ws-plain")).toBe(true);
+  });
+
+  test("a successful create adopts the legacy workspace as an owned record", async () => {
+    runtime.volumes.set("mbtest-ws-plain", { name: "mbtest-ws-plain", labels: managed("plain") });
+
+    const box = await newBox("plain");
+    expect(box.mounts).toContainEqual(expect.objectContaining({ volume: "mbtest-ws-plain", role: "workspace" }));
+    expect(host.volumes.findByEngine(host.host.id, "mbtest-ws-plain")).toMatchObject({
+      ownership: "owned",
+      ownerBoxId: box.boxId,
+    });
+  });
+
+  test("an engine volume that already has the id the attempt picked is refused and left alone", async () => {
+    const id = "vol_collide01";
+    runtime.volumes.set(id, { name: id, labels: { keep: "me" } });
+    const allocate = spyOn(host.volumes, "allocateId").mockReturnValue(id);
+    const creates = runtime.callsTo("createContainer").length;
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toMatchObject({ status: 409, key: "volume_engine_exists", params: { volume: id } });
+    expect(runtime.volumes.get(id)?.labels).toEqual({ keep: "me" });
+    expect(runtime.callsTo("removeVolume")).toHaveLength(0);
+    expect(runtime.callsTo("createContainer")).toHaveLength(creates);
+    expect(host.volumes.list()).toEqual([]);
+    allocate.mockRestore();
+  });
+});
+
+describe("the shared tools volume", () => {
+  test("is named for its host, so a second host creates its own", async () => {
+    await newBox("alpha");
+    const second: HostCtx = { ...host, host: { ...host.host, id: "nas-1" } };
+    await boxes.createBox(second, { name: "beta", cpus: 1, memoryMb: 256 });
+
+    const tools = host.volumes
+      .list()
+      .filter((volume) => volume.role === "tools")
+      .map((volume) => [volume.hostId, volume.name]);
+    expect(tools).toHaveLength(2);
+    expect(tools).toContainEqual(["local", "mbtest-tools-local"]);
+    expect(tools).toContainEqual(["nas-1", "mbtest-tools-nas-1"]);
+  });
+
+  test("an existing tools volume is reused whatever its name", async () => {
+    await createVolume(host, { name: "mbtest-tools", role: "tools", createdBy: "owner" });
+    const box = await newBox("alpha");
+
+    expect(box.mounts.find((mount) => mount.role === "tools")).toMatchObject({
+      volumeName: "mbtest-tools",
+      mode: "ro",
+    });
+    expect(host.volumes.list().filter((volume) => volume.role === "tools")).toHaveLength(1);
   });
 });

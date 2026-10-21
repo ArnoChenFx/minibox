@@ -11,11 +11,17 @@ import {
   chownEngines,
   createEngineVolume,
   defaultRolePlans,
+  inspectVolumeOrNull,
   mountFor,
   type NewVolume,
 } from "./engine";
 import { poolForRole } from "./pools";
 import type { VolumeRecord, VolumeRole } from "./types";
+
+/** Display names are unique per host: each host has its own engine and its own tools volume. */
+function nameTaken(host: HostCtx, name: string): boolean {
+  return host.volumes.list().some((volume) => volume.hostId === host.host.id && volume.name === name);
+}
 
 async function materialize(
   host: HostCtx,
@@ -26,19 +32,23 @@ async function materialize(
   const file = host.volumes.readPools();
   const pool = file.pools.find((item) => item.name === input.pool);
   if (!pool) throw notFound(msg("pool_not_found", { pool: input.pool }));
-  if (host.volumes.list().some((volume) => volume.name === input.name)) {
-    throw conflict(msg("volume_exists", { name: input.name }));
-  }
+  if (nameTaken(host, input.name)) throw conflict(msg("volume_exists", { name: input.name }));
   const now = new Date().toISOString();
   const record = blankRecord(host, input, host.volumes.allocateId(), now);
+  if ((await inspectVolumeOrNull(host, record.engineName)) !== null) {
+    throw conflict(msg("volume_engine_exists", { volume: record.engineName }));
+  }
   await createEngineVolume(host, pool, record, known, changes);
-  host.volumes.write(record);
   changes.add(`volume ${record.engineName}`, () => undoCreated(host, record));
+  host.volumes.write(record);
   log.info("volume.created", { id: record.id, name: record.name, pool: record.pool, role: record.role });
   return { record, chown: pool.backend === "local" };
 }
 
-/** Removes what `materialize` created. The record stays when the engine refuses, so MiniBox still knows the volume. */
+/**
+ * Removes what `materialize` created. Only called for an engine volume this attempt created, never for one it found.
+ * The record stays when the engine refuses, so MiniBox still knows the volume.
+ */
 async function undoCreated(host: HostCtx, record: VolumeRecord): Promise<void> {
   const outcome = await removeEngine(host, record.engineName);
   if (outcome.status === "failed") throw new Error(outcome.detail);
@@ -76,7 +86,7 @@ async function provisionDefaultMountsLocked(
   const chown: string[] = [];
   for (const plan of plans) {
     if (plan.role === "workspace") {
-      const legacy = await adoptLegacyWorkspace(host, box.name, box.id, box.createdBy);
+      const legacy = await adoptLegacyWorkspace(host, box.name, box.id, box.createdBy, changes);
       if (legacy) {
         mounts.push(mountFor("workspace", legacy.engineName));
         continue;
@@ -87,7 +97,7 @@ async function provisionDefaultMountsLocked(
       continue;
     }
     let name = plan.input.name;
-    if (host.volumes.list().some((volume) => volume.name === name)) name = `${name}-${plan.input.pool}`;
+    if (nameTaken(host, name)) name = `${name}-${plan.input.pool}`;
     const created = await materialize(host, { ...plan.input, name }, known, changes);
     if (created.chown) chown.push(created.record.engineName);
     mounts.push(mountFor(plan.role, created.record.engineName));

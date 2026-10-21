@@ -72,6 +72,10 @@ async function volumeExists(name: string): Promise<boolean> {
     );
 }
 
+async function boxIds(): Promise<string[]> {
+  return (await runtime.listContainers({ labels: owned })).map((c) => c.id).toSorted();
+}
+
 async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T | "timeout"> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<"timeout">((resolve) => {
@@ -579,6 +583,40 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
           .getVolume(pool)
           .remove()
           .catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a create the engine refuses leaves no volume, record, container or spec behind",
+    async () => {
+      const restore = silenceLogs();
+      const broken = { ...host, security: { ...host.security, runtime: `${prefix}-missing-runtime` } };
+      const volumeNames = async () =>
+        ((await docker.listVolumes({ filters: { label: [`${prefix}=true`] } })).Volumes ?? [])
+          .map((volume) => volume.Name)
+          .toSorted();
+      const recordIds = () =>
+        host.volumes
+          .list()
+          .map((volume) => volume.id)
+          .toSorted();
+      try {
+        const volumesBefore = await volumeNames();
+        const recordsBefore = recordIds();
+        const boxesBefore = await boxIds();
+
+        const error = await rejectionOf(
+          boxes.createBox(broken, { name: "rollback", image: IMAGE, cpus: 0.5, memoryMb: 64 }),
+        );
+        expect(error).toBeInstanceOf(Error);
+        expect(await volumeNames()).toEqual(volumesBefore);
+        expect(recordIds()).toEqual(recordsBefore);
+        expect(await boxIds()).toEqual(boxesBefore);
+        expect(host.specs.findByName("rollback")).toBeNull();
+      } finally {
         restore();
       }
     },
