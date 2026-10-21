@@ -20,9 +20,14 @@ interface Entry {
 export class FrameBuffer {
   private readonly entries: Entry[] = [];
   private readonly keyed = new Map<string, Entry>();
+  private readonly frameLimit: number;
+  private byteLimit: number;
   private held = 0;
 
-  constructor(private readonly limits: FrameLimits) {}
+  constructor(limits: FrameLimits) {
+    this.frameLimit = limits.frames;
+    this.byteLimit = limits.bytes;
+  }
 
   get length(): number {
     return this.entries.length;
@@ -34,9 +39,17 @@ export class FrameBuffer {
     const previous = key === undefined ? undefined : this.keyed.get(key);
     const frames = previous ? this.entries.length : this.entries.length + 1;
     const total = this.held - (previous?.bytes ?? 0) + bytes;
-    if (frames > this.limits.frames || total > this.limits.bytes) return false;
+    if (frames > this.frameLimit || total > this.byteLimit) return false;
     this.store({ text, bytes, key }, previous);
     return true;
+  }
+
+  /**
+   * Raises the byte limit to `bytes` if that is higher, and never lowers it. A frame that must be sent whole, such as a
+   * sync, can be larger than the limit; raising the limit past it lets the frames queued behind it fit.
+   */
+  raiseByteLimit(bytes: number): void {
+    this.byteLimit = Math.max(this.byteLimit, bytes);
   }
 
   /** Queues a frame whatever the limits. For the frames a stream must send in full: retry, sync, reset and replay. */

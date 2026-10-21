@@ -5,7 +5,10 @@ import { type EventFilter, matchesFilter, type StoredEvent } from "./store";
 export const REPLAY_LIMIT = 500;
 /** Frames a client may leave unread. Past this the queue is dropped and the client is asked to catch up. */
 export const PENDING_LIMIT = 1000;
-/** Bytes a client may leave unread. Past this the queue is dropped, as it is past PENDING_LIMIT frames. */
+/**
+ * Bytes a client may leave unread. Past this the queue is dropped, as it is past PENDING_LIMIT frames. A sync frame
+ * larger than this raises the limit to twice its size, so the frames after it still fit.
+ */
 export const PENDING_BYTES = 1024 * 1024;
 export const HEARTBEAT_MS = 15_000;
 /** The delay a browser waits before it reconnects after the connection drops. */
@@ -82,10 +85,17 @@ export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Ar
     wake = undefined;
   };
 
+  const forceSync = () => {
+    if (!live) return;
+    const sync = live.sync();
+    frames.raiseByteLimit(2 * Buffer.byteLength(sync));
+    frames.force(sync);
+  };
+
   const overflow = () => {
     frames.clear();
     frames.force(resetFrame(last));
-    if (live) frames.force(live.sync());
+    forceSync();
     notify();
   };
 
@@ -127,7 +137,7 @@ export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Ar
           if (missed.length > replayLimit) frames.force(resetFrame(store.head()));
           else for (const event of missed) frames.force(eventFrame(event));
         }
-        if (live) frames.force(live.sync());
+        forceSync();
         last = store.head();
         heartbeat = setInterval(() => {
           if (frames.push(HEARTBEAT)) notify();

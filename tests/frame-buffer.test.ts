@@ -62,6 +62,17 @@ describe("FrameBuffer", () => {
     expect(buffer.take(10)).toEqual(["abc"]);
   });
 
+  test("raising the byte limit admits the frames behind a forced frame, and never lowers the limit", () => {
+    const buffer = new FrameBuffer({ frames: 10, bytes: 4 });
+    buffer.force("abcdefgh");
+    expect(buffer.push("x")).toBe(false);
+    buffer.raiseByteLimit(12);
+    expect(buffer.push("xyz")).toBe(true);
+    buffer.raiseByteLimit(5);
+    expect(buffer.push("wx")).toBe(false);
+    expect(buffer.push("w")).toBe(true);
+  });
+
   test("clear empties the buffer and forgets its keys and bytes", () => {
     const buffer = new FrameBuffer({ frames: 10, bytes: 10 });
     buffer.push("aaaaaaaaaa", "k");

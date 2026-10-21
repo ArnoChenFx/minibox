@@ -9,6 +9,7 @@ import { Bus } from "../src/lib/bus";
 import { SseReader } from "./support/sse";
 
 const NOW = 1_750_000_000_000;
+const MIB = 1024 * 1024;
 
 interface Harness {
   readonly store: EventStore;
@@ -208,16 +209,21 @@ describe("eventStream", () => {
   });
 });
 
-/** A live source whose frames a test sends by hand. Each `sync` is numbered, so a test can tell the snapshots apart. */
-function fakeLive() {
+/**
+ * A live source whose frames a test sends by hand. Each `sync` is numbered, so a test can tell the snapshots apart.
+ * With `syncBytes`, each `sync` carries that much padding, as a sync of many boxes does.
+ */
+function fakeLive(syncBytes = 0) {
   const senders = new Set<(frame: string, key?: string) => void>();
   let generation = 0;
+  const padding = syncBytes > 0 ? "x".repeat(syncBytes) : undefined;
   return {
     listeners: () => senders.size,
     source: {
       sync: () => {
         generation += 1;
-        return `event: sync\ndata: ${JSON.stringify({ generation })}\n\n`;
+        const body = padding === undefined ? { generation } : { generation, padding };
+        return `event: sync\ndata: ${JSON.stringify(body)}\n\n`;
       },
       subscribe: (send: (frame: string, key?: string) => void) => {
         senders.add(send);
@@ -307,6 +313,33 @@ describe("eventStream with live state", () => {
     expect(await sse.next()).toEqual({ event: "sync", data: { generation: 1 } });
     expect(await sse.next()).toMatchObject({ event: "reset" });
     expect(await sse.next()).toEqual({ event: "sync", data: { generation: 2 } });
+    live.send('event: box\ndata: {"n":4}\n\n');
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 4 } });
+  });
+
+  test("a sync frame over the byte budget is sent whole, and the live frames behind it are not reset", async () => {
+    const h = harness();
+    const live = fakeLive(2 * MIB);
+    const sse = open(h, { live: live.source });
+    for (let n = 0; n < 5; n++) live.send(`event: box\ndata: {"n":${n}}\n\n`);
+
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toMatchObject({ event: "sync", data: { generation: 1 } });
+    for (let n = 0; n < 5; n++) expect(await sse.next()).toEqual({ event: "box", data: { n } });
+  });
+
+  test("a client more than twice a sync frame behind is reset once, then carries on from a fresh sync", async () => {
+    const h = harness();
+    const live = fakeLive(2 * MIB);
+    const sse = open(h, { live: live.source });
+    await Bun.sleep(0);
+    const large = `event: box\ndata: "${"x".repeat((3 * MIB) / 2)}"\n\n`;
+    for (let n = 0; n < 3; n++) live.send(large);
+
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toMatchObject({ event: "sync", data: { generation: 1 } });
+    expect(await sse.next()).toMatchObject({ event: "reset", data: { after: 0 } });
+    expect(await sse.next()).toMatchObject({ event: "sync", data: { generation: 2 } });
     live.send('event: box\ndata: {"n":4}\n\n');
     expect(await sse.next()).toEqual({ event: "box", data: { n: 4 } });
   });
