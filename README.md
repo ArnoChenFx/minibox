@@ -39,6 +39,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Templates | Bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
+| Live updates | Box state, resource samples, host metrics and task progress are pushed on `GET /api/events/stream` (SSE). The console polls only while the stream is down |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
 | Logs | Main-process output with selectable line count and auto-refresh |
 | Access control | Single access key, exchanged at sign-in for a revocable session token in an HttpOnly, `SameSite=Strict` cookie, or sent as `Authorization: Bearer`; login rate limiting per client address; cross-site requests refused |
@@ -72,6 +73,8 @@ flowchart LR
     OPS[Operation registry<br/>authorize · validate · audit]
     WS[WebSocket terminal]
     MON[HostMonitor<br/>/proc sampling]
+    SAMP[HostSampler<br/>box cache · resource samples]
+    BUS[Event bus]
   end
   subgraph Host
     PROC[/proc · statfs/]
@@ -88,6 +91,13 @@ flowchart LR
   OPS -- Runtime --> D
   WS -- exec / TTY --> D
   MON --> PROC
+  MON --> BUS
+  OPS -- reads --> SAMP
+  OPS --> BUS
+  SAMP -- inspect · stats --> D
+  D -- container events --> SAMP
+  SAMP --> BUS
+  BUS -- SSE --> UI
   D --> B1 & B2
   B1 & B2 --- V
   D --- I
@@ -96,6 +106,7 @@ flowchart LR
 - **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`). The restart policy is `no`: a startup reconciler starts or stops the container to match the spec's desired state (`running` or `stopped`). The spec file under `DATA_DIR/boxes/` is the authority for mutable state. Container labels are written once, at create, and are not changed later. `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. The container runs as the non-root user `dev` (see [Base template](#base-template)).
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
+- **Live state** = one `HostSampler` per host. It keeps the box cache current from the engine's container events, samples each running box into a ring of `METRICS_HISTORY` points once per `METRICS_INTERVAL_MS`, and publishes box, sample, link and host frames on the event bus. `GET /api/events/stream` forwards them to the console, which polls only while the stream is down. Samples stay in memory and never reach the event log.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
 
 (`minibox` is the default `LABEL_PREFIX`; all names and labels follow the prefix.)
@@ -285,8 +296,8 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `BOX_PIDS_LIMIT` | `1024` | Maximum number of processes in each new box (a positive integer) |
 | `RUNTIME` | engine default | OCI runtime for new boxes, such as `runsc` (gVisor). The runtime must already be installed in the Docker engine |
 | `STOP_TIMEOUT_SEC` | `3` | Seconds a box gets to exit after SIGTERM before it is killed, used by stop and restart. Whole number from 0 to 300 |
-| `METRICS_INTERVAL_MS` | `3000` | Host metrics sampling interval (ms) |
-| `METRICS_HISTORY` | `120` | Number of samples kept (≈ 6 minutes at the default interval) |
+| `METRICS_INTERVAL_MS` | `3000` | Interval (ms) between host metrics samples and per-box resource samples |
+| `METRICS_HISTORY` | `120` | Number of samples kept per host and per box (≈ 6 minutes at the default interval) |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
 | `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | Days to keep read events. Repeated reads are merged per minute |
 | `EVENT_OUTPUT_RETENTION_DAYS` | `7` | Days to keep command output in `DATA_DIR/exec`. `exec` writes a head-and-tail window there when a command finishes |
@@ -380,7 +391,7 @@ Errors use a consistent shape and the matching HTTP status:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/boxes?stats=false` | List boxes; live usage of running boxes is included unless `stats=false` |
+| `GET` | `/api/boxes?stats=false` | List boxes from the host's cache, which the engine's events keep current. While the cache is current the list makes no engine call. Running boxes carry their latest sample unless `stats=false` |
 | `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB |
 | `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. `template`, `mounts`, `env`, `network` and `profile` are not applied in place: a difference returns `409 confirmation_required` with a preview and leaves the in-place fields unchanged |
@@ -388,8 +399,8 @@ Errors use a consistent shape and the matching HTTP status:
 | `POST` | `/api/boxes/:id/rebuild` | Rebuild `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`. Requires `If-Match`. A mount or network that is not allowed returns `403 forbidden` and changes nothing: `minibox-data` is refused; a volume the box does not mount yet must be MiniBox's own (or absent) and no other box may mount it; the network must be the box network or the one the box already uses. Without `confirm: true`, `409 confirmation_required` and `error.details.preview` (docker diff of the writable layer and the planned changes). With `confirm: true`, creates the new container, swaps it in, and deletes the old one; failure restores the old container and the previous spec revision. Renames the container to `<LABEL_PREFIX>-<id>` |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions. Start and stop record the desired state |
 | `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"?, "pids"? }`. Requires `If-Match` |
-| `GET` | `/api/boxes/:id/stats` | Live usage |
-| `GET` | `/api/boxes/:id/logs?tail=300` | Container logs (1–5000 lines) |
+| `GET` | `/api/boxes/:id/stats` | Latest usage, the newest sample. `?history=true` also returns the recent samples, oldest first |
+| `GET` | `/api/boxes/:id/logs?tail=300` | Container logs (1–5000 lines). Engine reads are shared for two seconds per box and tail |
 | `POST` | `/api/boxes/:id/snapshots` | Start a snapshot `{ "name"? }`. Returns `202` `{ "taskId" }` |
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket terminal. Send `{"type":"resize","cols":N,"rows":N}` to resize; any other message is stdin |
 | `POST` | `/api/boxes/:id/exec` | Run a command. Body `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`. Send exactly one of `argv` (no shell) or `cmd` (`/bin/sh -c`). Defaults: user `dev`, directory `/workspace`, timeout 30s. A foreground call takes at most 55s, and `background: true` takes up to 3600s. A stopped box is started, which changes its revision. The result includes `status` (`running`, `exited` or `killed`), `exitCode`, `stdout`, `stderr`, `truncated`, `durationMs`, `timedOut` and `woke`. A non-zero exit is the program's status. Inline output keeps about 16 KiB from each end of each stream; `outputRef` names the saved window. Under the `strict` profile only `dev` or `1000` may be the user; other profiles may use `root`, and those runs are marked `privileged` in the audit. The box needs `/bin/sh`, `cat`, `rm` and `sleep` |
@@ -441,9 +452,11 @@ The log covers calls made through MiniBox. It does not record what runs inside a
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/events` | Events, newest first. Filters: `box` (id or name), `principal`, `op`, `status` (`started`, `ok`, `error` or `denied`), `run`, `since` (ISO 8601, such as `2026-10-20T00:00:00Z`). Paging: `limit` (1–200, default 50) and `cursor`, the `nextCursor` of the previous page. Returns `{ "events": [...], "nextCursor": ... }`, where `nextCursor` is `null` on the last page |
-| `GET` | `/api/events/stream` | The same filters as a server-sent event stream (`text/event-stream`). See below |
+| `GET` | `/api/events/stream` | The same filters as a server-sent event stream (`text/event-stream`). A stream without filters also carries live state. See below |
 
 The stream sends one message per event: `id` is the event's sequence number and `data` is the event as JSON. A new connection receives only the events recorded after it connects. A client that reconnects sends its last `id` back as `Last-Event-ID` (browsers do this on their own), and receives the events it missed, up to 500. If it missed more than 500, or more than 1000 messages queued up while it was not reading, the stream sends `event: reset` with `{"after": N}` instead. The client then reads `GET /api/events` with the same filters, following `nextCursor` until it reaches the last `id` it received, and carries on with the stream. An event can arrive both from the list and from the stream, so the client skips any sequence number it already has. The reset carries no `id`, so `Last-Event-ID` still points at the last event received. An idle stream sends a `: keep-alive` comment every 15 seconds, so proxies keep the connection open.
+
+A stream without filters also carries the live state the console shows. These frames are named with `event:` and have no `id:`, so they never change `Last-Event-ID`. `sync` gives the box list and link state of every host. It is sent first, and again after a `reset`. `box` reports a box that was added, changed or removed. `sample` carries the resource samples of the running boxes, `host` the host metrics, `link` whether a host's sampler is connected to the engine, and `task` the status changes of tasks. Live frames are never written to the event log, so high-frequency samples add no rows to `events.db`.
 
 Events are redacted before they are written. The access key is replaced wherever it appears, environment variables are recorded by name only, values under keys such as `password`, `token`, `secret` or `api_key` are replaced, and common credential formats are replaced too: PEM private keys, `Bearer` tokens, passwords in URLs, JWTs, `sk-` keys, GitHub tokens, AWS access keys, Slack tokens and Google API keys. This is best effort and not a guarantee: a credential in a format not listed here, or one split across fields, is not caught. A `detail` over 8 KB is replaced by a note with its size.
 
@@ -532,8 +545,8 @@ minibox/
 │   ├── services/            # Business logic on Runtime: boxes / exec / rebuild / images / snapshots / templates / reconcile
 │   ├── mcp/                 # Streamable HTTP MCP at /mcp
 │   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy
-│   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
-│   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, scope hook
+│   ├── host/                # Host registry (implicit local), procfs parsers, HostSampler (box cache and samples), HostMonitor
+│   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, live frames, scope hook
 │   ├── tasks/               # Task store (SQLite), manager, progress stream on the event bus
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
 │   ├── routes/              # Router, route groups (auth / system / images) and the REST adapter for operations
