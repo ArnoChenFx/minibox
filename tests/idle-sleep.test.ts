@@ -552,6 +552,56 @@ describe("on-demand wake", () => {
   });
 });
 
+/** Keeps the last box frame the bus publishes for `boxId`, which is what a web client shows once the frames settle. */
+function watchFrames(bus: App["bus"], boxId: string): { last: () => Box | undefined; off: () => void } {
+  let last: Box | undefined;
+  const off = bus.subscribe("box", (frame) => {
+    if (frame.boxId === boxId && frame.op === "upsert") last = frame.box;
+  });
+  return { last: () => last, off };
+}
+
+describe("live box frames", () => {
+  test("the last frame of an idle sleep shows the box asleep, not running", async () => {
+    const box = await quietBox("frames-idle");
+    const frames = watchFrames(app.bus, box.boxId);
+    try {
+      await watcher().tick();
+      await host.sampler.settle();
+      expect(frames.last()).toMatchObject({ running: false, desired: "stopped", stopReason: "idle", sleeping: true });
+    } finally {
+      frames.off();
+    }
+  });
+
+  test("the last frame of a TTL sleep shows the box asleep for ttl", async () => {
+    const box = await newBox("frames-ttl", { ttlSec: 60 });
+    await primeSampler(host, box);
+    backdate(box.boxId, 120_000);
+    const frames = watchFrames(app.bus, box.boxId);
+    try {
+      await watcher().tick();
+      await host.sampler.settle();
+      expect(frames.last()).toMatchObject({ running: false, desired: "stopped", stopReason: "ttl", sleeping: true });
+    } finally {
+      frames.off();
+    }
+  });
+
+  test("the last frame of a wake shows the box running, with no sleep left", async () => {
+    const box = await quietBox("frames-wake");
+    await watcher().tick();
+    const frames = watchFrames(app.bus, box.boxId);
+    try {
+      await boxes.wakeIfSleeping(host, box.boxId, { record: auditTo(host.host.id, "rest") });
+      await host.sampler.settle();
+      expect(frames.last()).toMatchObject({ running: true, desired: "running", stopReason: null, sleeping: false });
+    } finally {
+      frames.off();
+    }
+  });
+});
+
 describe("more than one Docker host", () => {
   test("locateBox finds a box on a second host by its stable id or its name, and reports that host", async () => {
     const { lab } = addSecondHost();
