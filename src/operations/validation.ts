@@ -15,6 +15,7 @@ import {
   NAME_RE,
   reject,
 } from "../lib/validation";
+import type { BoxEnv, BoxMount } from "../specs/types";
 
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
@@ -274,8 +275,9 @@ export function requireResources(
 }
 
 const UPDATE_FIELDS = ["name", "cpus", "memoryMb", "pids", "labels", "idleTimeoutSec", "ttlSec"] as const;
+const REBUILD_INPUTS = ["template", "mounts", "env", "network", "profile"] as const;
 
-/** An in-place update has to change something. Template, mounts, env and profile are not accepted here. */
+/** An update has to change an in-place field or name a rebuild field. The handler rejects rebuild fields without confirm. */
 export function requireUpdate(
   ctx: z.RefinementCtx,
   input: {
@@ -286,9 +288,23 @@ export function requireUpdate(
     labels?: unknown;
     idleTimeoutSec?: unknown;
     ttlSec?: unknown;
+    template?: unknown;
+    mounts?: unknown;
+    env?: unknown;
+    network?: unknown;
+    profile?: unknown;
   },
 ): void {
-  if (UPDATE_FIELDS.every((key) => input[key] === undefined)) addFailure(ctx, { message: msg("box_update_empty") });
+  const present = (key: string) => input[key as keyof typeof input] !== undefined;
+  if (![...UPDATE_FIELDS, ...REBUILD_INPUTS].some(present)) addFailure(ctx, { message: msg("box_update_empty") });
+}
+
+/** A rebuild request has to name at least one rebuild field. Whether it differs is checked against the spec. */
+export function requireRebuild(
+  ctx: z.RefinementCtx,
+  input: { template?: unknown; mounts?: unknown; env?: unknown; network?: unknown; profile?: unknown },
+): void {
+  if (REBUILD_INPUTS.every((key) => input[key] === undefined)) addFailure(ctx, { message: msg("rebuild_empty") });
 }
 
 export const optionalBoxName = () =>
@@ -327,6 +343,118 @@ export const userLabels = () =>
     maxProperties: LABEL_COUNT_MAX,
     additionalProperties: { type: "string", maxLength: LABEL_VALUE_MAX },
   }).optional();
+
+const MOUNT_MAX = 16;
+const ENV_MAX = 64;
+const ENV_VALUE_MAX = 8192;
+const IDENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+function checkMounts(value: unknown): Checked<BoxMount[] | undefined> {
+  if (value === undefined) return accept(undefined);
+  if (!Array.isArray(value) || value.length > MOUNT_MAX)
+    return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+  const mounts: BoxMount[] = [];
+  const paths = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    const mount = item as Partial<BoxMount>;
+    const path = mount.path;
+    if (typeof mount.volume !== "string" || !IDENT_RE.test(mount.volume)) {
+      return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    }
+    if (
+      typeof path !== "string" ||
+      !path.startsWith("/") ||
+      path.length > 256 ||
+      /\s/u.test(path) ||
+      /\p{Cc}/u.test(path)
+    ) {
+      return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    }
+    if (path.split("/").includes("..")) return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    if (mount.mode !== "rw" && mount.mode !== "ro") return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    if (paths.has(path)) return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    paths.add(path);
+    mounts.push({ volume: mount.volume, path, mode: mount.mode });
+  }
+  return accept(mounts);
+}
+
+function checkEnv(value: unknown): Checked<BoxEnv[] | undefined> {
+  if (value === undefined) return accept(undefined);
+  if (!Array.isArray(value) || value.length > ENV_MAX) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+  const env: BoxEnv[] = [];
+  const names = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    const entry = item as Partial<BoxEnv>;
+    if (typeof entry.name !== "string" || !ENV_NAME_RE.test(entry.name) || names.has(entry.name)) {
+      return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    }
+    const value = entry.value;
+    const secretRef = entry.secretRef;
+    const hasValue = typeof value === "string";
+    const hasRef = typeof secretRef === "string";
+    if (hasValue && (value.length > ENV_VALUE_MAX || /\p{Cc}/u.test(value))) {
+      return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    }
+    if (hasRef && !IDENT_RE.test(secretRef)) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    if (!hasValue && !hasRef) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    if (entry.value !== undefined && !hasValue) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    if (entry.secretRef !== undefined && !hasRef) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    const next: BoxEnv = { name: entry.name };
+    if (hasValue) next.value = value;
+    if (hasRef) next.secretRef = secretRef;
+    names.add(entry.name);
+    env.push(next);
+  }
+  return accept(env);
+}
+
+function checkNetwork(value: unknown): Checked<string | undefined> {
+  if (value === undefined || value === null || value === "") return accept(undefined);
+  if (typeof value !== "string" || !IDENT_RE.test(value)) return reject(msg("network_invalid"), "network");
+  return accept(value);
+}
+
+function checkConfirm(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null || value === "") return accept(false);
+  if (value === true || value === "true") return accept(true);
+  if (value === false || value === "false") return accept(false);
+  return reject(msg("not_boolean", { field: "confirm" }), "confirm");
+}
+
+export const rebuildMounts = () =>
+  field(checkMounts, {
+    type: "array",
+    maxItems: MOUNT_MAX,
+    description:
+      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. Stage 1 still creates one workspace volume; this does not create a volume pool.",
+  }).optional();
+
+export const rebuildEnv = () =>
+  field(checkEnv, {
+    type: "array",
+    maxItems: ENV_MAX,
+    description:
+      "Environment entries that replace the box's env list. Each entry is { name, value? , secretRef? } and needs a value or a secretRef. secretRef is stored and not injected yet. Omitted, the current env stays. Values are not written to container labels.",
+  }).optional();
+
+export const rebuildNetwork = () =>
+  field(checkNetwork, {
+    type: "string",
+    maxLength: 128,
+    description:
+      "Docker network the rebuilt container joins. Omitted, the current network stays. The host box network is created when missing. Any other network must already exist.",
+  }).optional();
+
+export const confirmFlag = () =>
+  field(checkConfirm, {
+    type: "boolean",
+    description:
+      "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false.",
+  }).default(false);
 
 /**
  * Present so MCP and direct callers can pass the revision. REST overwrites it with the If-Match header.

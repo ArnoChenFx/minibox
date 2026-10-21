@@ -1,4 +1,4 @@
-import { deleteBox, editResources, lifecycle, snapshotBox } from "../components/box-actions.js";
+import { deleteBox, editResources, lifecycle, openRebuild, snapshotBox } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
@@ -62,6 +62,7 @@ export function render(view, id, tab = "overview") {
         ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}${t("act.stop")}</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}${t("act.start")}</button>`}
         <button class="btn" data-action="restart">${icon("restart")}${t("act.restart")}</button>
         <button class="btn" data-action="snapshot">${icon("camera")}${t("act.snapshot")}</button>
+        <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
     </div>
@@ -113,6 +114,7 @@ export function render(view, id, tab = "overview") {
     stop: (b) => lifecycle(box, "stop", b).then(rerender),
     restart: (b) => lifecycle(box, "restart", b).then(rerender),
     snapshot: () => snapshotBox(box).then((s) => s && tab === "snapshots" && rerender()),
+    rebuild: () => openRebuild(box),
     delete: async () => {
       if (await deleteBox(box)) location.hash = "#/boxes";
     },
@@ -157,6 +159,8 @@ const TAB_RENDER = {
           <dt>${t("bd.template")}</dt><dd class="mono">${esc(b.template || "—")}</dd>
           <dt>${t("bd.profile")}</dt><dd>${b.profile ? t(`profile.${b.profile}`) : t("bd.profileLegacy")}</dd>
           <dt>${t("bd.network")}</dt><dd class="mono">${esc(b.network)}</dd>
+          <dt>${t("bd.env")}</dt><dd>${(b.env ?? []).length ? esc((b.env ?? []).map((item) => item.name).join(", ")) : t("bd.envNone")}</dd>
+          <dt>${t("bd.mounts")}</dt><dd>${(b.mounts ?? []).length ? (b.mounts ?? []).map((mount) => `<span class="mono">${esc(mount.path)}</span> <span class="subtle">${esc(mount.mode)}</span> <span class="mono">${esc(mount.volume)}</span>`).join("<br>") : "—"}</dd>
           <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume)}</span></dd>
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
           <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(b.containerName || `minibox-${b.name}`)} bash</code></dd>

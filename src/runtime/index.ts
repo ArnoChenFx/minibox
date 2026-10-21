@@ -40,6 +40,14 @@ export interface ContainerStats {
 export interface Mount {
   source: string;
   target: string;
+  /** Absent means writable, which is the engine default. */
+  mode?: "rw" | "ro";
+}
+
+/** One writable-layer change from `docker diff`. `modified` is the engine's kind 0, `added` is 1, `deleted` is 2. */
+export interface ContainerChange {
+  path: string;
+  kind: "added" | "modified" | "deleted";
 }
 
 export interface Ulimit {
@@ -79,6 +87,8 @@ export interface CreateContainerSpec {
   hostname?: string;
   labels?: Record<string, string>;
   mounts?: Mount[];
+  /** `NAME=value` entries merged over the image environment. Secrets are not passed here. */
+  env?: string[];
   restart?: "no" | "unless-stopped";
   cpus?: number;
   memoryBytes?: number;
@@ -202,6 +212,8 @@ export interface Runtime {
   updateContainer(id: string, limits: ContainerUpdate): Promise<void>;
   /** Log text with any stream framing removed. */
   containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string>;
+  /** Writable-layer changes (`docker diff`). An unchanged container returns an empty list. */
+  containerDiff(id: string): Promise<ContainerChange[]>;
   containerStats(id: string): Promise<ContainerStats>;
   commitContainer(id: string, spec: CommitSpec): Promise<void>;
   /** Extracts a tar archive into `path`. Works on created containers that are not running. */

@@ -95,6 +95,7 @@ export class SpecStore {
       log.warn("box.spec_unreadable", { id, error: "not a box spec" });
       return null;
     }
+    if (!Array.isArray(parsed.history)) parsed.history = [];
     return parsed;
   }
 
