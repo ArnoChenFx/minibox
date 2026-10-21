@@ -24,8 +24,8 @@ async function allowed(ctx: OperationContext, scope: string, volume?: VolumeRef)
 }
 
 /**
- * Mounting a volume is a read of that volume. The owner is allowed. A hook that returns false for `volume:attach`
- * refuses the mount. Agent tokens will carry this scope when #13 lands; until then the default hook allows every owner.
+ * Mounting a volume is a read of that volume. The hook decides from the volume's record, so a token passes only when
+ * its grant covers that volume. A refusal is `volume_attach_forbidden`.
  */
 export async function assertCanAttach(ctx: OperationContext, volume: VolumeRef): Promise<void> {
   if (await allowed(ctx, "volume:attach", volume)) return;
