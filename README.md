@@ -293,7 +293,7 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `BOX_PIDS_LIMIT` | `1024` | Maximum number of processes in each new box (a positive integer) |
 | `RUNTIME` | engine default | OCI runtime for new boxes, such as `runsc` (gVisor). The runtime must already be installed in the Docker engine |
 | `STOP_TIMEOUT_SEC` | `3` | Seconds a box gets to exit after SIGTERM before it is killed, used by stop and restart. Whole number from 0 to 300 |
-| `METRICS_INTERVAL_MS` | `3000` | Interval (ms) between host metrics samples, and between per-box resource samples while a live stream is open. Without one, boxes are sampled every 30 seconds, or at this interval if it is longer |
+| `METRICS_INTERVAL_MS` | `3000` | Interval (ms) between host metrics samples, and between per-box resource samples while a live stream is open. Without one, boxes are sampled every 30 seconds, or at this interval if it is longer. Keep it above 2000: a Docker stats call takes 1 to 2 seconds, and a call still running at the timeout is a missed sample |
 | `METRICS_HISTORY` | `120` | Number of samples kept per host and per box (≈ 6 minutes at the default interval) |
 | `STREAM_MAX_CONNECTIONS` | `256` | Event and task streams open at once, across all browsers and clients. The next one gets `429`, and the console retries it with a growing delay. A positive whole number |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
