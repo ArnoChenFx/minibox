@@ -253,6 +253,32 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "an inspect and a listing give up when their signal is already aborted, and answer when it is not",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-inspect-abort`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+      });
+      try {
+        await runtime.startContainer(id);
+        const inspected = await rejectionOf(runtime.inspectContainer(id, { signal: AbortSignal.abort() }));
+        expect((inspected as Error).name).toBe("AbortError");
+        const listed = await rejectionOf(runtime.listContainers({ labels: owned }, { signal: AbortSignal.abort() }));
+        expect((listed as Error).name).toBe("AbortError");
+
+        const live = new AbortController().signal;
+        expect((await runtime.inspectContainer(id, { signal: live })).running).toBe(true);
+        expect((await runtime.listContainers({ labels: owned }, { signal: live })).map((c) => c.id)).toEqual([id]);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "containerDiff lists a file written in the writable layer",
     async () => {
       const { id } = await runtime.createContainer({

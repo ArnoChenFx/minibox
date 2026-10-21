@@ -61,6 +61,10 @@ const NEVER_STARTED = {
 
 /** When set, inspects of "ok" wait for it, so a test can change the container while an inspect is in flight. */
 let inspectGate: Promise<void> | null = null;
+/** When set, the container listing does not answer until the client gives up on it. */
+let listHung = false;
+/** Requests the engine held and then saw the client abandon. */
+let abandoned = 0;
 
 const inspectable: Record<string, { status: number; body: unknown }> = {
   ok: { status: 200, body: RUNNING },
@@ -77,6 +81,21 @@ const ONE_SHOT_STATS = {
   precpu_stats: { cpu_usage: { total_usage: 100 }, system_cpu_usage: 1000 },
   memory_stats: { usage: 100, limit: 1000 },
 };
+
+/** Holds a request the way an engine that never answers does, until the client gives up on it. */
+async function hang(req: Request): Promise<Response> {
+  await new Promise<void>((resolve) =>
+    req.signal.addEventListener(
+      "abort",
+      () => {
+        abandoned += 1;
+        resolve();
+      },
+      { once: true },
+    ),
+  );
+  return new Response(null, { status: 499 });
+}
 
 /** Builds that the engine saw the client close, counted once per build. */
 let buildCloses = 0;
@@ -110,10 +129,12 @@ async function engine(req: Request): Promise<Response> {
 
   if (req.method === "GET" && path === "/_ping") return new Response("OK");
   if (req.method === "GET" && path === "/containers/json") {
+    if (listHung) return hang(req);
     return json(listed.map((id) => ({ Id: id, Names: [`/${id}`], Labels: {}, State: listStates[id] ?? "running" })));
   }
   const inspect = /^\/containers\/([^/]+)\/json$/.exec(path);
   if (req.method === "GET" && inspect) {
+    if (inspect[1] === "hung") return hang(req);
     if (inspect[1] === "ok" && inspectGate) await inspectGate;
     const entry = inspectable[inspect[1] ?? ""] ?? { status: 404, body: { message: "No such container" } };
     return json(entry.body, entry.status);
@@ -138,10 +159,7 @@ async function engine(req: Request): Promise<Response> {
   const stats = /^\/containers\/([^/]+)\/stats$/.exec(path);
   if (req.method === "GET" && stats) {
     if (stats[1] === "ok") return json(ONE_SHOT_STATS);
-    if (stats[1] === "hung") {
-      await new Promise<void>((resolve) => req.signal.addEventListener("abort", () => resolve(), { once: true }));
-      return new Response(null, { status: 499 });
-    }
+    if (stats[1] === "hung") return hang(req);
   }
   if (req.method === "POST" && path === "/build") return slowBuild(req);
   if (req.method === "POST" && path === "/containers/create") {
@@ -234,6 +252,31 @@ describe("Docker adapter against a fake engine socket", () => {
 
     const error = await rejectionOf(runtime().containerStats("hung", { signal: AbortSignal.timeout(50) }));
     expect(isAbortError(error)).toBe(true);
+  });
+
+  test("an inspect or a listing gives up when its signal aborts, and the engine sees the request close", async () => {
+    const before = abandoned;
+    const inspect = await rejectionOf(runtime().inspectContainer("hung", { signal: AbortSignal.timeout(50) }));
+    expect(isAbortError(inspect)).toBe(true);
+
+    listed = ["ok", "hung"];
+    const listingInspect = await rejectionOf(
+      runtime().listContainers({ labels: {} }, { signal: AbortSignal.timeout(50) }),
+    );
+    expect(isAbortError(listingInspect)).toBe(true);
+
+    listed = ["ok"];
+    listHung = true;
+    try {
+      const listing = await rejectionOf(runtime().listContainers({ labels: {} }, { signal: AbortSignal.timeout(50) }));
+      expect(isAbortError(listing)).toBe(true);
+    } finally {
+      listHung = false;
+    }
+
+    const abandonedThree = () => abandoned - before >= 3;
+    for (let i = 0; i < 400 && !abandonedThree(); i++) await Bun.sleep(5);
+    expect(abandoned - before).toBeGreaterThanOrEqual(3);
   });
 
   test("listing skips a container that vanished before it was inspected", async () => {

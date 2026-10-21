@@ -231,9 +231,13 @@ export interface Runtime {
   ping(): Promise<void>;
   info(): Promise<RuntimeInfo>;
 
-  /** Containers whose labels include every given key/value. Containers that disappear mid-list are skipped. */
-  listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]>;
-  inspectContainer(id: string): Promise<ContainerInfo>;
+  /**
+   * Containers whose labels include every given key/value. Containers that disappear mid-list are skipped. An aborted
+   * `signal` rejects with `AbortError` once the engine call is cancelled.
+   */
+  listContainers(filter: { labels: Record<string, string> }, opts?: { signal?: AbortSignal }): Promise<ContainerInfo[]>;
+  /** An aborted `signal` rejects with `AbortError` once the engine call is cancelled. */
+  inspectContainer(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerInfo>;
   createContainer(spec: CreateContainerSpec): Promise<{ id: string }>;
   /** Starting a running container succeeds. Fails with `not_found` while the container's network is missing. */
   startContainer(id: string): Promise<void>;
