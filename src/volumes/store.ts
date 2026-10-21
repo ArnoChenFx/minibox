@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { ensureDataDir, writeFileAtomic } from "../data-dir";
@@ -30,13 +30,26 @@ function isPools(value: unknown): value is PoolsFile {
   return file.version === POOLS_VERSION && Array.isArray(file.pools) && typeof file.roles === "object";
 }
 
+/** The records as last read from disk, indexed for the lookups a box projection makes per mount. */
+interface RecordSnapshot {
+  /** `mtimeNs` of the volumes directory when it was read. Every write renames into the directory, which changes it. */
+  stamp: bigint;
+  records: readonly VolumeRecord[];
+  byId: ReadonlyMap<string, VolumeRecord>;
+}
+
 /**
  * `DATA_DIR/volumes/<id>.json` and `DATA_DIR/pools.json`. Writes are atomic and mode 600.
  * One store is shared by every host; each record names the host its engine volume was created on.
+ *
+ * Reads come from an in-memory snapshot, because the host sampler projects every box, and each mount of each box, on
+ * every container event and list request. The snapshot is dropped on every write and remove made through this store,
+ * and re-read when the directory's mtime changes. Records are frozen so a caller cannot change the shared copy.
  */
 export class VolumeStore {
   private tail: Promise<void> = Promise.resolve();
   private readonly health = new Map<string, PoolHealth>();
+  private snapshot: RecordSnapshot | null = null;
 
   constructor(private readonly dataDir: string) {}
 
@@ -74,27 +87,12 @@ export class VolumeStore {
   }
 
   list(): VolumeRecord[] {
-    let names: string[];
-    try {
-      names = readdirSync(this.dir());
-    } catch (e) {
-      if (isEnoent(e)) return [];
-      throw e;
-    }
-    const records: VolumeRecord[] = [];
-    for (const name of names) {
-      if (!name.endsWith(".json")) continue;
-      const id = name.slice(0, -".json".length);
-      if (!isVolumeId(id)) continue;
-      const record = this.read(id);
-      if (record) records.push(record);
-    }
-    return records;
+    return [...this.records().records];
   }
 
   read(id: string): VolumeRecord | null {
     if (!isVolumeId(id)) return null;
-    return this.readJson(this.pathFor(id), isRecord, "volume.unreadable", id);
+    return this.records().byId.get(id) ?? null;
   }
 
   /** Id, display name, or engine name. Engine names are only unique per host, so pass `hostId` when you have one. */
@@ -107,12 +105,18 @@ export class VolumeStore {
   }
 
   findByEngine(hostId: string, engineName: string): VolumeRecord | null {
-    return this.list().find((record) => record.hostId === hostId && record.engineName === engineName) ?? null;
+    return (
+      this.records().records.find((record) => record.hostId === hostId && record.engineName === engineName) ?? null
+    );
   }
 
   write(record: VolumeRecord): void {
     ensureDataDir(this.dataDir);
-    writeFileAtomic(this.pathFor(record.id), `${JSON.stringify(record, null, 2)}\n`);
+    try {
+      writeFileAtomic(this.pathFor(record.id), `${JSON.stringify(record, null, 2)}\n`);
+    } finally {
+      this.snapshot = null;
+    }
   }
 
   remove(id: string): void {
@@ -121,6 +125,8 @@ export class VolumeStore {
       unlinkSync(this.pathFor(id));
     } catch (e) {
       if (!isEnoent(e)) throw e;
+    } finally {
+      this.snapshot = null;
     }
   }
 
@@ -141,6 +147,41 @@ export class VolumeStore {
 
   rememberHealth(health: PoolHealth): void {
     this.health.set(`${health.hostId}\0${health.pool}`, health);
+  }
+
+  /** The current snapshot, read again when this store wrote or the directory changed since it was taken. */
+  private records(): RecordSnapshot {
+    let stamp: bigint;
+    try {
+      stamp = statSync(this.dir(), { bigint: true }).mtimeNs;
+    } catch (e) {
+      if (isEnoent(e)) return { stamp: -1n, records: [], byId: new Map() };
+      throw e;
+    }
+    if (this.snapshot?.stamp === stamp) return this.snapshot;
+    const records = this.readAll();
+    const next: RecordSnapshot = { stamp, records, byId: new Map(records.map((record) => [record.id, record])) };
+    this.snapshot = next;
+    return next;
+  }
+
+  private readAll(): VolumeRecord[] {
+    let names: string[];
+    try {
+      names = readdirSync(this.dir());
+    } catch (e) {
+      if (isEnoent(e)) return [];
+      throw e;
+    }
+    const records: VolumeRecord[] = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const id = name.slice(0, -".json".length);
+      if (!isVolumeId(id)) continue;
+      const record = this.readJson(this.pathFor(id), isRecord, "volume.unreadable", id);
+      if (record) records.push(Object.freeze(record));
+    }
+    return records;
   }
 
   private readJson<T>(path: string, guard: (value: unknown) => value is T, event: string, id: string): T | null {
