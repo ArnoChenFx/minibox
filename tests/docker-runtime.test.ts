@@ -10,7 +10,7 @@
  * present locally, and must contain /bin/busybox for the sudo test). The prefix must start with "mbit", so the cleanup
  * can never touch a real MiniBox install.
  */
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,6 +59,8 @@ const EXPECTED_STATE: Record<BoxProfile, { capBnd: string; noNewPrivs: string }>
   strict: { capBnd: "0000000000000000", noNewPrivs: "1" },
   relaxed: { capBnd: "00000000a80425fb", noNewPrivs: "0" },
 };
+
+const shortImageId = (id: string) => id.replace(/^sha256:/, "").slice(0, 12);
 
 async function waitUntil(check: () => Promise<boolean>, what: string, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -981,6 +983,61 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "a box that runs its template tag is rebuilt onto the image the tag names after the tag moves",
+    async () => {
+      const restore = silenceLogs();
+      const repo = `${prefix}-template`;
+      const tag = `${repo}:moving`;
+      try {
+        await docker.getImage(IMAGE).tag({ repo, tag: "moving" });
+        const box = await boxes.createBox(host, { name: "moving", image: tag, cpus: 0.5, memoryMb: 64 });
+        const before = (await runtime.inspectContainer(box.id)).imageId;
+
+        await runtime.commitContainer(box.id, {
+          repo,
+          tag: "moving",
+          pause: true,
+          changes: [`LABEL ${prefix}.moved=true`],
+        });
+        const moved = (await runtime.inspectImage(tag)).id;
+        expect(moved).not.toBe(before);
+
+        const preview = await rejectionOf(rebuildBox(host, box.id, box.revision, { template: tag }, false));
+        expect(preview).toMatchObject({
+          status: 409,
+          key: "rebuild_confirm_required",
+          details: {
+            preview: {
+              changes: expect.arrayContaining([
+                {
+                  field: "template",
+                  from: `${tag} (${shortImageId(before)})`,
+                  to: `${tag} (${shortImageId(moved)})`,
+                },
+              ]),
+            },
+          },
+        });
+        expect((await runtime.inspectContainer(box.id)).imageId).toBe(before);
+
+        const rebuilt = await rebuildBox(host, box.id, box.revision, { template: tag }, true);
+        expect(rebuilt).toMatchObject({ template: tag, image: tag, running: true, drift: [] });
+        expect((await runtime.inspectContainer(rebuilt.id)).imageId).toBe(moved);
+        expect(host.specs.read(box.boxId)?.template).toEqual({ ref: tag, image: tag, digest: moved });
+
+        const again = await rejectionOf(rebuildBox(host, rebuilt.boxId, rebuilt.revision, { template: tag }, true));
+        expect(again).toMatchObject({ status: 400, key: "rebuild_empty" });
+
+        await boxes.deleteBox(host, rebuilt.id, true);
+      } finally {
+        await runtime.removeImage(tag, { force: true }).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
     "another box's workspace, the data volume, pool roots and reserved names are refused on the real engine",
     async () => {
       const restore = silenceLogs();
@@ -1446,6 +1503,205 @@ describe.skipIf(!enabled)("the box cache against a real engine", () => {
       } finally {
         reader.sampler.stop();
         for (const box of made) await boxes.deleteBox(host, box.id, true).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+});
+
+/** Ids of every container on the engine, MiniBox's or not. */
+const allContainerIds = async (): Promise<string[]> => (await docker.listContainers({ all: true })).map((c) => c.Id);
+
+describe.skipIf(!enabled)("volume root owners against a real engine", () => {
+  const MOUNT = "/minibox-volume";
+
+  test(
+    "the root owner of a volume is read and set, and what the volume holds keeps its owners",
+    async () => {
+      const restore = silenceLogs();
+      const volume = `${prefix}-owner`;
+      try {
+        await runtime.createVolume(volume, owned);
+        const { id } = await runtime.createContainer({
+          image: IMAGE,
+          name: `${prefix}-owner`,
+          cmd: ["sleep", "300"],
+          labels: owned,
+          mounts: [{ source: volume, target: MOUNT }],
+        });
+        expect(await runtime.volumeRootOwner(id, MOUNT)).toEqual({ uid: 0, gid: 0 });
+        expect(await rejectionOf(runtime.volumeRootOwner(id, "/minibox-absent"))).toMatchObject({ kind: "not_found" });
+
+        await runtime.startContainer(id);
+        await shell(id, `mkdir ${MOUNT}/sub && touch ${MOUNT}/seed ${MOUNT}/sub/inner`);
+        await runtime.setVolumeRootOwner(volume, { uid: 1000, gid: 1000 }, IMAGE);
+
+        expect(await runtime.volumeRootOwner(id, MOUNT)).toEqual({ uid: 1000, gid: 1000 });
+        expect(await shell(id, `stat -c '%u:%g %n' ${MOUNT} ${MOUNT}/seed ${MOUNT}/sub ${MOUNT}/sub/inner`)).toBe(
+          [`1000:1000 ${MOUNT}`, `0:0 ${MOUNT}/seed`, `0:0 ${MOUNT}/sub`, `0:0 ${MOUNT}/sub/inner`].join("\n"),
+        );
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "setting the owner of a volume that does not exist is not_found, and leaves no volume or helper behind",
+    async () => {
+      const missing = `${prefix}-missing`;
+      const before = await allContainerIds();
+
+      expect(await rejectionOf(runtime.setVolumeRootOwner(missing, { uid: 1000, gid: 1000 }, IMAGE))).toMatchObject({
+        kind: "not_found",
+      });
+      expect(await rejectionOf(runtime.inspectVolume(missing))).toMatchObject({ kind: "not_found" });
+      expect(await allContainerIds()).toEqual(before);
+    },
+    LONG,
+  );
+
+  test(
+    "a helper that cannot run chown is an engine error, and the helper is removed",
+    async () => {
+      const restore = silenceLogs();
+      const repo = `${prefix}-nochown`;
+      const volume = `${prefix}-nochown`;
+      try {
+        const { id } = await runtime.createContainer({
+          image: IMAGE,
+          name: repo,
+          cmd: ["sleep", "300"],
+          labels: owned,
+        });
+        await runtime.startContainer(id);
+        expect(await shell(id, "rm -f /bin/chown /usr/bin/chown; command -v chown || echo gone")).toBe("gone");
+        await runtime.commitContainer(id, { repo, tag: "1", pause: true, changes: [] });
+        await runtime.createVolume(volume, owned);
+
+        const failed = await rejectionOf(runtime.setVolumeRootOwner(volume, { uid: 1000, gid: 1000 }, `${repo}:1`));
+        expect(failed).toMatchObject({ kind: "engine" });
+        const leftover = (await docker.listContainers({ all: true })).filter((c) =>
+          c.Mounts.some((mount) => mount.Name === volume),
+        );
+        expect(leftover).toHaveLength(0);
+      } finally {
+        await runtime.removeImage(`${repo}:1`, { force: true }).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+});
+
+describe.skipIf(!enabled)("workspace root owner on create and rebuild against a real engine", () => {
+  const dev = `${prefix}-dev`;
+  const devTemplate = `${dev}:1`;
+
+  /** A dev template: user dev at uid and gid 1000, a /workspace that user owns, and the labels that name that owner. */
+  async function buildDevTemplate(): Promise<void> {
+    const { id } = await runtime.createContainer({
+      image: IMAGE,
+      name: `${prefix}-dev-builder`,
+      cmd: ["sleep", "300"],
+      labels: owned,
+    });
+    try {
+      await runtime.startContainer(id);
+      const built = await shell(
+        id,
+        "addgroup -g 1000 dev && adduser -D -u 1000 -G dev dev && mkdir /workspace && chown 1000:1000 /workspace && echo built",
+      );
+      expect(built).toBe("built");
+      await runtime.commitContainer(id, {
+        repo: dev,
+        tag: "1",
+        pause: true,
+        changes: ['LABEL minibox.template.uid="1000"', 'LABEL minibox.template.gid="1000"', "USER dev"],
+      });
+    } finally {
+      await runtime.removeContainer(id, { force: true });
+    }
+  }
+
+  beforeAll(buildDevTemplate, LONG);
+  afterAll(async () => {
+    await runtime.removeImage(devTemplate, { force: true }).catch(() => {});
+  });
+
+  test(
+    "a box created onto the dev template reuses a populated, root-owned workspace and hands its root to the template's owner",
+    async () => {
+      const restore = silenceLogs();
+      const name = "reuse";
+      const volume = `${prefix}-ws-${name}`;
+      let box: boxes.Box | undefined;
+      try {
+        await runtime.createVolume(volume, { [host.keys.box]: "true", [host.keys.name]: name });
+        const { id: holder } = await runtime.createContainer({
+          image: IMAGE,
+          name: `${prefix}-holder-${name}`,
+          cmd: ["sleep", "300"],
+          labels: owned,
+          mounts: [{ source: volume, target: "/workspace" }],
+        });
+        await runtime.startContainer(holder);
+        await shell(holder, "touch /workspace/seed");
+        expect(await runtime.volumeRootOwner(holder, "/workspace")).toEqual({ uid: 0, gid: 0 });
+        await runtime.removeContainer(holder, { force: true });
+
+        box = await boxes.createBox(host, { name, image: devTemplate, cpus: 0.5, memoryMb: 64 });
+        expect(await runtime.volumeRootOwner(box.id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+        expect(await shell(box.id, "id -u && touch /workspace/written && echo written")).toBe("1000\nwritten");
+      } finally {
+        if (box) await boxes.deleteBox(host, box.id, true).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a fresh workspace volume takes the template's owner at copy-up, so create reads the root and sets nothing",
+    async () => {
+      const restore = silenceLogs();
+      const counter = countingRuntime(runtime);
+      const counted = createLocalHost(cfg, counter.runtime, host.specs);
+      let box: boxes.Box | undefined;
+      try {
+        box = await boxes.createBox(counted, { name: "copy-up", image: devTemplate, cpus: 0.5, memoryMb: 64 });
+        expect(counter.count("volumeRootOwner")).toBe(1);
+        expect(counter.count("setVolumeRootOwner")).toBe(0);
+        expect(await runtime.volumeRootOwner(box.id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+      } finally {
+        if (box) await boxes.deleteBox(host, box.id, true).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a rebuild onto the dev template hands the root of a populated, root-owned workspace to the template's owner",
+    async () => {
+      const restore = silenceLogs();
+      let box: boxes.Box | undefined;
+      try {
+        box = await boxes.createBox(host, { name: "onto-dev", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        await shell(box.id, "touch /workspace/seed");
+        expect(await runtime.volumeRootOwner(box.id, "/workspace")).toEqual({ uid: 0, gid: 0 });
+
+        const rebuilt = await rebuildBox(host, box.id, box.revision, { template: devTemplate }, true);
+        box = rebuilt;
+        expect(rebuilt).toMatchObject({ template: devTemplate, running: true });
+        expect(await runtime.volumeRootOwner(rebuilt.id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+        expect(
+          await shell(rebuilt.id, "id -u && touch /workspace/written && test -f /workspace/seed && echo kept"),
+        ).toBe("1000\nkept");
+      } finally {
+        if (box) await boxes.deleteBox(host, box.id, true).catch(() => {});
         restore();
       }
     },

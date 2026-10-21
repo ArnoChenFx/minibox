@@ -55,6 +55,7 @@
 ### 新增
 - Agent API 令牌（#13）：设置页或 `POST /api/tokens` 创建，`GET /api/tokens` 列出（不含明文），`DELETE /api/tokens/:id` 吊销。创建响应只包含一次明文。操作注册表的默认鉴权钩子改为按 scope、资源范围与配额检查；所有者与浏览器会话仍可做全部操作。`box.create` 与 `snapshot.fork` 接受可选的 `ttlSec`，并记入规格的 `lifecycle.ttlSec`。令牌省略 TTL 时写入其上限；显式超过上限或传 `null` 返回 `403`。到期清扫不在本次实现。事件列表与事件流按令牌范围过滤：所有者与未收窄的 admin 令牌看全部，其他令牌只看自己造成的事件以及有权使用的 Box 的事件。中英文界面均可创建、复制一次明文，并吊销令牌。
 - 数据卷与存储池（#24）：卷是独立对象，记录放在 `DATA_DIR/volumes`，并写明创建它的主机。Box 通过 `mounts` 挂载零到多个卷，每次挂载指定路径与读写模式。新建 Box 默认挂载工作区 `/workspace`、主目录 `/home/dev`、共享只读工具卷 `/opt/minibox/tools`（每个主机一只，名为 `<前缀>-tools-<主机 id>`）与本地缓存 `/home/dev/.cache`。存储池支持 `local`、`nfs` 与 `path` 三种后端：`PUT /api/pools` 替换配置，`GET /api/pools` 探测可达性；非本地池不可达时，启动、重启与创建返回 `503 docker_unavailable`。删除 Box 时 `deleteVolume=true` 只删除记录中所有者为本 Box、且没有其它 Box 挂载的卷。已有的 `<前缀>-ws-*` 卷会被识别为卷，不改名、不补标签。新增 `/api/volumes`、`/api/pools` 系列接口与控制台「卷」页面（中英文）。存储写入需要 `confirm: true`：`POST /api/volumes`、`DELETE /api/volumes/:id?confirm=true` 与 `PUT /api/pools` 没有该标志时返回 `409 confirmation_required` 与 `details.preview`，不改动任何内容；保存存储池与删除卷的界面会先显示预览（#24）。
+- 数据卷与模板列表支持搜索：输入即时过滤，按 Esc 或 × 清除，没有匹配时显示单独的提示。卷列表可按 Box、角色、存储池或归属分组，分组方式保存在本浏览器中。
 - 实时推送（#17）：每台主机由一个采样器（`HostSampler`）维护盒子缓存与资源采样。`GET /api/events/stream` 在不带过滤条件时同时推送 `sync`、`box`、`sample`、`host`、`link` 与 `task`（仅状态变化）帧。这些帧以事件名区分、不带 `id`，因此不改变 `Last-Event-ID`，也不写入 `events.db`；审计事件与实时状态共用同一条进程内事件总线。带过滤条件的事件流只收到已存储的事件，与原来一致。`GET /api/boxes/:id/stats?history=true` 返回该盒子最近的采样（按时间从早到晚），供详情页的图表使用。
 - 终端会话（#14）：每个 Box 可以有多个具名的 tmux 会话，名称 1 到 32 位，以字母或数字开头，其后可含字母、数字、`-` 与 `_`。会话在 Box 内运行，关闭页面或断开连接后继续运行，刷新页面后控制台回到上次打开的会话。会话的发起方（`agent` 或 `human`）保存在 tmux 中；接管状态只保存在内存中，MiniBox 重启后每个会话的控制方回到其发起方的默认值。
 - 会话接口：`GET` 与 `POST /api/boxes/:id/sessions`，`GET`（支持 `lines` 与 `since`）与 `DELETE /api/boxes/:id/sessions/:name`，以及 `POST /api/boxes/:id/sessions/:name/input`（`keys` 或 `text`，二者只能提供一个）。MCP 的 `session` 工具集提供 `session_start`、`session_send` 与 `session_read`（`/mcp?toolsets=core,session`）；CLI 提供 `minibox session ls`、`start`、`read`、`send` 与 `close`。这些操作在操作注册表中各定义一次，REST、OpenAPI、MCP 与 CLI 由此生成。
@@ -167,6 +168,9 @@
 - 实时流中超过每客户端 1 MiB 字节上限的同步帧（`sync`）会让客户端陷入无限重置：之后的每一帧都超过上限，每帧都触发一次重置并重新发送同步帧。现在每个客户端的字节上限取 1 MiB 与其收到的最大同步帧的 2 倍中较大者，且只升不降（#17）。
 - 周期性重新列出的守卫在列出结束后才释放，列出请求带上取消信号：超过 30 秒未返回时请求真正结束。此前守卫在超时后即释放，引擎挂起时每 60 秒就堆积一个未完成的列出（#17）。
 - 事件流与任务流读取时抛出异常后，现在会结束并运行一次 `onEnd`，释放连接名额与总线订阅。此前这类流不运行 `onEnd`，名额不会释放：达到 `STREAM_MAX_CONNECTIONS` 后，新的事件流与任务流都返回 `429`，直到进程重启（#17）。
+- 基础模板等标签被重新指向新镜像后，以该标签创建的 Box 重建时，此前即使传入同一个模板名也返回 `rebuild_empty`，容器仍运行旧镜像；确认重建后规格仍记录旧摘要，Box 报告 `digest` 漂移。现在这类 Box 跟随标签：预览列出 `标签 (旧镜像短 ID) → 标签 (新镜像短 ID)` 的模板变更，确认后运行标签当前指向的镜像，`template.digest` 随之更新。快照 Box 与标签已删除的 Box 不跟随。
+- 镜像早于基础模板的 Box（缺少 `tmux`，或没有 `dev` 用户）启动会话时，此前显示引擎的原始错误（`docker_error`，或 `tmux failed: exit status 126`）。现在返回 `409` 与 `session_image_unsupported`，提示重新构建基础模板，并把该 Box 重建到新模板上。会话列表、启动与附着、终端错误帧都走同一映射。
+- 创建 Box，或重建到另一个镜像时，若模板的 `minibox.template.uid` 与 `minibox.template.gid` 标签给出的属主，与可写 `/workspace` 卷根目录的属主不同，启动前把根目录改为模板的属主（只改根目录，不递归）。此前已有内容的卷保留原来的 root 属主，`dev` 无法写入 `/workspace`。重建回滚时恢复原属主。只读挂载与不带属主标签的模板不做改动。
 
 ### 文档
 - README、README-zh 与 `docs/agents.md` 说明会话工具、接管与归还的规则、`SESSION_TAKEOVER_IDLE_SEC`、终端 WebSocket 的参数与控制帧、MCP 工具数（13 个），以及事件表中的活动与审计分档。`docs/design.md` 新增 §10.5 实现说明并更新 §8.9；`docs/runtime.md` 说明 FakeRuntime 对 tmux 的模拟（#14）。
@@ -198,7 +202,7 @@
 - 若现有访问密钥短于 20 位或强度不足，升级后启动日志会出现 `auth.weak_key` 警告。服务不受影响；建议换成至少 20 位的随机字符（例如 `openssl rand -hex 32`）并重启。
 - 使用 `Authorization: Bearer` 的脚本：错误的密钥现在计入登录限流，超限后返回 `429`。正确的密钥不受影响（见「安全」）。
 - 已构建的 `minibox-template:base` 仍是旧的 root 版本。在控制台「模板 → 构建基础模板」或运行 `bun run build:template` 重新构建后，新建 Box 才以 `dev` 运行。已有 Box 保持原样，不会改名或重建。
-- 新 Box 复用旧 Box 保留下来的工作区卷时，卷内 `/workspace` 仍属于 root，`dev` 无法写入。在该 Box 运行时执行一次 `docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace` 即可修复。MiniBox 暂不自动执行，详见 README「基础模板」。
+- 新 Box 复用旧 Box 保留下来的工作区卷时，卷内 `/workspace` 仍属于 root，`dev` 无法写入。在该 Box 运行时执行一次 `docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace` 即可修复。创建或重建到带属主标签的模板（如基础模板）时，MiniBox 会在启动前把工作区根目录改为模板属主，卷内已有文件的属主不变。认领已有容器，或模板不带属主标签时，仍需在该 Box 运行时执行一次上述命令，详见 README「基础模板」。
 - 创建与重建时的挂载和网络检查（见「安全」）可能让之前成功的请求返回 `403`（错误码 `forbidden`）：挂载没有 MiniBox 标签的卷、挂载属于其它 Box 的卷、挂载 `minibox-data`，或把网络改为既不是 Box 网络、也不是 Box 当前网络的网络。已有 Box 保持现有挂载与网络，只有改动这些字段时才受影响。独立卷可以挂到多个 Box 上，工具卷因此照常共享。目前只有所有者，现有客户端不受 `volume:write` 影响；令牌（#13）落地后，读写挂载需要 `volume:write`。
 
 ## [0.3.0] - 2026-10-21

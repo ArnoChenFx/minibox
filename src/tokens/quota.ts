@@ -1,5 +1,4 @@
-import type { HostCtx } from "../host/registry";
-import type { Principal, TokenPrincipal } from "../operations/types";
+import type { OperationContext, TokenPrincipal } from "../operations/types";
 import type { BoxSpec } from "../specs/types";
 import { ownedBoxes, refusal } from "./model";
 
@@ -45,12 +44,11 @@ const roundCpus = (value: number): number => Math.round(value * 1000) / 1000;
 
 /**
  * Refuses a change that would take a token past its box, CPU or memory limit. The totals are the boxes the token
- * created on this host, plus the box being changed at its new size. Renaming a box is never refused for being over a
+ * created on every host, plus the box being changed at its new size. Renaming a box is never refused for being over a
  * limit it already exceeds: only a dimension the change sets is checked.
  */
-export function assertQuota(principal: TokenPrincipal, host: HostCtx, change: QuotaChange): void {
+export function assertQuota(principal: TokenPrincipal, specs: readonly BoxSpec[], change: QuotaChange): void {
   const quotas = principal.grants.quotas;
-  const specs = host.specs.list();
   const changed = change.kind === "resize" ? change.boxId : undefined;
   const others = ownedBoxes(principal, specs).filter((spec) => spec.id !== changed);
   if (change.kind === "create" && quotas.maxBoxes !== null && others.length + 1 > quotas.maxBoxes) {
@@ -74,17 +72,22 @@ export function assertQuota(principal: TokenPrincipal, host: HostCtx, change: Qu
 
 /**
  * Checks the token's quota and then runs `work`, both inside the token's queue. Two creates by one token therefore
- * cannot both pass a count that only one of them fits. The owner has no quota and runs `work` directly.
+ * cannot both pass a count that only one of them fits, on any host. The owner has no quota and runs `work` directly.
  */
 export function underQuota<T>(
-  principal: Principal,
-  host: HostCtx,
+  ctx: Pick<OperationContext, "principal" | "host" | "allHosts">,
   change: QuotaChange,
   work: () => Promise<T>,
 ): Promise<T> {
+  const { principal } = ctx;
   if (principal.type !== "token") return work();
   return serialized(`quota:${principal.id}`, async () => {
-    assertQuota(principal, host, change);
+    const hosts = ctx.allHosts?.() ?? [ctx.host];
+    assertQuota(
+      principal,
+      hosts.flatMap((host) => host.specs.list()),
+      change,
+    );
     return work();
   });
 }

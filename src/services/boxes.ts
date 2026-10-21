@@ -27,6 +27,7 @@ import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
 import type { VolumeRecord, VolumeRole } from "../volumes/types";
 import { assertMountAllowed, mountTarget } from "./attachments";
 import { projectBox } from "./box-view";
+import { alignVolumeRoot, type RecordNote, writableWorkspaceVolume } from "./volume-owner";
 
 export interface CreateBoxInput {
   name: string;
@@ -304,11 +305,15 @@ interface CreateAttempt {
   changes: VolumeChanges;
 }
 
-export async function createBox(host: HostCtx, input: CreateBoxInput & { templateLabel?: string }): Promise<Box> {
+export async function createBox(
+  host: HostCtx,
+  input: CreateBoxInput & { templateLabel?: string },
+  record?: RecordNote,
+): Promise<Box> {
   const attempt: CreateAttempt = { boxId: null, containerId: null, changes: new VolumeChanges() };
   let containerId: string;
   try {
-    containerId = await buildBox(host, input, attempt);
+    containerId = await buildBox(host, input, attempt, record);
   } catch (e) {
     await undoCreate(host, attempt);
     throw e;
@@ -346,6 +351,7 @@ async function buildBox(
   host: HostCtx,
   input: CreateBoxInput & { templateLabel?: string },
   attempt: CreateAttempt,
+  record?: RecordNote,
 ): Promise<string> {
   const { runtime, keys, prefix, security } = host;
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
@@ -416,6 +422,14 @@ async function buildBox(
         throw e;
       });
     attempt.containerId = created.id;
+    const workspace = writableWorkspaceVolume(mounts);
+    if (workspace) {
+      await alignVolumeRoot(
+        host,
+        { containerId: created.id, volume: workspace, image: details.id, labels: details.labels },
+        record,
+      );
+    }
     const spec: BoxSpec = {
       version: 1,
       id,

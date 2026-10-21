@@ -64,19 +64,23 @@ export const snapshotFork = defineOperation({
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: (input, _box, result) => ({ kind: "box", id: result?.box.id, name: input.name }) },
   run: async (ctx, input) => {
-    const { host, principal } = ctx;
+    const { host, principal, record } = ctx;
     await assertCanCreateDefaultMounts(ctx, input.name);
-    return underQuota(principal, host, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
-      box: await createBox(host, {
-        name: input.name,
-        image: input.ref.trim(),
-        cpus: input.cpus,
-        memoryMb: input.memoryMb,
-        profile: input.profile,
-        templateLabel: `snapshot:${input.ref}`,
-        createdBy: principal.id,
-        ttlSec: ttlFor(principal, input.ttlSec),
-      }),
+    return underQuota(ctx, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
+      box: await createBox(
+        host,
+        {
+          name: input.name,
+          image: input.ref.trim(),
+          cpus: input.cpus,
+          memoryMb: input.memoryMb,
+          profile: input.profile,
+          templateLabel: `snapshot:${input.ref}`,
+          createdBy: principal.id,
+          ttlSec: ttlFor(principal, input.ttlSec),
+        },
+        record,
+      ),
     }));
   },
 });

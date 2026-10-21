@@ -5,6 +5,7 @@ export default {
   "common.ok": "OK",
   "common.close": "Close",
   "common.refresh": "Refresh",
+  "common.clearSearch": "Clear search",
   "common.save": "Save",
   "common.unknown": "Unknown",
   "common.unlimited": "Unlimited",
@@ -262,9 +263,10 @@ export default {
   "err.session_taken_over": "Session {name} is under human control, so an agent cannot send to it or close it.",
   "err.session_taken_over_hint":
     "A person is working in this session. Read it with session_read and try again in a little while.",
-  "err.session_tmux_missing": "This box does not have tmux, so sessions are unavailable.",
-  "err.session_tmux_missing_hint":
-    "Boxes from the base template include tmux. Rebuild the box from it, or install tmux inside the box.",
+  "err.session_image_unsupported":
+    "This box's image is too old to run sessions: it lacks tmux or the dev user from the base template.",
+  "err.session_image_unsupported_hint":
+    "Build the base template again, then rebuild this box onto the current base template.",
   "err.session_tmux_failed": "tmux failed: {detail}",
   "err.session_tmux_timeout": "tmux did not finish within {max} seconds.",
   "err.session_viewer_tmux_old": "Read-only viewers need tmux 3.2 or later, and this box has tmux {version}.",
@@ -696,6 +698,10 @@ export default {
   "tp.subtitle":
     "Templates are the base images for new boxes. Build the bundled base template, or promote a snapshot to a custom template.",
   "tp.build": "Build base template",
+  "tp.search": "Search templates",
+  "tp.searchPlaceholder": "Name, tag, description or image ID",
+  "tp.noMatch": "No matching templates",
+  "tp.noMatchText": "No template matches “{q}”.",
   "tp.loadFailed": "Couldn't load templates",
   "tp.empty": "No templates yet",
   "tp.emptyText":
@@ -854,6 +860,18 @@ export default {
     "Storage pools and volumes. Cache stays on the local pool unless you override it. A hard NFS mount that cannot be reached is reported here instead of hanging a box.",
   "vol.pools": "Storage pools",
   "vol.volumes": "Volumes",
+  "vol.search": "Search volumes",
+  "vol.searchPlaceholder": "Name, box, pool or path",
+  "vol.noMatch": "No matching volumes",
+  "vol.noMatchText": "No volume matches “{q}”.",
+  "vol.groupBy": "Group by",
+  "vol.groupNone": "None",
+  "vol.groupBox": "Box",
+  "vol.groupRole": "Role",
+  "vol.groupPool": "Pool",
+  "vol.groupOwnership": "Ownership",
+  "vol.groupUnattached": "Unattached / independent",
+  "vol.groupOther": "Other",
   "vol.colName": "Name",
   "vol.colBackend": "Backend",
   "vol.colHealth": "Health",

@@ -47,7 +47,6 @@ import {
   rebuildEnv,
   rebuildMounts,
   rebuildNetwork,
-  requireRebuild,
   requireResources,
   requireUpdate,
   historyFlag,
@@ -154,23 +153,27 @@ export const boxCreate = defineOperation({
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: ({ name }, _box, result) => ({ kind: "box", id: result?.box.id, name }) },
   run: async (ctx, input) => {
-    const { host, principal } = ctx;
+    const { host, principal, record } = ctx;
     if (input.mounts) {
       await assertCanChangeMounts(ctx, input.mounts, []);
     } else {
       await assertCanCreateDefaultMounts(ctx, input.name);
     }
-    return underQuota(principal, host, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
-      box: await createBox(host, {
-        name: input.name,
-        image: input.template,
-        cpus: input.cpus,
-        memoryMb: input.memoryMb,
-        profile: input.profile,
-        createdBy: principal.id,
-        mounts: input.mounts,
-        ttlSec: ttlFor(principal, input.ttlSec),
-      }),
+    return underQuota(ctx, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
+      box: await createBox(
+        host,
+        {
+          name: input.name,
+          image: input.template,
+          cpus: input.cpus,
+          memoryMb: input.memoryMb,
+          profile: input.profile,
+          createdBy: principal.id,
+          mounts: input.mounts,
+          ttlSec: ttlFor(principal, input.ttlSec),
+        },
+        record,
+      ),
     }));
   },
 });
@@ -247,19 +250,14 @@ export const boxResources = defineOperation({
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.resources", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host, principal }, input, box) =>
-    underQuota(
-      principal,
-      host,
-      { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb },
-      async () => ({
-        box: await updateBox(host, input.id, requireRevision(input.expectedRevision), {
-          cpus: input.cpus,
-          memoryMb: input.memoryMb,
-          pids: input.pids,
-        }),
+  run: async (ctx, input, box) =>
+    underQuota(ctx, { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
+      box: await updateBox(ctx.host, input.id, requireRevision(input.expectedRevision), {
+        cpus: input.cpus,
+        memoryMb: input.memoryMb,
+        pids: input.pids,
       }),
-    ),
+    })),
 });
 
 function inPlacePatch(input: {
@@ -336,8 +334,7 @@ export const boxUpdate = defineOperation({
       ttlSec: input.ttlSec === undefined ? undefined : ttlFor(principal, input.ttlSec),
     });
     return underQuota(
-      principal,
-      host,
+      ctx,
       { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb },
       async () => {
         if (hasRebuildFields(request)) {
@@ -362,18 +359,16 @@ export const boxRebuild = defineOperation({
   scope: "box:write",
   async: false,
   conflicts: true,
-  input: z
-    .object({
-      id: boxId(),
-      template: templateImage(),
-      mounts: rebuildMounts(),
-      env: rebuildEnv(),
-      network: rebuildNetwork(),
-      profile: boxProfile(),
-      confirm: confirmFlag(),
-      expectedRevision: expectedRevision(),
-    })
-    .superRefine((input, ctx) => requireRebuild(ctx, input)),
+  input: z.object({
+    id: boxId(),
+    template: templateImage(),
+    mounts: rebuildMounts(),
+    env: rebuildEnv(),
+    network: rebuildNetwork(),
+    profile: boxProfile(),
+    confirm: confirmFlag(),
+    expectedRevision: expectedRevision(),
+  }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rebuild", body: true, ifMatch: true }],
   cli: "box rebuild",
@@ -381,7 +376,7 @@ export const boxRebuild = defineOperation({
     toolset: "rebuild",
     name: "rebuild_box",
     description:
-      "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). Pass expectedRevision, the box's current revision.",
+      "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). A box whose template is a tag follows the tag: when the tag names another image, the preview lists it as a template change, and a confirmed rebuild runs the box on that image. Pass expectedRevision, the box's current revision.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.rebuild", target: (_input, box) => box.name },
@@ -411,6 +406,7 @@ export const boxRebuild = defineOperation({
           profile: input.profile,
         },
         input.confirm,
+        ctx.record,
       ),
     };
   },

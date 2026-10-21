@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Duplex, PassThrough, Readable } from "node:stream";
 
+import { templateOwnerOf } from "../../src/labels";
 import { abortError } from "../../src/lib/abort";
 import {
   type BuildSpec,
@@ -25,6 +26,7 @@ import {
   RuntimeError,
   type VolumeCreateOptions,
   type VolumeInfo,
+  type VolumeOwner,
 } from "../../src/runtime";
 import { FakeTmux, type TmuxClient, type TmuxRun } from "./fake-tmux";
 
@@ -112,6 +114,8 @@ const DEFAULT_NETWORK = "bridge";
 const ICC_OPTION = "com.docker.network.bridge.enable_icc";
 const networkMissing = (network: string) =>
   new RuntimeError("not_found", `failed to set up container networking: network ${network} not found`);
+const ROOT_OWNER: VolumeOwner = { uid: 0, gid: 0 };
+const WORKSPACE = "/workspace";
 
 function matchesEvent(event: RuntimeEvent, filter: { labels?: Record<string, string>; types?: string[] }): boolean {
   if (filter.types && !filter.types.includes(event.type)) return false;
@@ -222,6 +226,11 @@ export class FakeRuntime implements Runtime {
   readonly containers = new Map<string, FakeContainer>();
   readonly images = new Map<string, FakeImage>();
   readonly volumes = new Map<string, VolumeInfo>();
+  /**
+   * Owner of each volume's root directory. A volume takes the template's owner when it is first mounted at
+   * `/workspace` by an image that names one, as Docker's copy-up gives it. Otherwise it is owned by root.
+   */
+  readonly volumeOwners = new Map<string, VolumeOwner>();
   readonly networks = new Map<string, FakeNetwork>();
   readonly execs: FakeExec[] = [];
   /** When true, every call fails as if the engine socket were unreachable. */
@@ -250,6 +259,8 @@ export class FakeRuntime implements Runtime {
   readonly tmux = new FakeTmux();
   /** When true, `tmux` is not installed: its commands exit 127, as a shell reports a missing program. */
   tmuxMissing = false;
+  /** When true, `tmux` is present but cannot run: its commands exit 126, as a shell reports a file it may not execute. */
+  tmuxNotExecutable = false;
 
   /**
    * Holds the next calls to `op` until `release`. With `where`, only the calls whose arguments it accepts are held,
@@ -311,6 +322,17 @@ export class FakeRuntime implements Runtime {
     return id;
   }
 
+  /**
+   * Points `ref` at a new image, as a rebuilt template does. The image the tag named before keeps its ID and any
+   * container that runs it. Seeding does not record a call.
+   */
+  moveTag(ref: string, labels: Record<string, string> = {}): string {
+    const image: FakeImage = { id: newImageId(), tags: [], labels: { ...labels }, createdAt: now(), size: 1024 };
+    this.images.set(image.id, image);
+    this.tag(image, normalizeRef(ref));
+    return image.id;
+  }
+
   /** A network that is created again gets a new ID, which containers that ran on the old one still point at. */
   seedNetwork(name: string, options: Record<string, string> = {}, driver = "bridge"): void {
     this.networks.set(name, { id: newNetworkId(), name, driver, options: { ...options } });
@@ -327,6 +349,11 @@ export class FakeRuntime implements Runtime {
   /** Writable-layer changes the next `containerDiff` returns. Seeding does not record a call. */
   seedDiff(id: string, changes: ContainerChange[]): void {
     this.getContainer(id).diff = changes.map((change) => ({ ...change }));
+  }
+
+  /** Owner of a volume root, as a volume left behind by an earlier box has it. Seeding does not record a call. */
+  seedVolumeOwner(volume: string, owner: VolumeOwner): void {
+    this.volumeOwners.set(volume, { ...owner });
   }
 
   /** `null` limits model a box created without them (unlimited). */
@@ -460,6 +487,11 @@ export class FakeRuntime implements Runtime {
       networkId: running ? this.networkIdOf(spec.network) : null,
     };
     this.containers.set(c.id, c);
+    for (const mount of spec.mounts ?? []) {
+      if (this.volumeOwners.has(mount.source)) continue;
+      const owner = mount.target === WORKSPACE ? templateOwnerOf(image?.labels) : null;
+      this.volumeOwners.set(mount.source, owner ?? ROOT_OWNER);
+    }
     return c;
   }
 
@@ -635,6 +667,22 @@ export class FakeRuntime implements Runtime {
     return Readable.from([bytes]);
   }
 
+  /** Only a mounted path has an owner in the fake, which is its volume's root owner. */
+  async volumeRootOwner(id: string, path: string): Promise<VolumeOwner> {
+    this.enter("volumeRootOwner", [id, path]);
+    const mount = (this.getContainer(id).spec.mounts ?? []).find((m) => m.target === path);
+    if (!mount) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
+    return { ...(this.volumeOwners.get(mount.source) ?? ROOT_OWNER) };
+  }
+
+  /** The helper image must exist, and the volume must exist, as in the engine. The helper itself is not modelled. */
+  async setVolumeRootOwner(volume: string, owner: VolumeOwner, image: string): Promise<void> {
+    this.enter("setVolumeRootOwner", [volume, owner, image]);
+    if (!this.volumes.has(volume)) throw new RuntimeError("not_found", `get ${volume}: no such volume`);
+    if (!this.findImage(image)) throw new RuntimeError("engine", `helper image ${image} is missing`);
+    this.volumeOwners.set(volume, { ...owner });
+  }
+
   async startExec(containerId: string, spec: ExecSpec): Promise<ExecSession> {
     this.enter("startExec", [containerId, spec]);
     const c = this.getContainer(containerId);
@@ -758,9 +806,7 @@ export class FakeRuntime implements Runtime {
         finish(1);
       }
     } else {
-      const run: TmuxRun = this.tmuxMissing
-        ? { code: 127, stdout: "", stderr: "sh: tmux: not found\n" }
-        : this.tmux.run(containerId, argv);
+      const run = this.tmuxRun(containerId, argv);
       setTimeout(() => {
         if (run.stdout) stdout.write(run.stdout);
         if (run.stderr) stderr.write(run.stderr);
@@ -808,6 +854,13 @@ export class FakeRuntime implements Runtime {
     };
     this.execs.push(session);
     return session;
+  }
+
+  /** What a command-mode `tmux` exec reports: the shell's status when the binary is missing or cannot run. */
+  private tmuxRun(containerId: string, argv: string[]): TmuxRun {
+    if (this.tmuxMissing) return { code: 127, stdout: "", stderr: "sh: tmux: not found\n" };
+    if (this.tmuxNotExecutable) return { code: 126, stdout: "", stderr: "sh: tmux: Permission denied\n" };
+    return this.tmux.run(containerId, argv);
   }
 
   async *events(
@@ -928,6 +981,7 @@ export class FakeRuntime implements Runtime {
     const inUse = [...this.containers.values()].some((c) => c.spec.mounts?.some((m) => m.source === name));
     if (inUse) throw new RuntimeError("conflict", `remove ${name}: volume is in use`);
     this.volumes.delete(name);
+    this.volumeOwners.delete(name);
   }
 
   async runHelper(spec: HelperSpec): Promise<HelperResult> {

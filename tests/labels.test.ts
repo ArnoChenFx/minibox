@@ -9,10 +9,17 @@ import {
   parseImageLabels,
   quoteLabelValue,
   stripSlash,
+  templateOwnerOf,
   volumeName,
 } from "../src/labels";
 
 const keys = labelKeys("minibox");
+
+/** Template labels that name an owner. An id that is undefined leaves its label out. */
+const ownerLabels = (uid: string | undefined, gid: string | undefined): Record<string, string> => ({
+  ...(uid === undefined ? {} : { "minibox.template.uid": uid }),
+  ...(gid === undefined ? {} : { "minibox.template.gid": gid }),
+});
 
 describe("labels", () => {
   test("keys derive from prefix", () => {
@@ -67,5 +74,28 @@ describe("labels", () => {
     for (const bad of ["a\nENV X=1", 'a\nCMD ["sh"]', "a\rb", "a\tb", "a\u0000b", "a\u007fb"]) {
       expect(() => labelChange("minibox.template.description", bad)).toThrow("control characters");
     }
+  });
+
+  test("templateOwnerOf reads the owner the template's uid and gid labels name", () => {
+    expect(templateOwnerOf(ownerLabels("1000", "1000"))).toEqual({ uid: 1000, gid: 1000 });
+    expect(templateOwnerOf(ownerLabels("0", "0"))).toEqual({ uid: 0, gid: 0 });
+    expect(templateOwnerOf(ownerLabels("4294967294", "7"))).toEqual({ uid: 4294967294, gid: 7 });
+  });
+
+  test("templateOwnerOf names no owner unless both labels are decimal ids in range", () => {
+    expect(templateOwnerOf(ownerLabels("1000", undefined))).toBeNull();
+    expect(templateOwnerOf(ownerLabels(undefined, "1000"))).toBeNull();
+    expect(templateOwnerOf(ownerLabels("dev", "1000"))).toBeNull();
+    expect(templateOwnerOf(ownerLabels(" 1000", "1000"))).toBeNull();
+    expect(templateOwnerOf(ownerLabels("-1", "1000"))).toBeNull();
+    expect(templateOwnerOf(ownerLabels("1000", "4294967295"))).toBeNull();
+    expect(templateOwnerOf(ownerLabels("99999999999999999999", "1000"))).toBeNull();
+    expect(templateOwnerOf({})).toBeNull();
+    expect(templateOwnerOf(undefined)).toBeNull();
+    expect(templateOwnerOf(null)).toBeNull();
+  });
+
+  test("templateOwnerOf reads only the fixed minibox.template labels, whatever the prefix", () => {
+    expect(templateOwnerOf({ "mb.template.uid": "1000", "mb.template.gid": "1000" })).toBeNull();
   });
 });

@@ -226,6 +226,34 @@ const changeRule: Rule = async ({ principal, host, input, resolved }) => {
   if (input.ttlSec !== undefined) assertTtl(principal, input.ttlSec as number | null);
 };
 
+/**
+ * A box that tracks its template follows the tag when it rebuilds: the tag may now name another image. The token must
+ * see the image the tag names when the rebuild runs, not only the one the box was created from. A tag that names
+ * nothing is not a move, so there is nothing to check.
+ */
+async function assertTrackedTemplateVisible(check: Check, box: Box): Promise<void> {
+  const spec = check.host.specs.read(box.boxId);
+  if (!spec || spec.template.ref !== spec.template.image) return;
+  if ((await imageOrNull(check.host, spec.template.image)) === null) return;
+  await assertImageUsable(check.principal, check.host, spec.template.image, "template");
+}
+
+const rebuildRule: Rule = async (check) => {
+  await changeRule(check);
+  if (check.input.template === undefined) await assertTrackedTemplateVisible(check, resolvedBox(check.resolved));
+};
+
+/** Only an update that changes the box's template, mounts, env, network or profile rebuilds it. */
+const REBUILD_FIELDS = ["template", "mounts", "env", "network", "profile"] as const;
+
+const updateRule: Rule = async (check) => {
+  await changeRule(check);
+  const rebuilds = REBUILD_FIELDS.some((field) => check.input[field] !== undefined);
+  if (rebuilds && check.input.template === undefined) {
+    await assertTrackedTemplateVisible(check, resolvedBox(check.resolved));
+  }
+};
+
 const volumeRule: Rule = async ({ principal, host, resolved }) => {
   const view = resolved as { id: string; name: string } | undefined;
   const record = view ? host.volumes.resolve(view.id, host.host.id) : null;
@@ -262,8 +290,8 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["box.delete", boxRule],
   ["box.action", boxRule],
   ["box.resources", boxRule],
-  ["box.update", changeRule],
-  ["box.rebuild", changeRule],
+  ["box.update", updateRule],
+  ["box.rebuild", rebuildRule],
   ["box.logs", boxRule],
   ["box.stats", boxRule],
   ["snapshot.create", boxRule],
@@ -305,3 +333,8 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["exec.output", execRule],
   ["events.list", noAccess],
 ]);
+
+/** Whether a token may reach an operation at all. The tests use it to hold every token-reachable operation to a rule. */
+export function hasAccessRule(operation: string): boolean {
+  return RULES.has(operation);
+}

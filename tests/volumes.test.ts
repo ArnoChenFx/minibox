@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { statSync } from "node:fs";
 
+import type { AuditNote } from "../src/events/types";
 import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { AuditEvent, ExecutorHooks } from "../src/operations/executor";
@@ -63,6 +64,24 @@ describe("volumes and storage pools", () => {
     expect(runtime.volumes.has(shared.engineName)).toBe(true);
     const still = await boxes.getBox(host, beta.boxId);
     expect(still.mounts.some((mount) => mount.volumeId === shared.id)).toBe(true);
+  });
+
+  test("attaching a volume rebuilds the box, and the workspace root it aligns is recorded under the attach", async () => {
+    runtime.seedImage("dev:1", { "minibox.template.uid": "1000", "minibox.template.gid": "1000" });
+    const alpha = await newBox("alpha", { image: "dev:1" });
+    runtime.seedVolumeOwner(alpha.volume, { uid: 0, gid: 0 });
+    const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    const records: AuditNote[] = [];
+
+    await attachVolume(
+      host,
+      notes.id,
+      { box: alpha.boxId, path: "/srv/notes", mode: "rw", revision: alpha.revision, confirm: true },
+      (note) => records.push(note),
+    );
+
+    expect(runtime.volumeOwners.get(alpha.volume)).toEqual({ uid: 1000, gid: 1000 });
+    expect(records.map((note) => [note.op, note.status])).toEqual([["volume.chown", "ok"]]);
   });
 
   test("a default NFS pool places workspace, home and tools on NFS and cache on local", async () => {
