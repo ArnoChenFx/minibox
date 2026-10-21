@@ -1,3 +1,5 @@
+import { spyOn } from "bun:test";
+
 import type { HostMetrics } from "../../src/host/metrics";
 import { startServer } from "../../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "../support/app";
@@ -66,11 +68,34 @@ async function waitTask(base: string, json: Record<string, unknown> | null): Pro
   }
 }
 
+const MINUTE_MS = 60_000;
+
+/**
+ * Event timestamps group reads by the minute they fall in, so two identical reads on either side of a minute boundary
+ * are stored as two rows, and every later sequence number moves. The clock is moved to the middle of a minute for the
+ * run, which is far longer than the run takes. Every timestamp moves by the same amount, so their order is unchanged.
+ */
+function clockInMiddleOfMinute(): () => void {
+  const real = Date.now;
+  const offset = (MINUTE_MS / 2 - (real() % MINUTE_MS) + MINUTE_MS) % MINUTE_MS;
+  const clock = spyOn(Date, "now").mockImplementation(() => real() + offset);
+  return () => clock.mockRestore();
+}
+
 /**
  * Drives the box and snapshot API through success and failure paths and records every exchange. The same
  * scenario runs against the code before a refactor and after it, and the two transcripts must match.
  */
 export async function runParityScenario(): Promise<Exchange[]> {
+  const restoreClock = clockInMiddleOfMinute();
+  try {
+    return await recordScenario();
+  } finally {
+    restoreClock();
+  }
+}
+
+async function recordScenario(): Promise<Exchange[]> {
   const { app, runtime } = createTestApp({ labelPrefix: "mbtest" });
   app.monitor.snapshot = async () => HOST;
   const restoreLogs = silenceLogs();
