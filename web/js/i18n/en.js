@@ -177,8 +177,22 @@ export default {
     "No volume of this box is mounted at {path} now, so the checkpoint cannot be restored there.",
   "err.checkpoint_pinned": "Checkpoint {id} is pinned. Unpin it before deleting it.",
   "err.checkpoint_rollback_confirm":
-    "Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept; delete them yourself once you no longer need them. Send confirm: true to continue.",
+    "Rolling back first takes a checkpoint of the current data, then replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The replaced volumes are kept until you confirm the rollback, which deletes them, or undo it. Send confirm: true to continue.",
   "err.checkpoint_out_of_scope": "This credential cannot use that checkpoint.",
+  "err.checkpoint_held_by_rollback":
+    "Checkpoint {id} is the safety point of a rollback that waits for its confirm or undo. Confirm or undo that rollback before deleting it.",
+  "err.rollback_pending":
+    "Box {box} has a rollback that waits for its confirm or undo. Confirm or undo it before rolling back again.",
+  "err.rollback_none": "Box {box} has no rollback that waits for its confirm or undo.",
+  "err.rollback_confirm_required":
+    "Confirming deletes the volumes the rollback replaced. The box cannot switch back to them, but the checkpoint taken before the rollback still holds their data. Send confirm: true to continue.",
+  "err.rollback_undo_confirm":
+    "Undoing mounts the replaced volumes again and deletes the volumes the rollback restored. Anything written since the rollback is lost. Send confirm: true to continue.",
+  "err.rollback_undo_gone":
+    "Box {box} cannot undo its rollback: volume {volume}, which the rollback replaced, no longer exists.",
+  "err.rollback_undo_unmounted":
+    "Box {box} cannot undo its rollback: it no longer mounts {volume}, which the rollback restored.",
+  "err.rollback_out_of_scope": "This credential cannot change that box's rollback.",
   "err.box_network_conflict":
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
   "err.volume_reserved": "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",
@@ -363,6 +377,8 @@ export default {
   "act.box.resources": "Resized",
   "act.box.rebuild": "Rebuilt box",
   "act.box.rollback": "Rolled box back",
+  "act.box.rollback.confirm": "Confirmed rollback",
+  "act.box.rollback.undo": "Undid rollback",
   "act.snapshot.create": "Created snapshot",
   "act.snapshot.delete": "Deleted snapshot",
   "act.checkpoint.create": "Took checkpoint",
@@ -700,6 +716,13 @@ export default {
   "ev.box.update": "Box updated",
   "ev.box.resources": "Quota changed",
   "ev.box.rebuild": "Box rebuilt",
+  "ev.box.rollback": "Box rolled back",
+  "ev.box.rollback.confirm": "Rollback confirmed",
+  "ev.box.rollback.undo": "Rollback undone",
+  "ev.checkpoint.create": "Checkpoint taken",
+  "ev.checkpoint.update": "Checkpoint changed",
+  "ev.checkpoint.delete": "Checkpoint deleted",
+  "ev.checkpoint.fork": "Box made from checkpoint",
   "ev.snapshot.create": "Snapshot created",
   "ev.snapshot.delete": "Snapshot deleted",
   "ev.exec.run": "Command",

@@ -56,6 +56,15 @@ function checkpointIdOf(task: Record<string, unknown>): string {
   return String(checkpoint?.id ?? "");
 }
 
+/** A rollback rebuilds the box, so it has a new container id, which the task result carries. */
+function boxIdOfTask(task: Record<string, unknown>): string {
+  const box = (task.result as { box?: { id?: string } } | undefined)?.box;
+  return String(box?.id ?? "");
+}
+
+const rollbackAt = (box: string) => `/api/boxes/${box}/rollback`;
+const ifMatch = (revision: number) => ({ "if-match": String(revision) });
+
 function snapshotRef(json: Record<string, unknown> | null): string {
   const direct = (json?.snapshot as { ref?: string } | undefined)?.ref;
   const nested = (json?.result as { snapshot?: { ref?: string } } | undefined)?.snapshot?.ref;
@@ -584,7 +593,7 @@ async function recordScenario(): Promise<Exchange[]> {
       contentType: JSON_TYPE,
       headers: current,
     });
-    await waitTask(base, rolled.json);
+    const rolledBox = boxIdOfTask(await waitTask(base, rolled.json));
     const forked = await post("fork the checkpoint", `/api/checkpoints/${ckId}/fork`, {
       name: "ckcopy",
       cpus: 1,
@@ -598,6 +607,52 @@ async function recordScenario(): Promise<Exchange[]> {
     });
     await waitTask(base, (await send("delete the checkpoint", "DELETE", `/api/checkpoints/${ckId}`)).json);
     await send("read the deleted checkpoint", "GET", `/api/checkpoints/${ckId}`);
+
+    const afterRollback = await send("read the rolled back box", "GET", `/api/boxes/${rolledBox}`);
+    const rolledRevision = (afterRollback.json?.box as { revision?: number } | undefined)?.revision ?? 1;
+    await send("read the rollback that waits", "GET", rollbackAt(rolledBox));
+    await post("confirm a rollback without confirm", `${rollbackAt(rolledBox)}/confirm`, {});
+    await post("undo a rollback without a revision", `${rollbackAt(rolledBox)}/undo`, { confirm: true });
+    await send("undo a rollback from a stale revision", "POST", `${rollbackAt(rolledBox)}/undo`, {
+      body: JSON.stringify({ confirm: true }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(rolledRevision + 5),
+    });
+    await send("undo a rollback without confirm", "POST", `${rollbackAt(rolledBox)}/undo`, {
+      body: JSON.stringify({}),
+      contentType: JSON_TYPE,
+      headers: ifMatch(rolledRevision),
+    });
+    const undone = await send("undo the rollback", "POST", `${rollbackAt(rolledBox)}/undo`, {
+      body: JSON.stringify({ confirm: true }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(rolledRevision),
+    });
+    const undoneBox = boxIdOfTask(await waitTask(base, undone.json));
+    await send("read the rollback after undo", "GET", rollbackAt(undoneBox));
+    await post("confirm with nothing to confirm", `${rollbackAt(undoneBox)}/confirm`, { confirm: true });
+
+    const second = await post("take a checkpoint before a second rollback", `/api/boxes/${undoneBox}/checkpoints`, {
+      label: "before the second rollback",
+    });
+    const secondCheckpoint = checkpointIdOf(await waitTask(base, second.json));
+    const beforeSecond = await send("read the box before the second rollback", "GET", `/api/boxes/${undoneBox}`);
+    const secondRevision = (beforeSecond.json?.box as { revision?: number } | undefined)?.revision ?? 1;
+    const again = await send("roll back again", "POST", rollbackAt(undoneBox), {
+      body: JSON.stringify({ checkpoint: secondCheckpoint, confirm: true }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(secondRevision),
+    });
+    const againTask = await waitTask(base, again.json);
+    const rolledAgain = boxIdOfTask(againTask);
+    const safety = String((againTask.result as { safety?: { id?: string } } | undefined)?.safety?.id ?? "");
+    await send("delete the safety checkpoint of a waiting rollback", "DELETE", `/api/checkpoints/${safety}`);
+    await send("read the rollback that waits again", "GET", rollbackAt(rolledAgain));
+    const confirmed = await post("confirm the rollback", `${rollbackAt(rolledAgain)}/confirm`, { confirm: true });
+    await waitTask(base, confirmed.json);
+    const freed = await send("delete the safety checkpoint after confirm", "DELETE", `/api/checkpoints/${safety}`);
+    await waitTask(base, freed.json);
+    await send("read the rollback after confirm", "GET", rollbackAt(rolledAgain));
   } finally {
     server.stop(true);
     app.throttle.stop();

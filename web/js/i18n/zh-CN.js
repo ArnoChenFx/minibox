@@ -157,8 +157,19 @@ export default {
   "err.checkpoint_path_not_mounted": "本 Box 当前没有卷挂载在 {path}，无法回滚到该路径。",
   "err.checkpoint_pinned": "检查点 {id} 已置顶。请先取消置顶再删除。",
   "err.checkpoint_rollback_confirm":
-    "回滚会把检查点路径上的卷替换为检查点数据的副本。当前的卷会保留，不再需要时请自行删除。请发送 confirm: true 以继续。",
+    "回滚会先为当前数据拍摄一个检查点，然后把检查点路径上的卷替换为检查点数据的副本。被替换的卷会保留，直到你确认回滚（确认会删除它们）或撤销回滚。请发送 confirm: true 以继续。",
   "err.checkpoint_out_of_scope": "当前凭据不能使用该检查点。",
+  "err.checkpoint_held_by_rollback":
+    "检查点 {id} 是一次等待确认或撤销的回滚的安全点。请先确认或撤销该回滚，再删除它。",
+  "err.rollback_pending": "Box {box} 有一次等待确认或撤销的回滚。请先确认或撤销它，再进行新的回滚。",
+  "err.rollback_none": "Box {box} 没有等待确认或撤销的回滚。",
+  "err.rollback_confirm_required":
+    "确认会删除回滚替换下来的卷。Box 无法再切换回这些卷，但回滚前拍摄的检查点仍保存着它们的数据。请发送 confirm: true 以继续。",
+  "err.rollback_undo_confirm":
+    "撤销会重新挂载回滚替换下来的卷，并删除回滚恢复出来的卷。回滚之后写入的内容都会丢失。请发送 confirm: true 以继续。",
+  "err.rollback_undo_gone": "Box {box} 无法撤销回滚：回滚替换下来的卷 {volume} 已不存在。",
+  "err.rollback_undo_unmounted": "Box {box} 无法撤销回滚：它已不再挂载回滚恢复出来的卷 {volume}。",
+  "err.rollback_out_of_scope": "当前凭据不能更改该 Box 的回滚。",
   "err.box_network_conflict":
     "网络「{network}」已存在，但不是关闭了容器间通信的 bridge 网络。请在没有 Box 使用它时删除该网络，然后重试。",
   "err.volume_reserved": "卷 {volume} 保存着 MiniBox 自身的数据，不能挂载到 Box。",
@@ -328,6 +339,8 @@ export default {
   "act.box.resources": "调整资源",
   "act.box.rebuild": "重建了 Box",
   "act.box.rollback": "回滚了 Box",
+  "act.box.rollback.confirm": "确认了回滚",
+  "act.box.rollback.undo": "撤销了回滚",
   "act.snapshot.create": "创建快照",
   "act.snapshot.delete": "删除快照",
   "act.checkpoint.create": "拍摄检查点",
@@ -651,6 +664,13 @@ export default {
   "ev.box.update": "Box 已更新",
   "ev.box.resources": "配额已修改",
   "ev.box.rebuild": "Box 已重建",
+  "ev.box.rollback": "Box 已回滚",
+  "ev.box.rollback.confirm": "回滚已确认",
+  "ev.box.rollback.undo": "回滚已撤销",
+  "ev.checkpoint.create": "已拍摄检查点",
+  "ev.checkpoint.update": "检查点已修改",
+  "ev.checkpoint.delete": "检查点已删除",
+  "ev.checkpoint.fork": "已从检查点创建 Box",
   "ev.snapshot.create": "快照已创建",
   "ev.snapshot.delete": "快照已删除",
   "ev.exec.run": "命令",

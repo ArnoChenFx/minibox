@@ -8,6 +8,7 @@ import { getBox } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
 import {
   assertForkable,
+  assertNotHeld,
   assertTakeable,
   type CheckpointView,
   deleteCheckpoint,
@@ -22,13 +23,23 @@ import {
   type TakeCheckpointInput,
   updateCheckpoint,
 } from "../services/checkpoints";
+import {
+  assertUndoable,
+  cleanupConfirmation,
+  cleanupPreview,
+  confirmRollback,
+  pendingRollbackView,
+  undoConfirmation,
+  undoPreview,
+  undoRollback,
+} from "../services/rollback";
 import { requireRevision } from "../specs/revision";
 import { snapshotVisible, specViews, ttlFor } from "../tokens/model";
 import { assertWithinQuota, underQuota } from "../tokens/quota";
 import { assertCanCreateDefaultMounts, assertCanWrite } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
-import { BoxSchema, CheckpointSchema, OkSchema } from "./schemas";
+import { BoxSchema, CheckpointSchema, OkSchema, PendingRollbackSchema } from "./schemas";
 import {
   boxId,
   boxName,
@@ -246,8 +257,9 @@ export const checkpointDelete = defineOperation({
   rest: [{ method: "DELETE", path: "/api/checkpoints/:id", status: 202 }],
   cli: "checkpoint rm",
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
-  beforeTask: async (_ctx, _input, checkpoint) => {
+  beforeTask: async ({ host }, _input, checkpoint) => {
     if (checkpoint.pinned) throw conflict(msg("checkpoint_pinned", { id: checkpoint.id }));
+    assertNotHeld(host, checkpoint.id);
   },
   exclusive: ({ host }, _input, checkpoint) => `checkpoint.item:${host.host.id}:${checkpoint.id}`,
   activity: { action: () => "checkpoint.delete", target: (_input, checkpoint) => checkpoint.label },
@@ -275,6 +287,9 @@ export const boxRollback = defineOperation({
   output: z.object({
     box: BoxSchema,
     replaced: z.array(z.object({ id: z.string(), name: z.string() })),
+    safety: z.object({ id: z.string(), label: z.string() }).meta({
+      description: "The checkpoint taken before the rollback. It holds the data the replaced volumes held.",
+    }),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rollback", body: true, ifMatch: true, status: 202 }],
   cli: "box rollback",
@@ -296,8 +311,90 @@ export const boxRollback = defineOperation({
       ctx.principal.id,
       ctx.task,
     );
-    return { box: result.box, replaced: result.replaced };
+    return { box: result.box, replaced: result.replaced, safety: result.safety };
   },
+});
+
+const replacedVolumes = z.array(z.object({ id: z.string(), name: z.string() }));
+
+export const boxRollbackGet = defineOperation({
+  name: "box.rollback.get",
+  tag: "checkpoints",
+  summary: "Read the rollback of a box that waits for its confirm or undo",
+  kind: "read",
+  scope: "checkpoint:read",
+  async: false,
+  input: z.object({ id: boxId() }),
+  output: z.object({ rollback: PendingRollbackSchema.nullable() }),
+  rest: [{ method: "GET", path: "/api/boxes/:id/rollback" }],
+  cli: "box rollback-status",
+  resolve: ({ host }, input) => getBox(host, input.id),
+  run: async ({ host }, _input, box) => ({ rollback: pendingRollbackView(host, box.boxId) }),
+});
+
+/**
+ * Deletes the volumes a rollback replaced. Those volumes are no longer mounted, and the safety checkpoint still holds
+ * their data, so this step is the only one that removes them.
+ */
+export const boxRollbackConfirm = defineOperation({
+  name: "box.rollback.confirm",
+  tag: "checkpoints",
+  summary: "Confirm a rollback: delete the volumes it replaced",
+  kind: "destructive",
+  scope: "volume:write",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    id: boxId(),
+    confirm: storageConfirmFlag(),
+  }),
+  output: z.object({ removed: replacedVolumes }),
+  rest: [{ method: "POST", path: "/api/boxes/:id/rollback/confirm", body: true, status: 202 }],
+  cli: "box rollback-confirm",
+  resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async ({ host }, input, box) => {
+    const preview = cleanupPreview(host, box);
+    if (!input.confirm) throw cleanupConfirmation(preview);
+  },
+  exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
+  activity: { action: () => "box.rollback.confirm", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
+  run: async ({ host, task }, input) => confirmRollback(host, input.id, task),
+});
+
+/**
+ * Mounts the volumes a rollback replaced again, and deletes the ones it restored. The box is rebuilt, so the revision
+ * rules of a rebuild apply, and so does the power lock. Data written since the rollback is lost.
+ */
+export const boxRollbackUndo = defineOperation({
+  name: "box.rollback.undo",
+  tag: "checkpoints",
+  summary: "Undo a rollback: mount the volumes it replaced again",
+  kind: "destructive",
+  scope: "checkpoint:restore",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    id: boxId(),
+    confirm: storageConfirmFlag(),
+    expectedRevision: expectedRevision(),
+  }),
+  output: z.object({ box: BoxSchema }),
+  rest: [{ method: "POST", path: "/api/boxes/:id/rollback/undo", body: true, ifMatch: true, status: 202 }],
+  cli: "box rollback-undo",
+  precondition: (ctx) => assertCanWrite(ctx),
+  resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async ({ host }, input, box) => {
+    const revision = requireRevision(input.expectedRevision);
+    if (!input.confirm) throw undoConfirmation(undoPreview(host, box, revision));
+    assertUndoable(host, box, revision);
+  },
+  exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
+  activity: { action: () => "box.rollback.undo", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
+  run: async (ctx, input) => ({
+    box: await undoRollback(ctx.host, input.id, { revision: requireRevision(input.expectedRevision) }, ctx.task),
+  }),
 });
 
 export const checkpointOperations = [
@@ -308,4 +405,7 @@ export const checkpointOperations = [
   checkpointUpdate,
   checkpointDelete,
   boxRollback,
+  boxRollbackGet,
+  boxRollbackConfirm,
+  boxRollbackUndo,
 ];

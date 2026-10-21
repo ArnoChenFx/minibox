@@ -142,6 +142,24 @@ export const CheckpointSchema = z.object({
   updatedAt: z.string(),
 });
 
+/** A volume a rollback replaced or restored, and the path the box mounts it at. */
+export const RollbackVolumeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+});
+
+/** A rollback waiting for its confirm or undo. `null` in the response when the box has none. */
+export const PendingRollbackSchema = z.object({
+  boxId: z.string(),
+  checkpoint: z.object({ id: z.string(), label: z.string() }),
+  safetyCheckpointId: z.string(),
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  replaced: z.array(RollbackVolumeSchema),
+  restored: z.array(RollbackVolumeSchema),
+});
+
 /** A snapshot or template image, as the image list shows it. */
 export const ImageSchema = z.object({
   id: z.string(),
