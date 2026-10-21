@@ -4,8 +4,9 @@ import { finished } from "node:stream/promises";
 
 import type { AuditNote, Source } from "../src/events/types";
 import type { HostCtx } from "../src/host/registry";
-import type { AppError } from "../src/lib/errors";
+import { type AppError, toAppError } from "../src/lib/errors";
 import type { OperationContext, Principal } from "../src/operations/types";
+import { RuntimeError } from "../src/runtime";
 import { type Box, getBox, stopBox } from "../src/services/boxes";
 import {
   ATTACHES_PER_SESSION_MAX,
@@ -151,13 +152,56 @@ describe("terminal service: sessions", () => {
     expect(env.runtime.callsTo("startExec").length).toBe(before);
   });
 
-  test("a box without tmux reports a conflict that names the missing program", async () => {
+  test("a box whose image has no tmux is refused with the image error and the rebuild hint", async () => {
     const env = setup();
     const box = await runningBox(env);
     env.runtime.tmuxMissing = true;
 
     const error = await rejectionOf(env.terminals.start(env.host, box, "work", "rest"));
-    expect(error).toMatchObject({ status: 409, code: "conflict", key: "session_tmux_missing" });
+    expect(error).toMatchObject({ status: 409, code: "conflict", key: "session_image_unsupported" });
+    expect((error as AppError).hintKey).toBe("session_image_unsupported_hint");
+  });
+
+  test("a tmux that is present but cannot run is refused the same way", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    env.runtime.tmuxNotExecutable = true;
+
+    const error = await rejectionOf(env.terminals.list(env.host, box));
+    expect(error).toMatchObject({ status: 409, code: "conflict", key: "session_image_unsupported" });
+  });
+
+  test("an engine that cannot start a command, because the image has no dev user, is refused the same way", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    const refusal = "unable to find user dev: no matching entries in passwd file";
+    env.runtime.fail("startExec", new RuntimeError("engine", refusal, refusal));
+
+    const error = await rejectionOf(env.terminals.list(env.host, box));
+    expect(error).toMatchObject({ status: 409, code: "conflict", key: "session_image_unsupported" });
+  });
+
+  test("an attach the engine cannot start for the same reason is refused with the image error", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    const startExec = env.runtime.startExec.bind(env.runtime);
+    env.runtime.startExec = async (containerId, spec) => {
+      if (spec.tty) throw new RuntimeError("engine", "unable to find user dev", "unable to find user dev");
+      return startExec(containerId, spec);
+    };
+
+    const error = await rejectionOf(env.terminals.attach(env.host, box, "work", { source: "ui" }));
+    expect(error).toMatchObject({ status: 409, code: "conflict", key: "session_image_unsupported" });
+  });
+
+  test("other engine failures are still reported as Docker errors", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    env.runtime.fail("startExec", new RuntimeError("engine", "exec refused", "exec refused"));
+
+    const error = await rejectionOf(env.terminals.list(env.host, box));
+    expect(toAppError(error)).toMatchObject({ status: 502, code: "docker_error" });
   });
 
   test("an unknown session is reported as not found", async () => {

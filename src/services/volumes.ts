@@ -13,6 +13,7 @@ import { createIndependentVolume, planIndependentVolume, removeEngine } from "..
 import type { PoolBackend, PoolHealth, PoolsFile, RolePools, VolumeRecord, VolumeRole } from "../volumes/types";
 import { type Box, getBox, readSpec } from "./boxes";
 import { rebuildBox } from "./rebuild";
+import type { RecordNote } from "./volume-owner";
 
 export interface VolumeMountView {
   boxId: string;
@@ -226,6 +227,7 @@ export async function attachVolume(
   host: HostCtx,
   ref: string,
   input: { box: string; path: string; mode: MountMode; revision: number; confirm: boolean },
+  record?: RecordNote,
 ): Promise<{ box: Box; warning: "shared_rw" | null }> {
   const volume = requireVolume(host, ref);
   if (!validMountPath(input.path)) throw badRequest(msg("mount_path_invalid", { path: input.path }));
@@ -233,19 +235,20 @@ export async function attachVolume(
   const warning = warnShared(host, volume, input.mode, spec.id);
   const mount: BoxMount = { volume: volume.engineName, path: input.path, mode: input.mode };
   const mounts = nextMounts(spec.mounts, mount);
-  return { box: await applyMounts(host, spec.id, input.revision, mounts, input.confirm, spec.mounts), warning };
+  return { box: await applyMounts(host, spec.id, input.revision, mounts, input.confirm, spec.mounts, record), warning };
 }
 
 export async function detachVolume(
   host: HostCtx,
   ref: string,
   input: { box: string; path: string; revision: number; confirm: boolean },
+  record?: RecordNote,
 ): Promise<{ box: Box }> {
   const volume = requireVolume(host, ref);
   const spec = await readSpec(host, input.box);
   const mounts = spec.mounts.filter((mount) => !(mount.volume === volume.engineName && mount.path === input.path));
   if (mounts.length === spec.mounts.length) throw notFound(msg("mount_not_found", { path: input.path }));
-  return { box: await applyMounts(host, spec.id, input.revision, mounts, input.confirm, spec.mounts) };
+  return { box: await applyMounts(host, spec.id, input.revision, mounts, input.confirm, spec.mounts, record) };
 }
 
 async function applyMounts(
@@ -255,13 +258,14 @@ async function applyMounts(
   mounts: BoxMount[],
   confirm: boolean,
   current: BoxMount[],
+  record?: RecordNote,
 ): Promise<Box> {
   if (sameMountList(current, mounts)) {
     const spec = await readSpec(host, boxId);
     if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
     return getBox(host, boxId);
   }
-  return rebuildBox(host, boxId, revision, { mounts }, confirm);
+  return rebuildBox(host, boxId, revision, { mounts }, confirm, record);
 }
 
 export async function measureVolume(host: HostCtx, ref: string): Promise<VolumeView> {

@@ -9,6 +9,7 @@ import { createDockerRuntime } from "../src/docker/runtime";
 import { isAbortError } from "../src/lib/abort";
 import type { Runtime } from "../src/runtime";
 import { rejectionOf } from "./support/app";
+import { archive, entry, paxEntry } from "./support/tar";
 
 /** A tiny Engine API on a unix socket, so the adapter's HTTP error handling runs without a daemon. */
 interface Recorded {
@@ -23,6 +24,32 @@ let server: Server<undefined>;
 let listed: string[] = [];
 let listStates: Record<string, string> = {};
 const recorded: Recorded[] = [];
+/** Bodies of the container creates the adapter sent. */
+const createBodies: Record<string, unknown>[] = [];
+
+/** Each request as `METHOD path`, with a wait's condition after it, so the order of a helper's calls can be checked. */
+const trailOf = (requests: Recorded[]): string[] =>
+  requests.map((r) => {
+    const condition = new URLSearchParams(r.search).get("condition");
+    return condition ? `${r.method} ${r.path} ${condition}` : `${r.method} ${r.path}`;
+  });
+
+/** The archive the engine sends for a container's path, keyed by container id. */
+const ARCHIVES: Record<string, Buffer> = {
+  "tar-owned": archive(entry({ name: "workspace/", type: "5", uid: 1000, gid: 1000 })),
+  "tar-pax": archive(paxEntry({ uid: "3000000", gid: "3000001" }), entry({ name: "workspace/", type: "5" })),
+  "tar-garbage": Buffer.alloc(512, "z"),
+  "tar-empty": Buffer.alloc(1024),
+};
+
+/** The output of a helper that exits non-zero, in the multiplexed framing the engine uses for a non-TTY log. */
+const helperLog = (text: string): Buffer => {
+  const payload = Buffer.from(text);
+  const header = Buffer.alloc(8);
+  header[0] = 2;
+  header.writeUInt32BE(payload.length, 4);
+  return Buffer.concat([header, payload]);
+};
 
 const RUNNING = {
   Id: "ok",
@@ -177,13 +204,37 @@ async function engine(req: Request): Promise<Response> {
       return json({ message: 'Conflict. The container name "/taken" is already in use' }, 409);
     }
     const body = (await req.json()) as { Image?: string };
+    createBodies.push(body);
     if (body.Image === "missing:latest") return json({ message: "No such image: missing:latest" }, 404);
+    if (body.Image === "helper:ok") return json({ Id: "helper-ok" }, 201);
+    if (body.Image === "helper:fail") return json({ Id: "helper-fail" }, 201);
+    if (body.Image === "helper:refused") return json({ Id: "helper-refused" }, 201);
     return json({ Id: "new" }, 201);
   }
   const lifecycle = /^\/containers\/([^/]+)\/(start|stop)$/.exec(path);
   if (req.method === "POST" && lifecycle) {
+    if (lifecycle[1] === "helper-refused" && lifecycle[2] === "start") {
+      return json({ message: 'exec: "chown": executable file not found in $PATH' }, 400);
+    }
     return new Response(null, { status: lifecycle[1] === "already" ? 304 : 204 });
   }
+  const waited = /^\/containers\/([^/]+)\/wait$/.exec(path);
+  if (req.method === "POST" && waited) {
+    return json({ StatusCode: waited[1] === "helper-fail" ? 1 : 0 });
+  }
+  const archiveOf = /^\/containers\/([^/]+)\/archive$/.exec(path);
+  if (req.method === "GET" && archiveOf) {
+    const id = archiveOf[1] ?? "";
+    if (id === "tar-missing") return json({ message: "Could not find the requested path" }, 404);
+    const body = ARCHIVES[id];
+    return body ? new Response(body) : json({ message: `No such container: ${id}` }, 404);
+  }
+  const attachTo = /^\/containers\/([^/]+)\/attach$/.exec(path);
+  if (req.method === "POST" && attachTo) {
+    return new Response(attachTo[1] === "helper-fail" ? helperLog("chown: boom\n") : null);
+  }
+  const removal = /^\/containers\/([^/]+)$/.exec(path);
+  if (req.method === "DELETE" && removal) return new Response(null, { status: 204 });
   const change = /^\/containers\/([^/]+)\/(update|rename|restart)$/.exec(path);
   if (req.method === "POST" && change) {
     return change[2] === "update" ? json({ Warnings: [] }) : new Response(null, { status: 204 });
@@ -500,5 +551,97 @@ describe("Docker adapter list inspect cache", () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe("Docker adapter volume root owner", () => {
+  test("the owner is read from the first entry of the archive, and PAX ids take precedence over ustar", async () => {
+    expect(await runtime().volumeRootOwner("tar-owned", "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+    expect(await runtime().volumeRootOwner("tar-pax", "/workspace")).toEqual({ uid: 3000000, gid: 3000001 });
+    const request = recorded.at(-1);
+    expect(request).toMatchObject({ method: "GET", path: "/containers/tar-pax/archive" });
+    expect(new URLSearchParams(request?.search).get("path")).toBe("/workspace");
+  });
+
+  test("a path the engine does not have is not_found, and bytes that are not a tar are an engine error", async () => {
+    expect(await rejectionOf(runtime().volumeRootOwner("tar-missing", "/nope"))).toMatchObject({ kind: "not_found" });
+    expect(await rejectionOf(runtime().volumeRootOwner("tar-garbage", "/workspace"))).toMatchObject({
+      kind: "engine",
+      detail: expect.stringContaining("could not read the owner of /workspace"),
+    });
+    expect(await rejectionOf(runtime().volumeRootOwner("tar-empty", "/workspace"))).toMatchObject({ kind: "engine" });
+  });
+
+  test("setting the owner runs a helper that can only chown the volume root, and the engine removes it", async () => {
+    recorded.length = 0;
+    createBodies.length = 0;
+    await runtime().setVolumeRootOwner("mbx-alpha-workspace", { uid: 1000, gid: 1000 }, "helper:ok");
+
+    expect(createBodies).toMatchObject([
+      {
+        Image: "helper:ok",
+        Cmd: ["chown", "1000:1000", "/minibox-volume"],
+        User: "0:0",
+        HostConfig: {
+          Mounts: [
+            {
+              Type: "volume",
+              Source: "mbx-alpha-workspace",
+              Target: "/minibox-volume",
+              ReadOnly: false,
+              VolumeOptions: { NoCopy: true },
+            },
+          ],
+          CapDrop: ["ALL"],
+          CapAdd: ["CHOWN"],
+          SecurityOpt: ["no-new-privileges:true"],
+          NetworkMode: "none",
+          ReadonlyRootfs: true,
+          AutoRemove: true,
+        },
+      },
+    ]);
+    expect(trailOf(recorded)).toEqual([
+      "GET /volumes/mbx-alpha-workspace",
+      "POST /containers/create",
+      "POST /containers/helper-ok/attach",
+      "POST /containers/helper-ok/wait next-exit",
+      "POST /containers/helper-ok/start",
+      "POST /containers/helper-ok/wait removed",
+    ]);
+  });
+
+  test("a helper whose chown fails reports what it printed, and waits for the engine to remove it", async () => {
+    recorded.length = 0;
+    expect(
+      await rejectionOf(runtime().setVolumeRootOwner("mbx-alpha-workspace", { uid: 1000, gid: 1000 }, "helper:fail")),
+    ).toMatchObject({ kind: "engine", detail: "chown of mbx-alpha-workspace exited with status 1: chown: boom" });
+    expect(trailOf(recorded).at(-1)).toBe("POST /containers/helper-fail/wait removed");
+  });
+
+  test("a helper the engine refuses to start is an engine error, not a bad request, and it is removed", async () => {
+    recorded.length = 0;
+    expect(
+      await rejectionOf(
+        runtime().setVolumeRootOwner("mbx-alpha-workspace", { uid: 1000, gid: 1000 }, "helper:refused"),
+      ),
+    ).toMatchObject({ kind: "engine", detail: 'exec: "chown": executable file not found in $PATH' });
+    expect(recorded.at(-1)).toMatchObject({ method: "DELETE", path: "/containers/helper-refused" });
+  });
+
+  test("a volume that does not exist is not_found, and no helper is created", async () => {
+    recorded.length = 0;
+    expect(
+      await rejectionOf(runtime().setVolumeRootOwner("absent", { uid: 1000, gid: 1000 }, "helper:ok")),
+    ).toMatchObject({ kind: "not_found" });
+    expect(recorded.some((r) => r.method === "POST" && r.path === "/containers/create")).toBe(false);
+  });
+
+  test("a helper image the engine does not have is an engine error, not a missing volume", async () => {
+    expect(
+      await rejectionOf(
+        runtime().setVolumeRootOwner("mbx-alpha-workspace", { uid: 1000, gid: 1000 }, "missing:latest"),
+      ),
+    ).toMatchObject({ kind: "engine", detail: "No such image: missing:latest" });
   });
 });

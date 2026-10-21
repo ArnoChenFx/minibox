@@ -427,6 +427,26 @@ describe("terminal session with the console", () => {
     });
   });
 
+  test("a box whose image cannot run sessions sends the image error, with its hint, and closes with 1011", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "rest");
+    const refusal = "unable to find user dev: no matching entries in passwd file";
+    runtime.fail("startExec", new RuntimeError("engine", refusal, refusal));
+
+    const term = connect(`/api/boxes/${id}/terminal?session=work`);
+    await term.opened;
+    const close = await term.closed;
+    expect(close.code).toBe(1011);
+    expect(term.frames()).toContainEqual({
+      type: "error",
+      error: expect.objectContaining({
+        code: "conflict",
+        key: "session_image_unsupported",
+        hintKey: "session_image_unsupported_hint",
+      }),
+    });
+  });
+
   test("a session that does not exist is refused with its 404 and closes with 1011", async () => {
     const id = await createBox("alpha");
     const term = connect(`/api/boxes/${id}/terminal?session=missing`);

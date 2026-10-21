@@ -3,6 +3,9 @@
 # suite does not pull the whole template.
 FROM alpine:3.20
 
+LABEL minibox.template.uid="1000" \
+      minibox.template.gid="1000"
+
 RUN apk add --no-cache bash tmux \
  && addgroup -g 1000 dev \
  && adduser -D -u 1000 -G dev -h /home/dev -s /bin/bash dev \

@@ -123,15 +123,30 @@ export function isKeyName(value: string): boolean {
   return KEY_NAME_RE.test(value);
 }
 
-export type TmuxFailure = "missing" | "no_server" | "not_found" | "duplicate" | "failed";
+export type TmuxFailure = "unrunnable" | "no_server" | "not_found" | "duplicate" | "failed";
 
-/** What a failed tmux command means to the caller. `127` is the shell reporting that the binary is absent. */
+/**
+ * What a failed tmux command means to the caller. The shell exits 127 when tmux is absent and 126 when it is present but
+ * cannot run; either way the box's image cannot run sessions.
+ */
 export function classifyTmuxFailure(code: number, stderr: string): TmuxFailure {
-  if (code === 127) return "missing";
+  if (code === 126 || code === 127) return "unrunnable";
   if (/duplicate session/.test(stderr)) return "duplicate";
   if (/no server running|error connecting to/.test(stderr)) return "no_server";
   if (/can't find|no such session/.test(stderr)) return "not_found";
   return "failed";
+}
+
+const UNRUNNABLE_START_RE =
+  /executable file not found|no such file or directory|permission denied|unable to find user|no matching entries in passwd file/i;
+
+/**
+ * Whether the engine's refusal to start a command in a box means the box cannot run it: the program or the shell is
+ * missing or not executable, or the user it runs as is not in the box. A box from an image older than the base template
+ * fails this way, because that image has no `dev` user.
+ */
+export function isUnrunnableExec(message: string): boolean {
+  return UNRUNNABLE_START_RE.test(message);
 }
 
 /** A tmux version as `tmux -V` prints it. `text` keeps any letter suffix, such as `3.1c`. */

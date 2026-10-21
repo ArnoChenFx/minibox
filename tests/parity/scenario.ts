@@ -28,6 +28,7 @@ export function normalize(text: string): string {
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
     .replace(/[0-9a-f]{64}/g, "<id>")
+    .replace(/ \([0-9a-f]{12}\)/g, " (<image>)")
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<time>")
     .replace(/-\d{8}-\d{6}/g, "-<stamp>")
     .replace(/"parentId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"parentId":"<ulid>"')

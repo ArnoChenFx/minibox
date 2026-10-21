@@ -337,14 +337,6 @@ export function requireUpdate(
   if (![...UPDATE_FIELDS, ...REBUILD_INPUTS].some(present)) addFailure(ctx, { message: msg("box_update_empty") });
 }
 
-/** A rebuild request has to name at least one rebuild field. Whether it differs is checked against the spec. */
-export function requireRebuild(
-  ctx: z.RefinementCtx,
-  input: { template?: unknown; mounts?: unknown; env?: unknown; network?: unknown; profile?: unknown },
-): void {
-  if (REBUILD_INPUTS.every((key) => input[key] === undefined)) addFailure(ctx, { message: msg("rebuild_empty") });
-}
-
 export const optionalBoxName = () =>
   field(
     (value): Checked<string | undefined> =>

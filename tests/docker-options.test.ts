@@ -88,6 +88,11 @@ describe("toCreateOptions", () => {
   test("a zero process limit is still sent, so it cannot be mistaken for no limit", () => {
     expect(toCreateOptions({ ...base, hardening: { pidsLimit: 0 } }).HostConfig).toEqual({ PidsLimit: 0 });
   });
+
+  test("a user is sent as User, and an absent user keeps the image's", () => {
+    expect(toCreateOptions({ ...base, user: "0:0" })).toEqual({ Image: "img:1", User: "0:0" });
+    expect(toCreateOptions(base)).toEqual({ Image: "img:1" });
+  });
 });
 
 describe("toHelperOptions", () => {
