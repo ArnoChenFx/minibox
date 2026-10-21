@@ -439,9 +439,12 @@ export class FakeRuntime implements Runtime {
     };
   }
 
+  /** The listing is read when the call is made, and a held call returns it, as a delayed engine response does. */
   async listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]> {
     this.enter("listContainers", [filter]);
-    return [...this.containers.values()].filter((c) => matchesLabels(c.labels, filter.labels)).map(toInfo);
+    const infos = [...this.containers.values()].filter((c) => matchesLabels(c.labels, filter.labels)).map(toInfo);
+    await this.gate("listContainers");
+    return infos;
   }
 
   /** The state is read when the call is made, and a held call returns that state, as a delayed engine response does. */

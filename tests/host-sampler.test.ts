@@ -368,6 +368,74 @@ describe("the periodic re-list", () => {
     await Bun.sleep(40);
     expect(runtime.callsTo("listContainers").length).toBe(listed);
   });
+
+  test("a listing that does not answer holds up no write: a stop returns at once, and the cache shows the box stopped", async () => {
+    const id = seedBox("rho", true);
+    const sampler = fastSampler({ relistMs: 5 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+
+    const listed = runtime.callsTo("listContainers").length;
+    const hold = runtime.hold("listContainers");
+    try {
+      await waitFor(() => runtime.callsTo("listContainers").length > listed, "the held re-list");
+      const began = performance.now();
+      const box = await stopBox(app.hosts.get(), id);
+      expect(performance.now() - began).toBeLessThan(500);
+      expect(box.running).toBe(false);
+      expect(stateOf(sampler, "rho")).toBe(false);
+      await Bun.sleep(30);
+      expect(runtime.callsTo("listContainers")).toHaveLength(listed + 1);
+    } finally {
+      hold.release();
+    }
+  });
+
+  test("a listing taken before a change is dropped, so it cannot put the old state back", async () => {
+    const id = seedBox("sigma", true);
+    const sampler = fastSampler({ relistMs: 5 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+    boxFrames = [];
+
+    const listed = runtime.callsTo("listContainers").length;
+    const hold = runtime.hold("listContainers");
+    try {
+      await waitFor(() => runtime.callsTo("listContainers").length > listed, "the held re-list");
+      await stopBox(app.hosts.get(), id);
+      boxFrames = [];
+    } finally {
+      hold.release();
+    }
+    await sampler.settle();
+    await Bun.sleep(20);
+    await sampler.settle();
+    expect(boxFrames.some((frame) => frame.op === "upsert" && frame.box.running === true)).toBe(false);
+    expect(stateOf(sampler, "sigma")).toBe(false);
+  });
+
+  test("a listing that does not answer in time is given up, the link stays up, and the re-lists go on", async () => {
+    seedBox("tau", true);
+    const sampler = fastSampler({ relistMs: 5, relistTimeoutMs: 20 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+    const links = linkFrames.length;
+
+    const listed = runtime.callsTo("listContainers").length;
+    const hold = runtime.hold("listContainers");
+    try {
+      await waitFor(() => runtime.callsTo("listContainers").length > listed, "the held re-list");
+      const pending = runtime.callsTo("listContainers").length;
+      await waitFor(() => runtime.callsTo("listContainers").length > pending, "a re-list after the timeout");
+      expect(sampler.ready()).toBe(true);
+      expect(linkFrames).toHaveLength(links);
+    } finally {
+      hold.release();
+    }
+  });
 });
 
 describe("the host summary", () => {

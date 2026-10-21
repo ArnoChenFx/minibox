@@ -32,6 +32,8 @@ const BACKOFF_MAX_MS = 30_000;
 const IDLE_INTERVAL_MS = 30_000;
 /** How often the containers are listed again, so a change the event stream never reported is caught up. */
 const RELIST_MS = 60_000;
+/** Longest a re-list waits for the engine's listing. A listing that is still pending past this is given up. */
+const RELIST_TIMEOUT_MS = 30_000;
 
 export interface SamplerOptions {
   /** Time between two sample rounds while a live subscriber watches. Host metrics use the same interval. */
@@ -40,6 +42,8 @@ export interface SamplerOptions {
   idleIntervalMs?: number;
   /** Time between two full listings of the containers. A stalled event stream hides a change for at most this long. */
   relistMs?: number;
+  /** Longest a re-list waits for its listing. See `RELIST_TIMEOUT_MS`. */
+  relistTimeoutMs?: number;
   /** Samples kept per box. The oldest are dropped first. */
   history: number;
   backoffMinMs?: number;
@@ -135,6 +139,10 @@ export class HostSampler {
   private roundEndedAt = 0;
   /** Ends the sample loop's current wait early, so it reads the cadence and the expedite flag again. */
   private wakeLoop: (() => void) | null = null;
+  /** Counts the changes the cache takes in, so a listing taken before one of them is not applied over it. */
+  private changes = 0;
+  /** True while a re-list's listing is in flight, so that one listing at a time runs. */
+  private relisting = false;
 
   constructor(
     private readonly currentHost: () => HostCtx,
@@ -319,7 +327,7 @@ export class HostSampler {
         end();
         throw e;
       });
-      relist = setInterval(() => void this.enqueue(() => this.relist()), this.options.relistMs ?? RELIST_MS);
+      relist = setInterval(() => void this.relist(), this.options.relistMs ?? RELIST_MS);
       relist.unref();
       await streamed;
     } finally {
@@ -343,6 +351,7 @@ export class HostSampler {
 
   /** A removal outranks a refresh that was queued for the same container. */
   private markDirty(containerId: string, op: "refresh" | "remove"): void {
+    this.changes += 1;
     if (this.dirty.get(containerId) !== "remove") this.dirty.set(containerId, op);
   }
 
@@ -394,24 +403,41 @@ export class HostSampler {
   }
 
   /**
-   * Lists the containers again while the link is up, and publishes what the listing changed. The link is left as it is:
-   * the event stream is still the judge of whether it is up, and this only catches up what that stream never reported.
+   * Lists the containers again while the link is up, and publishes what the listing changed. The listing runs outside
+   * the queue, and a listing that does not answer in time is given up, so an engine that hangs holds up no write. It is
+   * applied in the queue only if the cache took no change while it was listed: a change made meanwhile may be newer than
+   * the listing, and the next re-list catches up. The link is left as it is: the event stream still decides whether it
+   * is up, and this only catches up what that stream never reported.
    */
   private async relist(): Promise<void> {
-    if (!this.ready()) return;
+    const epoch = this.abort?.signal;
+    if (!epoch || this.relisting || !this.ready()) return;
     const host = this.currentHost();
+    const seen = this.changes;
+    const timeoutMs = this.options.relistTimeoutMs ?? RELIST_TIMEOUT_MS;
+    const deadline = AbortSignal.any([epoch, AbortSignal.timeout(timeoutMs)]);
+    this.relisting = true;
     try {
-      const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
-      if (!this.ready()) return;
-      await this.adopt(infos);
-      this.reconcile();
+      const infos = await untilAborted(host.runtime.listContainers({ labels: { [host.keys.box]: "true" } }), deadline);
+      await this.enqueue(async () => {
+        if (!this.ready() || this.changes !== seen) return;
+        await this.adopt(infos);
+        this.reconcile();
+      });
     } catch (e) {
-      log.warn("sampler.relist_failed", { host: host.host.id, error: errorText(e) });
+      if (epoch.aborted) return;
+      log.warn("sampler.relist_failed", {
+        host: host.host.id,
+        error: deadline.aborted ? `no answer within ${timeoutMs} ms` : errorText(e),
+      });
+    } finally {
+      this.relisting = false;
     }
   }
 
   /** Makes the cache hold exactly the listed containers, and gives a spec to each one that has none. */
   private async adopt(infos: ContainerInfo[]): Promise<void> {
+    this.changes += 1;
     this.containers.clear();
     for (const info of infos) this.containers.set(info.id, info);
     await this.claimUnclaimed();
