@@ -128,6 +128,7 @@ export default {
   "err.event_since_invalid": "since must be an ISO 8601 date or date and time, such as 2026-10-20T00:00:00Z.",
   "err.last_event_id_invalid": "Last-Event-ID must be a sequence number from an earlier event.",
   "err.terminal_not_running": "The box is not running, so a terminal can't be opened.",
+  "err.terminal_read_only": "This terminal is read-only. Take over the session in the console to type.",
   "err.ws_upgrade_failed": "WebSocket upgrade failed.",
   "err.too_many_attempts": "Too many attempts. Please try again in 5 minutes.",
   "err.wrong_key": "Incorrect access key.",

@@ -82,6 +82,7 @@ export const MESSAGES = {
   task_limit_range: "limit must be an integer between 1 and {max}.",
   terminal_not_running: "The box is not running, so a terminal can't be opened.",
   ws_upgrade_failed: "WebSocket upgrade failed.",
+  terminal_read_only: "This terminal is read-only. Take over the session in the console to type.",
   too_many_attempts: "Too many attempts. Please try again in 5 minutes.",
   wrong_key: "Incorrect access key.",
   box_not_found: "Box not found.",

@@ -40,26 +40,34 @@ export function json(data: unknown, status = 200, headers: Record<string, string
   });
 }
 
-export function errorResponse(e: unknown): Response {
+/** The error object of every error answer, REST and the terminal socket alike, so a client reads one shape. */
+export interface ErrorBody {
+  code: string;
+  message: string;
+  hint?: string;
+  retryable: boolean;
+  key?: string;
+  params?: unknown;
+  hintKey?: string;
+  hintParams?: unknown;
+  details?: unknown;
+}
+
+export function errorBody(e: unknown): { status: number; error: ErrorBody } {
   const err = toAppError(e);
-  const error: {
-    code: string;
-    message: string;
-    hint?: string;
-    retryable: boolean;
-    key?: string;
-    params?: unknown;
-    hintKey?: string;
-    hintParams?: unknown;
-    details?: unknown;
-  } = { code: err.code, message: err.message, retryable: err.retryable };
+  const error: ErrorBody = { code: err.code, message: err.message, retryable: err.retryable };
   if (err.hint) error.hint = err.hint;
   if (err.key) error.key = err.key;
   if (err.params) error.params = err.params;
   if (err.hintKey) error.hintKey = err.hintKey;
   if (err.hintParams) error.hintParams = err.hintParams;
   if (err.details !== undefined) error.details = err.details;
-  return json({ error }, err.status);
+  return { status: err.status, error };
+}
+
+export function errorResponse(e: unknown): Response {
+  const { status, error } = errorBody(e);
+  return json({ error }, status);
 }
 
 /** Parse a JSON request body. Empty body → `{}`; malformed JSON → 400. */

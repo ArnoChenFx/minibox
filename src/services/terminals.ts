@@ -174,6 +174,15 @@ export class Attachment {
     this.exec.resize(size).catch(() => undefined);
   }
 
+  /** Stops reading output from tmux until the socket has drained, so a slow client does not buffer without limit. */
+  pause(): void {
+    if (!this.closed) this.exec.stream.pause();
+  }
+
+  resume(): void {
+    if (!this.closed) this.exec.stream.resume();
+  }
+
   /** Counts output the caller has passed on, for the close record. */
   sent(bytes: number): void {
     this.bytesOut += bytes;

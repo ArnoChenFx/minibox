@@ -118,6 +118,7 @@ export default {
   "err.event_since_invalid": "since 须为 ISO 8601 日期或日期时间，例如 2026-10-20T00:00:00Z。",
   "err.last_event_id_invalid": "Last-Event-ID 须为之前收到的事件序号。",
   "err.terminal_not_running": "Box 未运行，无法打开终端。",
+  "err.terminal_read_only": "此终端为只读。请在控制台中接管该会话后再输入。",
   "err.ws_upgrade_failed": "WebSocket 升级失败。",
   "err.too_many_attempts": "尝试次数过多，请 5 分钟后再试。",
   "err.wrong_key": "访问密钥不正确。",
