@@ -518,6 +518,11 @@ button {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.kv-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 48px;
+}
 
 /* ---------- Progress / usage bars ---------- */
 .bar {
@@ -1469,6 +1474,10 @@ input[type="range"] {
   .grid-2 {
     grid-template-columns: 1fr;
   }
+  .kv-cols {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
   .login-page {
     grid-template-columns: 1fr;
   }
@@ -1662,4 +1671,66 @@ input[type="range"] {
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
+}
+
+/* ---------- About ---------- */
+.about-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 24px;
+  text-align: center;
+}
+.about-hero img {
+  height: 40px;
+}
+.about-links {
+  overflow: hidden;
+}
+.link-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.link-list li + li {
+  border-top: 1px solid var(--border);
+}
+.link-list a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  color: var(--text);
+  text-decoration: none;
+}
+.link-list a:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+.link-list a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.link-list .ico {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.link-list .meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.link-list .meta .subtle {
+  font-size: 12.5px;
+}
+.link-list .external {
+  color: var(--text-3);
 }
