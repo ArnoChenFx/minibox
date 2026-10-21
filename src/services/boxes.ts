@@ -14,11 +14,11 @@ import {
   RuntimeError,
 } from "../runtime";
 import { ClaimError, ensureSpec } from "../specs/claim";
-import { detectDrift } from "../specs/drift";
 import { pushHistory } from "../specs/history";
 import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState } from "../specs/types";
 import { assertMountAllowed, inspectVolumeOrNull } from "./attachments";
+import { projectBox } from "./box-view";
 
 export interface CreateBoxInput {
   name: string;
@@ -84,44 +84,6 @@ export interface Box {
 
 const MB = 1024 * 1024;
 
-function workspaceVolume(host: HostCtx, spec: BoxSpec): string {
-  const workspace = spec.mounts.find((mount) => mount.path === "/workspace");
-  return workspace?.volume ?? volumeName(host.prefix, spec.createdName);
-}
-
-/** Observed container fields stay on the box so drift is visible. Desired fields come from the spec. */
-function project(host: HostCtx, spec: BoxSpec, info: ContainerInfo): Box {
-  return {
-    id: info.id,
-    boxId: spec.id,
-    name: spec.name,
-    state: info.state,
-    status: info.state,
-    running: info.running,
-    image: info.image,
-    template: spec.template.ref,
-    profile: spec.profile,
-    network: info.network,
-    cpus: info.cpus,
-    memory: info.memoryBytes,
-    pids: info.pidsLimit,
-    createdAt: spec.createdAt,
-    startedAt: info.startedAt,
-    volume: workspaceVolume(host, spec),
-    revision: spec.revision,
-    desired: spec.lifecycle.desired,
-    idleTimeoutSec: spec.lifecycle.idleTimeoutSec,
-    ttlSec: spec.lifecycle.ttlSec,
-    labels: spec.labels,
-    createdBy: spec.createdBy,
-    containerName: info.name,
-    drift: detectDrift(spec, info),
-    recovery: spec.recovery,
-    mounts: spec.mounts,
-    env: spec.env,
-  };
-}
-
 function specForRef(host: HostCtx, ref: string): BoxSpec | null {
   const direct = host.specs.read(ref);
   if (direct?.hostId === host.host.id) return direct;
@@ -161,7 +123,7 @@ export async function getBox(host: HostCtx, ref: string): Promise<Box> {
     try {
       const info = await inspectKnown(host, known);
       if (!parseBoxLabels(info.labels, host.keys).isBox) throw notFound(msg("box_not_found"));
-      return project(host, known, info);
+      return projectBox(host, known, info);
     } catch (e) {
       if (e instanceof RuntimeError) asMissing(e);
       throw e;
@@ -177,7 +139,7 @@ export async function getBox(host: HostCtx, ref: string): Promise<Box> {
   if (!parseBoxLabels(info.labels, host.keys).isBox) throw notFound(msg("box_not_found"));
   try {
     const { spec } = await ensureSpec(host, info);
-    return project(host, spec, info);
+    return projectBox(host, spec, info);
   } catch (e) {
     if (e instanceof ClaimError) throw conflict(msg("box_claim_failed", { detail: e.message }));
     throw e;
@@ -198,7 +160,7 @@ export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {
       }
       throw e;
     }
-    const box = project(host, spec, info);
+    const box = projectBox(host, spec, info);
     if (opts.withStats) {
       box.stats = box.running ? await host.runtime.containerStats(info.id).catch(() => null) : null;
     }
