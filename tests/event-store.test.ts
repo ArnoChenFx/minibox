@@ -170,7 +170,14 @@ describe("EventStore", () => {
 
   test("session sends, terminal and container events are activity and never merged", () => {
     const s = open();
-    const activity = ["session.start", "session.send", "session.close", "terminal.open", "terminal.close", "container.oom"];
+    const activity = [
+      "session.start",
+      "session.send",
+      "session.close",
+      "terminal.open",
+      "terminal.close",
+      "container.oom",
+    ];
     for (const op of activity) {
       expect({ op, tier: tierOf(input({ op, kind: "write", status: "ok" })) }).toEqual({ op, tier: "activity" });
     }
