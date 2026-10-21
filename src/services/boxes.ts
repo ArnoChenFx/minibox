@@ -12,6 +12,7 @@ import {
   type ContainerUpdate,
   type ImageDetails,
   isRuntimeError,
+  type Runtime,
   RuntimeError,
 } from "../runtime";
 import { ClaimError, ensureSpec } from "../specs/claim";
@@ -510,9 +511,39 @@ export async function updateResources(
   return updateBox(host, ref, revision, res);
 }
 
+/** How long one engine read of a box's logs is shared. Open tabs poll a few seconds apart, so they share it. */
+const LOGS_WINDOW_MS = 2000;
+
+const logReads = new WeakMap<Runtime, Map<string, { at: number; read: Promise<string> }>>();
+
+/**
+ * One engine read of a container's logs, shared by every caller that asks within the window. A read that fails is not
+ * kept, so the next caller reads the engine again.
+ */
+function sharedLogs(runtime: Runtime, containerId: string, tail: number): Promise<string> {
+  let reads = logReads.get(runtime);
+  if (!reads) {
+    reads = new Map();
+    logReads.set(runtime, reads);
+  }
+  const now = Date.now();
+  for (const [key, entry] of reads) {
+    if (now - entry.at >= LOGS_WINDOW_MS) reads.delete(key);
+  }
+  const key = `${containerId}\n${tail}`;
+  const hit = reads.get(key);
+  if (hit) return hit.read;
+  const read = runtime.containerLogs(containerId, { tail, timestamps: true });
+  reads.set(key, { at: now, read });
+  read.catch(() => {
+    if (reads.get(key)?.read === read) reads.delete(key);
+  });
+  return read;
+}
+
 export async function getLogs(host: HostCtx, ref: string, tail: number): Promise<string> {
-  const box = await getBox(host, ref);
-  return host.runtime.containerLogs(box.id, { tail, timestamps: true });
+  const box = await readBox(host, ref);
+  return sharedLogs(host.runtime, box.id, tail);
 }
 
 /**

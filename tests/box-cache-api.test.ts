@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import type { App } from "../src/app";
+import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
@@ -149,5 +150,56 @@ describe("host totals", () => {
     expect(metrics.boxes).toEqual({ total: 3, running: 2, allocatedCpus: 3, allocatedMemory: 512 * MB, unlimited: 0 });
     expect(runtime.ops().slice(before)).not.toContain("listContainers");
     expect(runtime.ops().slice(before)).not.toContain("inspectContainer");
+  });
+});
+
+describe("logs shared between readers", () => {
+  test("open tabs asking for the same logs at once cost the engine one read, and no inspect", async () => {
+    const id = seedBox("echo", true);
+    const base = await startApp();
+    const before = runtime.calls.length;
+    const reads = runtime.callsTo("containerLogs").length;
+
+    const replies = await Promise.all(
+      Array.from({ length: 5 }, () => getJson(`${base}/api/boxes/${id}/logs?tail=200`)),
+    );
+
+    expect(replies.map((reply) => reply.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(runtime.callsTo("containerLogs").length - reads).toBe(1);
+    expect(runtime.ops().slice(before)).not.toContain("inspectContainer");
+  });
+
+  test("a read is shared for its window, and the engine is read again after it", async () => {
+    const id = seedBox("foxtrot", true);
+    const base = await startApp();
+    const reads = runtime.callsTo("containerLogs").length;
+    const start = Date.now();
+    const clock = spyOn(Date, "now");
+    try {
+      clock.mockReturnValue(start);
+      await getJson(`${base}/api/boxes/${id}/logs?tail=200`);
+      clock.mockReturnValue(start + 1500);
+      await getJson(`${base}/api/boxes/${id}/logs?tail=200`);
+      expect(runtime.callsTo("containerLogs").length - reads).toBe(1);
+
+      clock.mockReturnValue(start + 2500);
+      await getJson(`${base}/api/boxes/${id}/logs?tail=200`);
+      expect(runtime.callsTo("containerLogs").length - reads).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test("each tail is read on its own, and a failed read is not kept", async () => {
+    const id = seedBox("golf", true);
+    const base = await startApp();
+    const reads = runtime.callsTo("containerLogs").length;
+    runtime.fail("containerLogs", new RuntimeError("engine", "daemon hiccup"));
+
+    const failed = await getJson(`${base}/api/boxes/${id}/logs?tail=200`);
+    expect(failed.status).not.toBe(200);
+    expect((await getJson(`${base}/api/boxes/${id}/logs?tail=200`)).status).toBe(200);
+    expect((await getJson(`${base}/api/boxes/${id}/logs?tail=50`)).status).toBe(200);
+    expect(runtime.callsTo("containerLogs").length - reads).toBe(3);
   });
 });
