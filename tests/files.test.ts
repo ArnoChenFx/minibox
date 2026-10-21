@@ -4,7 +4,7 @@ import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { copyFiles, downloadArchive, listFiles, readFile, uploadArchive, writeFile } from "../src/services/files";
-import { jailPath, symlinkTargetEscapes } from "../src/services/files-path";
+import { jailPath, resolveSymlinkInVolume, symlinkTargetEscapes } from "../src/services/files-path";
 import { fileArchive } from "../src/services/files-tar";
 import { createVolume } from "../src/services/volumes";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
@@ -57,6 +57,18 @@ describe("path jail", () => {
     expect(symlinkTargetEscapes("/minibox-volume", "escape", "/minibox-volume/ok")).toBe(false);
     expect(symlinkTargetEscapes("/minibox-volume", "a/link", "../..")).toBe(true);
     expect(symlinkTargetEscapes("/minibox-volume", "a/link", "../b")).toBe(false);
+    // Physical base after following an earlier in-volume link: foo at volume root with target "..".
+    expect(symlinkTargetEscapes("/minibox-volume", "foo", "..")).toBe(true);
+    expect(symlinkTargetEscapes("/minibox-volume", "deep/link/foo", "..")).toBe(false); // lexical-only would miss it
+  });
+
+  test("resolveSymlinkInVolume returns mount-relative target or null on escape", () => {
+    expect(resolveSymlinkInVolume("/minibox-volume", "deep/link", "..")).toBe("");
+    expect(resolveSymlinkInVolume("/minibox-volume", "foo", "..")).toBeNull();
+    expect(resolveSymlinkInVolume("/minibox-volume", "a/link", "../b")).toBe("b");
+    expect(resolveSymlinkInVolume("/minibox-volume", "escape", "/minibox-volume/ok")).toBe("ok");
+    expect(resolveSymlinkInVolume("/minibox-volume", "escape", "/minibox-volume")).toBe("");
+    expect(resolveSymlinkInVolume("/minibox-volume", "escape", "/tmp")).toBeNull();
   });
 });
 
@@ -140,6 +152,40 @@ describe("volume file API", () => {
     const up = await rejectionOf(
       uploadArchive(host, vol.id, {
         path: "escape",
+        content: Buffer.from(fileArchive("pwned.txt", Buffer.from("nope"))).toString("base64"),
+      }),
+    );
+    expect(up).toBeInstanceOf(AppError);
+    expect((up as AppError).status).toBe(400);
+  });
+
+  test("refuses read/write/copy/upload/download through nested relative symlink escape (B1b)", async () => {
+    // deep/link → ".." (in-volume, lands at volume root); foo → ".." at root (escapes).
+    // Lexical check of deep/link/foo with target ".." wrongly scored safe; physical base is foo.
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "deep/link", { type: "symlink", target: ".." });
+    runtime.seedVolumeFile(vol.engineName, "foo", { type: "symlink", target: ".." });
+    runtime.seedOutsideFile("/secret-out", { type: "file", content: Buffer.from("PWNED") });
+
+    const read = await rejectionOf(readFile(host, vol.id, { path: "deep/link/foo/secret-out" }));
+    expect(read).toBeInstanceOf(AppError);
+    expect((read as AppError).status).toBe(400);
+
+    const write = await rejectionOf(writeFile(host, vol.id, { path: "deep/link/foo/pwned.txt", content: "x" }));
+    expect(write).toBeInstanceOf(AppError);
+    expect((write as AppError).status).toBe(400);
+
+    const copy = await rejectionOf(copyFiles(host, vol.id, { from: "deep/link/foo/secret-out", to: "leaked.txt" }));
+    expect(copy).toBeInstanceOf(AppError);
+    expect((copy as AppError).status).toBe(400);
+
+    const dl = await rejectionOf(downloadArchive(host, vol.id, { path: "deep/link/foo/secret-out" }));
+    expect(dl).toBeInstanceOf(AppError);
+    expect((dl as AppError).status).toBe(400);
+
+    const up = await rejectionOf(
+      uploadArchive(host, vol.id, {
+        path: "deep/link/foo",
         content: Buffer.from(fileArchive("pwned.txt", Buffer.from("nope"))).toString("base64"),
       }),
     );

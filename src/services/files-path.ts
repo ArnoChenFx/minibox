@@ -47,24 +47,35 @@ export function baseOf(relative: string): string {
 }
 
 /**
- * Whether a symlink at `symlinkRelative` (volume-relative) whose target is `target` would leave the volume.
- * Absolute targets escape unless they stay under `mountPath`. Relative targets escape when `..` walks above the root.
+ * Resolve a symlink at `symlinkRelative` (mount-relative physical path of the link) to a mount-relative path.
+ * Returns `null` when the target would leave the volume mount root.
  */
-export function symlinkTargetEscapes(mountPath: string, symlinkRelative: string, target: string): boolean {
-  if (target === "" || target.includes("\0")) return true;
+export function resolveSymlinkInVolume(mountPath: string, symlinkRelative: string, target: string): string | null {
+  if (target === "" || target.includes("\0")) return null;
   const root = mountPath.replace(/\/+$/, "") || "/";
   if (target.startsWith("/")) {
-    return target !== root && !target.startsWith(`${root}/`);
+    if (target === root) return "";
+    if (!target.startsWith(`${root}/`)) return null;
+    return target.slice(root.length + 1);
   }
   const base = symlinkRelative === "" ? [] : parentOf(symlinkRelative).split("/").filter(Boolean);
   for (const part of target.split("/")) {
     if (part === "" || part === ".") continue;
     if (part === "..") {
-      if (base.length === 0) return true;
+      if (base.length === 0) return null;
       base.pop();
       continue;
     }
     base.push(part);
   }
-  return false;
+  return base.join("/");
+}
+
+/**
+ * Whether a symlink at `symlinkRelative` (volume-relative) whose target is `target` would leave the volume.
+ * Absolute targets escape unless they stay under `mountPath`. Relative targets escape when `..` walks above the root.
+ * `symlinkRelative` must be the **physical** location of the link (after following earlier in-volume symlinks).
+ */
+export function symlinkTargetEscapes(mountPath: string, symlinkRelative: string, target: string): boolean {
+  return resolveSymlinkInVolume(mountPath, symlinkRelative, target) === null;
 }

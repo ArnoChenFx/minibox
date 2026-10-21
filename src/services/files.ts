@@ -6,7 +6,7 @@ import { AppError, badRequest, notFound, toAppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { isRuntimeError, RuntimeError } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
-import { baseOf, containerPath, jailPath, parentOf, symlinkTargetEscapes } from "./files-path";
+import { baseOf, containerPath, jailPath, parentOf, resolveSymlinkInVolume } from "./files-path";
 import { DEV_GID, DEV_UID, dirArchive, fileArchive, firstFileData, parseTar } from "./files-tar";
 
 /** Where helpers and archive containers mount the target volume. Matches the chown helper's mount style. */
@@ -162,13 +162,14 @@ async function assertPathComponentsSafe(
   if (relative === "") return;
   const parts = relative.split("/");
   const last = parts.length - 1;
-  let built = "";
+  // Physical mount-relative directory after following accepted in-volume symlinks (not the lexical path).
+  let resolved = "";
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
     if (part === undefined) break;
-    built = built === "" ? part : `${built}/${part}`;
     if (opts.leaveFinalUnchecked && i === last) break;
-    const abs = containerPath(access.mountPath, built);
+    const physical = resolved === "" ? part : `${resolved}/${part}`;
+    const abs = containerPath(access.mountPath, physical);
     let tar: Buffer;
     try {
       tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
@@ -177,10 +178,19 @@ async function assertPathComponentsSafe(
       throw e;
     }
     const first = firstFileData(tar);
-    if (!first) continue;
-    if (first.type === "symlink" && symlinkTargetEscapes(access.mountPath, built, first.linkname || "")) {
-      throw badRequest(msg("file_path_escape"), { field: "path" });
+    if (!first) {
+      resolved = physical;
+      continue;
     }
+    if (first.type === "symlink") {
+      const next = resolveSymlinkInVolume(access.mountPath, physical, first.linkname || "");
+      if (next === null) {
+        throw badRequest(msg("file_path_escape"), { field: "path" });
+      }
+      resolved = next;
+      continue;
+    }
+    resolved = physical;
   }
 }
 
