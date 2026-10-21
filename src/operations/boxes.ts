@@ -140,6 +140,21 @@ export const boxCreate = defineOperation({
       }),
     idleTimeoutSec: idleTimeout(),
     ttlSec: ttl("create"),
+    tools: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(63)
+          .regex(/^[a-z][a-z0-9-]*$/),
+      )
+      .max(32)
+      .optional()
+      .meta({
+        description:
+          "Catalog tool ids to record on the box spec (version latest). After create, call reconcile_tools (or install_tool) to install them onto the shared tools volume.",
+      }),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/boxes", body: true, status: 201 }],
@@ -148,7 +163,7 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
@@ -173,6 +188,7 @@ export const boxCreate = defineOperation({
           mounts: input.mounts,
           idleTimeoutSec: input.idleTimeoutSec,
           ttlSec: ttlFor(principal, input.ttlSec),
+          tools: input.tools,
         },
         record,
       ),

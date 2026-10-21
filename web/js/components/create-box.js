@@ -7,6 +7,7 @@ import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoi
 import { getTemplates, hostNow, refreshHost } from "../lib/store.js";
 import { nameError, openDialog, toast } from "../lib/ui.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
+import { openTasks } from "./tasks.js";
 
 const PRESETS = [
   { id: "small", label: "cb.small", cpus: 2, memoryMb: 4096 },
@@ -59,6 +60,25 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   };
   let choices = null;
   let seeded = false;
+
+  let catalog = [];
+  try {
+    catalog = (await api("/api/tools/catalog")).tools;
+  } catch {
+    catalog = [];
+  }
+  const toolsSection =
+    snapshot || !catalog.length
+      ? ""
+      : `<div class="field" id="cbToolsField"><span class="label">${t("cb.tools")}</span>
+          <div class="help">${t("cb.toolsHelp")}</div>
+          <div class="tool-checks" id="cbTools">${catalog
+            .map(
+              (tool) => `<label class="check-row"><input type="checkbox" value="${esc(tool.id)}" />
+                <span><strong>${esc(tool.name)}</strong><span class="subtle"> · ${esc(tool.source)}${tool.requires ? ` · ${esc(tool.requires)}` : ""} · ~${tool.estimatedMb} MB</span>
+                <span class="help">${esc(tool.description)}</span></span></label>`,
+            )
+            .join("")}</div></div>`;
 
   const templatePicker = snapshot
     ? `<div class="option" aria-checked="true"><span class="avatar">${icon("camera")}</span><span class="meta"><strong>${esc(snapshot)}</strong><span>${t("cb.fromSnapshotHint")}</span></span></div>`
@@ -128,7 +148,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
               `<button type="button" class="seg" data-profile="${p}" aria-pressed="${p === state.profile}"><strong>${t(`profile.${p}`)}</strong><span>${t(`profile.${p}Hint`)}</span></button>`,
           ).join("")}</div>
           <div class="help">${t("cb.profileHelp")}</div></div>
-      </details>${volumesSection}`,
+      </details>${toolsSection}${volumesSection}`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
 
@@ -308,12 +328,23 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     try {
       const body = { name, cpus: state.cpus, memoryMb: state.memoryMb, profile: state.profile };
       if (mounts) body.mounts = mounts;
+      const selectedTools = [...root.querySelectorAll("#cbTools input:checked")].map((el) => el.value);
+      if (selectedTools.length) body.tools = selectedTools;
       const res = snapshot
         ? await api(`/api/snapshots/${enc(snapshot)}/boxes`, { method: "POST", body })
         : await api("/api/boxes", { method: "POST", body: { ...body, template: state.template } });
       close();
       toast(t("cb.created"), { message: t("cb.createdText", { name: res.box.name }) });
       refreshHost();
+      if (selectedTools.length) {
+        try {
+          const task = await api(`/api/boxes/${enc(res.box.id)}/tools/reconcile`, { method: "POST" });
+          if (task?.taskId) openTasks(task.taskId);
+          toast(t("cb.toolsInstalling"), { message: t("cb.toolsInstallingText") });
+        } catch (installErr) {
+          toast(t("cb.toolsInstallLater"), { message: installErr.message });
+        }
+      }
       onCreated?.(res.box);
     } catch (e) {
       btn.disabled = false;

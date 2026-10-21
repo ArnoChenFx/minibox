@@ -423,6 +423,57 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("cancel a missing task", "POST", "/api/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/cancel");
     await send("cancel a finished task", "POST", `/api/tasks/${String(finished.json?.id ?? "")}/cancel`);
 
+    await send("list tool catalog", "GET", "/api/tools/catalog");
+    const toolsBox = boxId(
+      (
+        await post("create tools box", "/api/boxes", {
+          name: "toolsbox",
+          cpus: 1,
+          memoryMb: 256,
+          tools: ["claude-code"],
+        })
+      ).json,
+    );
+    await send("list tools", "GET", "/api/tools");
+    await send("list tools for the box", "GET", `/api/tools?id=${toolsBox}`);
+    const priorHelper = runtime.helperHandler;
+    runtime.helperHandler = (spec) => {
+      const cmd = spec.cmd.join(" ");
+      if (
+        cmd.includes("claude") ||
+        cmd.includes("npm install") ||
+        cmd.includes("npm uninstall") ||
+        cmd.includes("command -v")
+      ) {
+        if (cmd.includes("--version") || cmd.includes("command -v")) return { exitCode: 0, logs: "1.0.0\n" };
+        return { exitCode: 0, logs: "ok\n" };
+      }
+      return priorHelper(spec);
+    };
+    const installTask = await post("install claude-code", `/api/boxes/${toolsBox}/tools/install`, {
+      tool: "claude-code",
+      version: "latest",
+    });
+    await waitTask(base, installTask.json);
+    await send("get install task", "GET", `/api/tasks/${String(installTask.json?.taskId ?? "")}`);
+    const upgradeTask = await post("upgrade claude-code", `/api/boxes/${toolsBox}/tools/upgrade`, {
+      tool: "claude-code",
+      version: "latest",
+    });
+    await waitTask(base, upgradeTask.json);
+    const reconcileTask = await send("reconcile tools", "POST", `/api/boxes/${toolsBox}/tools/reconcile`);
+    await waitTask(base, reconcileTask.json);
+    const uninstallTask = await post("uninstall claude-code", `/api/boxes/${toolsBox}/tools/uninstall`, {
+      tool: "claude-code",
+    });
+    await waitTask(base, uninstallTask.json);
+    const unknown = await post("install an unknown tool", `/api/boxes/${toolsBox}/tools/install`, {
+      tool: "no-such-tool",
+    });
+    await waitTask(base, unknown.json);
+    runtime.helperHandler = priorHelper;
+    await send("delete the tools box", "DELETE", `/api/boxes/${toolsBox}`);
+
     const term = boxId(
       (await post("create the session box", "/api/boxes", { name: "term", cpus: 1, memoryMb: 256 })).json,
     );

@@ -61,6 +61,12 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "volume.usage": () => ({ id: "spare" }),
   "pool.list": () => ({}),
   "pool.replace": () => ({ pools: [{ name: "local", backend: "local", default: true }], confirm: true }),
+  "tool.catalog": () => ({}),
+  "tool.list": () => ({}),
+  "tool.install": (id) => ({ id, tool: "claude-code", version: "latest" }),
+  "tool.upgrade": (id) => ({ id, tool: "claude-code", version: "latest" }),
+  "tool.uninstall": (id) => ({ id, tool: "claude-code" }),
+  "tool.reconcile": (id) => ({ id }),
   "session.list": (id) => ({ id }),
   "session.start": (id) => ({ id, name: "work" }),
   "session.read": (id) => ({ id, name: "work", lines: 10 }),
@@ -719,6 +725,11 @@ describe("projections", () => {
       "measure_volume",
       "replace_pools",
     ]);
+    expect(
+      mcpTools(OPERATIONS, ["tools"])
+        .map((tool) => tool.name)
+        .toSorted(),
+    ).toEqual(["install_tool", "list_tools", "reconcile_tools", "uninstall_tool", "upgrade_tool"]);
   });
 
   test("rebuild_box is outside the default toolsets and only in the rebuild toolset", () => {
@@ -741,6 +752,7 @@ describe("projections", () => {
       "mounts",
       "idleTimeoutSec",
       "ttlSec",
+      "tools",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });

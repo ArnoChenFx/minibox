@@ -82,6 +82,7 @@ export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): B
     recovery: spec.recovery,
     mounts: mountViews(host, spec.mounts),
     env: spec.env,
+    tools: spec.tools,
     storage: storageOf(host, spec),
   };
 }

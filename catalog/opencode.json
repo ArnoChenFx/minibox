@@ -1,0 +1,15 @@
+{
+  "id": "opencode",
+  "name": "OpenCode",
+  "description": "Open-source coding agent CLI (V2 @opencode/cli).",
+  "source": "npm",
+  "package": "@opencode/cli",
+  "bin": "opencode",
+  "needsRoot": false,
+  "estimatedMb": 100,
+  "requires": "Node \u2265 20",
+  "install": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "upgrade": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "uninstall": "npm uninstall -g --prefix {{prefix}} {{package}}",
+  "detect": "command -v opencode >/dev/null && opencode --version 2>/dev/null | head -1"
+}

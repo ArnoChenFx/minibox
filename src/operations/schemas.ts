@@ -82,6 +82,8 @@ export const BoxSchema = z.object({
   mounts: z.array(BoxMountSchema),
   /** Plain values and secret references. A secret reference is stored and not injected. */
   env: z.array(BoxEnvSchema),
+  /** Desired Agent CLIs from the box spec. */
+  tools: z.array(z.object({ id: z.string(), version: z.string() })),
   /** `unreachable` when a pool behind a mount could not be probed. The engine state stays in `state`. */
   storage: StorageStatusSchema,
 });

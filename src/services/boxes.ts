@@ -1,3 +1,5 @@
+import { dirname } from "node:path";
+
 import { type BoxProfile, hardeningFor } from "../box-profile";
 import type { StatSample } from "../host/live";
 import type { HostCtx } from "../host/registry";
@@ -20,6 +22,7 @@ import { ClaimError, ensureSpec } from "../specs/claim";
 import { pushHistory } from "../specs/history";
 import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState, MountMode, StopReason } from "../specs/types";
+import { loadCatalog } from "../tools/catalog";
 import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent, poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
@@ -29,6 +32,7 @@ import type { VolumeRecord, VolumeRole } from "../volumes/types";
 import { assertMountAllowed, mountTarget } from "./attachments";
 import { projectBox } from "./box-view";
 import type { RecordNote as AuditRecord } from "./terminals";
+import { desiredToolsOf } from "./tools";
 import { alignVolumeRoot, type RecordNote, writableWorkspaceVolume } from "./volume-owner";
 
 export interface CreateBoxInput {
@@ -49,6 +53,8 @@ export interface CreateBoxInput {
   idleTimeoutSec?: number | null;
   /** Absolute lifetime from create time. `null` means no TTL. */
   ttlSec?: number | null;
+  /** Catalog tool ids to record on the spec (`version: latest`). Install via tool.reconcile. */
+  tools?: string[];
 }
 
 export interface BoxUpdate {
@@ -105,6 +111,8 @@ export interface Box {
   mounts: BoxMountView[];
   /** Plain values and secret references. A secret reference is stored and not injected. */
   env: BoxEnv[];
+  /** Desired Agent CLIs from the spec (`id` + `version`). */
+  tools: { id: string; version: string }[];
   /** `unreachable` when a pool backing a mount could not be probed. The engine state stays in `state`. */
   storage: {
     status: "ok" | "unreachable" | "unknown";
@@ -461,7 +469,7 @@ async function buildBox(
       createdResources: resources,
       mounts,
       env: [],
-      tools: [],
+      tools: desiredToolsOf(input.tools, loadCatalog(dirname(host.specs.dir()))),
       labels: {},
       lifecycle: {
         desired: "running",

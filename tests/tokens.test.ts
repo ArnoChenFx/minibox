@@ -270,6 +270,16 @@ describe("presets and file access", () => {
     expect(requiredScopes("files:write")).toEqual(["files:write", "exec"]);
   });
 
+  test("tool install/upgrade/uninstall/reconcile need tool:install, not box:write (B3)", () => {
+    expect(requiredScopes("tool:install")).toEqual(["tool:install"]);
+    const sandbox = grantsOf(compileToken({ name: "s", preset: "sandboxed-agent" }));
+    const boxWrite = grantsOf(compileToken({ name: "w", scopes: ["box:write"] }));
+    const installer = grantsOf(compileToken({ name: "t", scopes: ["tool:install"] }));
+    expect(scopeAllowed(sandbox, "tool:install")).toBe(false);
+    expect(scopeAllowed(boxWrite, "tool:install")).toBe(false);
+    expect(scopeAllowed(installer, "tool:install")).toBe(true);
+  });
+
   test("an operation scope that no token scope covers is owner-only, including one the registry does not know", () => {
     for (const scope of ["pool:admin", "pool:read", "token:manage", "template:build", "task:write", "made:up"]) {
       expect(requiredScopes(scope)).toBe("owner");

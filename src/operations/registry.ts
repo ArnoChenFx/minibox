@@ -7,6 +7,7 @@ import { snapshotOperations } from "./snapshots";
 import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
 import { tokenOperations } from "./tokens";
+import { toolOperations } from "./tools";
 import type { Operation } from "./types";
 import { volumeOperations } from "./volumes";
 
@@ -15,6 +16,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...boxOperations,
   ...execOperations,
   ...volumeOperations,
+  ...toolOperations,
   ...sessionOperations,
   ...snapshotOperations,
   ...templateOperations,

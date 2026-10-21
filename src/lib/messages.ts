@@ -225,6 +225,16 @@ export const MESSAGES = {
   mcp_toolset_hint:
     "Use core, session, network, storage, tools, meta or rebuild, for example /mcp?toolsets=core,session.",
   mcp_not_sse: "GET /mcp does not stream events.",
+  tool_catalog_invalid: "Tool catalog entry {file} is invalid: {detail}.",
+  tool_unknown: "Unknown tool “{id}”.",
+  tool_needs_root: "Tool “{id}” requires root, which MiniBox does not run for Agent CLI installs.",
+  tool_volume_missing: "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
+  tool_install_failed: "Installing “{id}” failed: {detail}",
+  tool_install_timeout: "Installing “{id}” timed out.",
+  tool_reconcile_failed: "Could not install the requested tools: {detail}.",
+  tool_ids_invalid: "tools must be an array of catalog ids (letters, digits and hyphens), at most 32 entries.",
+  tool_version_invalid:
+    "Tool version must be latest or a pin of letters, digits, dots, underscores, plus and hyphen (optional leading v), at most 64 characters.",
   mcp_not_sse_hint: "Post JSON-RPC to /mcp. DELETE /mcp closes a session.",
 } as const;
 export type MessageKey = keyof typeof MESSAGES;

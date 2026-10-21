@@ -144,6 +144,22 @@ export interface HelperSpec {
   capAdd?: string[];
   timeoutSec?: number;
   labels?: Record<string, string>;
+  /** `NAME=value` entries. Used by Agent CLI installs for HTTP_PROXY and npm/pip settings. */
+  env?: string[];
+  /**
+   * When true, the helper joins the engine's default bridge so it can reach npm / PyPI / GitHub.
+   * Absent or false keeps NetworkMode `none` (volume probes and chown).
+   */
+  network?: boolean;
+  /**
+   * When false, the root filesystem is writable (needed for package managers that write outside the tools mount).
+   * Absent or true keeps the read-only root with a small `/tmp`.
+   */
+  readonlyRoot?: boolean;
+  /** Memory cap in bytes. Absent keeps the 256 MiB helper default. Tool installs raise this. */
+  memoryBytes?: number;
+  /** Process limit. Absent keeps 64. */
+  pidsLimit?: number;
 }
 
 export interface DiskUsage {

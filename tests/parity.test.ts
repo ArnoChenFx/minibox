@@ -19,5 +19,5 @@ describe("HTTP parity", () => {
     for (const [index, exchange] of expected.entries()) {
       expect({ index, ...actual[index] }).toEqual({ index, ...exchange });
     }
-  });
+  }, 15_000);
 });

@@ -2228,3 +2228,27 @@ textarea.token-lines {
 .link-list .external {
   color: var(--text-3);
 }
+
+/* Agent CLI checkboxes on the create dialog (#8) */
+.tool-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.check-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.check-row input {
+  margin-top: 3px;
+}
+.check-row .help {
+  display: block;
+  margin-top: 2px;
+}

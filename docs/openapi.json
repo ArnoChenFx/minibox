@@ -19,6 +19,9 @@
       "name": "volumes"
     },
     {
+      "name": "tools"
+    },
+    {
       "name": "sessions"
     },
     {
@@ -364,6 +367,25 @@
                               "additionalProperties": false
                             }
                           },
+                          "tools": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "version"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
                           "storage": {
                             "type": "object",
                             "properties": {
@@ -469,6 +491,7 @@
                           "recovery",
                           "mounts",
                           "env",
+                          "tools",
                           "storage"
                         ],
                         "additionalProperties": false
@@ -667,6 +690,17 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "tools": {
+                    "description": "Catalog tool ids to record on the box spec (version latest). After create, call reconcile_tools (or install_tool) to install them onto the shared tools volume.",
+                    "maxItems": 32,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 63,
+                      "pattern": "^[a-z][a-z0-9-]*$"
+                    }
                   }
                 },
                 "required": [
@@ -970,6 +1004,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -1044,6 +1097,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -1482,6 +1536,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -1587,6 +1660,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage",
                         "stats"
                       ],
@@ -2270,6 +2344,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -2344,6 +2437,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -2812,6 +2906,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -2886,6 +2999,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -3314,6 +3428,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -3388,6 +3521,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -3816,6 +3950,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -3890,6 +4043,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -4358,6 +4512,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -4432,6 +4605,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -4941,6 +5115,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -5015,6 +5208,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -7578,6 +7772,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -7652,6 +7865,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -8162,6 +8376,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -8236,6 +8469,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false
@@ -9354,6 +9588,1141 @@
         "x-mcp": {
           "name": "replace_pools",
           "toolset": "storage"
+        }
+      }
+    },
+    "/api/tools/catalog": {
+      "get": {
+        "operationId": "tool.catalog",
+        "tags": [
+          "tools"
+        ],
+        "summary": "List the Agent CLI catalog without install status",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "estimatedMb": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "requires": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "npm",
+                              "pip",
+                              "script"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "description",
+                          "estimatedMb",
+                          "requires",
+                          "source"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "tools"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:read",
+        "x-async": false
+      }
+    },
+    "/api/tools": {
+      "get": {
+        "operationId": "tool.list",
+        "tags": [
+          "tools"
+        ],
+        "summary": "List Agent CLI catalog and install status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "When set, desired versions come from this box's spec.",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "npm",
+                              "pip",
+                              "script"
+                            ]
+                          },
+                          "package": {
+                            "type": "string"
+                          },
+                          "bin": {
+                            "type": "string"
+                          },
+                          "estimatedMb": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "requires": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "desiredVersion": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "installed": {
+                            "type": "boolean"
+                          },
+                          "installedVersion": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "description",
+                          "source",
+                          "package",
+                          "bin",
+                          "estimatedMb",
+                          "requires",
+                          "desiredVersion",
+                          "installed",
+                          "installedVersion"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "tools"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:read",
+        "x-async": false,
+        "x-cli": "tool list",
+        "x-mcp": {
+          "name": "list_tools",
+          "toolset": "tools"
+        }
+      }
+    },
+    "/api/boxes/{id}/tools/install": {
+      "post": {
+        "operationId": "tool.install",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Install an Agent CLI into the shared tools volume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "Catalog tool id, such as claude-code."
+                  },
+                  "version": {
+                    "default": "latest",
+                    "description": "Desired package version, or latest. Letters, digits, dots, underscores, plus and hyphen only (optional leading v).",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^(latest|v?[A-Za-z0-9][A-Za-z0-9._+-]{0,62})$"
+                  }
+                },
+                "required": [
+                  "tool"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "tool:install",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "installedVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "installedVersion"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "tool install",
+        "x-mcp": {
+          "name": "install_tool",
+          "toolset": "tools"
+        }
+      }
+    },
+    "/api/boxes/{id}/tools/upgrade": {
+      "post": {
+        "operationId": "tool.upgrade",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Upgrade an Agent CLI on the shared tools volume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "Catalog tool id, such as claude-code."
+                  },
+                  "version": {
+                    "default": "latest",
+                    "description": "Desired package version, or latest. Letters, digits, dots, underscores, plus and hyphen only (optional leading v).",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^(latest|v?[A-Za-z0-9][A-Za-z0-9._+-]{0,62})$"
+                  }
+                },
+                "required": [
+                  "tool"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "tool:install",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "installedVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "installedVersion"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "tool upgrade",
+        "x-mcp": {
+          "name": "upgrade_tool",
+          "toolset": "tools"
+        }
+      }
+    },
+    "/api/boxes/{id}/tools/uninstall": {
+      "post": {
+        "operationId": "tool.uninstall",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Uninstall an Agent CLI from the shared tools volume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "Catalog tool id, such as claude-code."
+                  }
+                },
+                "required": [
+                  "tool"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "tool:install",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "installedVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "installedVersion"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "tool uninstall",
+        "x-mcp": {
+          "name": "uninstall_tool",
+          "toolset": "tools"
+        }
+      }
+    },
+    "/api/boxes/{id}/tools/reconcile": {
+      "post": {
+        "operationId": "tool.reconcile",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Install missing Agent CLIs from the box spec",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "tool:install",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "installed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "skipped": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "failed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "detail"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "installed",
+            "skipped",
+            "failed"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "tool reconcile",
+        "x-mcp": {
+          "name": "reconcile_tools",
+          "toolset": "tools"
         }
       }
     },
@@ -11028,6 +12397,25 @@
                             "additionalProperties": false
                           }
                         },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
                         "storage": {
                           "type": "object",
                           "properties": {
@@ -11102,6 +12490,7 @@
                         "recovery",
                         "mounts",
                         "env",
+                        "tools",
                         "storage"
                       ],
                       "additionalProperties": false

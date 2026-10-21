@@ -139,6 +139,34 @@ describe("toHelperOptions", () => {
     expect(options.HostConfig).toMatchObject({ CapDrop: ["ALL"], NetworkMode: "none", AutoRemove: true });
   });
 
+  test("a tools writer may join the bridge, write the root filesystem, and carry proxy env", () => {
+    const options = toHelperOptions(
+      {
+        image: "img:1",
+        cmd: ["npm", "install"],
+        user: "1000:1000",
+        network: true,
+        readonlyRoot: false,
+        memoryBytes: 1024 * 1024 * 1024,
+        pidsLimit: 256,
+        env: ["HTTP_PROXY=http://proxy:8080", "PATH=/opt/minibox/tools/bin"],
+        mounts: [{ source: "tools", target: "/opt/minibox/tools", mode: "rw" }],
+      },
+      "mbxhlp00000004",
+    );
+    expect(options).toMatchObject({
+      User: "1000:1000",
+      Env: ["HTTP_PROXY=http://proxy:8080", "PATH=/opt/minibox/tools/bin"],
+      HostConfig: {
+        NetworkMode: "bridge",
+        ReadonlyRootfs: false,
+        Memory: 1024 * 1024 * 1024,
+        PidsLimit: 256,
+      },
+    });
+    expect(options.HostConfig).not.toHaveProperty("Tmpfs");
+  });
+
   test("a read-only host path is a read-only bind and is not NoCopy", () => {
     const options = toHelperOptions(
       { image: "img:1", cmd: ["true"], mounts: [{ source: "/srv/pool", target: "/mnt", kind: "bind", mode: "ro" }] },
