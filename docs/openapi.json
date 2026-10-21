@@ -613,19 +613,6 @@
                     ],
                     "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
                   },
-                  "ttlSec": {
-                    "description": "Time to live in seconds. A positive integer, at most 365 days, or null for none. Omitted or null stores no TTL, except for an agent token with a max TTL, which stores that cap. A value above the cap is refused. Nothing stops or deletes the box when the time elapses.",
-                    "anyOf": [
-                      {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 31536000
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
                   "mounts": {
                     "description": "Mounts to use instead of the four role volumes. An empty list creates a box with no mounts. Omitted, MiniBox creates workspace, home, tools and cache.",
                     "type": "array",
@@ -669,7 +656,7 @@
                     ]
                   },
                   "ttlSec": {
-                    "description": "Time to live in seconds. A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
+                    "description": "Time to live in seconds. A positive integer, at most 365 days, or null for none. Omitted or null stores no TTL, except for an agent token with a max TTL, which stores that cap. A value above the cap is refused. When the time elapses the box stops, and its container is kept.",
                     "anyOf": [
                       {
                         "type": "integer",
@@ -10727,7 +10714,7 @@
                     "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
                   },
                   "ttlSec": {
-                    "description": "Time to live in seconds. A positive integer, at most 365 days, or null for none. Omitted or null stores no TTL, except for an agent token with a max TTL, which stores that cap. A value above the cap is refused. Nothing stops or deletes the box when the time elapses.",
+                    "description": "Time to live in seconds. A positive integer, at most 365 days, or null for none. Omitted or null stores no TTL, except for an agent token with a max TTL, which stores that cap. A value above the cap is refused. When the time elapses the box stops, and its container is kept.",
                     "anyOf": [
                       {
                         "type": "integer",
