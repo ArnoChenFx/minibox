@@ -2333,3 +2333,12 @@ textarea.token-lines {
   align-items: center;
   gap: 6px;
 }
+.tool-action-cell {
+  white-space: nowrap;
+}
+.tool-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+}

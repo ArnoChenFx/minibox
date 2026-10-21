@@ -466,7 +466,7 @@ function toolRow(tool) {
     <td class="mono">${esc(tool.id)}</td>
     <td>${tool.desiredVersion ? esc(tool.desiredVersion) : "—"}</td>
     <td>${toolInstalledCell(tool)}</td>
-    <td class="actions">${toolActionCell(tool)}</td>
+    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool)}</div></td>
   </tr>`;
 }
 
