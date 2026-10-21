@@ -24,6 +24,19 @@ function nameTaken(host: HostCtx, name: string): boolean {
   return host.volumes.list().some((volume) => volume.hostId === host.host.id && volume.name === name);
 }
 
+/** Most numbered names tried for a role volume before a create gives up with `volume_exists`. */
+const NAME_ATTEMPTS = 100;
+
+/**
+ * A free display name for a box's role volume: `<box>-<role>`, then `<box>-<role>-<pool>`, then numbered. Deleting a box
+ * keeps its volumes by default, so recreating a box of the same name several times must not run out of names.
+ */
+function freeName(host: HostCtx, base: string, pool: string): string {
+  const candidates = [base, `${base}-${pool}`];
+  for (let n = 2; n <= NAME_ATTEMPTS; n++) candidates.push(`${base}-${n}`);
+  return candidates.find((name) => !nameTaken(host, name)) ?? base;
+}
+
 async function materialize(
   host: HostCtx,
   input: NewVolume,
@@ -98,8 +111,7 @@ async function provisionDefaultMountsLocked(
       mounts.push(mountFor(plan.role, plan.existing.engineName));
       continue;
     }
-    let name = plan.input.name;
-    if (nameTaken(host, name)) name = `${name}-${plan.input.pool}`;
+    const name = freeName(host, plan.input.name, plan.input.pool);
     const created = await materialize(host, { ...plan.input, name }, known, changes);
     if (created.chown) chown.push(created.record.engineName);
     mounts.push(mountFor(plan.role, created.record.engineName));

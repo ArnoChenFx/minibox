@@ -351,6 +351,31 @@ describe("a failed create gives back what it made", () => {
   });
 });
 
+describe("recreating a box whose volumes were kept", () => {
+  test("each new box of the same name gets fresh volumes under a free name, and the kept ones stay", async () => {
+    const names: string[][] = [];
+    for (let round = 0; round < 4; round++) {
+      const box = await newBox("dev");
+      names.push(
+        box.mounts
+          .filter((mount) => mount.role === "workspace" || mount.role === "home")
+          .map((mount) => mount.volumeName ?? "")
+          .toSorted(),
+      );
+      expect((await boxes.deleteBox(host, box.boxId, false)).volumeDeleted).toBe(false);
+    }
+    expect(names).toEqual([
+      ["dev-home", "dev-workspace"],
+      ["dev-home-local", "dev-workspace-local"],
+      ["dev-home-2", "dev-workspace-2"],
+      ["dev-home-3", "dev-workspace-3"],
+    ]);
+    const kept = host.volumes.list().filter((volume) => volume.role === "workspace");
+    expect(kept).toHaveLength(4);
+    for (const volume of kept) expect(runtime.volumes.has(volume.engineName)).toBe(true);
+  });
+});
+
 describe("the shared tools volume", () => {
   test("is named for its host, so a second host creates its own", async () => {
     await newBox("alpha");
