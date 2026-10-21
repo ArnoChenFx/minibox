@@ -5,7 +5,7 @@ import { msg } from "../lib/messages";
 import { RuntimeError } from "../runtime";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, MountMode } from "../specs/types";
-import { claimEngineVolumes } from "../volumes/engine";
+import { assertVolumesPresent, claimEngineVolumes } from "../volumes/engine";
 import { probePools } from "../volumes/health";
 import { validMountPath } from "../volumes/mounts";
 import { normalizePools, type PoolDraft, type RoleDraft } from "../volumes/pools";
@@ -190,6 +190,7 @@ async function applyMounts(
 
 export async function measureVolume(host: HostCtx, ref: string): Promise<VolumeView> {
   const volume = requireVolume(host, ref);
+  await assertVolumesPresent(host, [volume.engineName]);
   let image: string;
   try {
     await host.runtime.inspectImage(host.baseTemplateTag);

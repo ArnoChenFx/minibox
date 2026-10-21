@@ -133,7 +133,7 @@ export default {
   "err.volume_unmanaged": "卷 {volume} 不是 MiniBox 创建的，Box 不能挂载它。",
   "err.volume_in_use": "卷 {volume} 已被另一个 Box 挂载。",
   "err.volume_missing":
-    "卷 {volume} 已被 MiniBox 记录，但引擎中已不存在。MiniBox 不会重新创建它。请删除该卷的记录，或恢复引擎中的卷。",
+    "卷 {volume} 在引擎中已不存在。MiniBox 不会重新创建它。请恢复引擎中的卷，或在不再需要时删除该卷的记录。",
   "err.network_reserved": "Box 不能加入网络 {network}。host、none 与 container 网络均被拒绝。",
   "err.network_not_managed": "Box 不能加入网络 {network}，只能加入 {managed}。",
   "err.cpu_over_host": "CPU 核数超出宿主机上限（{cores} 核）。",

@@ -15,6 +15,7 @@ import { planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from
 import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, BoxRecovery, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
+import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox } from "./boxes";
@@ -288,7 +289,13 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState): Promise
     await fail(() => host.runtime.renameContainer(previous.containerId, previous.containerName));
   }
   if (state.oldStopped && state.wasRunning) {
-    await fail(() => host.runtime.startContainer(previous.containerId));
+    await fail(async () => {
+      await assertVolumesPresent(
+        host,
+        previous.mounts.map((mount) => mount.volume),
+      );
+      await host.runtime.startContainer(previous.containerId);
+    });
   }
   await state.changes.rollback();
   if (!state.specWritten) return;
@@ -328,6 +335,10 @@ async function swap(
       ...planned,
       mounts: await resolveVolumes(host, previous, planned.mounts, state.changes),
     };
+    await assertVolumesPresent(
+      host,
+      resolved.mounts.map((mount) => mount.volume),
+    );
     const created = await host.runtime.createContainer(containerSpec(host, previous, resolved, template, scratch));
     state.createdId = created.id;
     await assertFresh(host, created.id, template.image, resolved);

@@ -19,7 +19,7 @@ import { pushHistory } from "../specs/history";
 import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState, MountMode } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
-import { poolsUsed, trackPoolRoots } from "../volumes/engine";
+import { assertVolumesPresent, poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { validMountPath } from "../volumes/mounts";
 import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
@@ -432,6 +432,10 @@ async function buildBox(
       [keys.pids]: String(pids),
       [keys.createdBy]: createdBy,
     };
+    await assertVolumesPresent(
+      host,
+      mounts.map((mount) => mount.volume),
+    );
     const created = await runtime
       .createContainer({
         name,
@@ -490,9 +494,15 @@ async function buildBox(
   return containerId;
 }
 
+/** Start and restart refuse a box whose pool is unreachable or whose volume is gone, instead of letting Docker recreate it. */
 async function ensureRunningStorage(host: HostCtx, box: Box): Promise<void> {
   const spec = host.specs.read(box.boxId);
-  await assertPoolsReachable(host, poolsUsed(host, spec?.mounts ?? box.mounts));
+  const mounts = spec?.mounts ?? box.mounts;
+  await assertPoolsReachable(host, poolsUsed(host, mounts));
+  await assertVolumesPresent(
+    host,
+    mounts.map((mount) => mount.volume),
+  );
 }
 
 export async function startBox(host: HostCtx, ref: string): Promise<Box> {

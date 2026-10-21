@@ -8,7 +8,7 @@ import type { OperationContext } from "../src/operations/types";
 import { type HelperSpec, RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
-import { attachVolume, createVolume, getPools, listVolumes, savePools } from "../src/services/volumes";
+import { attachVolume, createVolume, getPools, listVolumes, measureVolume, savePools } from "../src/services/volumes";
 import { claimEngineVolumes } from "../src/volumes/engine";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
@@ -374,5 +374,107 @@ describe("the shared tools volume", () => {
       mode: "ro",
     });
     expect(host.volumes.list().filter((volume) => volume.role === "tools")).toHaveLength(1);
+  });
+});
+
+describe("a volume the engine lost is refused, not recreated", () => {
+  test("starting or restarting a box whose volume is gone is a conflict, and the engine is not asked to start it", async () => {
+    const box = await newBox("alpha");
+    await boxes.stopBox(host, box.id);
+    runtime.volumes.delete(box.volume);
+    const starts = runtime.callsTo("startContainer").length;
+    const restarts = runtime.callsTo("restartContainer").length;
+
+    expect(await rejectionOf(boxes.startBox(host, box.id))).toMatchObject({
+      status: 409,
+      key: "volume_missing",
+      params: { volume: "alpha-workspace" },
+    });
+    expect(await rejectionOf(boxes.restartBox(host, box.id))).toMatchObject({ status: 409, key: "volume_missing" });
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
+    expect(runtime.callsTo("restartContainer")).toHaveLength(restarts);
+    expect(runtime.volumes.has(box.volume)).toBe(false);
+    expect((await boxes.getBox(host, box.id)).running).toBe(false);
+  });
+
+  test("reconcile reports the box whose volume is gone as failed and still starts the others", async () => {
+    const lost = await newBox("lost");
+    const fine = await newBox("fine");
+    await runtime.stopContainer(lost.id, { timeoutSec: 1 });
+    await runtime.stopContainer(fine.id, { timeoutSec: 1 });
+    runtime.volumes.delete(lost.volume);
+
+    const report = await reconcileHost(host);
+    expect(report.failed).toEqual([{ id: lost.boxId, error: expect.stringContaining("no longer exists") }]);
+    expect(report.started).toEqual([fine.boxId]);
+    expect(runtime.volumes.has(lost.volume)).toBe(false);
+  });
+
+  test("measuring a standalone volume the engine lost is refused before a helper could create it", async () => {
+    const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    runtime.volumes.delete(notes.engineName);
+    const helpers = runtime.callsTo("runHelper").length;
+
+    expect(await rejectionOf(measureVolume(host, notes.id))).toMatchObject({
+      status: 409,
+      key: "volume_missing",
+      params: { volume: "notes" },
+    });
+    expect(runtime.callsTo("runHelper")).toHaveLength(helpers);
+    expect(runtime.volumes.has(notes.engineName)).toBe(false);
+  });
+
+  test("attaching a standalone volume the engine lost is refused and no container is created", async () => {
+    const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    const box = await newBox("alpha");
+    runtime.volumes.delete(notes.engineName);
+    const creates = runtime.callsTo("createContainer").length;
+
+    expect(
+      await rejectionOf(
+        attachVolume(host, notes.id, {
+          box: box.boxId,
+          path: "/srv/notes",
+          mode: "rw",
+          revision: box.revision,
+          confirm: true,
+        }),
+      ),
+    ).toMatchObject({ status: 409, key: "volume_missing", params: { volume: "notes" } });
+    expect(runtime.callsTo("createContainer")).toHaveLength(creates);
+    expect(runtime.volumes.has(notes.engineName)).toBe(false);
+  });
+
+  test("a create that finds the shared tools volume gone is refused and leaves no volume, container or spec", async () => {
+    const first = await newBox("first");
+    await boxes.deleteBox(host, first.id, true);
+    const tools = host.volumes.list().find((volume) => volume.role === "tools");
+    if (!tools) throw new Error("the shared tools record is missing");
+    runtime.volumes.delete(tools.engineName);
+
+    expect(await rejectionOf(newBox("second"))).toMatchObject({
+      status: 409,
+      key: "volume_missing",
+      params: { volume: tools.name },
+    });
+    expect(runtime.volumes.size).toBe(0);
+    expect(runtime.containers.size).toBe(0);
+    expect(host.specs.findByName("second")).toBeNull();
+    expect(host.volumes.list().map((volume) => volume.role)).toEqual(["tools"]);
+  });
+
+  test("a legacy workspace record whose volume is gone blocks the box, instead of making a new workspace", async () => {
+    runtime.volumes.set("mbtest-ws-gone", { name: "mbtest-ws-gone", labels: managed("gone") });
+    await claimEngineVolumes(host);
+    runtime.volumes.delete("mbtest-ws-gone");
+
+    expect(await rejectionOf(newBox("gone"))).toMatchObject({
+      status: 409,
+      key: "volume_missing",
+      params: { volume: "mbtest-ws-gone" },
+    });
+    expect(runtime.volumes.size).toBe(0);
+    expect(runtime.containers.size).toBe(0);
+    expect(host.volumes.list().map((volume) => volume.engineName)).toEqual(["mbtest-ws-gone"]);
   });
 });

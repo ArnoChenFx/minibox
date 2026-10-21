@@ -18,6 +18,7 @@ import {
   type HelperResult,
   type HelperSpec,
   type ImageSummary,
+  type Mount,
   type Runtime,
   type RuntimeEvent,
   type RuntimeInfo,
@@ -297,6 +298,17 @@ export class FakeRuntime implements Runtime {
     return this.containers.get(idOrName) ?? [...this.containers.values()].find((c) => c.name === idOrName);
   }
 
+  /**
+   * As the engine does, a named volume that a container or helper mounts is created when it is missing. A bind mount
+   * (`kind: "bind"`, or a source that is an absolute path) names a host path and never creates a volume.
+   */
+  private ensureVolumes(mounts: Mount[] | undefined): void {
+    for (const mount of mounts ?? []) {
+      const named = mount.kind !== "bind" && !mount.source.startsWith("/");
+      if (named && !this.volumes.has(mount.source)) this.volumes.set(mount.source, { name: mount.source, labels: {} });
+    }
+  }
+
   private getContainer(idOrName: string): FakeContainer {
     const c = this.findContainer(idOrName);
     if (!c) throw new RuntimeError("not_found", `No such container: ${idOrName}`);
@@ -398,6 +410,7 @@ export class FakeRuntime implements Runtime {
     if (spec.name !== undefined && this.findContainer(spec.name)) {
       throw new RuntimeError("conflict", `Conflict. The container name "/${spec.name}" is already in use`);
     }
+    this.ensureVolumes(spec.mounts);
     const limits = {
       cpus: spec.cpus ?? null,
       memoryBytes: spec.memoryBytes ?? null,
@@ -410,6 +423,7 @@ export class FakeRuntime implements Runtime {
     this.enter("startContainer", [id]);
     const c = this.getContainer(id);
     if (!c.running) {
+      this.ensureVolumes(c.spec.mounts);
       this.attach(c);
       c.running = true;
       c.startedAt = now();
@@ -424,6 +438,7 @@ export class FakeRuntime implements Runtime {
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("restartContainer", [id, opts]);
     const c = this.getContainer(id);
+    this.ensureVolumes(c.spec.mounts);
     this.attach(c);
     c.running = true;
     c.startedAt = now();
@@ -654,6 +669,7 @@ export class FakeRuntime implements Runtime {
   async runHelper(spec: HelperSpec): Promise<HelperResult> {
     this.enter("runHelper", [spec]);
     this.getImage(spec.image);
+    this.ensureVolumes(spec.mounts);
     return this.helperHandler(spec);
   }
 

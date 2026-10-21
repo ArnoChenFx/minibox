@@ -1,6 +1,6 @@
 import type { HostCtx } from "../host/registry";
 import { volumeName } from "../labels";
-import { badRequest, forbidden } from "../lib/errors";
+import { badRequest, conflict, forbidden } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { RuntimeError, type VolumeInfo } from "../runtime";
@@ -114,9 +114,17 @@ export async function inspectVolumeOrNull(host: HostCtx, name: string): Promise<
 }
 
 /**
- * Creates the engine volume for a record. Local volumes still need `chownEngines`; nfs and path are prepared here.
- * Every step that creates something registers its undo in `changes`, so a later failure removes it again.
+ * Refuses an engine volume that no longer exists. Docker creates a missing named volume when a container is created or
+ * started and when a helper runs, so a check here is the only thing that keeps a lost volume from coming back empty.
  */
+export async function assertVolumesPresent(host: HostCtx, engineNames: Iterable<string>): Promise<void> {
+  for (const engineName of new Set(engineNames)) {
+    if ((await inspectVolumeOrNull(host, engineName)) !== null) continue;
+    const record = host.volumes.findByEngine(host.host.id, engineName);
+    throw conflict(msg("volume_missing", { volume: record?.name ?? engineName }));
+  }
+}
+
 /**
  * Records the removal of each NFS pool root that does not exist yet. The reachability probe creates a missing root, so
  * this runs before the probe, and a failed create then removes the root it caused.
@@ -137,6 +145,10 @@ export async function trackPoolRoots(
   }
 }
 
+/**
+ * Creates the engine volume for a record. Local volumes still need `chownEngines`; nfs and path are prepared here.
+ * Every step that creates something registers its undo in `changes`, so a later failure removes it again.
+ */
 export async function createEngineVolume(
   host: HostCtx,
   pool: StoragePool,
@@ -321,19 +333,20 @@ export async function adoptLegacyWorkspace(
   changes: VolumeChanges,
 ): Promise<VolumeRecord | null> {
   const engineName = volumeName(host.prefix, boxName);
+  const existing = host.volumes.findByEngine(host.host.id, engineName);
   let info: VolumeInfo;
   try {
     info = await host.runtime.inspectVolume(engineName);
   } catch (e) {
-    if (e instanceof RuntimeError && e.kind === "not_found") return null;
-    throw e;
+    if (!(e instanceof RuntimeError && e.kind === "not_found")) throw e;
+    if (existing) throw conflict(msg("volume_missing", { volume: existing.name }));
+    return null;
   }
   if (info.labels[host.keys.box] !== "true") throw forbidden(msg("volume_unmanaged", { volume: engineName }));
   if (mountedByAnotherBox(host, boxId, engineName) || ownedByAnotherBox(host, boxId, engineName)) {
     throw forbidden(msg("volume_in_use", { volume: engineName }));
   }
   const now = new Date().toISOString();
-  const existing = host.volumes.findByEngine(host.host.id, engineName);
   if (existing) {
     if (existing.ownership === "owned" && existing.ownerBoxId === boxId) return existing;
     const adopted: VolumeRecord = {

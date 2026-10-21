@@ -24,6 +24,7 @@ import * as boxes from "../src/services/boxes";
 import { rebuildBox } from "../src/services/rebuild";
 import { createSnapshot, deleteSnapshot } from "../src/services/snapshots";
 import { deleteTemplate, promoteSnapshot } from "../src/services/templates";
+import { attachVolume, createVolume, measureVolume } from "../src/services/volumes";
 import type { RebuildRequest } from "../src/specs/plan";
 import type { BoxMount } from "../src/specs/types";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
@@ -616,6 +617,44 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         expect(recordIds()).toEqual(recordsBefore);
         expect(await boxIds()).toEqual(boxesBefore);
         expect(host.specs.findByName("rollback")).toBeNull();
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a standalone volume the engine lost is refused by measure and attach, and the engine does not recreate it",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const box = await boxes.createBox(host, { name: "gone-owner", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const notes = await createVolume(host, { name: `${prefix}-notes`, role: null, createdBy: "owner" });
+        expect(await volumeExists(notes.engineName)).toBe(true);
+        await runtime.removeVolume(notes.engineName);
+
+        expect(await rejectionOf(measureVolume(host, notes.id))).toMatchObject({
+          status: 409,
+          key: "volume_missing",
+          params: { volume: notes.name },
+        });
+        expect(await volumeExists(notes.engineName)).toBe(false);
+
+        expect(
+          await rejectionOf(
+            attachVolume(host, notes.id, {
+              box: box.boxId,
+              path: "/srv/notes",
+              mode: "rw",
+              revision: box.revision,
+              confirm: true,
+            }),
+          ),
+        ).toMatchObject({ status: 409, key: "volume_missing", params: { volume: notes.name } });
+        expect(await volumeExists(notes.engineName)).toBe(false);
+        expect((await runtime.inspectContainer(box.id)).running).toBe(true);
+        await boxes.deleteBox(host, box.id, true);
       } finally {
         restore();
       }

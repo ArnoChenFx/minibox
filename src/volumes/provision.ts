@@ -7,6 +7,7 @@ import type { BoxMount } from "../specs/types";
 import { VolumeChanges } from "./changes";
 import {
   adoptLegacyWorkspace,
+  assertVolumesPresent,
   blankRecord,
   chownEngines,
   createEngineVolume,
@@ -93,6 +94,7 @@ async function provisionDefaultMountsLocked(
       }
     }
     if (plan.existing) {
+      await assertVolumesPresent(host, [plan.existing.engineName]);
       mounts.push(mountFor(plan.role, plan.existing.engineName));
       continue;
     }
