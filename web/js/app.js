@@ -8,6 +8,7 @@ import { setCrumbs } from "./lib/layout.js";
 import { onHost } from "./lib/store.js";
 import { applyTheme, currentTheme, toggleTheme } from "./lib/theme.js";
 import { confirmDialog } from "./lib/ui.js";
+import * as about from "./pages/about.js";
 import * as boxDetail from "./pages/box-detail.js";
 import * as boxes from "./pages/boxes.js";
 import * as overview from "./pages/overview.js";
@@ -22,6 +23,7 @@ const ROUTES = [
   { re: /^\/snapshots$/, page: snapshots, nav: "snapshots", crumbs: ["nav.snapshots"] },
   { re: /^\/templates$/, page: templates, nav: "templates", crumbs: ["nav.templates"] },
   { re: /^\/settings$/, page: settings, nav: "settings", crumbs: ["nav.settings"] },
+  { re: /^\/about$/, page: about, nav: "about", crumbs: ["nav.about"] },
 ];
 
 let cleanup = null;
