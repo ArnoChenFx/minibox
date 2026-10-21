@@ -139,6 +139,11 @@ export default {
   "err.box_exists": "A box named “{name}” already exists.",
   "err.box_network_conflict":
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
+  "err.volume_reserved": "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",
+  "err.volume_unmanaged": "Volume {volume} was not created by MiniBox, so a box cannot mount it.",
+  "err.volume_in_use": "Volume {volume} is already mounted by another box.",
+  "err.network_reserved": "Boxes cannot join network {network}. Host, none and container networks are refused.",
+  "err.network_not_managed": "Boxes cannot join network {network}. Boxes join {managed}.",
   "err.cpu_over_host": "CPU cores exceed the host limit ({cores} cores).",
   "err.memory_over_host": "Memory exceeds the host limit ({gb} GB).",
   "err.task_not_found": "Task not found.",

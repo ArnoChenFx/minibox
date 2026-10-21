@@ -18,6 +18,7 @@ import { detectDrift } from "../specs/drift";
 import { pushHistory } from "../specs/history";
 import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState } from "../specs/types";
+import { assertMountAllowed, inspectVolumeOrNull } from "./attachments";
 
 export interface CreateBoxInput {
   name: string;
@@ -217,14 +218,11 @@ async function ensureImage(host: HostCtx, image: string): Promise<ImageDetails> 
   }
 }
 
-/** Reuses a workspace volume left behind by an earlier box with the same name. */
-async function ensureVolume(host: HostCtx, name: string, labels: Record<string, string>): Promise<void> {
-  try {
-    await host.runtime.inspectVolume(name);
-  } catch (e) {
-    if (!isRuntimeError(e, "not_found")) throw e;
-    await host.runtime.createVolume(name, labels);
-  }
+/** Creates the workspace volume, or reuses one an earlier box with the same name left behind. */
+async function ensureWorkspaceVolume(host: HostCtx, name: string, labels: Record<string, string>): Promise<void> {
+  const existing = await inspectVolumeOrNull(host, name);
+  assertMountAllowed(host, null, name, existing);
+  if (!existing) await host.runtime.createVolume(name, labels);
 }
 
 /** Boxes share one bridge network with inter-container communication off. A network that differs is never reused. */
@@ -275,10 +273,10 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
   await ensureBoxNetwork(host);
 
   const volume = volumeName(prefix, input.name);
-  await ensureVolume(host, volume, { [keys.box]: "true", [keys.name]: input.name });
 
   const containerId = await host.specs.exclusive(async () => {
     if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
+    await ensureWorkspaceVolume(host, volume, { [keys.box]: "true", [keys.name]: input.name });
     let id = newBoxId();
     for (let attempt = 0; attempt < 5 && host.specs.read(id); attempt++) id = newBoxId();
     if (host.specs.read(id)) throw conflict(msg("box_claim_failed", { detail: "could not allocate a box id" }));

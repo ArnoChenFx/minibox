@@ -14,6 +14,7 @@ import { pushHistory } from "../specs/history";
 import { planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxRecovery, BoxSpec } from "../specs/types";
+import { assertRebuildAttachments } from "./attachments";
 import { type Box, getBox } from "./boxes";
 
 interface SwapState {
@@ -47,6 +48,7 @@ export async function rebuildBox(
     const previous = structuredClone(spec);
     const planned = planRebuild(host.prefix, spec, request);
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
+    await assertRebuildAttachments(host, spec, planned.mounts, planned.network);
 
     let template = spec.template;
     if (planned.templateRef) {
@@ -72,7 +74,7 @@ async function ensureImage(host: HostCtx, image: string): Promise<ImageDetails> 
   }
 }
 
-/** The host's box network is created when the rebuild joins it. Any other network must already exist. */
+/** Creates the host's box network when a rebuild joins it. Mounts and networks are checked before the preview. */
 async function ensureBoxNetwork(host: HostCtx): Promise<void> {
   try {
     await host.runtime.ensureBridgeNetwork(host.security.network, { interContainerComm: false });

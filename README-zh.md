@@ -385,7 +385,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除；可选同时删除工作区数据卷 |
-| `POST` | `/api/boxes/:id/rebuild` | 重建 `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`。必须带 `If-Match`。未带 `confirm: true` 时返回 `409 confirmation_required`，`error.details.preview` 包含可写层的 docker diff 和计划变更。确认后创建新容器、换上并删除旧容器；失败则恢复旧容器和上一版规格。容器名改为 `<LABEL_PREFIX>-<id>` |
+| `POST` | `/api/boxes/:id/rebuild` | 重建 `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`。必须带 `If-Match`。挂载或网络不被允许时返回 `403 forbidden`，不做任何改动：`minibox-data` 不能挂载；Box 尚未挂载的卷必须是 MiniBox 创建的（或尚不存在），且不能被其它 Box 挂载；网络只能是 Box 网络或 Box 当前已在使用的网络。未带 `confirm: true` 时返回 `409 confirmation_required`，`error.details.preview` 包含可写层的 docker diff 和计划变更。确认后创建新容器、换上并删除旧容器；失败则恢复旧容器和上一版规格。容器名改为 `<LABEL_PREFIX>-<id>` |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作。启动和停止会记下期望状态 |
 | `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"?, "pids"? }`。必须带 `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | 实时占用 |

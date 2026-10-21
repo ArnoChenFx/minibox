@@ -73,8 +73,11 @@ describe("createBox", () => {
     ]);
   });
 
-  test("reuses a workspace volume that already exists", async () => {
-    runtime.volumes.set("mbtest-ws-alpha", { name: "mbtest-ws-alpha", labels: {} });
+  test("reuses a labelled workspace volume that an earlier box left behind", async () => {
+    runtime.volumes.set("mbtest-ws-alpha", {
+      name: "mbtest-ws-alpha",
+      labels: { [keys.box]: "true", [keys.name]: "alpha" },
+    });
     await newBox("alpha");
     expect(runtime.callsTo("createVolume")).toHaveLength(0);
   });
