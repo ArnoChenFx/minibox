@@ -1,4 +1,7 @@
 import type { BoxProfile } from "../box-profile";
+import type { SnapshotEngine } from "../checkpoints/engine";
+import { ResticEngine } from "../checkpoints/restic";
+import { CheckpointStore } from "../checkpoints/store";
 import type { Config } from "../config";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
@@ -47,6 +50,10 @@ export interface HostCtx {
   volumes: VolumeStore;
   /** In-memory activity heartbeats for idle sleep (#12). Shared across hosts of one control plane. */
   pulse: ActivityPulse;
+  /** Checkpoint records. One store is shared by every host, files live under `DATA_DIR/checkpoints`. */
+  checkpoints: CheckpointStore;
+  /** Stores volume contents for checkpoints. Each host keeps its own repository behind this engine. */
+  checkpointEngine: SnapshotEngine;
 }
 
 /**
@@ -61,6 +68,8 @@ export function createLocalHost(
   volumes: VolumeStore = new VolumeStore(cfg.dataDir),
   live: LiveSink = NO_LIVE,
   pulse: ActivityPulse = new ActivityPulse(),
+  checkpoints: CheckpointStore = new CheckpointStore(cfg.dataDir),
+  checkpointEngine: SnapshotEngine = new ResticEngine({ dataDir: cfg.dataDir }),
 ): HostCtx {
   const ctx: HostCtx = {
     host: {
@@ -88,6 +97,8 @@ export function createLocalHost(
     specs,
     volumes,
     pulse,
+    checkpoints,
+    checkpointEngine,
   };
   return ctx;
 }

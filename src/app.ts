@@ -2,6 +2,9 @@ import { join } from "node:path";
 
 import { ActivityLog } from "./activity";
 import { LoginLimiter } from "./auth";
+import type { SnapshotEngine } from "./checkpoints/engine";
+import { ResticEngine } from "./checkpoints/restic";
+import { CheckpointStore } from "./checkpoints/store";
 import type { Config } from "./config";
 import { sessionsPath, tokensPath } from "./data-dir";
 import { createDockerRuntime } from "./docker/runtime";
@@ -78,6 +81,8 @@ export interface App {
 /** Collaborators a caller may replace. Anything omitted is built from the config. */
 export interface AppDeps {
   runtime?: Runtime;
+  /** Where checkpoint volume contents go. Defaults to restic in a helper image. Tests pass an in-memory engine. */
+  checkpointEngine?: SnapshotEngine;
   throttle?: LoginLimiter;
   hooks?: Partial<ExecutorHooks>;
   /** The SQLite file of the event store. Defaults to `events.db` under DATA_DIR. Tests pass `:memory:`. */
@@ -143,7 +148,18 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const volumes = new VolumeStore(cfg.dataDir);
   const bus = new Bus<AppTopics>();
   const pulse = new ActivityPulse();
-  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs, volumes, bus, pulse);
+  const checkpoints = new CheckpointStore(cfg.dataDir);
+  const checkpointEngine = deps.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir });
+  const local = createLocalHost(
+    cfg,
+    deps.runtime ?? createDockerRuntime(cfg.dockerSocket),
+    specs,
+    volumes,
+    bus,
+    pulse,
+    checkpoints,
+    checkpointEngine,
+  );
   hosts.add(local);
   const activity = new ActivityLog();
   const knownSecrets = [cfg.accessKey];

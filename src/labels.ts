@@ -33,7 +33,7 @@ export interface LabelKeys {
   pool: string;
   /** Probe and helper objects. Claim ignores them. */
   internal: string;
-  /** Set on the checkpoint repository volume, whose value is the host id it belongs to. */
+  /** Set on the checkpoint repository volume (value: host id) and on a checkpoint's system image (value: checkpoint id). */
   checkpoint: string;
 }
 

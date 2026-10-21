@@ -1,6 +1,7 @@
 import type { BoxProfile } from "../box-profile";
-import type { BoxSpec } from "../specs/types";
-import type { VolumeRole } from "../volumes/types";
+import type { VolumeOwner } from "../runtime";
+import type { BoxSpec, MountMode } from "../specs/types";
+import type { VolumeOwnership, VolumeRole } from "../volumes/types";
 
 /** On-disk schema version of `DATA_DIR/checkpoints/<id>.json`. */
 export const CHECKPOINT_VERSION = 1;
@@ -15,7 +16,14 @@ export interface DataLayer {
   volumeId: string;
   /** Where the volume was mounted in the box when the checkpoint was taken. */
   path: string;
+  mode: MountMode;
   role: VolumeRole | null;
+  ownership: VolumeOwnership;
+  /**
+   * Owner of the volume's root directory when the checkpoint was taken. A restore writes the files and their owners,
+   * but not this directory, so the restore sets it from here.
+   */
+  owner: VolumeOwner;
   /** Restic snapshot id in the checkpoint repository. */
   snapshotId: string;
   /** Bytes restic read from the volume for this snapshot. */
@@ -28,7 +36,10 @@ export interface SystemLayer {
   imageId: string;
 }
 
-/** What a new box needs to start from the checkpoint: the spec fields that a create call accepts. */
+/**
+ * What a new box needs to start from the checkpoint. Resources are null when the box had none recorded, as a box
+ * claimed from an unlabeled container does not.
+ */
 export interface CheckpointSpec {
   template: BoxSpec["template"];
   cpus: number | null;

@@ -4,7 +4,7 @@ import type { HostCtx } from "../src/host/registry";
 import type { HelperSpec } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { newBoxId } from "../src/specs/revision";
-import { createOwnedVolume, provisionDefaultMounts } from "../src/volumes/provision";
+import { createRestoredVolume, provisionDefaultMounts } from "../src/volumes/provision";
 import { ROLE_MOUNT } from "../src/volumes/types";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
@@ -30,9 +30,9 @@ const helperSpecs = (): HelperSpec[] => runtime.callsTo("runHelper").map((call) 
 describe("volumes restored for a box", () => {
   test("an owned volume records its box and is handed to no one", async () => {
     const owner = newBoxId();
-    const volume = await createOwnedVolume(
+    const volume = await createRestoredVolume(
       host,
-      { name: "fork-workspace", role: "workspace", ownerBoxId: owner, createdBy: "owner" },
+      { name: "fork-workspace", role: "workspace", owner, createdBy: "owner" },
       new Set(),
     );
 
@@ -53,15 +53,25 @@ describe("volumes restored for a box", () => {
     expect(helperSpecs()).toEqual([]);
   });
 
-  test("a name already taken gets the next free name", async () => {
-    const first = await createOwnedVolume(
+  test("a volume with no owner is independent", async () => {
+    const volume = await createRestoredVolume(
       host,
-      { name: "dup", role: "workspace", ownerBoxId: newBoxId(), createdBy: null },
+      { name: "shared-copy", role: null, owner: null, createdBy: null },
       new Set(),
     );
-    const second = await createOwnedVolume(
+
+    expect(volume).toMatchObject({ ownership: "independent", ownerBoxId: null, role: null });
+  });
+
+  test("a name already taken gets the next free name", async () => {
+    const first = await createRestoredVolume(
       host,
-      { name: "dup", role: "workspace", ownerBoxId: newBoxId(), createdBy: null },
+      { name: "dup", role: "workspace", owner: newBoxId(), createdBy: null },
+      new Set(),
+    );
+    const second = await createRestoredVolume(
+      host,
+      { name: "dup", role: "workspace", owner: newBoxId(), createdBy: null },
       new Set(),
     );
 
@@ -72,9 +82,9 @@ describe("volumes restored for a box", () => {
   test("a restored workspace is mounted as it is, and the other roles are made for the new box", async () => {
     const owner = newBoxId();
     const known = new Set<string>();
-    const restored = await createOwnedVolume(
+    const restored = await createRestoredVolume(
       host,
-      { name: "fork-workspace", role: "workspace", ownerBoxId: owner, createdBy: "owner" },
+      { name: "fork-workspace", role: "workspace", owner, createdBy: "owner" },
       known,
     );
 
@@ -106,9 +116,9 @@ describe("volumes restored for a box", () => {
 
   test("a restored volume the engine no longer has is refused, not recreated empty", async () => {
     const owner = newBoxId();
-    const restored = await createOwnedVolume(
+    const restored = await createRestoredVolume(
       host,
-      { name: "fork-workspace", role: "workspace", ownerBoxId: owner, createdBy: "owner" },
+      { name: "fork-workspace", role: "workspace", owner, createdBy: "owner" },
       new Set(),
     );
     await runtime.removeVolume(restored.engineName);
