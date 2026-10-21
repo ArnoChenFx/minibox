@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { createRedactor } from "../src/events/redact";
 import { EventStore, type StoredEvent } from "../src/events/store";
-import { type EventStreamOptions, eventStream } from "../src/events/stream";
+import { type EventStreamOptions, eventStream, type StreamStore } from "../src/events/stream";
 import type { EventInput } from "../src/events/types";
 import { ulid } from "../src/events/ulid";
 import { Bus } from "../src/lib/bus";
@@ -180,11 +180,37 @@ describe("eventStream", () => {
     await sse.close();
     expect(onEnd).toHaveBeenCalledTimes(1);
   });
+
+  test("a stream that fails while it starts releases its subscriptions and runs onEnd once", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const onEnd = mock(() => {});
+    const failing: StreamStore = {
+      head: () => 0,
+      after: () => {
+        throw new Error("store unavailable");
+      },
+    };
+    stores.push(h.store);
+    expect(() =>
+      eventStream({
+        store: failing,
+        subscribe: (listener) => h.bus.subscribe("event", listener),
+        filter: {},
+        lastId: 0,
+        live: live.source,
+        onEnd,
+      }),
+    ).toThrow("store unavailable");
+    expect(h.bus.listenerCount("event")).toBe(0);
+    expect(live.listeners()).toBe(0);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
 });
 
 /** A live source whose frames a test sends by hand. Each `sync` is numbered, so a test can tell the snapshots apart. */
 function fakeLive() {
-  const senders = new Set<(frame: string) => void>();
+  const senders = new Set<(frame: string, key?: string) => void>();
   let generation = 0;
   return {
     listeners: () => senders.size,
@@ -193,15 +219,15 @@ function fakeLive() {
         generation += 1;
         return `event: sync\ndata: ${JSON.stringify({ generation })}\n\n`;
       },
-      subscribe: (send: (frame: string) => void) => {
+      subscribe: (send: (frame: string, key?: string) => void) => {
         senders.add(send);
         return () => {
           senders.delete(send);
         };
       },
     },
-    send(frame: string) {
-      for (const send of senders) send(frame);
+    send(frame: string, key?: string) {
+      for (const send of senders) send(frame, key);
     },
   };
 }
@@ -251,5 +277,37 @@ describe("eventStream with live state", () => {
     expect(live.listeners()).toBe(1);
     await sse.close();
     expect(live.listeners()).toBe(0);
+  });
+
+  test("a slow reader is sent the latest sample and host frame, not each one in turn", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source });
+    await Bun.sleep(0);
+    for (const n of [1, 2, 3]) live.send(`event: sample\ndata: {"n":${n}}\n\n`, "sample:local");
+    for (const n of [1, 2]) live.send(`event: host\ndata: {"n":${n}}\n\n`, "host:local");
+    live.send('event: box\ndata: {"n":9}\n\n');
+
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 1 } });
+    expect(await sse.next()).toEqual({ event: "sample", data: { n: 3 } });
+    expect(await sse.next()).toEqual({ event: "host", data: { n: 2 } });
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 9 } });
+  });
+
+  test("a slow reader past its byte budget is reset, then sent a fresh sync", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source, pendingBytes: 1000 });
+    await Bun.sleep(0);
+    const large = `event: box\ndata: "${"x".repeat(300)}"\n\n`;
+    for (let n = 0; n < 4; n++) live.send(large);
+
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 1 } });
+    expect(await sse.next()).toMatchObject({ event: "reset" });
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 2 } });
+    live.send('event: box\ndata: {"n":4}\n\n');
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 4 } });
   });
 });

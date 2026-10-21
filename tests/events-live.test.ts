@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
+import { liveSource } from "../src/events/live";
 import { HostSampler } from "../src/host/sampler";
 import { startServer } from "../src/server";
 import type { TaskStreamEvent } from "../src/tasks/types";
@@ -236,6 +237,21 @@ async function untilQuiet(count: () => number, quietMs = 30, timeoutMs = 2000): 
   }
   return last;
 }
+
+describe("the keys of live frames", () => {
+  test("a sample frame is keyed by its host, and a link frame is not keyed", () => {
+    const sent: { frame: string; key: string | undefined }[] = [];
+    const unsubscribe = liveSource(app.bus, app.hosts).subscribe((frame, key) => sent.push({ frame, key }));
+    app.bus.publish("sample", { hostId: "local", t: 1, boxes: [] });
+    app.bus.publish("link", { hostId: "local", state: "live", error: null, at: "2026-10-21T00:00:00.000Z" });
+    unsubscribe();
+
+    expect(sent.map((item) => [item.frame.split("\n")[0], item.key])).toEqual([
+      ["event: sample", "sample:local"],
+      ["event: link", undefined],
+    ]);
+  });
+});
 
 describe("the sample cadence on the event stream", () => {
   test("box stats are sampled only while a stream is open: a stream samples at once, and sampling stops when it closes", async () => {
