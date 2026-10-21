@@ -146,9 +146,10 @@ export const MESSAGES = {
   session_taken_over: "Session {name} is under human control, so an agent cannot send to it or close it.",
   session_taken_over_hint:
     "A person is working in this session. Read it with session_read and try again in a little while.",
-  session_tmux_missing: "This box does not have tmux, so sessions are unavailable.",
-  session_tmux_missing_hint:
-    "Boxes from the base template include tmux. Rebuild the box from it, or install tmux inside the box.",
+  session_image_unsupported:
+    "This box's image is too old to run sessions: it lacks tmux or the dev user from the base template.",
+  session_image_unsupported_hint:
+    "Build the base template again, then rebuild this box onto the current base template.",
   session_tmux_failed: "tmux failed: {detail}",
   session_tmux_timeout: "tmux did not finish within {max} seconds.",
   session_viewer_tmux_old: "Read-only viewers need tmux 3.2 or later, and this box has tmux {version}.",

@@ -11,6 +11,9 @@ const POLL_MS = 10_000;
 
 const rememberKey = (boxId) => `minibox.session.${boxId}`;
 
+/** A failed request's message, followed by the hint that says what to do next when the server gives one. */
+const withHint = (err) => [errorText(err), errorHint(err)].filter(Boolean).join(" ");
+
 /** What holding the session means here: a takeover can time out, a session the console started stays with you. */
 function humanHelp(view) {
   if (!view.takenOver) return t("bd.ctlOwnHelp");
@@ -253,7 +256,7 @@ export function mountTerminal(root, { box }) {
       await loadSessions();
       select(session.name);
     } catch (e) {
-      toastError(t("bd.sessionStartFailed"), e);
+      toast(t("bd.sessionStartFailed"), { type: "error", message: withHint(e) });
     }
   });
   root.querySelector("#tReconnect").addEventListener("click", () => current && connect());
@@ -277,7 +280,7 @@ export function mountTerminal(root, { box }) {
     } catch (e) {
       if (disposed) return;
       setStatus(false, errorText(e));
-      list.innerHTML = `<span class="callout danger">${esc(errorText(e))}</span>`;
+      list.innerHTML = `<span class="callout danger">${esc(withHint(e))}</span>`;
     }
   })();
 

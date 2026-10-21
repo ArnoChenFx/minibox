@@ -7,6 +7,7 @@ import {
   hexBytes,
   isKeyName,
   isSessionName,
+  isUnrunnableExec,
   LIST_SESSIONS_FORMAT,
   PROBE_FORMAT,
   paneLines,
@@ -160,8 +161,9 @@ describe("key names", () => {
 });
 
 describe("classifyTmuxFailure", () => {
-  test("maps a missing binary, a missing server, a missing target, and a duplicate", () => {
-    expect(classifyTmuxFailure(127, "")).toBe("missing");
+  test("maps a binary that is absent or cannot run, a missing server, a missing target, and a duplicate", () => {
+    expect(classifyTmuxFailure(127, "")).toBe("unrunnable");
+    expect(classifyTmuxFailure(126, "sh: 1: tmux: Permission denied")).toBe("unrunnable");
     expect(classifyTmuxFailure(1, "no server running on /tmp/tmux-1000/default")).toBe("no_server");
     expect(classifyTmuxFailure(1, "error connecting to /tmp/tmux-1000/default (No such file or directory)")).toBe(
       "no_server",
@@ -173,6 +175,31 @@ describe("classifyTmuxFailure", () => {
 
   test("anything else is a plain failure", () => {
     expect(classifyTmuxFailure(1, "unknown key: Foo")).toBe("failed");
+  });
+});
+
+describe("isUnrunnableExec", () => {
+  test("recognises the engine refusals for a box whose image has no dev user or no program to run", () => {
+    for (const message of [
+      "unable to find user dev: no matching entries in passwd file",
+      'OCI runtime exec failed: exec failed: unable to start container process: exec: "tmux": executable file not found in $PATH: unknown',
+      'OCI runtime exec failed: exec failed: unable to start container process: exec: "/bin/sh": stat /bin/sh: no such file or directory: unknown',
+      'OCI runtime exec failed: exec failed: unable to start container process: exec: "/etc/passwd": permission denied: unknown',
+    ]) {
+      expect(isUnrunnableExec(message)).toBe(true);
+    }
+  });
+
+  test("leaves other engine failures to be reported as they are", () => {
+    for (const message of [
+      "exec refused",
+      "Container 3f2a is not running",
+      "No such container: mbtest-alpha",
+      "connect EACCES /var/run/docker.sock",
+      "tmux did not finish within 10 seconds.",
+    ]) {
+      expect(isUnrunnableExec(message)).toBe(false);
+    }
   });
 });
 

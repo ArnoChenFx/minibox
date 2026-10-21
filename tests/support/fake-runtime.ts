@@ -229,6 +229,8 @@ export class FakeRuntime implements Runtime {
   readonly tmux = new FakeTmux();
   /** When true, `tmux` is not installed: its commands exit 127, as a shell reports a missing program. */
   tmuxMissing = false;
+  /** When true, `tmux` is present but cannot run: its commands exit 126, as a shell reports a file it may not execute. */
+  tmuxNotExecutable = false;
 
   /**
    * Holds the next calls to `op` until `release`. With `where`, only the calls whose arguments it accepts are held,
@@ -723,9 +725,7 @@ export class FakeRuntime implements Runtime {
         finish(1);
       }
     } else {
-      const run: TmuxRun = this.tmuxMissing
-        ? { code: 127, stdout: "", stderr: "sh: tmux: not found\n" }
-        : this.tmux.run(containerId, argv);
+      const run = this.tmuxRun(containerId, argv);
       setTimeout(() => {
         if (run.stdout) stdout.write(run.stdout);
         if (run.stderr) stderr.write(run.stderr);
@@ -773,6 +773,13 @@ export class FakeRuntime implements Runtime {
     };
     this.execs.push(session);
     return session;
+  }
+
+  /** What a command-mode `tmux` exec reports: the shell's status when the binary is missing or cannot run. */
+  private tmuxRun(containerId: string, argv: string[]): TmuxRun {
+    if (this.tmuxMissing) return { code: 127, stdout: "", stderr: "sh: tmux: not found\n" };
+    if (this.tmuxNotExecutable) return { code: 126, stdout: "", stderr: "sh: tmux: Permission denied\n" };
+    return this.tmux.run(containerId, argv);
   }
 
   async *events(
