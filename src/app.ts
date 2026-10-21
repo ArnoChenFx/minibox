@@ -183,6 +183,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     operations: new Executor(OPERATIONS, {
       activity,
       tasks,
+      hosts,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,
         audit,

@@ -141,8 +141,8 @@ export const eventList = defineOperation({
       query: ["box", "principal", "op", "status", "run", "since", "cursor", "limit"],
     },
   ],
-  run: async ({ events, principal, host }, input) =>
-    events.list(scopedFilter(filterOf(input), principal, specViews(host.specs.list())), {
+  run: async ({ events, principal, host, boxViews }, input) =>
+    events.list(scopedFilter(filterOf(input), principal, boxViews?.() ?? specViews(host.specs.list())), {
       before: input.cursor,
       limit: input.limit,
     }),

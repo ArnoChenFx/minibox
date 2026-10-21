@@ -6,7 +6,7 @@ import type { HostCtx } from "../host/registry";
 import type { ExecService } from "../services/exec";
 import type { TerminalService } from "../services/terminals";
 import type { TaskHandle, TaskReader } from "../tasks/types";
-import type { TokenGrants } from "../tokens/model";
+import type { BoxView, TokenGrants } from "../tokens/model";
 import type { TokenStore } from "../tokens/store";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
@@ -58,6 +58,10 @@ export interface OperationContext {
   readonly events: EventReader;
   /** Agent API tokens. Token operations read and change this store. */
   readonly tokens: TokenStore;
+  /** Every box view across the hosts, for visibility checks that must not miss a box on another host. */
+  readonly boxViews?: () => readonly BoxView[];
+  /** Every host, for an operation that acts on objects wherever they are. Without it, only `host` is known. */
+  readonly allHosts?: () => readonly HostCtx[];
   /** Set on the background run of an async operation, so the handler can log and watch for cancellation. */
   readonly task?: TaskHandle;
   /** The task manager. The executor fills it in; task operations read it. */

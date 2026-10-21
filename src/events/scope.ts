@@ -57,10 +57,10 @@ export function scopedFilter(
 }
 
 /**
- * Whether a stream may carry the live state: the boxes, samples, host metrics, link state and task status. That state
- * has no filter of its own, so only a stream with no filter at all carries it. A principal whose limits narrow its
- * scope therefore gets the stored events alone, until the live frames are limited too.
+ * Whether a stream may carry the live state: the boxes, samples, host metrics, link state and task status. Those frames
+ * have no event filter, so only a stream whose own filters are all unset carries them. The principal's limits then
+ * decide what each live frame may show (see `liveSource`), so this takes the caller's filters, not the scoped ones.
  */
-export function carriesLiveState(scope: EventFilter): boolean {
-  return Object.values(scope).every((value) => value === undefined);
+export function carriesLiveState(requested: EventFilter): boolean {
+  return Object.values(requested).every((value) => value === undefined);
 }

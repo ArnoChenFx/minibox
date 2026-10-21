@@ -4,10 +4,12 @@ import type { App } from "../src/app";
 import { liveSource } from "../src/events/live";
 import { HostSampler } from "../src/host/sampler";
 import { startServer } from "../src/server";
-import type { TaskStreamEvent } from "../src/tasks/types";
+import type { Box } from "../src/services/boxes";
+import type { TaskStreamEvent, TaskView } from "../src/tasks/types";
+import { compileToken } from "../src/tokens/model";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
-import { SseReader } from "./support/sse";
+import { type SseFrame, SseReader } from "./support/sse";
 
 const MB = 1024 * 1024;
 
@@ -271,3 +273,142 @@ describe("the sample cadence on the event stream", () => {
     expect(statsCalls()).toBe(settled);
   });
 });
+
+function taskEvent(taskId: string, seq: number, kind: TaskStreamEvent["kind"]): TaskStreamEvent {
+  return {
+    taskId,
+    seq,
+    ts: 1,
+    kind,
+    ...(kind === "status" ? { status: "succeeded" as const } : { text: "output" }),
+  };
+}
+
+const mint = () => app.tokens.create(compileToken({ name: "agent", scopes: ["box:read"] }), "owner");
+
+function seedMade(name: string, createdBy: string): string {
+  const keys = app.hosts.get().keys;
+  return runtime.seedContainer({
+    image: app.cfg.baseTemplateTag,
+    name: `mbtest-${name}`,
+    labels: { [keys.box]: "true", [keys.name]: name, [keys.createdBy]: createdBy },
+    running: true,
+    cpus: 1,
+    memoryBytes: 256 * MB,
+  });
+}
+
+function boxNamed(name: string): Box {
+  const box = app.hosts
+    .get()
+    .sampler.boxes({ withStats: false })
+    .find((item) => item.name === name);
+  if (!box) throw new Error(`no box ${name}`);
+  return box;
+}
+
+async function openStreamAs(base: string, secret: string): Promise<SseReader> {
+  const res = await fetch(`${base}/api/events/stream`, { headers: { authorization: `Bearer ${secret}` } });
+  expect(res.status).toBe(200);
+  if (!res.body) throw new Error("the stream has no body");
+  const reader = new SseReader(res.body.getReader());
+  readers.push(reader);
+  return reader;
+}
+
+async function framesUntil(sse: SseReader, match: (frame: SseFrame) => boolean): Promise<SseFrame[]> {
+  const frames: SseFrame[] = [];
+  for (;;) {
+    const frame = await sse.next();
+    frames.push(frame);
+    if (match(frame)) return frames;
+  }
+}
+
+describe("a token's live state", () => {
+  test("a token's stream opens with the boxes it made, and carries no host or link state", async () => {
+    const { secret, record } = mint();
+    const hiddenId = seedBox("hidden", true);
+    seedMade("mine", record.id);
+    const base = await startApp();
+    const sse = await openStreamAs(base, secret);
+
+    const sync = await sse.until(isLive("sync"));
+    const hosts = (sync.data as { hosts: { boxes: { boxId: string; name: string }[] }[] }).hosts;
+    expect(hosts.flatMap((host) => host.boxes.map((box) => box.name))).toEqual(["mine"]);
+
+    app.bus.publish("link", { hostId: "local", state: "down", error: null, at: "2026-10-21T00:00:00.000Z" });
+    app.bus.publish("sample", {
+      hostId: "local",
+      t: 1,
+      boxes: [
+        { boxId: hiddenId, cpuPercent: 1, memUsage: 1, memLimit: 1, memPercent: 1 },
+        { boxId: boxNamed("mine").boxId, cpuPercent: 2, memUsage: 1, memLimit: 1, memPercent: 1 },
+      ],
+    });
+    const frames = await framesUntil(sse, (frame) => frame.event === "sample");
+    expect(frames.some((frame) => frame.event === "link")).toBe(false);
+    const sample = frames.at(-1)?.data as { boxes: { boxId: string }[] };
+    expect(sample.boxes.map((box) => box.boxId)).toEqual([boxNamed("mine").boxId]);
+  });
+
+  test("a box frame reaches a token only for a box it may see, and a box it stops seeing is removed", async () => {
+    const { secret, record } = mint();
+    seedBox("hidden", true);
+    seedMade("mine", record.id);
+    const base = await startApp();
+    const sse = await openStreamAs(base, secret);
+    await sse.until(isLive("sync"));
+
+    const hidden = { ...boxNamed("hidden") };
+    app.bus.publish("box", { hostId: "local", op: "upsert", boxId: hidden.boxId, containerId: hidden.id, box: hidden });
+    app.bus.publish("box", { hostId: "local", op: "remove", boxId: hidden.boxId, containerId: hidden.id });
+    const mine = boxNamed("mine");
+    app.bus.publish("box", { hostId: "local", op: "upsert", boxId: mine.boxId, containerId: mine.id, box: mine });
+    app.bus.publish("box", {
+      hostId: "local",
+      op: "upsert",
+      boxId: mine.boxId,
+      containerId: mine.id,
+      box: { ...mine, createdBy: "owner" },
+    });
+    const late = { ...mine, boxId: "bx_late0000000", id: "late-container", name: "late", createdBy: record.id };
+    app.bus.publish("box", { hostId: "local", op: "upsert", boxId: late.boxId, containerId: late.id, box: late });
+
+    const frames = await framesUntil(sse, (frame) => frame.event === "box" && frameBoxName(frame) === "late");
+    const boxFrames = frames
+      .filter((frame) => frame.event === "box")
+      .map((frame) => frame.data as { op: string; boxId: string });
+    expect(boxFrames.map((frame) => [frame.op, frame.boxId])).toEqual([
+      ["upsert", boxNamed("mine").boxId],
+      ["remove", boxNamed("mine").boxId],
+      ["upsert", late.boxId],
+    ]);
+  });
+
+  test("a token receives the status of its own tasks and of tasks on boxes it sees, and never the output", () => {
+    const { secret, record } = mint();
+    const principal = app.tokens.authenticate(secret, "127.0.0.1");
+    if (!principal) throw new Error("token did not authenticate");
+    const tasks = new Map<string, TaskView>([
+      ["mine", { principalId: record.id } as unknown as TaskView],
+      ["theirs", { principalId: "owner" } as unknown as TaskView],
+    ]);
+    const sent: string[] = [];
+    const unsubscribe = liveSource(app.bus, app.hosts, { principal, task: (id) => tasks.get(id) }).subscribe((frame) =>
+      sent.push(frame),
+    );
+    app.bus.publish("task", taskEvent("theirs", 1, "status"));
+    app.bus.publish("task", taskEvent("mine", 2, "log"));
+    app.bus.publish("task", taskEvent("mine", 3, "status"));
+    unsubscribe();
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.split("\n")[0]).toBe("event: task");
+    expect(sent[0]).toContain('"seq":3');
+  });
+});
+
+function frameBoxName(frame: SseFrame): string | undefined {
+  return (frame.data as { box?: { name?: string } }).box?.name;
+}

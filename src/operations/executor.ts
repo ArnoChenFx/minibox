@@ -8,6 +8,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { TaskManager } from "../tasks/manager";
 import type { TaskError, TaskHandle } from "../tasks/types";
+import { allBoxViews, specViews } from "../tokens/model";
 import type { Operation, OperationContext, Principal, VolumeResource } from "./types";
 
 export interface AuthorizeRequest {
@@ -81,6 +82,8 @@ export interface ExecutorDeps {
   readonly hooks: ExecutorHooks;
   /** Required for operations marked async. Synchronous operations never touch it. */
   readonly tasks?: TaskManager;
+  /** Every host, so `boxViews` and `allHosts` cover boxes on all of them. Without it, only the request's host counts. */
+  readonly hosts?: { list(): readonly HostCtx[] };
 }
 
 /** What the executor knows when one execution ends. Fields the run never reached stay undefined. */
@@ -162,9 +165,12 @@ export class Executor {
     if (!operation) throw new Error(`unknown operation: ${name}`);
     const started = { ts: Date.now(), at: performance.now() };
     const id = ulid(started.ts);
+    const hosts = this.deps.hosts;
     const bound: OperationContext = {
       ...ctx,
       tasks: ctx.tasks ?? this.deps.tasks,
+      boxViews: ctx.boxViews ?? (() => (hosts ? allBoxViews(hosts.list()) : specViews(ctx.host.specs.list()))),
+      allHosts: ctx.allHosts ?? (() => (hosts ? hosts.list() : [ctx.host])),
       authorize: (request) =>
         this.deps.hooks.authorize({
           principal: ctx.principal,

@@ -348,6 +348,11 @@ export function specViews(specs: readonly BoxSpec[]): BoxView[] {
   return specs.map(viewOfSpec);
 }
 
+/** Every box view across the hosts, so a grant that names a box on any host resolves the same way. */
+export function allBoxViews(hosts: readonly { readonly specs: { list(): readonly BoxSpec[] } }[]): BoxView[] {
+  return hosts.flatMap((host) => specViews(host.specs.list()));
+}
+
 /**
  * `exec` grants read and write on every mount of a box the token may use, so `files:*` only changes what a token
  * without `exec` can do. There is no file API yet; later operations call this instead of re-deciding.

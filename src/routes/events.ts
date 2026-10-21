@@ -5,7 +5,7 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { eventFilterInput, filterOf, parseSequence } from "../operations/events";
 import { parseInput } from "../operations/validation";
-import { specViews } from "../tokens/model";
+import { allBoxViews } from "../tokens/model";
 import { abortWhenEnded, principalOf, type Route, route, scopedAccess } from "./router";
 
 const STREAM_HEADERS = {
@@ -37,7 +37,7 @@ export const eventRoutes: Route[] = [
       const { app, req, url, server, caller } = ctx;
       const principal = principalOf(ctx);
       const requested = filterOf(parseInput(eventFilterInput, Object.fromEntries(url.searchParams)));
-      const filter = scopedFilter(requested, principal, specViews(ctx.host.specs.list()));
+      const filter = scopedFilter(requested, principal, allBoxViews(app.hosts.list()));
       const lastId = lastEventIdOf(req);
       const release = app.streams.acquire();
       server.timeout(req, 0);
@@ -49,7 +49,9 @@ export const eventRoutes: Route[] = [
         subscribe: (listener) => app.bus.subscribe("event", listener),
         filter,
         lastId,
-        live: carriesLiveState(filter) ? liveSource(app.bus, app.hosts) : undefined,
+        live: carriesLiveState(requested)
+          ? liveSource(app.bus, app.hosts, { principal, task: (id) => app.tasks.get(id, { output: false }) })
+          : undefined,
         signal: AbortSignal.any([req.signal, ended.signal]),
         onEnd: () => {
           stopWatching();
