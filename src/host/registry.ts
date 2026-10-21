@@ -11,6 +11,9 @@ import { HostSampler } from "./sampler";
 
 export const LOCAL_HOST_ID = "local";
 
+/** Longest one engine read of a box request may take. Past it the request fails as unavailable instead of waiting on. */
+export const ENGINE_READ_TIMEOUT_MS = 5000;
+
 export interface Host {
   id: string;
   name: string;
@@ -36,6 +39,8 @@ export interface HostCtx {
   keys: LabelKeys;
   baseTemplateTag: string;
   stopTimeoutSec: number;
+  /** Longest one engine read of a box request may take. See `ENGINE_READ_TIMEOUT_MS`. */
+  readTimeoutMs: number;
   templatesDir: string;
   security: HostSecurity;
   monitor: HostMonitor;
@@ -76,6 +81,7 @@ export function createLocalHost(
     keys: labelKeys(cfg.labelPrefix),
     baseTemplateTag: cfg.baseTemplateTag,
     stopTimeoutSec: cfg.stopTimeoutSec,
+    readTimeoutMs: ENGINE_READ_TIMEOUT_MS,
     templatesDir: cfg.templatesDir,
     security: {
       defaultProfile: cfg.boxProfile,

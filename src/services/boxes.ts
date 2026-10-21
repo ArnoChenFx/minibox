@@ -4,6 +4,7 @@ import { type BoxProfile, hardeningFor } from "../box-profile";
 import type { StatSample } from "../host/live";
 import type { HostCtx } from "../host/registry";
 import { containerName, parseBoxLabels } from "../labels";
+import { untilAborted } from "../lib/abort";
 import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
@@ -138,22 +139,36 @@ function specForRef(host: HostCtx, ref: string): BoxSpec | null {
   return host.specs.list().find((spec) => spec.hostId === host.host.id && spec.containerName === ref) ?? null;
 }
 
+/**
+ * One engine read, given up once the host's read timeout passes. The engine call is cancelled through its signal, and
+ * a read that times out fails as unavailable, so one hung engine call cannot hold a request open.
+ */
+function readWithin<T>(host: HostCtx, read: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const deadline = AbortSignal.timeout(host.readTimeoutMs);
+  return untilAborted(read(deadline), deadline).catch((e: unknown) => {
+    if (deadline.aborted) {
+      throw new RuntimeError("unavailable", `no answer within ${host.readTimeoutMs} ms`);
+    }
+    throw e;
+  });
+}
+
 async function inspectKnown(host: HostCtx, spec: BoxSpec): Promise<ContainerInfo> {
   try {
-    return await host.runtime.inspectContainer(spec.containerId);
+    return await readWithin(host, (signal) => host.runtime.inspectContainer(spec.containerId, { signal }));
   } catch (e) {
     if (!(e instanceof RuntimeError && e.kind === "not_found")) throw e;
-    return host.runtime.inspectContainer(spec.containerName);
+    return readWithin(host, (signal) => host.runtime.inspectContainer(spec.containerName, { signal }));
   }
 }
 
 /** Container id, container name, stable id, box name, or `prefix-<name>` for a box that has no spec yet. */
 async function inspectRef(host: HostCtx, ref: string): Promise<ContainerInfo> {
   try {
-    return await host.runtime.inspectContainer(ref);
+    return await readWithin(host, (signal) => host.runtime.inspectContainer(ref, { signal }));
   } catch (e) {
     if (!(e instanceof RuntimeError && e.kind === "not_found") || !NAME_RE.test(ref)) throw e;
-    return host.runtime.inspectContainer(containerName(host.prefix, ref));
+    return readWithin(host, (signal) => host.runtime.inspectContainer(containerName(host.prefix, ref), { signal }));
   }
 }
 

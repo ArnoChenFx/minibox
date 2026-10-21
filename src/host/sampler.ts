@@ -25,6 +25,8 @@ const STATE_VERBS = new Set([
   "health_status",
 ]);
 const STATS_CONCURRENCY = 8;
+/** Container inspects a drain runs at once. A burst of starts and stops then takes a few engine round trips, not one per box. */
+const INSPECT_CONCURRENCY = 8;
 /** Longest a stats call may take. A longer interval waits this long for a sample at most. */
 const STATS_TIMEOUT_MS = 5000;
 const BACKOFF_MIN_MS = 1000;
@@ -439,7 +441,7 @@ export class HostSampler {
       while (this.started && this.dirty.size > 0) {
         const batch = [...this.dirty];
         this.dirty.clear();
-        for (const [containerId, op] of batch) {
+        await mapLimit(batch, INSPECT_CONCURRENCY, async ([containerId, op]) => {
           if (op === "remove") {
             this.containers.delete(containerId);
             this.stale.delete(containerId);
@@ -448,7 +450,7 @@ export class HostSampler {
           } else {
             this.stale.add(containerId);
           }
-        }
+        });
       }
       await this.claimUnclaimed();
       this.reconcile();

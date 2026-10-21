@@ -5,7 +5,7 @@ import type { BoxFrame, LinkFrame, SampleFrame } from "../src/host/live";
 import { HostSampler, type SamplerOptions } from "../src/host/sampler";
 import type { LabelKeys } from "../src/labels";
 import { RuntimeError } from "../src/runtime";
-import { createBox, stopBox } from "../src/services/boxes";
+import { createBox, getBox, stopBox } from "../src/services/boxes";
 import { createTestApp, silenceLogs } from "./support/app";
 import type { Call, FakeRuntime } from "./support/fake-runtime";
 
@@ -548,6 +548,48 @@ describe("reads that do not answer in time", () => {
     }
     await waitFor(() => sampler.ready(), "the listing once the engine answers");
     expect(stateOf(sampler, "phi")).toBe(false);
+  });
+});
+
+describe("the drain of a burst of changes", () => {
+  test("a burst of changes is inspected eight at a time, not one container after another", async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => seedBox(`burst${String(i).padStart(2, "0")}`, true));
+    const sampler = await started();
+    const before = runtime.callsTo("inspectContainer").length;
+
+    const hold = runtime.hold("inspectContainer");
+    try {
+      void sampler.observe(...ids);
+      await waitFor(() => runtime.callsTo("inspectContainer").length === before + 8, "eight inspects in flight");
+      await Bun.sleep(30);
+      expect(runtime.callsTo("inspectContainer")).toHaveLength(before + 8);
+    } finally {
+      hold.release();
+    }
+    await sampler.settle();
+    expect(runtime.callsTo("inspectContainer")).toHaveLength(before + 20);
+  });
+});
+
+describe("engine reads of a box request", () => {
+  test("a read whose engine call never answers fails as unavailable once the read timeout passes", async () => {
+    const id = seedBox("eta", true);
+    const host = app.hosts.get();
+    host.readTimeoutMs = 30;
+
+    const hold = runtime.hold("inspectContainer");
+    try {
+      const began = performance.now();
+      const failure = await getBox(host, id).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(failure).toBeInstanceOf(RuntimeError);
+      expect((failure as RuntimeError).kind).toBe("unavailable");
+      expect(performance.now() - began).toBeLessThan(1000);
+    } finally {
+      hold.release();
+    }
   });
 });
 
