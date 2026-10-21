@@ -1,7 +1,7 @@
 {
   "id": "fx",
   "name": "fx agent",
-  "description": "fx agent coding CLI. Installed with the official fx.sh setup script, which downloads the release binary from releases.fx.sh.",
+  "description": "Tiny, open, native coding agent (binary fx). Installed with the official fx.sh setup script, which downloads the release binary from releases.fx.sh.",
   "category": "agents",
   "source": "script",
   "package": "fx.sh",
