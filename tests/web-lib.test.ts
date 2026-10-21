@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ROOT } from "../src/config";
 
 const LIB = join(ROOT, "web", "js", "lib");
+const I18N = join(ROOT, "web", "js", "i18n");
 
 interface Browser {
   /** The value saved under `minibox.lang` in localStorage. */
@@ -31,6 +32,9 @@ function inBrowser<T>(browser: Browser, expression: string): T {
     `const i18n = await import(${JSON.stringify(join(LIB, "i18n.js"))});`,
     `const format = await import(${JSON.stringify(join(LIB, "format.js"))});`,
     `const search = await import(${JSON.stringify(join(LIB, "search.js"))});`,
+    `const volumeList = await import(${JSON.stringify(join(LIB, "volume-list.js"))});`,
+    `const en = (await import(${JSON.stringify(join(I18N, "en.js"))})).default;`,
+    `const zh = (await import(${JSON.stringify(join(I18N, "zh-CN.js"))})).default;`,
     `console.log(JSON.stringify(${expression}));`,
   ].join("\n");
   const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
@@ -272,5 +276,188 @@ describe("search matching", () => {
         })()`,
       ),
     ).toEqual({ hits: ["beta", "gamma"], none: [], same: true });
+  });
+});
+
+/**
+ * Volumes as the console receives them, with three boxes. `web` owns one volume and mounts a second one, `api` mounts
+ * that second one too, and `idle` owns a volume that nothing mounts. `scratch` has no owner and no mount.
+ */
+const VOLUMES = `
+  const boxNames = new Map([["bx_web", "web"], ["bx_api", "api"], ["bx_idle", "idle"]]);
+  const roleLabel = (role) => ({ workspace: "Workspace", home: "Home", tools: "Tools", cache: "Cache" })[role];
+  const view = (fields) => ({ id: "vol_x", name: "x", engineName: "mb-x", pool: "local", backend: "local", role: null, ownership: "independent", ownerBoxId: null, mounts: [], ...fields });
+  const vWorkspace = view({ id: "vol_ws", name: "web-workspace", engineName: "mb-ws-web", role: "workspace", ownership: "owned", ownerBoxId: "bx_web", mounts: [{ boxId: "bx_web", boxName: "web", path: "/workspace", mode: "rw" }] });
+  const vCache = view({ id: "vol_cache", name: "shared-cache", engineName: "mb-cache", role: "cache", pool: "nas", backend: "nfs", mounts: [{ boxId: "bx_web", boxName: "web", path: "/cache", mode: "ro" }, { boxId: "bx_api", boxName: "api", path: "/home/dev/.cache", mode: "rw" }] });
+  const vScratch = view({ id: "vol_scratch", name: "scratch" });
+  const vHome = view({ id: "vol_home", name: "dev-home", role: "home", ownership: "owned", ownerBoxId: "bx_idle" });
+  const volumes = [vWorkspace, vCache, vScratch, vHome];
+  const ctx = { boxNames, roleLabel };
+`;
+
+describe("volume search and groups", () => {
+  test("a query finds a volume by its name, id, engine name, role, pool, owner box or mount path", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${VOLUMES}
+          const find = (query) =>
+            search.filterBySearch(volumes, query, (volume) => volumeList.volumeSearchFields(volume, ctx)).map((volume) => volume.id);
+          return {
+            name: find("web-work"),
+            id: find("VOL_CACHE"),
+            engine: find("mb-cache"),
+            role: find("cache"),
+            roleLabel: find("workspace"),
+            pool: find("nas"),
+            backend: find("nfs"),
+            owner: find("idle"),
+            mountPath: find("api:/home"),
+            mountOfOtherBox: find("web:/cache"),
+            mountPathWord: find("home"),
+            allTermsMustMatch: find("workspace home"),
+            nothing: find("missing"),
+          };
+        })()`,
+      ),
+    ).toEqual({
+      name: ["vol_ws"],
+      id: ["vol_cache"],
+      engine: ["vol_cache"],
+      role: ["vol_cache"],
+      roleLabel: ["vol_ws"],
+      pool: ["vol_cache"],
+      backend: ["vol_cache"],
+      owner: ["vol_home"],
+      mountPath: ["vol_cache"],
+      mountOfOtherBox: ["vol_cache"],
+      mountPathWord: ["vol_cache", "vol_home"],
+      allTermsMustMatch: [],
+      nothing: [],
+    });
+  });
+
+  test("the owner box's name comes from the box list, or from a mount of that box when the list lacks it", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${VOLUMES}
+          return {
+            listed: volumeList.ownerBoxName(vHome, boxNames),
+            unlisted: volumeList.ownerBoxName(vHome, new Map()),
+            fromMount: volumeList.ownerBoxName(vWorkspace, new Map()),
+            ownerless: volumeList.ownerBoxName(vScratch, boxNames),
+          };
+        })()`,
+      ),
+    ).toEqual({ listed: "idle", unlisted: null, fromMount: "web", ownerless: null });
+  });
+
+  test("box groups hold owned volumes under their owner and others under the first box that mounts them, unattached last", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${VOLUMES}
+          return volumeList.groupVolumes(volumes, "box", { boxNames }).map((g) => [g.kind, g.name, g.rows.map((v) => v.id)]);
+        })()`,
+      ),
+    ).toEqual([
+      ["box", "api", ["vol_cache"]],
+      ["box", "idle", ["vol_home"]],
+      ["box", "web", ["vol_ws"]],
+      ["unattached", null, ["vol_scratch"]],
+    ]);
+  });
+
+  test("role groups keep the role order, and volumes without a role form the last group", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${VOLUMES}
+          return volumeList.groupVolumes(volumes, "role", { boxNames }).map((g) => [g.kind, g.name, g.rows.map((v) => v.id)]);
+        })()`,
+      ),
+    ).toEqual([
+      ["role", "workspace", ["vol_ws"]],
+      ["role", "home", ["vol_home"]],
+      ["role", "cache", ["vol_cache"]],
+      ["other", null, ["vol_scratch"]],
+    ]);
+  });
+
+  test("pool groups sort by pool name, and ownership groups list owned volumes first", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${VOLUMES}
+          const shape = (groups) => groups.map((g) => [g.kind, g.name, g.rows.map((v) => v.id)]);
+          return {
+            pool: shape(volumeList.groupVolumes(volumes, "pool", { boxNames })),
+            ownership: shape(volumeList.groupVolumes(volumes, "ownership", { boxNames })),
+          };
+        })()`,
+      ),
+    ).toEqual({
+      pool: [
+        ["pool", "local", ["vol_home", "vol_scratch", "vol_ws"]],
+        ["pool", "nas", ["vol_cache"]],
+      ],
+      ownership: [
+        ["owned", null, ["vol_home", "vol_ws"]],
+        ["independent", null, ["vol_scratch", "vol_cache"]],
+      ],
+    });
+  });
+
+  test("without grouping, every volume is one group sorted by name, and no volumes make no groups", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${VOLUMES}
+          return {
+            none: volumeList.groupVolumes(volumes, "none", { boxNames }).map((g) => g.rows.map((v) => v.id)),
+            empty: volumeList.groupVolumes([], "box", { boxNames }),
+          };
+        })()`,
+      ),
+    ).toEqual({ none: [["vol_home", "vol_scratch", "vol_cache", "vol_ws"]], empty: [] });
+  });
+
+  test("the group-by choice is saved and read back, and an unknown or unreadable value falls back to none", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          const before = volumeList.loadGroupBy();
+          volumeList.saveGroupBy("box");
+          const after = volumeList.loadGroupBy();
+          localStorage.setItem("minibox.volumeGroupBy", "bogus");
+          const unknown = volumeList.loadGroupBy();
+          Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+            getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } } });
+          const denied = volumeList.loadGroupBy();
+          volumeList.saveGroupBy("role");
+          return { before, after, unknown, denied };
+        })()`,
+      ),
+    ).toEqual({ before: "none", after: "box", unknown: "none", denied: "none" });
+  });
+
+  test("every group-by choice has a label in both dictionaries", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `({
+          choices: volumeList.GROUP_BY.filter((key) => !(key in volumeList.GROUP_LABELS)),
+          missing: Object.values(volumeList.GROUP_LABELS).filter((key) => !(key in en) || !(key in zh)),
+        })`,
+      ),
+    ).toEqual({ choices: [], missing: [] });
   });
 });

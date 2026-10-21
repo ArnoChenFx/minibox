@@ -1,9 +1,19 @@
+import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { bytes } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { filterBySearch } from "../lib/search.js";
 import { confirmDialog, emptyState, nameError, openDialog, skeletonRows, toast, toastError } from "../lib/ui.js";
+import {
+  GROUP_BY,
+  GROUP_LABELS,
+  groupVolumes,
+  loadGroupBy,
+  saveGroupBy,
+  volumeSearchFields,
+} from "../lib/volume-list.js";
 
 const ROLES = [
   ["workspace", "vol.roleWorkspace"],
@@ -11,6 +21,56 @@ const ROLES = [
   ["tools", "vol.roleTools"],
   ["cache", "vol.roleCache"],
 ];
+
+const VOLUME_COLUMNS = 7;
+
+const roleLabel = (role) => t(ROLES.find(([name]) => name === role)?.[1] ?? "vol.unknown");
+
+function groupLabel(group) {
+  switch (group.kind) {
+    case "box":
+    case "pool":
+      return group.name;
+    case "role":
+      return roleLabel(group.name);
+    case "unattached":
+      return t("vol.groupUnattached");
+    case "other":
+      return t("vol.groupOther");
+    case "owned":
+      return t("vol.owned");
+    case "independent":
+      return t("vol.independent");
+    default:
+      return "";
+  }
+}
+
+function volumeRow(volume) {
+  const mounts = volume.mounts
+    .map((mount) => `${esc(mount.boxName)}:${esc(mount.path)} (${esc(mount.mode)})`)
+    .join(", ");
+  return `<tr>
+    <td><strong>${esc(volume.name)}</strong><div class="subtle mono">${esc(volume.id)}</div></td>
+    <td>${volume.role ? esc(roleLabel(volume.role)) : "—"}</td>
+    <td>${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
+    <td>${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>
+    <td>${mounts || "—"}</td>
+    <td class="num">${volume.bytes == null ? "—" : esc(bytes(volume.bytes))}</td>
+    <td><div class="actions">
+      <button class="btn btn-sm" data-action="measure" data-id="${esc(volume.id)}">${t("vol.measure")}</button>
+      <button class="btn btn-sm" data-action="delete" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}">${t("vol.delete")}</button>
+    </div></td>
+  </tr>`;
+}
+
+function groupRow(group, collapsed) {
+  return `<tr class="group-row"><td colspan="${VOLUME_COLUMNS}">
+    <button type="button" class="group-toggle" data-action="toggle-group" data-group="${esc(group.id)}" aria-expanded="${!collapsed}">
+      ${icon("chevron")}<strong>${esc(groupLabel(group))}</strong><span class="badge">${group.rows.length}</span>
+    </button>
+  </td></tr>`;
+}
 
 const healthBadge = (status, low) => {
   const cls = status === "reachable" ? "badge-success" : status === "unreachable" ? "badge-danger" : "";
@@ -76,7 +136,14 @@ export function render(view) {
   let pools = [];
   let roles = { workspace: null, home: null, tools: null, cache: null };
   let health = [];
-  let volumes = [];
+  let volumes = null;
+  let boxNames = new Map();
+  let query = "";
+  let groupBy = loadGroupBy();
+  const collapsed = new Set();
+  const groupOptions = GROUP_BY.map(
+    (key) => `<option value="${key}" ${key === groupBy ? "selected" : ""}>${esc(t(GROUP_LABELS[key]))}</option>`,
+  ).join("");
   view.innerHTML = `
     <div class="page-head">
       <div><h1>${t("nav.volumes")}</h1><p>${t("vol.subtitle")}</p></div>
@@ -87,7 +154,19 @@ export function render(view) {
         <button class="btn btn-primary" data-action="create">${icon("plus")}${t("vol.create")}</button>
       </div>
     </div>
-    <div id="volBody">${skeletonRows(3, 4)}</div>`;
+    <div id="volBody">${skeletonRows(3, 4)}</div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-head with-tools"><h3>${t("vol.volumes")}</h3>
+        <div class="list-tools">
+          ${searchBoxHtml({ id: "volSearch", placeholder: t("vol.searchPlaceholder"), label: t("vol.search") })}
+          <div class="group-by"><label for="volGroup">${t("vol.groupBy")}</label><select class="select" id="volGroup">${groupOptions}</select></div>
+        </div>
+      </div>
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>${t("vol.colName")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colPool")}</th><th>${t("vol.colOwnership")}</th><th>${t("vol.colMounts")}</th><th>${t("vol.colBytes")}</th><th></th></tr></thead>
+        <tbody id="volRows">${skeletonRows(3, VOLUME_COLUMNS)}</tbody>
+      </table></div>
+    </div>`;
 
   const healthOf = (name) => health.find((item) => item.pool === name);
 
@@ -121,25 +200,6 @@ export function render(view) {
         .join("");
       return field(t(label), `<select class="select" data-role="${role}">${options}</select>`);
     }).join("");
-    const volumeRows = volumes
-      .map((volume) => {
-        const mounts = volume.mounts
-          .map((mount) => `${esc(mount.boxName)}:${esc(mount.path)} (${esc(mount.mode)})`)
-          .join(", ");
-        return `<tr>
-          <td><strong>${esc(volume.name)}</strong><div class="subtle mono">${esc(volume.id)}</div></td>
-          <td>${volume.role ? esc(t(ROLES.find(([role]) => role === volume.role)?.[1] ?? "vol.unknown")) : "—"}</td>
-          <td>${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
-          <td>${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>
-          <td>${esc(mounts || "—")}</td>
-          <td class="num">${volume.bytes == null ? "—" : esc(bytes(volume.bytes))}</td>
-          <td><div class="actions">
-            <button class="btn btn-sm" data-action="measure" data-id="${esc(volume.id)}">${t("vol.measure")}</button>
-            <button class="btn btn-sm" data-action="delete" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}">${t("vol.delete")}</button>
-          </div></td>
-        </tr>`;
-      })
-      .join("");
     view.querySelector("#volBody").innerHTML = `
       <div class="card"><div class="card-head"><h3>${t("vol.pools")}</h3>
         <button class="btn btn-primary btn-sm" data-action="save">${t("vol.save")}</button></div>
@@ -151,22 +211,66 @@ export function render(view) {
           <div class="section-intro"><h3>${t("vol.roles")}</h3><p class="help">${t("vol.cacheHint")}</p></div>
           <div class="grid grid-2 form-grid">${roleFields}</div>
         </div>
-      </div>
-      <div class="card" style="margin-top:16px"><div class="card-head"><h3>${t("vol.volumes")}</h3></div>
-        <div class="table-wrap"><table class="table">
-          <thead><tr><th>${t("vol.colName")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colPool")}</th><th>${t("vol.colOwnership")}</th><th>${t("vol.colMounts")}</th><th>${t("vol.colBytes")}</th><th></th></tr></thead>
-          <tbody>${volumeRows || `<tr><td colspan="7">${emptyState({ iconName: "folder", title: t("vol.none"), text: "" })}</td></tr>`}</tbody>
-        </table></div>
       </div>`;
   };
 
+  const drawVolumes = () => {
+    if (!volumes) return;
+    const body = view.querySelector("#volRows");
+    if (!volumes.length) {
+      body.innerHTML = `<tr><td colspan="${VOLUME_COLUMNS}">${emptyState({ iconName: "folder", title: t("vol.none"), text: "" })}</td></tr>`;
+      return;
+    }
+    const matches = filterBySearch(volumes, query, (volume) => volumeSearchFields(volume, { boxNames, roleLabel }));
+    if (!matches.length) {
+      body.innerHTML = `<tr><td colspan="${VOLUME_COLUMNS}">${emptyState({
+        iconName: "search",
+        title: t("vol.noMatch"),
+        text: t("vol.noMatchText", { q: esc(query) }),
+        action: `<button class="btn btn-sm" data-action="clear-search">${t("common.clearSearch")}</button>`,
+      })}</td></tr>`;
+      return;
+    }
+    body.innerHTML = groupVolumes(matches, groupBy, { boxNames })
+      .map((group) => {
+        if (group.kind === "all") return group.rows.map(volumeRow).join("");
+        const isCollapsed = collapsed.has(group.id);
+        return groupRow(group, isCollapsed) + (isCollapsed ? "" : group.rows.map(volumeRow).join(""));
+      })
+      .join("");
+  };
+
+  const toggleGroup = (id) => {
+    if (collapsed.has(id)) collapsed.delete(id);
+    else collapsed.add(id);
+    drawVolumes();
+    [...view.querySelectorAll(".group-toggle")].find((button) => button.dataset.group === id)?.focus();
+  };
+
+  const search = bindSearchBox(view.querySelector("#volSearch"), (text) => {
+    query = text;
+    drawVolumes();
+  });
+  view.querySelector("#volGroup").addEventListener("change", (event) => {
+    groupBy = event.target.value;
+    saveGroupBy(groupBy);
+    drawVolumes();
+  });
+
   const load = async () => {
-    const [poolBody, volumeBody] = await Promise.all([api("/api/pools?refresh=true"), api("/api/volumes")]);
+    const [poolBody, volumeBody, boxBody] = await Promise.all([
+      api("/api/pools?refresh=true"),
+      api("/api/volumes"),
+      // The owner's name is only a label: without the box list, a mount of the owner still names it.
+      api("/api/boxes").catch(() => ({ boxes: [] })),
+    ]);
     pools = poolBody.pools;
     roles = { ...roles, ...poolBody.roles };
     health = poolBody.health;
     volumes = volumeBody.volumes;
+    boxNames = new Map(boxBody.boxes.map((box) => [box.id, box.name]));
     draw();
+    drawVolumes();
   };
 
   const readRoles = () => {
@@ -219,6 +323,10 @@ export function render(view) {
         target.disabled = true;
         await load();
         target.disabled = false;
+      } else if (action === "toggle-group") {
+        toggleGroup(target.dataset.group);
+      } else if (action === "clear-search") {
+        search.clear();
       } else if (action === "save") {
         await save();
       } else if (action === "make-default") {
@@ -330,10 +438,8 @@ export function render(view) {
   });
 
   load().catch((e) => {
-    view.querySelector("#volBody").innerHTML = emptyState({
-      iconName: "alert",
-      title: t("vol.loadingFailed"),
-      text: esc(e.message),
-    });
+    const failure = emptyState({ iconName: "alert", title: t("vol.loadingFailed"), text: esc(e.message) });
+    view.querySelector("#volBody").innerHTML = failure;
+    view.querySelector("#volRows").innerHTML = `<tr><td colspan="${VOLUME_COLUMNS}">${failure}</td></tr>`;
   });
 }
