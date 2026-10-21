@@ -313,6 +313,63 @@ describe("the sample cadence", () => {
   });
 });
 
+describe("the periodic re-list", () => {
+  test("a change the event stream never reported reaches the cache on the next re-list, and the link stays up", async () => {
+    const id = seedBox("zeta", true);
+    const sampler = fastSampler({ relistMs: 20 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    const links = linkFrames.length;
+    boxFrames = [];
+
+    const container = runtime.containers.get(id);
+    if (!container) throw new Error("the seeded container is missing");
+    container.running = false;
+    await waitFor(() => stateOf(sampler, "zeta") === false, "the re-listed state");
+    expect(boxFrames.some((frame) => frame.op === "upsert" && frame.box.running === false)).toBe(true);
+    expect(linkFrames).toHaveLength(links);
+    expect(sampler.ready()).toBe(true);
+  });
+
+  test("a container removed without an event leaves the cache on the next re-list", async () => {
+    const id = seedBox("eta", true);
+    const sampler = fastSampler({ relistMs: 20 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    boxFrames = [];
+
+    runtime.containers.delete(id);
+    await waitFor(() => boxFrames.some((frame) => frame.op === "remove"), "the removal frame");
+    expect(sampler.boxes({ withStats: false })).toEqual([]);
+  });
+
+  test("a re-list that finds nothing changed publishes nothing", async () => {
+    seedBox("iota", true);
+    const sampler = fastSampler({ relistMs: 5 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    boxFrames = [];
+    const listed = runtime.callsTo("listContainers").length;
+
+    await waitFor(() => runtime.callsTo("listContainers").length >= listed + 3, "three re-lists");
+    await sampler.settle();
+    expect(boxFrames).toEqual([]);
+  });
+
+  test("stop ends the re-lists", async () => {
+    seedBox("theta", true);
+    const sampler = fastSampler({ relistMs: 5 });
+    sampler.start();
+    await waitFor(() => runtime.callsTo("listContainers").length >= 3, "three listings");
+    sampler.stop();
+    await sampler.settle();
+    const listed = runtime.callsTo("listContainers").length;
+
+    await Bun.sleep(40);
+    expect(runtime.callsTo("listContainers").length).toBe(listed);
+  });
+});
+
 describe("the host summary", () => {
   test("totals come from the cache, and are null until the first listing", async () => {
     seedBox("one", true);

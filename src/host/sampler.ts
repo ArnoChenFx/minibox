@@ -30,12 +30,16 @@ const STATS_TIMEOUT_MS = 5000;
 const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 const IDLE_INTERVAL_MS = 30_000;
+/** How often the containers are listed again, so a change the event stream never reported is caught up. */
+const RELIST_MS = 60_000;
 
 export interface SamplerOptions {
   /** Time between two sample rounds while a live subscriber watches. Host metrics use the same interval. */
   intervalMs: number;
   /** Time between two sample rounds while none does. Never shorter than `intervalMs`. */
   idleIntervalMs?: number;
+  /** Time between two full listings of the containers. A stalled event stream hides a change for at most this long. */
+  relistMs?: number;
   /** Samples kept per box. The oldest are dropped first. */
   history: number;
   backoffMinMs?: number;
@@ -301,6 +305,7 @@ export class HostSampler {
     const ctl = new AbortController();
     const end = () => ctl.abort();
     parent.addEventListener("abort", end, { once: true });
+    let relist: ReturnType<typeof setInterval> | undefined;
     try {
       // `since` makes the engine replay what it recorded from a second before, which covers the moment the subscription
       // is still being established, so no change can fall between the subscription and the listing.
@@ -314,8 +319,11 @@ export class HostSampler {
         end();
         throw e;
       });
+      relist = setInterval(() => void this.enqueue(() => this.relist()), this.options.relistMs ?? RELIST_MS);
+      relist.unref();
       await streamed;
     } finally {
+      clearInterval(relist);
       ctl.abort();
       parent.removeEventListener("abort", end);
     }
@@ -378,13 +386,35 @@ export class HostSampler {
     const host = this.currentHost();
     const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
     if (!this.started) return;
-    this.containers.clear();
-    for (const info of infos) this.containers.set(info.id, info);
-    await this.claimUnclaimed();
+    await this.adopt(infos);
     this.failures = 0;
     this.setState("live", null);
     this.reconcile();
     void this.sampleRound();
+  }
+
+  /**
+   * Lists the containers again while the link is up, and publishes what the listing changed. The link is left as it is:
+   * the event stream is still the judge of whether it is up, and this only catches up what that stream never reported.
+   */
+  private async relist(): Promise<void> {
+    if (!this.ready()) return;
+    const host = this.currentHost();
+    try {
+      const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
+      if (!this.ready()) return;
+      await this.adopt(infos);
+      this.reconcile();
+    } catch (e) {
+      log.warn("sampler.relist_failed", { host: host.host.id, error: errorText(e) });
+    }
+  }
+
+  /** Makes the cache hold exactly the listed containers, and gives a spec to each one that has none. */
+  private async adopt(infos: ContainerInfo[]): Promise<void> {
+    this.containers.clear();
+    for (const info of infos) this.containers.set(info.id, info);
+    await this.claimUnclaimed();
   }
 
   /**
