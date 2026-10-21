@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 
+import { FrameBuffer } from "../src/events/frames";
 import { createRedactor } from "../src/events/redact";
 import { EventStore, type StoredEvent } from "../src/events/store";
 import { type EventStreamOptions, eventStream, type StreamStore } from "../src/events/stream";
@@ -206,6 +207,24 @@ describe("eventStream", () => {
     expect(h.bus.listenerCount("event")).toBe(0);
     expect(live.listeners()).toBe(0);
     expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test("a stream whose read throws ends with that error, runs onEnd once, and releases its subscriptions", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const onEnd = mock(() => {});
+    const take = spyOn(FrameBuffer.prototype, "take").mockImplementationOnce(() => {
+      throw new Error("frames unavailable");
+    });
+    try {
+      const sse = open(h, { live: live.source, onEnd });
+      await expect(sse.next()).rejects.toThrow("frames unavailable");
+    } finally {
+      take.mockRestore();
+    }
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(h.bus.listenerCount("event")).toBe(0);
+    expect(live.listeners()).toBe(0);
   });
 });
 

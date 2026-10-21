@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 
+import { FrameBuffer } from "../src/events/frames";
 import { Bus } from "../src/lib/bus";
 import { type TaskStreamOptions, taskStream } from "../src/tasks/stream";
 import type { TaskStreamEvent } from "../src/tasks/types";
@@ -78,6 +79,29 @@ describe("taskStream", () => {
     expect((await sse.next()).retry).toBe(3000);
     expect(await sse.next()).toMatchObject({ event: "reset", data: { after: 3 } });
     expect(await sse.next()).toMatchObject({ id: 4 });
+  });
+
+  test("a stream whose read throws ends with that error, runs onEnd once, and releases its subscription", async () => {
+    const bus = new Bus<{ task: TaskStreamEvent }>();
+    const onEnd = mock(() => {});
+    const take = spyOn(FrameBuffer.prototype, "take").mockImplementationOnce(() => {
+      throw new Error("frames unavailable");
+    });
+    const stream = taskStream({
+      taskId: "task",
+      store: emptyStore,
+      subscribe: (listener) => bus.subscribe("task", listener),
+      onEnd,
+    });
+    const sse = new SseReader(stream.getReader());
+    readers.push(sse);
+    try {
+      await expect(sse.next()).rejects.toThrow("frames unavailable");
+    } finally {
+      take.mockRestore();
+    }
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(bus.listenerCount("task")).toBe(0);
   });
 
   test("a stream that fails while it starts releases its subscription and runs onEnd once", async () => {

@@ -151,16 +151,21 @@ export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Ar
       }
     },
     async pull(controller) {
-      if (frames.length === 0 && !done) {
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+      try {
+        if (frames.length === 0 && !done) {
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
+        }
+        if (done) {
+          if (!cancelled) controller.close();
+          return;
+        }
+        if (frames.length > 0) controller.enqueue(encoder.encode(frames.take(FRAMES_PER_CHUNK).join("")));
+      } catch (e) {
+        stop();
+        throw e;
       }
-      if (done) {
-        if (!cancelled) controller.close();
-        return;
-      }
-      if (frames.length > 0) controller.enqueue(encoder.encode(frames.take(FRAMES_PER_CHUNK).join("")));
     },
     cancel() {
       cancelled = true;

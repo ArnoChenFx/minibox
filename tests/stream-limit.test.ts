@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import type { App } from "../src/app";
+import { FrameBuffer } from "../src/events/frames";
 import type { OperationContext } from "../src/operations/types";
 import { startServer } from "../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
@@ -87,6 +88,22 @@ describe("the cap on live streams", () => {
     await open("/api/events/stream");
     await first.close();
     await waitFor(() => app.streams.count === 1);
+    await open("/api/events/stream");
+    expect(app.streams.count).toBe(2);
+  });
+
+  test("a stream whose read throws gives its slot back, so the streams after it are admitted", async () => {
+    const take = spyOn(FrameBuffer.prototype, "take").mockImplementationOnce(() => {
+      throw new Error("frames unavailable");
+    });
+    try {
+      await fetch(`${base}/api/events/stream`, { headers: auth }).catch(() => undefined);
+      await waitFor(() => take.mock.calls.length === 1);
+      await waitFor(() => app.streams.count === 0);
+    } finally {
+      take.mockRestore();
+    }
+    await open("/api/events/stream");
     await open("/api/events/stream");
     expect(app.streams.count).toBe(2);
   });
