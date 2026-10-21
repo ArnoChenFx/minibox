@@ -94,7 +94,7 @@ export class LifecycleWatcher {
     }
   }
 
-  /** Stops a box whose absolute TTL has elapsed. Prefers stop over delete (overnight decision for #12). */
+  /** Stops a box whose absolute TTL has elapsed. It stops rather than deletes, so the container and its volumes remain. */
   private async expireTtl(host: HostCtx, spec: BoxSpec, report: LifecycleReport): Promise<boolean> {
     if (!ttlExpired(spec, this.now())) return false;
     if (spec.lifecycle.desired === "stopped" && spec.lifecycle.stopReason === "ttl") return true;

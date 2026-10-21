@@ -39,7 +39,7 @@ export type BoxScope =
 export type VolumeScope = { readonly type: "list"; readonly ids: string[] } | { readonly type: "all" };
 export type HostScope = { readonly type: "list"; readonly ids: string[] } | { readonly type: "all" };
 
-/** Null means the limit is not set. `maxTtlSec` caps the TTL stored on a box; expiry itself is #12. */
+/** Null means the limit is not set. `maxTtlSec` caps the TTL stored on a box; the lifecycle watcher enforces expiry. */
 export interface Quotas {
   readonly maxBoxes: number | null;
   readonly maxCpus: number | null;
