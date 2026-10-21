@@ -4,7 +4,13 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { accept, type Checked, reject } from "../lib/validation";
 import { getBox } from "../services/boxes";
-import type { ExecService, ExecTarget } from "../services/exec";
+import {
+  EXEC_BACKGROUND_PER_BOX,
+  EXEC_BACKGROUND_TOTAL,
+  type ExecService,
+  type ExecTarget,
+  isPrivilegedUser,
+} from "../services/exec";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
 import { addFailure, boxId, field } from "./validation";
@@ -19,13 +25,16 @@ const STDIN_MAX = 1024 * 1024;
 const TIMEOUT_DEFAULT = 30;
 const TIMEOUT_MIN = 1;
 const TIMEOUT_MAX = 3600;
+/** The server closes an idle connection after 60 seconds, so a foreground call must finish sooner. */
+const FOREGROUND_TIMEOUT_MAX = 55;
+/** Under the strict profile only the box's default user may run commands. */
+const STRICT_EXEC_USERS: readonly string[] = ["dev", "1000"];
 const WAIT_MAX = 25_000;
 const USER_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,31})?$/;
 const EXEC_ID = /^ex_[0-9A-HJKMNP-TV-Z]{26}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-const EXEC_DESCRIPTION =
-  "Run a command in a box. Starts the box if it is stopped. Default user is dev and the default directory is /workspace. Pass argv to run a program without a shell, or cmd to run it through /bin/sh -c. Send exactly one of them. The result includes exitCode, stdout, stderr, truncated, durationMs and timedOut. A non-zero exit code is the program's status. Inline output keeps about 16 KiB from the start and 16 KiB from the end of each stream; when truncated is true, outputRef names the saved window at GET /api/execs/{execId}/output. A timeout kills the process tree and returns timedOut true. Foreground calls should stay under 60 seconds; for longer commands set background true and poll with exec_get. exec can read and write every volume mounted on the box.";
+const EXEC_DESCRIPTION = `Run a command in a box. Starts the box if it is stopped, which sets its desired state to running and raises its revision. Default user is dev and the default directory is /workspace. Pass argv to run a program without a shell, or cmd to run it through /bin/sh -c. Send exactly one of them. The box needs /bin/sh, which the exec wrapper uses. The result includes status (running, exited or killed), exitCode, stdout, stderr, truncated, durationMs, timedOut and outputRef. A non-zero exit code is the program's status. Inline output keeps about 16 KiB from the start and 16 KiB from the end of each stream; when truncated is true, outputRef names the saved window at GET /api/execs/{execId}/output. A timeout stops the process tree and sets timedOut true. If the stop fails, status stays running and exec_kill can retry. Foreground calls may set timeoutSec up to ${FOREGROUND_TIMEOUT_MAX}; longer commands need background true, and then poll with exec_get. At most ${EXEC_BACKGROUND_PER_BOX} background execs run per box and ${EXEC_BACKGROUND_TOTAL} across MiniBox. Under the strict profile only dev or 1000 may be the user. Other profiles may run as root; those runs are marked privileged in the audit. Commands, argv and the env names are written to the audit log, so pass secrets through env, not argv. exec can read and write every volume mounted on the box.`;
 
 function checkCmd(value: unknown): Checked<string | undefined> {
   if (value === undefined || value === null) return accept(undefined);
@@ -135,6 +144,7 @@ const RunOutput = z.object({
   execId: z.string(),
   background: z.boolean(),
   woke: z.boolean(),
+  status: z.enum(["running", "exited", "killed"]),
   exitCode: z.number().int().nullable(),
   stdout: z.string(),
   stderr: z.string(),
@@ -167,6 +177,7 @@ function commandAudit(input: {
     argv: input.argv,
     cwd: input.cwd,
     user: input.user,
+    privileged: isPrivilegedUser(input.user),
     timeoutSec: input.timeoutSec,
     background: input.background,
     env: Object.keys(input.env),
@@ -208,7 +219,7 @@ export const execRun = defineOperation({
         type: "integer",
         minimum: TIMEOUT_MIN,
         maximum: TIMEOUT_MAX,
-        description: `Kill the process tree after this many seconds. Defaults to ${TIMEOUT_DEFAULT}.`,
+        description: `Stop the process tree after this many seconds. Defaults to ${TIMEOUT_DEFAULT}. Foreground calls accept at most ${FOREGROUND_TIMEOUT_MAX}; use background for longer commands.`,
       }).default(TIMEOUT_DEFAULT),
       stdin: field(checkStdin, {
         type: "string",
@@ -217,12 +228,13 @@ export const execRun = defineOperation({
       }).optional(),
       user: field(checkUser, {
         type: "string",
-        description: "Container user, as a name or id, optionally with a group. Defaults to dev.",
+        description:
+          "Container user, as a name or id, optionally with a group. Defaults to dev. The strict profile allows only dev or 1000. Other profiles may use root, and those runs are marked privileged in the audit.",
       }).default("dev"),
       background: field(checkBackground, {
         type: "boolean",
         description:
-          "Return immediately with execId. Poll with exec_get. Defaults to false. Foreground calls should finish within 60 seconds.",
+          "Return immediately with execId. Poll with exec_get. Defaults to false. A foreground call may use a timeoutSec of at most 55.",
       }).default(false),
     })
     .superRefine((input, ctx) => {
@@ -231,6 +243,13 @@ export const execRun = defineOperation({
           message: msg("exec_command_required"),
           field: "cmd",
           hint: msg("exec_command_hint"),
+        });
+      }
+      if (!input.background && input.timeoutSec > FOREGROUND_TIMEOUT_MAX) {
+        addFailure(ctx, {
+          message: msg("exec_timeout_foreground", { max: FOREGROUND_TIMEOUT_MAX }),
+          field: "timeoutSec",
+          hint: msg("exec_timeout_foreground_hint"),
         });
       }
     }),
@@ -251,6 +270,11 @@ export const execRun = defineOperation({
   },
   run: async ({ host, execs, record }, input, box) => {
     requireExecs(execs);
+    if (box.profile === "strict" && !STRICT_EXEC_USERS.includes(input.user)) {
+      throw new AppError(403, "forbidden", msg("exec_user_strict", { user: input.user }), undefined, {
+        hint: msg("exec_user_strict_hint"),
+      });
+    }
     return execs.run(host, box, input, record);
   },
 });
@@ -271,7 +295,7 @@ export const execGet = defineOperation({
       description: `Long-poll for up to this many milliseconds while the command is running. Defaults to 0. The maximum is ${WAIT_MAX}.`,
     }).default(0),
   }),
-  output: RunOutput.extend({ status: z.enum(["running", "exited", "killed"]) }),
+  output: RunOutput,
   rest: [{ method: "GET", path: "/api/execs/:execId", query: ["waitMs"] }],
   cli: "exec get",
   mcp: {
@@ -307,7 +331,8 @@ export const execKill = defineOperation({
   mcp: {
     toolset: "core",
     name: "exec_kill",
-    description: "Kill a running exec and its process tree. An exec that has already exited returns a conflict.",
+    description:
+      "Kill a running exec and its process tree, from inside the box as the exec's user. An exec that has already exited returns a conflict. If a process survives, the call fails with 502 and the exec keeps running, so it can be killed again.",
   },
   resolve: async ({ execs }, input) => {
     const found = targetOf(execs, input.execId);

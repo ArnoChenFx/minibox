@@ -158,8 +158,13 @@ export default {
   "err.exec_env_invalid":
     "env must be an object of at most 64 names. A name starts with a letter or underscore, and a value is a string of at most 32768 bytes without NUL.",
   "err.exec_timeout_range": "timeoutSec must be an integer between {min} and {max}.",
+  "err.exec_timeout_foreground": "A foreground exec may use at most {max} seconds of timeoutSec.",
+  "err.exec_timeout_foreground_hint": "For a longer command, set background to true and poll it with exec_get.",
   "err.exec_stdin_invalid": "stdin must be a string of at most {max} bytes.",
   "err.exec_user_invalid": "user must be a user name or id, optionally with a group, such as dev or 1000:1000.",
+  "err.exec_user_strict": "The strict profile runs exec only as dev or 1000, not as {user}.",
+  "err.exec_user_strict_hint":
+    "Use the default user. Other users need a box with the standard or relaxed profile, which is set when the box is created.",
   "err.exec_wait_range": "waitMs must be an integer between 0 and {max}.",
   "err.exec_id_invalid": "execId must be ex_ followed by 26 Crockford base32 characters.",
   "err.exec_not_found": "No exec with that id is known.",
@@ -167,6 +172,12 @@ export default {
     "Finished commands stay in memory only until the server restarts or the in-memory list drops them. Saved output is available from the output endpoint while the file is kept.",
   "err.exec_not_running": "That exec is not running.",
   "err.exec_not_running_hint": "It has already exited. Read the result with exec_get.",
+  "err.exec_kill_failed": "The exec could not be stopped: {detail}",
+  "err.exec_kill_failed_hint":
+    "The exec is still running. Call exec_kill again, or check its processes inside the box.",
+  "err.exec_background_box_limit": "This box already has {max} background execs running.",
+  "err.exec_background_total_limit": "MiniBox already has {max} background execs running.",
+  "err.exec_background_limit_hint": "Wait for one to finish, or stop one with exec_kill, then try again.",
   "err.exec_wake_failed_hint": "The box was stopped and starting it failed. Check the box, then retry exec.",
   "err.exec_output_missing": "No saved output for that exec.",
   "err.exec_output_missing_hint":
@@ -175,7 +186,8 @@ export default {
   "err.mcp_bearer_hint":
     "Send the header Authorization: Bearer and the access key. A browser session cookie is not accepted on /mcp.",
   "err.mcp_toolset_invalid": "Unknown MCP toolset.",
-  "err.mcp_toolset_hint": "Use core, session, network, storage, tools or meta, for example /mcp?toolsets=core,session.",
+  "err.mcp_toolset_hint":
+    "Use core, session, network, storage, tools, meta or rebuild, for example /mcp?toolsets=core,session.",
   "err.mcp_not_sse": "GET /mcp does not stream events.",
   "err.mcp_not_sse_hint": "Post JSON-RPC to /mcp. DELETE /mcp closes a session.",
   "ui.nameRequired": "Please enter a {what}.",

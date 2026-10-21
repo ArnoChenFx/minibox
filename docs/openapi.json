@@ -4466,7 +4466,7 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 3600,
-                    "description": "Kill the process tree after this many seconds. Defaults to 30."
+                    "description": "Stop the process tree after this many seconds. Defaults to 30. Foreground calls accept at most 55; use background for longer commands."
                   },
                   "stdin": {
                     "type": "string",
@@ -4475,11 +4475,11 @@
                   },
                   "user": {
                     "type": "string",
-                    "description": "Container user, as a name or id, optionally with a group. Defaults to dev."
+                    "description": "Container user, as a name or id, optionally with a group. Defaults to dev. The strict profile allows only dev or 1000. Other profiles may use root, and those runs are marked privileged in the audit."
                   },
                   "background": {
                     "type": "boolean",
-                    "description": "Return immediately with execId. Poll with exec_get. Defaults to false. Foreground calls should finish within 60 seconds."
+                    "description": "Return immediately with execId. Poll with exec_get. Defaults to false. A foreground call may use a timeoutSec of at most 55."
                   }
                 }
               }
@@ -4502,6 +4502,14 @@
                     },
                     "woke": {
                       "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "exited",
+                        "killed"
+                      ]
                     },
                     "exitCode": {
                       "anyOf": [
@@ -4543,6 +4551,7 @@
                     "execId",
                     "background",
                     "woke",
+                    "status",
                     "exitCode",
                     "stdout",
                     "stderr",
@@ -4706,6 +4715,14 @@
                     "woke": {
                       "type": "boolean"
                     },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "exited",
+                        "killed"
+                      ]
+                    },
                     "exitCode": {
                       "anyOf": [
                         {
@@ -4740,28 +4757,20 @@
                     },
                     "timedOut": {
                       "type": "boolean"
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "running",
-                        "exited",
-                        "killed"
-                      ]
                     }
                   },
                   "required": [
                     "execId",
                     "background",
                     "woke",
+                    "status",
                     "exitCode",
                     "stdout",
                     "stderr",
                     "truncated",
                     "durationMs",
                     "outputRef",
-                    "timedOut",
-                    "status"
+                    "timedOut"
                   ],
                   "additionalProperties": false
                 }

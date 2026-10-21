@@ -351,6 +351,7 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         await waitUntil(async () => !(await hanging.inspect()).running, "the command to stop");
         expect(await hanging.inspect()).toMatchObject({ running: false, exitCode: 137 });
         await waitUntil(async () => (await probe("ps | grep -c '[s]leep 317' || true")) === "0", "the child to stop");
+        // The probe runs through the exec wrapper too, so its own marker is the only one left.
         expect(await probe("ls -a /tmp | grep -c minibox-exec || true")).toBe("1");
         await expect(hanging.kill()).resolves.toBeUndefined();
       } finally {

@@ -31,15 +31,15 @@ Commands:
   minibox box list [--json]            Same as box ls
   minibox exec <box> [options] -- <argv...>
       --cwd DIR         Working directory (default /workspace)
-      --user USER       Container user (default dev)
-      --timeout SEC     Kill the process tree after SEC seconds (default 30)
+      --user USER       Container user (default dev; the strict profile allows only dev or 1000)
+      --timeout SEC     Stop the process tree after SEC seconds (default 30; at most 55 unless --background)
       --env K=V         Environment variable (repeatable). The value is not logged.
       --stdin TEXT      Write TEXT to stdin, then close it
       --background      Return an exec id without waiting
       --wait MS         With --background, long-poll once for up to MS milliseconds
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
 
-A foreground exec should finish within 60 seconds. Longer commands use --background.
+A foreground exec may use --timeout up to 55 seconds. Longer commands use --background with a larger --timeout.
 The process exit code is the command's exit code, 124 when the command times out, 1 on an API error, and 2 on usage.
 exec can read and write every volume mounted on the box.
 `;
@@ -62,7 +62,6 @@ async function request(
   const headers: Record<string, string> = {
     authorization: `Bearer ${key}`,
     accept: "application/json",
-    "x-minibox-client": "cli",
   };
   let payload: string | undefined;
   if (body !== undefined) {
@@ -95,6 +94,11 @@ function printExec(io: CliIo, result: ExecResult): number {
   if (result.stderr) io.stderr(result.stderr);
   if (result.truncated && result.outputRef) {
     io.stderr(`output truncated; outputRef ${result.outputRef}\n`);
+  }
+  if (result.timedOut && result.status === "running") {
+    io.stderr(
+      `the command timed out and could not be stopped. exec ${result.execId ?? ""} is still running; POST /api/execs/${result.execId ?? ""}/kill retries.\n`,
+    );
   }
   if (result.timedOut) return 124;
   if (typeof result.exitCode === "number") return result.exitCode;
@@ -208,7 +212,6 @@ async function mcpProxy(
       authorization: `Bearer ${key}`,
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
-      "x-minibox-client": "cli",
     };
     if (session) headers["mcp-session-id"] = session;
     const res = await fetch(url, { method: "POST", headers, body: line });

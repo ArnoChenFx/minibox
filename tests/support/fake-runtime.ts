@@ -215,6 +215,7 @@ export class FakeRuntime implements Runtime {
   execScript: FakeExecScript | null = { stdout: "", stderr: "", code: 0 };
 
   private readonly faults = new Map<Op, RuntimeError[]>();
+  private readonly execKillFaults: RuntimeError[] = [];
   private readonly gates = new Map<Op, Promise<void>>();
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
@@ -243,6 +244,11 @@ export class FakeRuntime implements Runtime {
     const queue = this.faults.get(op) ?? [];
     queue.push(error);
     this.faults.set(op, queue);
+  }
+
+  /** The next exec `kill()` fails with `error` and leaves the process running, as when a process survives the kill. */
+  failExecKill(error: RuntimeError): void {
+    this.execKillFaults.push(error);
   }
 
   callsTo(op: Op): Call[] {
@@ -551,6 +557,7 @@ export class FakeRuntime implements Runtime {
     const stdout = tty ? stream : new PassThrough();
     const stderr = new PassThrough();
     const sizes: { cols: number; rows: number }[] = [];
+    const killFaults = this.execKillFaults;
     let status: ExecStatus = { running: true, exitCode: null, pid: tty ? null : 4242 };
     const session: FakeExec = {
       id: `exec-${++this.execCount}`,
@@ -568,6 +575,8 @@ export class FakeRuntime implements Runtime {
         return status;
       },
       async kill() {
+        const fault = killFaults.shift();
+        if (fault) throw fault;
         if (session.killed || !status.running) {
           session.killed = true;
           return;

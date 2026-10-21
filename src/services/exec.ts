@@ -15,6 +15,15 @@ const MAX_LIVE = 200;
 
 /** How long `exec_get` may wait. Stays under the server's 60s idle timeout. */
 export const EXEC_WAIT_MAX_MS = 25_000;
+/** Background execs that may run at once. Each holds a process and its output until it ends. */
+export const EXEC_BACKGROUND_PER_BOX = 8;
+export const EXEC_BACKGROUND_TOTAL = 64;
+
+/** Root by name or by uid, optionally with a group. Recorded in the audit so privileged runs stand out. */
+export function isPrivilegedUser(user: string): boolean {
+  const [name] = user.split(":");
+  return name === "root" || name === "0";
+}
 
 export interface ExecRunInput {
   cmd?: string;
@@ -27,10 +36,14 @@ export interface ExecRunInput {
   background: boolean;
 }
 
+/** `killed` covers both `exec_kill` and a timeout. `running` after a timeout means the kill did not stop the process. */
+export type ExecState = "running" | "exited" | "killed";
+
 export interface ExecRunResult {
   execId: string;
   background: boolean;
   woke: boolean;
+  status: ExecState;
   exitCode: number | null;
   stdout: string;
   stderr: string;
@@ -40,9 +53,7 @@ export interface ExecRunResult {
   timedOut: boolean;
 }
 
-export interface ExecGetResult extends ExecRunResult {
-  status: "running" | "exited" | "killed";
-}
+export type ExecGetResult = ExecRunResult;
 
 export interface ExecKillResult {
   execId: string;
@@ -86,13 +97,17 @@ interface LiveExec {
   stdout: EdgeBuffer;
   stderr: EdgeBuffer;
   startedAt: number;
+  endedAt: number | null;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Resolves once the exec has ended and its result is recorded. */
   done: Promise<void>;
   resolveDone: () => void;
-  forced: Promise<void>;
-  force: () => void;
+  /** Resolves when a foreground caller should stop waiting although the exec still runs (its kill failed). */
+  released: Promise<void>;
+  release: () => void;
   settled: boolean;
   timedOut: boolean;
+  /** Set once the runtime has stopped every process of the exec. */
   killed: boolean;
   exitCode: number | null;
   woke: boolean;
@@ -102,6 +117,18 @@ interface LiveExec {
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** How long `exec_kill` waits for the exec to record its end before it answers. */
+const KILL_SETTLE_MS = 3000;
+
+/** Resolves when `done` does or after `ms`, and never leaves the timer running. */
+function settleWithin(done: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  return Promise.race([done, limit]).finally(() => clearTimeout(timer));
+}
 
 function noop(): void {}
 
@@ -123,6 +150,7 @@ function commandDetail(input: ExecRunInput, woke: boolean): Record<string, unkno
     argv: input.argv,
     cwd: input.cwd,
     user: input.user,
+    privileged: isPrivilegedUser(input.user),
     timeoutSec: input.timeoutSec,
     background: input.background,
     env: Object.keys(input.env),
@@ -131,12 +159,20 @@ function commandDetail(input: ExecRunInput, woke: boolean): Record<string, unkno
   };
 }
 
+function backgroundRefused(key: MessageKey, max: number): AppError {
+  return new AppError(429, "too_many_requests", msg(key, { max }), undefined, {
+    hint: msg("exec_background_limit_hint"),
+  });
+}
+
 /**
  * Runs commands in a box. A stopped box is started first. Output is kept in memory up to the stored head and tail,
  * and the same window is written under DATA_DIR/exec when the command ends. The in-memory map is lost on restart.
  */
 export class ExecManager implements ExecService {
   private readonly live = new Map<string, LiveExec>();
+  /** Background execs whose start is in progress, by box. They count against the limits before they are live. */
+  private readonly starting = new Map<string, number>();
 
   constructor(
     private readonly outputs: OutputStore,
@@ -149,66 +185,57 @@ export class ExecManager implements ExecService {
   }
 
   async run(host: HostCtx, box: Box, input: ExecRunInput, record?: (note: AuditNote) => void): Promise<ExecRunResult> {
-    let current = box;
-    let woke = false;
-    if (!box.running) {
-      try {
-        current = await startBox(host, box.boxId);
-        woke = true;
-      } catch (e) {
-        const err = toAppError(e);
-        const message = err.key ? msg(err.key as MessageKey, err.params) : err.message;
-        throw new AppError(err.status, err.code, message, err.details, {
-          hint: msg("exec_wake_failed_hint"),
-          retryable: err.retryable,
-        });
+    const releaseSlot = input.background ? this.reserveBackground(box.id) : noop;
+    try {
+      let current = box;
+      let woke = false;
+      if (!box.running) {
+        try {
+          current = await startBox(host, box.boxId);
+          woke = true;
+        } catch (e) {
+          const err = toAppError(e);
+          const message = err.key ? msg(err.key as MessageKey, err.params) : err.message;
+          throw new AppError(err.status, err.code, message, err.details, {
+            hint: msg("exec_wake_failed_hint"),
+            retryable: err.retryable,
+          });
+        }
       }
+
+      const argv = input.argv ?? (input.cmd !== undefined ? ["/bin/sh", "-c", input.cmd] : undefined);
+      if (!argv) throw new AppError(500, "internal", "exec was called without cmd or argv");
+      const session = await host.runtime.startExec(current.id, {
+        cmd: argv,
+        env: Object.entries(input.env).map(([key, value]) => `${key}=${value}`),
+        workingDir: input.cwd,
+        user: input.user,
+        tty: false,
+      });
+
+      const live = this.create(current, session, input.background, woke, record);
+      this.attach(live);
+      this.writeStdin(live, input.stdin);
+      live.recorder?.({
+        op: "exec.start",
+        kind: "write",
+        status: "started",
+        summary: `Exec started: ${current.name}`,
+        target: this.target(live),
+        detail: commandDetail(input, woke),
+        ref: { execId: live.id },
+      });
+      const timer = setTimeout(() => void this.expire(live), input.timeoutSec * 1000);
+      unref(timer);
+      live.timer = timer;
+      void this.capture(live);
+      this.remember(live);
+
+      if (!input.background) await Promise.race([live.done, live.released]);
+      return this.view(live);
+    } finally {
+      releaseSlot();
     }
-
-    const argv = input.argv ?? (input.cmd !== undefined ? ["/bin/sh", "-c", input.cmd] : undefined);
-    if (!argv) throw new AppError(500, "internal", "exec was called without cmd or argv");
-    const session = await host.runtime.startExec(current.id, {
-      cmd: argv,
-      env: Object.entries(input.env).map(([key, value]) => `${key}=${value}`),
-      workingDir: input.cwd,
-      user: input.user,
-      tty: false,
-    });
-
-    const live = this.create(current, session, input.background, woke, record);
-    this.attach(live);
-    this.writeStdin(live, input.stdin);
-    live.recorder?.({
-      op: "exec.start",
-      kind: "write",
-      status: "started",
-      summary: `Exec started: ${current.name}`,
-      target: this.target(live),
-      detail: commandDetail(input, woke),
-      ref: { execId: live.id },
-    });
-    const timer = setTimeout(() => void this.expire(live), input.timeoutSec * 1000);
-    unref(timer);
-    live.timer = timer;
-    void this.capture(live);
-    this.remember(live);
-
-    if (input.background) {
-      return {
-        execId: live.id,
-        background: true,
-        woke,
-        exitCode: null,
-        stdout: "",
-        stderr: "",
-        truncated: false,
-        durationMs: 0,
-        outputRef: null,
-        timedOut: false,
-      };
-    }
-    await live.done;
-    return this.view(live);
   }
 
   async get(execId: string, waitMs: number): Promise<ExecGetResult> {
@@ -216,7 +243,6 @@ export class ExecManager implements ExecService {
     if (!live) throw notFound(msg("exec_not_found"), { hint: msg("exec_not_found_hint") });
     if (!live.settled && waitMs > 0) {
       await new Promise<void>((resolve) => {
-        if (live.settled) return resolve();
         const timer = setTimeout(resolve, waitMs);
         unref(timer);
         live.waiters.push(() => {
@@ -225,25 +251,24 @@ export class ExecManager implements ExecService {
         });
       });
     }
-    const status = !live.settled ? "running" : live.killed ? "killed" : "exited";
-    return { ...this.view(live), status };
+    return this.view(live);
   }
 
   async kill(execId: string): Promise<ExecKillResult> {
     const live = this.live.get(execId);
     if (!live) throw notFound(msg("exec_not_found"), { hint: msg("exec_not_found_hint") });
     if (live.settled) throw conflict(msg("exec_not_running"), { hint: msg("exec_not_running_hint") });
-    if (live.timer) {
-      clearTimeout(live.timer);
-      live.timer = null;
-    }
     if (!live.killed) {
-      live.killed = true;
-      this.emitKilled(live, "client");
-      await live.session.kill().catch(() => undefined);
-      live.force();
+      try {
+        await this.stop(live, "client");
+      } catch (e) {
+        const err = toAppError(e);
+        throw new AppError(err.status, err.code, msg("exec_kill_failed", { detail: err.message }), undefined, {
+          hint: msg("exec_kill_failed_hint"),
+        });
+      }
     }
-    await Promise.race([live.done, sleep(3000)]);
+    await settleWithin(live.done, KILL_SETTLE_MS);
     return { execId, status: "killed" };
   }
 
@@ -270,6 +295,32 @@ export class ExecManager implements ExecService {
     return { execId, stdout: file.stdout, stderr: file.stderr, truncated, stdoutBytes, stderrBytes };
   }
 
+  /**
+   * Admits one background exec in `boxId`, or refuses with 429. The slot is taken before the box is woken, so a
+   * refused request never starts a box. The returned function gives the slot back.
+   */
+  private reserveBackground(boxId: string): () => void {
+    let inBox = this.starting.get(boxId) ?? 0;
+    let total = 0;
+    for (const count of this.starting.values()) total += count;
+    for (const item of this.live.values()) {
+      if (!item.background || item.settled) continue;
+      total += 1;
+      if (item.boxId === boxId) inBox += 1;
+    }
+    if (inBox >= EXEC_BACKGROUND_PER_BOX) throw backgroundRefused("exec_background_box_limit", EXEC_BACKGROUND_PER_BOX);
+    if (total >= EXEC_BACKGROUND_TOTAL) throw backgroundRefused("exec_background_total_limit", EXEC_BACKGROUND_TOTAL);
+    this.starting.set(boxId, (this.starting.get(boxId) ?? 0) + 1);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      const left = (this.starting.get(boxId) ?? 1) - 1;
+      if (left > 0) this.starting.set(boxId, left);
+      else this.starting.delete(boxId);
+    };
+  }
+
   private create(
     box: Box,
     session: LiveExec["session"],
@@ -281,9 +332,9 @@ export class ExecManager implements ExecService {
     const done = new Promise<void>((resolve) => {
       resolveDone = resolve;
     });
-    let force: () => void = noop;
-    const forced = new Promise<void>((resolve) => {
-      force = resolve;
+    let release: () => void = noop;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
     });
     return {
       id: `ex_${ulid()}`,
@@ -293,11 +344,12 @@ export class ExecManager implements ExecService {
       stdout: new EdgeBuffer(OUTPUT_HEAD_TAIL_BYTES),
       stderr: new EdgeBuffer(OUTPUT_HEAD_TAIL_BYTES),
       startedAt: Date.now(),
+      endedAt: null,
       timer: null,
       done,
       resolveDone,
-      forced,
-      force,
+      released,
+      release,
       settled: false,
       timedOut: false,
       killed: false,
@@ -333,51 +385,94 @@ export class ExecManager implements ExecService {
     }
   }
 
+  /** Waits for the output to close and for Docker to report the exit, then records the result. */
   private async capture(live: LiveExec): Promise<void> {
     try {
-      await Promise.race([
-        Promise.all([
-          finished(live.session.stdout, { cleanup: true }).catch(() => undefined),
-          finished(live.session.stderr, { cleanup: true }).catch(() => undefined),
-        ]),
-        live.forced,
+      await Promise.all([
+        finished(live.session.stdout, { cleanup: true }).catch(() => undefined),
+        finished(live.session.stderr, { cleanup: true }).catch(() => undefined),
       ]);
-      await this.finish(live);
+      await this.awaitExit(live);
     } catch (e) {
       log.error("exec.capture_failed", { execId: live.id, error: String(e) });
-      if (!live.settled) {
-        live.exitCode = live.exitCode ?? 1;
-        live.settled = true;
-        this.notify(live);
+    }
+    this.finalize(live);
+  }
+
+  /**
+   * Polls until Docker reports the exec has ended, so a live process is never recorded as finished. There is no
+   * deadline: the timeout or an explicit kill is what ends a command that keeps running. Only several failed reads
+   * in a row give up, and the exit code is then left unknown.
+   */
+  private async awaitExit(live: LiveExec): Promise<void> {
+    let delay = 20;
+    let unreadable = 0;
+    for (;;) {
+      const status = await live.session.inspect().catch(() => null);
+      if (status && !status.running) {
+        live.exitCode = status.exitCode;
+        return;
       }
+      if (!status && ++unreadable >= 3) return;
+      await sleep(delay);
+      delay = Math.min(delay * 2, 1000);
     }
   }
 
+  /** Called on a timeout. A failed kill leaves the exec running; the foreground caller is released and may retry. */
   private async expire(live: LiveExec): Promise<void> {
+    live.timer = null;
     if (live.settled || live.killed) return;
     live.timedOut = true;
-    live.killed = true;
-    this.emitKilled(live, "timeout");
-    await live.session.kill().catch(() => undefined);
-    live.force();
+    try {
+      await this.stop(live, "timeout");
+    } catch {
+      live.release();
+    }
   }
 
-  private async finish(live: LiveExec): Promise<void> {
+  /**
+   * Asks the runtime to stop every process of the exec. A failure is recorded and rethrown, and the exec stays in
+   * the running state so that a later kill or the timeout can try again.
+   */
+  private async stop(live: LiveExec, reason: "client" | "timeout"): Promise<void> {
+    try {
+      await live.session.kill();
+    } catch (e) {
+      const err = toAppError(e);
+      log.error("exec.kill_failed", { execId: live.id, reason, error: err.message });
+      live.recorder?.({
+        op: "exec.kill_failed",
+        kind: "write",
+        status: "error",
+        summary: `Exec kill failed: ${live.boxName}`,
+        target: this.target(live),
+        detail: { execId: live.id, reason, error: err.message },
+        ref: { execId: live.id },
+        error: { code: err.code, status: err.status },
+      });
+      throw err;
+    }
+    live.killed = true;
+    if (live.timer) {
+      clearTimeout(live.timer);
+      live.timer = null;
+    }
+    this.emitKilled(live, reason);
+  }
+
+  /** Records the end of the exec exactly once. Duration stops here, so a finished exec never gets longer. */
+  private finalize(live: LiveExec): void {
     if (live.settled) return;
     if (live.timer) {
       clearTimeout(live.timer);
       live.timer = null;
     }
-    let status = await live.session.inspect().catch(() => null);
-    const deadline = Date.now() + (live.killed ? 2000 : 200);
-    while (status?.running && Date.now() < deadline) {
-      await sleep(50);
-      status = await live.session.inspect().catch(() => status);
-    }
-    live.exitCode = status && !status.running ? status.exitCode : null;
-    if (live.killed && live.exitCode === null) live.exitCode = 137;
     live.settled = true;
-    const durationMs = Math.max(0, Date.now() - live.startedAt);
+    live.endedAt = Date.now();
+    if (live.killed && live.exitCode === null) live.exitCode = 137;
+    const durationMs = live.endedAt - live.startedAt;
+    const state: Exclude<ExecState, "running"> = live.killed ? "killed" : "exited";
     const stdout = live.stdout.project(OUTPUT_HEAD_TAIL_BYTES);
     const stderr = live.stderr.project(OUTPUT_HEAD_TAIL_BYTES);
     let outputRef = `exec/${live.id}`;
@@ -391,7 +486,7 @@ export class ExecManager implements ExecService {
           stderrBytes: stderr.bytes,
           exitCode: live.exitCode,
           timedOut: live.timedOut,
-          status: live.killed ? "killed" : "exited",
+          status: state,
         },
       );
     } catch (e) {
@@ -405,6 +500,7 @@ export class ExecManager implements ExecService {
       target: this.target(live),
       detail: {
         execId: live.id,
+        status: state,
         exitCode: live.exitCode,
         durationMs,
         stdoutBytes: live.stdout.byteLength,
@@ -439,6 +535,11 @@ export class ExecManager implements ExecService {
     live.resolveDone();
   }
 
+  private stateOf(live: LiveExec): ExecState {
+    if (live.killed) return "killed";
+    return live.settled ? "exited" : "running";
+  }
+
   private view(live: LiveExec): ExecRunResult {
     const stdout = live.stdout.project(EXEC_INLINE_EDGE_BYTES);
     const stderr = live.stderr.project(EXEC_INLINE_EDGE_BYTES);
@@ -451,9 +552,10 @@ export class ExecManager implements ExecService {
       stdout: this.redact(stdout.text),
       stderr: this.redact(stderr.text),
       truncated,
-      durationMs: Math.max(0, Date.now() - live.startedAt),
+      durationMs: Math.max(0, (live.endedAt ?? Date.now()) - live.startedAt),
       outputRef: truncated ? `exec/${live.id}` : null,
       timedOut: live.timedOut,
+      status: this.stateOf(live),
     };
   }
 

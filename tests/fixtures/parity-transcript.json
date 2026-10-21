@@ -381,7 +381,7 @@
     "path": "/api/boxes/<id>/exec",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"execId\":\"ex_<ulid>\",\"background\":false,\"woke\":false,\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false}"
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":false,\"woke\":false,\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"exited\"}"
   },
   {
     "step": "get the exec",
@@ -421,7 +421,7 @@
     "path": "/api/boxes/<id>/exec",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"execId\":\"ex_<ulid>\",\"background\":true,\"woke\":false,\"exitCode\":null,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false}"
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":true,\"woke\":false,\"exitCode\":null,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"running\"}"
   },
   {
     "step": "kill the background exec",

@@ -48,7 +48,8 @@ function handlerFor(operation: Operation, binding: RestBinding): Handler {
   return async ({ app, host, req, url, params }) => {
     const run = runOf(req);
     const body = binding.body ? asObject(await readJson(req)) : {};
-    const source = req.headers.get("x-minibox-client") === "cli" ? "cli" : "rest";
+    // A client header is only a claim: the access key does not identify the client, so it never sets the audit source.
+    const source = "rest";
     const result = await app.operations.run(
       operation.name,
       { host, principal: OWNER, source, run, events: app.events, execs: app.execs },

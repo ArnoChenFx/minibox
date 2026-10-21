@@ -24,8 +24,13 @@ function setup() {
   return { app, runtime, ctx };
 }
 
-async function createBox(app: ReturnType<typeof setup>["app"], ctx: OperationContext): Promise<string> {
-  const created = (await app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 })) as {
+async function createBox(
+  app: ReturnType<typeof setup>["app"],
+  ctx: OperationContext,
+  name = "alpha",
+  profile?: "standard" | "strict" | "relaxed",
+): Promise<string> {
+  const created = (await app.operations.run("box.create", ctx, { name, cpus: 1, memoryMb: 256, profile })) as {
     box: { id: string };
   };
   return created.box.id;
@@ -199,7 +204,161 @@ describe("exec", () => {
     runtime.execScript = null;
     const id = await createBox(app, ctx);
     const result = await app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 });
-    expect(result).toMatchObject({ timedOut: true, exitCode: 137, background: false });
+    expect(result).toMatchObject({ timedOut: true, exitCode: 137, status: "killed", background: false });
+  });
+
+  test("a failed kill reports 502, keeps the exec running, and a retry can stop it", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const published: StoredEvent[] = [];
+    app.bus.subscribe("event", (event) => published.push(event));
+    const id = await createBox(app, ctx);
+    const started = (await app.operations.run("exec.run", ctx, {
+      id,
+      argv: ["sleep", "30"],
+      background: true,
+    })) as { execId: string };
+
+    runtime.failExecKill(new RuntimeError("engine", "a process survived the kill"));
+    const failed = await rejectionOf(app.operations.run("exec.kill", ctx, { execId: started.execId }));
+    expect(failed).toMatchObject({ status: 502, code: "docker_error", key: "exec_kill_failed" });
+    expect(await app.operations.run("exec.get", ctx, { execId: started.execId, waitMs: 0 })).toMatchObject({
+      status: "running",
+      exitCode: null,
+    });
+    expect(published.some((event) => event.op === "exec.kill_failed" && event.status === "error")).toBe(true);
+
+    await app.operations.run("exec.kill", ctx, { execId: started.execId });
+    expect(await app.operations.run("exec.get", ctx, { execId: started.execId, waitMs: 0 })).toMatchObject({
+      status: "killed",
+      exitCode: 137,
+    });
+  });
+
+  test("a timeout whose kill fails returns as running, and exec_kill can still stop it", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const id = await createBox(app, ctx);
+    runtime.failExecKill(new RuntimeError("engine", "a process survived the kill"));
+    const result = (await app.operations.run("exec.run", ctx, {
+      id,
+      argv: ["sleep", "30"],
+      timeoutSec: 1,
+    })) as { execId: string };
+    expect(result).toMatchObject({ status: "running", exitCode: null, timedOut: true });
+
+    await app.operations.run("exec.kill", ctx, { execId: result.execId });
+    expect(await app.operations.run("exec.get", ctx, { execId: result.execId, waitMs: 0 })).toMatchObject({
+      status: "killed",
+      exitCode: 137,
+      timedOut: true,
+    });
+  });
+
+  test("a foreground timeout may be at most 55 seconds, and a background one may be longer", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = { stdout: "", stderr: "", code: 0 };
+    const id = await createBox(app, ctx);
+    const tooLong = await rejectionOf(app.operations.run("exec.run", ctx, { id, argv: ["true"], timeoutSec: 56 }));
+    expect(tooLong).toMatchObject({
+      status: 400,
+      key: "exec_timeout_foreground",
+      details: { field: "timeoutSec" },
+    });
+    expect(await app.operations.run("exec.run", ctx, { id, argv: ["true"], timeoutSec: 55 })).toMatchObject({
+      exitCode: 0,
+    });
+    const background = (await app.operations.run("exec.run", ctx, {
+      id,
+      argv: ["true"],
+      timeoutSec: 3600,
+      background: true,
+    })) as { execId: string };
+    expect(background).toMatchObject({ background: true });
+    expect(await app.operations.run("exec.get", ctx, { execId: background.execId, waitMs: 2000 })).toMatchObject({
+      status: "exited",
+    });
+  });
+
+  test("background execs are capped per box and across boxes, and a refused one does not wake its box", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const boxes: string[] = [];
+    for (let i = 0; i < 9; i++) boxes.push(await createBox(app, ctx, `cap-${i}`));
+    const running: string[] = [];
+    const background = (boxId: string) =>
+      app.operations.run("exec.run", ctx, { id: boxId, argv: ["sleep", "30"], background: true }) as Promise<{
+        execId: string;
+      }>;
+
+    for (let i = 0; i < 8; i++) running.push((await background(boxes[0] as string)).execId);
+    const perBox = await rejectionOf(background(boxes[0] as string));
+    expect(perBox).toMatchObject({ status: 429, code: "too_many_requests", key: "exec_background_box_limit" });
+
+    await app.operations.run("exec.kill", ctx, { execId: running.shift() as string });
+    running.push((await background(boxes[0] as string)).execId);
+
+    for (const boxId of boxes.slice(1, 8)) {
+      for (let i = 0; i < 8; i++) running.push((await background(boxId)).execId);
+    }
+    expect(running).toHaveLength(64);
+    const total = await rejectionOf(background(boxes[8] as string));
+    expect(total).toMatchObject({ status: 429, code: "too_many_requests", key: "exec_background_total_limit" });
+
+    await app.operations.run("box.action", ctx, { id: boxes[0], action: "stop" });
+    const starts = runtime.callsTo("startContainer").length;
+    const stopped = await rejectionOf(background(boxes[0] as string));
+    expect(stopped).toMatchObject({ status: 429, key: "exec_background_box_limit" });
+    expect(runtime.callsTo("startContainer").length).toBe(starts);
+
+    for (const execId of running) await app.operations.run("exec.kill", ctx, { execId });
+  }, 20_000);
+
+  test("the strict profile runs exec only as dev or 1000, and a refused user does not wake the box", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = { stdout: "", stderr: "", code: 0 };
+    const id = await createBox(app, ctx, "locked", "strict");
+    await app.operations.run("box.action", ctx, { id, action: "stop" });
+    const starts = runtime.callsTo("startContainer").length;
+    const execs = runtime.callsTo("startExec").length;
+
+    const refused = await rejectionOf(app.operations.run("exec.run", ctx, { id, argv: ["id", "-u"], user: "root" }));
+    expect(refused).toMatchObject({ status: 403, code: "forbidden", key: "exec_user_strict" });
+    expect(runtime.callsTo("startContainer").length).toBe(starts);
+    expect(runtime.callsTo("startExec").length).toBe(execs);
+
+    for (const user of ["dev", "1000"]) {
+      await app.operations.run("exec.run", ctx, { id, argv: ["true"], user });
+    }
+    expect(runtime.callsTo("startExec").length).toBe(execs + 2);
+  });
+
+  test("root runs are marked privileged in the audit, and a finished exec keeps its duration", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = { stdout: "", stderr: "", code: 0 };
+    const id = await createBox(app, ctx);
+    const published: StoredEvent[] = [];
+    app.bus.subscribe("event", (event) => published.push(event));
+
+    const rooted = (await app.operations.run("exec.run", ctx, { id, argv: ["id"], user: "0:0" })) as {
+      execId: string;
+    };
+    const asDev = await app.operations.run("exec.run", ctx, { id, argv: ["id"] });
+    const runs = published.filter((event) => event.op === "exec.run");
+    expect(runs[0]?.detail).toMatchObject({ user: "0:0", privileged: true });
+    expect(runs[1]?.detail).toMatchObject({ user: "dev", privileged: false });
+    expect(asDev).toMatchObject({ exitCode: 0 });
+
+    const first = (await app.operations.run("exec.get", ctx, { execId: rooted.execId, waitMs: 0 })) as {
+      status: string;
+      durationMs: number;
+    };
+    expect(first.status).toBe("exited");
+    await Bun.sleep(60);
+    const later = (await app.operations.run("exec.get", ctx, { execId: rooted.execId, waitMs: 0 })) as {
+      durationMs: number;
+    };
+    expect(later.durationMs).toBe(first.durationMs);
   });
 
   test("a missing exec and a bad id are distinct errors", async () => {
@@ -243,7 +402,8 @@ describe("exec", () => {
         },
       });
       const events = app.events.list({ op: "exec.run" }, { limit: 5 }).events;
-      expect(events.some((event) => event.source === "cli" && event.status === "error")).toBe(true);
+      expect(events.some((event) => event.source === "rest" && event.status === "error")).toBe(true);
+      expect(events.some((event) => event.source === "cli")).toBe(false);
     } finally {
       server.stop(true);
       app.throttle.stop();
