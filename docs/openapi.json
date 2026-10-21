@@ -811,7 +811,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1905,7 +1905,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4036,7 +4036,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4958,7 +4958,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5842,6 +5842,16 @@
               }
             }
           },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "415": {
             "description": "The request declares a body that is not JSON.",
             "content": {
@@ -6020,6 +6030,16 @@
           },
           "404": {
             "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6346,7 +6366,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6814,7 +6834,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7428,7 +7448,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8315,7 +8335,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {

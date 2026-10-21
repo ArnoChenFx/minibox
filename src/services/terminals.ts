@@ -20,13 +20,23 @@ import {
   paneTarget,
   parseProbe,
   parseSessionList,
+  type SessionIdentity,
   type SessionOrigin,
   sessionTarget,
+  type TmuxSession,
 } from "../tmux/format";
 import { type Box, startBox } from "./boxes";
 
 /** The most a single `session_read` returns. Each line is at most a pane row, so this bounds the response. */
 export const READ_LINES_MAX = 2000;
+/** Rows of history a read captures: twice what it can return, so a reader can follow a burst of output across two reads. */
+const HISTORY_LINES = READ_LINES_MAX * 2;
+/** The most output one tmux command is read for. Past it the oldest bytes are dropped, so the newest screen still shows. */
+const OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
+/** Sessions one box may hold. Each is a tmux session with an entry here, so this bounds both. */
+export const SESSIONS_PER_BOX_MAX = 16;
+/** Terminals one session may have open at once. Each is a tmux client and an exec in the box. */
+export const ATTACHES_PER_SESSION_MAX = 8;
 
 const TMUX_TIMEOUT_MS = 10_000;
 const TMUX_ENV = ["TERM=xterm-256color", "LANG=C.UTF-8"];
@@ -117,6 +127,9 @@ interface Tracked {
   readonly key: string;
   readonly containerId: string;
   readonly name: string;
+  /** tmux's id and creation time of the session this entry follows. A different pair is a different session. */
+  readonly sessionId: string;
+  readonly createdAt: number;
   readonly origin: SessionOrigin;
   controller: Controller;
   takenOver: boolean;
@@ -124,6 +137,8 @@ interface Tracked {
   hostId: string;
   target: EventTarget;
   readonly attachments: Set<Attachment>;
+  /** Attaches that are starting. They count against ATTACHES_PER_SESSION_MAX before they are in `attachments`. */
+  opening: number;
   snapshot: Snapshot | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -175,7 +190,9 @@ export class Attachment {
     return true;
   }
 
+  /** Only the console resizes. A Bearer viewer attaches with `ignore-size`, so its size is not used and its frames are dropped. */
   resize(size: { cols: number; rows: number }): void {
+    if (this.source !== "ui") return;
     this.exec.resize(size).catch(() => undefined);
   }
 
@@ -228,8 +245,9 @@ export class Attachment {
  * Sessions of the boxes, through tmux. Every tmux command is a short `dev` exec in the box, so a session is only a tmux
  * session. This service adds what tmux does not have: who may type, the takeover lock, and the cursor `session_read` uses.
  *
- * Takeover is a hard lock. A session whose controller is `human` refuses agent input with `taken_over`; reads still work.
- * An agent's session comes back to the agent when the human releases it or goes idle for `takeoverIdleMs`.
+ * Takeover is a hard lock. A session whose controller is `human` refuses agent input and an agent's close with
+ * `taken_over`; reads still work, and only the console may close it. An agent's session comes back to the agent when the
+ * human releases it or goes idle for `takeoverIdleMs`.
  */
 export class TerminalService {
   private readonly tracked = new Map<string, Tracked>();
@@ -242,17 +260,13 @@ export class TerminalService {
       this.forgetBox(box.id, new Set());
       return [];
     }
-    const run = await runTmux(host, box.id, ["list-sessions", "-F", LIST_SESSIONS_FORMAT]);
-    if (classifyTmuxFailure(run.code, run.stderr) === "no_server") {
-      this.forgetBox(box.id, new Set());
-      return [];
-    }
-    if (run.code !== 0) throw this.failure(run, box.id, "");
-    const listed = parseSessionList(run.stdout);
-    this.forgetBox(box.id, new Set(listed.map((session) => session.name)));
-    return listed.map((session) => {
-      const tracked = this.track(host.host.id, box, session.name, session.origin);
-      return { ...infoOf(tracked), createdAt: session.createdAt, attached: session.attached };
+    return this.serialized(boxKey(box.id), async () => {
+      const listed = await this.listTmux(host, box.id);
+      this.forgetBox(box.id, new Set(listed.map((session) => session.name)));
+      return listed.map((session) => {
+        const tracked = this.track(host.host.id, box, session);
+        return { ...infoOf(tracked), createdAt: session.createdAt, attached: session.attached };
+      });
     });
   }
 
@@ -264,40 +278,53 @@ export class TerminalService {
       current = await startBox(host, box.boxId);
       woke = true;
     }
-    return this.serialized(keyOf(current.id, name), async () => {
-      const run = await runTmux(host, current.id, [
-        "new-session",
-        "-d",
-        "-s",
-        name,
-        "-c",
-        WORKDIR,
-        "--",
-        "sh",
-        "-c",
-        SHELL_COMMAND,
-      ]);
-      const created = run.code === 0;
-      if (!created && classifyTmuxFailure(run.code, run.stderr) !== "duplicate") {
-        throw this.failure(run, current.id, name);
-      }
-      if (created) {
-        this.forget(current.id, name);
-        await this.tuneServer(host, current.id);
-        await this.mark(host, current.id, name, source === "ui" ? "human" : "agent");
-      }
-      const origin = await this.probe(host, current, name);
-      return { session: infoOf(this.track(host.host.id, current, name, origin)), created, woke };
-    });
+    return this.serialized(boxKey(current.id), () =>
+      this.serialized(keyOf(current.id, name), async () => {
+        const listed = await this.listTmux(host, current.id);
+        if (listed.length >= SESSIONS_PER_BOX_MAX && !listed.some((session) => session.name === name)) {
+          throw sessionLimitError();
+        }
+        const run = await runTmux(host, current.id, [
+          "new-session",
+          "-d",
+          "-s",
+          name,
+          "-c",
+          WORKDIR,
+          "--",
+          "sh",
+          "-c",
+          SHELL_COMMAND,
+        ]);
+        const created = run.code === 0;
+        if (!created && classifyTmuxFailure(run.code, run.stderr) !== "duplicate") {
+          throw this.failure(run, current.id, name);
+        }
+        if (created) {
+          this.forget(current.id, name);
+          await this.tuneServer(host, current.id);
+          await this.mark(host, current.id, name, source === "ui" ? "human" : "agent");
+        }
+        const found = await this.probe(host, current, name);
+        return { session: infoOf(this.track(host.host.id, current, found)), created, woke };
+      }),
+    );
   }
 
   async read(host: HostCtx, box: Box, name: string, options: ReadOptions): Promise<ReadResult> {
     assertName(name);
     if (!box.running) throw this.stopped(box.id);
     return this.serialized(keyOf(box.id, name), async () => {
-      const origin = await this.probe(host, box, name);
-      const tracked = this.track(host.host.id, box, name, origin);
-      const run = await runTmux(host, box.id, ["capture-pane", "-p", "-J", "-S", "-", "-t", paneTarget(name)]);
+      const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
+      const run = await runTmux(host, box.id, [
+        "capture-pane",
+        "-p",
+        "-J",
+        "-S",
+        `-${HISTORY_LINES}`,
+        "-t",
+        paneTarget(name),
+      ]);
       if (run.code !== 0) throw this.failure(run, box.id, name);
       const current = paneLines(run.stdout);
       const previous = tracked.snapshot;
@@ -328,8 +355,7 @@ export class TerminalService {
     const keys = input.keys ?? [];
     const text = input.text ?? "";
     return this.serialized(keyOf(box.id, name), async () => {
-      const origin = await this.probe(host, box, name);
-      const tracked = this.track(host.host.id, box, name, origin);
+      const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
       if (tracked.controller === "human") throw takenOverError(name);
       if (keys.length === 0 && text.length === 0) return { keys: 0, bytes: 0 };
       const args = keys.length > 0 ? [...keys] : ["-H", ...hexBytes(text)];
@@ -339,10 +365,13 @@ export class TerminalService {
     });
   }
 
-  async close(host: HostCtx, box: Box, name: string): Promise<void> {
+  /** Kills the session. While a person holds it, only the console may close it, as it may type into it. */
+  async close(host: HostCtx, box: Box, name: string, source: Source): Promise<void> {
     assertName(name);
     if (!box.running) throw this.stopped(box.id);
     await this.serialized(keyOf(box.id, name), async () => {
+      const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
+      if (tracked.controller === "human" && source !== "ui") throw takenOverError(name);
       const run = await runTmux(host, box.id, ["kill-session", "-t", sessionTarget(name)]);
       if (run.code === 0) this.forget(box.id, name);
       else throw this.failure(run, box.id, name);
@@ -353,15 +382,21 @@ export class TerminalService {
   async attach(host: HostCtx, box: Box, name: string, options: AttachOptions): Promise<Attachment> {
     assertName(name);
     if (!box.running) throw this.stopped(box.id);
-    const origin = await this.probe(host, box, name);
-    const tracked = this.track(host.host.id, box, name, origin);
-    const exec = await host.runtime.startExec(box.id, {
-      cmd: ["tmux", "-u", "attach-session", "-t", sessionTarget(name)],
-      env: TMUX_ENV,
-      workingDir: WORKDIR,
-      user: "dev",
-      tty: true,
-    });
+    const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
+    if (tracked.attachments.size + tracked.opening >= ATTACHES_PER_SESSION_MAX) throw attachLimitError();
+    tracked.opening += 1;
+    let exec: ExecSession;
+    try {
+      exec = await host.runtime.startExec(box.id, {
+        cmd: attachCommand(name, options.source),
+        env: TMUX_ENV,
+        workingDir: WORKDIR,
+        user: "dev",
+        tty: true,
+      });
+    } finally {
+      tracked.opening -= 1;
+    }
     const attachment = new Attachment(
       exec,
       tracked,
@@ -415,12 +450,19 @@ export class TerminalService {
     for (const tracked of this.tracked.values()) this.disarm(tracked);
   }
 
-  private async probe(host: HostCtx, box: Box, name: string): Promise<SessionOrigin> {
+  private async probe(host: HostCtx, box: Box, name: string): Promise<SessionIdentity> {
     const run = await runTmux(host, box.id, ["display-message", "-p", "-t", paneTarget(name), PROBE_FORMAT]);
     if (run.code !== 0) throw this.failure(run, box.id, name);
     const probed = parseProbe(run.stdout);
     if (!probed || probed.name !== name) throw this.missingSession(box.id, name);
-    return probed.origin;
+    return probed;
+  }
+
+  private async listTmux(host: HostCtx, containerId: string): Promise<TmuxSession[]> {
+    const run = await runTmux(host, containerId, ["list-sessions", "-F", LIST_SESSIONS_FORMAT]);
+    if (classifyTmuxFailure(run.code, run.stderr) === "no_server") return [];
+    if (run.code !== 0) throw this.failure(run, containerId, "");
+    return parseSessionList(run.stdout);
   }
 
   private async mark(host: HostCtx, containerId: string, name: string, origin: SessionOrigin): Promise<void> {
@@ -436,29 +478,35 @@ export class TerminalService {
     if (run.code !== 0) throw this.failure(run, containerId, "");
   }
 
-  /** Returns the tracked session for this name, replacing one that was made for an earlier session of the same name. */
-  private track(hostId: string, box: Box, name: string, origin: SessionOrigin): Tracked {
-    const key = keyOf(box.id, name);
+  /**
+   * Returns the tracked session for this name. An entry follows tmux's session id and creation time, not the origin
+   * option, so an agent that rewrites the option cannot reset a takeover. A different id or creation time is a new
+   * session under the same name, and its entry is made again.
+   */
+  private track(hostId: string, box: Box, found: SessionIdentity): Tracked {
+    const key = keyOf(box.id, found.name);
     const existing = this.tracked.get(key);
     const target: EventTarget = { kind: "box", id: box.id, name: box.name };
-    if (existing && existing.origin === origin) {
+    if (existing && existing.sessionId === found.id && existing.createdAt === found.createdAt) {
       existing.hostId = hostId;
       existing.target = target;
       return existing;
     }
     if (existing) this.drop(existing);
-    const controller: Controller = origin === "human" ? "human" : "agent";
     const tracked: Tracked = {
       key,
       containerId: box.id,
-      name,
-      origin,
-      controller,
+      name: found.name,
+      sessionId: found.id,
+      createdAt: found.createdAt,
+      origin: found.origin,
+      controller: found.origin === "human" ? "human" : "agent",
       takenOver: false,
       lastInputAt: Date.now(),
       hostId,
       target,
       attachments: new Set(),
+      opening: 0,
       snapshot: null,
       idleTimer: null,
     };
@@ -563,6 +611,33 @@ function keyOf(containerId: string, name: string): string {
   return `${containerId}\0${name}`;
 }
 
+/** The lock that serializes what changes a box's set of sessions. Session names cannot hold NUL, so it never clashes with `keyOf`. */
+function boxKey(containerId: string): string {
+  return `${containerId}\0`;
+}
+
+/** The console attaches writable, and the takeover lock still decides what it may type. Every other viewer is read-only. */
+function attachCommand(name: string, source: Source): string[] {
+  const viewer = source === "ui" ? [] : ["-r", "-f", "ignore-size"];
+  return ["tmux", "-u", "attach-session", ...viewer, "-t", sessionTarget(name)];
+}
+
+function sessionLimitError(): AppError {
+  return new AppError(429, "too_many_requests", msg("session_box_limit", { max: SESSIONS_PER_BOX_MAX }), undefined, {
+    hint: msg("session_box_limit_hint"),
+  });
+}
+
+function attachLimitError(): AppError {
+  return new AppError(
+    429,
+    "too_many_requests",
+    msg("session_attach_limit", { max: ATTACHES_PER_SESSION_MAX }),
+    undefined,
+    { hint: msg("session_attach_limit_hint") },
+  );
+}
+
 function cursorOf(snapshot: Snapshot): string {
   return `${snapshot.epoch}.${snapshot.seq}`;
 }
@@ -625,14 +700,39 @@ async function runTmux(host: HostCtx, containerId: string, args: readonly string
   return { code: await exitCodeOf(session), stdout: stdout(), stderr: stderr() };
 }
 
-function collectText(stream: Readable): () => string {
-  const chunks: Buffer[] = [];
+/**
+ * Collects a command's output as text and keeps only its newest `limit` bytes. The buffer is trimmed once it holds twice
+ * that, so the copying stays proportional to the output. A trimmed text starts mid-line, so its first line is dropped,
+ * unless no line break is left to start from.
+ */
+export function collectText(stream: Readable, limit = OUTPUT_LIMIT_BYTES): () => string {
+  let chunks: Buffer[] = [];
+  let size = 0;
+  let trimmed = false;
+  const trim = () => {
+    if (size <= limit) return;
+    const kept = Buffer.concat(chunks).subarray(size - limit);
+    chunks = [kept];
+    size = kept.byteLength;
+    trimmed = true;
+  };
   stream.on("data", (chunk: unknown) => {
-    if (typeof chunk === "string") chunks.push(Buffer.from(chunk));
-    else if (chunk instanceof Uint8Array) chunks.push(Buffer.from(chunk));
+    let bytes: Buffer | null = null;
+    if (typeof chunk === "string") bytes = Buffer.from(chunk);
+    else if (chunk instanceof Uint8Array) bytes = Buffer.from(chunk);
+    if (!bytes) return;
+    chunks.push(bytes);
+    size += bytes.byteLength;
+    if (size > 2 * limit) trim();
   });
   stream.on("error", () => undefined);
-  return () => Buffer.concat(chunks).toString("utf8");
+  return () => {
+    trim();
+    const text = Buffer.concat(chunks).toString("utf8");
+    if (!trimmed) return text;
+    const lineBreak = text.indexOf("\n");
+    return lineBreak === -1 ? text : text.slice(lineBreak + 1);
+  };
 }
 
 async function exitCodeOf(session: ExecSession): Promise<number> {

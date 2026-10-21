@@ -11,16 +11,37 @@ export const ORIGIN_OPTION = "@minibox-origin";
 
 export type SessionOrigin = "agent" | "human";
 
-export interface TmuxSession {
+/**
+ * What tmux says identifies one session: its name, its id (such as `$3`) and its creation time. The id and the creation
+ * time change when a session is killed and made again, even under the same name, so they tell a new session from the one
+ * MiniBox tracked. The origin is read once, when the session is first seen.
+ */
+export interface SessionIdentity {
   readonly name: string;
+  readonly id: string;
+  /** Milliseconds since the epoch. */
+  readonly createdAt: number;
   /** Sessions without the mark were not created by MiniBox, so they are treated as agent-driven. */
   readonly origin: SessionOrigin;
-  readonly createdAt: number;
+}
+
+export interface TmuxSession extends SessionIdentity {
   readonly attached: number;
 }
 
 export function isSessionName(value: string): boolean {
   return SESSION_NAME_RE.test(value);
+}
+
+const SESSION_ID_RE = /^\$\d{1,9}$/;
+
+/** The origin option is written inside the box too, so any text it holds that is not `human` reads as agent-driven. */
+function originOf(value: string): SessionOrigin {
+  return value === "human" ? "human" : "agent";
+}
+
+function millisecondsOf(seconds: string): number {
+  return (Number(seconds) || 0) * 1000;
 }
 
 /** Session-level commands (`has-session`, `kill-session`, `attach-session`). */
@@ -33,34 +54,42 @@ export function paneTarget(name: string): string {
   return `=${name}:`;
 }
 
+/**
+ * The fields of each session in `list-sessions`, tab-separated. The origin option comes last: an agent can set it to any
+ * text, so a tab inside it must not move the fields before it.
+ */
 export const LIST_SESSIONS_FORMAT = [
   "#{session_name}",
-  `#{${ORIGIN_OPTION}}`,
+  "#{session_id}",
   "#{session_created}",
   "#{session_attached}",
+  `#{${ORIGIN_OPTION}}`,
 ].join("\t");
 
 /**
- * The name and origin of one session, read in a single `display-message`. tmux exits 0 and prints nothing when the
- * target does not exist, so the name in the output is what says whether the session is there.
+ * The identity of one session, read in a single `display-message`. tmux exits 0 and prints nothing when the target does
+ * not exist, so the name in the output is what says whether the session is there.
  */
-export const PROBE_FORMAT = ["#{session_name}", `#{${ORIGIN_OPTION}}`].join("\t");
+export const PROBE_FORMAT = ["#{session_name}", "#{session_id}", "#{session_created}", `#{${ORIGIN_OPTION}}`].join(
+  "\t",
+);
 
-export function parseProbe(stdout: string): { name: string; origin: SessionOrigin } | null {
-  const [name, origin] = stdout.trim().split("\t");
-  if (!name || !isSessionName(name)) return null;
-  return { name, origin: origin === "human" ? "human" : "agent" };
+export function parseProbe(stdout: string): SessionIdentity | null {
+  const [name = "", id = "", created = "", ...origin] = stdout.trim().split("\t");
+  if (!isSessionName(name) || !SESSION_ID_RE.test(id)) return null;
+  return { name, id, createdAt: millisecondsOf(created), origin: originOf(origin.join("\t")) };
 }
 
 export function parseSessionList(stdout: string): TmuxSession[] {
   const sessions: TmuxSession[] = [];
   for (const line of stdout.split("\n")) {
-    const [name, origin, created, attached] = line.split("\t");
-    if (!name || !isSessionName(name)) continue;
+    const [name = "", id = "", created = "", attached = "", ...origin] = line.split("\t");
+    if (!isSessionName(name) || !SESSION_ID_RE.test(id)) continue;
     sessions.push({
       name,
-      origin: origin === "human" ? "human" : "agent",
-      createdAt: (Number(created) || 0) * 1000,
+      id,
+      origin: originOf(origin.join("\t")),
+      createdAt: millisecondsOf(created),
       attached: Number(attached) || 0,
     });
   }
@@ -68,8 +97,8 @@ export function parseSessionList(stdout: string): TmuxSession[] {
 }
 
 /**
- * Lines of a `capture-pane -p -J -S -` result. Trailing blank rows are dropped: they are the empty part of the screen,
- * and keeping them would make every new line look like a change in the middle of the snapshot.
+ * Lines of a `capture-pane -p -J` result. Trailing blank rows are dropped: they are the empty part of the screen, and
+ * keeping them would make every new line look like a change in the middle of the snapshot.
  */
 export function paneLines(stdout: string): string[] {
   const lines = stdout.split("\n").map((line) => line.replace(/\r$/, ""));

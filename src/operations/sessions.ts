@@ -4,7 +4,7 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { accept, type Checked, reject } from "../lib/validation";
 import { getBox } from "../services/boxes";
-import { READ_LINES_MAX, type TerminalService } from "../services/terminals";
+import { READ_LINES_MAX, SESSIONS_PER_BOX_MAX, type TerminalService } from "../services/terminals";
 import { isKeyName, isSessionName, SESSION_NAME_RE } from "../tmux/format";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
@@ -16,7 +16,7 @@ const TEXT_MAX = 16 * 1024;
 const LINES_DEFAULT = 100;
 const CURSOR_RE = /^[0-9a-f]{12}\.[1-9]\d{0,14}$/;
 
-const START_DESCRIPTION = `Start a named tmux session in a box, or return the one that already exists. A stopped box is started first, which sets its desired state to running and raises its revision. The session keeps running after the caller disconnects, and it ends when the box stops. A session started through the API has origin agent. The console opens an agent session read-only, and a person can take it over. The result has created false when the session already existed, and woke true when this call started the box. Use session_read and session_send with it. Use exec for one-off commands.`;
+const START_DESCRIPTION = `Start a named tmux session in a box, or return the one that already exists. A stopped box is started first, which sets its desired state to running and raises its revision. The session keeps running after the caller disconnects, and it ends when the box stops. A session started through the API has origin agent. The console opens an agent session read-only, and a person can take it over. The result has created false when the session already existed, and woke true when this call started the box. A box holds at most ${SESSIONS_PER_BOX_MAX} sessions: past that, the call fails with too_many_requests until one is closed. Use session_read and session_send with it. Use exec for one-off commands.`;
 
 const SEND_DESCRIPTION = `Send keys or text to a session. Pass keys, a list of tmux key names such as Enter, Tab, Escape, BSpace, Up, C-c or M-x, or pass text, which is typed literally up to 16 KiB, and a newline in it is read by the shell as Enter. Pass exactly one of them. If a person has taken the session over, the call fails with code taken_over and retryable true: wait a little, read the session with session_read, and send again. Reads still work during a takeover. The result counts the keys and bytes sent. The input itself is not written to the audit log, only the counts.`;
 
@@ -209,6 +209,7 @@ export const sessionSend = defineOperation({
   kind: "write",
   scope: "box:session",
   async: false,
+  conflicts: true,
   input: z
     .object({
       id: boxId(),
@@ -260,6 +261,7 @@ export const sessionClose = defineOperation({
   kind: "write",
   scope: "box:session",
   async: false,
+  conflicts: true,
   input: z.object({ id: boxId(), name: sessionName() }),
   output: z.object({ session: z.string(), status: z.literal("closed") }),
   rest: [{ method: "DELETE", path: "/api/boxes/:id/sessions/:name" }],
@@ -270,9 +272,9 @@ export const sessionClose = defineOperation({
     target: (_input, box) => box && boxTarget(box),
     detail: (input) => ({ session: input.name }),
   },
-  run: async ({ host, terminals }, input, box) => {
+  run: async ({ host, source, terminals }, input, box) => {
     requireTerminals(terminals);
-    await terminals.close(host, box, input.name);
+    await terminals.close(host, box, input.name, source);
     return { session: input.name, status: "closed" as const };
   },
 });
