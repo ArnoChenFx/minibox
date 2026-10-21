@@ -68,6 +68,14 @@ export interface Body {
   snapshots?: { ref: string; source: string | null; createdBy: string | null }[];
   templates?: { ref: string; name: string | null; createdBy: string | null }[];
   taskId?: string;
+  tasks?: { id: string }[];
+  events?: {
+    seq: number;
+    op: string;
+    principal: { id: string; type?: string; name?: string };
+    target?: { kind: string; id?: string; name: string };
+  }[];
+  nextCursor?: number | null;
   result?: { snapshot?: { ref?: string } };
   deletedBoxes?: string[];
   failedBoxes?: { id: string; name: string; hostId: string; message: string }[];
