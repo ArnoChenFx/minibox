@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { notFound } from "../lib/errors";
+import { notFound, toAppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { accept, type Checked, NAME_RE, reject } from "../lib/validation";
@@ -395,6 +395,15 @@ export const tokenList = defineOperation({
   run: async ({ tokens }) => ({ tokens: tokens.list() }),
 });
 
+const FailedBoxSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  hostId: z.string(),
+  message: z.string(),
+});
+
+type FailedBox = z.infer<typeof FailedBoxSchema>;
+
 export const tokenRevoke = defineOperation({
   name: "token.revoke",
   tag: "tokens",
@@ -409,7 +418,13 @@ export const tokenRevoke = defineOperation({
       description: "Also delete boxes this token created, including their workspace volumes.",
     }).default(false),
   }),
-  output: z.object({ token: TokenInfoSchema, deletedBoxes: z.array(z.string()) }),
+  output: z.object({
+    token: TokenInfoSchema,
+    deletedBoxes: z.array(z.string()).meta({ description: "Names of the boxes deleted with the token." }),
+    failedBoxes: z.array(FailedBoxSchema).meta({
+      description: "Boxes that could not be deleted. The token is revoked either way, and the other boxes still go.",
+    }),
+  }),
   rest: [{ method: "DELETE", path: "/api/tokens/:id", query: ["deleteCreated"] }],
   cli: "token revoke",
   activity: { action: () => "token.revoke", target: (input) => input.id },
@@ -417,22 +432,34 @@ export const tokenRevoke = defineOperation({
     target: ({ id }, _resolved, result) => ({ kind: "token", id, name: result?.token.name ?? id }),
     detail: (input) => ({ id: input.id, deleteCreated: input.deleteCreated }),
   },
-  run: async ({ host, tokens }, input) => {
+  run: async ({ host, allHosts, tokens }, input) => {
     const token = tokens.revoke(input.id);
     if (!token) throw notFound(msg("token_not_found"));
     const deletedBoxes: string[] = [];
+    const failedBoxes: FailedBox[] = [];
     if (input.deleteCreated) {
-      const specs = host.specs.list().filter((spec) => spec.createdBy === input.id && spec.hostId === host.host.id);
-      for (const spec of specs) {
-        try {
-          const removed = await deleteBox(host, spec.id, true);
-          deletedBoxes.push(removed.name);
-        } catch (error) {
-          log.warn("token.revoke_box_failed", { tokenId: input.id, boxId: spec.id, error: String(error) });
+      for (const target of allHosts?.() ?? [host]) {
+        const specs = target.specs
+          .list()
+          .filter((spec) => spec.createdBy === input.id && spec.hostId === target.host.id);
+        for (const spec of specs) {
+          try {
+            const removed = await deleteBox(target, spec.id, true);
+            deletedBoxes.push(removed.name);
+          } catch (error) {
+            const message = toAppError(error).message;
+            log.warn("token.revoke_box_failed", {
+              tokenId: input.id,
+              boxId: spec.id,
+              hostId: target.host.id,
+              error: String(error),
+            });
+            failedBoxes.push({ id: spec.id, name: spec.name, hostId: target.host.id, message });
+          }
         }
       }
     }
-    return { token, deletedBoxes };
+    return { token, deletedBoxes, failedBoxes };
   },
 });
 

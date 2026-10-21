@@ -14069,12 +14069,42 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "Names of the boxes deleted with the token."
+                    },
+                    "failedBoxes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "hostId": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "hostId",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "Boxes that could not be deleted. The token is revoked either way, and the other boxes still go."
                     }
                   },
                   "required": [
                     "token",
-                    "deletedBoxes"
+                    "deletedBoxes",
+                    "failedBoxes"
                   ],
                   "additionalProperties": false
                 }

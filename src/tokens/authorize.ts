@@ -18,6 +18,7 @@ import {
   scopeAllowed,
   snapshotVisible,
   specViews,
+  templateVisible,
   viewOfSpec,
   volumeVisible,
   volumeWritable,
@@ -153,8 +154,9 @@ async function imageOrNull(host: HostCtx, ref: string) {
 
 /**
  * The image a ref names, resolved by the engine so a short id, a digest or a tag all reach the same label check. A
- * template is any template image. A snapshot must be visible to the token. Anything else, and a ref that names nothing,
- * is refused with the same message, so a refusal does not reveal which images exist.
+ * template must be visible to the token (the owner's, or one it promoted itself). A snapshot must be visible to it.
+ * Anything else, and a ref that names nothing, is refused with the same message, so a refusal does not reveal which
+ * images exist.
  */
 async function assertImageUsable(
   principal: TokenPrincipal,
@@ -166,7 +168,10 @@ async function assertImageUsable(
   const info = await imageOrNull(host, ref);
   if (!info) throw refusal(refusedAs);
   const labels = info.labels;
-  if (labels[host.keys.template] === "true") return;
+  if (labels[host.keys.template] === "true") {
+    if (templateVisible(principal, imageViewOf(host, labels))) return;
+    throw refusal(refusedAs);
+  }
   if (labels[host.keys.snapshot] === "true") {
     if (snapshotVisible(principal, imageViewOf(host, labels), specViews(host.specs.list()))) return;
   }
