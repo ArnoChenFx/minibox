@@ -8,7 +8,7 @@ import type { HostMetrics } from "../src/host/metrics";
 import { AppError } from "../src/lib/errors";
 import { sha256 } from "../src/lib/hash";
 import { startServer } from "../src/server";
-import { canExec, compileToken, fileAccess, type TokenGrants } from "../src/tokens/model";
+import { canExec, compileToken, fileAccess, requiredScopes, scopeAllowed, type TokenGrants } from "../src/tokens/model";
 import { TokenStore } from "../src/tokens/store";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
@@ -256,6 +256,24 @@ describe("presets and file access", () => {
     expect(canExec({ type: "token", id: "tok_1", grants: reader }, mine)).toBe(false);
     expect(fileAccess({ type: "token", id: "tok_1", grants: reader }, mine)).toEqual({ read: true, write: false });
     expect(fileAccess(OWNER, mine)).toEqual({ read: true, write: true });
+  });
+
+  test("box:exec, box:session and exec all need the exec scope, and files:* accept exec as well", () => {
+    const execOnly = grantsOf(compileToken({ name: "e", scopes: ["exec"] }));
+    const readOnly = grantsOf(compileToken({ name: "r", scopes: ["box:read"] }));
+    for (const scope of ["box:exec", "box:session", "exec"]) {
+      expect(requiredScopes(scope)).toEqual(["exec"]);
+      expect(scopeAllowed(execOnly, scope)).toBe(true);
+      expect(scopeAllowed(readOnly, scope)).toBe(false);
+    }
+    expect(requiredScopes("files:read")).toEqual(["files:read", "exec"]);
+    expect(requiredScopes("files:write")).toEqual(["files:write", "exec"]);
+  });
+
+  test("an operation scope that no token scope covers is owner-only, including one the registry does not know", () => {
+    for (const scope of ["pool:admin", "pool:read", "token:manage", "template:build", "task:write", "made:up"]) {
+      expect(requiredScopes(scope)).toBe("owner");
+    }
   });
 });
 

@@ -295,6 +295,35 @@ function ownerEventsNamedWeb(events: EventRow[]): string[] {
     .map((event) => event.op);
 }
 
+describe("networks a token may give a box", () => {
+  test("a token's rebuild cannot put a box on a shared or unmanaged network, and the refused box keeps its network", async () => {
+    const carrier = mint(harness.app, { name: "carrier", preset: "operator" });
+    const box = await createBox(carrier.secret, "carrier-box");
+    const id = box.json.box?.id ?? "";
+    const revision = String(box.json.box?.revision ?? 1);
+    const specs = harness.app.hosts.get().specs;
+    const network = specs.read(id)?.network;
+    const creates = harness.runtime.callsTo("createContainer").length;
+
+    const refusals: [string, { status: number; key: string }][] = [
+      ["host", { status: 403, key: "network_reserved" }],
+      ["none", { status: 403, key: "network_reserved" }],
+      ["container:abc123", { status: 400, key: "network_invalid" }],
+      ["bridge", { status: 403, key: "network_not_managed" }],
+    ];
+    for (const [requested, expected] of refusals) {
+      const reply = await call(harness.base, `/api/boxes/${id}/rebuild`, {
+        token: carrier.secret,
+        body: { confirm: true, network: requested },
+        headers: { "if-match": revision },
+      });
+      expect(refused(reply)).toEqual(expected);
+    }
+    expect(harness.runtime.callsTo("createContainer")).toHaveLength(creates);
+    expect(specs.read(id)?.network).toBe(network);
+  });
+});
+
 describe("events about a box name", () => {
   test("an earlier box of the same name keeps its events from a token, and the owner's events survive a rebuild", async () => {
     const first = await call(harness.base, "/api/boxes", { body: { name: "web", cpus: 1, memoryMb: 256 } });
