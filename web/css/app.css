@@ -274,8 +274,12 @@ button {
 }
 .content {
   padding: 28px;
-  max-width: 1320px;
   width: 100%;
+}
+/* Single-column pages (settings) read best at a fixed measure, so they are centered rather than stretched. */
+.page-narrow {
+  max-width: 960px;
+  margin-inline: auto;
 }
 .page-head {
   display: flex;
@@ -446,6 +450,10 @@ button {
 }
 .grid-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* Empty tracks collapse, so the cards always span the row whatever their count. */
+.grid-fit {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 }
 .stack {
   display: flex;
@@ -1471,7 +1479,8 @@ input[type="range"] {
     padding: 0 16px;
   }
   .grid-3,
-  .grid-2 {
+  .grid-2,
+  .grid-fit {
     grid-template-columns: 1fr;
   }
   .kv-cols {

@@ -15,7 +15,7 @@ export function render(view) {
       <div><h1>${t("nav.templates")}</h1><p>${t("tp.subtitle")}</p></div>
       <div class="page-actions"><button class="btn" data-action="build">${icon("hammer")}${t("tp.build")}</button></div>
     </div>
-    <div class="grid grid-3" id="tpGrid">${'<div class="card"><div class="skeleton sk-block"></div></div>'.repeat(3)}</div>`;
+    <div class="grid grid-fit" id="tpGrid">${'<div class="card"><div class="skeleton sk-block"></div></div>'.repeat(3)}</div>`;
   const grid = view.querySelector("#tpGrid");
 
   const load = async () => {
