@@ -544,7 +544,9 @@ export function createDockerRuntime(socketPath: string): Runtime {
       const filters: Record<string, string[]> = {};
       if (filter.labels) filters.label = labelFilter(filter.labels);
       if (filter.types) filters.type = filter.types;
-      const options = Object.keys(filters).length > 0 ? { filters } : {};
+      const options: { filters?: Record<string, string[]>; since?: number } = {};
+      if (Object.keys(filters).length > 0) options.filters = filters;
+      if (filter.since !== undefined) options.since = filter.since;
       const stream = (await call(() => docker.getEvents(options))) as Readable;
       yield* readEvents(stream, signal);
     },

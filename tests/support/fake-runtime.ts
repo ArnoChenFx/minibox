@@ -222,6 +222,7 @@ export class FakeRuntime implements Runtime {
   private readonly gates = new Map<Op, Promise<void>>();
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
+  private readonly interrupts = new Set<(error: RuntimeError) => void>();
   private execCount = 0;
 
   /**
@@ -312,11 +313,30 @@ export class FakeRuntime implements Runtime {
   ): string {
     const { running = false, cpus = null, memoryBytes = null, swapBytes = null, ...rest } = spec;
     const imageId = this.findImage(rest.image)?.id ?? this.seedImage(rest.image);
-    return this.insertContainer(rest, imageId, running, { cpus, memoryBytes, swapBytes }).id;
+    const c = this.insertContainer(rest, imageId, running, { cpus, memoryBytes, swapBytes });
+    this.announce("create", c);
+    if (running) this.announce("start", c);
+    return c.id;
   }
 
   emitEvent(event: RuntimeEvent): void {
     for (const subscriber of this.subscribers) subscriber(event);
+  }
+
+  /** Ends every open `events()` stream with `error`, as a dropped connection to the engine does. */
+  interruptEvents(error: RuntimeError): void {
+    for (const interrupt of new Set(this.interrupts)) interrupt(error);
+  }
+
+  /** The event the engine sends after a container change. Attributes carry the labels, as Docker's do. */
+  private announce(action: string, c: FakeContainer): void {
+    this.emitEvent({
+      type: "container",
+      action,
+      id: c.id,
+      attributes: { ...c.labels, name: c.name, image: c.spec.image },
+      time: now(),
+    });
   }
 
   private async gate(op: Op): Promise<void> {
@@ -440,7 +460,9 @@ export class FakeRuntime implements Runtime {
       memoryBytes: spec.memoryBytes ?? null,
       swapBytes: spec.swapBytes ?? null,
     };
-    return { id: this.insertContainer(spec, image.id, false, limits).id };
+    const c = this.insertContainer(spec, image.id, false, limits);
+    this.announce("create", c);
+    return { id: c.id };
   }
 
   async startContainer(id: string): Promise<void> {
@@ -450,12 +472,17 @@ export class FakeRuntime implements Runtime {
       this.attach(c);
       c.running = true;
       c.startedAt = now();
+      this.announce("start", c);
     }
   }
 
   async stopContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("stopContainer", [id, opts]);
-    this.getContainer(id).running = false;
+    const c = this.getContainer(id);
+    if (!c.running) return;
+    c.running = false;
+    this.announce("die", c);
+    this.announce("stop", c);
   }
 
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
@@ -464,6 +491,7 @@ export class FakeRuntime implements Runtime {
     this.attach(c);
     c.running = true;
     c.startedAt = now();
+    this.announce("restart", c);
   }
 
   async removeContainer(id: string, opts: { force: boolean }): Promise<void> {
@@ -473,6 +501,7 @@ export class FakeRuntime implements Runtime {
       throw new RuntimeError("conflict", `You cannot remove a running container ${c.id}. Stop it or force removal.`);
     }
     this.containers.delete(c.id);
+    this.announce("destroy", c);
   }
 
   async renameContainer(id: string, name: string): Promise<void> {
@@ -482,6 +511,7 @@ export class FakeRuntime implements Runtime {
     if (other && other !== c)
       throw new RuntimeError("conflict", `Conflict. The container name "/${name}" is already in use`);
     c.name = name;
+    this.announce("rename", c);
   }
 
   async updateContainer(id: string, limits: ContainerUpdate): Promise<void> {
@@ -492,6 +522,7 @@ export class FakeRuntime implements Runtime {
     if (limits.swapBytes !== undefined) c.swapBytes = limits.swapBytes;
     if (limits.pidsLimit !== undefined) c.pidsLimit = limits.pidsLimit;
     if (limits.restart !== undefined) c.restart = limits.restart;
+    this.announce("update", c);
   }
 
   async containerDiff(id: string): Promise<ContainerChange[]> {
@@ -629,16 +660,23 @@ export class FakeRuntime implements Runtime {
     this.enter("events", [filter]);
     const queue: RuntimeEvent[] = [];
     let wake: (() => void) | undefined;
+    let failure: RuntimeError | undefined;
     const notify = () => wake?.();
     const subscriber = (event: RuntimeEvent) => {
       if (!matchesEvent(event, filter)) return;
       queue.push(event);
       notify();
     };
+    const interrupt = (error: RuntimeError) => {
+      failure = error;
+      notify();
+    };
     this.subscribers.add(subscriber);
+    this.interrupts.add(interrupt);
     signal?.addEventListener("abort", notify);
     try {
       for (;;) {
+        if (failure) throw failure;
         if (signal?.aborted) return;
         const next = queue.shift();
         if (next) {
@@ -652,6 +690,7 @@ export class FakeRuntime implements Runtime {
       }
     } finally {
       this.subscribers.delete(subscriber);
+      this.interrupts.delete(interrupt);
       signal?.removeEventListener("abort", notify);
     }
   }

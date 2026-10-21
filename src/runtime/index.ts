@@ -255,9 +255,12 @@ export interface Runtime {
   /** Tar archive of `path`. Works on created containers that are not running. */
   getArchive(id: string, path: string): Promise<Readable>;
   startExec(containerId: string, spec: ExecSpec): Promise<ExecSession>;
-  /** Stops when the consumer stops iterating or `signal` aborts. */
+  /**
+   * Stops when the consumer stops iterating or `signal` aborts. `since` (Unix seconds) also yields the events the
+   * engine still holds from that time, so a subscriber that lists containers after subscribing misses nothing.
+   */
   events(
-    filter: { labels?: Record<string, string>; types?: string[] },
+    filter: { labels?: Record<string, string>; types?: string[]; since?: number },
     signal?: AbortSignal,
   ): AsyncIterable<RuntimeEvent>;
 
