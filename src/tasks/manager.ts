@@ -114,6 +114,18 @@ export class TaskManager implements TaskReader {
     return this.store.list(filter);
   }
 
+  /** True when an async task (#16) is running for this box. Exempts the box from idle sleep. */
+  hasRunningForBox(boxId: string, containerId?: string): boolean {
+    for (const id of this.running.keys()) {
+      const task = this.store.get(id, { output: false });
+      if (!task || task.target?.kind !== "box") continue;
+      const targetId = task.target.id;
+      if (targetId === boxId || (containerId !== undefined && targetId === containerId)) return true;
+      if (task.target.name && (task.target.name === boxId || task.target.name === containerId)) return true;
+    }
+    return false;
+  }
+
   /**
    * Marks a running task cancelled and aborts its work. The task keeps its exclusive key until the work has returned,
    * so a new task for the same box or host is refused with `409` until then. A commit the engine has already finished

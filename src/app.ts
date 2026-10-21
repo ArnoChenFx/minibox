@@ -21,8 +21,10 @@ import { Executor, type ExecutorHooks, logAudit, ownerOnly, type AuditEvent } fr
 import { OPERATIONS } from "./operations/registry";
 import { OWNER } from "./routes/operations";
 import type { Runtime } from "./runtime";
+import { ActivityPulse } from "./services/activity-pulse";
 import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
+import { LifecycleWatcher } from "./services/lifecycle";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
@@ -65,6 +67,8 @@ export interface App {
   throttle: LoginLimiter;
   sessions: SessionStore;
   streams: StreamSlots;
+  pulse: ActivityPulse;
+  lifecycle: LifecycleWatcher;
   version: string;
   startedAt: Date;
 }
@@ -136,13 +140,15 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const specs = new SpecStore(cfg.dataDir);
   const volumes = new VolumeStore(cfg.dataDir);
   const bus = new Bus<AppTopics>();
-  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs, volumes, bus);
+  const pulse = new ActivityPulse();
+  const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs, volumes, bus, pulse);
   hosts.add(local);
   const activity = new ActivityLog();
   const redactor = createRedactor({ knownSecrets: [cfg.accessKey] });
   const events = openEventStore(deps.eventsPath ?? join(cfg.dataDir, "events.db"), redactor);
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const execs = new ExecManager(outputs, (text) => redactor.text(text));
+  execs.setActivityHandler((boxId) => pulse.touch(boxId, "exec"));
   const tasks = new TaskManager(openTaskStore(join(cfg.dataDir, "tasks.db")), redactor, (event) =>
     bus.publish("task", event),
   );
@@ -156,6 +162,20 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   });
   const audit = deps.hooks?.audit ?? recordAudit(events, bus);
   const recordNote = recordNoteWith(audit);
+  const terminals = new TerminalService({
+    record: recordNote,
+    takeoverIdleMs: cfg.takeoverIdleSec * 1000,
+    onActivity: (boxId, kind) => pulse.touch(boxId, kind),
+  });
+  const lifecycle = new LifecycleWatcher({
+    hosts,
+    pulse,
+    terminals,
+    execs,
+    tasks,
+    cfg,
+    record: recordNote,
+  });
   return {
     cfg,
     hosts,
@@ -164,10 +184,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     events,
     outputs,
     execs,
-    terminals: new TerminalService({
-      record: recordNote,
-      takeoverIdleMs: cfg.takeoverIdleSec * 1000,
-    }),
+    terminals,
     containers: new ContainerWatch(hosts, recordNote),
     mcpSessions: new McpSessions(),
     bus,
@@ -191,6 +208,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
         idleMs: cfg.sessionIdleMs,
       }),
     streams: new StreamSlots(cfg.streamMaxConnections),
+    pulse,
+    lifecycle,
     version,
     startedAt: new Date(),
   };

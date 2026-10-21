@@ -69,6 +69,12 @@ export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): B
     desired: spec.lifecycle.desired,
     idleTimeoutSec: spec.lifecycle.idleTimeoutSec,
     ttlSec: spec.lifecycle.ttlSec,
+    stopReason: spec.lifecycle.stopReason ?? null,
+    sleeping:
+      !info.running &&
+      spec.lifecycle.desired === "stopped" &&
+      (spec.lifecycle.stopReason === "idle" || spec.lifecycle.stopReason === "ttl"),
+    lastActivityAt: host.pulse.lastActivityAt(spec.id),
     labels: spec.labels,
     createdBy: spec.createdBy,
     containerName: info.name,

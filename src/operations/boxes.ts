@@ -61,7 +61,7 @@ export const boxTarget = (box: Pick<Box, "id" | "name">): EventTarget => ({ kind
 
 const ACTIONS: Record<"start" | "stop" | "restart", (host: HostCtx, id: string) => Promise<Box>> = {
   start: startBox,
-  stop: stopBox,
+  stop: (host, id) => stopBox(host, id, "manual"),
   restart: restartBox,
 };
 
@@ -132,6 +132,8 @@ export const boxCreate = defineOperation({
         description:
           "Mounts to use instead of the four role volumes. An empty list creates a box with no mounts. Omitted, MiniBox creates workspace, home, tools and cache.",
       }),
+    idleTimeoutSec: idleTimeout(),
+    ttlSec: ttl(),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/boxes", body: true, status: 201 }],
@@ -140,7 +142,7 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
@@ -163,6 +165,8 @@ export const boxCreate = defineOperation({
           profile: input.profile,
           createdBy: principal.type,
           mounts: input.mounts,
+          idleTimeoutSec: input.idleTimeoutSec,
+          ttlSec: input.ttlSec,
         },
         record,
       ),

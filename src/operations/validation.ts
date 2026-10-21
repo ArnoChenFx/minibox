@@ -270,7 +270,9 @@ function checkLifetime(value: unknown, field: "idleTimeoutSec" | "ttlSec"): Chec
   if (value === null) return accept(null);
   const n = toNumber(value);
   const key = field === "idleTimeoutSec" ? "idle_timeout_invalid" : "ttl_invalid";
-  if (n === undefined || !Number.isInteger(n) || n < 1 || n > MAX_LIFETIME_SEC) {
+  // Idle timeout may be 0 (never sleep). TTL must be a positive lifetime.
+  const min = field === "idleTimeoutSec" ? 0 : 1;
+  if (n === undefined || !Number.isInteger(n) || n < min || n > MAX_LIFETIME_SEC) {
     return reject(msg(key, { max: MAX_LIFETIME_SEC }), field);
   }
   return accept(n);
@@ -355,8 +357,8 @@ export const optionalPids = () =>
 
 export const idleTimeout = () =>
   field((value) => checkLifetime(value, "idleTimeoutSec"), {
-    description: `Idle timeout in seconds. ${LIFETIME_HELP}`,
-    anyOf: [{ type: "integer", minimum: 1, maximum: MAX_LIFETIME_SEC }, { type: "null" }],
+    description: `Idle timeout in seconds. 0 disables idle sleep for this box; null inherits the global default (BOX_IDLE_TIMEOUT_SEC). ${LIFETIME_HELP}`,
+    anyOf: [{ type: "integer", minimum: 0, maximum: MAX_LIFETIME_SEC }, { type: "null" }],
   }).optional();
 
 export const ttl = () =>

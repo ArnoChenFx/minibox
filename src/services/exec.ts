@@ -178,11 +178,26 @@ export class ExecManager implements ExecService {
   private readonly live = new Map<string, LiveExec>();
   /** Background execs whose start is in progress, by box. They count against the limits before they are live. */
   private readonly starting = new Map<string, number>();
+  private onActivity: ((boxId: string) => void) | undefined;
 
   constructor(
     private readonly outputs: OutputStore,
     private readonly redact: (text: string) => string,
   ) {}
+
+  /** Idle-sleep heartbeat (#12). `boxId` is the stable id. */
+  setActivityHandler(handler: ((boxId: string) => void) | undefined): void {
+    this.onActivity = handler;
+  }
+
+  /** True when a background exec is running or starting on this container. Exempts the box from idle sleep. */
+  hasBackground(containerId: string): boolean {
+    if ((this.starting.get(containerId) ?? 0) > 0) return true;
+    for (const item of this.live.values()) {
+      if (item.boxId === containerId && item.background && !item.settled) return true;
+    }
+    return false;
+  }
 
   lookup(execId: string): ExecTarget | undefined {
     const live = this.live.get(execId);
@@ -207,6 +222,7 @@ export class ExecManager implements ExecService {
           });
         }
       }
+      this.onActivity?.(current.boxId);
 
       const argv = input.argv ?? (input.cmd !== undefined ? ["/bin/sh", "-c", input.cmd] : undefined);
       if (!argv) throw new AppError(500, "internal", "exec was called without cmd or argv");
