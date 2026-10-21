@@ -221,6 +221,15 @@ describe("rebuild swap", () => {
     expect(JSON.stringify(container?.labels)).not.toContain("vault");
   });
 
+  test("the swap stops the old container with the host's configured stop timeout", async () => {
+    const custom = createTestApp({ labelPrefix: "mbtest", stopTimeoutSec: 12 });
+    const customHost = custom.app.hosts.get();
+    custom.runtime.seedImage(customHost.baseTemplateTag, { [customHost.keys.template]: "true" });
+    const box = await boxes.createBox(customHost, { name: "alpha", cpus: 1, memoryMb: 256 });
+    await rebuildBox(customHost, box.id, box.revision, { profile: "strict" }, true);
+    expect(custom.runtime.callsTo("stopContainer").map((call) => call.args[1])).toEqual([{ timeoutSec: 12 }]);
+  });
+
   test("a stopped box is started as a health check and then stopped again", async () => {
     const running = await newBox("alpha");
     const stopped = await boxes.stopBox(host, running.id);
