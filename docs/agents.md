@@ -15,7 +15,7 @@ The `initialize` result includes the block below. [`README.md`](../README.md) in
 Use the MiniBox MCP server (`/mcp`, Bearer access key) to work inside a box.
 
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision. Read the revision again before an update that sends expectedRevision.
-- exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat and rm.
+- exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
 - Pass secrets in env, not in argv or cmd. The audit log keeps commands and argv, but never env values.
 - The result includes status, exitCode, stdout, stderr, truncated and durationMs. A non-zero exit code is the program's status.
 - Inline output keeps about 16 KiB from the start and 16 KiB from the end of each stream. When truncated is true, outputRef names the rest: GET /api/execs/{execId}/output.
@@ -28,12 +28,12 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key) to work inside a box.
 
 `exec` means the caller can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Attaching a volume requires `volume:attach` (#13, not enforced yet).
 
-A foreground call may set `timeoutSec` up to 55 seconds, which stays under the server's 60-second idle timeout. Longer commands use `background: true` with a larger `timeoutSec` (up to 3600) and `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and returns `timedOut: true`, with the exit code from `exec.inspect`, or 137 when the engine does not report one. If the stop fails, the exec stays `running`, a foreground call returns with `timedOut: true`, and `exec_kill` retries.
+A foreground call may set `timeoutSec` up to 55 seconds, which stays under the server's 60-second idle timeout. Longer commands use `background: true` with a larger `timeoutSec` (up to 3600) and `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and returns `timedOut: true`, with the exit code from `exec.inspect`, or 137 when the engine does not report one. If the stop fails, the exec stays `running`, a foreground call returns with `timedOut: true`, the stop is retried after a growing delay, and `exec_kill` can retry too.
 
 Stopping a box is not required before `exec`: a stopped box is started, and that changes its revision, so read the revision again before an update that sends `expectedRevision`. Idle timeout and TTL remain #12.
 
 Commands and argv are written to the audit log, so pass secrets in `env`, not in `argv` or `cmd`. Under the `strict` profile exec runs only as `dev` or `1000`. Other profiles may run as `root`, and the audit marks those runs `privileged: true`. The `X-Minibox-Client` header does not change the audit source: REST calls are recorded as `rest` and MCP calls as `mcp`.
 
-The box needs `/bin/sh`, `cat` and `rm`: the exec wrapper and the process-tree stop run them inside the box.
+The box needs `/bin/sh`, `cat`, `rm` and `sleep`: the exec wrapper and the process-tree stop run them inside the box.
 
 File read and write, including archive access and a helper container for a stopped box, are not in this server. They follow Volume (#24).

@@ -74,6 +74,7 @@ describe("exec", () => {
       env: ["TOKEN=super-secret-value"],
       workingDir: "/workspace",
       user: "dev",
+      stopAs: "root",
       tty: false,
     });
     expect(runtime.execs.at(-1)?.stdin()).toBe("line\n");
@@ -255,6 +256,63 @@ describe("exec", () => {
     });
   });
 
+  test("a timeout whose stop keeps failing is retried with a growing delay until it stops the exec", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const id = await createBox(app, ctx);
+    runtime.failExecKill(new RuntimeError("engine", "a process survived the kill"));
+    runtime.failExecKill(new RuntimeError("engine", "a process survived the kill"));
+    const started = (await app.operations.run("exec.run", ctx, {
+      id,
+      argv: ["sleep", "30"],
+      background: true,
+      timeoutSec: 1,
+    })) as { execId: string };
+
+    const session = runtime.execs.at(-1);
+    const attempts: number[] = [];
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      while (attempts.length < (session?.kills ?? 0)) attempts.push(Date.now());
+      const view = (await app.operations.run("exec.get", ctx, { execId: started.execId, waitMs: 0 })) as {
+        status: string;
+      };
+      if (view.status === "killed" || Date.now() > deadline) break;
+      await Bun.sleep(10);
+    }
+
+    expect(attempts).toHaveLength(3);
+    expect(attempts[1] as number).toBeGreaterThanOrEqual((attempts[0] as number) + 900);
+    expect(attempts[2] as number).toBeGreaterThanOrEqual((attempts[1] as number) + 1900);
+    expect(await app.operations.run("exec.get", ctx, { execId: started.execId, waitMs: 0 })).toMatchObject({
+      status: "killed",
+      exitCode: 137,
+      timedOut: true,
+    });
+  }, 15_000);
+
+  test("kills that overlap share one stop", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const id = await createBox(app, ctx);
+    const started = (await app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], background: true })) as {
+      execId: string;
+    };
+
+    const gate = runtime.holdExecKill();
+    const first = app.operations.run("exec.kill", ctx, { execId: started.execId });
+    const second = app.operations.run("exec.kill", ctx, { execId: started.execId });
+    await Bun.sleep(30);
+    gate.release();
+    await Promise.all([first, second]);
+
+    expect(runtime.execs.at(-1)?.kills).toBe(1);
+    expect(await app.operations.run("exec.get", ctx, { execId: started.execId, waitMs: 0 })).toMatchObject({
+      status: "killed",
+      exitCode: 137,
+    });
+  });
+
   test("a foreground timeout may be at most 55 seconds, and a background one may be longer", async () => {
     const { app, runtime, ctx } = setup();
     runtime.execScript = { stdout: "", stderr: "", code: 0 };
@@ -329,8 +387,17 @@ describe("exec", () => {
 
     for (const user of ["dev", "1000"]) {
       await app.operations.run("exec.run", ctx, { id, argv: ["true"], user });
+      expect(runtime.execs.at(-1)?.spec.stopAs).toBe(user);
     }
     expect(runtime.callsTo("startExec").length).toBe(execs + 2);
+  });
+
+  test("a strict refusal is audited as denied, not as an error", async () => {
+    const { app, ctx } = setup();
+    const id = await createBox(app, ctx, "locked", "strict");
+    await rejectionOf(app.operations.run("exec.run", ctx, { id, argv: ["id", "-u"], user: "root" }));
+    expect(app.events.list({ op: "exec.run", status: "denied" }, { limit: 5 }).events).toHaveLength(1);
+    expect(app.events.list({ op: "exec.run", status: "error" }, { limit: 5 }).events).toHaveLength(0);
   });
 
   test("root runs are marked privileged in the audit, and a finished exec keeps its duration", async () => {
