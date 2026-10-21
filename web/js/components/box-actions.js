@@ -3,8 +3,10 @@ import { esc } from "../lib/dom.js";
 import { gbOrMb } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { canonicalMounts } from "../lib/mounts.js";
 import { hostNow, refreshHost } from "../lib/store.js";
 import { confirmDialog, nameError, openDialog, promptDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { mountRow, readMountRows } from "./mount-editor.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
 const LIFECYCLE = {
@@ -147,14 +149,6 @@ function envKey(env) {
   );
 }
 
-function canonMounts(mounts) {
-  return JSON.stringify(
-    [...(mounts ?? [])]
-      .map((mount) => ({ volume: mount.volume, path: mount.path, mode: mount.mode }))
-      .toSorted((a, b) => `${a.path}\0${a.volume}`.localeCompare(`${b.path}\0${b.volume}`)),
-  );
-}
-
 function formatEnv(env) {
   return (env ?? []).map((item) => (item.value !== undefined ? `${item.name}=${item.value}` : item.name)).join("\n");
 }
@@ -187,29 +181,6 @@ function readEnv(text, existing) {
   return env;
 }
 
-function mountRow(mount) {
-  const row = document.createElement("div");
-  row.className = "rebuild-mount";
-  row.dataset.mount = "true";
-  row.innerHTML = `<input class="input" data-volume value="${esc(mount.volume)}" placeholder="${esc(t("rb.volume"))}" />
-    <input class="input" data-path value="${esc(mount.path)}" placeholder="${esc(t("rb.path"))}" />
-    <select class="select" data-mode>
-      <option value="rw" ${mount.mode === "rw" ? "selected" : ""}>rw</option>
-      <option value="ro" ${mount.mode === "ro" ? "selected" : ""}>ro</option>
-    </select>
-    <button type="button" class="btn" data-remove-mount>${esc(t("rb.removeMount"))}</button>`;
-  row.querySelector("[data-remove-mount]").addEventListener("click", () => row.remove());
-  return row;
-}
-
-function readMounts(root) {
-  return [...root.querySelectorAll("[data-mount]")].map((row) => ({
-    volume: row.querySelector("[data-volume]").value.trim(),
-    path: row.querySelector("[data-path]").value.trim(),
-    mode: row.querySelector("[data-mode]").value,
-  }));
-}
-
 function rebuildBody(root, box) {
   const body = {};
   const template = root.querySelector("#rbTemplate").value.trim();
@@ -221,8 +192,8 @@ function rebuildBody(root, box) {
   if (profile && profile !== (box.profile ?? "")) body.profile = profile;
   const env = readEnv(root.querySelector("#rbEnv").value, box.env);
   if (envKey(env) !== envKey(box.env)) body.env = env;
-  const mounts = readMounts(root);
-  if (canonMounts(mounts) !== canonMounts(box.mounts)) body.mounts = mounts;
+  const mounts = readMountRows(root.querySelector("#rbMounts"));
+  if (canonicalMounts(mounts) !== canonicalMounts(box.mounts)) body.mounts = mounts;
   return body;
 }
 
@@ -283,7 +254,7 @@ export function openRebuild(box) {
         <div class="help">${esc(t("rb.envHelp"))}</div></div>
       <div class="field"><span class="label">${esc(t("rb.mounts"))}</span>
         <div class="rebuild-mounts" id="rbMounts"></div>
-        <button type="button" class="btn" id="rbAddMount">${esc(t("rb.addMount"))}</button>
+        <button type="button" class="btn" id="rbAddMount">${esc(t("mount.add"))}</button>
         <div class="help">${esc(t("rb.mountsHelp"))}</div></div>
       <div class="error-text" id="rbErr"></div>
       <div id="rbPreview" hidden></div>`,

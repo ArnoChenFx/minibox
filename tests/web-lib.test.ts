@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 import { ROOT } from "../src/config";
+import { validMountPath as serverValidMountPath } from "../src/volumes/mounts";
+import { canonicalMounts, validMountPath } from "../web/js/lib/mounts.js";
 
 const LIB = join(ROOT, "web", "js", "lib");
 const I18N = join(ROOT, "web", "js", "i18n");
@@ -530,5 +532,40 @@ describe("api errors", () => {
       code: "conflict",
       status: 409,
     });
+  });
+});
+
+describe("mount lists", () => {
+  test("a mount path is valid by the rule the server applies to it", () => {
+    const samples = [
+      "/",
+      "/a",
+      "/opt/minibox/tools",
+      "/a//b",
+      "/a/./b",
+      "/a/../b",
+      "/a b",
+      "/a\u0000b",
+      "relative",
+      "",
+      "/..data",
+      "/data/",
+      `/${"x".repeat(199)}`,
+      `/${"x".repeat(200)}`,
+    ];
+    for (const path of samples) expect([path, validMountPath(path)]).toEqual([path, serverValidMountPath(path)]);
+  });
+
+  test("the canonical form ignores the order of the list and keeps the mode", () => {
+    const sorted = [
+      { volume: "a", path: "/a", mode: "rw" },
+      { volume: "b", path: "/b", mode: "ro" },
+    ] as const;
+    const reversed = sorted.toReversed();
+    expect(canonicalMounts(reversed)).toBe(canonicalMounts(sorted));
+    expect(canonicalMounts([{ volume: "a", path: "/a", mode: "ro" }])).not.toBe(
+      canonicalMounts([{ volume: "a", path: "/a", mode: "rw" }]),
+    );
+    expect(canonicalMounts(null)).toBe("[]");
   });
 });

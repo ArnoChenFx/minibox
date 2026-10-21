@@ -7,6 +7,7 @@ import { ROOT } from "../src/config";
 
 const WEB = join(ROOT, "web");
 const BOX_ACTIONS = join(WEB, "js", "components", "box-actions.js");
+const MOUNT_EDITOR = join(WEB, "js", "components", "mount-editor.js");
 
 const stubs = [
   `const stub = { documentElement: {}, body: {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, removeEventListener() {} };`,
@@ -41,6 +42,28 @@ describe("rebuild preview", () => {
     });
     expect(html.startsWith('<div class="rebuild-preview"><strong>')).toBe(true);
     expect(html.endsWith("</div></div>")).toBe(true);
+  });
+});
+
+/** Loads the mount editor in a fresh process and renders one row. */
+function mountRowMarkup(mount: Record<string, string>): string {
+  const script = [
+    ...stubs,
+    `const { mountRowHtml } = await import(${JSON.stringify(MOUNT_EDITOR)});`,
+    `console.log(JSON.stringify(mountRowHtml(${JSON.stringify(mount)})));`,
+  ].join("\n");
+  const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
+  if (run.status !== 0) throw new Error(run.stderr);
+  return JSON.parse(run.stdout) as string;
+}
+
+describe("mount row", () => {
+  test("a row names its volume, path and mode, escapes them, and carries the remove button", () => {
+    const html = mountRowMarkup({ volume: "data", path: '/srv/"x"', mode: "ro" });
+    expect(html).toContain('data-volume value="data"');
+    expect(html).toContain('data-path value="/srv/&quot;x&quot;"');
+    expect(html).toContain('<option value="ro" selected>');
+    expect(html).toContain("data-remove-mount");
   });
 });
 
