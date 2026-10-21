@@ -168,6 +168,19 @@ describe("EventStore", () => {
     expect(s.append(read()).merged).toBe(true);
   });
 
+  test("session sends, terminal and container events are activity and never merged", () => {
+    const s = open();
+    const activity = ["session.start", "session.send", "session.close", "terminal.open", "terminal.close", "container.oom"];
+    for (const op of activity) {
+      expect({ op, tier: tierOf(input({ op, kind: "write", status: "ok" })) }).toEqual({ op, tier: "activity" });
+    }
+    expect(tierOf(input({ op: "session.takeover", kind: "write", status: "ok" }))).toBe("audit");
+    expect(tierOf(input({ op: "session.release", kind: "write", status: "ok" }))).toBe("audit");
+    expect(tierOf(input({ op: "session.send", kind: "write", status: "denied" }))).toBe("audit");
+    expect(s.append(input({ op: "session.send", kind: "write", status: "ok" })).merged).toBe(false);
+    expect(s.append(input({ op: "session.send", kind: "write", status: "ok" })).merged).toBe(false);
+  });
+
   test("denied operations and changes are audited one by one, never merged", () => {
     const s = open();
     expect(tierOf(denied())).toBe("audit");

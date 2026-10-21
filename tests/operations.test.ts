@@ -38,6 +38,11 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "exec.get": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "exec.kill": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "exec.output": () => ({ execId: `ex_${"0".repeat(26)}` }),
+  "session.list": (id) => ({ id }),
+  "session.start": (id) => ({ id, name: "work" }),
+  "session.read": (id) => ({ id, name: "work", lines: 10 }),
+  "session.send": (id) => ({ id, name: "work", text: "echo hi\n" }),
+  "session.close": (id) => ({ id, name: "work" }),
   "snapshot.list": () => ({}),
   "snapshot.create": (id) => ({ id, name: "nightly" }),
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
@@ -74,6 +79,9 @@ async function preparedInput(
     const started = (await app.operations.run("exec.run", ctx, { id: boxId, argv: ["true"] })) as { execId: string };
     return { input: { execId: started.execId } };
   }
+  if (["session.read", "session.send", "session.close"].includes(operation.name)) {
+    await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+  }
   if (operation.name === "exec.kill") {
     runtime.execScript = null;
     const started = (await app.operations.run("exec.run", ctx, {
@@ -107,6 +115,7 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
     source: "rest",
     events: app.events,
     execs: app.execs,
+    terminals: app.terminals,
   };
   return { app, runtime, ctx };
 }

@@ -2,6 +2,7 @@ import { boxOperations } from "./boxes";
 import { eventOperations } from "./events";
 import { execOperations } from "./exec";
 import { operationIdOf } from "./openapi";
+import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
 import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
@@ -11,6 +12,7 @@ import type { Operation } from "./types";
 export const OPERATIONS: readonly Operation[] = [
   ...boxOperations,
   ...execOperations,
+  ...sessionOperations,
   ...snapshotOperations,
   ...templateOperations,
   ...taskOperations,

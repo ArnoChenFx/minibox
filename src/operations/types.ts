@@ -4,6 +4,7 @@ import type { EventReader } from "../events/store";
 import type { AuditNote, EventRefs, EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
 import type { ExecService } from "../services/exec";
+import type { TerminalService } from "../services/terminals";
 import type { TaskHandle, TaskReader } from "../tasks/types";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
@@ -36,6 +37,8 @@ export interface OperationContext {
   readonly tasks?: TaskReader;
   /** Command exec. Present on REST, MCP and the CLI. */
   readonly execs?: ExecService;
+  /** Terminal sessions (tmux in the box). Present on REST, MCP and the CLI. */
+  readonly terminals?: TerminalService;
   /** Records an audit event parented to this operation. Exec uses it for start, finish and kill. */
   record?(note: AuditNote): void;
 }

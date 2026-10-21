@@ -37,11 +37,19 @@ Commands:
       --stdin TEXT      Write TEXT to stdin, then close it
       --background      Return an exec id without waiting
       --wait MS         With --background, long-poll once for up to MS milliseconds
+  minibox session ls <box> [--json]    List the terminal sessions of a box
+  minibox session start <box> <name>   Start a session, or return the one that exists
+  minibox session read <box> <name> [--lines N] [--since CURSOR] [--json]
+                                       Print the screen; the cursor goes to stderr
+  minibox session send <box> <name> (--text TEXT | --key KEY ...)
+                                       Type text, or press tmux key names in order
+  minibox session close <box> <name>   End a session
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
 
 A foreground exec may use --timeout up to 55 seconds. Longer commands use --background with a larger --timeout.
 The process exit code is the command's exit code, 124 when the command times out, 1 on an API error, and 2 on usage.
 exec can read and write every volume mounted on the box.
+A session is a tmux session in the box. A person can take it over in the console, and then session send fails with taken_over; session read still works.
 `;
 
 function flagValue(argv: string[], index: number, name: string): string {
@@ -186,6 +194,96 @@ async function execCommand(argv: string[], env: Record<string, string | undefine
   return printExec(io, result);
 }
 
+interface SessionRead {
+  lines?: string[];
+  cursor?: string;
+  reset?: boolean;
+  truncated?: boolean;
+}
+
+const SESSION_VALUE_FLAGS = ["--lines", "--since", "--text", "--key"];
+const SESSION_COMMANDS = ["ls", "start", "read", "send", "close"];
+
+async function sessionCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub === undefined || !SESSION_COMMANDS.includes(sub)) {
+    throw new Error(`minibox session needs one of ${SESSION_COMMANDS.join(", ")}`);
+  }
+  const positional: string[] = [];
+  const values = new Map<string, string[]>();
+  let asJson = false;
+  for (let i = 0; i < rest.length; i++) {
+    const token = rest[i] ?? "";
+    if (token === "--json") asJson = true;
+    else if (SESSION_VALUE_FLAGS.includes(token)) {
+      values.set(token, [...(values.get(token) ?? []), flagValue(rest, i, token)]);
+      i += 1;
+    } else if (token.startsWith("--")) throw new Error(`Unknown option ${token}`);
+    else positional.push(token);
+  }
+  const [box, name] = positional;
+  if (!box) throw new Error(`minibox session ${sub} needs a box name or id`);
+  const sessions = `/api/boxes/${encodeURIComponent(box)}/sessions`;
+  if (sub === "ls") {
+    const res = await request(env, "GET", sessions);
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+    if (asJson) return printJson(io, res.json);
+    const listed = (res.json as { sessions?: Record<string, unknown>[] } | null)?.sessions ?? [];
+    io.stdout("NAME  ORIGIN  CONTROLLER  ATTACHED  CREATED\n");
+    for (const item of listed) {
+      io.stdout(
+        `${String(item.name)}  ${String(item.origin)}  ${String(item.controller)}  ${String(item.attached)}  ${String(item.createdAt)}\n`,
+      );
+    }
+    return 0;
+  }
+  if (name === undefined) throw new Error(`minibox session ${sub} needs a session name`);
+  const path = `${sessions}/${encodeURIComponent(name)}`;
+  if (sub === "start") {
+    const res = await request(env, "POST", sessions, { name });
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+    if (asJson) return printJson(io, res.json);
+    io.stdout(`${name}\n`);
+    return 0;
+  }
+  if (sub === "read") {
+    const query = new URLSearchParams();
+    const lines = values.get("--lines")?.at(-1);
+    const since = values.get("--since")?.at(-1);
+    if (lines !== undefined) query.set("lines", lines);
+    if (since !== undefined) query.set("since", since);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    const res = await request(env, "GET", `${path}${suffix}`);
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+    if (asJson) return printJson(io, res.json);
+    const read = res.json as SessionRead;
+    const rows = read.lines ?? [];
+    if (rows.length > 0) io.stdout(`${rows.join("\n")}\n`);
+    io.stderr(`cursor ${read.cursor ?? ""}${read.reset ? " (reset)" : ""}\n`);
+    return 0;
+  }
+  if (sub === "send") {
+    const texts = values.get("--text") ?? [];
+    const keys = values.get("--key") ?? [];
+    if (texts.length > 1 || texts.length > 0 === keys.length > 0) {
+      throw new Error("minibox session send needs one --text TEXT, or one or more --key KEY, but not both");
+    }
+    const body = texts.length === 1 ? { text: texts[0] } : { keys };
+    const res = await request(env, "POST", `${path}/input`, body);
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+    return 0;
+  }
+  const res = await request(env, "DELETE", path);
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  io.stdout(`${name}\n`);
+  return 0;
+}
+
+function printJson(io: CliIo, json: unknown): number {
+  io.stdout(`${JSON.stringify(json)}\n`);
+  return 0;
+}
+
 async function mcpProxy(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -239,6 +337,7 @@ export async function runCli(
     }
     if (command === "box" && (sub === "ls" || sub === "list")) return await boxLs(rest, env, io);
     if (command === "exec") return await execCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "session") return await sessionCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "mcp") return await mcpProxy(sub === undefined ? [] : [sub, ...rest], env, io, lines);
     io.stderr(`Unknown command ${command}\n${HELP}`);
     return 2;
