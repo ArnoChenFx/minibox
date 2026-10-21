@@ -237,13 +237,13 @@ export function rebuildPreviewHtml(preview) {
   const loses = (preview.loses ?? []).map((name) => t(`rebuild.lose.${name}`)).join(", ");
   const name = preview.containerName ?? { from: "", to: "" };
   const revision = preview.revision ?? { current: "", next: "" };
-  return `<strong>${esc(t("rb.previewTitle"))}</strong>
+  return `<div class="rebuild-preview"><strong>${esc(t("rb.previewTitle"))}</strong>
     <div class="help" style="margin-top:8px">${esc(t("rb.changes"))}</div><pre class="mono">${esc(changes || "—")}</pre>
     <div class="help">${esc(t("rb.diff"))}</div><pre class="mono">${esc(diff)}</pre>
     <div class="help">${esc(t("rb.keeps"))}: ${esc(keeps)}</div>
     <div class="help">${esc(t("rb.loses"))}: ${esc(loses)}</div>
     <div class="help">${esc(t("rb.containerName"))}: <span class="mono">${esc(name.from)} → ${esc(name.to)}</span></div>
-    <div class="help">${esc(t("rb.revision"))}: ${esc(String(revision.current))} → ${esc(String(revision.next))}</div>`;
+    <div class="help">${esc(t("rb.revision"))}: ${esc(String(revision.current))} → ${esc(String(revision.next))}</div></div>`;
 }
 
 function showPreview(root, preview) {
@@ -282,7 +282,7 @@ export function openRebuild(box) {
         <button type="button" class="btn" id="rbAddMount">${esc(t("rb.addMount"))}</button>
         <div class="help">${esc(t("rb.mountsHelp"))}</div></div>
       <div class="error-text" id="rbErr"></div>
-      <div class="rebuild-preview" id="rbPreview" hidden></div>`,
+      <div id="rbPreview" hidden></div>`,
     footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button>
       <button class="btn btn-primary" id="rbPreviewBtn">${esc(t("rb.preview"))}</button>
       <button class="btn btn-danger" id="rbApply" hidden>${esc(t("rb.apply"))}</button>`,

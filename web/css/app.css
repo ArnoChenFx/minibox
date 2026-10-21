@@ -1193,6 +1193,7 @@ input[type="range"] {
   inset: 0;
   z-index: 50;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 24px;
   background: rgba(9, 9, 11, 0.45);
