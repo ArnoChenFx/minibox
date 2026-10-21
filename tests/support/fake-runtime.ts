@@ -203,7 +203,14 @@ function toInfo(c: FakeContainer): ContainerInfo {
       mode: mount.mode === "ro" ? ("ro" as const) : ("rw" as const),
     })),
     network: c.spec.network ?? DEFAULT_NETWORK,
+    ipAddress: c.running ? fakeIpOf(c) : null,
   };
+}
+
+/** Stable fake IPv4 from the container id so preview tests can resolve an upstream. */
+function fakeIpOf(c: FakeContainer): string {
+  const n = Number.parseInt(c.id.replace(/\D/g, "").slice(-2) || "1", 10) || 1;
+  return `10.255.0.${(n % 254) + 1}`;
 }
 
 function toSummary(img: FakeImage): ImageSummary {

@@ -1176,6 +1176,54 @@
     "body": "{\"taskId\":\"<ulid>\"}"
   },
   {
+    "step": "list ports of the tools box",
+    "method": "GET",
+    "path": "/api/boxes/<id>/ports",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ports\":[]}"
+  },
+  {
+    "step": "expose a preview port",
+    "method": "POST",
+    "path": "/api/boxes/<id>/ports",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"port\":{\"port\":5173,\"source\":\"manual\",\"url\":\"/box/toolsbox/5173/\"}}"
+  },
+  {
+    "step": "expose an invalid preview port",
+    "method": "POST",
+    "path": "/api/boxes/<id>/ports",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Too small: expected number to be >=1\",\"retryable\":false}}"
+  },
+  {
+    "step": "list ports after expose",
+    "method": "GET",
+    "path": "/api/boxes/<id>/ports",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ports\":[{\"port\":5173,\"source\":\"manual\",\"url\":\"/box/toolsbox/5173/\"}]}"
+  },
+  {
+    "step": "unexpose the preview port",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/ports/5173",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"port\":5173}"
+  },
+  {
+    "step": "unexpose a missing preview port",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/ports/5173",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"That port is not on the manual preview list.\",\"retryable\":false,\"key\":\"preview_port_not_manual\"}}"
+  },
+  {
     "step": "delete the tools box",
     "method": "DELETE",
     "path": "/api/boxes/<id>",

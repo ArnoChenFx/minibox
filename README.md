@@ -114,7 +114,7 @@ flowchart LR
 ### Target architecture (planned)
 
 > [!NOTE]
-> Storage pools and volumes, exec, `/mcp` and the CLI client are implemented. Sessions, the preview proxy, tasks, checkpoints, multi-host and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
+> Storage pools and volumes, exec, `/mcp` and the CLI client, sessions, and the path-mode port preview proxy are implemented. Tasks, checkpoints, multi-host and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
 
 ```mermaid
 flowchart LR
@@ -278,16 +278,31 @@ docker run -d --name minibox --restart unless-stopped \
 
 Create-box can tick Agent CLIs (Claude Code, Codex, Gemini CLI, OpenCode, Aider). Install, upgrade and uninstall also live on the box page under **Tools**. Binaries go on the shared read-only tools volume (`/opt/minibox/tools`); installs run in a networked helper that mounts that volume read-write as uid `1000`. Catalog entries live in repo `catalog/*.json` and can be overridden by `DATA_DIR/tools.d/*.json`. Long installs are async tasks with live logs. API: `GET /api/tools`, `GET /api/tools/catalog`, `POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`. MCP toolset `tools` (`list_tools`, `install_tool`, …). Honor `HTTP_PROXY` / `HTTPS_PROXY` when set on the MiniBox process.
 
+See [Port preview](#port-preview) for `/box/<name>/<port>/` reverse proxy of in-box HTTP/WebSocket services (no host ports).
+
 ## Idle sleep
 
 Boxes can stop themselves when idle and wake on the next terminal, exec or session request ([#12](https://github.com/ArnoChenFx/minibox/issues/12)).
 
 - **Sleep** sets the desired state to `stopped` with reason `idle` and runs `docker stop`. The container is kept (workspace volumes stay).
 - **Idle** means: no WebSocket terminal attach, no background exec, no running async task for the box, no activity heartbeat for N seconds, and CPU below `BOX_IDLE_CPU_PERCENT`.
-- Activity heartbeats are in memory only (not the events table). Terminal, exec and session traffic refresh them.
+- Activity heartbeats are in memory only (not the events table). Terminal, exec, session and port-preview traffic refresh them.
 - **TTL** (`ttlSec` on create/update) is an absolute lifetime from create time. On expiry MiniBox **stops** the box (does not delete it) with reason `ttl`.
 - The dashboard shows **Sleeping** when a box was stopped for idle or TTL, plus last activity time.
 
+
+## Port preview
+
+Signed-in users can open a service that listens inside a box through MiniBox, with **no host port published**:
+
+- Path mode (this release): `https://<minibox>/box/<name-or-id>/<port>/…`
+- The proxy forwards HTTP and WebSocket (for Vite HMR and similar) to the container IP on the box network.
+- Responses get a CSP `sandbox` (without `allow-same-origin`) so the preview page cannot read the console session cookie. Prefer opening previews in a new tab.
+- Box page → **Ports** tab lists listening ports (from `/proc/net/tcp` inside the box) and lets you add a port manually. API: `GET/POST /api/boxes/:id/ports`, `DELETE /api/boxes/:id/ports/:port`. MCP toolset `network` (`list_ports`, `expose_port`).
+- Share links (signed URLs) and subdomain mode (`<port>-<name>.<BASE_DOMAIN>`) are not in this release.
+- MiniBox must reach the container IP (host-side process on the Docker bridge). A MiniBox container on `minibox-boxes` with ICC disabled cannot proxy until a follow-up network design.
+
+Framework tip: many bundlers assume `/` as the public base. For path-mode previews set the app base to `/box/<name>/<port>/` (Vite `base`, Next `assetPrefix`, etc.), or wait for subdomain mode.
 
 ## Configuration
 
@@ -613,7 +628,7 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 > **Warning: the main access key grants full owner access over `/mcp`.** A client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Give an agent an agent token ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) rather than the key, and keep the key out of prompts, logs and repositories.
 
-The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`) (27 tools in total when those toolsets are enabled). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` and `meta` are accepted; enable `tools` for Agent CLI install operations. File tools are not implemented; they follow Volume ([#24](https://github.com/ArnoChenFx/minibox/issues/24)). See [`docs/agents.md`](docs/agents.md).
+The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`) (27 tools in total when those toolsets are enabled). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for Agent CLI install operations. File tools are not implemented; they follow Volume ([#24](https://github.com/ArnoChenFx/minibox/issues/24)). See [`docs/agents.md`](docs/agents.md).
 
 Build the CLI with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). It talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token.
 
@@ -644,6 +659,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - session_send takes keys (tmux names such as Enter, Tab, Escape or C-c) or text, but not both. The audit log keeps the counts, never the input.
 - The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool and reconcile_tools. Installs write to the shared tools volume and update BoxSpec.tools.
 - The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
+- The network toolset (`/mcp?toolsets=network`) holds list_ports and expose_port for path-mode previews under `/box/<name>/<port>/`.
 - File tools are not available yet. The default toolsets are core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
 
 ## Project structure
@@ -803,7 +819,8 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 ### M3 · Core value
 
 - [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) Checkpoints with restic: fork, rollback and retention
-- [ ] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Port preview for dev servers running inside boxes
+
+- [x] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Port preview for dev servers running inside boxes
 - [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) Optional agent CLI install at creation or at runtime
 
 ### M4 · Multi-host and optimization

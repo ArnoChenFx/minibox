@@ -235,6 +235,7 @@ function mountsOf(info: Docker.ContainerInspectInfo): ContainerMount[] {
 
 export function toContainerInfo(info: Docker.ContainerInspectInfo): ContainerInfo {
   const started = info.State.StartedAt;
+  const network = networkOf(info);
   return {
     id: info.Id,
     name: stripSlash(info.Name),
@@ -250,8 +251,17 @@ export function toContainerInfo(info: Docker.ContainerInspectInfo): ContainerInf
     pidsLimit: pidsOf(info.HostConfig?.PidsLimit),
     restart: info.HostConfig?.RestartPolicy?.Name || "no",
     mounts: mountsOf(info),
-    network: networkOf(info),
+    network,
+    ipAddress: ipAddressOf(info, network),
   };
+}
+
+/** IPv4 on the container's primary network endpoint. Empty or IPv6-only endpoints yield null. */
+function ipAddressOf(info: Docker.ContainerInspectInfo, network: string): string | null {
+  const networks = info.NetworkSettings?.Networks ?? {};
+  const endpoint = networks[network] ?? Object.values(networks)[0];
+  const ip = endpoint?.IPAddress?.trim();
+  return ip || null;
 }
 
 function applyHardening(hostConfig: Docker.HostConfig, hardening: ContainerHardening): void {

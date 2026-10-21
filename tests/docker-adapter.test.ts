@@ -75,6 +75,7 @@ const RUNNING = {
       Mode: "z",
     },
   ],
+  NetworkSettings: { Networks: { "minibox-boxes": { IPAddress: "172.18.0.2" } } },
 };
 
 const NEVER_STARTED = {
@@ -84,6 +85,7 @@ const NEVER_STARTED = {
   Config: { Image: "minibox-template:base", Labels: {} },
   State: { Status: "created", Running: false, StartedAt: "0001-01-01T00:00:00Z" },
   HostConfig: { NanoCpus: 0, Memory: 0, NetworkMode: "default" },
+  NetworkSettings: { Networks: {} },
 };
 
 /** When set, inspects of "ok" wait for it, so a test can change the container while an inspect is in flight. */
@@ -288,6 +290,7 @@ describe("Docker adapter against a fake engine socket", () => {
       restart: "unless-stopped",
       mounts: [{ source: "mbx-alpha-workspace", target: "/workspace", mode: "rw" }],
       network: "minibox-boxes",
+      ipAddress: "172.18.0.2",
     });
     expect(await runtime().inspectContainer("fresh")).toMatchObject({
       state: "created",
@@ -299,6 +302,7 @@ describe("Docker adapter against a fake engine socket", () => {
       restart: "no",
       mounts: [],
       network: "bridge",
+      ipAddress: null,
     });
   });
 

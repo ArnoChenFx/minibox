@@ -39,6 +39,9 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "exec.get": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "exec.kill": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "exec.output": () => ({ execId: `ex_${"0".repeat(26)}` }),
+  "port.list": (id) => ({ id }),
+  "port.expose": (id) => ({ id, port: 3000 }),
+  "port.unexpose": (id) => ({ id, port: 3000 }),
   "volume.list": () => ({}),
   "volume.get": () => ({ id: "alpha-workspace" }),
   "volume.create": () => ({ name: "extra", confirm: true }),
@@ -125,6 +128,9 @@ async function preparedInput(
       timeoutSec: 30,
     })) as { execId: string };
     return { input: { execId: started.execId } };
+  }
+  if (operation.name === "port.unexpose") {
+    await app.operations.run("port.expose", ctx, { id: boxId, port: 3000 });
   }
   const sample = SAMPLES[operation.name];
   if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);

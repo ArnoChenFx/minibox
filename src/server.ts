@@ -21,6 +21,9 @@ import { errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
 import { handleMcp } from "./mcp/http";
+import { isPreviewPath } from "./preview/path";
+import { proxyHttp, resolvePreview } from "./preview/proxy";
+import { attachPreviewUpstream, type PreviewSocketData } from "./preview/ws";
 import { routes } from "./routes";
 import { matchRoute, routeAllows } from "./routes/router";
 import { getBox } from "./services/boxes";
@@ -29,7 +32,8 @@ import { serveFile } from "./static";
 import { isSessionName } from "./tmux/format";
 import { boxVisible, scopeAllowed, viewOfBox } from "./tokens/model";
 import { resolveVersion } from "./version";
-import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData, terminalHandlers } from "./ws/terminal";
+import { type SocketData, socketHandlers } from "./ws/socket";
+import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData } from "./ws/terminal";
 
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
@@ -49,7 +53,7 @@ function callerOf(app: App, req: Request, server: Pick<Server<unknown>, "request
   return resolveCaller(req, callerGate(app), addressOf(app, req, server));
 }
 
-async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
+async function handleApi(app: App, req: Request, url: URL, server: Server<SocketData>): Promise<Response> {
   const m = matchRoute(routes, req.method, url.pathname);
   if (m === null) throw new AppError(404, "not_found", msg("api_not_found"));
   if (m === "method_not_allowed") throw new AppError(405, "method_not_allowed", msg("method_not_allowed"));
@@ -97,12 +101,17 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
   return new Response("Not Found", { status: 404 });
 }
 
-export function startServer(app: App): Server<TerminalData> {
-  const term = terminalHandlers({ sessions: app.sessions, tokens: app.tokens, terminals: app.terminals });
+export function startServer(app: App): Server<SocketData> {
+  const sockets = socketHandlers({
+    sessions: app.sessions,
+    tokens: app.tokens,
+    terminals: app.terminals,
+    pulse: app.pulse,
+  });
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
   );
-  return Bun.serve<TerminalData>({
+  return Bun.serve<SocketData>({
     hostname: app.cfg.host,
     port: app.cfg.port,
     // Bun's idle timer is a hard cap measured from the start of the request, in 4-second steps, and writes do not
@@ -144,7 +153,32 @@ export function startServer(app: App): Server<TerminalData> {
           if (server.upgrade(req, { data })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
-        if (url.pathname === "/mcp") res = await handleMcp(app, req, url, addressOf(app, req, server));
+        if (isPreviewPath(url.pathname)) {
+          // Path-mode preview: session cookie only (share links deferred). Proxied pages get CSP sandbox.
+          if (sessionCaller(req, app.sessions) === null) {
+            throw new AppError(401, "unauthorized", msg("preview_unauthorized"));
+          }
+          const host = app.hosts.get();
+          const resolved = await resolvePreview(host, url);
+          if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+            const upstreamUrl =
+              resolved.upstreamOrigin.replace(/^http/, "ws") +
+              (resolved.target.forwardPath.startsWith("/")
+                ? resolved.target.forwardPath
+                : `/${resolved.target.forwardPath}`);
+            const data: PreviewSocketData = {
+              kind: "preview",
+              boxId: resolved.box.boxId,
+              pendingUpstream: upstreamUrl,
+              pendingHeaders: req.headers,
+            };
+            if (!server.upgrade(req, { data })) {
+              throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
+            }
+            return undefined;
+          }
+          res = await proxyHttp(req, resolved, app.pulse);
+        } else if (url.pathname === "/mcp") res = await handleMcp(app, req, url, addressOf(app, req, server));
         else
           res = url.pathname.startsWith("/api/")
             ? await handleApi(app, req, url, server)
@@ -154,6 +188,7 @@ export function startServer(app: App): Server<TerminalData> {
         if (res.status >= 500)
           log.error("request.failed", { method: req.method, path: url.pathname, error: String(e) });
       }
+      if (res === undefined) return undefined;
       if ((url.pathname.startsWith("/api/") && url.pathname !== "/api/host/metrics") || url.pathname === "/mcp") {
         log.debug("request", {
           method: req.method,
@@ -162,13 +197,32 @@ export function startServer(app: App): Server<TerminalData> {
           ms: Math.round(performance.now() - started),
         });
       }
+      // Preview responses already set CSP sandbox; withSecurityHeaders keeps existing CSP.
       return withSecurityHeaders(res, isSecureRequest(req, app.cfg.trustProxy));
     },
     websocket: {
-      open: term.open,
-      message: term.message,
-      drain: term.drain,
-      close: term.close,
+      open: async (ws) => {
+        if (ws.data && "kind" in ws.data && ws.data.kind === "preview") {
+          const data = ws.data;
+          if (data.pendingUpstream) {
+            const upstream = data.pendingUpstream;
+            const headers = data.pendingHeaders ?? new Headers();
+            data.pendingUpstream = undefined;
+            data.pendingHeaders = undefined;
+            await attachPreviewUpstream(
+              ws as import("bun").ServerWebSocket<PreviewSocketData>,
+              upstream,
+              app.pulse,
+              headers,
+            );
+          }
+          return;
+        }
+        return sockets.open(ws);
+      },
+      message: sockets.message,
+      drain: sockets.drain,
+      close: sockets.close,
       idleTimeout: HEARTBEAT_SEC,
       backpressureLimit: BACKPRESSURE_LIMIT_BYTES,
       closeOnBackpressureLimit: true,

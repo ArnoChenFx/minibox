@@ -346,6 +346,9 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["tool.upgrade", boxRule],
   ["tool.uninstall", boxRule],
   ["tool.reconcile", boxRule],
+  ["port.list", boxRule],
+  ["port.expose", boxRule],
+  ["port.unexpose", boxRule],
 ]);
 
 /** Whether a token may reach an operation at all. The tests use it to hold every token-reachable operation to a rule. */
