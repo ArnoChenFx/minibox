@@ -87,6 +87,7 @@ describe("the live state on the event stream", () => {
     seedBox("alpha", true);
     seedBox("beta", false);
     const base = await startApp();
+    await app.hosts.get().sampler.sampleNow();
     const sse = await openStream(base);
 
     expect((await sse.next()).retry).toBe(3000);
@@ -256,16 +257,16 @@ describe("the keys of live frames", () => {
 });
 
 describe("the sample cadence on the event stream", () => {
-  test("box stats are sampled only while a stream is open: a stream samples at once, and sampling stops when it closes", async () => {
+  test("box stats are sampled only while a stream is open: nothing is sampled before one, a stream samples at once, and sampling stops when it closes", async () => {
     seedBox("nu", true);
     shortCadence();
     const base = await startApp();
     await Bun.sleep(40);
-    expect(statsCalls()).toBe(1);
+    expect(statsCalls()).toBe(0);
 
     const sse = await openStream(base);
     await sse.until(isLive("sample"));
-    expect(statsCalls()).toBeGreaterThan(1);
+    expect(statsCalls()).toBeGreaterThan(0);
 
     await sse.close();
     const settled = await untilQuiet(statsCalls);

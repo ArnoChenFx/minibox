@@ -74,6 +74,14 @@ describe("guardRequest", () => {
 
   test("cross-site reads are left to the browser's same-origin policy", () => {
     expect(guard(req("GET", "/api/boxes", evil))).toBeNull();
+    expect(guard(req("GET", "/api/boxes/a/logs", evil))).toBeNull();
+  });
+
+  test("cross-site reads of the event log and of a box's log stream are refused, and the same origin passes", () => {
+    for (const path of ["/api/events", "/api/events/stream", "/api/boxes/a/logs/stream"]) {
+      expect(guard(req("GET", path, evil))).toBe(403);
+      expect(guard(req("GET", path, { origin: APP }))).toBeNull();
+    }
   });
 
   test("same-origin writes with a JSON body pass; other bodies are 415", () => {

@@ -65,6 +65,8 @@ export interface App {
   execs: ExecManager;
   terminals: TerminalService;
   containers: ContainerWatch;
+  /** Writes an audit note for an action a route takes outside the operation registry, such as opening a log stream. */
+  recordNote: RecordNote;
   mcpSessions: McpSessions;
   bus: Bus<AppTopics>;
   retention: RetentionJob;
@@ -232,6 +234,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     execs,
     terminals,
     containers: new ContainerWatch(hosts, recordNote),
+    recordNote,
     mcpSessions: new McpSessions((id, listener) => tokens.watch(id, listener)),
     bus,
     retention,

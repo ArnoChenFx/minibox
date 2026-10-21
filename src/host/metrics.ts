@@ -118,8 +118,10 @@ export class HostMonitor {
     this.timer = null;
   }
 
+  /** The local reading is kept every tick. The Docker reads, and the publish, happen only while a subscriber watches. */
   private tick(): void {
     this.sample();
+    if (!this.currentHost().sampler.watched()) return;
     this.snapshot()
       .then(({ history, ...metrics }) => {
         this.live.publish("host", {

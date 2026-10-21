@@ -1,4 +1,4 @@
-import { untilAborted } from "../lib/abort";
+import { sleep, untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
 import { type ContainerInfo, type ContainerStats, isRuntimeError, type RuntimeEvent } from "../runtime";
 import { liveBox, projectBox } from "../services/box-view";
@@ -7,6 +7,7 @@ import { ClaimError, ensureSpec } from "../specs/claim";
 import type { SpecChange } from "../specs/store";
 import type { BoxSpec } from "../specs/types";
 import { type BoxSample, type LinkState, type LiveSink, NO_LIVE, type StatSample } from "./live";
+import { LogFollows } from "./log-follow";
 import type { HostCtx } from "./registry";
 
 /** Container actions that can change how a box looks. Exec, attach and the like leave the box as it was. */
@@ -25,11 +26,24 @@ const STATE_VERBS = new Set([
   "health_status",
 ]);
 const STATS_CONCURRENCY = 8;
+/** Container inspects a drain runs at once. A burst of starts and stops then takes a few engine round trips, not one per box. */
+const INSPECT_CONCURRENCY = 8;
 /** Longest a stats call may take. A longer interval waits this long for a sample at most. */
 const STATS_TIMEOUT_MS = 5000;
 const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 const IDLE_INTERVAL_MS = 30_000;
+/**
+ * How long one `need()` keeps the samples going while no live subscriber watches. A reader of usage renews it, so
+ * a host that nobody reads costs no stats call once the lease runs out.
+ */
+export const DEMAND_LEASE_MS = 5 * 60_000;
+/** A sample older than this is not reported. The idle cadence sits well inside it, so a leased sampler keeps it current. */
+const STALE_AFTER_MS = 60_000;
+/** How long a delivered event is remembered, so a replay of it after a reconnect is not delivered again. */
+const EVENT_MEMORY_MS = 60_000;
+/** Remembered events above this count are swept of the expired ones before a new one is remembered. */
+const EVENT_MEMORY_SWEEP = 1024;
 /** How often the containers are listed again, so a change the event stream never reported is caught up. */
 const RELIST_MS = 60_000;
 /** Longest a re-list waits for the engine's listing. A listing that is still pending past this is given up. */
@@ -46,6 +60,8 @@ export interface SamplerOptions {
   intervalMs: number;
   /** Time between two sample rounds while none does. Never shorter than `intervalMs`. */
   idleIntervalMs?: number;
+  /** Age past which a sample is no longer reported. See `STALE_AFTER_MS`. */
+  staleAfterMs?: number;
   /** Time between two full listings of the containers. A stalled event stream hides a change for at most this long. */
   relistMs?: number;
   /** Longest a re-list waits for its listing. See `RELIST_TIMEOUT_MS`. */
@@ -86,18 +102,6 @@ export function summarizeBoxes(infos: Iterable<ContainerInfo>): BoxTotals {
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(done, ms);
-    function done() {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", done);
-      resolve();
-    }
-    signal.addEventListener("abort", done, { once: true });
-  });
 }
 
 /** Resolves once `promise` settles, or after `ms`, whichever comes first. The promise itself is left to finish. */
@@ -164,18 +168,35 @@ export class HostSampler {
   private expedited = false;
   /** When the last round ended, in epoch milliseconds. The next round is due one cadence later. */
   private roundEndedAt = 0;
+  /** Sampling is wanted until this time while no live subscriber watches. See `need`. */
+  private needUntil = 0;
+  private readonly listeners = new Set<(event: RuntimeEvent) => void>();
+  /** The events delivered lately, by identity, with the time each one is remembered until. See `claim`. */
+  private readonly delivered = new Map<string, number>();
+  /** The second of the newest event delivered, so a new subscription resumes from there. Zero before any event. */
+  private cursor = 0;
+  /** The round queued or running now, so the callers that ask meanwhile share it. */
+  private pendingRound: Promise<void> | null = null;
   /** Ends the sample loop's current wait early, so it reads the cadence and the expedite flag again. */
   private wakeLoop: (() => void) | null = null;
   /** Counts the changes the cache takes in, so a listing taken before one of them is not applied over it. */
   private changes = 0;
   /** True while a re-list's listing is in flight, so that one listing at a time runs. */
   private relisting = false;
+  /** The log of each box a subscriber reads. One follow per box serves every subscriber. See `LogFollows`. */
+  readonly logs: LogFollows;
 
   constructor(
     private readonly currentHost: () => HostCtx,
     private readonly options: SamplerOptions,
     private readonly sink: LiveSink = NO_LIVE,
-  ) {}
+  ) {
+    this.logs = new LogFollows({
+      runtime: () => this.currentHost().runtime,
+      target: (boxId) => this.logTarget(boxId),
+      ready: () => this.ready(),
+    });
+  }
 
   isStarted(): boolean {
     return this.started;
@@ -195,7 +216,6 @@ export class HostSampler {
     }
     this.unsubscribe = host.specs.subscribe((change) => this.onSpec(change));
     this.abort = new AbortController();
-    this.roundEndedAt = Date.now();
     void this.run(this.abort.signal);
     void this.sampleLoop(this.abort.signal);
   }
@@ -209,6 +229,10 @@ export class HostSampler {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.expedited = false;
+    this.needUntil = 0;
+    this.roundEndedAt = 0;
+    this.delivered.clear();
+    this.cursor = 0;
     this.dirty.clear();
     this.stale.clear();
     this.containers.clear();
@@ -217,6 +241,7 @@ export class HostSampler {
     this.rings.clear();
     this.failures = 0;
     this.setState("down", "stopped");
+    this.logs.stop();
   }
 
   /**
@@ -242,6 +267,17 @@ export class HostSampler {
       rounds = this.rounds;
       await Promise.all([queue, rounds]);
     } while (queue !== this.queue || rounds !== this.rounds);
+  }
+
+  /**
+   * Calls `listener` with each container event of this host, once, while the sampler runs. The events it sees are the
+   * ones the cache takes in, so a replay after a reconnect reaches it only the first time. Returns the way to stop.
+   */
+  subscribeEvents(listener: (event: RuntimeEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   /** The boxes the cache holds, projected as the list endpoint shows them, sorted by name. */
@@ -271,9 +307,10 @@ export class HostSampler {
     return info && spec ? projectBox(host, spec, info) : null;
   }
 
+  /** The newest sample of a box, or `null` when there is none, or the newest is older than the stale age. */
   statsOf(boxId: string): ContainerStats | null {
     const last = this.rings.get(boxId)?.at(-1);
-    if (!last) return null;
+    if (!last || Date.now() - last.t >= this.staleMs()) return null;
     return {
       cpuPercent: last.cpuPercent,
       memUsage: last.memUsage,
@@ -303,9 +340,33 @@ export class HostSampler {
   }
 
   /**
+   * Keeps samples going for `ms` from now while no live subscriber watches. Every reader of usage calls this, so a host
+   * is sampled while its usage is read, and stops once nobody has read it for the lease.
+   */
+  need(ms: number = DEMAND_LEASE_MS): void {
+    this.needUntil = Math.max(this.needUntil, Date.now() + ms);
+    this.wakeLoop?.();
+  }
+
+  /** True while a live subscriber watches. The host metrics are published, and the engine read for them, only then. */
+  watched(): boolean {
+    return this.watchers > 0;
+  }
+
+  /**
+   * Resolves once the samples are current: at once when the last round is recent, else when a round has run, or after
+   * `ms`, whichever comes first. Callers that ask while a round is queued or running share that round.
+   */
+  sampleSoon(ms: number = STATS_TIMEOUT_MS): Promise<void> {
+    this.need();
+    if (Date.now() - this.roundEndedAt < this.staleMs()) return Promise.resolve();
+    return waitUpTo(this.sampleRound(), ms);
+  }
+
+  /**
    * Asks for samples at the live interval until the returned function is called, and the first watcher gets a round at
-   * once. While nobody watches, the boxes are sampled only at the idle interval, so an unwatched host costs one stats
-   * call per running box per idle interval.
+   * once. While nobody watches, samples go on only at the idle interval, and only within a lease taken by `need`: once
+   * the lease runs out, an unwatched host makes no stats call at all.
    */
   watch(): () => void {
     this.watchers += 1;
@@ -347,10 +408,12 @@ export class HostSampler {
     parent.addEventListener("abort", end, { once: true });
     let relist: ReturnType<typeof setInterval> | undefined;
     try {
-      // `since` makes the engine replay what it recorded from a second before, which covers the moment the subscription
-      // is still being established, so no change can fall between the subscription and the listing.
+      // `since` makes the engine replay what it recorded from the newest event delivered, or from a second before the
+      // first subscription. Each event is taken once (see `claim`), so the replay covers any change that fell between
+      // two subscriptions, and no change can fall between the subscription and the listing.
+      const since = this.cursor > 0 ? this.cursor : Math.floor(Date.now() / 1000) - 1;
       const events = host.runtime.events(
-        { labels: { [host.keys.box]: "true" }, types: ["container"], since: Math.floor(Date.now() / 1000) - 1 },
+        { labels: { [host.keys.box]: "true" }, types: ["container"], since },
         ctl.signal,
       );
       const streamed = this.consume(events);
@@ -374,11 +437,40 @@ export class HostSampler {
   }
 
   private onEvent(event: RuntimeEvent): void {
+    if (!this.claim(event)) return;
+    this.fanOut(event);
     const verb = event.action.split(":")[0]?.trim() ?? "";
     if (verb === "destroy") this.markDirty(event.id, "remove");
     else if (STATE_VERBS.has(verb)) this.markDirty(event.id, "refresh");
     else return;
     this.schedule();
+  }
+
+  /**
+   * Takes an event the first time it arrives. The engine replays events from the cursor after a reconnect, and an event
+   * already taken must not reach the cache or a listener twice. Returns false for a replay.
+   */
+  private claim(event: RuntimeEvent): boolean {
+    const now = Date.now();
+    const key = `${event.id}\n${event.action}\n${event.timeNano}`;
+    const until = this.delivered.get(key);
+    if (until !== undefined && until > now) return false;
+    if (this.delivered.size >= EVENT_MEMORY_SWEEP) {
+      for (const [seen, expires] of this.delivered) if (expires <= now) this.delivered.delete(seen);
+    }
+    this.delivered.set(key, now + EVENT_MEMORY_MS);
+    this.cursor = Math.max(this.cursor, Math.floor(event.timeNano / 1_000_000_000));
+    return true;
+  }
+
+  private fanOut(event: RuntimeEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (e) {
+        log.error("sampler.listener_failed", { host: this.currentHost().host.id, error: errorText(e) });
+      }
+    }
   }
 
   /** A removal outranks a refresh that was queued for the same container. */
@@ -400,7 +492,7 @@ export class HostSampler {
       while (this.started && this.dirty.size > 0) {
         const batch = [...this.dirty];
         this.dirty.clear();
-        for (const [containerId, op] of batch) {
+        await mapLimit(batch, INSPECT_CONCURRENCY, async ([containerId, op]) => {
           if (op === "remove") {
             this.containers.delete(containerId);
             this.stale.delete(containerId);
@@ -409,7 +501,7 @@ export class HostSampler {
           } else {
             this.stale.add(containerId);
           }
-        }
+        });
       }
       await this.claimUnclaimed();
       this.reconcile();
@@ -485,7 +577,7 @@ export class HostSampler {
     this.failures = 0;
     this.setState("live", null);
     this.reconcile();
-    void this.sampleRound();
+    if (this.wanted()) void this.sampleRound();
   }
 
   /**
@@ -560,18 +652,31 @@ export class HostSampler {
   /**
    * Runs one sample round after the rounds before it. The targets are picked in the queue, so they follow every change
    * queued before the round. The stats calls run outside the queue, and only the write of their results is queued again.
+   * A round that is queued or running already is returned instead of a second one.
    */
   private sampleRound(): Promise<void> {
-    const run = this.rounds
+    if (this.pendingRound) return this.pendingRound;
+    const run: Promise<void> = this.rounds
       .then(() => this.round())
       .catch((e: unknown) =>
         log.error("sampler.round_failed", { host: this.currentHost().host.id, error: errorText(e) }),
       )
       .finally(() => {
         this.roundEndedAt = Date.now();
+        if (this.pendingRound === run) this.pendingRound = null;
       });
+    this.pendingRound = run;
     this.rounds = run;
     return run;
+  }
+
+  private staleMs(): number {
+    return this.options.staleAfterMs ?? STALE_AFTER_MS;
+  }
+
+  /** True while a live subscriber watches, or a reader asked for samples within the lease. */
+  private wanted(now = Date.now()): boolean {
+    return this.watchers > 0 || now < this.needUntil;
   }
 
   private async round(): Promise<void> {
@@ -641,7 +746,7 @@ export class HostSampler {
     return info?.id === target.containerId && info.running;
   }
 
-  /** Runs a round whenever one is due, until the sampler stops. */
+  /** Runs a round whenever one is due and sampling is wanted, until the sampler stops. */
   private async sampleLoop(signal: AbortSignal): Promise<void> {
     while (await this.roundDue(signal)) {
       this.expedited = false;
@@ -649,21 +754,32 @@ export class HostSampler {
     }
   }
 
-  /** Resolves true when a round is due, and false once the sampler stops. */
+  /**
+   * Resolves true when a round is due, and false once the sampler stops. While nothing is wanted the loop parks until a
+   * watcher or a reader wakes it. A lease is waited out only up to its end, so the loop parks again once it runs out.
+   */
   private async roundDue(signal: AbortSignal): Promise<boolean> {
     while (!signal.aborted) {
-      const wait = this.roundEndedAt + this.cadence() - Date.now();
+      const now = Date.now();
+      if (!this.wanted(now)) {
+        await this.pause();
+        continue;
+      }
+      const wait = this.roundEndedAt + this.cadence() - now;
       if (this.expedited || wait <= 0) return true;
-      await this.pause(wait);
+      await this.pause(this.watchers > 0 ? wait : Math.min(wait, this.needUntil - now));
     }
     return false;
   }
 
-  /** Resolves after `ms`, or sooner when the loop is woken. Only one wait is pending at a time. */
-  private pause(ms: number): Promise<void> {
+  /**
+   * Resolves after `ms`, or sooner when the loop is woken. Without `ms` it resolves only when woken. Only one wait is
+   * pending at a time.
+   */
+  private pause(ms?: number): Promise<void> {
     return new Promise((resolve) => {
-      const timer = setTimeout(() => this.wakeLoop?.(), ms);
-      timer.unref?.();
+      const timer = ms === undefined ? undefined : setTimeout(() => this.wakeLoop?.(), Math.max(0, ms));
+      timer?.unref?.();
       this.wakeLoop = () => {
         clearTimeout(timer);
         this.wakeLoop = null;
@@ -692,6 +808,7 @@ export class HostSampler {
     } else {
       if (!this.specs.delete(change.id)) return;
       this.rings.delete(change.id);
+      this.logs.close(change.id);
     }
     this.reconcile();
   }
@@ -718,12 +835,21 @@ export class HostSampler {
       this.shown.delete(boxId);
       this.sink.publish("box", { hostId, op: "remove", boxId, containerId: previous.containerId });
     }
+    this.logs.changed();
   }
 
   private setState(state: LinkState, error: string | null): void {
     if (this.state === state) return;
     this.state = state;
     this.sink.publish("link", { hostId: this.currentHost().host.id, state, error, at: new Date().toISOString() });
+    this.logs.changed();
+  }
+
+  /** The container a box's log is followed in, or `null` when the cache holds none for the box. */
+  private logTarget(boxId: string): { containerId: string; running: boolean } | null {
+    const spec = this.specs.get(boxId);
+    const info = spec ? this.containerOf(spec) : undefined;
+    return info ? { containerId: info.id, running: info.running } : null;
   }
 
   /** The spec a container belongs to, by container id or, as the claim does, by name. */

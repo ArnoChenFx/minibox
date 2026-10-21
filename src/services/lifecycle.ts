@@ -128,6 +128,7 @@ export class LifecycleWatcher {
     if (!info?.running) return;
     if (!this.isIdle(info.id, spec.id, spec.createdAt, idleSec)) return;
 
+    await host.sampler.sampleSoon();
     const cpu = host.sampler.statsOf(spec.id)?.cpuPercent;
     if (cpu == null) return;
     if (cpu >= this.options.cfg.boxIdleCpuPercent) return;
