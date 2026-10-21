@@ -36,7 +36,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | 资源配额 | 按预设（小型 2 核 4 GB / 中型 4 核 8 GB / 大型 8 核 16 GB）或自定义设置 CPU、内存，并按宿主机容量校验；运行中可热更新（`docker update`） |
 | Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行；Web 终端与 `docker exec` 默认以 `dev` 进入。三个[安全档位](#安全档位)决定 Box 能做什么：默认的「标准」档位保留无密码 `sudo`，「严格」档位禁止提权。见[基础模板](#基础模板) |
 | 快照 | 基于 `docker commit` 保存 Box 的系统环境，可从快照创建新 Box，或提升为模板 |
-| 模板 | 内置基础模板（Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
+| 模板 | 内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应 |
@@ -385,7 +385,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除；可选同时删除工作区数据卷 |
-| `POST` | `/api/boxes/:id/rebuild` | 重建 `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`。必须带 `If-Match`。未带 `confirm: true` 时返回 `409 confirmation_required`，`error.details.preview` 包含可写层的 docker diff 和计划变更。确认后创建新容器、换上并删除旧容器；失败则恢复旧容器和上一版规格。容器名改为 `<LABEL_PREFIX>-<id>` |
+| `POST` | `/api/boxes/:id/rebuild` | 重建 `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`。必须带 `If-Match`。挂载或网络不被允许时返回 `403 forbidden`，不做任何改动：`minibox-data` 不能挂载；Box 尚未挂载的卷必须是 MiniBox 创建的（或尚不存在），且不能被其它 Box 挂载；网络只能是 Box 网络或 Box 当前已在使用的网络。未带 `confirm: true` 时返回 `409 confirmation_required`，`error.details.preview` 包含可写层的 docker diff 和计划变更。确认后创建新容器、换上并删除旧容器；失败则恢复旧容器和上一版规格。容器名改为 `<LABEL_PREFIX>-<id>` |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作。启动和停止会记下期望状态 |
 | `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"?, "pids"? }`。必须带 `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | 实时占用 |
@@ -424,7 +424,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `POST` | `/api/tasks/:id/cancel` | 取消正在运行的任务。任务不在运行中时返回 `409` |
 | `GET` | `/api/tasks/:id/events` | SSE 进度。它不是操作，因此不在 OpenAPI 文档中。`after` 或 `Last-Event-ID` 从游标续传；`reset` 事件表示日志已被截断 |
 
-日志只保留最新的 64 KB，更早的文本会被丢掉，视图开头会注明。取消会中止构建的输出流。已经完成的快照提交不会回滚。重启后，仍在运行的任务变为 `interrupted`，不会继续执行。
+日志只保留最新的 64 KB，更早的文本会被丢掉，视图开头会注明。取消会中止构建的输出流。已取消的任务在引擎调用返回之前仍持有模板或 Box 的锁，同一目标的新请求在此之前返回 `409`。已经完成的快照提交不会回滚。重启后，仍在运行的任务变为 `interrupted`，不会继续执行。
 
 Bun 的 HTTP 空闲计时从请求开始计算，上限 60 秒，响应内容不会延长它。如果把构建一直挂在 POST 上，连接会被掐断。`202` 在此之前返回；进度流调用 `server.timeout(req, 0)` 关闭这个计时，并每 15 秒发送心跳，供反向代理使用。顶栏的「任务」按钮打开抽屉，显示实时日志。
 

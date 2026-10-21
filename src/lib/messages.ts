@@ -93,6 +93,11 @@ export const MESSAGES = {
   box_exists: "A box named “{name}” already exists.",
   box_network_conflict:
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
+  volume_reserved: "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",
+  volume_unmanaged: "Volume {volume} was not created by MiniBox, so a box cannot mount it.",
+  volume_in_use: "Volume {volume} is already mounted by another box.",
+  network_reserved: "Boxes cannot join network {network}. Host, none and container networks are refused.",
+  network_not_managed: "Boxes cannot join network {network}. Boxes join {managed}.",
   cpu_over_host: "CPU cores exceed the host limit ({cores} cores).",
   memory_over_host: "Memory exceeds the host limit ({gb} GB).",
 } as const;

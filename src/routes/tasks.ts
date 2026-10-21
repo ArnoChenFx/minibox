@@ -36,19 +36,24 @@ function cursorOf(req: Request, url: URL): number | undefined {
  * `server.timeout(req, 0)` disables Bun's idle timer, which is not extended by heartbeats.
  */
 export const taskRoutes: Route[] = [
-  route("GET", "/api/tasks/:id/events", ({ app, req, url, params, server }) => {
+  route("GET", "/api/tasks/:id/events", ({ app, req, url, params, server, caller }) => {
     if (!TASK_ID_RE.test(params.id ?? "")) {
       throw new AppError(400, "validation_failed", msg("task_id_invalid"), { field: "id" });
     }
     const task = app.tasks.get(params.id ?? "", { output: false });
     if (!task) throw new AppError(404, "not_found", msg("task_not_found"));
+    const after = cursorOf(req, url);
     server.timeout(req, 0);
+    // A browser that signs out or is revoked must stop receiving progress now, not at its next reconnect.
+    const sessionEnded = new AbortController();
+    const unwatch = caller?.sessionId ? app.sessions.watch(caller.sessionId, () => sessionEnded.abort()) : undefined;
     const stream = taskStream({
       taskId: task.id,
       store: app.tasks,
       subscribe: (listener) => app.bus.subscribe("task", listener),
-      after: cursorOf(req, url),
-      signal: req.signal,
+      after,
+      signal: AbortSignal.any([req.signal, sessionEnded.signal]),
+      onEnd: unwatch,
     });
     return new Response(stream, { headers: STREAM_HEADERS });
   }),

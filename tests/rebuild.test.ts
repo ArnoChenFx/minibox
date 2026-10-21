@@ -82,6 +82,20 @@ describe("rebuild preview", () => {
     expect(runtime.containers.size).toBe(1);
   });
 
+  test("a diff that cannot be read fails the preview instead of showing an empty one", async () => {
+    const box = await newBox("alpha");
+    runtime.fail("containerDiff", new RuntimeError("engine", "docker diff failed", "docker diff failed"));
+    const creates = runtime.callsTo("createContainer").length;
+
+    const error = await rejectionOf(rebuildBox(host, box.id, box.revision, { profile: "strict" }, false));
+
+    expect(error).toBeInstanceOf(RuntimeError);
+    expect(error).toMatchObject({ kind: "engine" });
+    expect(runtime.callsTo("createContainer")).toHaveLength(creates);
+    expect(runtime.containers.get(box.id)?.name).toBe("mbtest-alpha");
+    expect(host.specs.read(box.boxId)?.revision).toBe(1);
+  });
+
   test("an identical request and a missing image are refused before a container is created", async () => {
     const box = await newBox("alpha");
     const same = await rejectionOf(rebuildBox(host, box.id, box.revision, { profile: "standard" }, true));
@@ -173,18 +187,19 @@ describe("rebuild swap", () => {
     expect(runtime.volumes.has("mbtest-ws-alpha")).toBe(true);
   });
 
-  test("a missing network rolls the swap back", async () => {
+  test("a network other than the box network is refused before the swap starts", async () => {
     const box = await newBox("alpha");
+    const creates = runtime.callsTo("createContainer").length;
     const error = await rejectionOf(rebuildBox(host, box.id, box.revision, { network: "missingnet" }, true));
-    expect(error).toBeInstanceOf(RuntimeError);
-    expect(error).toMatchObject({ kind: "not_found" });
+    expect(error).toMatchObject({ status: 403, key: "network_not_managed", params: { network: "missingnet" } });
+    expect(runtime.callsTo("createContainer")).toHaveLength(creates);
     expect(runtime.containers.get(box.id)?.name).toBe("mbtest-alpha");
     expect(runtime.containers.get(box.id)?.running).toBe(true);
     expect(host.specs.read(box.boxId)?.network).toBe(host.security.network);
     expect(host.specs.read(box.boxId)?.revision).toBe(1);
   });
 
-  test("mounts, env, network and template are applied, and a removed volume is kept", async () => {
+  test("mounts, env and template are applied, and a removed volume is kept", async () => {
     const box = await newBox("alpha");
     runtime.seedImage("other:1");
     const rebuilt = await rebuildBox(
@@ -193,7 +208,6 @@ describe("rebuild swap", () => {
       box.revision,
       {
         template: "other:1",
-        network: "bridge",
         mounts: [{ volume: "extra", path: "/data", mode: "ro" }],
         env: [
           { name: "FOO", value: "bar" },
@@ -205,7 +219,7 @@ describe("rebuild swap", () => {
 
     expect(rebuilt.template).toBe("other:1");
     expect(rebuilt.image).toBe("other:1");
-    expect(rebuilt.network).toBe("bridge");
+    expect(rebuilt.network).toBe("mbtest-boxes");
     expect(rebuilt.mounts).toEqual([{ volume: "extra", path: "/data", mode: "ro" }]);
     expect(rebuilt.env).toEqual([
       { name: "FOO", value: "bar" },
@@ -219,6 +233,15 @@ describe("rebuild swap", () => {
     expect(container?.spec.mounts).toEqual([{ source: "extra", target: "/data", mode: "ro" }]);
     expect(JSON.stringify(container?.labels)).not.toContain("bar");
     expect(JSON.stringify(container?.labels)).not.toContain("vault");
+  });
+
+  test("the swap stops the old container with the host's configured stop timeout", async () => {
+    const custom = createTestApp({ labelPrefix: "mbtest", stopTimeoutSec: 12 });
+    const customHost = custom.app.hosts.get();
+    custom.runtime.seedImage(customHost.baseTemplateTag, { [customHost.keys.template]: "true" });
+    const box = await boxes.createBox(customHost, { name: "alpha", cpus: 1, memoryMb: 256 });
+    await rebuildBox(customHost, box.id, box.revision, { profile: "strict" }, true);
+    expect(custom.runtime.callsTo("stopContainer").map((call) => call.args[1])).toEqual([{ timeoutSec: 12 }]);
   });
 
   test("a stopped box is started as a health check and then stopped again", async () => {
@@ -247,7 +270,9 @@ describe("rebuild swap", () => {
     expect(second.containerName).toBe(formal(second.boxId));
     expect(second.profile).toBe("relaxed");
 
-    const again = await rejectionOf(rebuildBox(host, second.boxId, second.revision, { network: "bridge" }, false));
+    const again = await rejectionOf(
+      rebuildBox(host, second.boxId, second.revision, { env: [{ name: "FOO", value: "bar" }] }, false),
+    );
     if (!(again instanceof AppError)) throw new Error("expected AppError");
     const next = (again.details as { preview: { changes: { field: string }[]; containerName: { to: string } } })
       .preview;

@@ -1,7 +1,7 @@
-import { chmodSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
-import { ensureDataDir, SECRET_FILE_MODE } from "../data-dir";
+import { ensureDataDir, SECRET_FILE_MODE, writeFileAtomic } from "../data-dir";
 import { log } from "../lib/logger";
 import { isBoxId } from "./revision";
 import { SPEC_VERSION, type BoxSpec } from "./types";
@@ -109,22 +109,7 @@ export class SpecStore {
 
   write(spec: BoxSpec): void {
     ensureDataDir(this.dataDir);
-    const path = this.pathFor(spec.id);
-    const tmp = `${path}.${process.pid}.tmp`;
-    const body = `${JSON.stringify(spec, null, 2)}\n`;
-    try {
-      writeFileSync(tmp, body, { mode: SECRET_FILE_MODE });
-      chmodSync(tmp, SECRET_FILE_MODE);
-      renameSync(tmp, path);
-      chmodSync(path, SECRET_FILE_MODE);
-    } catch (e) {
-      try {
-        unlinkSync(tmp);
-      } catch {
-        // The temp file was already renamed, or it was never created.
-      }
-      throw e;
-    }
+    writeFileAtomic(this.pathFor(spec.id), `${JSON.stringify(spec, null, 2)}\n`, SECRET_FILE_MODE);
   }
 
   remove(id: string): void {

@@ -187,8 +187,9 @@ export class FakeRuntime implements Runtime {
   private execCount = 0;
 
   /**
-   * Holds the next calls to `op` until `release`. `buildImage` reports its log before waiting, and both `buildImage`
-   * and `commitContainer` leave the call unfinished when `signal` aborts.
+   * Holds the next calls to `op` until `release`. `buildImage` reports its log before waiting. A held call does not
+   * return when `signal` aborts, as an engine call already in flight does not: once released, it fails with
+   * `AbortError` if `signal` has aborted.
    */
   hold(op: Op): { release(): void } {
     let resolveGate: GateResolve | undefined;
@@ -261,27 +262,8 @@ export class FakeRuntime implements Runtime {
     for (const subscriber of this.subscribers) subscriber(event);
   }
 
-  private async gate(op: Op, signal?: AbortSignal): Promise<void> {
-    const gate = this.gates.get(op);
-    if (!gate) return;
-    if (signal?.aborted) throw abortError();
-    if (!signal) {
-      await gate;
-      return;
-    }
-    let onAbort: (() => void) | undefined;
-    try {
-      await Promise.race([
-        gate,
-        new Promise<void>((_resolve, reject) => {
-          onAbort = () => reject(abortError());
-          signal.addEventListener("abort", onAbort, { once: true });
-        }),
-      ]);
-    } finally {
-      if (onAbort) signal.removeEventListener("abort", onAbort);
-    }
-    if (signal.aborted) throw abortError();
+  private async gate(op: Op): Promise<void> {
+    await this.gates.get(op);
   }
 
   private enter(op: Op, args: unknown[]): void {
@@ -476,7 +458,7 @@ export class FakeRuntime implements Runtime {
 
   async commitContainer(id: string, spec: CommitSpec): Promise<void> {
     this.enter("commitContainer", [id, spec]);
-    await this.gate("commitContainer", spec.signal);
+    await this.gate("commitContainer");
     if (spec.signal?.aborted) throw abortError();
     const c = this.getContainer(id);
     const image: FakeImage = {
@@ -599,7 +581,7 @@ export class FakeRuntime implements Runtime {
   async buildImage(spec: BuildSpec): Promise<string> {
     this.enter("buildImage", [spec]);
     spec.onLog?.(this.buildLog);
-    await this.gate("buildImage", spec.signal);
+    await this.gate("buildImage");
     if (spec.signal?.aborted) throw abortError();
     const image: FakeImage = { id: newImageId(), tags: [], labels: { ...spec.labels }, createdAt: now(), size: 1024 };
     this.images.set(image.id, image);

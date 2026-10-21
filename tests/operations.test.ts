@@ -297,6 +297,7 @@ describe("executor", () => {
       events.length = 0;
       try {
         await app.operations.run(operation.name, ctx, prepared.input);
+        prepared.release?.();
         await app.tasks.drain();
         const mine = events.filter((event) => event.op === operation.name);
         expect(mine.map((event) => [event.op, event.kind, event.status])).toEqual(
@@ -475,6 +476,7 @@ describe("event log", () => {
       const before = app.events.head();
       try {
         await app.operations.run(operation.name, ctx, prepared.input);
+        prepared.release?.();
         await app.tasks.drain();
         const rows = app.events.after(before, {}, 10).filter((event) => event.op === operation.name);
         expect(rows.map((event) => [event.op, event.status])).toEqual(

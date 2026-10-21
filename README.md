@@ -36,7 +36,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Box user | Boxes run as the non-root `dev` user (uid/gid 1000); the web terminal and `docker exec` start as `dev`. Three [security profiles](#security-profiles) set what a box can do: `standard` (default) keeps passwordless `sudo`, and `strict` blocks escalation. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
 | Snapshots | Save a box's system environment via `docker commit`, create new boxes from a snapshot, or promote it to a template |
-| Templates | Bundled base template (Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
+| Templates | Bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
@@ -385,7 +385,7 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 | `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. `template`, `mounts`, `env`, `network` and `profile` are not applied in place: a difference returns `409 confirmation_required` with a preview and leaves the in-place fields unchanged |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete; optionally delete the workspace volume too |
-| `POST` | `/api/boxes/:id/rebuild` | Rebuild `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`. Requires `If-Match`. Without `confirm: true`, `409 confirmation_required` and `error.details.preview` (docker diff of the writable layer and the planned changes). With `confirm: true`, creates the new container, swaps it in, and deletes the old one; failure restores the old container and the previous spec revision. Renames the container to `<LABEL_PREFIX>-<id>` |
+| `POST` | `/api/boxes/:id/rebuild` | Rebuild `{ "template"?, "mounts"?, "env"?, "network"?, "profile"?, "confirm"? }`. Requires `If-Match`. A mount or network that is not allowed returns `403 forbidden` and changes nothing: `minibox-data` is refused; a volume the box does not mount yet must be MiniBox's own (or absent) and no other box may mount it; the network must be the box network or the one the box already uses. Without `confirm: true`, `409 confirmation_required` and `error.details.preview` (docker diff of the writable layer and the planned changes). With `confirm: true`, creates the new container, swaps it in, and deletes the old one; failure restores the old container and the previous spec revision. Renames the container to `<LABEL_PREFIX>-<id>` |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions. Start and stop record the desired state |
 | `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"?, "pids"? }`. Requires `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | Live usage |
@@ -424,7 +424,7 @@ Template builds and snapshot commits run as tasks. The POST returns `202` and `{
 | `POST` | `/api/tasks/:id/cancel` | Cancel a running task. A task that is not running gets `409` |
 | `GET` | `/api/tasks/:id/events` | SSE progress. Not an operation, so it is not in the OpenAPI document. `after` or `Last-Event-ID` resumes the cursor; a `reset` event means the log was trimmed |
 
-The log keeps the newest 64 KB. Older text is dropped and the view starts with a note that it did. Cancellation aborts a build's output stream. A snapshot commit that has already finished is not rolled back. After a restart, tasks that were still running are `interrupted` and are not resumed.
+The log keeps the newest 64 KB. Older text is dropped and the view starts with a note that it did. Cancellation aborts a build's output stream. A cancelled task still holds its template or box lock until its engine call returns, so a new request for the same target gets `409` until then. A snapshot commit that has already finished is not rolled back. After a restart, tasks that were still running are `interrupted` and are not resumed.
 
 Bun's HTTP idle timer is 60 seconds, measured from the start of the request, and response bytes do not extend it. Holding the build open on the POST would be cut off. The 202 returns before that, and the progress stream disables the timer (`server.timeout(req, 0)`) and sends a heartbeat every 15 seconds for proxies. The Tasks button in the top bar opens a drawer with the live log.
 

@@ -45,6 +45,7 @@ export const badRequest = (message: string | Msg, details?: unknown) =>
   new AppError(400, "validation_failed", message, details);
 export const notFound = (message: string | Msg) => new AppError(404, "not_found", message);
 export const conflict = (message: string | Msg) => new AppError(409, "conflict", message);
+export const forbidden = (message: string | Msg) => new AppError(403, "forbidden", message);
 
 function fromRuntimeError(e: RuntimeError): AppError {
   switch (e.kind) {

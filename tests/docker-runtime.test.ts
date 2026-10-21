@@ -21,8 +21,10 @@ import { createDockerRuntime } from "../src/docker/runtime";
 import { createLocalHost } from "../src/host/registry";
 import type { Runtime } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
+import { rebuildBox } from "../src/services/rebuild";
 import { createSnapshot, deleteSnapshot } from "../src/services/snapshots";
 import { deleteTemplate, promoteSnapshot } from "../src/services/templates";
+import type { RebuildRequest } from "../src/specs/plan";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
@@ -463,6 +465,54 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       });
       await docker.getNetwork(gone).remove();
       expect(await rejectionOf(runtime.reattachNetwork(id, gone))).toMatchObject({ kind: "not_found" });
+    },
+    LONG,
+  );
+
+  test(
+    "rebuilds keep to the attachment rules, and a volume MiniBox created can be attached",
+    async () => {
+      const restore = silenceLogs();
+      const plain = `${prefix}-plain`;
+      const managed = `${prefix}-extra`;
+      try {
+        const box = await boxes.createBox(host, { name: "guard", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const workspace = { volume: `${prefix}-ws-guard`, path: "/workspace", mode: "rw" as const };
+        await docker.createVolume({ Name: plain });
+
+        const refused = (request: RebuildRequest) => rejectionOf(rebuildBox(host, box.id, box.revision, request, true));
+        expect(await refused({ mounts: [workspace, { volume: plain, path: "/plain", mode: "ro" }] })).toMatchObject({
+          status: 403,
+          key: "volume_unmanaged",
+          params: { volume: plain },
+        });
+        expect(
+          await refused({ mounts: [workspace, { volume: "minibox-data", path: "/data", mode: "ro" }] }),
+        ).toMatchObject({ status: 403, key: "volume_reserved" });
+        expect(await refused({ network: "bridge" })).toMatchObject({ status: 403, key: "network_not_managed" });
+        expect(await refused({ network: "host" })).toMatchObject({ status: 403, key: "network_reserved" });
+        expect((await runtime.inspectContainer(box.id)).running).toBe(true);
+        expect(host.specs.read(box.boxId)).toMatchObject({ revision: box.revision, network: host.security.network });
+
+        await runtime.createVolume(managed, { [host.keys.box]: "true", [host.keys.name]: "guard" });
+        const rebuilt = await rebuildBox(
+          host,
+          box.id,
+          box.revision,
+          { mounts: [workspace, { volume: managed, path: "/extra", mode: "ro" }] },
+          true,
+        );
+        const mounted = (await docker.getContainer(rebuilt.id).inspect()).Mounts.map((mount) => mount.Name);
+        expect(mounted).toEqual(expect.arrayContaining([workspace.volume, managed]));
+        expect((await runtime.inspectContainer(rebuilt.id)).running).toBe(true);
+        await boxes.deleteBox(host, rebuilt.id, true);
+      } finally {
+        await docker
+          .getVolume(plain)
+          .remove()
+          .catch(() => {});
+        restore();
+      }
     },
     LONG,
   );

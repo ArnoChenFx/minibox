@@ -129,6 +129,11 @@ export default {
   "err.box_exists": "名为「{name}」的 Box 已存在。",
   "err.box_network_conflict":
     "网络「{network}」已存在，但不是关闭了容器间通信的 bridge 网络。请在没有 Box 使用它时删除该网络，然后重试。",
+  "err.volume_reserved": "卷 {volume} 保存着 MiniBox 自身的数据，不能挂载到 Box。",
+  "err.volume_unmanaged": "卷 {volume} 不是 MiniBox 创建的，Box 不能挂载它。",
+  "err.volume_in_use": "卷 {volume} 已被另一个 Box 挂载。",
+  "err.network_reserved": "Box 不能加入网络 {network}。host、none 与 container 网络均被拒绝。",
+  "err.network_not_managed": "Box 不能加入网络 {network}，只能加入 {managed}。",
   "err.cpu_over_host": "CPU 核数超出宿主机上限（{cores} 核）。",
   "err.memory_over_host": "内存超出宿主机上限（{gb} GB）。",
   "err.task_not_found": "找不到该任务。",
@@ -452,7 +457,7 @@ export default {
   "tp.loadFailed": "无法加载模板",
   "tp.empty": "还没有模板",
   "tp.emptyText":
-    "构建内置的基础模板（Debian 12 · Node.js 24 · Python 3 · git · tmux · 非 root 用户 dev），首次构建约需 1–3 分钟。",
+    "构建内置的基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · 非 root 用户 dev），首次构建约需 1–3 分钟。",
   "tp.builtin": "内置",
   "tp.custom": "自定义",
   "tp.noDesc": "无描述",
