@@ -341,6 +341,17 @@ describe("CLI SSH commands", () => {
         expect(statSync(join(fresh, ".ssh")).mode & 0o777).toBe(0o700);
         expect(statSync(join(fresh, ".ssh", "config")).mode & 0o777).toBe(0o600);
         expect(statSync(join(fresh, ".ssh", "minibox_known_hosts")).mode & 0o777).toBe(0o600);
+        const saved = join(fresh, ".config", "minibox", "ssh-credentials.json");
+        expect(statSync(saved).mode & 0o777).toBe(0o600);
+        expect(JSON.parse(readFileSync(saved, "utf8"))).toEqual({
+          url: env.env.MINIBOX_URL,
+          key: env.env.MINIBOX_ACCESS_KEY,
+        });
+        // ssh starts the ProxyCommand without the shell's exports, so ssh-proxy falls back to the saved credentials.
+        const proxied = io();
+        expect(await runCli(["ssh-proxy", "missing.minibox"], { HOME: fresh }, proxied, lines([]))).toBe(1);
+        expect(proxied.err).not.toContain("Set MINIBOX_ACCESS_KEY");
+        expect(proxied.err).toContain("Box not found");
       } finally {
         rmSync(fresh, { recursive: true, force: true });
       }

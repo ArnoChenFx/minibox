@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -342,6 +342,41 @@ async function mcpProxy(
   return 0;
 }
 
+/** Where `ssh-config --append` saves the server and key, so `ssh-proxy` works from any shell, IDE or launcher. */
+function credentialsPath(env: Record<string, string | undefined>): string {
+  return join(env.HOME ?? homedir(), ".config", "minibox", "ssh-credentials.json");
+}
+
+/**
+ * The environment `ssh-proxy` runs with. ssh starts it from whatever launched ssh, often an IDE that never saw the
+ * shell's exports, so when no key is set it reads the server and key `ssh-config --append` saved (mode 600).
+ */
+async function proxyEnv(env: Record<string, string | undefined>): Promise<Record<string, string | undefined>> {
+  if (env.MINIBOX_ACCESS_KEY ?? env.ACCESS_KEY) return env;
+  const text = await readFile(credentialsPath(env), "utf8").catch(() => null);
+  if (text === null) return env;
+  let saved: { url?: unknown; key?: unknown };
+  try {
+    saved = JSON.parse(text) as { url?: unknown; key?: unknown };
+  } catch {
+    throw new Error(`${credentialsPath(env)} is not valid JSON. Run minibox ssh-config --append again.`);
+  }
+  if (typeof saved.key !== "string" || !saved.key) return env;
+  return {
+    ...env,
+    MINIBOX_ACCESS_KEY: saved.key,
+    MINIBOX_URL: env.MINIBOX_URL ?? (typeof saved.url === "string" ? saved.url : undefined),
+  };
+}
+
+async function saveCredentials(env: Record<string, string | undefined>): Promise<void> {
+  const path = credentialsPath(env);
+  await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
+  const url = (env.MINIBOX_URL ?? DEFAULT_URL).replace(/\/$/, "");
+  await writeFile(path, `${JSON.stringify({ url, key: accessKey(env) })}\n`, { mode: 0o600 });
+  await chmod(path, 0o600);
+}
+
 function accessKey(env: Record<string, string | undefined>): string {
   const key = env.MINIBOX_ACCESS_KEY ?? env.ACCESS_KEY;
   if (!key) throw new Error("Set MINIBOX_ACCESS_KEY or ACCESS_KEY.");
@@ -407,8 +442,9 @@ async function sshConfig(argv: string[], env: Record<string, string | undefined>
   const block = sshConfigBlock(pinPath);
   await writeFile(configPath, kept ? `${block}\n${kept}` : block, { mode: 0o600 });
   await writeFile(pinPath, pin, { mode: 0o600 });
+  await saveCredentials(env);
   io.stdout(
-    `Wrote ~/.ssh/config and ~/.ssh/minibox_known_hosts. Pinned ${published.fingerprint} for *${SSH_SUFFIX}.\n`,
+    `Wrote ~/.ssh/config, ~/.ssh/minibox_known_hosts and ~/.config/minibox/ssh-credentials.json (mode 600). Pinned ${published.fingerprint} for *${SSH_SUFFIX}.\n`,
   );
   return 0;
 }
@@ -611,7 +647,8 @@ export async function runCli(
     if (command === "files") return await filesCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "mcp") return await mcpProxy(sub === undefined ? [] : [sub, ...rest], env, io, lines);
     if (command === "ssh-config") return await sshConfig(sub === undefined ? [] : [sub, ...rest], env, io);
-    if (command === "ssh-proxy") return await sshProxy(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "ssh-proxy")
+      return await sshProxy(sub === undefined ? [] : [sub, ...rest], await proxyEnv(env), io);
     io.stderr(`Unknown command ${command}\n${HELP}`);
     return 2;
   } catch (e) {

@@ -320,21 +320,20 @@ Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https:/
 `ssh`、`scp`、`sftp` 与 `ssh -L` 通过 MiniBox 连接 Box：经由服务器自身地址上的 WebSocket，不发布宿主机端口。在运行 `ssh` 的机器上，用 `bun run build:cli` 构建 CLI，并把 `dist/minibox` 放进 `PATH`。
 
 ```sh
-export MINIBOX_URL=https://minibox.example.com
-export MINIBOX_ACCESS_KEY=...          # 访问密钥，或带 box:ssh 的 Agent 令牌
-minibox ssh-config --append            # 写入 ~/.ssh/config，并固定服务器的主机密钥
+# 只需一次：访问密钥，或带 box:ssh 的 Agent 令牌
+MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
 ssh mybox.minibox
 scp ./build.tar.gz mybox.minibox:/workspace/
 sftp mybox.minibox
 ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 ```
 
-`ProxyCommand` 从运行 `ssh` 的 shell 环境中读取 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY`，因此要在该 shell 中导出它们。
+`ssh-config --append` 在 `~/.ssh/config` 顶部写入 `Host *.minibox` 配置块，把服务器主机密钥固定在 `~/.ssh/minibox_known_hosts`，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600）。`ProxyCommand`（`minibox ssh-proxy %h`）在没有设置 `MINIBOX_ACCESS_KEY` 时读取该文件，因此从任何 shell 或 IDE 的 Remote-SSH 启动 ssh 都能使用。已导出的 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY` 仍然优先。
 
 - 登录用户为 `dev` 或 Box id，`root` 与其他名字会被拒绝。访问密钥或令牌在 WebSocket 握手时校验，Box 内不需要任何密钥或密码。浏览器会话不能建立 SSH 连接。
 - 令牌需要 `box:ssh` 范围，且只能访问其 Box 选择器允许的 Box。`operator` 与 `admin` 预设包含该范围，`sandboxed-agent` 不包含。它与 `exec` 一样能在 Box 内执行命令、读写全部挂载，因此应同样谨慎地授予。`-L` 另需 `port:expose`。
 - 转发只到 Box 内的 `localhost` 与 `127.0.0.1`。`-R`、Unix 套接字转发、X11 与 agent 转发会被拒绝并写入审计日志。
-- 已停止或休眠的 Box 会在连接时启动。打开的连接会让 Box 保持运行，连接上的输入计为活动。上限：每个 Box 8 个连接，全局 64 个，每个连接 16 个通道。超过 Box 或全局上限时，握手返回 `429`。
+- 已停止或休眠的 Box 会在连接时启动。打开的连接会让 Box 保持运行，连接上的输入计为活动。停止 Box（手动、空闲或 TTL）、删除或重建 Box 会断开它的 SSH 连接；TTL 已过的 Box 拒绝新连接，返回 `409 box_ttl_expired`。上限：每个 Box 8 个连接，全局 64 个，每个连接 16 个通道。超过 Box 或全局上限时，握手返回 `429`。
 - `sftp` 与 `-L` 需要 `openssh-sftp-server` 和 `socat`，[基础模板](#基础模板)已包含它们。旧 Box 可在标准档位下执行 `sudo apt-get install -y openssh-sftp-server socat` 补装，或重新创建。
 - 主机密钥位于 `DATA_DIR/ssh_host_ed25519_key`，首次启动时生成。删除后需重新运行 `minibox ssh-config --append`，让客户端固定新密钥。连接、通道、被拒绝的转发与断开都会写入审计日志。
 

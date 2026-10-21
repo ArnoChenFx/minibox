@@ -323,21 +323,20 @@ Framework tip: many bundlers assume `/` as the public base. For path-mode previe
 `ssh`, `scp`, `sftp` and `ssh -L` reach a box through MiniBox over a WebSocket on the server's own address, so no host port is published. On the machine that runs `ssh`, build the CLI with `bun run build:cli` and put `dist/minibox` on your `PATH`.
 
 ```sh
-export MINIBOX_URL=https://minibox.example.com
-export MINIBOX_ACCESS_KEY=...          # the access key, or an agent token with box:ssh
-minibox ssh-config --append            # writes ~/.ssh/config and pins the server's host key
+# once: the access key, or an agent token with box:ssh
+MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
 ssh mybox.minibox
 scp ./build.tar.gz mybox.minibox:/workspace/
 sftp mybox.minibox
 ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 ```
 
-The `ProxyCommand` reads `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` from the environment of the shell that runs `ssh`, so export them in that shell.
+`ssh-config --append` writes a `Host *.minibox` block at the top of `~/.ssh/config`, pins the server's host key in `~/.ssh/minibox_known_hosts`, and saves the server address and key to `~/.config/minibox/ssh-credentials.json` (mode 600). The `ProxyCommand` (`minibox ssh-proxy %h`) reads that file when `MINIBOX_ACCESS_KEY` is not set, so ssh started from any shell or an IDE's Remote-SSH works. Exported `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` still take precedence.
 
 - The login user is `dev` or the box id. `root` and other names are refused. The access key or token is checked at the WebSocket handshake, so the box needs no key or password. A browser session cannot open an SSH connection.
 - A token needs the `box:ssh` scope and reaches only the boxes its selector allows. `operator` and `admin` include the scope, `sandboxed-agent` does not. Like `exec`, it can run commands and read and write every mount of the box, so grant it the same way. `-L` also needs `port:expose`.
 - Forwards reach only `localhost` and `127.0.0.1` inside the box. `-R`, Unix socket forwards, X11 and agent forwarding are refused and audited.
-- A stopped or sleeping box starts on connect. An open connection keeps the box awake, and input over it counts as activity. Limits: 8 connections per box, 64 in total, and 16 channels per connection. Past a box or server limit the handshake returns `429`.
+- A stopped or sleeping box starts on connect. An open connection keeps the box awake, and input over it counts as activity. Stopping the box (by hand, idle or TTL), deleting it or rebuilding it ends its SSH connections, and a box whose TTL has passed refuses new ones with `409 box_ttl_expired`. Limits: 8 connections per box, 64 in total, and 16 channels per connection. Past a box or server limit the handshake returns `429`.
 - `sftp` and `-L` need `openssh-sftp-server` and `socat`, which the [base template](#base-template) installs. An older box can add them with `sudo apt-get install -y openssh-sftp-server socat` in the standard profile, or be created again.
 - The host key is `DATA_DIR/ssh_host_ed25519_key`, created on first start. If you delete it, run `minibox ssh-config --append` again so clients pin the new key. Connections, channels, refused forwards and disconnects are written to the audit log.
 

@@ -97,7 +97,7 @@
 - 新增配置 `STREAM_MAX_CONNECTIONS`（默认 `256`）：同时打开的事件流与任务流上限，两者共用。超出时新连接返回 `429`，错误码为 `too_many_requests`，`key` 为 `stream_limit`，响应体给出上限。控制台按退避间隔重试，连接结束时名额即释放。README、README-zh 与 `.env.example` 均有说明（#17）。
 - SSH 访问：`ssh`、`scp`、`sftp` 与 `ssh -L` 经由 MiniBox 进入 Box，不发布宿主机端口。`GET /api/ssh/:box` 以 WebSocket 承载一条 SSH 连接，用户为 `dev` 或 Box id，其他用户名（包括 `root`）一律拒绝。访问密钥或令牌在握手时鉴权；令牌需要新增的 `box:ssh` 范围，默认拒绝，`operator` 与 `admin` 预设包含它，`sandboxed-agent` 不包含。与 `exec` 一样，它能在 Box 内执行命令并读写全部挂载。`-L` 只转发到 Box 内的回环地址，并需要 `port:expose`；`-R`、Unix 套接字转发、X11 与 agent 转发被拒绝并审计。停止或休眠的 Box 在连接时启动，打开的 SSH 连接让 Box 保持运行。连接、通道与断开都写入审计日志。每个 Box 最多 8 个连接，全局 64 个，每个连接 16 个通道。新增 `GET /api/ssh/host-key`，主机密钥保存在 `DATA_DIR/ssh_host_ed25519_key`。CLI 新增 `minibox ssh-proxy <box>` 与 `minibox ssh-config [--append]`，后者写入 `~/.ssh/config` 并固定主机密钥。Box 详情页新增「SSH」按钮与对话框（中英文）。
 - Agent CLI 工具（#8）：创建 Box 时可勾选，运行中的 Box 可在「工具」页安装、升级与卸载。目录按四组展示（AI 编程助手、语言与运行时、终端与开发工具、网络），创建对话框与「工具」页都带搜索框，可按名称、说明或分组过滤。目录内容见 `catalog/*.json`，每一项都从其官方来源安装；Tailscale 需要 root，只列出，MiniBox 拒绝安装与卸载。镜像或家目录里已有的工具显示为已安装并附版本，不会重复安装；升级与卸载只作用于 MiniBox 装在 tools 卷上的工具。
->
+
 ### 变更
 - Box 的列表、详情、统计与主机指标改为读取每台主机的缓存。缓存由 Docker 容器事件保持最新，列表不再对每个容器调用 `inspect` 或 `docker stats`：Docker 调用次数与 Box 数量无关，也不随打开的标签页数增加。`HostMonitor` 不再每个间隔列出 Box，Box 汇总取自采样器。采样器未就绪时（启动之后、列出完成之前，或与引擎断开期间），读取退回引擎（#17）。
 - 控制台改为订阅 `GET /api/events/stream`。盒子列表、概览、详情与主机指标由推送更新，原有的 3 秒、5 秒、10 秒定时刷新取消。事件流断开时，各页面回退为轮询（主机指标与详情 3 秒，盒子列表 5 秒，概览 10 秒），并按 1 秒起、最长 30 秒的间隔重连。详情页的资源图表读取后端的采样环形缓冲，长度由 `METRICS_HISTORY` 决定。日志面板开启自动刷新时仍每 4 秒读取一次，尚未进入实时流（#17）。
