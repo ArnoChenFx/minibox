@@ -541,6 +541,8 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await setDesired(host, box.boxId, "running", null);
   await host.sampler.observe(box.id);
+  // Same as startBox wake: clear a stale idle heartbeat so LifecycleWatcher does not re-sleep immediately.
+  host.pulse.touch(box.boxId, "wake");
   return getBox(host, box.boxId);
 }
 

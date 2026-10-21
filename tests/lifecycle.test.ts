@@ -153,4 +153,38 @@ describe("LifecycleWatcher", () => {
     expect(woke.stopReason).toBeNull();
     expect(app.pulse.lastAt(box.boxId)).not.toBeNull();
   });
+
+  test("restart of a sleeping box refreshes the pulse so the watcher does not re-sleep", async () => {
+    const box = await newBox("restart-wake", { idleTimeoutSec: 30 });
+    await boxes.stopBox(host, box.boxId, "idle");
+    expect((await boxes.getBox(host, box.boxId)).sleeping).toBe(true);
+    // Stale heartbeat as if the box had been idle past the window before Restart.
+    app.pulse.touch(box.boxId, "create", Date.now() - 120_000);
+
+    const restarted = await boxes.restartBox(host, box.boxId);
+    expect(restarted.running).toBe(true);
+    expect(restarted.desired).toBe("running");
+    expect(restarted.sleeping).toBe(false);
+    expect(restarted.stopReason).toBeNull();
+    const last = app.pulse.lastAt(box.boxId);
+    expect(last).not.toBeNull();
+    expect(Date.now() - last!).toBeLessThan(5_000);
+
+    host.sampler.start();
+    await host.sampler.observe(box.id);
+    await host.sampler.sampleNow();
+    const watcher = new LifecycleWatcher({
+      hosts: app.hosts,
+      pulse: app.pulse,
+      terminals: app.terminals,
+      execs: app.execs,
+      tasks: app.tasks,
+      cfg: app.cfg,
+      record: () => undefined,
+    });
+    const report = await watcher.tick();
+    expect(report.slept).not.toContain(box.boxId);
+    expect((await boxes.getBox(host, box.boxId)).running).toBe(true);
+    expect((await boxes.getBox(host, box.boxId)).sleeping).toBe(false);
+  });
 });
