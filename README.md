@@ -328,7 +328,7 @@ Tools: `tmux`, `jq`, `ripgrep`, `openssh-client`, `unzip`, `less`, `vim-tiny` an
 - Existing boxes keep running as root on the template they were created from. Nothing is renamed or rebuilt.
 - Boxes created from an older snapshot or template keep that image's user, which is root for images made before this change.
 - A new **local** volume is `chown -R 1000:1000` by a short-lived helper container from the base template image, running as root. If that image is not present, the chown is skipped and MiniBox logs `volume.chown_skipped`. NFS and path volumes must have their subdirectory created; chown there is best-effort, because `root_squash` often blocks it (the same log line, with the helper printing `MINIBOX_CHOWN_SKIPPED`).
-- An existing `minibox-ws-*` volume is recognized and **not** chowned. A new box that reuses one still gets a root-owned `/workspace` when that volume was created before this change, so `dev` can't write to it. Fix that volume once, with the box running:
+- An existing `minibox-ws-*` volume is recognized on startup and is **not** chowned then. When a box is created or rebuilt onto a template that names its owner (the `minibox.template.uid` and `minibox.template.gid` labels, which the base template sets), MiniBox sets the root of a writable `/workspace` to that owner before the box starts, so a root-owned volume left by an older box becomes writable for `dev`. Only the root changes: files already in the volume keep their owners. A volume that is only recognized, or a box made from a template without those labels, is left as it is. If its `/workspace` is root-owned, fix that volume once, with the box running:
 
   ```bash
   docker exec -u root minibox-<name> chown -R 1000:1000 /workspace

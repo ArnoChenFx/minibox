@@ -441,8 +441,8 @@ pools:
 
 第一版实现与上文的差异如下。
 
-- **引擎名**：新建卷的 Docker 卷名就是卷 id（`vol_…`），显示名另存。Docker 不能在创建后补标签，所以已有的 `<prefix>-ws-*` 只写入所有权记录，不改名、不补标签、不 chown。认领容器也不改名。
-- **chown**：新建的本地卷用基础模板镜像的辅助容器（root，`0:0`）执行 `chown -R 1000:1000`，失败则创建失败。镜像不存在时跳过并记 `volume.chown_skipped`。NFS 与 path 必须先建子目录；chown 尽力而为（`root_squash` 常见，辅助容器打印 `MINIBOX_CHOWN_SKIPPED`）。重建不递归 chown 已有数据。遗留的 root 属主工作区仍用 README 中的一次性命令。
+- **引擎名**：新建卷的 Docker 卷名就是卷 id（`vol_…`），显示名另存。Docker 不能在创建后补标签，所以已有的 `<prefix>-ws-*` 只写入所有权记录，不改名、不补标签、启动时不 chown；创建或重建采用该卷时的属主修正见 §6.2。认领容器也不改名。
+- **chown**：新建的本地卷用基础模板镜像的辅助容器（root，`0:0`）执行 `chown -R 1000:1000`，失败则创建失败。镜像不存在时跳过并记 `volume.chown_skipped`。NFS 与 path 必须先建子目录；chown 尽力而为（`root_squash` 常见，辅助容器打印 `MINIBOX_CHOWN_SKIPPED`）。重建不递归 chown 已有数据。创建或重建到带属主标签的模板时，只把可写 `/workspace` 的根目录改为模板属主（见 §6.2）；其余遗留的 root 属主工作区仍用 README 中的一次性命令。
 - **重建改名**：挂载变更会重建容器，新容器名为 `<prefix>-<box id>`。失败则回滚名称，并在原先处于运行时重新启动旧容器，不写规格。界面在容器 id 变化后跳到新 id；稳定 box id 在 API 里仍然有效。
 - **探测**：池健康缓存在 `VolumeStore` 的内存里，15 秒。`GET /api/pools` 会探测（`refresh=true` 强制）。列出 Box 不探测 NFS，因此 `storage.status` 在探测前是 `unknown`；界面只把 `unreachable` 标成警告。启动、重启和创建在非本地池不是 `reachable`（含缺少基础镜像时的 `unknown`）时返回 503 `docker_unavailable`，消息键 `storage_unreachable`。本地池只有引擎探测失败才算不可达。协调器捕获该错误，记 `reconcile.start_failed` 后继续。
 - **NFS**：数据卷使用用户选项（通常 `hard`）。探测根卷 `<prefix>-pool-<pool>` 强制 `soft,timeo=10,retrans=1`，并在驱动选项变化时重建，避免死服务器挂起探测。已有数据卷保持创建时的选项。不要把 Docker data-root 搬到网络存储上。
