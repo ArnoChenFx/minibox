@@ -47,7 +47,7 @@ function specBanners(box) {
       .map((pool) => pool.name)
       .join(", ");
     parts.push(
-      `<div class="callout danger" style="margin-bottom:16px">${icon("alert")}<span><strong>${t("vol.unreachable")}</strong> ${t("vol.storageUnreachable", { pools })}</span></div>`,
+      `<div class="callout danger" style="margin-bottom:16px">${icon("alert")}<span><strong>${t("vol.unreachable")}</strong> ${t("vol.storageUnreachable", { pools: esc(pools) })}</span></div>`,
     );
   }
   if (box.drift?.length) {

@@ -356,15 +356,15 @@ export default {
   "ba.deleteMessage":
     "The container will be force-stopped and removed. This can't be undone. Existing snapshots are not affected.",
   "ba.deleteConfirm": "Delete box",
-  "ba.deleteVolume": "Also delete workspace volume <code>{volume}</code>",
+  "ba.deleteVolume": "Also delete the volumes this box owns",
   "ba.deleteVolumeHelp":
-    "If checked, code and data in /workspace are deleted permanently. Otherwise the volume is kept and re-attached to a new box with the same name.",
+    "If checked, the workspace, home and cache volumes created with this box are deleted permanently, with everything in /workspace and /home/dev, unless another box mounts them. Independent volumes, including the shared tools volume, are kept. Unchecked, every volume stays on the Volumes page.",
   "ba.deleted": "Box deleted",
-  "ba.deletedWithVolume": "{name} and its workspace volume were deleted.",
-  "ba.deletedKeepVolume": "{name} was deleted; its workspace volume was kept.",
-  "ba.deletedVolumeFailed": "{name} was deleted, but its workspace volume was not removed",
+  "ba.deletedWithVolume": "{name} and the volumes it owned were deleted.",
+  "ba.deletedKeepVolume": "{name} was deleted; its volumes were kept.",
+  "ba.deletedVolumeFailed": "{name} was deleted, but some of its volumes were not removed",
   "ba.deleteVolumeFailedHint":
-    "Volume {volume} is still there: {detail}. Once nothing uses it, remove it with docker volume rm {volume}, or create a box with the same name to reuse it.",
+    "{detail}. The volumes that were not removed are still listed on the Volumes page. Delete them there once nothing uses them.",
   "ba.deleteFailed": "Delete failed",
   "ba.snapTitle": "Create snapshot",
   "ba.snapDesc":

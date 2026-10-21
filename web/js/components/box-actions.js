@@ -33,7 +33,7 @@ export async function deleteBox(box) {
     confirmText: t("ba.deleteConfirm"),
     danger: true,
     checkbox: {
-      label: t("ba.deleteVolume", { volume: esc(box.volume) }),
+      label: t("ba.deleteVolume"),
       help: t("ba.deleteVolumeHelp"),
     },
   });
@@ -43,7 +43,7 @@ export async function deleteBox(box) {
     if (r.volumeError) {
       toast(t("ba.deletedVolumeFailed", { name: box.name }), {
         type: "error",
-        message: t("ba.deleteVolumeFailedHint", { volume: box.volume, detail: r.volumeError }),
+        message: t("ba.deleteVolumeFailedHint", { detail: r.volumeError }),
       });
     } else {
       toast(t("ba.deleted"), {
