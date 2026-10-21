@@ -480,6 +480,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
 
       expect(await shell(box.id, "ps -o user,args | grep '[{]tmux: server' | awk '{print $1}' | sort -u")).toBe("dev");
       const terminal = await app.terminals.attach(host, box, "locked", { source: "ui" });
+      await waitFor(async () => (await attachedClients(box)) === 1, "the attach process");
       expect(await shell(box.id, "ps -o user,args | grep '[t]mux: client' | awk '{print $1}' | sort -u")).toBe("dev");
       await terminal.close();
     },
