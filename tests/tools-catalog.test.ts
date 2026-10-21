@@ -4,15 +4,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppError } from "../src/lib/errors";
+import { catalogSummary } from "../src/operations/tools";
 import { desiredToolsOf, installEnv } from "../src/services/tools";
-import { findCatalogEntry, loadCatalog, parseCatalogEntry } from "../src/tools/catalog";
-import { assertSafeToolVersion, commandFor, detectCommand, packageSpec, renderCommand } from "../src/tools/commands";
-import type { CatalogEntry } from "../src/tools/types";
+import { findCatalogEntry, loadCatalog, parseCatalogEntry, requireCatalogEntry } from "../src/tools/catalog";
+import {
+  assertSafeToolVersion,
+  commandFor,
+  detectCommand,
+  packageSpec,
+  renderCommand,
+  resolveToolVersion,
+  shellQuote,
+} from "../src/tools/commands";
+import { detectScript, parseDetectOutput } from "../src/tools/detect";
+import { TOOL_CATEGORIES, type CatalogEntry } from "../src/tools/types";
 
 const sample: CatalogEntry = {
   id: "claude-code",
   name: "Claude Code",
   description: "test",
+  category: "agents",
   source: "npm",
   package: "@anthropic-ai/claude-code",
   bin: "claude",
@@ -24,11 +35,39 @@ const sample: CatalogEntry = {
   detect: "claude --version",
 };
 
+const emptyDataDir = () => mkdtempSync(join(tmpdir(), "mb-tools-empty-"));
+
+function errorKey(fn: () => unknown): string | undefined {
+  try {
+    fn();
+  } catch (e) {
+    return e instanceof AppError ? e.key : undefined;
+  }
+  return undefined;
+}
+
 describe("tool catalog parse", () => {
   test("accepts a valid entry and rejects a bad id", () => {
     const entry = parseCatalogEntry({ ...sample, requires: "Node ≥ 20" }, "x.json");
     expect(entry.requires).toBe("Node ≥ 20");
     expect(() => parseCatalogEntry({ ...sample, id: "Bad_ID" }, "x.json")).toThrow(AppError);
+  });
+
+  test("requires a known category on every entry", () => {
+    for (const category of TOOL_CATEGORIES) {
+      expect(parseCatalogEntry({ ...sample, category }, "x.json").category).toBe(category);
+    }
+    expect(() => parseCatalogEntry({ ...sample, category: "misc" }, "x.json")).toThrow(/unknown category misc/);
+    const raw: Record<string, unknown> = { ...sample };
+    delete raw.category;
+    expect(() => parseCatalogEntry(raw, "x.json")).toThrow(AppError);
+  });
+
+  test("reads needsRoot and defaults it to false", () => {
+    expect(parseCatalogEntry({ ...sample, needsRoot: true }, "x.json").needsRoot).toBe(true);
+    const raw: Record<string, unknown> = { ...sample };
+    delete raw.needsRoot;
+    expect(parseCatalogEntry(raw, "x.json").needsRoot).toBe(false);
   });
 
   test("loads bundled catalog and overrides from DATA_DIR/tools.d", () => {
@@ -49,6 +88,7 @@ describe("tool catalog parse", () => {
         ...sample,
         id: "my-tool",
         name: "My Tool",
+        category: "terminal",
         package: "my-tool",
         bin: "my-tool",
       }),
@@ -60,13 +100,61 @@ describe("tool catalog parse", () => {
   });
 });
 
+describe("bundled catalog", () => {
+  const catalog = loadCatalog(emptyDataDir());
+
+  test("every entry has a known category, and every group has at least one entry", () => {
+    for (const entry of catalog) expect(TOOL_CATEGORIES).toContain(entry.category);
+    expect(new Set(catalog.map((entry) => entry.category))).toEqual(new Set(TOOL_CATEGORIES));
+  });
+
+  test("retired entries are gone", () => {
+    expect(findCatalogEntry(catalog, "aider")).toBeUndefined();
+    expect(findCatalogEntry(catalog, "gemini")).toBeUndefined();
+  });
+
+  test("only the root-only installer is flagged needsRoot", () => {
+    expect(catalog.filter((entry) => entry.needsRoot).map((entry) => entry.id)).toEqual(["tailscale"]);
+    expect(errorKey(() => requireCatalogEntry(catalog, "tailscale"))).toBe("tool_needs_root");
+    expect(errorKey(() => requireCatalogEntry(catalog, "no-such-tool"))).toBe("tool_unknown");
+  });
+
+  test("script installers download over HTTPS and never pipe a download into a shell", () => {
+    const scripts = catalog.filter((entry) => entry.source === "script");
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const entry of scripts) {
+      for (const template of [entry.install, entry.upgrade]) {
+        expect(template, entry.id).not.toMatch(/http:\/\//);
+        expect(template, entry.id).not.toMatch(/\|\s*(sudo\s+)?(ba)?sh\b/);
+      }
+    }
+  });
+
+  test("script installers take no version pin", () => {
+    for (const entry of catalog.filter((item) => item.source === "script")) {
+      expect(resolveToolVersion(entry, "latest")).toBe("latest");
+      expect(
+        errorKey(() => resolveToolVersion(entry, "1.0.0")),
+        entry.id,
+      ).toBe("tool_version_unsupported");
+    }
+  });
+
+  test("catalog summary carries the category and the root flag for the create dialog", () => {
+    const summary = catalogSummary(emptyDataDir());
+    expect(summary.find((item) => item.id === "claude-code")).toMatchObject({ category: "agents", needsRoot: false });
+    expect(summary.find((item) => item.id === "tailscale")).toMatchObject({ category: "networking", needsRoot: true });
+    expect(summary.find((item) => item.id === "aider")).toBeUndefined();
+  });
+});
+
 describe("tool command generation", () => {
   test("pins npm and pip package specs", () => {
     expect(packageSpec(sample, "latest")).toBe("@anthropic-ai/claude-code@latest");
     expect(packageSpec(sample, "1.2.3")).toBe("@anthropic-ai/claude-code@1.2.3");
-    const pip: CatalogEntry = { ...sample, id: "aider", source: "pip", package: "aider-chat", bin: "aider" };
-    expect(packageSpec(pip, "latest")).toBe("aider-chat");
-    expect(packageSpec(pip, "0.80.0")).toBe("aider-chat==0.80.0");
+    const pip: CatalogEntry = { ...sample, id: "pip-tool", source: "pip", package: "pip-tool-pkg", bin: "pip-tool" };
+    expect(packageSpec(pip, "latest")).toBe("pip-tool-pkg");
+    expect(packageSpec(pip, "0.80.0")).toBe("pip-tool-pkg==0.80.0");
   });
 
   test("rejects unsafe versions that would inject into sh -c", () => {
@@ -91,6 +179,73 @@ describe("tool command generation", () => {
     );
     expect(detectCommand(sample)).toBe("claude --version");
     expect(renderCommand("echo {{bin}} {{version}}", sample, { version: "2.0.0" })).toBe("echo claude 2.0.0");
+  });
+
+  test("a version pin on an npm entry passes through, and a script entry takes only latest", () => {
+    expect(resolveToolVersion(sample, "1.4.0")).toBe("1.4.0");
+    expect(resolveToolVersion(sample, "")).toBe("latest");
+    const script: CatalogEntry = { ...sample, source: "script", package: "example.sh" };
+    expect(resolveToolVersion(script, "")).toBe("latest");
+    expect(() => resolveToolVersion(script, "1.4.0")).toThrow(AppError);
+  });
+
+  test("shellQuote keeps quotes, expansions and newlines literal in sh -c", () => {
+    for (const value of ["plain", "it's", '$HOME `id` "x"', "a\nb"]) {
+      const result = Bun.spawnSync({ cmd: ["sh", "-c", `printf '%s' ${shellQuote(value)}`], stdout: "pipe" });
+      expect(result.stdout.toString()).toBe(value);
+    }
+  });
+});
+
+describe("detect script", () => {
+  test("parses one record per entry and ignores other output", () => {
+    const logs = [
+      "shell: warning from the image",
+      "MBTOOL\tclaude-code\t0\t1\t2.1.0 (Claude Code)",
+      "MBTOOL\tcodex\t1\t0\t",
+      "MBTOOL\tuv\t0\t0\t",
+      "",
+    ].join("\n");
+    const found = parseDetectOutput(logs);
+    expect(found.get("claude-code")).toEqual({
+      installed: true,
+      installedVersion: "2.1.0 (Claude Code)",
+      managed: true,
+    });
+    expect(found.get("codex")).toEqual({ installed: false, installedVersion: null, managed: false });
+    expect(found.get("uv")).toEqual({ installed: true, installedVersion: null, managed: false });
+    expect(found.has("shell")).toBe(false);
+  });
+
+  test.skipIf(!Bun.which("timeout"))("runs each detect command in the PATH it is given", () => {
+    const prefix = mkdtempSync(join(tmpdir(), "mb-tools-prefix-"));
+    mkdirSync(join(prefix, "bin"));
+    writeFileSync(
+      join(prefix, "bin", "fake-tool"),
+      '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "fake-tool 9.8.7"; echo more; fi\n',
+      { mode: 0o755 },
+    );
+    const present: CatalogEntry = {
+      ...sample,
+      id: "fake-tool",
+      bin: "fake-tool",
+      detect: "command -v fake-tool >/dev/null && fake-tool --version 2>/dev/null",
+    };
+    const absent: CatalogEntry = {
+      ...sample,
+      id: "absent-tool",
+      bin: "absent-tool",
+      detect: "command -v absent-tool >/dev/null && absent-tool --version 2>/dev/null",
+    };
+    const result = Bun.spawnSync({
+      cmd: ["sh", "-c", detectScript([present, absent], prefix)],
+      env: { ...process.env, PATH: `${join(prefix, "bin")}:${process.env.PATH ?? ""}` },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const found = parseDetectOutput(result.stdout.toString());
+    expect(found.get("fake-tool")).toEqual({ installed: true, installedVersion: "fake-tool 9.8.7", managed: true });
+    expect(found.get("absent-tool")).toEqual({ installed: false, installedVersion: null, managed: false });
   });
 });
 
@@ -123,8 +278,13 @@ describe("install env", () => {
 
 describe("desiredToolsOf", () => {
   test("records latest and rejects unknown ids", () => {
-    const catalog = loadCatalog(mkdtempSync(join(tmpdir(), "mb-tools-empty-")));
+    const catalog = loadCatalog(emptyDataDir());
     expect(desiredToolsOf(["claude-code", "claude-code"], catalog)).toEqual([{ id: "claude-code", version: "latest" }]);
     expect(() => desiredToolsOf(["no-such-tool"], catalog)).toThrow(AppError);
+  });
+
+  test("refuses a root-only tool when a box records it", () => {
+    const catalog = loadCatalog(emptyDataDir());
+    expect(errorKey(() => desiredToolsOf(["tailscale"], catalog))).toBe("tool_needs_root");
   });
 });

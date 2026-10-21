@@ -1003,4 +1003,6 @@ export default {
   "err.tool_ids_invalid": "tools 须为目录 id 数组（字母、数字与连字符），最多 32 项。",
   "err.tool_version_invalid":
     "工具版本须为 latest，或以可选 v 开头的字母、数字、点、下划线、加号与连字符组成的固定版本，最长 64 字符。",
+  "err.tool_version_unsupported": "工具 “{id}” 只安装最新版本，因为其安装器不接受版本固定。",
+  "err.tool_unmanaged": "工具 “{id}” 装在 MiniBox 之外（Box 镜像或 home 卷中），MiniBox 无法修改它。",
 };

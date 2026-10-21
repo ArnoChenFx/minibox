@@ -1059,4 +1059,8 @@ export default {
   "err.tool_ids_invalid": "tools must be an array of catalog ids (letters, digits and hyphens), at most 32 entries.",
   "err.tool_version_invalid":
     "Tool version must be latest or a pin of letters, digits, dots, underscores, plus and hyphen (optional leading v), at most 64 characters.",
+  "err.tool_version_unsupported":
+    "Tool “{id}” installs the latest release only, because its installer takes no version pin.",
+  "err.tool_unmanaged":
+    "Tool “{id}” is installed outside MiniBox, in the box image or home volume, so MiniBox cannot change it.",
 };

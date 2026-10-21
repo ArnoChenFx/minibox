@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ROOT } from "../config";
 import { badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
-import type { CatalogEntry } from "./types";
+import { isToolCategory, TOOL_CATEGORIES, type CatalogEntry } from "./types";
 
 const ID = /^[a-z][a-z0-9-]{0,62}$/;
 const SOURCES = new Set(["npm", "pip", "script"]);
@@ -26,6 +26,15 @@ export function parseCatalogEntry(raw: unknown, file: string): CatalogEntry {
   if (!isObject(raw)) throw badRequest(msg("tool_catalog_invalid", { file, detail: "root must be an object" }));
   const id = requireString(raw, "id", file);
   if (!ID.test(id)) throw badRequest(msg("tool_catalog_invalid", { file, detail: `invalid id ${id}` }));
+  const category = requireString(raw, "category", file);
+  if (!isToolCategory(category)) {
+    throw badRequest(
+      msg("tool_catalog_invalid", {
+        file,
+        detail: `unknown category ${category} (expected ${TOOL_CATEGORIES.join(", ")})`,
+      }),
+    );
+  }
   const source = requireString(raw, "source", file);
   if (!SOURCES.has(source)) {
     throw badRequest(msg("tool_catalog_invalid", { file, detail: `unknown source ${source}` }));
@@ -37,6 +46,7 @@ export function parseCatalogEntry(raw: unknown, file: string): CatalogEntry {
     id,
     name: requireString(raw, "name", file),
     description: requireString(raw, "description", file),
+    category,
     source: source as CatalogEntry["source"],
     package: requireString(raw, "package", file),
     bin: requireString(raw, "bin", file),

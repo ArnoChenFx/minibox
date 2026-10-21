@@ -1,0 +1,15 @@
+{
+  "id": "zig",
+  "name": "Zig",
+  "description": "Zig toolchain from ziglang.org: the newest stable release in the official download index, checked against its sha256 and unpacked with its lib directory.",
+  "category": "languages",
+  "source": "script",
+  "package": "ziglang.org",
+  "bin": "zig",
+  "needsRoot": false,
+  "estimatedMb": 411,
+  "install": "set -e; d=$(mktemp -d); trap 'rm -rf \"$d\"' EXIT; curl -fsSL https://ziglang.org/download/index.json -o \"$d/index.json\"; v=$(jq -r 'keys_unsorted[] | select(. != \"master\")' \"$d/index.json\" | sort -V | tail -n 1); case \"$(uname -m)\" in x86_64|amd64) a=x86_64 ;; aarch64|arm64) a=aarch64 ;; *) echo \"unsupported architecture: $(uname -m)\" >&2; exit 1 ;; esac; k=\"$a-linux\"; url=$(jq -r --arg v \"$v\" --arg k \"$k\" '.[$v][$k].tarball' \"$d/index.json\"); sum=$(jq -r --arg v \"$v\" --arg k \"$k\" '.[$v][$k].shasum' \"$d/index.json\"); curl -fsSL \"$url\" -o \"$d/zig.tar.xz\"; printf '%s  %s\\n' \"$sum\" \"$d/zig.tar.xz\" | sha256sum -c -; rm -rf {{prefix}}/zig.new; mkdir -p {{prefix}}/zig.new {{prefix}}/bin; tar -xJf \"$d/zig.tar.xz\" -C {{prefix}}/zig.new --strip-components=1; rm -rf {{prefix}}/zig; mv {{prefix}}/zig.new {{prefix}}/zig; ln -sfn ../zig/zig {{prefix}}/bin/zig",
+  "upgrade": "set -e; d=$(mktemp -d); trap 'rm -rf \"$d\"' EXIT; curl -fsSL https://ziglang.org/download/index.json -o \"$d/index.json\"; v=$(jq -r 'keys_unsorted[] | select(. != \"master\")' \"$d/index.json\" | sort -V | tail -n 1); case \"$(uname -m)\" in x86_64|amd64) a=x86_64 ;; aarch64|arm64) a=aarch64 ;; *) echo \"unsupported architecture: $(uname -m)\" >&2; exit 1 ;; esac; k=\"$a-linux\"; url=$(jq -r --arg v \"$v\" --arg k \"$k\" '.[$v][$k].tarball' \"$d/index.json\"); sum=$(jq -r --arg v \"$v\" --arg k \"$k\" '.[$v][$k].shasum' \"$d/index.json\"); curl -fsSL \"$url\" -o \"$d/zig.tar.xz\"; printf '%s  %s\\n' \"$sum\" \"$d/zig.tar.xz\" | sha256sum -c -; rm -rf {{prefix}}/zig.new; mkdir -p {{prefix}}/zig.new {{prefix}}/bin; tar -xJf \"$d/zig.tar.xz\" -C {{prefix}}/zig.new --strip-components=1; rm -rf {{prefix}}/zig; mv {{prefix}}/zig.new {{prefix}}/zig; ln -sfn ../zig/zig {{prefix}}/bin/zig",
+  "uninstall": "rm -f {{prefix}}/bin/zig; rm -rf {{prefix}}/zig {{prefix}}/zig.new",
+  "detect": "command -v zig >/dev/null && zig version 2>/dev/null"
+}

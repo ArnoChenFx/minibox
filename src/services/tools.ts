@@ -6,16 +6,17 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { TaskHandle } from "../tasks/types";
 import { findCatalogEntry, loadCatalog, requireCatalogEntry } from "../tools/catalog";
-import { assertSafeToolVersion, commandFor, detectCommand } from "../tools/commands";
-import { TOOLS_BIN, TOOLS_PREFIX, type CatalogEntry, type ToolAction, type ToolStatus } from "../tools/types";
+import { commandFor, resolveToolVersion } from "../tools/commands";
+import { detectScript, parseDetectOutput, type DetectResult } from "../tools/detect";
+import { TOOLS_PREFIX, type CatalogEntry, type ToolAction, type ToolStatus } from "../tools/types";
 import { findSharedTools } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
-import { getBox } from "./boxes";
+import { getBox, type Box } from "./boxes";
 
 const WRITER_MEMORY = 1024 * 1024 * 1024;
 const WRITER_PIDS = 256;
 const WRITER_TIMEOUT_SEC = 900;
-const DETECT_TIMEOUT_SEC = 30;
+const DETECT_TIMEOUT_SEC = 300;
 
 /** Proxy and package-manager env forwarded into the tools writer when the host process has them. */
 export function installEnv(): string[] {
@@ -30,7 +31,7 @@ export function installEnv(): string[] {
     "all_proxy",
   ];
   const env: string[] = [
-    `PATH=${TOOLS_BIN}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+    `PATH=${TOOLS_PREFIX}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
     `NPM_CONFIG_PREFIX=${TOOLS_PREFIX}`,
     `npm_config_cache=/tmp/npm-cache`,
     `PIP_CACHE_DIR=/tmp/pip-cache`,
@@ -43,95 +44,127 @@ export function installEnv(): string[] {
   return env;
 }
 
-function toolsVolume(host: HostCtx): { engine: string } {
+function sharedToolsEngine(host: HostCtx): string | null {
   const pool = poolForRole(host.volumes.readPools(), "tools");
-  const record = findSharedTools(host, pool.name);
-  if (!record) throw badRequest(msg("tool_volume_missing"));
-  return { engine: record.engineName };
+  return findSharedTools(host, pool.name)?.engineName ?? null;
 }
 
-async function runToolsHelper(
+async function runToolsWriter(
   host: HostCtx,
-  opts: {
-    cmd: string[];
-    write: boolean;
-    task?: TaskHandle;
-    timeoutSec?: number;
-  },
+  opts: { cmd: string[]; task?: TaskHandle },
 ): Promise<{ exitCode: number; logs: string }> {
-  const volume = toolsVolume(host);
+  const engine = sharedToolsEngine(host);
+  if (!engine) throw badRequest(msg("tool_volume_missing"));
   const image = host.baseTemplateTag;
   try {
     await host.runtime.inspectImage(image);
   } catch {
     throw badRequest(msg("helper_image_missing", { image }));
   }
-  opts.task?.log(`Using tools volume ${volume.engine} (${opts.write ? "read-write" : "read-only"})\n`);
+  opts.task?.log(`Using tools volume ${engine} (read-write)\n`);
   const result = await host.runtime.runHelper({
     image,
     user: "1000:1000",
     cmd: opts.cmd,
-    mounts: [{ source: volume.engine, target: TOOLS_PREFIX, mode: opts.write ? "rw" : "ro" }],
+    mounts: [{ source: engine, target: TOOLS_PREFIX, mode: "rw" }],
     env: installEnv(),
-    network: opts.write,
+    network: true,
     readonlyRoot: false,
-    memoryBytes: opts.write ? WRITER_MEMORY : undefined,
-    pidsLimit: opts.write ? WRITER_PIDS : undefined,
-    timeoutSec: opts.timeoutSec ?? (opts.write ? WRITER_TIMEOUT_SEC : DETECT_TIMEOUT_SEC),
+    memoryBytes: WRITER_MEMORY,
+    pidsLimit: WRITER_PIDS,
+    timeoutSec: WRITER_TIMEOUT_SEC,
     labels: { [host.keys.internal]: "true" },
   });
   if (result.logs) opts.task?.log(result.logs.endsWith("\n") ? result.logs : `${result.logs}\n`);
   return result;
 }
 
-async function detectVersion(host: HostCtx, entry: CatalogEntry): Promise<string | null> {
-  const script = [`export PATH="${TOOLS_BIN}:$PATH"`, detectCommand(entry)].join("\n");
-  const result = await runToolsHelper(host, {
-    cmd: ["sh", "-c", script],
-    write: false,
-    timeoutSec: DETECT_TIMEOUT_SEC,
-  });
-  if (result.exitCode !== 0) return null;
-  const line = result.logs
-    .split("\n")
-    .map((part) => part.trim())
-    .find((part) => part.length > 0);
-  return line ?? null;
+interface DetectTarget {
+  image: string;
+  mounts: { source: string; target: string; mode: "ro" }[];
+}
+
+/**
+ * Where detection runs. With a box, that is the box's own image with the box's home volume and the shared tools volume
+ * mounted read-only, so a tool baked into the image or installed in the home volume is found the way the box finds it.
+ * Without a box, the base template stands in for the image.
+ */
+async function detectTarget(host: HostCtx, box: Box | null): Promise<DetectTarget> {
+  const mounts: DetectTarget["mounts"] = [];
+  const engine = sharedToolsEngine(host);
+  if (engine) mounts.push({ source: engine, target: TOOLS_PREFIX, mode: "ro" });
+  let image = host.baseTemplateTag;
+  if (box) {
+    const home = box.mounts.find((mount) => mount.role === "home");
+    if (home) mounts.push({ source: home.volume, target: home.path, mode: "ro" });
+    if (box.image && (await imageExists(host, box.image))) image = box.image;
+  }
+  return { image, mounts };
+}
+
+async function imageExists(host: HostCtx, ref: string): Promise<boolean> {
+  try {
+    await host.runtime.inspectImage(ref);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Runs the detect command of each entry in one helper. An entry the helper does not answer for is reported as not
+ * installed; a helper failure is logged and leaves every entry not installed rather than failing the request.
+ */
+export async function detectTools(
+  host: HostCtx,
+  entries: CatalogEntry[],
+  box: Box | null,
+): Promise<Map<string, DetectResult>> {
+  if (entries.length === 0) return new Map();
+  try {
+    const target = await detectTarget(host, box);
+    const result = await host.runtime.runHelper({
+      image: target.image,
+      user: "1000:1000",
+      cmd: ["sh", "-c", detectScript(entries)],
+      mounts: target.mounts,
+      network: false,
+      timeoutSec: DETECT_TIMEOUT_SEC,
+      labels: { [host.keys.internal]: "true" },
+    });
+    return parseDetectOutput(result.logs);
+  } catch (e) {
+    log.warn("tool.detect_failed", { boxId: box?.boxId ?? null, error: String(e) });
+    return new Map();
+  }
+}
+
+function statusOf(entry: CatalogEntry, desiredVersion: string | null, found: DetectResult | undefined): ToolStatus {
+  return {
+    id: entry.id,
+    name: entry.name,
+    description: entry.description,
+    category: entry.category,
+    source: entry.source,
+    package: entry.package,
+    bin: entry.bin,
+    estimatedMb: entry.estimatedMb,
+    requires: entry.requires ?? null,
+    needsRoot: entry.needsRoot,
+    desiredVersion,
+    installed: found?.installed ?? false,
+    installedVersion: found?.installedVersion ?? null,
+    managed: found?.managed ?? false,
+  };
 }
 
 export async function listToolStatuses(host: HostCtx, boxRef?: string): Promise<ToolStatus[]> {
   const catalog = loadCatalog(dirname(host.specs.dir()));
+  const box = boxRef ? await getBox(host, boxRef) : null;
   const desired = new Map<string, string>();
-  if (boxRef) {
-    const box = await getBox(host, boxRef);
-    const spec = host.specs.read(box.boxId);
-    for (const tool of spec?.tools ?? []) desired.set(tool.id, tool.version);
-  }
-  const out: ToolStatus[] = [];
-  for (const entry of catalog) {
-    let installedVersion: string | null = null;
-    let installed = false;
-    try {
-      installedVersion = await detectVersion(host, entry);
-      installed = installedVersion !== null;
-    } catch (e) {
-      log.warn("tool.detect_failed", { id: entry.id, error: String(e) });
-    }
-    out.push({
-      id: entry.id,
-      name: entry.name,
-      description: entry.description,
-      source: entry.source,
-      package: entry.package,
-      bin: entry.bin,
-      estimatedMb: entry.estimatedMb,
-      requires: entry.requires ?? null,
-      desiredVersion: desired.get(entry.id) ?? null,
-      installed,
-      installedVersion,
-    });
-  }
-  return out;
+  for (const tool of (box && host.specs.read(box.boxId)?.tools) || []) desired.set(tool.id, tool.version);
+  const found = await detectTools(host, catalog, box);
+  return catalog.map((entry) => statusOf(entry, desired.get(entry.id) ?? null, found.get(entry.id)));
 }
 
 function setDesiredTool(host: HostCtx, boxId: string, id: string, version: string | null): void {
@@ -158,14 +191,14 @@ async function runAction(
   const box = await getBox(host, boxRef);
   const catalog = loadCatalog(dirname(host.specs.dir()));
   const entry = requireCatalogEntry(catalog, toolId);
-  const resolvedVersion = assertSafeToolVersion(version);
+  const resolvedVersion = resolveToolVersion(entry, version);
+  if (action !== "install") {
+    const current = (await detectTools(host, [entry], box)).get(entry.id);
+    if (current?.installed && !current.managed) throw badRequest(msg("tool_unmanaged", { id: toolId }));
+  }
   const shell = commandFor(entry, action, resolvedVersion);
   task?.log(`${action} ${entry.id}@${resolvedVersion}\n$ ${shell}\n`);
-  const result = await runToolsHelper(host, {
-    cmd: ["sh", "-c", shell],
-    write: true,
-    task,
-  });
+  const result = await runToolsWriter(host, { cmd: ["sh", "-c", shell], task });
   if (result.exitCode === 124) throw conflict(msg("tool_install_timeout", { id: toolId }));
   if (result.exitCode !== 0) {
     throw badRequest(
@@ -180,8 +213,9 @@ async function runAction(
   } else {
     await host.specs.exclusive(async () => setDesiredTool(host, box.boxId, toolId, resolvedVersion));
   }
-  const installedVersion = action === "uninstall" ? null : await detectVersion(host, entry);
-  return { id: toolId, version: resolvedVersion, installedVersion };
+  if (action === "uninstall") return { id: toolId, version: resolvedVersion, installedVersion: null };
+  const found = await detectTools(host, [entry], box);
+  return { id: toolId, version: resolvedVersion, installedVersion: found.get(entry.id)?.installedVersion ?? null };
 }
 
 export function installTool(
@@ -214,8 +248,8 @@ export function uninstallTool(
 }
 
 /**
- * Idempotent reconcile: install every desired tool that detect does not find.
- * Upgrade is not implied; missing tools are installed at the desired version.
+ * Idempotent reconcile: install every desired tool the box does not already have. Detection uses the box's own image
+ * and home volume, so a tool baked into the image is skipped. Upgrade is not implied.
  */
 export async function reconcileTools(
   host: HostCtx,
@@ -229,6 +263,11 @@ export async function reconcileTools(
   const installed: string[] = [];
   const skipped: string[] = [];
   const failed: { id: string; detail: string }[] = [];
+  const entries = spec.tools.flatMap((desired) => {
+    const entry = findCatalogEntry(catalog, desired.id);
+    return entry ? [entry] : [];
+  });
+  const found = await detectTools(host, entries, box);
   for (const desired of spec.tools) {
     if (task?.signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
     const entry = findCatalogEntry(catalog, desired.id);
@@ -237,10 +276,12 @@ export async function reconcileTools(
       task?.log(`skip unknown tool ${desired.id}\n`);
       continue;
     }
-    const current = await detectVersion(host, entry);
-    if (current !== null) {
+    const current = found.get(entry.id);
+    if (current?.installed) {
       skipped.push(desired.id);
-      task?.log(`ok ${desired.id} already present (${current})\n`);
+      task?.log(
+        `ok ${desired.id} already present${current.installedVersion ? ` (${current.installedVersion})` : ""}\n`,
+      );
       continue;
     }
     try {

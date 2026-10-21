@@ -1,0 +1,15 @@
+{
+  "id": "fx",
+  "name": "fx agent",
+  "description": "fx agent coding CLI. Installed with the official fx.sh setup script, which downloads the release binary from releases.fx.sh.",
+  "category": "agents",
+  "source": "script",
+  "package": "fx.sh",
+  "bin": "fx",
+  "needsRoot": false,
+  "estimatedMb": 13,
+  "install": "t=$(mktemp) && curl -fsSL https://fx.sh/setup.sh -o \"$t\" && FX_INSTALL_DIR={{prefix}}/bin bash \"$t\"; rc=$?; rm -f \"$t\"; exit $rc",
+  "upgrade": "t=$(mktemp) && curl -fsSL https://fx.sh/setup.sh -o \"$t\" && FX_INSTALL_DIR={{prefix}}/bin bash \"$t\"; rc=$?; rm -f \"$t\"; exit $rc",
+  "uninstall": "rm -f {{prefix}}/bin/fx",
+  "detect": "command -v fx >/dev/null && fx --version 2>/dev/null"
+}

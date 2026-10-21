@@ -1,0 +1,15 @@
+{
+  "id": "grok",
+  "name": "Grok Build CLI",
+  "description": "xAI's Grok Build coding agent (binary grok). The official installer runs in a scratch home, and only the grok binary is copied onto the tools volume.",
+  "category": "agents",
+  "source": "script",
+  "package": "x.ai/cli",
+  "bin": "grok",
+  "needsRoot": false,
+  "estimatedMb": 183,
+  "install": "mkdir -p {{prefix}}/bin; t=$(mktemp -d) && curl -fsSL https://x.ai/cli/install.sh -o \"$t/install.sh\" && HOME=\"$t\" GROK_BIN_DIR=\"$t/bin\" bash \"$t/install.sh\" && cp -L \"$t/bin/grok\" {{prefix}}/bin/.grok.new && mv -f {{prefix}}/bin/.grok.new {{prefix}}/bin/grok; rc=$?; rm -rf \"$t\"; exit $rc",
+  "upgrade": "mkdir -p {{prefix}}/bin; t=$(mktemp -d) && curl -fsSL https://x.ai/cli/install.sh -o \"$t/install.sh\" && HOME=\"$t\" GROK_BIN_DIR=\"$t/bin\" bash \"$t/install.sh\" && cp -L \"$t/bin/grok\" {{prefix}}/bin/.grok.new && mv -f {{prefix}}/bin/.grok.new {{prefix}}/bin/grok; rc=$?; rm -rf \"$t\"; exit $rc",
+  "uninstall": "rm -f {{prefix}}/bin/grok",
+  "detect": "command -v grok >/dev/null && grok --version 2>/dev/null"
+}

@@ -239,9 +239,12 @@ export const MESSAGES = {
   tool_install_failed: "Installing “{id}” failed: {detail}",
   tool_install_timeout: "Installing “{id}” timed out.",
   tool_reconcile_failed: "Could not install the requested tools: {detail}.",
+  tool_unmanaged:
+    "Tool “{id}” is installed outside MiniBox, in the box image or home volume, so MiniBox cannot change it.",
   tool_ids_invalid: "tools must be an array of catalog ids (letters, digits and hyphens), at most 32 entries.",
   tool_version_invalid:
     "Tool version must be latest or a pin of letters, digits, dots, underscores, plus and hyphen (optional leading v), at most 64 characters.",
+  tool_version_unsupported: "Tool “{id}” installs the latest release only, because its installer takes no version pin.",
   mcp_not_sse_hint: "Post JSON-RPC to /mcp. DELETE /mcp closes a session.",
 } as const;
 export type MessageKey = keyof typeof MESSAGES;
