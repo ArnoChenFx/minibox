@@ -1,0 +1,15 @@
+{
+  "id": "bun",
+  "name": "Bun",
+  "description": "Fast all-in-one JavaScript runtime, bundler and package manager, from the official bun npm package.",
+  "category": "languages",
+  "source": "npm",
+  "package": "bun",
+  "bin": "bun",
+  "needsRoot": false,
+  "estimatedMb": 85,
+  "install": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "upgrade": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "uninstall": "npm uninstall -g --prefix {{prefix}} {{package}}",
+  "detect": "command -v bun >/dev/null && bun --version 2>/dev/null"
+}

@@ -43,6 +43,7 @@ function inBrowser<T>(browser: Browser, expression: string, prelude: string[] = 
     `const format = await import(${JSON.stringify(join(LIB, "format.js"))});`,
     `const search = await import(${JSON.stringify(join(LIB, "search.js"))});`,
     `const volumeList = await import(${JSON.stringify(join(LIB, "volume-list.js"))});`,
+    `const toolList = await import(${JSON.stringify(join(LIB, "tool-list.js"))});`,
     `const templateList = await import(${JSON.stringify(join(LIB, "template-list.js"))});`,
     `const en = (await import(${JSON.stringify(join(I18N, "en.js"))})).default;`,
     `const zh = (await import(${JSON.stringify(join(I18N, "zh-CN.js"))})).default;`,
@@ -655,6 +656,125 @@ describe("api error keys", () => {
       status: 409,
       message: expect.stringContaining("Volume data no longer exists"),
     });
+  });
+});
+
+/** Agent CLI tools in catalog order, with the fields the picker reads. Category labels come from the loaded dictionary. */
+const TOOLS = `
+  const categoryLabel = (id) => i18n.t("tool.cat." + id);
+  const tool = (fields) => ({ description: "", needsRoot: false, installed: false, managed: false, ...fields });
+  const tools = [
+    tool({ id: "codex", name: "Codex", description: "Coding agent from OpenAI", category: "agents" }),
+    tool({ id: "bun", name: "Bun", description: "Fast JavaScript runtime", category: "languages" }),
+    tool({ id: "herdr", name: "herdr", description: "Terminal workspace for agents", category: "terminal" }),
+    tool({ id: "tailscale", name: "Tailscale", description: "Private mesh network", category: "networking", needsRoot: true }),
+    tool({ id: "zig", name: "Zig", description: "Systems language toolchain", category: "languages" }),
+  ];
+`;
+
+describe("tool picker", () => {
+  test("a query finds a tool by name, id, description or category label, every word must match, and case is ignored", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${TOOLS}
+          const find = (query) => toolList.filterTools(tools, query, categoryLabel).map((tool) => tool.id);
+          return {
+            name: find("CODEX"),
+            id: find("tailscale"),
+            description: find("mesh"),
+            category: find("networking"),
+            label: find("runtimes"),
+            words: find("zig toolchain"),
+            everyWord: find("bun agent"),
+            none: find("nope"),
+            blank: toolList.filterTools(tools, "  ", categoryLabel) === tools,
+          };
+        })()`,
+      ),
+    ).toEqual({
+      name: ["codex"],
+      id: ["tailscale"],
+      description: ["tailscale"],
+      category: ["tailscale"],
+      label: ["bun", "zig"],
+      words: ["zig"],
+      everyWord: [],
+      none: [],
+      blank: true,
+    });
+  });
+
+  test("a Chinese picker searches the Chinese category labels", () => {
+    expect(
+      inBrowser(
+        { languages: ["zh-CN"] },
+        `(() => {
+          ${TOOLS}
+          const find = (query) => toolList.filterTools(tools, query, categoryLabel).map((tool) => tool.id);
+          return { runtimes: find("运行时"), agents: find("代理"), networking: find("网络") };
+        })()`,
+      ),
+    ).toEqual({ runtimes: ["bun", "zig"], agents: ["codex"], networking: ["tailscale"] });
+  });
+
+  test("groups follow the picker's order, drop empty categories, and keep catalog order inside each group", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${TOOLS}
+          const shape = (list) => toolList.groupTools(list).map((group) => [group.id, group.rows.map((tool) => tool.id)]);
+          return {
+            all: shape(tools),
+            runtimes: shape(toolList.filterTools(tools, "runtimes", categoryLabel)),
+            reversed: shape([...tools].reverse()),
+          };
+        })()`,
+      ),
+    ).toEqual({
+      all: [
+        ["category:agents", ["codex"]],
+        ["category:languages", ["bun", "zig"]],
+        ["category:terminal", ["herdr"]],
+        ["category:networking", ["tailscale"]],
+      ],
+      runtimes: [["category:languages", ["bun", "zig"]]],
+      reversed: [
+        ["category:agents", ["codex"]],
+        ["category:languages", ["zig", "bun"]],
+        ["category:terminal", ["herdr"]],
+        ["category:networking", ["tailscale"]],
+      ],
+    });
+  });
+
+  test("the search fields are the name, id, description, category id and its label", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${TOOLS}
+          return toolList.toolSearchFields(tools[0], categoryLabel);
+        })()`,
+      ),
+    ).toEqual(["Codex", "codex", "Coding agent from OpenAI", "agents", "AI coding agents"]);
+  });
+
+  test("each tool gets one row action: a root tool none, a missing tool an install, a MiniBox tool an upgrade and uninstall", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `[
+          { needsRoot: true, installed: false, managed: false },
+          { needsRoot: false, installed: false, managed: false },
+          { needsRoot: false, installed: true, managed: true },
+          { needsRoot: false, installed: true, managed: false },
+          { needsRoot: true, installed: true, managed: false },
+        ].map((tool) => toolList.toolAction(tool))`,
+      ),
+    ).toEqual(["needsRoot", "install", "managed", "outside", "needsRoot"]);
   });
 });
 

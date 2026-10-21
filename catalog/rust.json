@@ -1,0 +1,15 @@
+{
+  "id": "rust",
+  "name": "Rust toolchain",
+  "description": "rustup with the stable toolchain, rustfmt and clippy, from the official sh.rustup.rs installer. Wrappers on the tools bin set RUSTUP_HOME, so cargo and rustc work in any box.",
+  "category": "languages",
+  "source": "script",
+  "package": "rustup.rs",
+  "bin": "cargo",
+  "needsRoot": false,
+  "estimatedMb": 637,
+  "install": "t=$(mktemp) && curl -fsSL https://sh.rustup.rs -o \"$t\" && RUSTUP_HOME={{prefix}}/rustup CARGO_HOME={{prefix}}/cargo sh \"$t\" -y --no-modify-path --profile minimal -c rustfmt -c clippy --default-toolchain stable; rc=$?; rm -f \"$t\"; [ \"$rc\" -eq 0 ] || exit \"$rc\"; mkdir -p {{prefix}}/bin && for p in {{prefix}}/cargo/bin/*; do n=$(basename \"$p\"); printf '#!/bin/sh\\nexport RUSTUP_HOME={{prefix}}/rustup\\nexec {{prefix}}/cargo/bin/%s \"$@\"\\n' \"$n\" > {{prefix}}/bin/$n && chmod +x {{prefix}}/bin/$n; done",
+  "upgrade": "RUSTUP_HOME={{prefix}}/rustup CARGO_HOME={{prefix}}/cargo {{prefix}}/cargo/bin/rustup update stable --no-self-update",
+  "uninstall": "for p in {{prefix}}/cargo/bin/*; do rm -f {{prefix}}/bin/$(basename \"$p\"); done; rm -rf {{prefix}}/cargo {{prefix}}/rustup",
+  "detect": "command -v cargo >/dev/null && cargo --version 2>/dev/null"
+}

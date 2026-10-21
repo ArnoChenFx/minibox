@@ -1,0 +1,16 @@
+{
+  "id": "tailscale",
+  "name": "Tailscale",
+  "description": "Tailscale client. Its installer adds a system package and a tailscaled daemon as root, so MiniBox lists it but refuses to install or remove it.",
+  "category": "networking",
+  "source": "script",
+  "package": "tailscale.com",
+  "bin": "tailscale",
+  "needsRoot": true,
+  "estimatedMb": 40,
+  "requires": "Root and tailscaled daemon",
+  "install": "t=$(mktemp) && curl -fsSL https://tailscale.com/install.sh -o \"$t\" && sh \"$t\"; rc=$?; rm -f \"$t\"; exit $rc",
+  "upgrade": "t=$(mktemp) && curl -fsSL https://tailscale.com/install.sh -o \"$t\" && sh \"$t\"; rc=$?; rm -f \"$t\"; exit $rc",
+  "uninstall": "apt-get remove -y tailscale",
+  "detect": "command -v tailscale >/dev/null && tailscale version 2>/dev/null"
+}

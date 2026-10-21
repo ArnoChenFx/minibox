@@ -1,0 +1,15 @@
+{
+  "id": "antigravity",
+  "name": "Antigravity CLI",
+  "description": "Google's Antigravity agent CLI (binary agy), installed with its official bootstrapper, which checks a sha512 from the release manifest.",
+  "category": "agents",
+  "source": "script",
+  "package": "antigravity.google",
+  "bin": "agy",
+  "needsRoot": false,
+  "estimatedMb": 213,
+  "install": "rm -f {{prefix}}/bin/agy; t=$(mktemp) && curl -fsSL https://antigravity.google/cli/install.sh -o \"$t\" && bash \"$t\" --dir {{prefix}}/bin; rc=$?; rm -f \"$t\"; exit $rc",
+  "upgrade": "rm -f {{prefix}}/bin/agy; t=$(mktemp) && curl -fsSL https://antigravity.google/cli/install.sh -o \"$t\" && bash \"$t\" --dir {{prefix}}/bin; rc=$?; rm -f \"$t\"; exit $rc",
+  "uninstall": "rm -f {{prefix}}/bin/agy",
+  "detect": "command -v agy >/dev/null && agy --version 2>/dev/null"
+}

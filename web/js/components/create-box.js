@@ -5,8 +5,10 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoices } from "../lib/mounts.js";
 import { getTemplates, hostNow, refreshHost } from "../lib/store.js";
-import { nameError, openDialog, toast } from "../lib/ui.js";
+import { filterTools, groupTools } from "../lib/tool-list.js";
+import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
+import { bindSearchBox, searchBoxHtml } from "./search-box.js";
 import { openTasks } from "./tasks.js";
 
 const PRESETS = [
@@ -21,6 +23,29 @@ const PROFILES = ["standard", "strict", "relaxed"];
 /** The text for a custom row the dialog refuses before sending. Paths use the server's own messages. */
 function problemText(problem) {
   return problem.code === "volume" ? t("cb.mountVolumeRequired") : t(`err.${problem.code}`, { path: problem.path });
+}
+
+const categoryLabel = (id) => t(`tool.cat.${id}`);
+
+/** The native checkbox stays for keyboard and screen-reader use; the row draws its own box and check mark. */
+function toolCheckHtml(tool, selected) {
+  const blocked = tool.needsRoot;
+  return `<label class="check-row${blocked ? " is-disabled" : ""}">
+    <input class="sr-only" type="checkbox" value="${esc(tool.id)}"${selected ? " checked" : ""}${blocked ? " disabled" : ""} />
+    <span class="check-mark" aria-hidden="true">${icon("check")}</span>
+    <span class="check-body">
+      <span class="check-title"><strong>${esc(tool.name)}</strong>${blocked ? `<span class="badge badge-warning" title="${esc(t("tool.needsRootHelp"))}">${esc(t("tool.needsRoot"))}</span>` : ""}</span>
+      <span class="subtle">${esc(tool.source)}${tool.requires ? ` · ${esc(tool.requires)}` : ""} · ~${esc(String(tool.estimatedMb))} MB</span>
+      <span class="help">${esc(tool.description)}</span>
+    </span></label>`;
+}
+
+function toolGroupHtml(group, selected) {
+  const label = esc(categoryLabel(group.category));
+  return `<section class="tool-group" aria-label="${label}">
+    <div class="tool-group-head"><strong>${label}</strong><span class="badge">${group.rows.length}</span></div>
+    <div class="tool-checks">${group.rows.map((tool) => toolCheckHtml(tool, selected.has(tool.id))).join("")}</div>
+  </section>`;
 }
 
 /** The volumes a custom row can pick, with the ones another live box owns marked unavailable. */
@@ -67,18 +92,13 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   } catch {
     catalog = [];
   }
-  const toolsSection =
-    snapshot || !catalog.length
-      ? ""
-      : `<div class="field" id="cbToolsField"><span class="label">${t("cb.tools")}</span>
+  const picker = !snapshot && catalog.length > 0;
+  const toolsSection = picker
+    ? `<div class="field" id="cbToolsField">
+          <div class="tool-picker-head"><span class="label">${t("cb.tools")}</span>${searchBoxHtml({ id: "cbToolSearch", placeholder: t("tool.searchPlaceholder"), label: t("tool.search") })}</div>
           <div class="help">${t("cb.toolsHelp")}</div>
-          <div class="tool-checks" id="cbTools">${catalog
-            .map(
-              (tool) => `<label class="check-row"><input type="checkbox" value="${esc(tool.id)}" />
-                <span><strong>${esc(tool.name)}</strong><span class="subtle"> · ${esc(tool.source)}${tool.requires ? ` · ${esc(tool.requires)}` : ""} · ~${tool.estimatedMb} MB</span>
-                <span class="help">${esc(tool.description)}</span></span></label>`,
-            )
-            .join("")}</div></div>`;
+          <div class="tool-groups" id="cbTools"></div></div>`
+    : "";
 
   const templatePicker = snapshot
     ? `<div class="option" aria-checked="true"><span class="avatar">${icon("camera")}</span><span class="meta"><strong>${esc(snapshot)}</strong><span>${t("cb.fromSnapshotHint")}</span></span></div>`
@@ -299,6 +319,37 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbMountRows").addEventListener("change", refreshMounts);
     q("#cbMountRows").addEventListener("click", refreshMounts);
   }
+  const selectedTools = new Set();
+  if (picker) {
+    let toolQuery = "";
+    const drawTools = () => {
+      const matches = filterTools(catalog, toolQuery, categoryLabel);
+      q("#cbTools").innerHTML = matches.length
+        ? groupTools(matches)
+            .map((group) => toolGroupHtml(group, selectedTools))
+            .join("")
+        : emptyState({
+            iconName: "search",
+            title: t("tool.noMatch"),
+            text: t("tool.noMatchText", { q: esc(toolQuery) }),
+            action: `<button class="btn btn-sm" data-action="clear-search">${t("common.clearSearch")}</button>`,
+          });
+    };
+    const search = bindSearchBox(q("#cbToolSearch"), (text) => {
+      toolQuery = text;
+      drawTools();
+    });
+    q("#cbTools").addEventListener("change", (event) => {
+      const input = event.target.closest("input[type=checkbox]");
+      if (!input) return;
+      if (input.checked) selectedTools.add(input.value);
+      else selectedTools.delete(input.value);
+    });
+    q("#cbTools").addEventListener("click", (event) => {
+      if (event.target.closest('[data-action="clear-search"]')) search.clear();
+    });
+    drawTools();
+  }
   sync();
 
   const submit = async () => {
@@ -328,15 +379,15 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     try {
       const body = { name, cpus: state.cpus, memoryMb: state.memoryMb, profile: state.profile };
       if (mounts) body.mounts = mounts;
-      const selectedTools = [...root.querySelectorAll("#cbTools input:checked")].map((el) => el.value);
-      if (selectedTools.length) body.tools = selectedTools;
+      const selectedToolIds = [...selectedTools];
+      if (selectedToolIds.length) body.tools = selectedToolIds;
       const res = snapshot
         ? await api(`/api/snapshots/${enc(snapshot)}/boxes`, { method: "POST", body })
         : await api("/api/boxes", { method: "POST", body: { ...body, template: state.template } });
       close();
       toast(t("cb.created"), { message: t("cb.createdText", { name: res.box.name }) });
       refreshHost();
-      if (selectedTools.length) {
+      if (selectedToolIds.length) {
         try {
           const task = await api(`/api/boxes/${enc(res.box.id)}/tools/reconcile`, { method: "POST" });
           if (task?.taskId) openTasks(task.taskId);

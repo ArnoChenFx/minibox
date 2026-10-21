@@ -458,15 +458,19 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("list tools", "GET", "/api/tools");
     await send("list tools for the box", "GET", `/api/tools?id=${toolsBox}`);
     const priorHelper = runtime.helperHandler;
+    const onVolume = new Set<string>();
     runtime.helperHandler = (spec) => {
       const cmd = spec.cmd.join(" ");
-      if (
-        cmd.includes("claude") ||
-        cmd.includes("npm install") ||
-        cmd.includes("npm uninstall") ||
-        cmd.includes("command -v")
-      ) {
-        if (cmd.includes("--version") || cmd.includes("command -v")) return { exitCode: 0, logs: "1.0.0\n" };
+      if (cmd.includes("MBTOOL")) {
+        const records = [...onVolume].map((id) => `MBTOOL\t${id}\t0\t1\t1.0.0`);
+        return { exitCode: 0, logs: records.length ? `${records.join("\n")}\n` : "" };
+      }
+      if (cmd.includes("npm install")) {
+        onVolume.add("claude-code");
+        return { exitCode: 0, logs: "ok\n" };
+      }
+      if (cmd.includes("npm uninstall")) {
+        onVolume.delete("claude-code");
         return { exitCode: 0, logs: "ok\n" };
       }
       return priorHelper(spec);
