@@ -17,7 +17,7 @@
 ### 安全
 - 错误的 `Authorization: Bearer` 密钥计入登录限流：`/api/`、`/mcp` 与终端 WebSocket 和登录共用同一计数，超限后返回 `429`。正确的密钥不计入，也不会被拒绝。此前 Bearer 密钥的错误不受限制。
 - `/mcp` 仍使用主访问密钥认证（范围令牌 #13 未完成）。持有该密钥的 MCP 客户端拥有完全的所有者权限，包括以 `root` 执行 `exec`（非「严格」档位）、`delete_box` 与 `rebuild_box`。README、README-zh 与 `docs/agents.md` 已用警示块写明。
-- exec 的进程树改为在箱内以 exec 的用户终止：读取包装 shell 记录的 pid，冻结并结束整棵进程树。宿主机不再对 Docker 报告的宿主机 pid 发送 `SIGKILL`。原先的做法在 uid 不同时会失败并被吞掉，pid 复用时还可能误杀无关进程。
+- exec 的进程树改为在箱内终止，宿主机不再对 Docker 报告的宿主机 pid 发送 `SIGKILL`。「标准」与「宽松」档位以 `root` 执行终止，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。进程由包装 shell 命令行中的随机令牌找到；`/tmp` 中的标记文件只作线索，因为箱内任何进程都能改写或删除它。终止时先冻结每个进程再结束，并一并结束包装 shell 所在的会话与进程组。Docker 报告 exec 已结束后才算成功，否则返回 `502`，exec 保持 `running`。
 - 审计来源由服务端决定：`X-Minibox-Client` 请求头不再把 CLI 调用记为 `cli`，REST 与 CLI 的调用都记为 `rest`，MCP 调用记为 `mcp`。
 - 登录 Cookie 不再保存原始 `ACCESS_KEY`。登录后签发随机的 32 字节会话令牌（来自 CSPRNG），Cookie 只保存该令牌。服务端只在 `DATA_DIR/sessions.json` 中保存其 SHA-256 哈希，令牌与访问密钥都不写入日志（#2）。
 - 会话可撤销：登出会立即在服务端作废会话。修改 `ACCESS_KEY` 后，下次启动时全部会话失效；文件中只保存用于检测变更的 scrypt 校验值。`Authorization: Bearer <ACCESS_KEY>` 不受影响（#2）。
@@ -96,7 +96,7 @@
 - 所有 GitHub Actions 引用固定到完整 commit SHA，并以注释保留版本号，升级由 Dependabot 提出。
 - 发布工作流的镜像构建与 GitHub Release 步骤显式依赖 CI 检查（`checks`），检查不通过时不会推送镜像，也不会创建 Release。
 - 新增 `FakeRuntime` 与基于它的单元测试，覆盖 Box 创建 / 删除、快照与模板提升、路由校验与错误映射、终端升级和主机指标。新增架构测试：只有 `src/docker/` 可以引入 Docker SDK，只有 `src/docker/` 与组合根可以引用 Docker 适配器。
-- 新增可选的真实引擎集成测试 `tests/docker-runtime.test.ts`，设置 `MINIBOX_TEST_DOCKER=1` 时运行。它覆盖以另一个 uid 运行的 exec 的终止，以及标记文件的清理。删除了宿主机侧的进程探测 `src/docker/proc.ts` 与 `tests/proc.test.ts`。
+- 新增可选的真实引擎集成测试 `tests/docker-runtime.test.ts`，设置 `MINIBOX_TEST_DOCKER=1` 时运行。它覆盖删除自身标记文件的命令仍会被终止、标记被改写为其他进程的 pid 时只结束 exec 自己的进程树、以 `root` 运行的 sudo 式子进程被终止（exec 用户做不到），以及超时终止在引擎暂停期间失败后重试。`tests/kill-tree.test.ts` 在宿主机的 `/proc` 上直接运行终止脚本，覆盖同一会话中的孤儿进程。删除了宿主机侧的进程探测 `src/docker/proc.ts` 与 `tests/proc.test.ts`。
 - 新增 `bun run openapi`（`scripts/export-openapi.ts`），`scripts/` 纳入 TypeScript 类型检查（#22）。
 - 新增 HTTP 等价性测试 `tests/parity.test.ts`：以重构前录制的 `tests/fixtures/parity-transcript.json` 为基线，逐条比对 97 次请求的状态码、内容类型与响应体（时间、ID 与镜像摘要已规范化）（#22）。
 - 新增 OpenAPI 测试：校验生成的文档与 `docs/openapi.json`；检查路径、方法与 operationId 和注册表一致；要求录制的每个响应都符合对应操作的输出结构或错误结构（#22）。
@@ -120,6 +120,8 @@
 - 重建读取可写层差异时，只有引擎返回 JSON `null` 或空响应体才视为无变更；其它响应报错，不再显示为空差异。
 - 重建停止旧容器时使用 `STOP_TIMEOUT_SEC` 的配置值，此前固定为 3 秒。规格文件改用原子写入并刷盘，断电后不会恢复到已被替换的旧版本。
 - 基础模板的描述（模板标签、界面、两份 README 与 `bun run build:template`）此前写作 Node.js 24，而镜像一直基于 Node.js 26。现已统一，并有测试保证各处的版本与 Dockerfile 一致。
+- 控制台内容区不再限制为 1320px 宽。在宽屏显示器上，概览、Box、快照与关于页现在会填满侧边栏右侧的可用宽度，不再在右侧留出大片空白。模板卡片改为按可用宽度自动排列列数，只有一个模板时也会撑满一行。设置页保持 960px 的可读宽度并居中显示。
+- exec 超时后的终止失败时，改为按 1 秒、2 秒、4 秒……（最长 30 秒）的间隔重试，直到 exec 被终止，不再放弃。超时与 `POST /api/execs/:execId/kill` 同时发生时共用同一次终止。所有 `403` 拒绝（包括「严格」档位的用户检查，以及创建与重建时的挂载和网络检查）现在审计为 `denied`，不再记为 `error`。
 
 ### 文档
 - README、README-zh 与 `docs/agents.md` 说明 exec 的 55 秒前台上限、后台上限与 `status` 字段、`rebuild` 工具集、「严格」档位的用户规则、`/mcp` 使用主访问密钥的警示，以及 `AGENTS.md` 片段（建议通过 `env` 传递密钥）。`docs/design.md` 更新 §4.2 至 §4.3 与 §9.2、§14，并新增决策 44 至 48。

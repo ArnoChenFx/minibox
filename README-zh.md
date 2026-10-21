@@ -392,10 +392,10 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行） |
 | `POST` | `/api/boxes/:id/snapshots` | 开始创建快照 `{ "name"? }`。返回 `202` `{ "taskId" }` |
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket 终端；发送 `{"type":"resize","cols":N,"rows":N}` 调整窗口，其余消息作为输入 |
-| `POST` | `/api/boxes/:id/exec` | 在 Box 里运行命令。请求体 `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`。`argv`（不经 shell）与 `cmd`（`/bin/sh -c`）只能提供一个。默认用户 `dev`，目录 `/workspace`，超时 30 秒；前台调用最长 55 秒，`background: true` 最长 3600 秒。已停止的 Box 会先启动，这会改变它的版本号。结果包含 `status`（`running`、`exited` 或 `killed`）、`exitCode`、`stdout`、`stderr`、`truncated`、`durationMs`、`timedOut` 与 `woke`。非零退出码是程序自己的状态。内联输出保留每个流头尾各约 16 KiB；`outputRef` 指向保存的窗口。「严格」档位下用户只能是 `dev` 或 `1000`；其他档位可以用 `root`，这类执行在审计中标记为 `privileged`。Box 需要 `/bin/sh`、`cat` 和 `rm` |
+| `POST` | `/api/boxes/:id/exec` | 在 Box 里运行命令。请求体 `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`。`argv`（不经 shell）与 `cmd`（`/bin/sh -c`）只能提供一个。默认用户 `dev`，目录 `/workspace`，超时 30 秒；前台调用最长 55 秒，`background: true` 最长 3600 秒。已停止的 Box 会先启动，这会改变它的版本号。结果包含 `status`（`running`、`exited` 或 `killed`）、`exitCode`、`stdout`、`stderr`、`truncated`、`durationMs`、`timedOut` 与 `woke`。非零退出码是程序自己的状态。内联输出保留每个流头尾各约 16 KiB；`outputRef` 指向保存的窗口。「严格」档位下用户只能是 `dev` 或 `1000`；其他档位可以用 `root`，这类执行在审计中标记为 `privileged`。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep` |
 | `GET` | `/api/execs/:execId?waitMs=` | 读取一次 exec。`waitMs` 在命令仍在运行时最长等待 25000 毫秒。`status` 为 `running`、`exited` 或 `killed` |
 | `GET` | `/api/execs/:execId/output` | 已保存的 stdout 与 stderr（每个流头尾各约 64 KiB）。内存记录消失后，在保留期内仍可读取 |
-| `POST` | `/api/execs/:execId/kill` | 在 Box 内以 exec 的用户结束正在运行的 exec 及其进程树。已经退出的 exec 返回 `409`。如果仍有进程存活，返回 `502`，exec 保持 `running`，可以再次调用重试 |
+| `POST` | `/api/execs/:execId/kill` | 在 Box 内结束正在运行的 exec 及其进程树：标准与宽松档位以 `root` 执行，严格档位以 exec 的用户执行。已经退出的 exec 返回 `409`。如果仍有进程存活，或 exec 没有结束，返回 `502`，exec 保持 `running`，可以再次调用重试 |
 
 `:id` 可以是容器 ID、容器名（`minibox-<名称>`）、稳定 ID（`bx_…`）或 Box 名称。会改动 Box 的请求必须带 `If-Match`，值为当前版本号（纯数字、带引号的实体标签，或弱标签）。缺少该头返回 `428 precondition_required`；版本过期返回 `412 precondition_failed`。限制：CPU 0.1–64 核，内存 128–262144 MB，进程数 1–1000000，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
 
@@ -475,7 +475,7 @@ docker exec -it minibox-agent-dev bash
 MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 ```
 
-前台 exec 的 `timeoutSec` 最长 55 秒，因为服务器会在 60 秒后关闭空闲连接。更长的命令使用 `background: true`（`timeoutSec` 最长 3600），或 `minibox exec --background --timeout SEC`，并用 `GET /api/execs/:execId`（`waitMs` 最长 25000）或 `exec_get` 读取结果。每个 Box 最多同时运行 8 个后台 exec，整个 MiniBox 最多 64 个；超过任一上限的调用返回 `429`，且不会启动已停止的 Box。超时会杀掉进程树，CLI 以 124 退出。如果停止失败，exec 保持 `status: running`，可通过 `POST /api/execs/:execId/kill` 重试。把密钥放在 `env` 里，不要放在 `cmd` 或 `argv` 中：审计日志会记录命令与 argv（脱敏规则见[事件](#事件)），而 `env` 只记录变量名。
+前台 exec 的 `timeoutSec` 最长 55 秒，因为服务器会在 60 秒后关闭空闲连接。更长的命令使用 `background: true`（`timeoutSec` 最长 3600），或 `minibox exec --background --timeout SEC`，并用 `GET /api/execs/:execId`（`waitMs` 最长 25000）或 `exec_get` 读取结果。每个 Box 最多同时运行 8 个后台 exec，整个 MiniBox 最多 64 个；超过任一上限的调用返回 `429`，且不会启动已停止的 Box。超时会杀掉进程树，CLI 以 124 退出。如果停止失败，exec 保持 `status: running`，停止会按递增的间隔（1 秒、2 秒、4 秒，最长 30 秒）再次尝试，也可以随时通过 `POST /api/execs/:execId/kill` 重试。把密钥放在 `env` 里，不要放在 `cmd` 或 `argv` 中：审计日志会记录命令与 argv（脱敏规则见[事件](#事件)），而 `env` 只记录变量名。
 
 `exec` 可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。把卷挂到 Box 上需要 `volume:attach`（[#13](https://github.com/ArnoChenFx/minibox/issues/13)，当前尚未强制执行）。
 
@@ -499,7 +499,7 @@ minibox mcp
 可以贴进 Agent 的 `AGENTS.md` 的中文说明：
 
 - 先 `list_boxes` 或 `create_box`。`exec` 会启动已停止的 Box，这会改变它的版本号（revision）。在发送 `expectedRevision` 的更新之前重新读取版本号。
-- `argv` 不经过 shell，`cmd` 经 `/bin/sh -c`。默认用户 `dev`，默认目录 `/workspace`。严格 Box 只允许 `dev` 或 `1000` 作为用户。Box 需要 `/bin/sh`、`cat` 和 `rm`。
+- `argv` 不经过 shell，`cmd` 经 `/bin/sh -c`。默认用户 `dev`，默认目录 `/workspace`。严格 Box 只允许 `dev` 或 `1000` 作为用户。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep`。
 - 把密钥放在 `env` 里，不要放在 `argv` 或 `cmd` 中。审计日志会记录命令与 argv，但从不记录 env 的值。
 - 结果包含 `status`、`exitCode`、`stdout`、`stderr`、`truncated` 与 `durationMs`。非零退出码是程序自己的状态。
 - 内联输出保留每个流头尾各约 16 KiB。`truncated` 为 true 时，`outputRef` 指向 `GET /api/execs/{execId}/output`。

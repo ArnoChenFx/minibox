@@ -109,6 +109,8 @@ interface LiveExec {
   timedOut: boolean;
   /** Set once the runtime has stopped every process of the exec. */
   killed: boolean;
+  /** The stop in progress. A kill and a timeout that overlap share it instead of stopping the exec twice. */
+  stopping: Promise<void> | null;
   exitCode: number | null;
   woke: boolean;
   background: boolean;
@@ -120,6 +122,9 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 /** How long `exec_kill` waits for the exec to record its end before it answers. */
 const KILL_SETTLE_MS = 3000;
+/** A timeout whose stop fails is tried again after 1 s, then 2 s, 4 s and so on, but not after more than this. */
+const EXPIRE_RETRY_MS = 1000;
+const EXPIRE_RETRY_MAX_MS = 30_000;
 
 /** Resolves when `done` does or after `ms`, and never leaves the timer running. */
 function settleWithin(done: Promise<void>, ms: number): Promise<void> {
@@ -210,6 +215,9 @@ export class ExecManager implements ExecService {
         env: Object.entries(input.env).map(([key, value]) => `${key}=${value}`),
         workingDir: input.cwd,
         user: input.user,
+        // A setuid program the command starts runs as root and only root can stop it. The strict profile has no
+        // escalation, so its exec user can stop the exec itself.
+        stopAs: box.profile === "strict" ? input.user : "root",
         tty: false,
       });
 
@@ -225,7 +233,7 @@ export class ExecManager implements ExecService {
         detail: commandDetail(input, woke),
         ref: { execId: live.id },
       });
-      const timer = setTimeout(() => void this.expire(live), input.timeoutSec * 1000);
+      const timer = setTimeout(() => void this.expire(live, 0), input.timeoutSec * 1000);
       unref(timer);
       live.timer = timer;
       void this.capture(live);
@@ -353,6 +361,7 @@ export class ExecManager implements ExecService {
       settled: false,
       timedOut: false,
       killed: false,
+      stopping: null,
       exitCode: null,
       woke,
       background,
@@ -419,8 +428,12 @@ export class ExecManager implements ExecService {
     }
   }
 
-  /** Called on a timeout. A failed kill leaves the exec running; the foreground caller is released and may retry. */
-  private async expire(live: LiveExec): Promise<void> {
+  /**
+   * Called on a timeout and again after each failed attempt. A failed stop leaves the exec running and releases a
+   * foreground caller. The next attempt waits twice as long as the last, so an exec that cannot be stopped yet (its
+   * box is paused, or a process is briefly unkillable) is stopped as soon as it can be.
+   */
+  private async expire(live: LiveExec, attempt: number): Promise<void> {
     live.timer = null;
     if (live.settled || live.killed) return;
     live.timedOut = true;
@@ -428,14 +441,25 @@ export class ExecManager implements ExecService {
       await this.stop(live, "timeout");
     } catch {
       live.release();
+      if (live.settled) return;
+      const delay = Math.min(EXPIRE_RETRY_MS * 2 ** attempt, EXPIRE_RETRY_MAX_MS);
+      live.timer = setTimeout(() => void this.expire(live, attempt + 1), delay);
+      unref(live.timer);
     }
   }
 
   /**
-   * Asks the runtime to stop every process of the exec. A failure is recorded and rethrown, and the exec stays in
-   * the running state so that a later kill or the timeout can try again.
+   * Asks the runtime to stop every process of the exec. Stops that overlap share one attempt. A failure is recorded
+   * and rethrown, and the exec stays in the running state so that a later kill or the timeout can try again.
    */
-  private async stop(live: LiveExec, reason: "client" | "timeout"): Promise<void> {
+  private stop(live: LiveExec, reason: "client" | "timeout"): Promise<void> {
+    live.stopping ??= this.attemptStop(live, reason).finally(() => {
+      live.stopping = null;
+    });
+    return live.stopping;
+  }
+
+  private async attemptStop(live: LiveExec, reason: "client" | "timeout"): Promise<void> {
     try {
       await live.session.kill();
     } catch (e) {

@@ -73,6 +73,8 @@ export interface FakeExec extends ExecSession {
   readonly sizes: { cols: number; rows: number }[];
   /** Set when `kill()` stopped the process. A normal exit leaves this false. */
   killed: boolean;
+  /** Calls to `kill()`, including the ones that failed. */
+  kills: number;
   /** Writes text to the terminal output, as a shell would. */
   print(text: string): void;
   /** Writes text to stderr. Command exec (`tty: false`) reads this stream. */
@@ -217,6 +219,7 @@ export class FakeRuntime implements Runtime {
 
   private readonly faults = new Map<Op, RuntimeError[]>();
   private readonly execKillFaults: RuntimeError[] = [];
+  private readonly execKillHold: { gate: Promise<void> | null } = { gate: null };
   private readonly gates = new Map<Op, Promise<void>>();
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
@@ -255,6 +258,20 @@ export class FakeRuntime implements Runtime {
   /** The next exec `kill()` fails with `error` and leaves the process running, as when a process survives the kill. */
   failExecKill(error: RuntimeError): void {
     this.execKillFaults.push(error);
+  }
+
+  /** Holds every exec `kill()` until the returned `release` is called, so a second kill can overlap the first. */
+  holdExecKill(): { release(): void } {
+    let resolveGate: GateResolve | undefined;
+    this.execKillHold.gate = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    return {
+      release: () => {
+        this.execKillHold.gate = null;
+        resolveGate?.();
+      },
+    };
   }
 
   callsTo(op: Op): Call[] {
@@ -550,6 +567,7 @@ export class FakeRuntime implements Runtime {
     const stderr = new PassThrough();
     const sizes: { cols: number; rows: number }[] = [];
     const killFaults = this.execKillFaults;
+    const killHold = this.execKillHold;
     let status: ExecStatus = { running: true, exitCode: null, pid: tty ? null : 4242 };
     const session: FakeExec = {
       id: `exec-${++this.execCount}`,
@@ -560,6 +578,7 @@ export class FakeRuntime implements Runtime {
       containerId: c.id,
       sizes,
       killed: false,
+      kills: 0,
       async resize(size) {
         sizes.push(size);
       },
@@ -567,6 +586,8 @@ export class FakeRuntime implements Runtime {
         return status;
       },
       async kill() {
+        session.kills += 1;
+        if (killHold.gate) await killHold.gate;
         const fault = killFaults.shift();
         if (fault) throw fault;
         if (session.killed || !status.running) {
@@ -622,6 +643,8 @@ export class FakeRuntime implements Runtime {
     const stderr = new PassThrough();
     const exitHooks: (() => void)[] = [];
     const typed: Buffer[] = [];
+    const killFaults = this.execKillFaults;
+    const killHold = this.execKillHold;
     let status: ExecStatus = { running: true, exitCode: null, pid: null };
     const finish = (code: number) => {
       if (!status.running) return;
@@ -671,6 +694,7 @@ export class FakeRuntime implements Runtime {
       containerId,
       sizes: [],
       killed: false,
+      kills: 0,
       async resize(size) {
         session.sizes.push(size);
       },
@@ -678,6 +702,10 @@ export class FakeRuntime implements Runtime {
         return status;
       },
       async kill() {
+        session.kills += 1;
+        if (killHold.gate) await killHold.gate;
+        const fault = killFaults.shift();
+        if (fault) throw fault;
         if (status.running) {
           session.killed = true;
           finish(137);
