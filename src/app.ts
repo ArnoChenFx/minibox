@@ -30,7 +30,7 @@ import { LifecycleWatcher } from "./services/lifecycle";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
-import { TaskManager } from "./tasks/manager";
+import { TaskManager, type TaskSubject } from "./tasks/manager";
 import { TaskStore } from "./tasks/store";
 import type { TaskStreamEvent } from "./tasks/types";
 import { authorizeOperation } from "./tokens/authorize";
@@ -74,6 +74,8 @@ export interface App {
   streams: StreamSlots;
   pulse: ActivityPulse;
   lifecycle: LifecycleWatcher;
+  /** Writes an audit note for a request caused by a transport, such as a wake from a terminal or preview. */
+  record: RecordNote;
   version: string;
   startedAt: Date;
 }
@@ -133,6 +135,18 @@ function openEventStore(path: string, redactor: Redactor): EventStore {
   }
 }
 
+/**
+ * A box task keeps the box awake while it runs. When it ends, its end is activity too, so the idle window starts from
+ * there rather than from the last request before the task began (#12).
+ */
+function touchSettledBox(hosts: HostRegistry, pulse: ActivityPulse, subject: TaskSubject): void {
+  const target = subject.target;
+  if (target?.kind !== "box" || target.id === undefined) return;
+  const host = hosts.list().find((candidate) => candidate.host.id === subject.hostId);
+  const spec = host?.specs.findByContainer(target.id, target.name);
+  if (spec) pulse.touch(spec.id, "task");
+}
+
 function openTaskStore(path: string): TaskStore {
   try {
     return new TaskStore(path);
@@ -157,8 +171,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     volumes,
     bus,
     pulse,
-    checkpoints,
-    checkpointEngine,
+    { checkpoints, checkpointEngine },
   );
   hosts.add(local);
   const activity = new ActivityLog();
@@ -172,8 +185,11 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const execs = new ExecManager(outputs, (text) => redactor.text(text));
   execs.setActivityHandler((boxId) => pulse.touch(boxId, "exec"));
-  const tasks = new TaskManager(openTaskStore(join(cfg.dataDir, "tasks.db")), redactor, (event) =>
-    bus.publish("task", event),
+  const tasks = new TaskManager(
+    openTaskStore(join(cfg.dataDir, "tasks.db")),
+    redactor,
+    (event) => bus.publish("task", event),
+    (subject) => touchSettledBox(hosts, pulse, subject),
   );
   const interrupted = tasks.recover();
   if (interrupted > 0) log.info("task.interrupted", { count: interrupted });
@@ -189,6 +205,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     record: recordNote,
     takeoverIdleMs: cfg.takeoverIdleSec * 1000,
     onActivity: (boxId, kind) => pulse.touch(boxId, kind),
+    hold: (boxId) => pulse.hold(boxId),
   });
   const lifecycle = new LifecycleWatcher({
     hosts,
@@ -235,6 +252,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     streams: new StreamSlots(cfg.streamMaxConnections),
     pulse,
     lifecycle,
+    record: recordNote,
     version,
     startedAt: new Date(),
   };

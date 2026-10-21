@@ -96,6 +96,8 @@ export const MESSAGES = {
   stream_limit: "Too many live connections are open (at most {max}). Close a MiniBox tab or wait, then try again.",
   wrong_key: "Incorrect access key.",
   box_not_found: "Box not found.",
+  box_ttl_expired: "The box's TTL has expired, so it cannot be started.",
+  box_ttl_expired_hint: "Clear the TTL or set a later one, then start the box.",
   session_not_found: "Session not found.",
   snapshot_not_found: "Snapshot not found.",
   template_not_found: "Template not found.",
@@ -254,10 +256,14 @@ export const MESSAGES = {
   tool_volume_missing: "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
   tool_install_failed: "Installing “{id}” failed: {detail}",
   tool_install_timeout: "Installing “{id}” timed out.",
+  tool_detect_failed: "Could not check which tools are installed in this box: {detail}",
   tool_reconcile_failed: "Could not install the requested tools: {detail}.",
+  tool_unmanaged:
+    "Tool “{id}” is installed outside MiniBox, in the box image or home volume, so MiniBox cannot change it.",
   tool_ids_invalid: "tools must be an array of catalog ids (letters, digits and hyphens), at most 32 entries.",
   tool_version_invalid:
     "Tool version must be latest or a pin of letters, digits, dots, underscores, plus and hyphen (optional leading v), at most 64 characters.",
+  tool_version_unsupported: "Tool “{id}” installs the latest release only, because its installer takes no version pin.",
   file_path_invalid: "File path must be at most 512 bytes, without NUL or line breaks.",
   file_path_escape: "File path must stay inside the volume (no .. or absolute escape).",
   file_symlink_loop: "Too many levels of symbolic links in the file path (more than {max}).",

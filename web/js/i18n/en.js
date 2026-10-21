@@ -146,6 +146,8 @@ export default {
   "err.wrong_key": "Incorrect access key.",
   "err.session_not_found": "Session not found.",
   "err.box_not_found": "Box not found.",
+  "err.box_ttl_expired": "The box's TTL has expired, so it cannot be started.",
+  "err.box_ttl_expired_hint": "Clear the TTL or set a later one, then start the box.",
   "err.snapshot_not_found": "Snapshot not found.",
   "err.template_not_found": "Template not found.",
   "err.template_image_missing":
@@ -333,6 +335,7 @@ export default {
     "{what} may only contain letters, digits, dots, underscores and hyphens, and must start with a letter or digit.",
   "state.running": "Running",
   "state.sleeping": "Sleeping",
+  "state.expired": "TTL expired",
   "state.exited": "Stopped",
   "state.created": "Created",
   "state.paused": "Paused",
@@ -550,6 +553,15 @@ export default {
   "bd.cli": "CLI access",
   "bd.termNotRunningText": "Start the box to open a terminal in your browser.",
   "bd.startBox": "Start box",
+  "bd.sleepTitle": "The box is asleep",
+  "bd.sleepText": "It stopped after a period without activity. Its files are kept. Wake it to start a session.",
+  "bd.wakeSession": "Wake and start a session",
+  "bd.wakingTitle": "Waking the box",
+  "bd.wakingText": "It starts with its files intact. The terminal opens once it is running.",
+  "bd.wakeFailed": "The box did not wake",
+  "bd.expiredTitle": "The TTL has passed",
+  "bd.expiredText":
+    "This box reached its TTL and stays stopped. It cannot start again until its TTL is cleared or extended through the API or the CLI.",
   "bd.reconnect": "Reconnect",
   "bd.termHelp":
     "Sessions run in tmux inside the box. They keep running when you close this page, and opening the page again reattaches to them. An agent's session is read-only until you take it over.",
@@ -713,7 +725,7 @@ export default {
   "bd.sleepingYes": "Yes",
   "bd.sleepingNo": "No",
   "bd.stopReason.idle": "idle",
-  "bd.stopReason.ttl": "TTL",
+  "bd.stopReason.ttl": "TTL elapsed",
   "bd.stopReason.manual": "manual",
   "bd.lastActivity": "Last activity",
   "bd.lastActivityUnknown": "No activity recorded since MiniBox started",
@@ -1033,7 +1045,8 @@ export default {
   "vol.loadingFailed": "Could not load storage",
   "vol.choose": "Volume",
   "cb.tools": "Agent CLI tools",
-  "cb.toolsHelp": "Optional. Installed onto the shared tools volume after the box starts. Progress appears in Tasks.",
+  "cb.toolsHelp":
+    "Optional. Installed onto the shared tools volume after the box starts. Tools already in the template are skipped. Progress appears in Tasks.",
   "cb.toolsInstalling": "Installing tools",
   "cb.toolsInstallingText": "Watch progress in the Tasks panel.",
   "cb.toolsInstallLater": "Box created; tools will need a manual install",
@@ -1068,7 +1081,7 @@ export default {
   "bd.portsNotRunning": "Start the box to discover listening ports.",
 
   "bd.toolsHelp":
-    "Install, upgrade or uninstall Agent CLIs on the shared tools volume. Config and login state stay on the home volume. Rebuild keeps tools available from the volume.",
+    "Install, upgrade or uninstall Agent CLIs on the shared tools volume. Tools found in the image or home volume show as installed and MiniBox leaves them alone. Config and login state stay on the home volume. Rebuild keeps tools available from the volume.",
   "bd.toolsLoading": "Loading catalog…",
   "bd.toolsLoadFailed": "Could not load tools",
   "bd.toolsColName": "Tool",
@@ -1083,6 +1096,17 @@ export default {
   "bd.toolsNotInstalled": "Not installed",
   "bd.toolsTaskStarted": "Tool task started",
   "bd.toolsTaskFailed": "Tool task failed",
+  "tool.search": "Search tools",
+  "tool.searchPlaceholder": "Name, description or category",
+  "tool.noMatch": "No matching tools",
+  "tool.noMatchText": "No tool matches “{q}”.",
+  "tool.cat.agents": "AI coding agents",
+  "tool.cat.languages": "Languages & runtimes",
+  "tool.cat.terminal": "Terminal & dev utilities",
+  "tool.cat.networking": "Networking",
+  "tool.needsRoot": "Needs root",
+  "tool.needsRootHelp": "Needs root and a system service, so MiniBox never runs it. Install it on the host yourself.",
+  "tool.foundOutside": "Found outside MiniBox",
   "task.op.tool.install": "Install tool",
   "task.op.tool.upgrade": "Upgrade tool",
   "task.op.tool.uninstall": "Uninstall tool",
@@ -1094,8 +1118,13 @@ export default {
     "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
   "err.tool_install_failed": "Installing “{id}” failed: {detail}",
   "err.tool_install_timeout": "Installing “{id}” timed out.",
+  "err.tool_detect_failed": "Could not check which tools are installed in this box: {detail}",
   "err.tool_reconcile_failed": "Could not install the requested tools: {detail}.",
   "err.tool_ids_invalid": "tools must be an array of catalog ids (letters, digits and hyphens), at most 32 entries.",
   "err.tool_version_invalid":
     "Tool version must be latest or a pin of letters, digits, dots, underscores, plus and hyphen (optional leading v), at most 64 characters.",
+  "err.tool_version_unsupported":
+    "Tool “{id}” installs the latest release only, because its installer takes no version pin.",
+  "err.tool_unmanaged":
+    "Tool “{id}” is installed outside MiniBox, in the box image or home volume, so MiniBox cannot change it.",
 };

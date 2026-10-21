@@ -11237,6 +11237,15 @@
                           "description": {
                             "type": "string"
                           },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "agents",
+                              "languages",
+                              "terminal",
+                              "networking"
+                            ]
+                          },
                           "estimatedMb": {
                             "type": "integer",
                             "minimum": -9007199254740991,
@@ -11255,15 +11264,20 @@
                               "pip",
                               "script"
                             ]
+                          },
+                          "needsRoot": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
                           "id",
                           "name",
                           "description",
+                          "category",
                           "estimatedMb",
                           "requires",
-                          "source"
+                          "source",
+                          "needsRoot"
                         ],
                         "additionalProperties": false
                       }
@@ -11395,6 +11409,16 @@
                           "description": {
                             "type": "string"
                           },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "agents",
+                              "languages",
+                              "terminal",
+                              "networking"
+                            ],
+                            "description": "UI group: agents, languages, terminal or networking."
+                          },
                           "source": {
                             "type": "string",
                             "enum": [
@@ -11420,6 +11444,10 @@
                               "null"
                             ]
                           },
+                          "needsRoot": {
+                            "type": "boolean",
+                            "description": "True when the install needs root, which MiniBox never runs. Install, upgrade and uninstall are refused."
+                          },
                           "desiredVersion": {
                             "type": [
                               "string",
@@ -11427,27 +11455,35 @@
                             ]
                           },
                           "installed": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True when the detect command succeeds inside the box, whether MiniBox, the image or the home volume put the tool there."
                           },
                           "installedVersion": {
                             "type": [
                               "string",
                               "null"
                             ]
+                          },
+                          "managed": {
+                            "type": "boolean",
+                            "description": "True when the entry point is on the shared tools volume. Only then may upgrade or uninstall change it."
                           }
                         },
                         "required": [
                           "id",
                           "name",
                           "description",
+                          "category",
                           "source",
                           "package",
                           "bin",
                           "estimatedMb",
                           "requires",
+                          "needsRoot",
                           "desiredVersion",
                           "installed",
-                          "installedVersion"
+                          "installedVersion",
+                          "managed"
                         ],
                         "additionalProperties": false
                       }
@@ -19606,7 +19642,7 @@
                   },
                   "quotas": {
                     "type": "object",
-                    "description": "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box (auto-stop is #12). rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
+                    "description": "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
                     "properties": {
                       "maxBoxes": {
                         "type": [

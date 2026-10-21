@@ -310,7 +310,7 @@ const tokenCreateInput = z
     quotas: field(checkQuotas, {
       type: "object",
       description:
-        "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box (auto-stop is #12). rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
+        "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
       properties: {
         maxBoxes: { type: ["integer", "null"] },
         maxCpus: { type: ["number", "null"] },

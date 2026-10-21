@@ -20,7 +20,7 @@ import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
-import { type Box, getBox } from "./boxes";
+import { type Box, getBox, refuseExpired } from "./boxes";
 import { alignVolumeRoot, type RecordNote, restoreVolumeRoot, writableWorkspaceVolume } from "./volume-owner";
 
 interface SwapState {
@@ -53,6 +53,7 @@ export async function rebuildBox(
     const spec = host.specs.read(box.boxId);
     if (!spec) throw notFound(msg("box_not_found"));
     if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
+    refuseExpired(host, spec.id);
 
     const previous = structuredClone(spec);
     const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;

@@ -25,6 +25,23 @@ export function assertSafeToolVersion(version: string): string {
 }
 
 /**
+ * The version an action may use for this entry. Script installers have no pin to pass through, so they take only
+ * `latest`; npm and pip entries accept any safe pin.
+ */
+export function resolveToolVersion(entry: CatalogEntry, version: string): string {
+  const pin = assertSafeToolVersion(version);
+  if (entry.source === "script" && pin !== "latest") {
+    throw badRequest(msg("tool_version_unsupported", { id: entry.id }));
+  }
+  return pin;
+}
+
+/** Quotes one word for `sh -c`. */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
  * Builds the package argument for npm (`pkg` / `pkg@1.2.3` / `pkg@latest`) and pip
  * (`pkg` / `pkg==1.2.3`). A requested version of `latest` means the registry's latest.
  */

@@ -277,19 +277,30 @@ docker run -d --name minibox --restart unless-stopped \
 
 ## Agent CLI tools
 
-Create-box can tick Agent CLIs (Claude Code, Codex, Gemini CLI, OpenCode, Aider). Install, upgrade and uninstall also live on the box page under **Tools**. Binaries go on the shared read-only tools volume (`/opt/minibox/tools`); installs run in a networked helper that mounts that volume read-write as uid `1000`. Catalog entries live in repo `catalog/*.json` and can be overridden by `DATA_DIR/tools.d/*.json`. Long installs are async tasks with live logs. API: `GET /api/tools`, `GET /api/tools/catalog`, `POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`. MCP toolset `tools` (`list_tools`, `install_tool`, …). Honor `HTTP_PROXY` / `HTTPS_PROXY` when set on the MiniBox process.
+Create-box can tick Agent CLIs and other tools. The list is grouped into AI coding agents, languages and runtimes, terminal and dev utilities, and networking, and a search field above it filters by name, description or category. The box's **Tools** page uses the same groups and search, and install, upgrade and uninstall live there too. The catalog covers Claude Code, Codex, OpenCode, Pi coding agent, fx agent, Antigravity CLI, Grok Build CLI, Qoder CLI, oh-my-pi, herdr, luvus, Bun, uv, Rust, Zig and Tailscale. Each entry installs from its official source (see `catalog/*.json`), and `DATA_DIR/tools.d/*.json` can add or override entries. Binaries go on the shared read-only tools volume (`/opt/minibox/tools`). Installs run in a networked helper that mounts that volume read-write as uid `1000`, never as root. A tool already in the image or the home volume shows as installed with its version and is left alone. Upgrade and uninstall apply only to tools MiniBox installed on the tools volume. Tailscale needs root, so MiniBox lists it but refuses to install or remove it. Long installs are async tasks with live logs. API: `GET /api/tools`, `GET /api/tools/catalog`, `POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`. MCP toolset `tools` (`list_tools`, `install_tool`, …). Honor `HTTP_PROXY` / `HTTPS_PROXY` when set on the MiniBox process.
 
 See [Port preview](#port-preview) for `/box/<name>/<port>/` reverse proxy of in-box HTTP/WebSocket services (no host ports).
 
 ## Idle sleep
 
-Boxes can stop themselves when idle and wake on the next terminal, exec or session request ([#12](https://github.com/ArnoChenFx/minibox/issues/12)).
+A box can stop itself when it has been idle, and it wakes on demand ([#12](https://github.com/ArnoChenFx/minibox/issues/12)).
 
-- **Sleep** sets the desired state to `stopped` with reason `idle` and runs `docker stop`. The container is kept (workspace volumes stay).
-- **Idle** means: no WebSocket terminal attach, no background exec, no running async task for the box, no activity heartbeat for N seconds, and CPU below `BOX_IDLE_CPU_PERCENT`.
-- Activity heartbeats are in memory only (not the events table). Terminal, exec, session and port-preview traffic refresh them.
-- **TTL** (`ttlSec` on create/update) is an absolute lifetime from create time. On expiry MiniBox **stops** the box (does not delete it) with reason `ttl`.
-- The dashboard shows **Sleeping** when a box was stopped for idle or TTL, plus last activity time.
+- **Sleep** sets the desired state to `stopped` with reason `idle` and runs `docker stop`. The container and its workspace volumes are kept.
+- **Timeout.** `BOX_IDLE_TIMEOUT_SEC` is the global default, and `0` turns idle sleep off. A box's `idleTimeoutSec` overrides it: `0` means that box never sleeps, and `null` inherits the default.
+- **Activity** is an in-memory heartbeat per box, not an event. These count: terminal input, output and close, and an open terminal; an exec from start to finish; session start, read and send; a port-preview request, including a streamed response, and a preview WebSocket until it closes; a volume file call, for every box that mounts the volume, for as long as the call runs; and a box task, when it ends. Reading the box record or its stats does not count.
+- **Idle** means none of those is in progress, the last heartbeat is at least the timeout old, and the latest CPU sample is below `BOX_IDLE_CPU_PERCENT`. A box with no CPU sample yet stays awake.
+- **Wake** depends on the request:
+  - `exec` starts any stopped box, as before. The wake is audited under the exec run.
+  - `session_start` (REST, MCP and CLI) starts any stopped box.
+  - A terminal WebSocket and a port preview wake a box only when it is asleep. A box a person stopped answers `409`, with `terminal_not_running` or `preview_box_stopped`.
+  - Reading, sending to, closing or listing sessions does not wake a box. A session ends with its container, so a terminal opened on a sleeping box wakes it and then closes with `session_not_found`.
+  - A volume file call never starts a box. The file API works on a volume while its boxes are stopped, so a stopped box stays stopped.
+- **TTL** (`ttlSec` on create/update) is an absolute lifetime from creation. When it elapses, MiniBox **stops** the box (it does not delete it) with reason `ttl`. An expired box does not start again: start, restart, rebuild, exec, sessions, terminals and previews all refuse it with `409` and `box_ttl_expired`. Clear the TTL, or set a later one with `PATCH /api/boxes/:id`, and then start the box.
+- **Restarts** do not put every box to sleep at once: a box with no heartbeat counts idle from when MiniBox started watching, not from its creation.
+- **Hosts.** Terminals and previews find a box on any registered Docker host, and the idle watcher checks every host.
+- The dashboard shows **Sleeping** for a box stopped for idle, and **TTL expired** for one past its TTL, with its last activity time. A terminal tab says why a box is not running, and offers to wake a sleeping one.
+- **Known limits.** Rebuilding a box that is asleep for idle (not expired) starts the container briefly and stops it again. A preview response keeps the box awake until it is read to the end or cancelled.
+  - **Detached sessions.** A session with no terminal attached does not keep its box awake. After the timeout with no session request, a quiet job in it ends when the box sleeps. Keep a terminal open, or run the job as a background exec, which counts as activity until it ends.
 
 
 ## Port preview
@@ -710,7 +721,7 @@ Paste this into an agent's `AGENTS.md`:
 
 Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work inside a box.
 
-- list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision. Read the revision again before an update that sends expectedRevision.
+- list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision, unless the box's TTL has passed: then exec fails with box_ttl_expired. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
 - Pass secrets in env, not in argv or cmd. The audit log keeps commands and argv, but never env values.
 - The result includes status, exitCode, stdout, stderr, truncated and durationMs. A non-zero exit code is the program's status.
@@ -725,7 +736,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool and reconcile_tools. Installs write to the shared tools volume and update BoxSpec.tools.
 - The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
 - The network toolset (`/mcp?toolsets=network`) holds list_ports and expose_port for path-mode previews under `/box/<name>/<port>/`.
-- read_file, write_file, list_files and copy_files act on volumes (not boxes). They work when no box is running, via a helper container and the Docker archive API. Paths are jailed inside the volume. write_file stamps uid/gid 1000 (dev). exec already implies volume RW on mounts of boxes the token may use; files:* only matters without exec.
+- read_file, write_file, list_files and copy_files act on volumes (not boxes). They work when no box is running, via a helper container and the Docker archive API. A call keeps the boxes that mount the volume awake while it runs, and it never starts a stopped box. Paths are jailed inside the volume. write_file stamps uid/gid 1000 (dev). exec already implies volume RW on mounts of boxes the token may use; files:* only matters without exec.
 - The default toolsets are core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
 
 ## Project structure

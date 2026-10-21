@@ -5,7 +5,7 @@ import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, notFound, toAppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { readFirstEntry, type FirstEntry } from "../lib/tar";
-import { isRuntimeError, type PathStat, RuntimeError } from "../runtime";
+import { type HelperResult, type HelperSpec, isRuntimeError, type PathStat, RuntimeError } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
 import { baseOf, containerPath, jailPath, parentOf, SYMLINK_HOP_MAX, splitLinkTarget } from "./files-path";
 import { DEV_GID, DEV_UID, dirArchive, fileArchive, parseTar } from "./files-tar";
@@ -266,18 +266,40 @@ async function resolveInVolume(
   return { path: resolved.join("/"), existing };
 }
 
+/**
+ * Holds each box on this host that mounts `volume` while `run` works, so a file call counts as box activity (#12). It
+ * never starts a box: the file API works while boxes are stopped (§4.4).
+ */
+async function whileVolumeInUse<T>(host: HostCtx, volume: VolumeRecord, run: () => Promise<T>): Promise<T> {
+  const releases = host.specs
+    .list()
+    .filter((spec) => spec.hostId === host.host.id && spec.mounts.some((mount) => mount.volume === volume.engineName))
+    .map((spec) => host.pulse.hold(spec.id));
+  try {
+    return await run();
+  } finally {
+    for (const release of releases) release();
+  }
+}
+
+function runVolumeHelper(host: HostCtx, volume: VolumeRecord, spec: HelperSpec): Promise<HelperResult> {
+  return whileVolumeInUse(host, volume, () => host.runtime.runHelper(spec));
+}
+
 async function withArchive<T>(
   host: HostCtx,
   volume: VolumeRecord,
   mode: "rw" | "ro",
   run: (access: MountAccess) => Promise<T>,
 ): Promise<T> {
-  const access = await openMount(host, volume, mode);
-  try {
-    return await run(access);
-  } finally {
-    await closeMount(host, access);
-  }
+  return whileVolumeInUse(host, volume, async () => {
+    const access = await openMount(host, volume, mode);
+    try {
+      return await run(access);
+    } finally {
+      await closeMount(host, access);
+    }
+  });
 }
 
 function decodeContent(content: string, encoding: FileEncoding): Buffer {
@@ -414,7 +436,7 @@ export async function listFiles(
   const image = await requireHelperImage(host);
   const search = relative === "" ? FILE_MOUNT : `${FILE_MOUNT}/${relative}`;
 
-  const result = await host.runtime.runHelper({
+  const result = await runVolumeHelper(host, volume, {
     image,
     user: "1000:1000",
     capAdd: ["DAC_READ_SEARCH"],
@@ -503,7 +525,7 @@ export async function copyFiles(
   const image = await requireHelperImage(host);
   const fromAbs = containerPath(FILE_MOUNT, physical.from);
   const toAbs = containerPath(FILE_MOUNT, physical.to);
-  const result = await host.runtime.runHelper({
+  const result = await runVolumeHelper(host, volume, {
     image,
     user: "1000:1000",
     capAdd: ["DAC_READ_SEARCH"],
