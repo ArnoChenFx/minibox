@@ -35,6 +35,30 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     expect((await rt.inspectContainer(id)).running).toBe(false);
   });
 
+  test("pausing freezes a running container and reports it as paused, and each direction refuses a no-op", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    const { id } = await rt.createContainer({ image: "alpine:3.20", name: "box" });
+    expect(await rejectionOf(rt.pauseContainer(id))).toMatchObject({ kind: "conflict" });
+    await rt.startContainer(id);
+    await rt.pauseContainer(id);
+    expect(await rt.inspectContainer(id)).toMatchObject({ running: true, state: "paused" });
+    expect(await rejectionOf(rt.pauseContainer(id))).toMatchObject({ kind: "conflict" });
+    await rt.unpauseContainer(id);
+    expect(await rt.inspectContainer(id)).toMatchObject({ running: true, state: "running" });
+    await rt.unpauseContainer(id);
+    expect(await rt.inspectContainer(id)).toMatchObject({ running: true, state: "running" });
+  });
+
+  test("pulling seeds a missing image and leaves a present one alone", async () => {
+    const rt = new FakeRuntime();
+    await rt.pullImage("restic/restic:0.18.1");
+    const first = await rt.inspectImage("restic/restic:0.18.1");
+    await rt.pullImage("restic/restic:0.18.1");
+    expect((await rt.inspectImage("restic/restic:0.18.1")).id).toBe(first.id);
+    expect(rt.callsTo("pullImage")).toHaveLength(2);
+  });
+
   test("a volume that a container mounts cannot be removed", async () => {
     const rt = new FakeRuntime();
     rt.seedImage("alpine:3.20");
