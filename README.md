@@ -387,7 +387,7 @@ Mounting a volume needs `volume:attach` on that volume. A read-write mount also 
 ```bash
 # Make an NFS export the default. Cache stays on local unless you override roles.cache.
 curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
-  -X PUT -d '{"pools":[
+  -X PUT -d '{"confirm":true,"pools":[
     {"name":"local","backend":"local"},
     {"name":"nas","backend":"nfs","server":"192.168.1.10","export":"/volume1/minibox","options":["nfsvers=4.1","hard","noatime"],"default":true}
   ]}' http://127.0.0.1:3920/api/pools
@@ -457,14 +457,14 @@ Errors use a consistent shape and the matching HTTP status:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/volumes` | List volumes and which boxes mount them. Existing `minibox-ws-*` volumes are recognized |
-| `POST` | `/api/volumes` | Create an independent volume `{ "name", "pool"?, "role"? }`. `201`. A new local volume is chowned to uid 1000 when the base template image exists |
+| `POST` | `/api/volumes` | Create an independent volume `{ "name", "pool"?, "role"?, "confirm"? }`. `201`. A new local volume is chowned to uid 1000 when the base template image exists. Without `"confirm": true` it is `409 confirmation_required` with `details.preview`, and nothing is created |
 | `GET` | `/api/volumes/:id` | One volume |
-| `DELETE` | `/api/volumes/:id` | Delete a volume no box mounts. A mounted volume is `409` |
-| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode" }`. Requires `If-Match` of the box. Rebuilds the container. `warning` is `shared_rw` or `null`. Needs `volume:attach`, and also `volume:write` when `mode` is `rw` |
-| `POST` | `/api/volumes/:id/detach` | `{ "box", "path" }`. Requires `If-Match`. Rebuilds the container. Needs `volume:attach` |
+| `DELETE` | `/api/volumes/:id?confirm=true` | Delete a volume no box mounts. A mounted volume is `409` (`volume_mounted`). Without `confirm=true` it is `409 confirmation_required` with `details.preview`, and nothing is deleted |
+| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode", "confirm"? }`. Requires `If-Match` of the box. Rebuilds the container. Without `"confirm": true` it returns `409 confirmation_required` with the rebuild preview and changes nothing. `warning` is `shared_rw` or `null`. Needs `volume:attach`, and also `volume:write` when `mode` is `rw` |
+| `POST` | `/api/volumes/:id/detach` | `{ "box", "path", "confirm"? }`. Requires `If-Match`. Rebuilds the container. Without `"confirm": true` it returns the rebuild preview as `409 confirmation_required`. Needs `volume:attach` |
 | `POST` | `/api/volumes/:id/usage` | Measure used bytes with a helper container and cache them on the volume |
 | `GET` | `/api/pools?refresh=true` | Pools, role defaults and reachability. An unreachable pool is reported; the list itself does not fail |
-| `PUT` | `/api/pools` | Replace `{ "pools", "roles"? }`. The local pool is restored if omitted. Needs `pool:admin` |
+| `PUT` | `/api/pools` | Replace `{ "pools", "roles"?, "confirm"? }`. The local pool is restored if omitted. Without `"confirm": true` it is `409 confirmation_required` with the pools that would be added and removed, and nothing is saved. Needs `pool:admin` |
 
 A rebuild keeps mounted volumes, the stable id, the box name and the last 20 spec revisions. It drops the writable layer outside volumes, running processes (including tmux) and the container IP. Claim does not rename; the rename to `<LABEL_PREFIX>-<id>` happens on rebuild (decision D6). `secretRef` is stored and not injected. Stage 1 still creates one workspace volume; adding or removing a mount is a rebuild, not a volume pool. A checkpoint before rebuild is not part of this step. The public container id changes; the stable id and the box name do not. Restart policy stays `no`.
 
@@ -544,7 +544,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 A foreground exec may use `timeoutSec` up to 55 seconds, because the server closes an idle connection after 60. Longer commands use `background: true` with a `timeoutSec` up to 3600, or `minibox exec --background --timeout SEC`, and are read with `GET /api/execs/:execId` (`waitMs` up to 25000) or `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and the CLI exits 124. If the stop fails, the exec keeps running with `status: running`. The stop is retried after a growing delay (1 s, then 2 s, 4 s, up to 30 s), and `POST /api/execs/:execId/kill` can retry at any time. Pass secrets in `env`, not in `cmd` or `argv`: the audit log records the command and argv (redacted as described under Events) and only the names of the `env` variables.
 
-`exec` can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Attaching a volume requires `volume:attach` ([#13](https://github.com/ArnoChenFx/minibox/issues/13), not enforced yet).
+`exec` can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Mounting a volume needs `volume:attach` on that volume, and a read-write mount or a new volume also needs `volume:write`. Changing storage pools needs `pool:admin`. The owner key holds every scope; scoped tokens ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) are not built yet.
 
 ## Agents
 

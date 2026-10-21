@@ -211,7 +211,7 @@ flowchart LR
 
 `delete_box` 单独成工具，便于单独授权。
 
-已实现的是 box 的 6 个工具加上 `exec`、`exec_get`、`exec_kill`，共 9 个，属于默认工具集。`rebuild_box` 不在上表的 27 个工具里，它需要显式确认，不属于 `core`（决策 45），因此单独放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`），实现的工具共 10 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 9 个，而不是表里的 15 个。`session`、`network`、`storage`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具不在本阶段。
+已实现的是 box 的 6 个工具加上 `exec`、`exec_get`、`exec_kill`，共 9 个，属于默认工具集。`rebuild_box` 不在上表的 27 个工具里，它需要显式确认，不属于 `core`（决策 45），因此单独放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`）。`storage` 工具集已实现 9 个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`（决策 50）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`（决策 49）；`measure_volume` 只刷新缓存的大小，不需要。实现的工具共 19 个：默认工具集 9 个，`rebuild` 1 个，`storage` 9 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 9 个，而不是表里的 15 个。`session`、`network`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具不在本阶段。
 
 ### 4.3 执行模型
 
@@ -223,7 +223,7 @@ flowchart LR
 - **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
 - **并发上限**：后台 exec 每个 Box 最多 8 个，全部 MiniBox 最多 64 个。超限的调用返回 `429`，且不会唤醒已停止的 Box（决策 47）。前台调用不计入。
 - **终止在箱内完成**（决策 44）：非 TTY 的命令经包装 shell 运行，包装 shell 的参数中带有一个随机令牌。终止时，箱内的脚本在 `/proc` 中按命令行找到包装 shell；`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选，同样要核对命令行。「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本冻结整棵进程树（沿父进程号收集；包装 shell 自己是会话或进程组首进程时，同一会话与进程组也一并收集），再逐个 `SIGKILL`，并重新扫描直到没有新进程。宿主机从不向 Docker 报告的宿主机 pid 发送信号。Docker 报告 exec 已结束后才算成功；否则返回 `502`，exec 保持 `running`，可以重试。不在保证范围内的进程：调用 `setsid` 换了会话、且父进程已先退出的进程；命令结束后留在箱内的后台进程；处于不可中断睡眠的进程。Box 需要 `/bin/sh`、`cat`、`rm` 与 `sleep`。
-- **权限**：`exec` 意味着可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。把卷挂到 Box 上需要 `volume:attach`（#13，当前尚未强制执行）。
+- **权限**：`exec` 意味着可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。挂载卷需要对该卷的 `volume:attach`，读写挂载或新建卷还需要 `volume:write`（见 [9.2](#92-必须写进文档与测试的安全约束)）。所有者密钥拥有全部范围；按令牌限定范围（#13）尚未实现。
 - **执行用户**：「严格」档位的 exec 只允许 `dev` 或 `1000`，其他用户在唤醒 Box 之前返回 `403`。其他档位可以用 `root`，审计记录标记 `privileged: true`（决策 48）。
 - **会话** `session_*` 用于长任务和需要观察的交互式程序，见 [10](#10-会话与接管)。
 
@@ -447,6 +447,8 @@ pools:
 - **path**：辅助容器以只读方式绑定根目录，并 `test -f` 标记文件（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在则为不可达，不写入、不创建标记。
 - **能力**：由后端计算，用户不能设置。全部可共享；`snapshots`、`quota`、`clone` 为 false；只有 nfs 的 `crossHost` 为 true。无每卷配额。
 - **授权**：`volume:attach`、`volume:write` 与 `pool:admin` 各自是一次 `authorize()` 调用，带 `scope` 与资源：有记录的卷带 `id`，尚无记录的名字只带 `name`。操作级调用的 `scope` 为空，钩子可以区分「能否执行操作」和「能否挂这只卷」。`pool.replace` 在操作内单独检查 `pool:admin`，`volume:write` 不能代替它。读写挂载计为写入。所有者是目前唯一的主体，浏览器会话以所有者身份访问，因此始终允许。令牌范围留到 #13。拒绝时审计状态为 `denied`。
+- **确认**：`create_volume`、`delete_volume` 与 `replace_pools` 没有 `confirm: true` 时不改动任何内容，返回 `409 confirmation_required` 与 `details.preview`，预览即将发生的改动：新卷的池与名称、将删除的卷、将新增与移除的池。`delete_volume` 对已挂载的卷直接返回 `volume_mounted`，不生成预览。`volume.attach` 与 `volume.detach` 会重建容器，沿用 `box.rebuild` 的确认与重建预览。`volume.usage`（测量）只刷新缓存的大小，因此不加确认（决策 49）。
+- **MCP 存储工具集**：卷与存储池工具放在非默认的 `storage` 工具集（决策 50）。MCP 工具的错误结果带上 `details`（`structuredContent.details`），代理因此能读到 `details.preview`。挂载与卸载经 `rebuildBox`，适用与 `rebuild_box` 相同的记录规则（见 §9.2）。
 - **位置**：池配置是控制面全局的（`DATA_DIR/pools.json`）。每条 Volume 记录带 `hostId`，挂到另一台主机上的卷会被拒绝。文件原子写入，模式 600，目录 700。损坏的池文件不覆盖，记 `pools.unreadable`，并按隐式本地池处理。
 - **失败的创建**：一次创建产生的容器、规格、卷记录、引擎卷与子目录，失败时按相反顺序撤销（`VolumeChanges`）。NFS 池根卷若是这次创建或其可达性探测首次建立的，同样撤销；池根卷原本就存在则保留。遗留的 `<prefix>-ws-*` 只恢复原来的记录，不删除引擎卷。引擎拒绝删除容器时，保留规格和卷，避免仍在使用的资源失去记录。
 - **工具卷与引擎名**：共享工具卷名为 `<prefix>-tools-<主机 id>`，同名检查只在同一主机内进行。已有的工具卷按记录复用，不论叫什么名字。引擎名若已被引擎中的其它卷占用，返回 409 `volume_engine_exists`：不接管，也不删除该卷。
@@ -660,6 +662,7 @@ Token
 - **挂载某卷等于获得该卷的读权限**：创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权，否则 Agent 可以新建 Box 把别人的卷挂进去读走。
 - **写入也是权限（N5）**：读写挂载（`rw`）还需要 `volume:write`，只读的 `volume:attach` 不能让 Agent 写入别人的卷。新建卷需要 `volume:write`，不带 `mounts` 的新建 Box 会创建自己的工作区、主目录与缓存卷，因此也需要 `volume:write`。`box.update` 与 `box.rebuild` 的挂载变更同样检查。配额（§6.6）尚无后端，因此 rw 挂载暂不计入配额。
 - **存储池是管理员操作（N2）**：`pool.replace` 需要 `pool:admin`，`volume:write` 不能代替它。存储池决定之后所有新卷放在哪里，只有所有者可以修改。
+- **存储写入需要确认**：`create_volume`、`delete_volume` 与 `replace_pools` 没有 `confirm: true` 时不改动任何内容，返回 `409 confirmation_required` 与 `details.preview`；`attach_volume` 与 `detach_volume` 沿用重建的确认。确认防的是误操作和 Agent 的误调用，不替代权限：有写权限的主体仍可以带上 `confirm: true`（决策 49）。
 - **`volume:attach` 授权落地（#13）之前的过渡规则**：创建 Box、重建与挂载变更共用同一套检查（`src/services/attachments.ts` 的 `assertMountAllowed`），违反时在改动容器之前返回 `403 forbidden`，或 `409 volume_missing`。检查以 Volume 记录为准：引擎中带 MiniBox 标签、还没有记录的卷先被认领，再判断。
   - 一律拒绝，不论卷是否存在、是否已挂载：`minibox-data`（保存访问密钥与会话）、池根卷 `<prefix>-pool-<pool>`、带 `<prefix>.internal` 标签的辅助卷，以及没有 MiniBox 标签的卷。
   - 记录的所有者是另一个仍然存在的 Box（`owned`）时拒绝挂载，因此别的 Box 的工作区不能被挂走。独立记录（`independent`）可以被多个 Box 挂载，§6.2 的共享工具卷因此可用。所有者已删除的记录视为无主。
@@ -895,6 +898,7 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 ### 13.7 存储页
 
 - **Volume 表**：名称、大小、已挂载的 Box（带读写标签）、拥有者（随 Box / 独立）、所在存储池与能力、最近检查点、状态。没有任何 Box 挂载的标「未挂载」并给出清理建议。操作：浏览文件、快照、挂载到 Box、删除。
+- **确认流程（已实现）**：保存存储池前先请求预览，界面列出保存后的池、新增与移除的池，确认后带 `confirm: true` 重发。删除卷前先确认，然后请求 `DELETE /api/volumes/:id?confirm=true`。挂载与卸载显示与 §13.6 相同的重建预览，确认后才应用。
 - **Checkpoint**：按 Box 的时间线分组，显示时间、标签、手动/自动/置顶、包含的内容和大小。操作：派生新 Box、回滚、置顶、删除。
 
 ### 13.8 首次引导
@@ -1097,6 +1101,8 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | 46 | exec 唤醒与 revision | 保留 `revision` 加 1。唤醒把期望状态改为 `running`，期望状态属于规格（§5.1、§5.2、§5.7、§5.9），每次修改都加 1。若唤醒不改 `revision`，期望状态的变化就不在 `If-Match` 的保护之内。客户端唤醒后要重新读取 `revision`，文档与 MCP 说明都写明这一点 |
 | 47 | exec 资源上限 | 前台 `timeoutSec` 最多 55 秒（服务器空闲超时是 60 秒）；后台最多 3600 秒；后台 exec 每箱 8 个、全局 64 个。超限返回 `429`，并在唤醒 Box 之前拒绝 |
 | 48 | MCP 认证与审计 | `/mcp` 暂用主访问密钥，文档写明它拥有完全的所有者权限，直到令牌（#13）实现。错误的 Bearer 密钥计入登录限流。审计来源只由服务端决定：REST 与 CLI 记为 `rest`，MCP 记为 `mcp`。「严格」档位的 exec 只允许 `dev` 或 `1000`；其他档位允许 `root`，审计标记 `privileged` |
+| 49 | 存储写入确认 | `create_volume`、`delete_volume`、`replace_pools` 没有 `confirm: true` 时不改动任何内容，返回 `409 confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 沿用重建的确认。`delete_volume` 对已挂载的卷直接返回 `volume_mounted`，不生成预览。`measure_volume` 只刷新缓存的大小，不加确认。确认是防误操作的闸，不是权限；权限仍由 `volume:*` 与 `pool:admin` 决定 |
+| 50 | 存储工具集 | 卷与存储池工具放在非默认的 `storage` 工具集（`/mcp?toolsets=storage`），共 9 个。MCP 错误结果带上 `details`，代理因此能读到 `details.preview`。挂载与卸载经 `rebuildBox`，适用与 `rebuild_box` 相同的记录规则。设计目录中 `storage` 行列出的检查点工具仍未实现 |
 
 ---
 

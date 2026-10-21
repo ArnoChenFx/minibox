@@ -387,7 +387,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 ```bash
 # 把 NFS 导出设为默认池。除非覆盖 roles.cache，缓存仍在本地。
 curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
-  -X PUT -d '{"pools":[
+  -X PUT -d '{"confirm":true,"pools":[
     {"name":"local","backend":"local"},
     {"name":"nas","backend":"nfs","server":"192.168.1.10","export":"/volume1/minibox","options":["nfsvers=4.1","hard","noatime"],"default":true}
   ]}' http://127.0.0.1:3920/api/pools
@@ -457,14 +457,14 @@ sudo touch /mnt/minibox/.minibox-mounted
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/volumes` | 列出数据卷，以及哪些 Box 挂载了它们。已有的 `minibox-ws-*` 会被识别 |
-| `POST` | `/api/volumes` | 创建独立卷 `{ "name", "pool"?, "role"? }`。返回 `201`。基础模板镜像存在时，新建的本地卷会 chown 到 uid 1000 |
+| `POST` | `/api/volumes` | 创建独立卷 `{ "name", "pool"?, "role"?, "confirm"? }`。返回 `201`。基础模板镜像存在时，新建的本地卷会 chown 到 uid 1000。不带 `"confirm": true` 时返回 `409` `confirmation_required` 与 `details.preview`，什么也不会创建 |
 | `GET` | `/api/volumes/:id` | 一只卷 |
-| `DELETE` | `/api/volumes/:id` | 删除没有被任何 Box 挂载的卷。仍被挂载时返回 `409` |
-| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode" }`。必须带该 Box 的 `If-Match`。会重建容器。`warning` 为 `shared_rw` 或 `null`。需要 `volume:attach`；`mode` 为 `rw` 时还需要 `volume:write` |
-| `POST` | `/api/volumes/:id/detach` | `{ "box", "path" }`。必须带 `If-Match`。会重建容器。需要 `volume:attach` |
+| `DELETE` | `/api/volumes/:id?confirm=true` | 删除没有被任何 Box 挂载的卷。仍被挂载时返回 `409`（`volume_mounted`）。不带 `confirm=true` 时返回 `409` `confirmation_required` 与 `details.preview`，什么也不会删除 |
+| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode", "confirm"? }`。必须带该 Box 的 `If-Match`。会重建容器。不带 `"confirm": true` 时返回 `409` `confirmation_required` 与重建预览，什么也不会改变。`warning` 为 `shared_rw` 或 `null`。需要 `volume:attach`；`mode` 为 `rw` 时还需要 `volume:write` |
+| `POST` | `/api/volumes/:id/detach` | `{ "box", "path", "confirm"? }`。必须带 `If-Match`。会重建容器。不带 `"confirm": true` 时以 `409` `confirmation_required` 返回重建预览。需要 `volume:attach` |
 | `POST` | `/api/volumes/:id/usage` | 用辅助容器统计已用字节，并缓存在卷记录上 |
 | `GET` | `/api/pools?refresh=true` | 存储池、角色默认值与可达性。不可达的池会在结果里说明，列表本身不会失败 |
-| `PUT` | `/api/pools` | 整体替换 `{ "pools", "roles"? }`。如果省略，本地池会被补回。需要 `pool:admin` |
+| `PUT` | `/api/pools` | 整体替换 `{ "pools", "roles"?, "confirm"? }`。如果省略，本地池会被补回。不带 `"confirm": true` 时返回 `409` `confirmation_required`，列出将新增和移除的池，且不保存任何内容。需要 `pool:admin` |
 
 重建会保留已挂载的卷、稳定 ID、Box 名称和最近 20 个规格版本。未写入卷的可写层、运行中的进程（包括 tmux）和容器 IP 会丢失。认领不改名；改成 `<LABEL_PREFIX>-<id>` 发生在重建时（决策 D6）。`secretRef` 只存储、不注入。第一阶段创建时仍只有一个工作区卷；增删挂载属于重建，不是卷池。重建前的检查点不在这一步。对外的容器 ID 会变，稳定 ID 和 Box 名称不变。重启策略保持 `no`。
 
@@ -544,7 +544,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 前台 exec 的 `timeoutSec` 最长 55 秒，因为服务器会在 60 秒后关闭空闲连接。更长的命令使用 `background: true`（`timeoutSec` 最长 3600），或 `minibox exec --background --timeout SEC`，并用 `GET /api/execs/:execId`（`waitMs` 最长 25000）或 `exec_get` 读取结果。每个 Box 最多同时运行 8 个后台 exec，整个 MiniBox 最多 64 个；超过任一上限的调用返回 `429`，且不会启动已停止的 Box。超时会杀掉进程树，CLI 以 124 退出。如果停止失败，exec 保持 `status: running`，停止会按递增的间隔（1 秒、2 秒、4 秒，最长 30 秒）再次尝试，也可以随时通过 `POST /api/execs/:execId/kill` 重试。把密钥放在 `env` 里，不要放在 `cmd` 或 `argv` 中：审计日志会记录命令与 argv（脱敏规则见[事件](#事件)），而 `env` 只记录变量名。
 
-`exec` 可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。把卷挂到 Box 上需要 `volume:attach`（[#13](https://github.com/ArnoChenFx/minibox/issues/13)，当前尚未强制执行）。
+`exec` 可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。挂载卷需要该卷的 `volume:attach`，读写挂载或新建卷还需要 `volume:write`。修改存储池需要 `pool:admin`。所有者密钥拥有全部范围；按令牌限定范围（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）尚未实现。
 
 ## Agent
 
@@ -552,7 +552,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 > **警告：`/mcp` 使用主访问密钥，该密钥拥有完全的所有者权限。** 持有密钥的客户端可以调用其所请求工具集中的每一个工具，包括在非「严格」档位的 Box 中以 root 执行 `exec`、`delete_box` 与 `rebuild_box`。作用域令牌尚未实现（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）。只有在可以接受这一点时才把密钥交给 Agent，并确保密钥不出现在提示词、日志和仓库中。
 
-设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`，它们属于默认工具集（共 9 个）；`rebuild_box` 属于 `rebuild`（总计 10 个）。`session`、`network`、`storage`、`tools` 与 `meta` 可以被接受，目前没有工具。文件工具尚未实现，留到 Volume（[#24](https://github.com/ArnoChenFx/minibox/issues/24)）之后。说明见 [`docs/agents.md`](docs/agents.md)。
+设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`，它们属于默认工具集（共 9 个）；`rebuild_box` 属于 `rebuild`（1 个工具）。`storage` 工具集（`/mcp?toolsets=storage`）加入九个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`session`、`network`、`tools` 与 `meta` 可以被接受，目前没有工具。文件工具尚未实现，留到 Volume（[#24](https://github.com/ArnoChenFx/minibox/issues/24)）之后。说明见 [`docs/agents.md`](docs/agents.md)。
 
 用 `bun run build:cli` 编译 CLI（`bun build --compile`，输出 `dist/minibox`，不提交）。它访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。
 
@@ -573,6 +573,7 @@ minibox mcp
 - 前台 exec 的 `timeoutSec` 最大为 55。更长的命令使用 `background: true` 并把 `timeoutSec` 设到最大 3600，再用 `exec_get` 的 `waitMs`（最大 25000）轮询。`exec_kill` 结束进程树。
 - `exec` 可以读写该 Box 上挂载的每一个卷。
 - `rebuild_box` 位于 `rebuild` 工具集（`/mcp?toolsets=rebuild`），需要 `confirm: true`。
+- `storage` 工具集（`/mcp?toolsets=storage`）包含卷与存储池工具。`create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`。没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 会重建 Box，因此适用与 `rebuild_box` 相同的挂载规则。`measure_volume` 只刷新缓存的大小。
 - 文件工具还没有。用 `/mcp?toolsets=core,session` 选择工具集。默认是 core 与 meta。设计目录 27 个工具，默认工具集 15 个；当前服务只暴露已经实现的工具。
 
 ## 项目结构
