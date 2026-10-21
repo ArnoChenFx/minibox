@@ -1113,6 +1113,9 @@ input[type="range"] {
 .segmented.segmented-3 {
   grid-template-columns: repeat(3, 1fr);
 }
+.segmented.segmented-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
 .advanced {
   margin-top: 16px;
 }
