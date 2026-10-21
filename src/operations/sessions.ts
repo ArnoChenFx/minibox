@@ -240,10 +240,10 @@ export const sessionSend = defineOperation({
   activity: { action: () => "session.send", target: (_input, box) => box.name },
   audit: {
     target: (_input, box) => box && boxTarget(box),
-    detail: (input) => ({
+    detail: (input, _resolved, sent) => ({
       session: input.name,
-      keys: input.keys?.length ?? 0,
-      bytes: Buffer.byteLength(input.text ?? ""),
+      keys: sent?.keys ?? 0,
+      bytes: sent?.bytes ?? 0,
     }),
   },
   run: async ({ host, terminals }, input, box) => {

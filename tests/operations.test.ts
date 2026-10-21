@@ -550,6 +550,24 @@ describe("event log", () => {
       );
     }
   });
+
+  test("a send records the counts it delivered, and a send that fails records none", async () => {
+    const { app, ctx } = appWith();
+    const boxId = await withBox(app, ctx);
+    await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+    const before = app.events.head();
+
+    await app.operations.run("session.send", ctx, { id: boxId, name: "work", text: "echo hi\n" });
+    expect(
+      await rejectionOf(app.operations.run("session.send", ctx, { id: boxId, name: "missing", text: "echo hi\n" })),
+    ).toMatchObject({ status: 404 });
+
+    const sends = app.events.after(before, {}, 10).filter((event) => event.op === "session.send");
+    expect(sends.map((event) => [event.status, event.detail])).toEqual([
+      ["ok", { session: "work", keys: 0, bytes: 8 }],
+      ["error", { session: "missing", keys: 0, bytes: 0 }],
+    ]);
+  });
 });
 
 describe("audit sink", () => {
