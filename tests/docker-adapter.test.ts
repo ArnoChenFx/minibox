@@ -85,6 +85,19 @@ async function engine(req: Request): Promise<Response> {
     const entry = inspectable[inspect[1] ?? ""] ?? { status: 404, body: { message: "No such container" } };
     return json(entry.body, entry.status);
   }
+  const diff = /^\/containers\/([^/]+)\/changes$/.exec(path);
+  if (req.method === "GET" && diff) {
+    const id = diff[1] ?? "";
+    if (id === "pristine") return json(null);
+    if (id === "edited") {
+      return json([
+        { Path: "/tmp", Kind: 0 },
+        { Path: "/tmp/mb-diff", Kind: 1 },
+        { Path: "/var/cache/old", Kind: 2 },
+      ]);
+    }
+    return json({ message: `No such container: ${id}` }, 404);
+  }
   if (req.method === "POST" && path === "/containers/create") {
     if (url.searchParams.get("name") === "taken") {
       return json({ message: 'Conflict. The container name "/taken" is already in use' }, 409);
@@ -196,6 +209,16 @@ describe("Docker adapter against a fake engine socket", () => {
       kind: "engine",
       detail: "engine exploded",
     });
+  });
+
+  test("a container with no writable-layer changes has none, and the engine's change kinds are mapped", async () => {
+    expect(await runtime().containerDiff("pristine")).toEqual([]);
+    expect(await runtime().containerDiff("edited")).toEqual([
+      { path: "/tmp", kind: "modified" },
+      { path: "/tmp/mb-diff", kind: "added" },
+      { path: "/var/cache/old", kind: "deleted" },
+    ]);
+    expect(await rejectionOf(runtime().containerDiff("gone"))).toMatchObject({ kind: "not_found" });
   });
 
   test("a volume that is in use is a conflict, and a missing volume is not_found", async () => {

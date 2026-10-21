@@ -294,10 +294,9 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
 
     async containerDiff(id) {
-      const changes = (await call(() => docker.getContainer(id).changes())) as
-        | { Path?: string; Kind?: number }[]
-        | null;
-      return changes ? changes.flatMap(toChange) : [];
+      const changes: unknown = await call(() => docker.getContainer(id).changes());
+      // The engine answers JSON null when nothing changed, and docker-modem hands that body back as a Buffer, not null.
+      return Array.isArray(changes) ? changes.flatMap(toChange) : [];
     },
 
     async containerStats(id) {
