@@ -12,9 +12,9 @@ const ERROR_RESPONSES: Record<string, string> = {
   "400": "Invalid input, or a malformed X-Minibox-Run header.",
   "401": "Not signed in, or the access key is invalid.",
   "403": "Refused: a cross-site write, or an operation this credential may not run.",
-  "404": "The box, snapshot, template, volume or pool named in the path does not exist.",
+  "404": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
   "409":
-    "The name is already taken, this operation is already running, a volume is in use, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+    "The name is already taken, this operation is already running, a volume is in use, an exec is not running, or a change was requested without confirm set to true. A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff.",
   "415": "The request declares a body that is not JSON.",
   "412": "The If-Match revision is not the box's current revision.",
   "422": "The box would exceed the host's CPU or memory.",

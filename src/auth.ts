@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 
+import { AppError } from "./lib/errors";
+import { log } from "./lib/logger";
+import { msg } from "./lib/messages";
 import type { SessionStore } from "./sessions";
 
 export const COOKIE_NAME = "minibox_session";
@@ -36,16 +39,22 @@ export interface Caller {
   sessionId: string | null;
 }
 
+/** The key that an `Authorization: Bearer` header presents, `""` when it is empty, or `null` when there is no such header. */
+export function bearerKey(req: Request): string | null {
+  const auth = req.headers.get("authorization");
+  if (!auth || !/^bearer\s+/i.test(auth)) return null;
+  return auth.replace(/^bearer\s+/i, "").trim();
+}
+
 /**
  * Resolves a request to its caller, or `null` when it is not signed in. A request with an `Authorization: Bearer`
  * header is judged by that header alone, so a wrong key cannot fall back to a cookie. Otherwise the session cookie
  * must hold a live session token. Resolving a session counts as use, which renews it under sliding renewal.
  */
 export function authenticate(req: Request, accessKey: string, sessions: SessionStore): Caller | null {
-  const auth = req.headers.get("authorization");
-  if (auth && /^bearer\s+/i.test(auth)) {
-    const key = auth.replace(/^bearer\s+/i, "").trim();
-    return key !== "" && safeEqual(key, accessKey) ? { sessionId: null } : null;
+  const presented = bearerKey(req);
+  if (presented !== null) {
+    return presented !== "" && safeEqual(presented, accessKey) ? { sessionId: null } : null;
   }
   const token = parseCookies(req.headers.get("cookie"))[COOKIE_NAME];
   if (!token) return null;
@@ -311,4 +320,29 @@ export class LoginLimiter {
     this.byAddress.stop();
     this.overall.stop();
   }
+}
+
+export interface BearerGate {
+  readonly accessKey: string;
+  readonly throttle: LoginLimiter;
+}
+
+/**
+ * Whether a request's Bearer key is the access key. A wrong key counts toward the same limiter as a wrong login key,
+ * so guessing over the API meets the login limits. Over the limit it waits out the penalty and gets 429, and a right
+ * key is never refused. A request without a key, or with an empty one, is neither allowed nor counted.
+ */
+export async function bearerAllowed(req: Request, gate: BearerGate, address: string): Promise<boolean> {
+  const presented = bearerKey(req);
+  if (!presented) return false;
+  if (safeEqual(presented, gate.accessKey)) return true;
+  const ip = rateLimitKey(address);
+  const refused = gate.throttle.refuses(ip);
+  gate.throttle.recordFailure(ip);
+  log.warn("auth.bearer_failed", { ip, refused, path: new URL(req.url).pathname });
+  if (refused) {
+    await gate.throttle.delayRefusal();
+    throw new AppError(429, "too_many_requests", msg("too_many_attempts"));
+  }
+  return false;
 }

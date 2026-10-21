@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { Duplex, Readable } from "node:stream";
+import { Duplex, PassThrough, Readable } from "node:stream";
 
 import { abortError } from "../../src/lib/abort";
 import {
@@ -75,13 +75,28 @@ export interface FakeExec extends ExecSession {
   readonly spec: ExecSpec;
   readonly containerId: string;
   readonly sizes: { cols: number; rows: number }[];
+  /** Set when `kill()` stopped the process. A normal exit leaves this false. */
+  killed: boolean;
+  /** Calls to `kill()`, including the ones that failed. */
+  kills: number;
   /** Writes text to the terminal output, as a shell would. */
   print(text: string): void;
+  /** Writes text to stderr. Command exec (`tty: false`) reads this stream. */
+  printStderr(text: string): void;
+  /** Bytes written to stdin so far. */
+  stdin(): string;
   /** Ends the session as if the process had exited. */
   exit(code?: number): void;
 }
 
 type GateResolve = () => void;
+
+/** What a non-TTY exec prints and returns. `null` hangs until `kill()`. */
+export interface FakeExecScript {
+  stdout: string;
+  stderr: string;
+  code: number;
+}
 
 const now = () => new Date().toISOString();
 const newContainerId = () => randomBytes(32).toString("hex");
@@ -119,11 +134,13 @@ async function collect(stream: Readable): Promise<Buffer> {
 }
 
 /** Echoes everything written to it, like a TTY, and ends when the write side ends. */
-function echoStream(): Duplex {
+function echoStream(onWrite?: (chunk: Buffer) => void): Duplex {
   const stream: Duplex = new Duplex({
     read() {},
     write(chunk: Buffer, _encoding, callback) {
-      stream.push(chunk);
+      const copy = Buffer.from(chunk);
+      onWrite?.(copy);
+      stream.push(copy);
       callback();
     },
     final(callback) {
@@ -144,6 +161,20 @@ function defaultHelper(spec: HelperSpec): HelperResult {
     };
   }
   return { exitCode: 0, logs: "" };
+}
+
+/** Collects stdin and does not echo it. Command exec closes this when it has finished writing. */
+function stdinStream(onWrite: (chunk: Buffer) => void): Duplex {
+  return new Duplex({
+    read() {},
+    write(chunk: Buffer, _encoding, callback) {
+      onWrite(Buffer.from(chunk));
+      callback();
+    },
+    final(callback) {
+      callback();
+    },
+  });
 }
 
 function toInfo(c: FakeContainer): ContainerInfo {
@@ -200,8 +231,15 @@ export class FakeRuntime implements Runtime {
   disk: DiskUsage = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
   /** Answers `runHelper`. The default pretends `df`, `du` and `chown` succeeded. */
   helperHandler: (spec: HelperSpec) => HelperResult = defaultHelper;
+  /**
+   * Output of the next non-TTY exec. The default is a successful empty command, which is what `true` does.
+   * `null` leaves the command running until `kill()`, which is how tests model `sleep`.
+   */
+  execScript: FakeExecScript | null = { stdout: "", stderr: "", code: 0 };
 
   private readonly faults = new Map<Op, RuntimeError[]>();
+  private readonly execKillFaults: RuntimeError[] = [];
+  private readonly execKillHold: { gate: Promise<void> | null } = { gate: null };
   private readonly gates = new Map<Op, Promise<void>>();
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
@@ -231,6 +269,25 @@ export class FakeRuntime implements Runtime {
     const queue = this.faults.get(op) ?? [];
     queue.push(error);
     this.faults.set(op, queue);
+  }
+
+  /** The next exec `kill()` fails with `error` and leaves the process running, as when a process survives the kill. */
+  failExecKill(error: RuntimeError): void {
+    this.execKillFaults.push(error);
+  }
+
+  /** Holds every exec `kill()` until the returned `release` is called, so a second kill can overlap the first. */
+  holdExecKill(): { release(): void } {
+    let resolveGate: GateResolve | undefined;
+    this.execKillHold.gate = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    return {
+      release: () => {
+        this.execKillHold.gate = null;
+        resolveGate?.();
+      },
+    };
   }
 
   callsTo(op: Op): Call[] {
@@ -526,31 +583,77 @@ export class FakeRuntime implements Runtime {
     this.enter("startExec", [containerId, spec]);
     const c = this.getContainer(containerId);
     if (!c.running) throw new RuntimeError("conflict", `Container ${c.id} is not running`);
-    const stream = echoStream();
+    const tty = spec.tty !== false;
+    const stdinChunks: Buffer[] = [];
+    const stream = tty
+      ? echoStream((chunk) => stdinChunks.push(chunk))
+      : stdinStream((chunk) => stdinChunks.push(chunk));
+    const stdout = tty ? stream : new PassThrough();
+    const stderr = new PassThrough();
     const sizes: { cols: number; rows: number }[] = [];
-    let status: ExecStatus = { running: true, exitCode: null, pid: null };
+    const killFaults = this.execKillFaults;
+    const killHold = this.execKillHold;
+    let status: ExecStatus = { running: true, exitCode: null, pid: tty ? null : 4242 };
     const session: FakeExec = {
       id: `exec-${++this.execCount}`,
       stream,
+      stdout,
+      stderr,
       spec,
       containerId: c.id,
       sizes,
+      killed: false,
+      kills: 0,
       async resize(size) {
         sizes.push(size);
       },
       async inspect() {
         return status;
       },
+      async kill() {
+        session.kills += 1;
+        if (killHold.gate) await killHold.gate;
+        const fault = killFaults.shift();
+        if (fault) throw fault;
+        if (session.killed || !status.running) {
+          session.killed = true;
+          return;
+        }
+        session.killed = true;
+        session.exit(137);
+      },
       print(text) {
-        stream.push(text);
+        if (tty) stream.push(text);
+        else stdout.write(text);
+      },
+      printStderr(text) {
+        stderr.write(text);
+      },
+      stdin() {
+        return Buffer.concat(stdinChunks).toString("utf8");
       },
       exit(code = 0) {
+        if (!status.running) return;
         status = { running: false, exitCode: code, pid: null };
-        stream.push(null);
+        if (tty) stream.push(null);
+        else if (!stdout.writableEnded) stdout.end();
+        if (!stderr.writableEnded) stderr.end();
       },
     };
     this.execs.push(session);
-    session.print("$ ");
+    if (tty) {
+      session.print("$ ");
+      return session;
+    }
+    const script = this.execScript;
+    if (script) {
+      setTimeout(() => {
+        if (!status.running) return;
+        if (script.stdout) stdout.write(script.stdout);
+        if (script.stderr) stderr.write(script.stderr);
+        session.exit(script.code);
+      }, 0);
+    }
     return session;
   }
 

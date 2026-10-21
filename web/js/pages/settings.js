@@ -8,20 +8,22 @@ import { confirmDialog, emptyState, toast, toastError } from "../lib/ui.js";
 
 export function render(view) {
   view.innerHTML = `
-    <div class="page-head"><div><h1>${t("nav.settings")}</h1><p>${t("st.subtitle")}</p></div></div>
-    <div class="stack">
-      <div class="card" id="stRuntime">
-        <div class="card-head"><h3>${t("st.runtime")}</h3>${icon("settings")}</div>
-        <div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><h3>${t("st.appearance")}</h3></div>
-        <div class="card-body row between">
-          <div><strong>${t("st.theme")}</strong><div class="help">${t("st.themeHelp")}</div></div>
-          <button class="btn" id="stTheme"></button>
+    <div class="page-narrow">
+      <div class="page-head"><div><h1>${t("nav.settings")}</h1><p>${t("st.subtitle")}</p></div></div>
+      <div class="stack">
+        <div class="card" id="stRuntime">
+          <div class="card-head"><h3>${t("st.runtime")}</h3>${icon("settings")}</div>
+          <div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div>
         </div>
+        <div class="card">
+          <div class="card-head"><h3>${t("st.appearance")}</h3></div>
+          <div class="card-body row between">
+            <div><strong>${t("st.theme")}</strong><div class="help">${t("st.themeHelp")}</div></div>
+            <button class="btn" id="stTheme"></button>
+          </div>
+        </div>
+        <div class="card" id="stSessions"></div>
       </div>
-      <div class="card" id="stSessions"></div>
     </div>`;
 
   const themeBtn = view.querySelector("#stTheme");

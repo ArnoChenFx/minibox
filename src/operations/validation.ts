@@ -499,6 +499,7 @@ export function parseInput<T extends z.ZodObject>(schema: T, raw: unknown): z.ou
     "validation_failed",
     failure.message,
     failure.field === undefined ? undefined : { field: failure.field },
+    failure.hint ? { hint: failure.hint } : undefined,
   );
 }
 

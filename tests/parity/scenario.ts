@@ -26,9 +26,11 @@ export function normalize(text: string): string {
     .replace(/vol_[0-9a-z]+/g, "<volumeId>")
     .replace(/bx_[0-9a-z]+/g, "<boxId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
+    .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
     .replace(/[0-9a-f]{64}/g, "<id>")
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<time>")
     .replace(/-\d{8}-\d{6}/g, "-<stamp>")
+    .replace(/"parentId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"parentId":"<ulid>"')
     .replace(/"id":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"id":"<ulid>"')
     .replace(/"taskId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"taskId":"<ulid>"')
     .replace(/"parentId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"parentId":"<ulid>"')
@@ -198,6 +200,22 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("stop alpha again", "POST", `/api/boxes/${alpha}/stop`);
     await send("start alpha", "POST", `/api/boxes/${alpha}/start`);
     await send("restart alpha", "POST", `/api/boxes/${alpha}/restart`);
+    const ran = await post("exec true in alpha", `/api/boxes/${alpha}/exec`, { argv: ["true"] });
+    const execId = String(ran.json?.execId ?? "");
+    await send("get the exec", "GET", `/api/execs/${execId}`);
+    await send("read exec output", "GET", `/api/execs/${execId}/output`);
+    await post("exec with neither cmd nor argv", `/api/boxes/${alpha}/exec`, {});
+    await post("kill an exec that has finished", `/api/execs/${execId}/kill`, {});
+    runtime.execScript = null;
+    const background = await post("exec sleep in the background", `/api/boxes/${alpha}/exec`, {
+      argv: ["sleep", "30"],
+      background: true,
+      timeoutSec: 30,
+    });
+    const sleepId = String(background.json?.execId ?? "");
+    await post("kill the background exec", `/api/execs/${sleepId}/kill`, {});
+    await send("get the killed exec", "GET", `/api/execs/${sleepId}?waitMs=0`);
+    runtime.execScript = { stdout: "", stderr: "", code: 0 };
     await raw("start ignores a malformed body", "POST", `/api/boxes/${alpha}/start`, "{not json");
     await send("start a missing box", "POST", "/api/boxes/missing/start");
     await send("stop a missing box", "POST", "/api/boxes/missing/stop");
@@ -325,23 +343,28 @@ export async function runParityScenario(): Promise<Exchange[]> {
     const spare = await post("create spare volume", "/api/volumes", { name: "spare" });
     const spareId = String((spare.json?.volume as { id?: string } | undefined)?.id ?? "");
     await send("measure spare", "POST", `/api/volumes/${spareId}/usage`);
-    const attached = await send("attach spare read-only", "POST", `/api/volumes/${spareId}/attach`, {
+    await send("attach spare without confirm", "POST", `/api/volumes/${spareId}/attach`, {
       body: JSON.stringify({ box: gamma, path: "/srv/data", mode: "ro" }),
       contentType: JSON_TYPE,
       headers: { "if-match": String(gammaRev) },
     });
-    const attachedBox = attached.json?.box as { id?: string; revision?: number } | undefined;
-    const detached = await send("detach spare", "POST", `/api/volumes/${spareId}/detach`, {
-      body: JSON.stringify({ box: attachedBox?.id, path: "/srv/data" }),
+    const attached = await send("attach spare read-only", "POST", `/api/volumes/${spareId}/attach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", mode: "ro", confirm: true }),
       contentType: JSON_TYPE,
-      headers: { "if-match": String(attachedBox?.revision ?? "") },
+      headers: { "if-match": String(gammaRev) },
+    });
+    const attachedRevision = (attached.json?.box as { revision?: number } | undefined)?.revision ?? 1;
+    await send("detach spare", "POST", `/api/volumes/${spareId}/detach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", confirm: true }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(attachedRevision) },
     });
     await send("delete spare volume", "DELETE", `/api/volumes/${spareId}`);
     await send("replace pools", "PUT", "/api/pools", {
       body: JSON.stringify({ pools: [{ name: "local", backend: "local", default: true }] }),
       contentType: JSON_TYPE,
     });
-    await send("delete gamma", "DELETE", `/api/boxes/${boxId(detached.json)}`);
+    await send("delete gamma", "DELETE", `/api/boxes/${gamma}`);
 
     await send("events without a key", "GET", "/api/events", { authed: false });
     await send("events from another site", "GET", "/api/events", { origin: "https://evil.example" });

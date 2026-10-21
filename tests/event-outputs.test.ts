@@ -50,6 +50,46 @@ describe("OutputStore", () => {
     expect(JSON.parse(text)).toEqual({ stdout: `token ${REDACTED}\n`, stderr: "ok" });
   });
 
+  test("a capped record keeps the caller's byte counts and load reads it back", () => {
+    const outputs = store();
+    const ref = outputs.save(
+      "ex_01",
+      { stdout: "head", stderr: "tail" },
+      {
+        capped: true,
+        stdoutBytes: OUTPUT_HEAD_TAIL_BYTES * 2 + 9,
+        stderrBytes: 4,
+        exitCode: 3,
+        timedOut: true,
+        status: "killed",
+      },
+    );
+    expect(ref).toBe("exec/ex_01");
+    expect(JSON.parse(readFileSync(join(outputDir, "ex_01.json"), "utf8"))).toEqual({
+      stdout: "head",
+      stderr: "tail",
+      stdoutBytes: OUTPUT_HEAD_TAIL_BYTES * 2 + 9,
+      stderrBytes: 4,
+      truncated: true,
+      exitCode: 3,
+      timedOut: true,
+      status: "killed",
+    });
+    expect(outputs.load(ref)).toEqual({
+      stdout: "head",
+      stderr: "tail",
+      stdoutBytes: OUTPUT_HEAD_TAIL_BYTES * 2 + 9,
+      stderrBytes: 4,
+      truncated: true,
+      exitCode: 3,
+      timedOut: true,
+      status: "killed",
+    });
+    expect(outputs.load("exec/missing")).toBeNull();
+    expect(outputs.load("../escape")).toBeNull();
+    expect(outputs.load("other/ex_01")).toBeNull();
+  });
+
   test("a name that is not a plain identifier is refused, so nothing is written outside the directory", () => {
     expect(() => store().save("../escape", { stdout: "", stderr: "" })).toThrow("not a plain identifier");
     expect(() => store().save("a/b", { stdout: "", stderr: "" })).toThrow("not a plain identifier");

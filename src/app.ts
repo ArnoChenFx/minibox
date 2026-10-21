@@ -13,9 +13,11 @@ import type { HostMonitor } from "./host/metrics";
 import { createLocalHost, HostRegistry } from "./host/registry";
 import { Bus } from "./lib/bus";
 import { log } from "./lib/logger";
+import { McpSessions } from "./mcp/sessions";
 import { Executor, type ExecutorHooks, logAudit, ownerOnly, type AuditEvent } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
 import type { Runtime } from "./runtime";
+import { ExecManager } from "./services/exec";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
 import { TaskManager } from "./tasks/manager";
@@ -39,6 +41,8 @@ export interface App {
   activity: ActivityLog;
   events: EventStore;
   outputs: OutputStore;
+  execs: ExecManager;
+  mcpSessions: McpSessions;
   bus: Bus<AppTopics>;
   retention: RetentionJob;
   tasks: TaskManager;
@@ -98,6 +102,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const redactor = createRedactor({ knownSecrets: [cfg.accessKey] });
   const events = openEventStore(deps.eventsPath ?? join(cfg.dataDir, "events.db"), redactor);
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
+  const execs = new ExecManager(outputs, (text) => redactor.text(text));
   const bus = new Bus<AppTopics>();
   const tasks = new TaskManager(openTaskStore(join(cfg.dataDir, "tasks.db")), redactor, (event) =>
     bus.publish("task", event),
@@ -117,6 +122,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     activity,
     events,
     outputs,
+    execs,
+    mcpSessions: new McpSessions(),
     bus,
     retention,
     tasks,

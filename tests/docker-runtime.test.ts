@@ -7,7 +7,8 @@
  * behind. To run this file directly: MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbit<id> bun test tests/docker-runtime.test.ts
  *
  * Optional: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20, must already be
- * present locally). The prefix must start with "mbit", so the cleanup can never touch a real MiniBox install.
+ * present locally, and must contain /bin/busybox for the sudo test). The prefix must start with "mbit", so the cleanup
+ * can never touch a real MiniBox install.
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -18,9 +19,12 @@ import Docker from "dockerode";
 
 import { BOX_PROFILES, type BoxProfile } from "../src/box-profile";
 import { createDockerRuntime, toHelperOptions } from "../src/docker/runtime";
+import { OutputStore } from "../src/events/outputs";
+import { createRedactor } from "../src/events/redact";
 import { createLocalHost } from "../src/host/registry";
 import type { Runtime } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
+import { ExecManager } from "../src/services/exec";
 import { rebuildBox } from "../src/services/rebuild";
 import { createSnapshot, deleteSnapshot } from "../src/services/snapshots";
 import { deleteTemplate, promoteSnapshot } from "../src/services/templates";
@@ -130,6 +134,24 @@ async function shell(id: string, script: string): Promise<string> {
     exec.stream.destroy();
   }
   return text.slice(0, text.indexOf("MB_DONE")).replace(/\r/g, "").trim();
+}
+
+/**
+ * How many processes in the box have a command line that matches `pattern` (a grep pattern, matched per line). Anchor
+ * it with `^` and bracket a letter, as in `^[s]leep 317`, so the probe does not count its own command line.
+ */
+async function countProcesses(id: string, pattern: string): Promise<number> {
+  const found = await shell(
+    id,
+    `for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline 2>/dev/null; echo; done | grep -c '${pattern}' || true`,
+  );
+  return Number(found);
+}
+
+/** The exec service the app runs, over this test's runtime and output directory. */
+function execService(): ExecManager {
+  const redactor = createRedactor();
+  return new ExecManager(new OutputStore(join(cfg.dataDir, "exec"), redactor), (text) => redactor.text(text));
 }
 
 /** The address and gateway a box has on one network, as the engine reports them. */
@@ -274,6 +296,316 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         expect(output).toContain("hello-tty");
       } finally {
         await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "exec without a TTY separates stdout and stderr, reports the exit code, and kill stops the process",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-exec-notty`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const finished = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo out-text; echo err-text >&2; exit 3"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let stdout = "";
+        let stderr = "";
+        finished.stdout.on("data", (chunk: Buffer) => {
+          stdout += chunk.toString("utf8");
+        });
+        finished.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString("utf8");
+        });
+        await waitUntil(async () => !(await finished.inspect()).running, "the non-tty command to finish");
+        expect(await finished.inspect()).toMatchObject({ running: false, exitCode: 3 });
+        expect(stdout).toContain("out-text");
+        expect(stderr).toContain("err-text");
+
+        const hanging = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo started; sleep 30"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let started = "";
+        hanging.stdout.on("data", (chunk: Buffer) => {
+          started += chunk.toString("utf8");
+        });
+        await waitUntil(async () => started.includes("started"), "the sleep command to print");
+        await hanging.kill();
+        await waitUntil(async () => !(await hanging.inspect()).running, "the sleep command to stop");
+        expect((await hanging.inspect()).running).toBe(false);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "kill stops a command running as another uid and its children, from inside the box",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-exec-uid`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      const probe = async (cmd: string): Promise<string> => {
+        const run = await runtime.startExec(id, { cmd: ["sh", "-c", cmd], env: [], workingDir: "/", tty: false });
+        let out = "";
+        run.stdout.on("data", (chunk: Buffer) => {
+          out += chunk.toString("utf8");
+        });
+        await waitUntil(async () => !(await run.inspect()).running, "the probe to finish");
+        return out.trim();
+      };
+      try {
+        const hanging = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "sleep 317 & echo started $(id -u); wait"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+          user: "65534",
+        });
+        let started = "";
+        hanging.stdout.on("data", (chunk: Buffer) => {
+          started += chunk.toString("utf8");
+        });
+        await waitUntil(async () => started.includes("started 65534"), "the command to run as uid 65534");
+
+        await hanging.kill();
+        await waitUntil(async () => !(await hanging.inspect()).running, "the command to stop");
+        expect(await hanging.inspect()).toMatchObject({ running: false, exitCode: 137 });
+        await waitUntil(async () => (await probe("ps | grep -c '[s]leep 317' || true")) === "0", "the child to stop");
+        // The probe runs through the exec wrapper too, so its own marker is the only one left.
+        expect(await probe("ls -a /tmp | grep -c minibox-exec || true")).toBe("1");
+        await expect(hanging.kill()).resolves.toBeUndefined();
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a command that deletes its own marker is stopped with its children",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-marker`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const exec = await runtime.startExec(id, {
+          cmd: [
+            "sh",
+            "-c",
+            "test -e /tmp/.minibox-exec-*.$PPID && echo marked; rm -f /tmp/.minibox-exec-*.$PPID; echo started; sleep 317",
+          ],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let out = "";
+        exec.stdout.on("data", (chunk: Buffer) => {
+          out += chunk.toString("utf8");
+        });
+        await waitUntil(async () => out.includes("started"), "the command to start");
+        expect(out).toContain("marked");
+        expect(await shell(id, "ls -a /tmp | grep -c minibox-exec || true")).toBe("0");
+
+        await exec.kill();
+        await waitUntil(async () => !(await exec.inspect()).running, "the command to stop");
+        expect(await exec.inspect()).toMatchObject({ running: false, exitCode: 137 });
+        expect(await countProcesses(id, "^[s]leep 317")).toBe(0);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a command that overwrites its marker with another pid is stopped, and the process that pid names is left alone",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-decoy`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const decoy = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo $$; exec sleep 600"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let decoyOut = "";
+        decoy.stdout.on("data", (chunk: Buffer) => {
+          decoyOut += chunk.toString("utf8");
+        });
+        await waitUntil(async () => decoyOut.includes("\n"), "the decoy to print its pid");
+        const decoyPid = Number(decoyOut.trim());
+
+        const victim = await runtime.startExec(id, {
+          cmd: [
+            "sh",
+            "-c",
+            `for m in /tmp/.minibox-exec-*.$PPID; do echo ${decoyPid} > "$m"; : > "\${m%.*}.${decoyPid}"; done; echo started; sleep 317`,
+          ],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let victimOut = "";
+        victim.stdout.on("data", (chunk: Buffer) => {
+          victimOut += chunk.toString("utf8");
+        });
+        await waitUntil(async () => victimOut.includes("started"), "the victim to overwrite its marker");
+
+        await victim.kill();
+        await waitUntil(async () => !(await victim.inspect()).running, "the victim to stop");
+        expect(await victim.inspect()).toMatchObject({ running: false, exitCode: 137 });
+        expect(await countProcesses(id, "^[s]leep 317")).toBe(0);
+
+        expect((await decoy.inspect()).running).toBe(true);
+        expect(await countProcesses(id, "^[s]leep 600")).toBe(1);
+        await decoy.kill();
+        await waitUntil(async () => !(await decoy.inspect()).running, "the decoy to stop");
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a sudo child that becomes root is stopped by the kill, which the exec user cannot do on its own",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const box = await boxes.createBox(host, {
+          name: "sudo",
+          image: IMAGE,
+          cpus: 0.5,
+          memoryMb: 64,
+          profile: "standard",
+        });
+        try {
+          // busybox su is setuid root and sets its real uid to 0 after a password check, as sudo does.
+          expect(
+            await shell(
+              box.id,
+              "mkdir -p /tmp/mb-suid && cp -L /bin/busybox /tmp/mb-suid/su && chown root:root /tmp/mb-suid/su && chmod 4755 /tmp/mb-suid/su && echo 'root:mbpass' | chpasswd >/dev/null 2>&1 && echo ready",
+            ),
+          ).toBe("ready");
+          const command = "printf 'mbpass\\n' | /tmp/mb-suid/su -c 'echo started; sleep 317' root";
+          const sleepUids = `for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline 2>/dev/null | grep -q '^sleep 317' && awk '/^Uid/{print $2, $3}' $p/status; done`;
+
+          const service = execService();
+          const run = await service.run(host, box, {
+            cmd: command,
+            cwd: "/",
+            env: {},
+            timeoutSec: 60,
+            user: "65534",
+            background: true,
+          });
+          await waitUntil(async () => (await countProcesses(box.id, "^[s]leep 317")) === 1, "the sudo child to start");
+          expect(await shell(box.id, sleepUids)).toBe("0 0");
+
+          await service.kill(run.execId);
+          expect(await service.get(run.execId, 0)).toMatchObject({ status: "killed", exitCode: 137 });
+          expect(await countProcesses(box.id, "^[s]leep 317")).toBe(0);
+
+          const stuck = await runtime.startExec(box.id, {
+            cmd: ["sh", "-c", command],
+            env: [],
+            workingDir: "/",
+            tty: false,
+            user: "65534",
+            stopAs: "65534",
+          });
+          await waitUntil(async () => (await countProcesses(box.id, "^[s]leep 317")) === 1, "the second sudo child");
+          expect(await rejectionOf(stuck.kill())).toMatchObject({ kind: "engine" });
+          expect((await stuck.inspect()).running).toBe(true);
+        } finally {
+          await boxes.deleteBox(host, box.id, true);
+        }
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a timeout whose kill fails while the box is paused is retried until the exec stops",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const box = await boxes.createBox(host, {
+          name: "retry",
+          image: IMAGE,
+          cpus: 0.5,
+          memoryMb: 64,
+          profile: "standard",
+        });
+        try {
+          const service = execService();
+          const run = await service.run(host, box, {
+            cmd: "sleep 317",
+            cwd: "/",
+            env: {},
+            timeoutSec: 3,
+            user: "65534",
+            background: true,
+          });
+          await waitUntil(async () => (await countProcesses(box.id, "^[s]leep 317")) === 1, "the sleep to start");
+          const container = docker.getContainer(box.id);
+          await container.pause();
+          try {
+            await waitUntil(
+              async () => (await service.get(run.execId, 0)).timedOut,
+              "the timeout to fire while the box is paused",
+              10_000,
+            );
+            await Bun.sleep(300);
+            expect(await service.get(run.execId, 0)).toMatchObject({ status: "running", timedOut: true });
+          } finally {
+            await container.unpause();
+          }
+          await waitUntil(
+            async () => (await service.get(run.execId, 0)).status === "killed",
+            "the timed-out exec to be stopped",
+            15_000,
+          );
+          expect(await service.get(run.execId, 0)).toMatchObject({ status: "killed", exitCode: 137, timedOut: true });
+        } finally {
+          await boxes.deleteBox(host, box.id, true);
+        }
+      } finally {
+        restore();
       }
     },
     LONG,

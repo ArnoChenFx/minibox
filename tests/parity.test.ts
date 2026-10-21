@@ -4,8 +4,9 @@ import { join } from "node:path";
 
 import { type Exchange, runParityScenario } from "./parity/scenario";
 
-// Regenerated when the HTTP contract changes on purpose. Volumes and pools (#24) added mounts, storage
-// and /api/volumes, /api/pools. `bx_…` ids are normalized to <boxId> and `vol_…` ids to <volumeId>.
+// Regenerated when the HTTP contract changes on purpose. Error bodies include retryable, and hint when one is set.
+// Volumes and pools (#24) and exec routes (Refs #9) are part of the transcript. `bx_…` ids are normalized to <boxId>,
+// `vol_…` ids to <volumeId> and exec ids to ex_<ulid>.
 // Do not refresh this file for a change that should stay compatible.
 const TRANSCRIPT = join(import.meta.dir, "fixtures", "parity-transcript.json");
 

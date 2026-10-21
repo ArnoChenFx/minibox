@@ -181,20 +181,41 @@ export interface ExecSpec {
   cmd: string[];
   env: string[];
   workingDir: string;
+  /** Container user. Absent keeps the container's own user. Command exec passes `dev`. */
+  user?: string;
+  /**
+   * User the kill runs as, when it is not the exec's own. A setuid program can start a child that the exec's user
+   * cannot signal, so a kill as that user would leave the child running. Absent means `user`.
+   */
+  stopAs?: string;
+  /**
+   * Interactive terminal. Absent means a TTY, which is what the web terminal uses.
+   * Command exec sets this to false so stdout and stderr stay separate.
+   */
+  tty?: boolean;
 }
 
 export interface ExecStatus {
   running: boolean;
   exitCode: number | null;
+  /** The engine's host pid. Informational only: `kill()` never signals it. */
   pid: number | null;
 }
 
-/** An attached exec in TTY mode. */
+/**
+ * An attached exec. A TTY session uses `stream` for both directions. A command exec (`tty: false`) also fills
+ * `stdout` and `stderr` separately. `inspect()` is the exit code. `kill()` stops the process and its descendants from
+ * inside the box, as `stopAs` or else the exec's user. It resolves once the exec has ended, and rejects with an
+ * `engine` error if a process survives or the exec does not end. A TTY session cannot be stopped this way.
+ */
 export interface ExecSession {
   readonly id: string;
   readonly stream: Duplex;
+  readonly stdout: Readable;
+  readonly stderr: Readable;
   resize(size: { cols: number; rows: number }): Promise<void>;
   inspect(): Promise<ExecStatus>;
+  kill(): Promise<void>;
 }
 
 export interface RuntimeEvent {
