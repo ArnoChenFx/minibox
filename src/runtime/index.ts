@@ -40,6 +40,16 @@ export interface ContainerStats {
 export interface Mount {
   source: string;
   target: string;
+  /** Absent means writable, which is the engine default. */
+  mode?: "rw" | "ro";
+  /** `bind` is a host path. Absent means a named volume. Both use the engine's bind string. */
+  kind?: "volume" | "bind";
+}
+
+/** One writable-layer change from `docker diff`. `modified` is the engine's kind 0, `added` is 1, `deleted` is 2. */
+export interface ContainerChange {
+  path: string;
+  kind: "added" | "modified" | "deleted";
 }
 
 export interface Ulimit {
@@ -79,6 +89,8 @@ export interface CreateContainerSpec {
   hostname?: string;
   labels?: Record<string, string>;
   mounts?: Mount[];
+  /** `NAME=value` entries merged over the image environment. Secrets are not passed here. */
+  env?: string[];
   restart?: "no" | "unless-stopped";
   cpus?: number;
   memoryBytes?: number;
@@ -87,6 +99,8 @@ export interface CreateContainerSpec {
   /** Network name. Absent means the engine's default bridge. */
   network?: string;
   hardening?: ContainerHardening;
+  /** Numeric user, such as `0:0` for a root helper. Absent keeps the image user. */
+  user?: string;
 }
 
 export interface ImageSummary {
@@ -105,6 +119,36 @@ export interface ImageDetails {
 export interface VolumeInfo {
   name: string;
   labels: Record<string, string>;
+  driver?: string;
+  /** Driver options. Absent when the engine did not report any. */
+  options?: Record<string, string>;
+}
+
+export interface VolumeCreateOptions {
+  driver?: string;
+  driverOpts?: Record<string, string>;
+}
+
+export interface HelperResult {
+  exitCode: number;
+  logs: string;
+}
+
+export interface HelperSpec {
+  image: string;
+  cmd: string[];
+  mounts?: Mount[];
+  /** Numeric user, such as `0:0`. Absent keeps the image user. */
+  user?: string;
+  /** Capabilities granted on top of none. A helper that changes ownership or reads other users' files names them. */
+  capAdd?: string[];
+  timeoutSec?: number;
+  labels?: Record<string, string>;
+}
+
+export interface DiskUsage {
+  totalBytes: number;
+  freeBytes: number;
 }
 
 export interface CommitSpec {
@@ -115,6 +159,11 @@ export interface CommitSpec {
   pause?: boolean;
   /** Dockerfile instructions applied to the new image, e.g. `LABEL k=v` or `CMD [...]`. */
   changes: string[];
+  /**
+   * Checked before the commit starts and after it returns. A commit that has already finished is not rolled back
+   * when this aborts.
+   */
+  signal?: AbortSignal;
 }
 
 export interface BuildSpec {
@@ -122,26 +171,51 @@ export interface BuildSpec {
   dockerfile: string;
   tag: string;
   labels: Record<string, string>;
+  /** Called with each chunk of build output as the engine produces it. */
+  onLog?: (chunk: string) => void;
+  /** Closes the build stream. The call rejects with `AbortError` once that connection has closed. */
+  signal?: AbortSignal;
 }
 
 export interface ExecSpec {
   cmd: string[];
   env: string[];
   workingDir: string;
+  /** Container user. Absent keeps the container's own user. Command exec passes `dev`. */
+  user?: string;
+  /**
+   * User the kill runs as, when it is not the exec's own. A setuid program can start a child that the exec's user
+   * cannot signal, so a kill as that user would leave the child running. Absent means `user`.
+   */
+  stopAs?: string;
+  /**
+   * Interactive terminal. Absent means a TTY, which is what the web terminal uses.
+   * Command exec sets this to false so stdout and stderr stay separate.
+   */
+  tty?: boolean;
 }
 
 export interface ExecStatus {
   running: boolean;
   exitCode: number | null;
+  /** The engine's host pid. Informational only: `kill()` never signals it. */
   pid: number | null;
 }
 
-/** An attached exec in TTY mode. */
+/**
+ * An attached exec. A TTY session uses `stream` for both directions. A command exec (`tty: false`) also fills
+ * `stdout` and `stderr` separately. `inspect()` is the exit code. `kill()` stops the process and its descendants from
+ * inside the box, as `stopAs` or else the exec's user, for TTY and non-TTY execs alike. It resolves once the exec has
+ * ended, and rejects with an `engine` error if a process survives or the exec does not end.
+ */
 export interface ExecSession {
   readonly id: string;
   readonly stream: Duplex;
+  readonly stdout: Readable;
+  readonly stderr: Readable;
   resize(size: { cols: number; rows: number }): Promise<void>;
   inspect(): Promise<ExecStatus>;
+  kill(): Promise<void>;
 }
 
 export interface RuntimeEvent {
@@ -179,6 +253,10 @@ export class RuntimeError extends Error {
   }
 }
 
+/** Business code branches on the kind of an engine failure, never on its message. */
+export const isRuntimeError = (e: unknown, kind: RuntimeErrorKind): e is RuntimeError =>
+  e instanceof RuntimeError && e.kind === kind;
+
 /**
  * Operations MiniBox needs from a container engine. Engine failures are RuntimeError; anything else is an
  * unexpected Error. See docs/runtime.md for the contract.
@@ -187,9 +265,13 @@ export interface Runtime {
   ping(): Promise<void>;
   info(): Promise<RuntimeInfo>;
 
-  /** Containers whose labels include every given key/value. Containers that disappear mid-list are skipped. */
-  listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]>;
-  inspectContainer(id: string): Promise<ContainerInfo>;
+  /**
+   * Containers whose labels include every given key/value. Containers that disappear mid-list are skipped. An aborted
+   * `signal` rejects with `AbortError` once the engine call is cancelled.
+   */
+  listContainers(filter: { labels: Record<string, string> }, opts?: { signal?: AbortSignal }): Promise<ContainerInfo[]>;
+  /** An aborted `signal` rejects with `AbortError` once the engine call is cancelled. */
+  inspectContainer(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerInfo>;
   createContainer(spec: CreateContainerSpec): Promise<{ id: string }>;
   /** Starting a running container succeeds. Fails with `not_found` while the container's network is missing. */
   startContainer(id: string): Promise<void>;
@@ -202,28 +284,51 @@ export interface Runtime {
   updateContainer(id: string, limits: ContainerUpdate): Promise<void>;
   /** Log text with any stream framing removed. */
   containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string>;
-  containerStats(id: string): Promise<ContainerStats>;
+  /** Writable-layer changes (`docker diff`). An unchanged container returns an empty list. */
+  containerDiff(id: string): Promise<ContainerChange[]>;
+  /** One sample of a container's usage. An aborted `signal` rejects with `AbortError` once the engine call is cancelled. */
+  containerStats(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerStats>;
   commitContainer(id: string, spec: CommitSpec): Promise<void>;
   /** Extracts a tar archive into `path`. Works on created containers that are not running. */
   putArchive(id: string, path: string, tar: Readable | Buffer): Promise<void>;
   /** Tar archive of `path`. Works on created containers that are not running. */
   getArchive(id: string, path: string): Promise<Readable>;
   startExec(containerId: string, spec: ExecSpec): Promise<ExecSession>;
-  /** Stops when the consumer stops iterating or `signal` aborts. */
+  /**
+   * Stops when the consumer stops iterating or `signal` aborts. `since` (Unix seconds) also yields the events the
+   * engine still holds from that time, so a subscriber that lists containers after subscribing misses nothing.
+   */
   events(
-    filter: { labels?: Record<string, string>; types?: string[] },
+    filter: { labels?: Record<string, string>; types?: string[]; since?: number },
     signal?: AbortSignal,
   ): AsyncIterable<RuntimeEvent>;
 
   listImages(filter: { labels: Record<string, string> }): Promise<ImageSummary[]>;
   inspectImage(ref: string): Promise<ImageDetails>;
   removeImage(ref: string, opts: { force: boolean }): Promise<void>;
-  /** Resolves with the build log. */
+  /**
+   * Resolves with the build log. `onLog` receives the same text as it arrives. An aborted `signal` rejects with
+   * `AbortError` rather than a RuntimeError, once the connection to the engine has closed.
+   */
   buildImage(spec: BuildSpec): Promise<string>;
 
   inspectVolume(name: string): Promise<VolumeInfo>;
-  createVolume(name: string, labels: Record<string, string>): Promise<void>;
+  listVolumes(): Promise<VolumeInfo[]>;
+  /**
+   * Creating an existing volume succeeds and keeps its labels and driver options.
+   * `opts` selects a driver, for example the local driver with NFS or bind options.
+   */
+  createVolume(name: string, labels: Record<string, string>, opts?: VolumeCreateOptions): Promise<void>;
   removeVolume(name: string): Promise<void>;
+  /**
+   * Runs a short-lived container to completion. It has no network, a read-only root filesystem with a small `/tmp`,
+   * no capabilities beyond `capAdd`, no privilege escalation, and fixed memory and process limits. The engine removes it
+   * when it exits, and this returns once it is gone. A timeout kills the container and returns exit code 124. Used for
+   * chown, NFS directory setup, pool probes and measuring. The image is the base template.
+   */
+  runHelper(spec: HelperSpec): Promise<HelperResult>;
+  /** Bytes on the filesystem that holds `path`, as seen by this runtime's host. */
+  diskUsage(path: string): Promise<DiskUsage>;
 
   /**
    * Creates a bridge network named `name` if it does not exist. An existing network must be a bridge whose

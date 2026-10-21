@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="web/assets/logo-dark.svg" />
-    <img src="web/assets/logo.svg" alt="MiniBox" height="56" />
-  </picture>
+  <img src="web/assets/logo-readme.svg" alt="MiniBox" height="56" />
 </p>
 
 <p align="center"><strong>为 AI Agent 准备的个人自托管开发环境：基于 Docker 的 Box 与管理面板。</strong></p>
@@ -26,20 +23,23 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 
 - Agent 很容易把环境弄乱：随手全局安装、做到一半的构建、残留进程。放进 Box 里就不会污染宿主机，一键即可重建、快照或删除。
 - 托管沙箱很好用，但有时你更想用自己的硬件和网络，也不想按分钟计费。
-- 更重的自托管方案（基于 Firecracker 的沙箱、Coder、Kubernetes Operator）对个人来说太重。MiniBox 只是一个和本机 Docker Engine 通信的 Bun 进程，**不需要数据库服务**。Box 的状态保存在 Docker 的标签、镜像和数据卷中，MiniBox 自身的少量文件保存在[数据目录](#数据目录)里。
+- 更重的自托管方案（基于 Firecracker 的沙箱、Coder、Kubernetes Operator）对个人来说太重。MiniBox 只是一个和本机 Docker Engine 通信的 Bun 进程，**不需要数据库服务**。镜像和数据卷在 Docker 里。规格、卷记录和事件日志在[数据目录](#数据目录)里。
 
 ## 功能
 
 | 模块 | 说明 |
 |---|---|
-| Box 生命周期 | 创建、启动、停止、重启、删除；删除时可选择保留或一并删除工作区数据卷 |
+| Box 生命周期 | 创建、启动、停止、重启、删除；删除时可保留卷，或只删除该 Box 拥有的卷 |
+| 数据卷 | 独立的 Volume 与存储池（`local`、`nfs`、`path`）。新建 Box 会挂载工作区、主目录、一只共享只读的工具卷，以及本地缓存。见[数据卷与存储池](#数据卷与存储池) |
 | 资源配额 | 按预设（小型 2 核 4 GB / 中型 4 核 8 GB / 大型 8 核 16 GB）或自定义设置 CPU、内存，并按宿主机容量校验；运行中可热更新（`docker update`） |
 | Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行；Web 终端与 `docker exec` 默认以 `dev` 进入。三个[安全档位](#安全档位)决定 Box 能做什么：默认的「标准」档位保留无密码 `sudo`，「严格」档位禁止提权。见[基础模板](#基础模板) |
 | 快照 | 基于 `docker commit` 保存 Box 的系统环境，可从快照创建新 Box，或提升为模板 |
-| 模板 | 内置基础模板（Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
+| 模板 | 内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
-| 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应 |
+| 实时更新 | Box 状态、资源采样、宿主机指标与任务进度通过 `GET /api/events/stream`（SSE）推送。控制台只在事件流断开时轮询 |
+| 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应。具名的 tmux 会话在刷新页面或连接断开后仍然保留。Agent 发起的会话默认只读，接管后才能输入 |
+| 活动 | Box 的历史记录：经由 MiniBox 执行的命令、容器启动 / 停止 / 内存溢出（OOM）事件，以及终端会话的开启与关闭。从不记录键入的内容。`docker logs` 保留在下方 |
 | 日志 | 查看容器主进程输出，支持行数选择与自动刷新 |
 | 访问控制 | 单一访问密钥；登录时换取可撤销的会话令牌，保存在 HttpOnly、`SameSite=Strict` Cookie 中，或以 `Authorization: Bearer` 发送。另有带 scope、`created-by-me`（或 id、标签、全部 Box）、配额和吊销的 Agent API 令牌。按客户端地址限制登录失败次数；拒绝跨站请求 |
 | 多语言 | 英文与简体中文；点击右上角（控制台顶栏和登录页）的语言图标按钮即可切换，默认跟随浏览器语言，并在本浏览器记住选择 |
@@ -72,6 +72,8 @@ flowchart LR
     OPS[操作注册表<br/>鉴权 / 校验 / 审计]
     WS[WebSocket 终端]
     MON[HostMonitor<br/>/proc 采样]
+    SAMP[HostSampler<br/>盒子缓存 · 资源采样]
+    BUS[事件总线]
   end
   subgraph Host[宿主机]
     PROC[/proc · statfs/]
@@ -86,16 +88,25 @@ flowchart LR
   HTTP -- 盒子路由 --> OPS
   HTTP -- 其他路由 --> D
   OPS -- Runtime --> D
-  WS -- exec / TTY --> D
+  WS -- tmux attach / TTY --> D
   MON --> PROC
+  MON --> BUS
+  OPS -- 读取 --> SAMP
+  OPS --> BUS
+  SAMP -- inspect · stats --> D
+  D -- 容器事件 --> SAMP
+  SAMP --> BUS
+  BUS -- SSE --> UI
   D --> B1 & B2
   B1 & B2 --- V
   D --- I
 ```
 
-- **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`）。重启策略为 `no`：启动时的协调器按规格里的期望状态（`running` 或 `stopped`）启动或停止容器。`DATA_DIR/boxes/` 下的规格文件是可变状态的权威来源。容器标签只在创建时写入，之后不再修改。`/workspace` 挂载在独立数据卷 `minibox-ws-<名称>`。容器以非 root 用户 `dev` 运行（见[基础模板](#基础模板)）。
+- **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`）。重启策略为 `no`：启动时的协调器按规格里的期望状态（`running` 或 `stopped`）启动或停止容器。`DATA_DIR/boxes/` 下的规格文件是可变状态的权威来源。容器标签只在创建时写入，之后不再修改。新建 Box 会挂载 `/workspace`、`/home/dev`、共享且只读的 `/opt/minibox/tools` 和 `/home/dev/.cache`。新建卷的引擎名是 `vol_…`。已有的 `minibox-ws-<名称>` 会当作该 Box 的工作区继续使用，不会改名。更改挂载会重建容器，并把容器改名为 `minibox-<box id>`；认领已有容器不会改名。容器以非 root 用户 `dev` 运行（见[基础模板](#基础模板)）。
+- **会话** = Box 内以 `dev` 运行的一个具名 tmux 会话。网页终端附着到它；Agent 通过会话工具发送按键、读取屏幕。关闭页面只是断开附着，会话会一直运行，直到被关闭或 Box 停止（见[会话](#会话)）。
 - **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`。
 - **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。
+- **实时状态** = 每台主机一个 `HostSampler`。它根据引擎的容器事件保持盒子缓存最新，并每分钟重新列出一次容器，以补上事件流静默停止时漏掉的变化。有实时流打开时，每隔 `METRICS_INTERVAL_MS` 为每个运行中的 Box 采样，没有时每 30 秒一次（`METRICS_INTERVAL_MS` 更长时按它），并保留 `METRICS_HISTORY` 个采样点；同时把 Box、采样、链路与主机指标帧发布到事件总线。`GET /api/events/stream` 把它们转发给控制台，控制台只在事件流断开时轮询。实时帧只带环境变量的名称，不带值。同时打开的事件流与任务流不超过 `STREAM_MAX_CONNECTIONS`，超出的请求返回 `429`。采样只保存在内存中，从不写入事件日志。
 - 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 随仓库放在 [`web/vendor/`](web/vendor/README.md)，控制台不会从 CDN 加载任何代码。
 
 （`minibox` 是默认的 `LABEL_PREFIX`，所有名称和标签都随前缀变化。）
@@ -103,7 +114,7 @@ flowchart LR
 ### 目标架构（规划中）
 
 > [!NOTE]
-> 规划中的设计，尚未实现。完整设计与取舍见 [`docs/design.md`](docs/design.md)。
+> exec、`/mcp` 与 CLI 客户端，以及图中的存储池和数据卷已经实现。图中的会话、预览代理、任务、检查点、多宿主机，以及卷准备之外的辅助容器用途仍在规划中。完整设计见 [`docs/design.md`](docs/design.md)。
 
 ```mermaid
 flowchart LR
@@ -277,6 +288,7 @@ docker run -d --name minibox --restart unless-stopped \
 | `COOKIE_SECURE` | `false` | 始终为会话 Cookie 加上 `Secure` 标记。浏览器登录时会带上 `https://` Origin，已足以加上该标记，通常无需设置。只在 HTTPS 下使用：浏览器会丢弃明文 HTTP 收到的 `Secure` Cookie |
 | `SESSION_TTL_DAYS` | `30` | 一次登录的有效期，从登录时起算，单位为天，大于 0 且至多 3650，可用小数。已登录的会话保持其创建时的有效期 |
 | `SESSION_IDLE_DAYS` | 留空（关闭） | 可选的滑动续期：会话在这么多天未被使用后也会结束。每个请求都算作使用，打开的终端里有输入也算。会话永远不会超过 `SESSION_TTL_DAYS` |
+| `SESSION_TAKEOVER_IDLE_SEC` | `300` | 接管 Agent 的终端会话后，人在这么多秒内没有输入，会话便还给 Agent。取值为 0 到 86400 的整数；`0` 表示接管一直持续到手动归还，即使页面已经关闭。其他取值回退为 300（见[会话](#会话)） |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
 | `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
@@ -284,11 +296,13 @@ docker run -d --name minibox --restart unless-stopped \
 | `BOX_PROFILE` | `standard` | 新建 Box 的默认[安全档位](#安全档位)：`standard`、`strict` 或 `relaxed` |
 | `BOX_PIDS_LIMIT` | `1024` | 每个新建 Box 允许的最大进程数（正整数） |
 | `RUNTIME` | 引擎默认 | 新建 Box 使用的 OCI 运行时，例如 gVisor 的 `runsc`。该运行时必须已经安装在 Docker 引擎中 |
-| `METRICS_INTERVAL_MS` | `3000` | 宿主机采样间隔（毫秒） |
-| `METRICS_HISTORY` | `120` | 保留的采样点数量（默认间隔下约 6 分钟） |
+| `STOP_TIMEOUT_SEC` | `3` | 停止或重启 Box 时，发送 SIGTERM 后等待退出的秒数，超时则强制结束。0 到 300 之间的整数 |
+| `METRICS_INTERVAL_MS` | `3000` | 宿主机指标的间隔（毫秒）；有实时流打开时，也是每个 Box 资源采样的间隔。没有实时流时，Box 每 30 秒采样一次（`METRICS_INTERVAL_MS` 更长时按它）。请保持在 2000 以上：Docker 的统计调用需要 1 到 2 秒，超时仍未返回的调用记为缺失的采样 |
+| `METRICS_HISTORY` | `120` | 每台主机与每个 Box 保留的采样点数量（默认间隔下约 6 分钟） |
+| `STREAM_MAX_CONNECTIONS` | `256` | 同时打开的事件流与任务流上限，所有浏览器与客户端共用。超出的连接返回 `429`，控制台按逐渐增长的间隔重试。须为正整数 |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | 审计事件的保留天数：写操作、删除与被拒绝的调用。见[事件](#事件) |
-| `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | 读取事件的保留天数。同一分钟内的重复读取会合并 |
-| `EVENT_OUTPUT_RETENTION_DAYS` | `7` | 命令输出（`DATA_DIR/exec`）的保留天数。在 `exec`（[#9](https://github.com/ArnoChenFx/minibox/issues/9)）落地前没有写入方 |
+| `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | 活动事件的保留天数：命令执行、容器事件、终端会话与读取。同一分钟内的重复读取会合并 |
+| `EVENT_OUTPUT_RETENTION_DAYS` | `7` | 命令输出（`DATA_DIR/exec`）的保留天数。命令结束时 `exec` 会在这里写入头尾窗口 |
 | `EVENT_OUTPUT_MAX_MB` | `512` | 命令输出的总大小上限（MB），最旧的先删除 |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `MINIBOX_VERSION` | 来自 git / `package.json` | 覆盖显示的版本号（发布镜像中自动设置） |
@@ -302,7 +316,7 @@ docker run -d --name minibox --restart unless-stopped \
 | 方面 | 约定 |
 |---|---|
 | 用户 | `dev`，uid/gid 为 `1000`。Box 以镜像默认用户启动，因此 Web 终端与 `docker exec` 默认以 `dev` 进入。`sudo` 无需密码，且仅限 Box 内。「严格」档位下 `sudo` 已安装但无法提权（见[安全档位](#安全档位)） |
-| 挂载点 | `/workspace`（工作区卷）、`/home/dev`（主目录）、`/opt/minibox/tools`（共享且只读的工具，其 `bin` 在 `PATH` 中）、`/home/dev/.cache`（缓存）。在 [#24](https://github.com/ArnoChenFx/minibox/issues/24) 实现数据卷挂载之前，它们是镜像里的普通目录 |
+| 挂载点 | `/workspace`（工作区卷，读写）、`/home/dev`（主目录，读写）、`/opt/minibox/tools`（每个池一只共享工具卷，只读，其 `bin` 在 `PATH` 中）、`/home/dev/.cache`（缓存，读写，本地池）。除非请求里写了 `mounts`，新建 Box 会挂上这四只 |
 | 缓存 | `XDG_CACHE_HOME`、`npm_config_cache`、`PIP_CACHE_DIR` 与 `YARN_CACHE_FOLDER` 指向 `/home/dev/.cache` 下。`NPM_CONFIG_PREFIX` 为 `/home/dev/.npm-global`，因此 `npm install -g` 无需 root |
 | 标签 | `minibox.template.user`、`minibox.template.uid` 与 `minibox.template.gid` 记录该约定，便于校验其他模板 |
 
@@ -314,19 +328,20 @@ docker run -d --name minibox --restart unless-stopped \
 
 - 已有的 Box 继续以旧模板的 root 用户运行，不会改名，也不会重建。
 - 从旧快照或旧模板创建的 Box，沿用该镜像的用户；在本次改动之前制作的镜像，用户是 root。
-- 新 Box 如果复用了旧 Box 留下的工作区卷（删除旧 Box 时保留了卷），卷内 `/workspace` 属主为 root，`dev` 无法写入。在 Box 运行时执行一次即可修复：
+- 新建的**本地**卷会由基础模板镜像拉起的短生命周期辅助容器（以 root 运行）执行 `chown -R 1000:1000`。如果该镜像不存在，则跳过 chown，并记录 `volume.chown_skipped`。NFS 与 path 卷必须先建好子目录；那里的 chown 是尽力而为，因为 `root_squash` 经常会拦住它（同一条日志，辅助容器会打印 `MINIBOX_CHOWN_SKIPPED`）。
+- 已有的 `minibox-ws-*` 卷会被识别，**不会**自动 chown。新 Box 如果复用了这次改动之前创建的这种卷，`/workspace` 的属主仍是 root，`dev` 无法写入。对那一只卷执行一次即可，Box 运行时：
 
   ```bash
   docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace
   ```
 
-  或者在卷没有被使用时，用一次性容器对它执行：
+  或者在卷没有被使用时：
 
   ```bash
   docker run --rm --user root -v minibox-ws-<名称>:/workspace minibox-template:base chown -R 1000:1000 /workspace
   ```
 
-  MiniBox 暂不自动执行。对整个工作区递归 `chown` 可能耗时很长，并且会改动你没有要求改动的数据，因此这件事归入 [#24](https://github.com/ArnoChenFx/minibox/issues/24) 的存储工作一起处理。
+  重建不会递归修改已有数据。已经装过文件的卷，递归 chown 仍然是你自己执行的一次性操作。
 
 用 Docker 检查镜像：执行 `bun run build:template` 后，运行 `bun run check:template`（或 `scripts/check-box-image.sh <镜像>`）。它会检查用户、uid、`sudo`、工具、挂载点、缓存变量、登录 Shell 的 `PATH`，并检查两个共享同一卷的容器能否读写它。它还会以每个安全档位启动一个容器，检查其能力集、`no-new-privileges`、`sudo` 与 `ping`。CI 会对 `linux/amd64` 执行检查，并在模拟环境下对 `linux/arm64` 执行检查。
 
@@ -340,11 +355,62 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 | `sessions.json` | `600` | 浏览器会话：令牌的 SHA-256 哈希（从不保存令牌本身）、登录与过期时间、最后活动时间、User-Agent 与地址，以及在访问密钥变更时用于结束全部会话的 scrypt 校验值 |
 | `tokens.json` | `600` | Agent API 令牌：只保存 SHA-256。包含 scope、资源范围、配额、到期时间、最后使用，以及创建者。更换 `ACCESS_KEY` 不会吊销这些令牌 |
 | `boxes/` | `700` | 每个 Box 一个规格文件 `<id>.json`（权限 `600`）。可变状态写在这里；标签只是创建时的副本 |
-| `exec/` | `700` | `exec` 命令的输出（现在创建，后续功能使用） |
+| `exec/` | `700` | `exec` 命令保存的输出，每个 exec 一个 JSON 文件。进程重启后内存中的记录消失，文件保留到清理策略删除它 |
 | `secrets/` | `700` | 密钥值与仓库密钥（现在创建，后续功能使用） |
+| `volumes/` | `700` | 每只卷一个记录文件 `vol_….json`（权限 `600`）。写入该文件不会改 Docker 卷名 |
+| `pools.json` | `600` | 存储池，以及角色到池的默认对应。文件不存在时使用隐式的本地池；文件损坏则保留原文件，并按缺失处理 |
 | `events.db`（旁边还有 `events.db-wal` 与 `events.db-shm`） | 位于 `DATA_DIR` 内 | 事件库，SQLite WAL 模式。见[事件](#事件) |
+| `tasks.db`（旁边还有 `tasks.db-wal` 与 `tasks.db-shm`） | 位于 `DATA_DIR` 内 | 任务状态，以及每个任务最新的 64 KB 输出。见[任务](#任务) |
 
-MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写入 `.env`。如果 `DATA_DIR` 丢失，且 `.env` 和环境变量中也没有设置密钥，下次启动会生成新的访问密钥，所有人都需要用新密钥登录。如果你依赖当前密钥，请备份 `access_key`，或在 `.env` 中设置 `ACCESS_KEY`。复制 `events.db` 之前请先停止 MiniBox：WAL 模式下，最近的变更会留在 `events.db-wal` 中，直到 SQLite 将其写回主文件，因此只复制主文件可能是旧的。
+MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写入 `.env`。如果 `DATA_DIR` 丢失，且 `.env` 和环境变量中也没有设置密钥，下次启动会生成新的访问密钥，所有人都需要用新密钥登录。如果你依赖当前密钥，请备份 `access_key`，或在 `.env` 中设置 `ACCESS_KEY`。复制 `events.db` 或 `tasks.db` 之前请先停止 MiniBox：WAL 模式下，最近的变更会留在 `-wal` 文件中，直到 SQLite 将其写回主文件，因此只复制主文件可能是旧的。
+
+## 数据卷与存储池
+
+数据卷是独立对象。一只 Box 可以挂载零只或多只。控制台导航项是**卷**。记录放在 `DATA_DIR` 里，并写明创建该引擎卷的主机，因此以后增加主机时不必假设只有一个 Docker 守护进程。
+
+| 角色 | 默认池 | 挂载点 | 模式 |
+|---|---|---|---|
+| `workspace` | 默认池 | `/workspace` | 读写 |
+| `home` | 默认池 | `/home/dev` | 读写；视为敏感数据 |
+| `tools` | 默认池 | `/opt/minibox/tools` | 只读；每个池一只共享的独立卷 |
+| `cache` | **本地**池 | `/home/dev/.cache` | 读写；不进入检查点 |
+
+省略 `mounts` 时，新建 Box 得到这四只。`"mounts": []` 表示一只都不挂。显式列表会替换默认值。同一只卷可以挂到多只 Box，每次单独选择读写或只读。第二次读写挂载是允许的，API 返回 `warning: "shared_rw"`；控制台会先询问。Docker 不提供文件锁。
+
+`DELETE /api/boxes/:id?deleteVolume=true` 只删除**没有被其他 Box 挂载的自有卷**（随该 Box 创建的工作区、主目录和缓存）。独立卷会留下，包括共享工具卷，以及在数据卷页面单独创建的卷。没有记录的卷，或者属于其他 Box 的卷，即使本 Box 仍挂载着它们，也不会被删除。只有至少删除了一只自有卷时，`volumeDeleted` 才为 true。删除 Box 从不删除独立卷。
+
+新建的引擎卷名为 `vol_…`，并带标签 `minibox.volume=true`。已有的 `minibox-ws-*` 会在启动时、以及创建同名 Box 时被识别：MiniBox 写入所有权记录，不改名、不补标签、不删除。Docker 不能在卷创建之后追加标签。如果 `minibox-ws-<名称>` 已经存在，新建的同名 Box 会把它当作工作区，而不是再创建一只。
+
+更改挂载会重建容器。新容器名为 `<前缀>-<box id>`（默认 `minibox-bx_…`）。认领不会改名。响应里是新的容器 id；稳定的 box id（`bx_…`）在 API 里仍然有效。控制台会跟着跳到新 id。
+
+### 存储池
+
+`pools.json` 保存池列表。始终有一只名为 `local` 的池，其后端保持 `local`。恰好一只池是默认池。角色设为 `null` 时使用规则：缓存放本地池，其余放默认池。保存池配置不会改写已经存在的卷。仍有卷的池不能删除，也不能更换后端（`409`，键 `pool_in_use`）。
+
+| 后端 | MiniBox 的行为 |
+|---|---|
+| `local` | 本机上的 Docker 本地卷。不要把 Docker 的 data-root 挪到网络存储上。`DATA_DIR` 留在运行 MiniBox 的机器上 |
+| `nfs` | 带 NFS 选项的 Docker 本地卷（`type=nfs`，`o=addr=<服务器>,<选项>`，`device=:<导出路径>/<卷 id>`）。辅助容器在导出根目录下创建子目录。**数据**卷使用你设置的选项，通常是 `hard`。**探测**挂载是 `soft,timeo=10,retrans=1`（不会把你的 `hard`/`soft` 抄到探测上），这样服务器无响应时探测不会挂起。NFS 应在可信网络内使用。更长的 NAS 说明是 [#30](https://github.com/ArnoChenFx/minibox/issues/30) |
+| `path` | 通过 Docker 卷绑定 `<根目录>/<卷 id>`（`type=none`，`o=bind`）。任何写入之前，辅助容器以只读方式绑定 `root`，并检查标记文件是否存在（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在就是**存储不可达**；MiniBox 不会创建标记，也不会往本地盘里写 |
+
+`GET /api/pools` 探测可达性，并缓存 15 秒。`?refresh=true` 会重新探测。列出 Box 不会探测 NFS，因此在有东西探测之前，Box 的 `storage.status` 保持 `unknown`。Box 列表和详情只把 `unreachable` 标出来；`ok` 和 `unknown` 不单独提示。当非本地池不是 `reachable`（包括缺少基础模板镜像），或本地引擎探测本身失败时，启动、重启或创建 Box 返回 `503` `docker_unavailable`（消息键 `storage_unreachable`）。协调器记录 `reconcile.start_failed` 后继续，因此一只不可达的池不会让进程退出。剩余空间低于 5 GiB 或低于 10% 时 `lowSpace` 为 true。没有每卷配额。
+
+挂载卷需要对该卷的 `volume:attach`。读写挂载还需要 `volume:write`；创建卷也需要 `volume:write`，新建 Box 为自己创建的工作区、主目录和缓存同样如此。修改存储池列表需要 `pool:admin`，`volume:write` 不能代替它。每项检查都是对鉴权钩子的一次单独调用，有卷时资源是这只卷，因此 [#13](https://github.com/ArnoChenFx/minibox/issues/13) 落地后可以把 Agent 令牌限制在对应的范围上。在那之前，钩子只允许所有者（目前唯一的主体，浏览器会话也以所有者身份访问）。能力标志（`shareable`、`snapshots`、`quota`、`clone`、`crossHost`）由后端计算：每个池都可共享，只有 NFS 的 `crossHost` 为 true，其余为 false。
+
+```bash
+# 把 NFS 导出设为默认池。除非覆盖 roles.cache，缓存仍在本地。
+curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -X PUT -d '{"confirm":true,"pools":[
+    {"name":"local","backend":"local"},
+    {"name":"nas","backend":"nfs","server":"192.168.1.10","export":"/volume1/minibox","options":["nfsvers=4.1","hard","noatime"],"default":true}
+  ]}' http://127.0.0.1:3920/api/pools
+```
+
+使用 path 池之前，在已经挂载好的文件系统上创建标记：
+
+```bash
+sudo touch /mnt/minibox/.minibox-mounted
+```
 
 ## API 参考
 
@@ -355,10 +421,10 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 出错时返回对应的 HTTP 状态码和统一结构：
 
 ```json
-{ "error": { "code": "validation_failed", "message": "CPU 核数须在 0.1 到 64 之间。", "details": { "field": "cpus" } } }
+{ "error": { "code": "validation_failed", "message": "CPU 核数须在 0.1 到 64 之间。", "hint": "…", "retryable": false, "details": { "field": "cpus" } } }
 ```
 
-常见错误码：`validation_failed`（400）、`unauthorized`（401）、`forbidden`（403）、`not_found`（404）、`method_not_allowed`（405）、`conflict`（409）、`precondition_failed`（412）、`unsupported_media_type`（415）、`insufficient_capacity`（422）、`precondition_required`（428）、`too_many_requests`（429）、`docker_error`（502）、`docker_unavailable`（503）。错误消息为英文，并带有 `key` 供界面翻译。
+`retryable` 总会出现。408、429 和 5xx 默认为 true，除非处理程序另行指定。`hint` 在有下一步可做时出现，并带 `hintKey` 供界面翻译。常见错误码：`validation_failed`（400）、`unauthorized`（401）、`forbidden`（403）、`not_found`（404）、`method_not_allowed`（405）、`conflict`（409）、`confirmation_required`（409）、`precondition_failed`（412）、`unsupported_media_type`（415）、`insufficient_capacity`（422）、`precondition_required`（428）、`too_many_requests`（429）、`docker_error`（502）、`docker_unavailable`（503）。错误消息为英文，并带有 `key` 供界面翻译。
 
 ### 认证与系统
 
@@ -379,19 +445,57 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET` | `/api/boxes?stats=false` | 列表；除非 `stats=false`，否则附带运行中 Box 的实时占用 |
-| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB |
+| `GET` | `/api/boxes?stats=false` | 从主机的缓存列出 Box，缓存由引擎事件保持最新。缓存就绪时列表不调用引擎；除非 `stats=false`，否则运行中的 Box 附带最近一次采样 |
+| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载 |
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
-| `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。模板、挂载、环境变量和安全档位在重建实现前会被忽略 |
-| `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除；可选同时删除工作区数据卷 |
+| `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
+| `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除 Box。`deleteVolume=true` 还会删除没有被其他 Box 挂载的自有卷。独立卷会留下 |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作。启动和停止会记下期望状态 |
 | `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"?, "pids"? }`。必须带 `If-Match` |
-| `GET` | `/api/boxes/:id/stats` | 实时占用 |
-| `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行） |
-| `POST` | `/api/boxes/:id/snapshots` | 创建快照 `{ "name"? }` |
-| `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket 终端；发送 `{"type":"resize","cols":N,"rows":N}` 调整窗口，其余消息作为输入 |
+| `GET` | `/api/boxes/:id/stats` | 最近一次占用（最新采样）。`?history=true` 另外返回最近的采样，按时间从早到晚排列 |
+| `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行）。同一 Box 与 tail 的引擎读取在两秒内共享 |
+| `POST` | `/api/boxes/:id/snapshots` | 开始创建快照 `{ "name"? }`。返回 `202` `{ "taskId" }` |
+| `GET` (WS) | `/api/boxes/:id/terminal?session=NAME` | 附着到具名会话的 WebSocket 终端（见[会话](#会话)）。二进制帧与其他文本帧是键入的输入。文本帧 `{"type":"takeover"}` 与 `{"type":"release"}` 用于接管与归还，`{"type":"resize","cols":N,"rows":N}` 调整窗口。只有浏览器会话能输入、接管或调整窗口；Bearer 调用者只能读取输出，输入会收到带 `terminal_read_only` 的 `forbidden` 错误帧，其调整窗口的消息会被忽略 |
+| `POST` | `/api/boxes/:id/exec` | 在 Box 里运行命令。请求体 `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`。`argv`（不经 shell）与 `cmd`（`/bin/sh -c`）只能提供一个。默认用户 `dev`，目录 `/workspace`，超时 30 秒；前台调用最长 55 秒，`background: true` 最长 3600 秒。已停止的 Box 会先启动，这会改变它的版本号。结果包含 `status`（`running`、`exited` 或 `killed`）、`exitCode`、`stdout`、`stderr`、`truncated`、`durationMs`、`timedOut` 与 `woke`。非零退出码是程序自己的状态。内联输出保留每个流头尾各约 16 KiB；`outputRef` 指向保存的窗口。「严格」档位下用户只能是 `dev` 或 `1000`；其他档位可以用 `root`，这类执行在审计中标记为 `privileged`。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep` |
+| `GET` | `/api/execs/:execId?waitMs=` | 读取一次 exec。`waitMs` 在命令仍在运行时最长等待 25000 毫秒。`status` 为 `running`、`exited` 或 `killed` |
+| `GET` | `/api/execs/:execId/output` | 已保存的 stdout 与 stderr（每个流头尾各约 64 KiB）。内存记录消失后，在保留期内仍可读取 |
+| `POST` | `/api/execs/:execId/kill` | 在 Box 内结束正在运行的 exec 及其进程树：标准与宽松档位以 `root` 执行，严格档位以 exec 的用户执行。已经退出的 exec 返回 `409`。如果仍有进程存活，或 exec 没有结束，返回 `502`，exec 保持 `running`，可以再次调用重试 |
 
-`:id` 可以是容器 ID、容器名（`minibox-<名称>`）、稳定 ID（`bx_…`）或 Box 名称。会改动 Box 的请求必须带 `If-Match`，值为当前版本号（纯数字、带引号的实体标签，或弱标签）。缺少该头返回 `428 precondition_required`；版本过期返回 `412 precondition_failed`。限制：CPU 0.1–64 核，内存 128–262144 MB，进程数 1–1000000，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
+`:id` 可以是容器 ID、容器名（`minibox-<名称>`，挂载变更后为 `minibox-<box id>`）、稳定 ID（`bx_…`）或 Box 名称。会改动 Box 的请求必须带 `If-Match`，值为当前版本号（纯数字、带引号的实体标签，或弱标签）。缺少该头返回 `428 precondition_required`；版本过期返回 `412 precondition_failed`。限制：CPU 0.1–64 核，内存 128–262144 MB，进程数 1–1000000，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
+
+### 数据卷与存储池
+
+数据卷路由上的 `:id` 是卷 id（`vol_…`）或显示名。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/volumes` | 列出数据卷，以及哪些 Box 挂载了它们。已有的 `minibox-ws-*` 会被识别 |
+| `POST` | `/api/volumes` | 创建独立卷 `{ "name", "pool"?, "role"?, "confirm"? }`。返回 `201`。基础模板镜像存在时，新建的本地卷会 chown 到 uid 1000。不带 `"confirm": true` 时返回 `409` `confirmation_required` 与 `details.preview`，什么也不会创建 |
+| `GET` | `/api/volumes/:id` | 一只卷 |
+| `DELETE` | `/api/volumes/:id?confirm=true` | 删除没有被任何 Box 挂载的卷。仍被挂载时返回 `409`（`volume_mounted`）。不带 `confirm=true` 时返回 `409` `confirmation_required` 与 `details.preview`，什么也不会删除 |
+| `POST` | `/api/volumes/:id/attach` | `{ "box", "path", "mode", "confirm"? }`。必须带该 Box 的 `If-Match`。会重建容器。不带 `"confirm": true` 时返回 `409` `confirmation_required` 与重建预览，什么也不会改变。`warning` 为 `shared_rw` 或 `null`。需要 `volume:attach`；`mode` 为 `rw` 时还需要 `volume:write` |
+| `POST` | `/api/volumes/:id/detach` | `{ "box", "path", "confirm"? }`。必须带 `If-Match`。会重建容器。不带 `"confirm": true` 时以 `409` `confirmation_required` 返回重建预览。需要 `volume:attach` |
+| `POST` | `/api/volumes/:id/usage` | 用辅助容器统计已用字节，并缓存在卷记录上 |
+| `GET` | `/api/pools?refresh=true` | 存储池、角色默认值与可达性。不可达的池会在结果里说明，列表本身不会失败 |
+| `PUT` | `/api/pools` | 整体替换 `{ "pools", "roles"?, "confirm"? }`。如果省略，本地池会被补回。不带 `"confirm": true` 时返回 `409` `confirmation_required`，列出将新增和移除的池，且不保存任何内容。需要 `pool:admin` |
+
+重建会保留已挂载的卷、稳定 ID、Box 名称和最近 20 个规格版本。未写入卷的可写层、运行中的进程（包括 tmux）和容器 IP 会丢失。认领不改名；改成 `<LABEL_PREFIX>-<id>` 发生在重建时（决策 D6）。`secretRef` 只存储、不注入。第一阶段创建时仍只有一个工作区卷；增删挂载属于重建，不是卷池。重建前的检查点不在这一步。对外的容器 ID 会变，稳定 ID 和 Box 名称不变。重启策略保持 `no`。
+
+### 会话
+
+会话是 Box 内的一个具名 tmux 会话。网页终端每次附着一个会话，Agent 通过 `session_start`、`session_send` 与 `session_read` 使用它们（见 [Agent](#agent)）。会话在每种安全档位下都以 `dev` 运行，调用方断开后仍会继续运行，直到被关闭或 Box 停止。启动一个已存在的名称会返回该会话。在已停止的 Box 中启动会话时，会先启动 Box（`woke: true`）。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/boxes/:id/sessions` | 列出会话：`name`、`origin`（`agent` 表示 API 与 MCP 创建，`human` 表示控制台创建）、`controller`（`agent` 或 `human`，表示现在谁能输入）、`takenOver`、`createdAt`，以及 `attached`（当前附着在该会话上的终端数） |
+| `POST` | `/api/boxes/:id/sessions` | 启动会话，或返回同名的已有会话。请求体 `{ "name" }`：1 到 32 位，以字母或数字开头，其后可含字母、数字、`-` 或 `_`。返回 `session`、`created`（会话已存在时为 false）与 `woke` |
+| `GET` | `/api/boxes/:id/sessions/:name?lines=100&since=CURSOR` | 读取屏幕及其历史，最多回看 4000 行。`lines` 取 1 到 2000，默认 100。把最新的 `cursor` 作为 `since` 传回，只取新增的行。`reset: true` 表示屏幕被重绘或游标已过期，此时 `lines` 为当前窗口。`truncated` 表示还有未返回的行 |
+| `POST` | `/api/boxes/:id/sessions/:name/input` | 发送输入。请求体为 `{ "keys": [...] }`（tmux 键名，如 `Enter`、`Tab`、`Escape`、`C-c` 或 `Up`，最多 32 个）或 `{ "text": "..." }`（字面 UTF-8，最多 16 KiB），二者只能提供一个。返回发送的 `keys` 数与 `bytes` 字节数。人正在接管该会话时返回 `409 taken_over`，并带 `retryable: true` |
+| `DELETE` | `/api/boxes/:id/sessions/:name` | 关闭会话，并结束其中正在运行的程序。人正在持有该会话时，Agent 或 Bearer 调用者会收到 `409 taken_over`，并带 `retryable: true`；只有控制台能关闭它 |
+
+接管与归还是终端的控制帧，不是 REST 调用：控制台通过它的 WebSocket 发送。Agent 发起的会话在控制台中默认只读，直到有人接管。接管会在人手动归还，或人在 `SESSION_TAKEOVER_IDLE_SEC` 秒（默认 300 秒）没有输入后还给 Agent。控制台发起的会话留在人手中，直到人归还。接管状态只保存在内存中，因此 MiniBox 重启后，每个会话的控制方都会回到其发起方对应的默认值。接管锁约束会话 API、关闭与终端，但不约束 `exec`：在箱内以 `dev` 运行 `exec` 的 Agent 仍可用 `tmux send-keys` 或 `tmux kill-session` 直接操作会话（见 [Agent](#agent)）。每个 Box 最多 16 个会话，每个会话最多 8 个终端。其中 Bearer 终端最多 6 个，其余 2 个留给控制台。超过任一上限时，调用返回 `429` 与 `too_many_requests`。
+
+终端 WebSocket 以二进制帧输出，以文本帧发送 `state` 或 `error` 帧。会话结束时以关闭码 `1000` 关闭，浏览器会话结束时以 `1008` 关闭。连接 30 秒没有任何数据时会被关闭，浏览器会自动回应服务器的 ping，因此正常打开的页面不会被断开。浏览器来不及接收时输出会暂停；未读数据超过 4 MiB 的客户端会被关闭。无论终端如何结束，其附着进程都会在 Box 内结束，不会残留 exec。
 
 ### 快照与模板
 
@@ -404,31 +508,48 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `POST` | `/api/snapshots/:ref/boxes` | 从快照创建 Box `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
 | `POST` | `/api/snapshots/:ref/promote` | 提升为模板 `{ "name", "description"? }` |
 | `GET` | `/api/templates` | 模板列表 |
-| `POST` | `/api/templates/base/build` | 构建内置基础模板 |
+| `POST` | `/api/templates/base/build` | 开始构建内置基础模板。返回 `202` `{ "taskId" }` |
 | `DELETE` | `/api/templates/:ref` | 删除模板 |
 
 只有带 MiniBox 标签的镜像才能通过 API 删除。
 
+### 任务
+
+模板构建和快照提交作为任务运行。POST 立即返回 `202` 和 `{ "taskId" }`，工作在服务端继续。同一时间只能构建一个模板，每个 Box 同一时间只能提交一个快照；第二次请求返回 `409`，`details.taskId` 指向正在运行的任务。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/tasks?status=&limit=` | 最新的任务在前。`status` 为 `running`、`succeeded`、`failed`、`cancelled` 或 `interrupted`。列表不含 `output` |
+| `GET` | `/api/tasks/:id` | 单个任务，含 `result`（操作自己的输出）和保留的 `output` 日志 |
+| `POST` | `/api/tasks/:id/cancel` | 取消正在运行的任务。任务不在运行中时返回 `409` |
+| `GET` | `/api/tasks/:id/events` | SSE 进度。它不是操作，因此不在 OpenAPI 文档中。`after` 或 `Last-Event-ID` 从游标续传；`reset` 事件表示日志已被截断 |
+
+日志只保留最新的 64 KB，更早的文本会被丢掉，视图开头会注明。取消会中止构建的输出流。已取消的任务在引擎调用返回之前仍持有模板或 Box 的锁，同一目标的新请求在此之前返回 `409`。已经完成的快照提交不会回滚。重启后，仍在运行的任务变为 `interrupted`，不会继续执行。
+
+Bun 的 HTTP 空闲计时从请求开始计算，上限 60 秒，响应内容不会延长它。如果把构建一直挂在 POST 上，连接会被掐断。`202` 在此之前返回；进度流调用 `server.timeout(req, 0)` 关闭这个计时，并每 15 秒发送心跳，供反向代理使用。顶栏的「任务」按钮打开抽屉，显示实时日志。
+
 ### 事件
 
-每次操作调用都会在事件日志中记录一次，即[数据目录](#数据目录)中的 `events.db`，不论它经由哪个接口到达。目前只有 REST；MCP 服务与 CLI 随 [#9](https://github.com/ArnoChenFx/minibox/issues/9) 接入。事件记录调用者（`principal`）、操作的对象（`op`、`target`）、开始时间与耗时（`ts`、`durationMs`）、结果（`status`），以及所属的客户端会话（`run`，来自 `X-Minibox-Run`）。
+同步操作在事件日志中记录一次，即[数据目录](#数据目录)中的 `events.db`，不论它经由 REST、[MCP](#agent) 还是 CLI 到达。CLI 的调用是 REST 调用，记为 `rest`；`X-Minibox-Client` 请求头只是客户端的声明，从不决定事件来源。任务在被接受时记录 `started`，结束时再记录一条最终事件；`ref.taskId` 把它们连起来，最终事件的 `parentId` 是 `started` 事件。构建日志不会写入事件库。`exec` 还会在同一条总线上记录 `exec.start`（`status` 为 `started`）、`exec.finish` 与 `exec.killed`，并用 `parentId` 挂到对应的 `exec.run`。事件记录调用者（`principal`）、操作的对象（`op`、`target`）、开始时间与耗时（`ts`、`durationMs`）、结果（`status`），以及所属的客户端会话（`run`，来自 `X-Minibox-Run`，MCP 则用会话 id）。
 
-事件日志只覆盖经由 MiniBox 的调用，不记录箱内发生的事情，包括 Agent 在箱内自己的 Shell 里执行的命令。在请求到达操作之前就被拒绝的请求（例如缺少密钥返回 `401`，或跨站请求返回 `403`）同样不会被记录。
+事件日志只覆盖经由 MiniBox 的调用，不记录箱内发生的事情，包括 Agent 在箱内自己的 Shell 里执行的命令。键入的内容从不记录：终端只记录开启与关闭，以及两个方向各自的字节数；会话发送只记录按键数与字节数，从不记录文本。在请求到达操作之前就被拒绝的请求（例如缺少密钥返回 `401`，或跨站请求返回 `403`）同样不会被记录。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/events` | 事件，最新的在前。过滤条件：`box`（ID 或名称）、`principal`、`op`、`status`（`started`、`ok`、`error` 或 `denied`）、`run`、`since`（ISO 8601，例如 `2026-10-20T00:00:00Z`）。分页：`limit`（1–200，默认 50）与 `cursor`（上一页的 `nextCursor`）。返回 `{ "events": [...], "nextCursor": ... }`，最后一页的 `nextCursor` 为 `null` |
-| `GET` | `/api/events/stream` | 同样的过滤条件，以服务器推送事件（`text/event-stream`）的方式返回。见下文 |
+| `GET` | `/api/events/stream` | 同样的过滤条件，以服务器推送事件（`text/event-stream`）的方式返回。不带过滤条件时还携带实时状态。见下文 |
 
 事件流每条消息对应一个事件：`id` 为事件的序号，`data` 为 JSON 格式的事件。新连接只会收到连接之后记录的事件。断线重连的客户端会把最后收到的 `id` 放在 `Last-Event-ID` 中发回（浏览器会自动这样做），并收到它错过的事件，最多 500 条。如果错过的超过 500 条，或在未读取期间排队的消息超过 1000 条，流会改为发送 `event: reset`（`{"after": N}`）。客户端随后用相同的过滤条件读取 `GET /api/events`，沿 `nextCursor` 翻页直到遇到它收到的最后一个 `id`，然后继续接收事件流。同一事件可能既来自列表，也来自事件流，因此客户端应跳过已经拥有的序号。`reset` 消息不带 `id`，因此 `Last-Event-ID` 仍指向最后收到的事件。空闲时流每 15 秒发送一条 `: keep-alive` 注释，使代理不会断开连接。
+
+不带过滤条件的事件流还会携带控制台显示的实时状态。这些帧以 `event:` 命名且没有 `id:`，因此不会改变 `Last-Event-ID`：`sync` 给出每台主机的 Box 列表与链路状态，首先发送，并在 `reset` 之后再次发送；`box` 表示某个 Box 被新增、修改或删除；`sample` 携带运行中 Box 的资源采样，`host` 携带宿主机指标，`link` 表示主机的采样器是否已连接引擎，`task` 表示任务的状态变化。实时帧从不写入事件日志，因此高频采样不会在 `events.db` 中增加记录。
 
 事件在写入前会脱敏。访问密钥在出现的任何位置都会被替换；环境变量只记录变量名；名为 `password`、`token`、`secret` 或 `api_key` 等的字段值会被替换；常见凭据格式也会被替换：PEM 私钥、`Bearer` 令牌、URL 中的密码、JWT、`sk-` 密钥、GitHub 令牌、AWS 访问密钥、Slack 令牌和 Google API 密钥。这是尽力而为，不保证完整：未列出的格式，或被拆分到多个字段中的凭据，不会被识别。超过 8 KB 的 `detail` 会被替换为一条带大小的说明。
 
 | 档位 | 内容 | 默认保留 |
 |---|---|---|
-| 审计 | 任何结果的写操作与删除，以及被拒绝的调用 | 365 天（`EVENT_RETENTION_AUDIT_DAYS`） |
-| 活动 | 未被拒绝的读取。同一主体对同一对象、相同操作与结果的读取，在一分钟内合并为一条，带 `count` | 30 天（`EVENT_RETENTION_ACTIVITY_DAYS`） |
-| 输出 | `DATA_DIR/exec` 中的命令输出。目前还没有写入方；`exec` 随 [#9](https://github.com/ArnoChenFx/minibox/issues/9) 落地 | 7 天，总计最多 512 MB（`EVENT_OUTPUT_RETENTION_DAYS`、`EVENT_OUTPUT_MAX_MB`） |
+| 审计 | 任何结果的写操作与删除，以及被拒绝的调用。被拒绝的 `exec` 同样记在审计档。会话的接管与归还（`session.takeover`、`session.release`）是写操作，也记在审计档 | 365 天（`EVENT_RETENTION_AUDIT_DAYS`） |
+| 活动 | 未被拒绝的读取；全部 `exec.*` 事件（`exec.run`、`exec.get`、`exec.output`、`exec.start`、`exec.finish`、`exec.killed`）；终端会话的开启与关闭（`terminal.open`、`terminal.close`）；会话的启动、发送与关闭（`session.start`、`session.send`、`session.close`）；以及容器的启动、停止与内存溢出事件（`container.start`、`container.stop`、`container.oom`，由 MiniBox 从引擎获取）。同一主体对同一对象、相同操作与结果的读取，在一分钟内合并为一条，带 `count`。exec、终端与容器事件逐条保留 | 30 天（`EVENT_RETENTION_ACTIVITY_DAYS`） |
+| 输出 | `DATA_DIR/exec` 中的命令输出，在 exec 结束时写入。每个流保留头尾 | 7 天，总计最多 512 MB（`EVENT_OUTPUT_RETENTION_DAYS`、`EVENT_OUTPUT_MAX_MB`） |
 
 清理在启动时执行，之后每小时执行一次。超过各档位保留期的事件会被删除；输出先按时间删除，再从最旧的开始删除，直到总量不超过上限。保留相关配置必须是正整数，其他取值回退为默认值。
 
@@ -436,7 +557,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 ### OpenAPI
 
-盒子、快照、模板、事件列表以及 Agent 令牌的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。认证、系统、宿主机与活动记录接口，以及事件流，暂未纳入。
+盒子、快照、模板、任务、事件列表以及 Agent 令牌的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。`202` 的响应体是 `{ "taskId" }`；操作自己的输出在 `x-task-result` 中，并保存在任务上。认证、系统、宿主机与活动记录接口，以及事件流和任务流，暂未纳入。
 
 ### 示例
 
@@ -457,7 +578,48 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 # MCP 客户端可以在该端点落地后粘贴这段配置：
 # { "mcpServers": { "minibox": { "url": "http://127.0.0.1:3920/mcp",
 #   "headers": { "Authorization": "Bearer mbx_…" } } } }
+
+# 或使用 CLI（bun run build:cli 生成 dist/minibox）：
+MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 ```
+
+前台 exec 的 `timeoutSec` 最长 55 秒，因为服务器会在 60 秒后关闭空闲连接。更长的命令使用 `background: true`（`timeoutSec` 最长 3600），或 `minibox exec --background --timeout SEC`，并用 `GET /api/execs/:execId`（`waitMs` 最长 25000）或 `exec_get` 读取结果。每个 Box 最多同时运行 8 个后台 exec，整个 MiniBox 最多 64 个；超过任一上限的调用返回 `429`，且不会启动已停止的 Box。超时会杀掉进程树，CLI 以 124 退出。如果停止失败，exec 保持 `status: running`，停止会按递增的间隔（1 秒、2 秒、4 秒，最长 30 秒）再次尝试，也可以随时通过 `POST /api/execs/:execId/kill` 重试。把密钥放在 `env` 里，不要放在 `cmd` 或 `argv` 中：审计日志会记录命令与 argv（脱敏规则见[事件](#事件)），而 `env` 只记录变量名。
+
+`exec` 可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。挂载卷需要该卷的 `volume:attach`，读写挂载或新建卷还需要 `volume:write`。修改存储池需要 `pool:admin`。所有者密钥拥有全部范围；按令牌限定范围（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）尚未实现。
+
+## Agent
+
+`POST /mcp` 是 Streamable HTTP MCP。请发送 `Authorization: Bearer` 和访问密钥。浏览器会话 Cookie 不会被接受；错误的 Bearer 密钥计入与错误登录密钥相同的登录限流。`GET /mcp` 不提供事件流。`DELETE /mcp` 结束会话。`?toolsets=core,session` 选择工具集，默认是 `core,meta`。`rebuild_box` 位于 `rebuild` 工具集中，需要用 `?toolsets=rebuild` 启用。
+
+> **警告：`/mcp` 使用主访问密钥，该密钥拥有完全的所有者权限。** 持有密钥的客户端可以调用其所请求工具集中的每一个工具，包括在非「严格」档位的 Box 中以 root 执行 `exec`、`delete_box` 与 `rebuild_box`。作用域令牌尚未实现（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）。只有在可以接受这一点时才把密钥交给 Agent，并确保密钥不出现在提示词、日志和仓库中。
+
+设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`，它们属于默认工具集（共 9 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集（`/mcp?toolsets=storage`）加入九个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`（启用这些工具集时共 22 个）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`、`tools` 与 `meta` 可以被接受，目前没有工具。文件工具尚未实现，留到 Volume（[#24](https://github.com/ArnoChenFx/minibox/issues/24)）之后。说明见 [`docs/agents.md`](docs/agents.md)。
+
+用 `bun run build:cli` 编译 CLI（`bun build --compile`，输出 `dist/minibox`，不提交）。它访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。
+
+```bash
+minibox box ls
+minibox exec mybox -- npm test
+minibox exec mybox --background --timeout 600 -- npm test
+minibox mcp
+```
+
+可以贴进 Agent 的 `AGENTS.md` 的中文说明：
+
+- 先 `list_boxes` 或 `create_box`。`exec` 会启动已停止的 Box，这会改变它的版本号（revision）。在发送 `expectedRevision` 的更新之前重新读取版本号。
+- `argv` 不经过 shell，`cmd` 经 `/bin/sh -c`。默认用户 `dev`，默认目录 `/workspace`。严格 Box 只允许 `dev` 或 `1000` 作为用户。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep`。
+- 把密钥放在 `env` 里，不要放在 `argv` 或 `cmd` 中。审计日志会记录命令与 argv，但从不记录 env 的值。
+- 结果包含 `status`、`exitCode`、`stdout`、`stderr`、`truncated` 与 `durationMs`。非零退出码是程序自己的状态。
+- 内联输出保留每个流头尾各约 16 KiB。`truncated` 为 true 时，`outputRef` 指向 `GET /api/execs/{execId}/output`。
+- 前台 exec 的 `timeoutSec` 最大为 55。更长的命令使用 `background: true` 并把 `timeoutSec` 设到最大 3600，再用 `exec_get` 的 `waitMs`（最大 25000）轮询。`exec_kill` 结束进程树。
+- `exec` 可以读写该 Box 上挂载的每一个卷。
+- `rebuild_box` 位于 `rebuild` 工具集（`/mcp?toolsets=rebuild`），需要 `confirm: true`。
+- `session_start`、`session_send` 与 `session_read` 驱动 Box 里的 tmux 会话，它们属于 `session` 工具集（`/mcp?toolsets=core,session`）。会话在你断开后继续运行。一次性命令用 exec，长时间运行或需要交互的程序用会话。列出和关闭会话只在 REST API 与 CLI 中提供。
+- 经由 MCP 启动的会话，发起方为 agent。人可以在控制台接管它。人持有会话期间，`session_send` 会失败并返回 `taken_over`（`retryable: true`）：稍等一下，用 `session_read` 读取会话，然后再发送。接管期间 `session_read` 仍可用。
+- `session_read` 返回 `lines` 与游标。把最新的游标作为 `since` 传入，只读取新增内容。`reset: true` 表示屏幕被重绘，此时 `lines` 是当前窗口。
+- `session_send` 接受 `keys`（tmux 键名，如 Enter、Tab、Escape 或 C-c）或 `text`，二者只能提供一个。审计日志只记录数量，从不记录输入内容。
+- `storage` 工具集（`/mcp?toolsets=storage`）包含卷与存储池工具。`create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`。没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 会重建 Box，因此适用与 `rebuild_box` 相同的挂载规则。`measure_volume` 只刷新缓存的大小。
+- 文件工具还没有。默认工具集是 core 与 meta。设计目录 27 个工具，默认工具集 15 个；当前服务只暴露已经实现的工具。
 
 ## 项目结构
 
@@ -475,14 +637,19 @@ minibox/
 │   ├── activity.ts          # 最近操作记录
 │   ├── static.ts            # 静态文件服务（防目录穿越）
 │   ├── runtime/             # Runtime 接口与 RuntimeError（引擎边界）
-│   ├── docker/              # Docker 适配器（唯一使用 dockerode）：runtime / errors / logs / stats
-│   ├── specs/               # Box 规格存储、认领、漂移与 If-Match 版本号
-│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / images / snapshots / templates / reconcile
-│   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostMonitor 采样
-│   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、范围钩子
+│   ├── docker/              # Docker 适配器（唯一使用 dockerode）：runtime / errors / logs / stats / proc
+│   ├── specs/               # Box 规格存储、认领、漂移、历史与重建计划
+│   ├── volumes/             # 卷记录、存储池配置、探测与引擎卷认领
+│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / exec / volumes / rebuild / images / snapshots / templates / reconcile / terminals
+│   ├── tmux/                # tmux 命令行、会话名称，以及 tmux 输出的解析
+│   ├── mcp/                 # /mcp 上的 Streamable HTTP MCP
+│   ├── cli.ts               # 瘦客户端：box ls、exec、mcp 的 stdio 代理
+│   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostSampler（盒子缓存与采样）、HostMonitor
+│   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、实时帧、范围钩子
+│   ├── tasks/               # 任务库（SQLite）、管理器、走事件总线的进度流
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
 │   ├── routes/              # router、各组路由（auth / system / images）与操作的 REST 适配层
-│   ├── ws/terminal.ts       # WebSocket 终端
+│   ├── ws/terminal.ts       # WebSocket 终端：附着、控制帧、心跳与背压
 │   └── lib/                 # errors / http / logger / bus（进程内事件总线）/ validation
 ├── web/
 │   ├── index.html · login.html
@@ -494,10 +661,12 @@ minibox/
 ├── scripts/restart.sh       # 无 systemd 环境的重启脚本
 ├── scripts/export-openapi.ts # 写入 docs/openapi.json（bun run openapi）
 ├── scripts/check-box-image.sh  # 基础模板的 Docker 检查（CI 中检查 amd64 与 arm64）
+├── scripts/docker-integration.ts  # 真实引擎集成测试，结束后清理（bun run test:docker）
 ├── Dockerfile               # 发布镜像（oven/bun，多架构）
 ├── .github/workflows/release.yml  # tag → 镜像 + GitHub Release
 └── docs/
     ├── design.md            # 产品与架构设计
+    ├── agents.md            # MCP 说明与 AGENTS.md 片段
     ├── runtime.md           # Runtime 接口、错误与新增后端
     ├── openapi.json         # 由操作注册表生成的 OpenAPI 3.1 文档
     └── screenshots/
@@ -513,11 +682,12 @@ bun run lint       # oxlint 检查（有警告即失败）
 bun run typecheck  # TypeScript 严格模式类型检查（tsc --noEmit）
 bun test           # 单元测试（不需要 Docker）
 bun run check      # 以上全部，与 CI 一致
-bun run openapi    # 由操作注册表重新生成 docs/openapi.json
+bun run test:docker  # 真实引擎集成测试（需要 Docker，不包含在 bun run check 中）
+bun run openapi      # 由操作注册表重新生成 docs/openapi.json
 bun run build:template && bun run check:template  # 基础模板检查（需要 Docker）
 ```
 
-格式化使用 [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html)（`.oxfmtrc.json`），代码检查使用 [oxlint](https://oxc.rs/docs/guide/usage/linter.html)（`.oxlintrc.json`）。[CI](.github/workflows/ci.yml) 会在每次推送到 `main` 和每个 Pull Request 时运行 `fmt:check`、`lint`、`typecheck` 和 `bun test`，并做一次 Docker 构建冒烟测试（启动镜像并访问 `/login`）。
+格式化使用 [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html)（`.oxfmtrc.json`），代码检查使用 [oxlint](https://oxc.rs/docs/guide/usage/linter.html)（`.oxlintrc.json`）。[CI](.github/workflows/ci.yml) 会在每次推送到 `main` 和每个 Pull Request 时运行 `fmt:check`、`lint`、`typecheck` 和 `bun test`，并做一次 Docker 构建冒烟测试（启动镜像并访问 `/login`）。另有一个独立任务 `Integration tests (real Docker engine)`，会在运行器的 Docker 引擎上执行 `bun run test:docker`，它不是必需检查。脚本使用独立的 `mbit` 标签前缀，并清理自己创建的资源，因此可以与真实安装并存。
 
 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -541,7 +711,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 
 - **Docker Socket 等同于 root。** MiniBox 通过 Docker Socket 管理容器，拿到访问密钥的人实际上可以以 root 身份在宿主机上做任何事。请像对待 root 密码一样保管密钥。`.env` 和 `data/` 已在 `.gitignore` 中忽略，不要提交它们。
 - **容器以 root 运行。** 容器需要使用 Docker Socket，而 Docker Socket 等同于 root。要缩小这部分权限，可以在 Socket 前放一个只转发 MiniBox 所需 Docker API 的 Socket 代理，并把 `DOCKER_SOCKET` 指向代理的 Unix Socket；也可以让 MiniBox 连接 rootless Docker 或 Podman 的 Socket。
-- **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以密钥的长度和随机性才是关键：请使用至少 20 位的随机字符，例如 `openssl rand -hex 32` 生成的密钥（自动生成的密钥为 64 位十六进制）。启动时，若密钥短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符），会记录 `auth.weak_key` 警告。MiniBox 仍会正常启动，已有部署不受影响。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务；使用新密钥启动时，全部浏览器会话随之结束。
+- **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。以 `Authorization: Bearer` 发送的错误密钥（发往 `/api/`、`/mcp` 或终端）计入同一限流。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以密钥的长度和随机性才是关键：请使用至少 20 位的随机字符，例如 `openssl rand -hex 32` 生成的密钥（自动生成的密钥为 64 位十六进制）。启动时，若密钥短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符），会记录 `auth.weak_key` 警告。MiniBox 仍会正常启动，已有部署不受影响。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务；使用新密钥启动时，全部浏览器会话随之结束。
 - **会话可以撤销。** 登录后密钥不会保存在浏览器里：Cookie 中是随机生成的 32 字节会话令牌，`DATA_DIR/sessions.json` 只保存它的 SHA-256 哈希，因此拿到该文件也无法用来伪造登录 Cookie。文件中还有一个用于检测密钥变更的 scrypt 校验值，所以访问密钥的强度依然重要。会话在登出、在设置页撤销、到期（`SESSION_TTL_DAYS`，默认 30 天）或访问密钥变更时结束；会话结束时，它打开的终端和事件流也会关闭。
 - **Agent API 令牌与访问密钥分开。** 在设置页或用 `POST /api/tokens` 创建。明文（`mbx_…`）只显示一次；`DATA_DIR/tokens.json` 只保存 SHA-256。令牌带有 scope（`box:read`、`box:write`、`box:delete`、`exec`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:attach`、`tool:install`）、Box 选择器（默认 `created-by-me`，也可以是 id、标签或 `*`）、显式的卷列表、允许的宿主机，以及可选配额。预设为 `readonly`、`operator`、`sandboxed-agent` 和 `admin`。`sandboxed-agent` 的起点是最多 5 个 Box、合计 8 个 CPU 与 16 GB 内存、4 小时 TTL、每分钟 60 次请求。吊销立即生效，也可以同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。挂载一个已经存在的卷需要对该卷的 `volume:attach`。更换 `ACCESS_KEY` 会结束浏览器会话，不会吊销 API 令牌。没有任何预设可以签发令牌：那仍属于访问密钥或已登录的会话。TTL 到期后自动停止 Box 属于 [#12](https://github.com/ArnoChenFx/minibox/issues/12)。卷对象属于 [#24](https://github.com/ArnoChenFx/minibox/issues/24)。`/mcp` 端点本身随 [#9](https://github.com/ArnoChenFx/minibox/issues/9) 落地；令牌已经可以作为 REST 的 Bearer 使用。只读且限制在自己创建的 Box 上的令牌，在授予 `*` 或具体 id 之前看不到任何 Box，因为它不能创建 Box。
 - **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。写请求必须声明 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外），这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
@@ -551,6 +721,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **公开隧道可以被发现。** 隧道域名（例如 OpenTunnel 的 `*.opentunnel.xyz`）可能出现在公开的证书透明度日志里，也可能被猜到，而且 OpenTunnel 本身不提供认证。这相当于把控制台直接放在公网上，只靠访问密钥保护；流量还会经过隧道的中继服务器。条件允许时优先使用私有网络（如 Tailscale）或带认证的反向代理，不用时把隧道关掉。
 - **这是容器隔离，不是安全沙箱。** Box 与宿主机共享内核，适合运行你自己的 Agent，**不适合运行不可信的第三方代码**，那种场景请使用 gVisor 或基于 microVM 的沙箱。不要把 Docker Socket 或宿主机敏感目录挂进 Box。
 - **默认的「标准」档位拥有无密码 `sudo`。** Box 内的 `dev` 用户可以提升为 root，而 Box 内的 root 可以改动 Box 以及其工作区卷中的任何内容。「标准」档位还丢弃了大部分 Linux capability，因此 Box 不是特权容器。「严格」档位禁止提权，见[安全档位](#安全档位)。
+- **`/mcp` 使用主访问密钥，拥有完全的所有者权限。** 用该密钥连接 `/mcp` 的 Agent 可以在非「严格」档位的 Box 中以 root 执行 `exec`、删除 Box 并重建它们。作用域令牌尚未实现（[#13](https://github.com/ArnoChenFx/minibox/issues/13)），因此只有在可以接受时才把密钥交给 Agent。参见 [Agent](#agent)。
 - **快照不包含 `/workspace`。** `docker commit` 不会保存挂载的数据卷，重要代码请用 git 同步或单独备份数据卷。
 - `scripts/restart.sh` 是单用户沙箱的便利脚本。它可能会用 `sudo` 启动 `dockerd`，然后把 Docker Socket 的属组设为你的主组、权限设为 `660`，只有该主组的成员（通常只有你）和 root 能使用 Docker。但 Docker 访问等同于 root 权限，用在其他环境前请先检查脚本。
 
@@ -588,17 +759,17 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 - [x] [#27](https://github.com/ArnoChenFx/minibox/issues/27) 基础模板：非 root 用户 `dev`、tmux、挂载点约定
 - [x] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」「严格」「宽松」三个安全档位，出站策略与磁盘配额暂缓
-- [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
+- [x] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
-- [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
+- [x] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
 - [x] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与吊销。TTL 到期后自动停止仍属于 [#12](https://github.com/ArnoChenFx/minibox/issues/12)；卷对象仍属于 [#24](https://github.com/ArnoChenFx/minibox/issues/24)
 - [x] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
 
 ### M2 · 存储与 Agent 接口
 
-- [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volume 与存储池（`local` / `nfs` / `path`）
-- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI
-- [ ] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
+- [x] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volume 与存储池（`local` / `nfs` / `path`）
+- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI。exec、MCP 与 CLI 已落地；文件 API 仍留到 Volume（#24）之后
+- [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
 - [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) 通过 SSE 推送 Box 状态与资源占用，取代轮询
 - [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS 部署指南
 

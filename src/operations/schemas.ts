@@ -13,6 +13,26 @@ export const BoxMountSchema = z.object({
   volume: z.string(),
   path: z.string(),
   mode: z.enum(["rw", "ro"]),
+  volumeId: z.string().nullable(),
+  volumeName: z.string().nullable(),
+  role: z.enum(["workspace", "home", "tools", "cache"]).nullable(),
+  pool: z.string().nullable(),
+});
+
+export const StorageStatusSchema = z.object({
+  status: z.enum(["ok", "unreachable", "unknown"]),
+  pools: z.array(
+    z.object({
+      name: z.string(),
+      status: z.enum(["reachable", "unreachable", "unknown"]),
+    }),
+  ),
+});
+
+export const BoxEnvSchema = z.object({
+  name: z.string(),
+  value: z.string().optional(),
+  secretRef: z.string().optional(),
 });
 
 export const BoxDriftSchema = z.object({
@@ -57,6 +77,15 @@ export const BoxSchema = z.object({
   drift: z.array(BoxDriftSchema),
   recovery: BoxRecoverySchema.nullable(),
   mounts: z.array(BoxMountSchema),
+  /** Plain values and secret references. A secret reference is stored and not injected. */
+  env: z.array(BoxEnvSchema),
+  /** `unreachable` when a pool behind a mount could not be probed. The engine state stays in `state`. */
+  storage: StorageStatusSchema,
+});
+
+/** One sample of a box's usage. `t` is epoch milliseconds. */
+export const StatSampleSchema = StatsSchema.extend({
+  t: z.number().int(),
 });
 
 export const BoxWithStatsSchema = BoxSchema.extend({
@@ -76,6 +105,8 @@ export const ImageSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   source: z.string().nullable(),
+  sourceId: z.string().nullable(),
+  createdBy: z.string().nullable(),
   createdAt: z.string(),
   size: z.number(),
 });
@@ -85,9 +116,48 @@ export const PromotedTemplateSchema = z.object({
   name: z.string(),
 });
 
+/** The image the build produced. The build log is kept on the task, not in this result. */
 export const BuildResultSchema = z.object({
   ref: z.string(),
-  output: z.string(),
+});
+
+export const TaskStatusSchema = z.enum(["running", "succeeded", "failed", "cancelled", "interrupted"]);
+
+export const TaskErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  status: z.number().int(),
+  key: z.string().optional(),
+  params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+});
+
+export const TaskTargetSchema = z.object({
+  kind: z.string(),
+  id: z.string().optional(),
+  name: z.string(),
+});
+
+/** One long-running operation. `output` is omitted from lists. `result` is the operation's own output. */
+export const TaskSchema = z.object({
+  id: z.string(),
+  op: z.string(),
+  status: TaskStatusSchema,
+  summary: z.string(),
+  hostId: z.string(),
+  target: TaskTargetSchema.optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  finishedAt: z.string().optional(),
+  error: TaskErrorSchema.optional(),
+  result: z.unknown().optional(),
+  output: z.string().optional(),
+  truncated: z.boolean(),
+  logSeq: z.number().int(),
+});
+
+/** The body of a 202 response. The operation's own output is stored on the task as `result`. */
+export const TaskAcceptedSchema = z.object({
+  taskId: z.string(),
 });
 
 export const OkSchema = z.object({
@@ -129,8 +199,12 @@ export const ErrorSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
+    hint: z.string().optional(),
+    retryable: z.boolean(),
     key: z.string().optional(),
     params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+    hintKey: z.string().optional(),
+    hintParams: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
     details: z.record(z.string(), z.unknown()).optional(),
   }),
 });

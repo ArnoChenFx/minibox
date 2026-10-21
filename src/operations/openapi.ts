@@ -3,24 +3,25 @@ import { z } from "zod";
 import { COOKIE_NAME } from "../auth";
 import { type JsonSchema, toJsonSchema } from "./jsonschema";
 import { RUN_HEADER, RUN_ID_PATTERN } from "./run";
-import { ErrorSchema } from "./schemas";
+import { ErrorSchema, TaskAcceptedSchema } from "./schemas";
 import type { Operation, RestBinding } from "./types";
 
 const PATH_PARAM = /:([A-Za-z]\w*)/g;
 
 const ERROR_RESPONSES: Record<string, string> = {
   "400": "Invalid input, or a malformed X-Minibox-Run header.",
-  "401": "Not signed in, or the bearer credential is invalid.",
+  "401": "Not signed in, or the access key is invalid.",
   "403": "Refused: a cross-site write, or an operation this credential may not run.",
-  "404": "The box, snapshot, template or token named in the path does not exist.",
-  "409": "The name is already taken.",
+  "404": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+  "409":
+    "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
   "415": "The request declares a body that is not JSON.",
   "412": "The If-Match revision is not the box's current revision.",
   "422": "The box would exceed the host's CPU or memory.",
   "428": "If-Match is required and was not sent.",
   "500": "Unexpected server error.",
   "502": "Docker returned an error.",
-  "503": "Docker is unavailable.",
+  "503": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
 };
 
 /** The OpenAPI operationId: the operation name, plus the fixed value that tells the bindings of one operation apart. */
@@ -117,6 +118,7 @@ function errorResponses(op: Operation, binding: RestBinding): Record<string, Jso
 
 function operationObject(op: Operation, binding: RestBinding): JsonSchema {
   const status = String(binding.status ?? 200);
+  const accepted = status === "202";
   const body = requestBody(op, binding);
   return {
     operationId: operationIdOf(op, binding),
@@ -126,14 +128,17 @@ function operationObject(op: Operation, binding: RestBinding): JsonSchema {
     ...(body ? { requestBody: body } : {}),
     responses: {
       [status]: {
-        description: status === "201" ? "Created." : "OK.",
-        content: { "application/json": { schema: toJsonSchema(op.output, "output") } },
+        description: accepted ? "Accepted. The result is stored on the task." : status === "201" ? "Created." : "OK.",
+        content: {
+          "application/json": { schema: toJsonSchema(accepted ? TaskAcceptedSchema : op.output, "output") },
+        },
       },
       ...errorResponses(op, binding),
     },
     "x-kind": op.kind,
     "x-scope": op.scope,
     "x-async": op.async,
+    ...(accepted ? { "x-task-result": toJsonSchema(op.output, "output") } : {}),
     ...(op.cli ? { "x-cli": op.cli } : {}),
     ...(op.mcp ? { "x-mcp": { name: op.mcp.name, toolset: op.mcp.toolset } } : {}),
   };
@@ -164,7 +169,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
       title: "MiniBox API",
       version,
       description:
-        "Generated from the operation registry: boxes, snapshots, templates, the event log and agent API tokens. Sign-in, host and activity routes, and the event stream (GET /api/events/stream, text/event-stream), are not listed yet.",
+        "Generated from the operation registry: boxes, volumes, storage pools, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the event and task streams (GET /api/events/stream and GET /api/tasks/{id}/events, text/event-stream), are not listed yet.",
       license: { name: "MIT" },
     },
     tags,
@@ -172,11 +177,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
     components: {
       schemas: { Error: toJsonSchema(ErrorSchema, "output") },
       securitySchemes: {
-        bearer: {
-          type: "http",
-          scheme: "bearer",
-          description: "The access key, or an agent API token (mbx_…), as a Bearer token.",
-        },
+        bearer: { type: "http", scheme: "bearer", description: "The access key, as a Bearer token." },
         cookie: {
           type: "apiKey",
           in: "cookie",

@@ -20,6 +20,8 @@ export interface Config {
   dockerSocket: string;
   labelPrefix: string;
   baseTemplateTag: string;
+  /** Seconds a box gets to stop after SIGTERM before it is killed. Used by stop and restart. */
+  stopTimeoutSec: number;
   webDir: string;
   templatesDir: string;
   metricsIntervalMs: number;
@@ -42,6 +44,10 @@ export interface Config {
   sessionTtlMs: number;
   /** Sliding renewal: a session also ends this long after its last use. `null` leaves sessions without it. */
   sessionIdleMs: number | null;
+  /** Event and task streams open at once, across all browsers and clients. A stream past this is refused with 429. */
+  streamMaxConnections: number;
+  /** Seconds without input before a human's takeover of an agent's terminal session returns it to the agent. 0 keeps it until released. */
+  takeoverIdleSec: number;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -72,6 +78,14 @@ function readEnvFile(path: string): Record<string, string> {
 function intOr(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/** A whole number from `min` to `max`. Blank or out-of-range values fall back, as intOr does. */
+function intInRange(value: string | undefined, fallback: number, min: number, max: number): number {
+  const text = value?.trim() ?? "";
+  if (text === "") return fallback;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
 }
 
 function isTruthy(value: string | undefined): boolean {
@@ -168,6 +182,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dockerSocket: get("DOCKER_SOCKET")?.trim() || "/var/run/docker.sock",
     labelPrefix,
     baseTemplateTag: get("BASE_TEMPLATE")?.trim() || `${labelPrefix}-template:base`,
+    stopTimeoutSec: intInRange(get("STOP_TIMEOUT_SEC"), 3, 0, 300),
     webDir: join(ROOT, "web"),
     templatesDir: join(ROOT, "templates"),
     metricsIntervalMs: intOr(get("METRICS_INTERVAL_MS"), 3000),
@@ -185,6 +200,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     containerRuntime: parseContainerRuntime(get("RUNTIME")),
     sessionTtlMs: parseDays(get("SESSION_TTL_DAYS"), "SESSION_TTL_DAYS") ?? DEFAULT_SESSION_TTL_MS,
     sessionIdleMs: parseDays(get("SESSION_IDLE_DAYS"), "SESSION_IDLE_DAYS"),
+    streamMaxConnections: intOr(get("STREAM_MAX_CONNECTIONS"), 256),
+    takeoverIdleSec: intInRange(get("SESSION_TAKEOVER_IDLE_SEC"), 300, 0, 86400),
   };
 }
 

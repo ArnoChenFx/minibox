@@ -58,6 +58,16 @@ export function createRedactor(options: RedactOptions = {}): Redactor {
 
   const walk = (value: unknown, key: string | undefined): unknown => {
     if (key === "env" && isPlainObject(value)) return Object.keys(value);
+    if (key === "env" && Array.isArray(value)) {
+      return value.map((item) => {
+        if (typeof item === "string") {
+          const eq = item.indexOf("=");
+          return eq === -1 ? item : item.slice(0, eq);
+        }
+        if (isPlainObject(item) && typeof item.name === "string") return item.name;
+        return walk(item, undefined);
+      });
+    }
     if (key !== undefined && SECRET_KEY.test(key) && value !== undefined && value !== null) return REDACTED;
     if (typeof value === "string") return text(value);
     if (Array.isArray(value)) return value.map((item) => walk(item, undefined));

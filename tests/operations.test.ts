@@ -12,9 +12,11 @@ import { cliCommands, DEFAULT_TOOLSETS, mcpTools } from "../src/operations/proje
 import { OPERATIONS, registryProblems } from "../src/operations/registry";
 import type { Operation, OperationContext, Principal } from "../src/operations/types";
 import { runOf } from "../src/routes/operations";
+import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import { compileToken } from "../src/tokens/model";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
+import type { FakeRuntime } from "./support/fake-runtime";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
@@ -30,8 +32,40 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.action": (id) => ({ id, action: "stop" }),
   "box.resources": (id) => ({ id, cpus: 1, expectedRevision: "1" }),
   "box.update": (id) => ({ id, idleTimeoutSec: 120, expectedRevision: "1" }),
+  "box.rebuild": (id) => ({ id, profile: "strict", confirm: true, expectedRevision: "1" }),
   "box.logs": (id) => ({ id, tail: 10 }),
   "box.stats": (id) => ({ id }),
+  "exec.run": (id) => ({ id, argv: ["true"] }),
+  "exec.get": () => ({ execId: `ex_${"0".repeat(26)}` }),
+  "exec.kill": () => ({ execId: `ex_${"0".repeat(26)}` }),
+  "exec.output": () => ({ execId: `ex_${"0".repeat(26)}` }),
+  "volume.list": () => ({}),
+  "volume.get": () => ({ id: "alpha-workspace" }),
+  "volume.create": () => ({ name: "extra", confirm: true }),
+  "volume.delete": () => ({ id: "spare", confirm: true }),
+  "volume.attach": (id) => ({
+    id: "spare",
+    box: id,
+    path: "/srv/data",
+    mode: "ro",
+    confirm: true,
+    expectedRevision: "1",
+  }),
+  "volume.detach": (id) => ({
+    id: "alpha-workspace",
+    box: id,
+    path: "/workspace",
+    confirm: true,
+    expectedRevision: "1",
+  }),
+  "volume.usage": () => ({ id: "spare" }),
+  "pool.list": () => ({}),
+  "pool.replace": () => ({ pools: [{ name: "local", backend: "local", default: true }], confirm: true }),
+  "session.list": (id) => ({ id }),
+  "session.start": (id) => ({ id, name: "work" }),
+  "session.read": (id) => ({ id, name: "work", lines: 10 }),
+  "session.send": (id) => ({ id, name: "work", text: "echo hi\n" }),
+  "session.close": (id) => ({ id, name: "work" }),
   "snapshot.list": () => ({}),
   "snapshot.create": (id) => ({ id, name: "nightly" }),
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
@@ -40,6 +74,9 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.build": () => ({}),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
+  "task.list": () => ({}),
+  "task.get": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
+  "task.cancel": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "events.list": () => ({ op: "box.create" }),
   "token.list": () => ({}),
   "token.create": () => ({ name: "ci", preset: "readonly" }),
@@ -47,6 +84,46 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
     id: app.tokens.create(compileToken({ name: "gone", preset: "readonly" }), "owner").record.id,
   }),
 };
+
+/** A real id for operations that cannot succeed against the placeholder in `SAMPLES`. */
+async function preparedInput(
+  app: App,
+  ctx: OperationContext,
+  runtime: FakeRuntime,
+  operation: Operation,
+  boxId: string,
+): Promise<{ input: unknown; release?: () => void }> {
+  if (operation.name === "task.get") {
+    const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
+    await app.tasks.drain();
+    return { input: { id: started.taskId } };
+  }
+  if (operation.name === "task.cancel") {
+    const held = runtime.hold("buildImage");
+    const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
+    return { input: { id: started.taskId }, release: held.release };
+  }
+  if (operation.name === "exec.get" || operation.name === "exec.output") {
+    const started = (await app.operations.run("exec.run", ctx, { id: boxId, argv: ["true"] })) as { execId: string };
+    return { input: { execId: started.execId } };
+  }
+  if (["session.read", "session.send", "session.close"].includes(operation.name)) {
+    await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+  }
+  if (operation.name === "exec.kill") {
+    runtime.execScript = null;
+    const started = (await app.operations.run("exec.run", ctx, {
+      id: boxId,
+      argv: ["sleep", "30"],
+      background: true,
+      timeoutSec: 30,
+    })) as { execId: string };
+    return { input: { execId: started.execId } };
+  }
+  const sample = SAMPLES[operation.name];
+  if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
+  return { input: sample(boxId, app) };
+}
 
 function opNamed(name: string): Operation {
   const operation = OPERATIONS.find((op) => op.name === name);
@@ -66,6 +143,8 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
     source: "rest",
     events: app.events,
     tokens: app.tokens,
+    execs: app.execs,
+    terminals: app.terminals,
   };
   return { app, runtime, ctx };
 }
@@ -74,6 +153,7 @@ async function withBox(app: App, ctx: OperationContext): Promise<string> {
   const { box } = (await app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 })) as {
     box: { id: string };
   };
+  await app.operations.run("volume.create", ctx, { name: "spare", confirm: true });
   return box.id;
 }
 
@@ -130,7 +210,7 @@ describe("registry definitions", () => {
     expect(registryProblems(OPERATIONS)).toEqual([]);
   });
 
-  test("the registry holds the box, snapshot, template and event operations in scope", () => {
+  test("the samples name every registry operation, in registry order", () => {
     expect(OPERATIONS.map((op) => op.name)).toEqual(Object.keys(SAMPLES));
   });
 
@@ -165,6 +245,23 @@ describe("registry definitions", () => {
     const problems = registryProblems([quiet, mislabelled]).join("\n");
     expect(problems).toContain("thing.wipe changes state but declares no activity");
     expect(problems).toContain("thing.peek is read but binds POST");
+  });
+
+  test("async operations answer 202, and a 202 binding is async", () => {
+    const late = definition({
+      name: "thing.build",
+      kind: "write",
+      async: true,
+      activity: { action: () => "thing.build", target: () => "thing" },
+      rest: [{ method: "POST", path: "/api/things/:id", body: true }],
+    });
+    const early = definition({
+      name: "thing.peek",
+      rest: [{ method: "GET", path: "/api/things/:id", status: 202 }],
+    });
+    const problems = registryProblems([late, early]).join("\n");
+    expect(problems).toContain("thing.build is async but does not return 202");
+    expect(problems).toContain("thing.peek returns 202 but is not async");
   });
 });
 
@@ -231,6 +328,7 @@ describe("executor", () => {
           message: "This credential may not run box.list.",
           key: "operation_forbidden",
           params: { op: "box.list" },
+          retryable: false,
         },
       });
       expect(events.map((e) => [e.op, e.status])).toEqual([["box.list", "denied"]]);
@@ -255,28 +353,43 @@ describe("executor", () => {
     expect(app.activity.list()).toEqual([]);
   });
 
-  test("every registered operation calls the audit sink once when it succeeds", async () => {
+  test("every registered operation records its outcome when it succeeds", async () => {
     for (const operation of OPERATIONS) {
-      const sample = SAMPLES[operation.name];
-      if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
       const events: AuditEvent[] = [];
-      const { app, ctx } = appWith({ audit: (event) => events.push(event) });
+      const { app, ctx, runtime } = appWith({ audit: (event) => events.push(event) });
       const boxId = await withBox(app, ctx);
+      const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
       events.length = 0;
-
-      await app.operations.run(operation.name, ctx, sample(boxId, app));
-      expect(events.map((event) => [event.op, event.kind, event.status])).toEqual([
-        [operation.name, operation.kind, "ok"],
-      ]);
+      try {
+        await app.operations.run(operation.name, ctx, prepared.input);
+        prepared.release?.();
+        await app.tasks.drain();
+        const mine = events.filter((event) => event.op === operation.name);
+        expect(mine.map((event) => [event.op, event.kind, event.status])).toEqual(
+          operation.async
+            ? [
+                [operation.name, operation.kind, "started"],
+                [operation.name, operation.kind, "ok"],
+              ]
+            : [[operation.name, operation.kind, "ok"]],
+        );
+      } finally {
+        prepared.release?.();
+        await app.tasks.drain();
+      }
     }
   });
 
-  test("every registered operation calls the audit sink once when it fails", async () => {
+  test("every registered operation calls the audit sink when it fails", async () => {
     for (const operation of OPERATIONS) {
       const events: AuditEvent[] = [];
       const { app, ctx } = appWith({ audit: (event) => events.push(event) });
       await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
-      expect(events.map((event) => event.op)).toEqual([operation.name]);
+      await app.tasks.drain();
+      expect(events.map((event) => event.op)).toEqual(
+        operation.name === "template.build" ? ["template.build", "template.build"] : [operation.name],
+      );
+      if (operation.name === "template.build") expect(events.map((event) => event.status)).toEqual(["started", "ok"]);
     }
   });
 
@@ -335,7 +448,10 @@ describe("executor", () => {
     expect(app.activity.list()).toEqual([]);
 
     await withBox(app, ctx);
-    expect(app.activity.list()).toEqual([expect.objectContaining({ action: "box.create", target: "alpha", ok: true })]);
+    expect(app.activity.list()).toEqual([
+      expect.objectContaining({ action: "volume.create", target: "spare", ok: true }),
+      expect.objectContaining({ action: "box.create", target: "alpha", ok: true }),
+    ]);
 
     const duplicate = await rejectionOf(
       app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 }),
@@ -354,6 +470,19 @@ describe("executor", () => {
     const id = await withBox(app, ctx);
     await app.operations.run("box.action", ctx, { id, action: "stop" });
     expect(app.activity.list()[0]).toMatchObject({ action: "box.stop", target: "alpha", ok: true });
+  });
+
+  test("box.delete returns the reason a volume could not be removed, and the box is gone", async () => {
+    const { app, runtime, ctx } = appWith();
+    const id = await withBox(app, ctx);
+    runtime.fail("removeVolume", new RuntimeError("engine", "device busy", "device busy"));
+
+    expect(await app.operations.run("box.delete", ctx, { id, deleteVolume: true })).toEqual({
+      name: "alpha",
+      volumeDeleted: false,
+      volumeError: "device busy",
+    });
+    expect(runtime.containers.size).toBe(0);
   });
 });
 
@@ -407,17 +536,30 @@ describe("event log", () => {
   });
   afterEach(() => restoreLogs());
 
-  test("every registered operation leaves one stored event when it succeeds", async () => {
+  test("every registered operation leaves its outcome in the event log when it succeeds", async () => {
     for (const operation of OPERATIONS) {
-      const sample = SAMPLES[operation.name];
-      if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
-      const { app, ctx } = appWith();
+      const { app, ctx, runtime } = appWith();
       const boxId = await withBox(app, ctx);
+      const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
       const before = app.events.head();
-      await app.operations.run(operation.name, ctx, sample(boxId, app));
-      expect(app.events.after(before, {}, 10).map((event) => [event.op, event.status])).toEqual([
-        [operation.name, "ok"],
-      ]);
+      try {
+        await app.operations.run(operation.name, ctx, prepared.input);
+        prepared.release?.();
+        await app.tasks.drain();
+        const rows = app.events.after(before, {}, 20).filter((event) => event.op === operation.name);
+        expect(rows.map((event) => [event.op, event.status])).toEqual(
+          operation.async
+            ? [
+                [operation.name, "started"],
+                [operation.name, "ok"],
+              ]
+            : [[operation.name, "ok"]],
+        );
+        if (operation.async) expect(rows[0]?.ref?.taskId).toBe(rows[1]?.ref?.taskId);
+      } finally {
+        prepared.release?.();
+        await app.tasks.drain();
+      }
     }
   });
 
@@ -435,8 +577,29 @@ describe("event log", () => {
     for (const operation of OPERATIONS) {
       const { app, ctx } = appWith();
       await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
-      expect(app.events.after(0, {}, 10).map((event) => event.op)).toEqual([operation.name]);
+      await app.tasks.drain();
+      expect(app.events.after(0, {}, 10).map((event) => event.op)).toEqual(
+        operation.name === "template.build" ? ["template.build", "template.build"] : [operation.name],
+      );
     }
+  });
+
+  test("a send records the counts it delivered, and a send that fails records none", async () => {
+    const { app, ctx } = appWith();
+    const boxId = await withBox(app, ctx);
+    await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+    const before = app.events.head();
+
+    await app.operations.run("session.send", ctx, { id: boxId, name: "work", text: "echo hi\n" });
+    expect(
+      await rejectionOf(app.operations.run("session.send", ctx, { id: boxId, name: "missing", text: "echo hi\n" })),
+    ).toMatchObject({ status: 404 });
+
+    const sends = app.events.after(before, {}, 10).filter((event) => event.op === "session.send");
+    expect(sends.map((event) => [event.status, event.detail])).toEqual([
+      ["ok", { session: "work", keys: 0, bytes: 8 }],
+      ["error", { session: "missing", keys: 0, bytes: 0 }],
+    ]);
   });
 });
 
@@ -537,12 +700,36 @@ describe("projections", () => {
       "delete_box",
       "box_action",
       "update_box",
+      "exec",
+      "exec_get",
+      "exec_kill",
     ]);
-    expect(mcpTools(OPERATIONS, ["storage"])).toEqual([]);
+    expect(
+      mcpTools(OPERATIONS, ["storage"])
+        .map((tool) => tool.name)
+        .toSorted(),
+    ).toEqual([
+      "attach_volume",
+      "create_volume",
+      "delete_volume",
+      "detach_volume",
+      "get_volume",
+      "list_pools",
+      "list_volumes",
+      "measure_volume",
+      "replace_pools",
+    ]);
+  });
+
+  test("rebuild_box is outside the default toolsets and only in the rebuild toolset", () => {
+    expect(mcpTools(OPERATIONS, ["rebuild"]).map((tool) => tool.name)).toEqual(["rebuild_box"]);
+    expect(mcpTools(OPERATIONS, ["rebuild"])[0]?.toolset).toBe("rebuild");
   });
 
   test("each tool carries the operation's input and output schemas and its read or destructive hint", () => {
-    const tools = new Map(mcpTools(OPERATIONS).map((tool) => [tool.name, tool]));
+    const tools = new Map(
+      [...mcpTools(OPERATIONS), ...mcpTools(OPERATIONS, ["rebuild"])].map((tool) => [tool.name, tool]),
+    );
     const create = tools.get("create_box");
     expect(create?.inputSchema).toMatchObject({ type: "object", required: ["name"] });
     expect(Object.keys((create?.inputSchema.properties ?? {}) as object)).toEqual([
@@ -552,11 +739,13 @@ describe("projections", () => {
       "memoryMb",
       "profile",
       "ttlSec",
+      "mounts",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });
     expect(tools.get("get_box")?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false });
     expect(tools.get("delete_box")?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
+    expect(tools.get("rebuild_box")?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
   });
 
   test("CLI commands come from the registry, with the operation kind", () => {

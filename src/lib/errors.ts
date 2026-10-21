@@ -11,6 +11,8 @@ export type ErrorCode =
   | "unsupported_media_type"
   | "too_many_requests"
   | "conflict"
+  | "taken_over"
+  | "confirmation_required"
   | "precondition_failed"
   | "precondition_required"
   | "insufficient_capacity"
@@ -18,18 +20,29 @@ export type ErrorCode =
   | "docker_error"
   | "internal";
 
+export interface ErrorExtra {
+  hint?: string | Msg;
+  retryable?: boolean;
+}
+
 /**
- * An error that maps to a JSON response `{ error: { code, message, key?, params?, details? } }`.
+ * An error that maps to a JSON response `{ error: { code, message, hint?, retryable, key?, params?, details? } }`.
  * Pass a `Msg` (from `msg()`) to include a translatable key; a plain string is sent as-is.
+ * `retryable` defaults to true for 408, 429 and 5xx.
  */
 export class AppError extends Error {
   readonly key?: string;
   readonly params?: Record<string, string | number>;
+  readonly hint?: string;
+  readonly hintKey?: string;
+  readonly hintParams?: Record<string, string | number>;
+  readonly retryable: boolean;
   constructor(
     readonly status: number,
     readonly code: ErrorCode,
     message: string | Msg,
     readonly details?: unknown,
+    extra?: ErrorExtra,
   ) {
     super(typeof message === "string" ? message : message.text);
     this.name = "AppError";
@@ -37,13 +50,25 @@ export class AppError extends Error {
       this.key = message.key;
       this.params = message.params;
     }
+    const hint = extra?.hint;
+    if (typeof hint === "string") this.hint = hint;
+    else if (hint) {
+      this.hint = hint.text;
+      this.hintKey = hint.key;
+      this.hintParams = hint.params;
+    }
+    this.retryable = extra?.retryable ?? (status === 408 || status === 429 || status >= 500);
   }
 }
 
-export const badRequest = (message: string | Msg, details?: unknown) =>
-  new AppError(400, "validation_failed", message, details);
-export const notFound = (message: string | Msg) => new AppError(404, "not_found", message);
-export const conflict = (message: string | Msg) => new AppError(409, "conflict", message);
+export const badRequest = (message: string | Msg, details?: unknown, extra?: ErrorExtra) =>
+  new AppError(400, "validation_failed", message, details, extra);
+export const notFound = (message: string | Msg, extra?: ErrorExtra) =>
+  new AppError(404, "not_found", message, undefined, extra);
+export const conflict = (message: string | Msg, extra?: ErrorExtra) =>
+  new AppError(409, "conflict", message, undefined, extra);
+export const forbidden = (message: string | Msg, extra?: ErrorExtra) =>
+  new AppError(403, "forbidden", message, undefined, extra);
 
 function fromRuntimeError(e: RuntimeError): AppError {
   switch (e.kind) {

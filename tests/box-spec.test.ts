@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { readdirSync, statSync } from "node:fs";
 
 import type { Server } from "bun";
@@ -7,6 +7,7 @@ import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
 import type { LabelKeys } from "../src/labels";
 import { AppError } from "../src/lib/errors";
+import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
@@ -53,7 +54,14 @@ describe("spec storage", () => {
     expect(box.pids).toBe(1024);
     expect(box.recovery).toBeNull();
     expect(box.drift).toEqual([]);
-    expect(box.mounts).toEqual([{ volume: "mbtest-ws-alpha", path: "/workspace", mode: "rw" }]);
+    expect(box.mounts.map((mount) => ({ path: mount.path, mode: mount.mode, role: mount.role }))).toEqual([
+      { path: "/workspace", mode: "rw", role: "workspace" },
+      { path: "/home/dev", mode: "rw", role: "home" },
+      { path: "/opt/minibox/tools", mode: "ro", role: "tools" },
+      { path: "/home/dev/.cache", mode: "rw", role: "cache" },
+    ]);
+    expect(box.volume).toMatch(/^vol_/);
+    expect(box.env).toEqual([]);
     expect(mode(host.specs.dir())).toBe(0o700);
     expect(mode(host.specs.pathFor(box.boxId))).toBe(0o600);
     expect(readdirSync(host.specs.dir()).some((name) => name.endsWith(".tmp"))).toBe(false);
@@ -68,6 +76,31 @@ describe("spec storage", () => {
       [keys.memory]: String(256 * MB),
       [keys.pids]: "1024",
     });
+  });
+
+  test("subscribers hear each write and removal after the file has changed, and a failing one does not stop the rest", async () => {
+    const box = await newBox("gamma");
+    const seen: string[] = [];
+    const off = host.specs.subscribe((change) => {
+      seen.push(change.kind === "write" ? `write ${change.spec.name}` : `remove ${change.id}`);
+    });
+    host.specs.subscribe(() => {
+      throw new Error("listener failure");
+    });
+    const last = host.specs.subscribe((change) => {
+      if (change.kind === "write") seen.push(`file ${host.specs.read(change.spec.id)?.revision}`);
+    });
+
+    await boxes.stopBox(host, box.boxId);
+    expect(seen).toEqual(["write gamma", "file 2"]);
+
+    await boxes.deleteBox(host, box.boxId, false);
+    expect(seen).toEqual(["write gamma", "file 2", `remove ${box.boxId}`]);
+
+    off();
+    last();
+    await newBox("delta");
+    expect(seen).toHaveLength(3);
   });
 });
 
@@ -185,13 +218,17 @@ describe("in-place updates", () => {
       cpus: 2,
       pids: 256,
       revision: box.revision + 1,
-      volume: "mbtest-ws-alpha",
+      volume: box.volume,
       containerName: "mbtest-beta",
     });
     expect(container?.labels).toEqual(labels);
     expect(container?.name).toBe("mbtest-beta");
     expect(container?.spec.hostname).toBe("alpha");
     expect(labels[keys.name]).toBe("alpha");
+    const history = host.specs.read(box.boxId)?.history;
+    expect(history).toHaveLength(1);
+    expect(history?.[0]).toMatchObject({ revision: box.revision, spec: { name: "alpha" } });
+    expect(history?.[0]?.spec).not.toHaveProperty("history");
   });
 
   test("an idle timeout stays in the spec and does not call docker update", async () => {
@@ -229,19 +266,26 @@ describe("in-place updates", () => {
         error: { code: "precondition_required", key: "revision_required" },
       });
 
+      runtime.seedImage("other:1");
       const quoted = await fetch(`${base}/api/boxes/${box.id}`, {
         method: "PATCH",
         headers: { ...headers, "if-match": `W/"${box.revision}"` },
         body: JSON.stringify({ labels: { team: "lab" }, template: "other:1" }),
       });
-      expect(quoted.status).toBe(200);
-      const body = (await quoted.json()) as {
-        box: { revision: number; labels: Record<string, string>; image: string };
-      };
-      expect(body.box.labels).toEqual({ team: "lab" });
-      expect(body.box.image).toBe(host.baseTemplateTag);
-      expect(runtime.containers.get(box.id)?.labels[keys.template]).toBe(host.baseTemplateTag);
+      expect(quoted.status).toBe(409);
+      const denied = (await quoted.json()) as { error: { code: string; details?: { preview?: unknown } } };
+      expect(denied.error.code).toBe("confirmation_required");
+      expect(denied.error.details?.preview).toBeTruthy();
+      expect(runtime.callsTo("containerDiff").length).toBeGreaterThan(0);
+      expect(host.specs.read(box.boxId)?.labels).toEqual({});
       expect(runtime.containers.get(box.id)?.spec.image).toBe(host.baseTemplateTag);
+
+      const applied = await fetch(`${base}/api/boxes/${box.id}`, {
+        method: "PATCH",
+        headers: { ...headers, "if-match": String(box.revision) },
+        body: JSON.stringify({ labels: { team: "lab" } }),
+      });
+      expect(applied.status).toBe(200);
 
       const again = await fetch(`${base}/api/boxes/${box.id}/resources`, {
         method: "PATCH",
@@ -286,15 +330,20 @@ describe("drift and the reconciler", () => {
     const container = runtime.containers.get(box.id);
     if (!container) throw new Error("box missing");
     container.cpus = 3;
+    container.spec = { ...container.spec, network: "bridge" };
 
     const drifted = await boxes.getBox(host, box.id);
     expect(drifted.drift).toContainEqual({ field: "cpus", expected: "1", actual: "3" });
+    expect(drifted.drift).toContainEqual({ field: "network", expected: host.security.network, actual: "bridge" });
 
     const report = await reconcileHost(host);
     expect(report.started).toEqual([]);
     expect(report.stopped).toEqual([]);
     expect(runtime.containers.get(box.id)?.cpus).toBe(3);
-    expect((await boxes.getBox(host, box.id)).drift.map((item) => item.field)).toContain("cpus");
+    expect(runtime.containers.get(box.id)?.spec.network).toBe("bridge");
+    expect((await boxes.getBox(host, box.id)).drift.map((item) => item.field)).toEqual(
+      expect.arrayContaining(["cpus", "network"]),
+    );
   });
 
   test("a desired-running box is started and a desired-stopped box is stopped, without a revision bump", async () => {
@@ -337,5 +386,51 @@ describe("drift and the reconciler", () => {
     expect((await runtime.inspectContainer(id)).restart).toBe("no");
     expect(host.specs.read(report.restartReset[0] ?? "")?.revision).toBe(1);
     expect(runtime.containers.get(id)?.labels[keys.id]).toBeUndefined();
+  });
+
+  test("a box that fails to start is reported and logged, and the boxes after it still start", async () => {
+    const first = await newBox("alpha");
+    const second = await newBox("beta");
+    await runtime.stopContainer(first.id, { timeoutSec: 1 });
+    await runtime.stopContainer(second.id, { timeoutSec: 1 });
+    runtime.fail("startContainer", new RuntimeError("engine", "image was removed", "image was removed"));
+    const errors = spyOn(console, "error");
+    errors.mockClear();
+
+    const report = await reconcileHost(host);
+
+    expect(report.failed).toEqual([{ id: first.boxId, error: "image was removed" }]);
+    expect(report.started).toEqual([second.boxId]);
+    expect((await boxes.getBox(host, first.boxId)).running).toBe(false);
+    expect((await boxes.getBox(host, second.boxId)).running).toBe(true);
+    const logged = errors.mock.calls.map((args) => JSON.parse(String(args[0])) as Record<string, unknown>);
+    expect(logged).toContainEqual(
+      expect.objectContaining({ msg: "box.reconcile_box_failed", id: first.boxId, error: "image was removed" }),
+    );
+  });
+
+  test("a container that cannot be claimed is reported, and the containers after it are still claimed", async () => {
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-broken",
+      labels: { [keys.box]: "true", [keys.name]: "broken" },
+    });
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "mbtest-legacy",
+      labels: { [keys.box]: "true", [keys.name]: "legacy" },
+    });
+    const write = host.specs.write.bind(host.specs);
+    host.specs.write = (spec) => {
+      if (spec.containerName === "mbtest-broken") throw new Error("disk full");
+      write(spec);
+    };
+
+    const report = await reconcileHost(host);
+
+    expect(report.failed).toEqual([{ id: "mbtest-broken", error: "disk full" }]);
+    expect(report.claimed).toHaveLength(1);
+    expect(host.specs.findByName("legacy")?.containerName).toBe("mbtest-legacy");
+    expect(host.specs.findByName("broken")).toBeNull();
   });
 });

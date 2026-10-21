@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  authenticate,
   clearLegacyKeyCookie,
   clearSessionCookie,
   clientAddress,
@@ -13,15 +12,21 @@ import {
   isWeakAccessKey,
   LEGACY_KEY_COOKIE,
   LoginLimiter,
+  type LoginLimits,
   LoginThrottle,
   parseCookies,
   proxyHeaderWarner,
   rateLimitKey,
+  resolveCaller,
   safeEqual,
+  sessionCaller,
   sessionCookie,
 } from "../src/auth";
 import { setLogLevel } from "../src/lib/logger";
+import { OWNER } from "../src/operations/types";
 import { SessionStore } from "../src/sessions";
+import { compileToken } from "../src/tokens/model";
+import { TokenStore } from "../src/tokens/store";
 
 setLogLevel("error");
 
@@ -72,7 +77,7 @@ describe("auth", () => {
   });
 });
 
-describe("authenticate", () => {
+describe("session caller", () => {
   let dir: string;
   let sessions: SessionStore;
 
@@ -86,52 +91,33 @@ describe("authenticate", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("a bearer header with the access key is a bearer caller", () => {
-    const owner = { type: "owner" as const, id: "owner", name: "owner" };
-    expect(authenticate(req({ authorization: `Bearer ${KEY}` }), KEY, sessions)).toEqual({
-      sessionId: null,
-      principal: owner,
-    });
-    expect(authenticate(req({ authorization: `bearer   ${KEY}` }), KEY, sessions)).toEqual({
-      sessionId: null,
-      principal: owner,
-    });
-  });
-
-  test("a wrong, empty or non-bearer header is not a caller", () => {
-    expect(authenticate(req({ authorization: "Bearer wrong" }), KEY, sessions)).toBeNull();
-    expect(authenticate(req({ authorization: "Bearer " }), KEY, sessions)).toBeNull();
-    expect(authenticate(req({ authorization: "Basic xyz" }), KEY, sessions)).toBeNull();
-    expect(authenticate(req({}), KEY, sessions)).toBeNull();
+  test("a Bearer header never signs a page in, not even with the access key", () => {
+    expect(sessionCaller(req({ authorization: `Bearer ${KEY}` }), sessions)).toBeNull();
+    expect(sessionCaller(req({ authorization: "Bearer wrong" }), sessions)).toBeNull();
+    expect(sessionCaller(req({}), sessions)).toBeNull();
   });
 
   test("a live session token in the cookie is a session caller", () => {
     const { token, session } = sessions.create({ userAgent: "test", ip: "127.0.0.1" });
-    expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, sessions)).toEqual({
+    expect(sessionCaller(cookieOnly(`${COOKIE_NAME}=${token}`), sessions)).toEqual({
       sessionId: session.id,
-      principal: { type: "owner" as const, id: "owner", name: "owner" },
+      principal: OWNER,
     });
   });
 
   test("an unknown token is not a caller", () => {
-    expect(authenticate(cookieOnly(`${COOKIE_NAME}=not-a-session`), KEY, sessions)).toBeNull();
+    expect(sessionCaller(cookieOnly(`${COOKIE_NAME}=not-a-session`), sessions)).toBeNull();
   });
 
   test("the raw access key is not accepted from either cookie", () => {
-    expect(authenticate(cookieOnly(`${COOKIE_NAME}=${KEY}`), KEY, sessions)).toBeNull();
-    expect(authenticate(cookieOnly(`${LEGACY_KEY_COOKIE}=${KEY}`), KEY, sessions)).toBeNull();
-  });
-
-  test("a wrong bearer header does not fall back to a valid session cookie", () => {
-    const { token } = sessions.create({ userAgent: "test", ip: "127.0.0.1" });
-    const headers = { authorization: "Bearer wrong", cookie: `${COOKIE_NAME}=${token}` };
-    expect(authenticate(req(headers), KEY, sessions)).toBeNull();
+    expect(sessionCaller(cookieOnly(`${COOKIE_NAME}=${KEY}`), sessions)).toBeNull();
+    expect(sessionCaller(cookieOnly(`${LEGACY_KEY_COOKIE}=${KEY}`), sessions)).toBeNull();
   });
 
   test("a revoked session stops authenticating at once", () => {
     const { token, session } = sessions.create({ userAgent: "test", ip: "127.0.0.1" });
     expect(sessions.revoke(session.id, "test")).toBe(true);
-    expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, sessions)).toBeNull();
+    expect(sessionCaller(cookieOnly(`${COOKIE_NAME}=${token}`), sessions)).toBeNull();
   });
 
   test("a session stops authenticating when its lifetime is over", () => {
@@ -146,9 +132,9 @@ describe("authenticate", () => {
     try {
       const { token } = timed.create({ userAgent: "test", ip: "127.0.0.1" });
       clock += 59_999;
-      expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, timed)).not.toBeNull();
+      expect(sessionCaller(cookieOnly(`${COOKIE_NAME}=${token}`), timed)).not.toBeNull();
       clock += 1;
-      expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, timed)).toBeNull();
+      expect(sessionCaller(cookieOnly(`${COOKIE_NAME}=${token}`), timed)).toBeNull();
     } finally {
       timed.stop();
     }
@@ -360,6 +346,114 @@ describe("login limiter", () => {
     } finally {
       none.stop();
       full.stop();
+    }
+  });
+});
+
+describe("bearer keys", () => {
+  let dir: string;
+  let sessions: SessionStore;
+  let tokens: TokenStore;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "minibox-bearer-"));
+    sessions = new SessionStore({ file: join(dir, "sessions.json"), accessKey: KEY, ttlMs: 60_000, idleMs: null });
+    tokens = new TokenStore({ file: join(dir, "tokens.json") });
+  });
+
+  afterAll(() => {
+    tokens.stop();
+    sessions.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const gateWith = (limits: Partial<LoginLimits> = {}) => ({
+    accessKey: KEY,
+    sessions,
+    tokens,
+    throttle: new LoginLimiter({ penaltyMs: 0, perAddress: 1, total: 100, ...limits }),
+  });
+
+  test("the access key passes as the owner and is never counted", async () => {
+    const gate = gateWith();
+    try {
+      const owner = { sessionId: null, principal: OWNER };
+      expect(await resolveCaller(req({ authorization: `Bearer ${KEY}` }), gate, "198.51.100.1")).toEqual(owner);
+      expect(await resolveCaller(req({ authorization: `Bearer ${KEY}` }), gate, "198.51.100.1")).toEqual(owner);
+      expect(gate.throttle.refuses(rateLimitKey("198.51.100.1"))).toBe(false);
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("a live agent token passes as its principal, and a revoked one does not", async () => {
+    const gate = gateWith({ perAddress: 100 });
+    try {
+      const created = tokens.create(compileToken({ name: "reader", preset: "readonly" }), "owner");
+      const caller = await resolveCaller(req({ authorization: `Bearer ${created.secret}` }), gate, "198.51.100.6");
+      expect(caller).toMatchObject({ sessionId: null, principal: { type: "token", id: created.record.id } });
+      tokens.revoke(created.record.id);
+      expect(await resolveCaller(req({ authorization: `Bearer ${created.secret}` }), gate, "198.51.100.6")).toBeNull();
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("a wrong bearer key does not fall back to a valid session cookie", async () => {
+    const gate = gateWith();
+    try {
+      const { token } = sessions.create({ userAgent: "test", ip: "127.0.0.1" });
+      const headers = { authorization: "Bearer wrong", cookie: `${COOKIE_NAME}=${token}` };
+      expect(await resolveCaller(req(headers), gate, "198.51.100.7")).toBeNull();
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("a wrong key is counted, and the next one from that address is refused with 429", async () => {
+    const gate = gateWith();
+    try {
+      expect(await resolveCaller(req({ authorization: "Bearer wrong" }), gate, "198.51.100.2")).toBeNull();
+      expect(gate.throttle.refuses(rateLimitKey("198.51.100.2"))).toBe(true);
+      await expect(resolveCaller(req({ authorization: "Bearer wrong" }), gate, "198.51.100.2")).rejects.toMatchObject({
+        status: 429,
+        code: "too_many_requests",
+      });
+      expect(await resolveCaller(req({ authorization: `Bearer ${KEY}` }), gate, "198.51.100.2")).toMatchObject({
+        principal: OWNER,
+      });
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("a missing, empty or non-bearer credential is neither allowed nor counted", async () => {
+    const gate = gateWith();
+    try {
+      const credentials: Record<string, string>[] = [
+        {},
+        { authorization: "Bearer " },
+        { authorization: "Basic xyz" },
+        { cookie: "a=b" },
+      ];
+      for (const headers of credentials) {
+        expect(await resolveCaller(req(headers), gate, "198.51.100.3")).toBeNull();
+      }
+      expect(gate.throttle.refuses(rateLimitKey("198.51.100.3"))).toBe(false);
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("the total counts wrong keys from addresses that have never failed", async () => {
+    const gate = gateWith({ perAddress: 100, total: 1 });
+    try {
+      expect(await resolveCaller(req({ authorization: "Bearer wrong" }), gate, "198.51.100.4")).toBeNull();
+      await expect(resolveCaller(req({ authorization: "Bearer wrong" }), gate, "198.51.100.5")).rejects.toMatchObject({
+        status: 429,
+      });
+    } finally {
+      gate.throttle.stop();
     }
   });
 });

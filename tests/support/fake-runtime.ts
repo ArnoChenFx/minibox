@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { Duplex, Readable } from "node:stream";
+import { Duplex, PassThrough, Readable } from "node:stream";
 
+import { abortError } from "../../src/lib/abort";
 import {
   type BuildSpec,
   type CommitSpec,
+  type ContainerChange,
   type ContainerInfo,
   type ContainerStats,
   type ContainerUpdate,
@@ -12,13 +14,19 @@ import {
   type ExecSpec,
   type ExecStatus,
   type ImageDetails,
+  type DiskUsage,
+  type HelperResult,
+  type HelperSpec,
   type ImageSummary,
+  type Mount,
   type Runtime,
   type RuntimeEvent,
   type RuntimeInfo,
   RuntimeError,
+  type VolumeCreateOptions,
   type VolumeInfo,
 } from "../../src/runtime";
+import { FakeTmux, type TmuxClient, type TmuxRun } from "./fake-tmux";
 
 export type Op = keyof Runtime;
 
@@ -43,6 +51,8 @@ export interface FakeContainer {
   /** Engine restart policy. Updates can set values create does not offer, such as `always`. */
   restart: string;
   logs: string;
+  /** Writable-layer changes returned by `containerDiff`. Empty unless a test seeds them. */
+  diff: ContainerChange[];
   /** ID of the network the container's endpoint points at. Null until the container first starts, as in the engine. */
   networkId: string | null;
 }
@@ -66,10 +76,27 @@ export interface FakeExec extends ExecSession {
   readonly spec: ExecSpec;
   readonly containerId: string;
   readonly sizes: { cols: number; rows: number }[];
+  /** Set when `kill()` stopped the process. A normal exit leaves this false. */
+  killed: boolean;
+  /** Calls to `kill()`, including the ones that failed. */
+  kills: number;
   /** Writes text to the terminal output, as a shell would. */
   print(text: string): void;
+  /** Writes text to stderr. Command exec (`tty: false`) reads this stream. */
+  printStderr(text: string): void;
+  /** Bytes written to stdin so far. */
+  stdin(): string;
   /** Ends the session as if the process had exited. */
   exit(code?: number): void;
+}
+
+type GateResolve = () => void;
+
+/** What a non-TTY exec prints and returns. `null` hangs until `kill()`. */
+export interface FakeExecScript {
+  stdout: string;
+  stderr: string;
+  code: number;
 }
 
 const now = () => new Date().toISOString();
@@ -108,11 +135,13 @@ async function collect(stream: Readable): Promise<Buffer> {
 }
 
 /** Echoes everything written to it, like a TTY, and ends when the write side ends. */
-function echoStream(): Duplex {
+function echoStream(onWrite?: (chunk: Buffer) => void): Duplex {
   const stream: Duplex = new Duplex({
     read() {},
     write(chunk: Buffer, _encoding, callback) {
-      stream.push(chunk);
+      const copy = Buffer.from(chunk);
+      onWrite?.(copy);
+      stream.push(copy);
       callback();
     },
     final(callback) {
@@ -121,6 +150,32 @@ function echoStream(): Duplex {
     },
   });
   return stream;
+}
+
+function defaultHelper(spec: HelperSpec): HelperResult {
+  const cmd = spec.cmd.join(" ");
+  if (cmd.includes("du")) return { exitCode: 0, logs: "0\t/mnt\n" };
+  if (cmd.includes("df") || cmd.includes("test -f")) {
+    return {
+      exitCode: 0,
+      logs: "Filesystem 1B-blocks Used Available Use% Mounted\nfake 100000000000 1 80000000000 1% /mnt\n",
+    };
+  }
+  return { exitCode: 0, logs: "" };
+}
+
+/** Collects stdin and does not echo it. Command exec closes this when it has finished writing. */
+function stdinStream(onWrite: (chunk: Buffer) => void): Duplex {
+  return new Duplex({
+    read() {},
+    write(chunk: Buffer, _encoding, callback) {
+      onWrite(Buffer.from(chunk));
+      callback();
+    },
+    final(callback) {
+      callback();
+    },
+  });
 }
 
 function toInfo(c: FakeContainer): ContainerInfo {
@@ -138,7 +193,11 @@ function toInfo(c: FakeContainer): ContainerInfo {
     memoryBytes: c.memoryBytes,
     pidsLimit: c.pidsLimit,
     restart: c.restart,
-    mounts: (c.spec.mounts ?? []).map((mount) => ({ source: mount.source, target: mount.target, mode: "rw" as const })),
+    mounts: (c.spec.mounts ?? []).map((mount) => ({
+      source: mount.source,
+      target: mount.target,
+      mode: mount.mode === "ro" ? ("ro" as const) : ("rw" as const),
+    })),
     network: c.spec.network ?? DEFAULT_NETWORK,
   };
 }
@@ -169,17 +228,73 @@ export class FakeRuntime implements Runtime {
   down = false;
   /** Output returned by the next and later builds. */
   buildLog = "Successfully built fake\n";
+  /** Bytes reported by `diskUsage`. Tests shrink `freeBytes` to exercise the low-space flag. */
+  disk: DiskUsage = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
+  /** Answers `runHelper`. The default pretends `df`, `du` and `chown` succeeded. */
+  helperHandler: (spec: HelperSpec) => HelperResult = defaultHelper;
+  /**
+   * Output of the next non-TTY exec. The default is a successful empty command, which is what `true` does.
+   * `null` leaves the command running until `kill()`, which is how tests model `sleep`.
+   */
+  execScript: FakeExecScript | null = { stdout: "", stderr: "", code: 0 };
 
   private readonly faults = new Map<Op, RuntimeError[]>();
+  private readonly execKillFaults: RuntimeError[] = [];
+  private readonly execKillHold: { gate: Promise<void> | null } = { gate: null };
+  private readonly gates = new Map<Op, { promise: Promise<void>; where?: (args: unknown[]) => boolean }>();
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
+  private readonly interrupts = new Set<(error: RuntimeError) => void>();
   private execCount = 0;
+  /** The tmux server of each container. A `tmux` exec runs against it, and a box that stops loses it. */
+  readonly tmux = new FakeTmux();
+  /** When true, `tmux` is not installed: its commands exit 127, as a shell reports a missing program. */
+  tmuxMissing = false;
+
+  /**
+   * Holds the next calls to `op` until `release`. With `where`, only the calls whose arguments it accepts are held,
+   * so a test can hang the inspect of one container and leave the others answering. `buildImage` reports its log
+   * before waiting. A held call does not return when `signal` aborts, as an engine call already in flight does not:
+   * once released, it fails with `AbortError` if `signal` has aborted.
+   */
+  hold(op: Op, where?: (args: unknown[]) => boolean): { release(): void } {
+    let resolveGate: GateResolve | undefined;
+    const promise = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    this.gates.set(op, { promise, where });
+    return {
+      release: () => {
+        this.gates.delete(op);
+        resolveGate?.();
+      },
+    };
+  }
 
   /** The next call to `op` fails with `error`. Queue several errors to fail several calls. */
   fail(op: Op, error: RuntimeError): void {
     const queue = this.faults.get(op) ?? [];
     queue.push(error);
     this.faults.set(op, queue);
+  }
+
+  /** The next exec `kill()` fails with `error` and leaves the process running, as when a process survives the kill. */
+  failExecKill(error: RuntimeError): void {
+    this.execKillFaults.push(error);
+  }
+
+  /** Holds every exec `kill()` until the returned `release` is called, so a second kill can overlap the first. */
+  holdExecKill(): { release(): void } {
+    let resolveGate: GateResolve | undefined;
+    this.execKillHold.gate = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    return {
+      release: () => {
+        this.execKillHold.gate = null;
+        resolveGate?.();
+      },
+    };
   }
 
   callsTo(op: Op): Call[] {
@@ -209,6 +324,11 @@ export class FakeRuntime implements Runtime {
     }
   }
 
+  /** Writable-layer changes the next `containerDiff` returns. Seeding does not record a call. */
+  seedDiff(id: string, changes: ContainerChange[]): void {
+    this.getContainer(id).diff = changes.map((change) => ({ ...change }));
+  }
+
   /** `null` limits model a box created without them (unlimited). */
   seedContainer(
     spec: Omit<CreateContainerSpec, "cpus" | "memoryBytes" | "swapBytes"> & {
@@ -220,11 +340,35 @@ export class FakeRuntime implements Runtime {
   ): string {
     const { running = false, cpus = null, memoryBytes = null, swapBytes = null, ...rest } = spec;
     const imageId = this.findImage(rest.image)?.id ?? this.seedImage(rest.image);
-    return this.insertContainer(rest, imageId, running, { cpus, memoryBytes, swapBytes }).id;
+    const c = this.insertContainer(rest, imageId, running, { cpus, memoryBytes, swapBytes });
+    this.announce("create", c);
+    if (running) this.announce("start", c);
+    return c.id;
   }
 
   emitEvent(event: RuntimeEvent): void {
     for (const subscriber of this.subscribers) subscriber(event);
+  }
+
+  /** Ends every open `events()` stream with `error`, as a dropped connection to the engine does. */
+  interruptEvents(error: RuntimeError): void {
+    for (const interrupt of new Set(this.interrupts)) interrupt(error);
+  }
+
+  /** The event the engine sends after a container change. Attributes carry the labels, as Docker's do. */
+  private announce(action: string, c: FakeContainer): void {
+    this.emitEvent({
+      type: "container",
+      action,
+      id: c.id,
+      attributes: { ...c.labels, name: c.name, image: c.spec.image },
+      time: now(),
+    });
+  }
+
+  private async gate(op: Op, args: unknown[]): Promise<void> {
+    const held = this.gates.get(op);
+    if (held && (held.where?.(args) ?? true)) await held.promise;
   }
 
   private enter(op: Op, args: unknown[]): void {
@@ -236,6 +380,17 @@ export class FakeRuntime implements Runtime {
 
   private findContainer(idOrName: string): FakeContainer | undefined {
     return this.containers.get(idOrName) ?? [...this.containers.values()].find((c) => c.name === idOrName);
+  }
+
+  /**
+   * As the engine does, a named volume that a container or helper mounts is created when it is missing. A bind mount
+   * (`kind: "bind"`, or a source that is an absolute path) names a host path and never creates a volume.
+   */
+  private ensureVolumes(mounts: Mount[] | undefined): void {
+    for (const mount of mounts ?? []) {
+      const named = mount.kind !== "bind" && !mount.source.startsWith("/");
+      if (named && !this.volumes.has(mount.source)) this.volumes.set(mount.source, { name: mount.source, labels: {} });
+    }
   }
 
   private getContainer(idOrName: string): FakeContainer {
@@ -301,6 +456,7 @@ export class FakeRuntime implements Runtime {
       pidsLimit: spec.hardening?.pidsLimit ?? null,
       restart: spec.restart ?? "no",
       logs: "",
+      diff: [],
       networkId: running ? this.networkIdOf(spec.network) : null,
     };
     this.containers.set(c.id, c);
@@ -322,14 +478,27 @@ export class FakeRuntime implements Runtime {
     };
   }
 
-  async listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]> {
-    this.enter("listContainers", [filter]);
-    return [...this.containers.values()].filter((c) => matchesLabels(c.labels, filter.labels)).map(toInfo);
+  /** The listing is read when the call is made. A held call returns it unless its signal has aborted by then. */
+  async listContainers(
+    filter: { labels: Record<string, string> },
+    opts?: { signal?: AbortSignal },
+  ): Promise<ContainerInfo[]> {
+    const args = [filter, opts];
+    this.enter("listContainers", args);
+    const infos = [...this.containers.values()].filter((c) => matchesLabels(c.labels, filter.labels)).map(toInfo);
+    await this.gate("listContainers", args);
+    if (opts?.signal?.aborted) throw abortError();
+    return infos;
   }
 
-  async inspectContainer(id: string): Promise<ContainerInfo> {
-    this.enter("inspectContainer", [id]);
-    return toInfo(this.getContainer(id));
+  /** The state is read when the call is made. A held call returns it unless its signal has aborted by then. */
+  async inspectContainer(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerInfo> {
+    const args = [id, opts];
+    this.enter("inspectContainer", args);
+    const info = toInfo(this.getContainer(id));
+    await this.gate("inspectContainer", args);
+    if (opts?.signal?.aborted) throw abortError();
+    return info;
   }
 
   async createContainer(spec: CreateContainerSpec): Promise<{ id: string }> {
@@ -338,35 +507,48 @@ export class FakeRuntime implements Runtime {
     if (spec.name !== undefined && this.findContainer(spec.name)) {
       throw new RuntimeError("conflict", `Conflict. The container name "/${spec.name}" is already in use`);
     }
+    this.ensureVolumes(spec.mounts);
     const limits = {
       cpus: spec.cpus ?? null,
       memoryBytes: spec.memoryBytes ?? null,
       swapBytes: spec.swapBytes ?? null,
     };
-    return { id: this.insertContainer(spec, image.id, false, limits).id };
+    const c = this.insertContainer(spec, image.id, false, limits);
+    this.announce("create", c);
+    return { id: c.id };
   }
 
   async startContainer(id: string): Promise<void> {
     this.enter("startContainer", [id]);
     const c = this.getContainer(id);
     if (!c.running) {
+      this.ensureVolumes(c.spec.mounts);
       this.attach(c);
       c.running = true;
       c.startedAt = now();
+      this.announce("start", c);
     }
   }
 
   async stopContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("stopContainer", [id, opts]);
-    this.getContainer(id).running = false;
+    const c = this.getContainer(id);
+    this.tmux.stop(c.id);
+    if (!c.running) return;
+    c.running = false;
+    this.announce("die", c);
+    this.announce("stop", c);
   }
 
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("restartContainer", [id, opts]);
     const c = this.getContainer(id);
+    this.ensureVolumes(c.spec.mounts);
     this.attach(c);
+    this.tmux.stop(c.id);
     c.running = true;
     c.startedAt = now();
+    this.announce("restart", c);
   }
 
   async removeContainer(id: string, opts: { force: boolean }): Promise<void> {
@@ -376,6 +558,8 @@ export class FakeRuntime implements Runtime {
       throw new RuntimeError("conflict", `You cannot remove a running container ${c.id}. Stop it or force removal.`);
     }
     this.containers.delete(c.id);
+    this.tmux.stop(c.id);
+    this.announce("destroy", c);
   }
 
   async renameContainer(id: string, name: string): Promise<void> {
@@ -385,6 +569,7 @@ export class FakeRuntime implements Runtime {
     if (other && other !== c)
       throw new RuntimeError("conflict", `Conflict. The container name "/${name}" is already in use`);
     c.name = name;
+    this.announce("rename", c);
   }
 
   async updateContainer(id: string, limits: ContainerUpdate): Promise<void> {
@@ -395,6 +580,12 @@ export class FakeRuntime implements Runtime {
     if (limits.swapBytes !== undefined) c.swapBytes = limits.swapBytes;
     if (limits.pidsLimit !== undefined) c.pidsLimit = limits.pidsLimit;
     if (limits.restart !== undefined) c.restart = limits.restart;
+    this.announce("update", c);
+  }
+
+  async containerDiff(id: string): Promise<ContainerChange[]> {
+    this.enter("containerDiff", [id]);
+    return this.getContainer(id).diff.map((change) => ({ ...change }));
   }
 
   async containerLogs(id: string, opts: { tail: number; timestamps: boolean }): Promise<string> {
@@ -405,14 +596,18 @@ export class FakeRuntime implements Runtime {
       .join("");
   }
 
-  async containerStats(id: string): Promise<ContainerStats> {
-    this.enter("containerStats", [id]);
+  async containerStats(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerStats> {
+    this.enter("containerStats", [id, opts]);
+    await this.gate("containerStats", [id, opts]);
+    if (opts?.signal?.aborted) throw abortError();
     const memLimit = this.getContainer(id).memoryBytes ?? 1024 ** 3;
     return { cpuPercent: 1.5, memUsage: Math.round(memLimit / 4), memLimit, memPercent: 25 };
   }
 
   async commitContainer(id: string, spec: CommitSpec): Promise<void> {
     this.enter("commitContainer", [id, spec]);
+    await this.gate("commitContainer", [id, spec]);
+    if (spec.signal?.aborted) throw abortError();
     const c = this.getContainer(id);
     const image: FakeImage = {
       id: newImageId(),
@@ -423,6 +618,7 @@ export class FakeRuntime implements Runtime {
     };
     this.images.set(image.id, image);
     this.tag(image, `${spec.repo}:${spec.tag}`);
+    if (spec.signal?.aborted) throw abortError();
   }
 
   /** Keeps the last archive per container; paths are not interpreted. */
@@ -443,31 +639,174 @@ export class FakeRuntime implements Runtime {
     this.enter("startExec", [containerId, spec]);
     const c = this.getContainer(containerId);
     if (!c.running) throw new RuntimeError("conflict", `Container ${c.id} is not running`);
-    const stream = echoStream();
+    const tty = spec.tty !== false;
+    if (spec.cmd[0] === "tmux") return this.startTmux(c.id, spec, tty);
+    const stdinChunks: Buffer[] = [];
+    const stream = tty
+      ? echoStream((chunk) => stdinChunks.push(chunk))
+      : stdinStream((chunk) => stdinChunks.push(chunk));
+    const stdout = tty ? stream : new PassThrough();
+    const stderr = new PassThrough();
     const sizes: { cols: number; rows: number }[] = [];
-    let status: ExecStatus = { running: true, exitCode: null, pid: null };
+    const killFaults = this.execKillFaults;
+    const killHold = this.execKillHold;
+    let status: ExecStatus = { running: true, exitCode: null, pid: tty ? null : 4242 };
     const session: FakeExec = {
       id: `exec-${++this.execCount}`,
       stream,
+      stdout,
+      stderr,
       spec,
       containerId: c.id,
       sizes,
+      killed: false,
+      kills: 0,
       async resize(size) {
         sizes.push(size);
       },
       async inspect() {
         return status;
       },
+      async kill() {
+        session.kills += 1;
+        if (killHold.gate) await killHold.gate;
+        const fault = killFaults.shift();
+        if (fault) throw fault;
+        if (session.killed || !status.running) {
+          session.killed = true;
+          return;
+        }
+        session.killed = true;
+        session.exit(137);
+      },
       print(text) {
-        stream.push(text);
+        if (tty) stream.push(text);
+        else stdout.write(text);
+      },
+      printStderr(text) {
+        stderr.write(text);
+      },
+      stdin() {
+        return Buffer.concat(stdinChunks).toString("utf8");
       },
       exit(code = 0) {
+        if (!status.running) return;
         status = { running: false, exitCode: code, pid: null };
-        stream.push(null);
+        if (tty) stream.push(null);
+        else if (!stdout.writableEnded) stdout.end();
+        if (!stderr.writableEnded) stderr.end();
       },
     };
     this.execs.push(session);
-    session.print("$ ");
+    if (tty) {
+      session.print("$ ");
+      return session;
+    }
+    const script = this.execScript;
+    if (script) {
+      setTimeout(() => {
+        if (!status.running) return;
+        if (script.stdout) stdout.write(script.stdout);
+        if (script.stderr) stderr.write(script.stderr);
+        session.exit(script.code);
+      }, 0);
+    }
+    return session;
+  }
+
+  /**
+   * A `tmux` exec. A command exec (`tty: false`) runs once against the emulated server and exits with its status. A TTY
+   * exec attaches a client to the session it names: the session's output goes to the stream, and what is written to the
+   * stream is typed into the session. Ending the exec detaches the client, as a killed attach does in the box.
+   */
+  private startTmux(containerId: string, spec: ExecSpec, tty: boolean): FakeExec {
+    const argv = spec.cmd.slice(1);
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const exitHooks: (() => void)[] = [];
+    const typed: Buffer[] = [];
+    const killFaults = this.execKillFaults;
+    const killHold = this.execKillHold;
+    let status: ExecStatus = { running: true, exitCode: null, pid: null };
+    const finish = (code: number) => {
+      if (!status.running) return;
+      status = { running: false, exitCode: code, pid: null };
+      for (const hook of exitHooks) hook();
+      if (!stdout.writableEnded) stdout.end();
+      if (!stderr.writableEnded) stderr.end();
+      if (tty) stream.push(null);
+    };
+    let stream: Duplex = new PassThrough();
+    if (tty) {
+      const name = (argv[argv.indexOf("-t") + 1] ?? "").replace(/^=/, "").replace(/:.*$/, "");
+      stream = new Duplex({
+        read() {},
+        write: (chunk: Buffer, _encoding, callback) => {
+          typed.push(Buffer.from(chunk));
+          this.tmux.type(containerId, name, Buffer.from(chunk).toString("utf8"));
+          callback();
+        },
+      });
+      const client: TmuxClient = {
+        output: (text) => stream.push(Buffer.from(text)),
+        end: () => finish(0),
+      };
+      if (this.tmux.attach(containerId, name, client)) {
+        exitHooks.push(() => this.tmux.detach(containerId, name, client));
+      } else {
+        stream.push(Buffer.from(`can't find session: ${name}\r\n`));
+        finish(1);
+      }
+    } else {
+      const run: TmuxRun = this.tmuxMissing
+        ? { code: 127, stdout: "", stderr: "sh: tmux: not found\n" }
+        : this.tmux.run(containerId, argv);
+      setTimeout(() => {
+        if (run.stdout) stdout.write(run.stdout);
+        if (run.stderr) stderr.write(run.stderr);
+        finish(run.code);
+      }, 0);
+    }
+    const session: FakeExec = {
+      id: `exec-${++this.execCount}`,
+      stream,
+      stdout,
+      stderr,
+      spec,
+      containerId,
+      sizes: [],
+      killed: false,
+      kills: 0,
+      async resize(size) {
+        session.sizes.push(size);
+      },
+      async inspect() {
+        return status;
+      },
+      async kill() {
+        session.kills += 1;
+        if (killHold.gate) await killHold.gate;
+        const fault = killFaults.shift();
+        if (fault) throw fault;
+        if (status.running) {
+          session.killed = true;
+          finish(137);
+        }
+      },
+      print(text) {
+        stream.push(Buffer.from(text));
+      },
+      printStderr(text) {
+        stderr.write(text);
+      },
+      stdin() {
+        return Buffer.concat(typed).toString("utf8");
+      },
+      exit(code = 0) {
+        finish(code);
+      },
+    };
+    this.execs.push(session);
     return session;
   }
 
@@ -478,16 +817,23 @@ export class FakeRuntime implements Runtime {
     this.enter("events", [filter]);
     const queue: RuntimeEvent[] = [];
     let wake: (() => void) | undefined;
+    let failure: RuntimeError | undefined;
     const notify = () => wake?.();
     const subscriber = (event: RuntimeEvent) => {
       if (!matchesEvent(event, filter)) return;
       queue.push(event);
       notify();
     };
+    const interrupt = (error: RuntimeError) => {
+      failure = error;
+      notify();
+    };
     this.subscribers.add(subscriber);
+    this.interrupts.add(interrupt);
     signal?.addEventListener("abort", notify);
     try {
       for (;;) {
+        if (failure) throw failure;
         if (signal?.aborted) return;
         const next = queue.shift();
         if (next) {
@@ -501,6 +847,7 @@ export class FakeRuntime implements Runtime {
       }
     } finally {
       this.subscribers.delete(subscriber);
+      this.interrupts.delete(interrupt);
       signal?.removeEventListener("abort", notify);
     }
   }
@@ -532,6 +879,9 @@ export class FakeRuntime implements Runtime {
 
   async buildImage(spec: BuildSpec): Promise<string> {
     this.enter("buildImage", [spec]);
+    spec.onLog?.(this.buildLog);
+    await this.gate("buildImage", [spec]);
+    if (spec.signal?.aborted) throw abortError();
     const image: FakeImage = { id: newImageId(), tags: [], labels: { ...spec.labels }, createdAt: now(), size: 1024 };
     this.images.set(image.id, image);
     this.tag(image, normalizeRef(spec.tag));
@@ -542,13 +892,34 @@ export class FakeRuntime implements Runtime {
     this.enter("inspectVolume", [name]);
     const volume = this.volumes.get(name);
     if (!volume) throw new RuntimeError("not_found", `get ${name}: no such volume`);
-    return { name: volume.name, labels: { ...volume.labels } };
+    return {
+      name: volume.name,
+      labels: { ...volume.labels },
+      driver: volume.driver,
+      options: volume.options ? { ...volume.options } : undefined,
+    };
   }
 
-  /** Like Docker, creating an existing volume succeeds and keeps the original labels. */
-  async createVolume(name: string, labels: Record<string, string>): Promise<void> {
-    this.enter("createVolume", [name, labels]);
-    if (!this.volumes.has(name)) this.volumes.set(name, { name, labels: { ...labels } });
+  async listVolumes(): Promise<VolumeInfo[]> {
+    this.enter("listVolumes", []);
+    return [...this.volumes.values()].map((volume) => ({
+      name: volume.name,
+      labels: { ...volume.labels },
+      driver: volume.driver,
+      options: volume.options ? { ...volume.options } : undefined,
+    }));
+  }
+
+  /** Like Docker, creating an existing volume succeeds and keeps the original labels and driver options. */
+  async createVolume(name: string, labels: Record<string, string>, opts?: VolumeCreateOptions): Promise<void> {
+    this.enter("createVolume", [name, labels, opts]);
+    if (this.volumes.has(name)) return;
+    this.volumes.set(name, {
+      name,
+      labels: { ...labels },
+      driver: opts?.driver,
+      options: opts?.driverOpts ? { ...opts.driverOpts } : undefined,
+    });
   }
 
   async removeVolume(name: string): Promise<void> {
@@ -557,6 +928,18 @@ export class FakeRuntime implements Runtime {
     const inUse = [...this.containers.values()].some((c) => c.spec.mounts?.some((m) => m.source === name));
     if (inUse) throw new RuntimeError("conflict", `remove ${name}: volume is in use`);
     this.volumes.delete(name);
+  }
+
+  async runHelper(spec: HelperSpec): Promise<HelperResult> {
+    this.enter("runHelper", [spec]);
+    this.getImage(spec.image);
+    this.ensureVolumes(spec.mounts);
+    return this.helperHandler(spec);
+  }
+
+  async diskUsage(path: string): Promise<DiskUsage> {
+    this.enter("diskUsage", [path]);
+    return { totalBytes: this.disk.totalBytes, freeBytes: this.disk.freeBytes };
   }
 
   async ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void> {

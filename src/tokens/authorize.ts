@@ -1,206 +1,302 @@
 import type { HostCtx } from "../host/registry";
-import { volumeName } from "../labels";
-import { AppError } from "../lib/errors";
-import { type MessageKey, msg, type Params } from "../lib/messages";
 import type { AuthorizeRequest } from "../operations/executor";
 import type { TokenPrincipal } from "../operations/types";
-import { RuntimeError } from "../runtime";
+import { isRuntimeError } from "../runtime";
+import type { Box } from "../services/boxes";
 import { getBox } from "../services/boxes";
-import { listSnapshots } from "../services/snapshots";
-import type { BoxSpec } from "../specs/types";
+import type { ExecTarget } from "../services/exec";
+import { inspectVolumeOrNull } from "../volumes/engine";
+import type { VolumeRecord } from "../volumes/types";
 import {
+  type BoxView,
   boxVisible,
   hostAllowed,
+  type ImageView,
+  profileForToken,
+  profileRank,
+  refusal,
   scopeAllowed,
   snapshotVisible,
-  viewFromBox,
-  type BoxView,
-  volumeGranted,
-  volumesNamed,
+  specViews,
+  viewOfSpec,
+  volumeVisible,
+  volumeWritable,
 } from "./model";
 
-const MB = 1024 * 1024;
+/**
+ * The authorize hook. The owner passes every check. A token passes the scope check for the operation, then the
+ * access rule for its target (host, box, image, volume, profile, TTL), and a service that asks about one volume passes
+ * the resource check. An operation with no access rule is refused for tokens, so a new operation is owner-only until
+ * it gets one.
+ */
+export async function authorizeOperation(request: AuthorizeRequest): Promise<boolean> {
+  const { principal } = request;
+  if (principal.type === "owner") return true;
+  if (principal.type !== "token") return false;
+  const phase = request.phase ?? "scope";
+  if (phase === "scope") return scopeAllowed(principal.grants, request.operation.scope);
+  if (phase === "resource") return resourceAllowed(request, principal);
+  return accessAllowed(request, principal);
+}
 
-/** Operations that read or change one existing box, so the box has to be inside the token's scope. */
-const BOX_OPS = new Set([
-  "box.get",
-  "box.delete",
-  "box.action",
-  "box.resources",
-  "box.update",
-  "box.logs",
-  "box.stats",
-  "snapshot.create",
-]);
-
-const WORKSPACE_OPS = new Set(["box.create", "snapshot.fork"]);
-const TTL_OPS = new Set(["box.create", "box.update", "snapshot.fork"]);
-const QUOTA_OPS = new Set(["box.create", "snapshot.fork", "box.update", "box.resources"]);
-
-function deny(key: MessageKey, params?: Params): never {
-  throw new AppError(403, "forbidden", msg(key, params));
+function recordOf(host: HostCtx, ref: { id?: string; name: string }): VolumeRecord | null {
+  return host.volumes.resolve(ref.id ?? ref.name, host.host.id);
 }
 
 /**
- * Scope, then resource, host and quota checks. The owner skips every check. A token missing the operation's scope,
- * a box outside its selector, a volume it cannot attach, or a quota it would pass is a 403. `box-self` and `system`
- * are refused: those principals are reserved and not issued.
+ * One volume check from a service, asked while the operation runs. `scope` is `volume:attach` or `volume:write`, or
+ * absent for a create. A volume with a record is judged by its grants and owner. A name with no record is a new volume,
+ * so only the scope is judged, unless an unclaimed engine volume already has that name: then it belongs to someone and
+ * a token may not take it over. The shared tools volume is attachable by every token, because every new box mounts it.
  */
-export async function authorizeOperation(request: AuthorizeRequest): Promise<boolean> {
-  const { principal, operation } = request;
-  if (principal.type === "owner") return true;
-  if (principal.type !== "token") deny("operation_forbidden", { op: operation.name });
-  if ((request.phase ?? "scope") === "scope") {
-    if (!scopeAllowed(principal.grants, operation.scope)) deny("operation_forbidden", { op: operation.name });
-    return true;
+async function resourceAllowed(request: AuthorizeRequest, principal: TokenPrincipal): Promise<boolean> {
+  const host = request.host;
+  if (!host) return false;
+  const scope = request.scope ?? "";
+  const resource = request.resource;
+  if (!resource) return scopeAllowed(principal.grants, scope);
+  const record = recordOf(host, resource);
+  if (!record) {
+    if (resource.id !== undefined) return false;
+    if (await inspectVolumeOrNull(host, resource.name)) return false;
+    return scopeAllowed(principal.grants, scope);
   }
-  await assertAccess(request, principal);
+  if (scope === "volume:attach" && record.role === "tools") return true;
+  if (!scopeAllowed(principal.grants, scope)) return false;
+  const views = specViews(host.specs.list());
+  if (scope === "volume:write") return volumeWritable(principal, record, views);
+  if (scope === "volume:attach") return volumeVisible(principal, record, views);
+  return false;
+}
+
+interface Check {
+  readonly principal: TokenPrincipal;
+  readonly host: HostCtx;
+  readonly input: Record<string, unknown>;
+  readonly resolved: unknown;
+}
+
+type Rule = (check: Check) => Promise<void>;
+
+async function accessAllowed(request: AuthorizeRequest, principal: TokenPrincipal): Promise<boolean> {
+  const { host } = request;
+  if (!host) throw new Error("the access check needs the host the operation runs on");
+  if (!hostAllowed(principal.grants.hosts, host.host.id)) throw refusal("host_not_granted", { host: host.host.id });
+  const rule = RULES.get(request.operation.name);
+  if (!rule) throw refusal("operation_forbidden", { op: request.operation.name });
+  await rule({ principal, host, input: request.input ?? {}, resolved: request.resolved });
   return true;
 }
 
-async function assertAccess(request: AuthorizeRequest, principal: TokenPrincipal): Promise<void> {
-  const host = request.host;
-  if (!host) throw new Error("the access check needs the host the operation runs on");
-  if (!hostAllowed(principal.grants.hosts, host.host.id)) deny("host_not_granted", { host: host.host.id });
+function isBox(value: unknown): value is Box {
+  return typeof value === "object" && value !== null && "boxId" in value && typeof value.boxId === "string";
+}
 
-  const input = request.input ?? {};
-  for (const volume of volumesNamed(input)) {
-    if (!volumeGranted(principal, volume)) deny("volume_not_granted", { volume });
-  }
-  if (WORKSPACE_OPS.has(request.operation.name) && typeof input.name === "string") {
-    const volume = volumeName(host.prefix, input.name);
-    // Creating a box mounts this volume even when the caller did not name it. Reusing one that already exists is an
-    // attach, and needs the same grant as an explicit mount. A volume created for this box does not.
-    if ((await volumeExists(host, volume)) && !volumeGranted(principal, volume)) {
-      deny("volume_not_granted", { volume });
-    }
-  }
+function boxViewOf(host: HostCtx, box: Box): BoxView {
+  return {
+    boxId: box.boxId,
+    containerId: box.id,
+    name: box.name,
+    createdBy: box.createdBy,
+    labels: box.labels,
+    hostId: host.host.id,
+  };
+}
 
-  assertTtl(principal, request.operation.name, input);
-  assertQuota(request, principal, host);
+function assertBoxVisible(principal: TokenPrincipal, view: BoxView): void {
+  if (!boxVisible(principal, view)) throw refusal("box_out_of_scope");
+}
 
-  const box = await targetBox(request, host);
-  if (box && !boxVisible(principal, viewFromBox(box))) deny("box_out_of_scope");
+/** The box an operation resolved. A missing resolution is refused, so an operation without one cannot pass. */
+function resolvedBox(resolved: unknown): Box {
+  if (!isBox(resolved)) throw refusal("box_out_of_scope");
+  return resolved;
+}
 
-  if (
-    (request.operation.name === "snapshot.delete" || request.operation.name === "snapshot.fork") &&
-    typeof input.ref === "string"
-  ) {
-    await assertSnapshot(host, principal, input.ref);
+const boxRule: Rule = async ({ principal, host, resolved }) => {
+  assertBoxVisible(principal, boxViewOf(host, resolvedBox(resolved)));
+};
+
+/** An exec names its box by container id. Anything that cannot be matched to a visible spec is refused. */
+const execRule: Rule = async ({ principal, host, resolved }) => {
+  const target = resolved as ExecTarget | undefined;
+  if (!target) throw refusal("box_out_of_scope");
+  const spec = host.specs.list().find((item) => item.containerId === target.id);
+  if (!spec) throw refusal("box_out_of_scope");
+  assertBoxVisible(principal, viewOfSpec(spec));
+};
+
+const noAccess: Rule = async () => {};
+
+function assertProfile(profile: string, current: string | null | undefined): void {
+  if (!profileForToken(profile)) throw refusal("profile_not_allowed", { profile });
+  if (current !== undefined && profileRank(profile) < profileRank(current)) {
+    throw refusal("profile_not_allowed", { profile });
   }
 }
 
-function assertTtl(principal: TokenPrincipal, name: string, input: Record<string, unknown>): void {
-  if (!TTL_OPS.has(name)) return;
+/** A requested TTL above the token's cap is refused. Null and omission take the cap, which `ttlFor` stores. */
+function assertTtl(principal: TokenPrincipal, requested: number | null | undefined): void {
   const max = principal.grants.quotas.maxTtlSec;
-  if (max === null || !Object.hasOwn(input, "ttlSec") || input.ttlSec === undefined) return;
-  if (typeof input.ttlSec !== "number" || input.ttlSec > max) deny("quota_ttl", { max });
+  if (max === null || typeof requested !== "number") return;
+  if (requested > max) throw refusal("quota_ttl", { max });
 }
 
-function assertQuota(request: AuthorizeRequest, principal: TokenPrincipal, host: HostCtx): void {
-  if (!QUOTA_OPS.has(request.operation.name)) return;
-  const creating = WORKSPACE_OPS.has(request.operation.name);
-  const input = request.input ?? {};
-  const quotas = principal.grants.quotas;
-  const own = host.specs.list().filter((spec) => spec.createdBy === principal.id);
-  if (creating && quotas.maxBoxes !== null && own.length + 1 > quotas.maxBoxes) {
-    deny("quota_boxes", { max: quotas.maxBoxes });
-  }
-  const current = creating ? null : specOf(host, request.resolved, input);
-  const others = own.filter((spec) => spec.id !== current?.id);
-  if ((creating || typeof input.cpus === "number") && quotas.maxCpus !== null) {
-    const used = roundCpus(sumCpus(others) + requestedCpus(input, current));
-    if (used > quotas.maxCpus + 1e-6) deny("quota_cpus", { used, max: quotas.maxCpus });
-  }
-  if ((creating || typeof input.memoryMb === "number") && quotas.maxMemoryMb !== null) {
-    const used = sumMemory(others) + requestedMemory(input, current);
-    if (used > quotas.maxMemoryMb) deny("quota_memory", { used, max: quotas.maxMemoryMb });
-  }
-}
-
-async function targetBox(request: AuthorizeRequest, host: HostCtx): Promise<BoxLike | null> {
-  if (isBox(request.resolved)) return request.resolved;
-  if (!BOX_OPS.has(request.operation.name)) return null;
-  const id = request.input?.id;
-  if (typeof id !== "string" || id === "") return null;
-  return getBox(host, id);
-}
-
-async function assertSnapshot(host: HostCtx, principal: TokenPrincipal, ref: string): Promise<void> {
-  const images = await listSnapshots(host);
-  const image = images.find((item) => item.ref === ref || item.id === ref || item.tags.includes(ref));
-  if (!image) return;
-  const boxes = host.specs.list().map(viewOfSpec);
-  if (!snapshotVisible(principal, image.source, boxes)) deny("snapshot_out_of_scope");
-}
-
-async function volumeExists(host: HostCtx, name: string): Promise<boolean> {
+async function imageOrNull(host: HostCtx, ref: string) {
   try {
-    await host.runtime.inspectVolume(name);
-    return true;
+    return await host.runtime.inspectImage(ref);
   } catch (e) {
-    if (e instanceof RuntimeError && e.kind === "not_found") return false;
+    if (isRuntimeError(e, "not_found")) return null;
     throw e;
   }
 }
 
-function specOf(host: HostCtx, resolved: unknown, input: Record<string, unknown>): BoxSpec | null {
-  if (isBox(resolved)) return host.specs.read(resolved.boxId);
-  const id = typeof input.id === "string" ? input.id : "";
-  if (id === "") return null;
-  return host.specs.read(id) ?? host.specs.findByName(id) ?? host.specs.findByContainer(id, id);
+/**
+ * The image a ref names, resolved by the engine so a short id, a digest or a tag all reach the same label check. A
+ * template is any template image. A snapshot must be visible to the token. Anything else, and a ref that names nothing,
+ * is refused with the same message, so a refusal does not reveal which images exist.
+ */
+async function assertImageUsable(
+  principal: TokenPrincipal,
+  host: HostCtx,
+  ref: string,
+  kind: "template" | "snapshot",
+): Promise<void> {
+  const refusedAs = kind === "snapshot" ? "snapshot_out_of_scope" : "template_out_of_scope";
+  const info = await imageOrNull(host, ref);
+  if (!info) throw refusal(refusedAs);
+  const labels = info.labels;
+  if (labels[host.keys.template] === "true") return;
+  if (labels[host.keys.snapshot] === "true") {
+    if (snapshotVisible(principal, imageViewOf(host, labels), specViews(host.specs.list()))) return;
+  }
+  throw refusal(refusedAs);
 }
 
-function sumCpus(specs: readonly BoxSpec[]): number {
-  return specs.reduce((sum, spec) => sum + (spec.resources.cpus ?? 0), 0);
+export function imageViewOf(host: HostCtx, labels: Record<string, string>): ImageView {
+  return {
+    createdBy: labels[host.keys.createdBy] || null,
+    sourceId: labels[host.keys.snapshotOfId] || null,
+  };
 }
 
-function sumMemory(specs: readonly BoxSpec[]): number {
-  return specs.reduce((sum, spec) => sum + Math.round((spec.resources.memoryBytes ?? 0) / MB), 0);
+/** A snapshot or template the token itself created. Deleting or promoting another principal's image is refused. */
+async function assertOwnedImage(
+  principal: TokenPrincipal,
+  host: HostCtx,
+  ref: string,
+  kind: "template" | "snapshot",
+): Promise<void> {
+  const refusedAs = kind === "snapshot" ? "snapshot_out_of_scope" : "template_out_of_scope";
+  const info = await imageOrNull(host, ref);
+  if (!info) throw refusal(refusedAs);
+  const labels = info.labels;
+  const flag = kind === "snapshot" ? host.keys.snapshot : host.keys.template;
+  if (labels[flag] !== "true") throw refusal(refusedAs);
+  if (labels[host.keys.createdBy] !== principal.id) throw refusal(refusedAs);
 }
 
-function requestedCpus(input: Record<string, unknown>, current: BoxSpec | null): number {
-  return typeof input.cpus === "number" ? input.cpus : (current?.resources.cpus ?? 0);
+/** Box create and snapshot fork: the profile and the TTL cap. The quota is checked later, under the token's lock. */
+const createRule: Rule = async ({ principal, host, input }) => {
+  const profile = typeof input.profile === "string" ? input.profile : host.security.defaultProfile;
+  assertProfile(profile, undefined);
+  const template = typeof input.template === "string" ? input.template : host.baseTemplateTag;
+  await assertImageUsable(principal, host, template, "template");
+  assertTtl(principal, input.ttlSec as number | null | undefined);
+};
+
+const forkRule: Rule = async ({ principal, host, input }) => {
+  const profile = typeof input.profile === "string" ? input.profile : host.security.defaultProfile;
+  assertProfile(profile, undefined);
+  await assertImageUsable(principal, host, String(input.ref ?? "").trim(), "snapshot");
+  assertTtl(principal, input.ttlSec as number | null | undefined);
+};
+
+/** Update and rebuild: the box must be visible; a template, profile or TTL change must stay within the token's bounds. */
+const changeRule: Rule = async ({ principal, host, input, resolved }) => {
+  const box = resolvedBox(resolved);
+  assertBoxVisible(principal, boxViewOf(host, box));
+  if (typeof input.template === "string") await assertImageUsable(principal, host, input.template, "template");
+  if (typeof input.profile === "string") assertProfile(input.profile, box.profile);
+  if (input.ttlSec !== undefined) assertTtl(principal, input.ttlSec as number | null);
+};
+
+const volumeRule: Rule = async ({ principal, host, resolved }) => {
+  const view = resolved as { id: string; name: string } | undefined;
+  const record = view ? host.volumes.resolve(view.id, host.host.id) : null;
+  if (!view || !record || !volumeVisible(principal, record, specViews(host.specs.list()))) {
+    throw refusal("volume_not_granted", { volume: view?.name ?? "" });
+  }
+};
+
+/** Deleting a volume is its creator's alone. A grant lets a token mount a volume, not remove it. */
+const volumeDeleteRule: Rule = async ({ principal, host, resolved }) => {
+  const view = resolved as { id: string; name: string } | undefined;
+  const record = view ? host.volumes.resolve(view.id, host.host.id) : null;
+  if (!view || !record || record.createdBy !== principal.id) {
+    throw refusal("volume_not_granted", { volume: view?.name ?? "" });
+  }
+};
+
+/** Attaching or detaching needs the box visible. The volume itself is judged by the resource checks while it runs. */
+const volumeAttachRule: Rule = async ({ principal, host, input }) => {
+  const box = await getBox(host, String(input.box ?? ""));
+  assertBoxVisible(principal, boxViewOf(host, box));
+};
+
+/** A template name a token promotes into must be free: promotion would otherwise overwrite that tag. */
+async function assertTemplateNameFree(host: HostCtx, name: string): Promise<void> {
+  const ref = `${host.prefix}-template:${name}`;
+  if (await imageOrNull(host, ref)) throw refusal("template_out_of_scope");
 }
 
-function requestedMemory(input: Record<string, unknown>, current: BoxSpec | null): number {
-  if (typeof input.memoryMb === "number") return input.memoryMb;
-  return Math.round((current?.resources.memoryBytes ?? 0) / MB);
-}
-
-function roundCpus(value: number): number {
-  return Math.round(value * 1000) / 1000;
-}
-
-function viewOfSpec(spec: BoxSpec): BoxView {
-  return viewFromBox({
-    boxId: spec.id,
-    containerId: spec.containerId,
-    name: spec.name,
-    createdBy: spec.createdBy,
-    labels: spec.labels,
-    hostId: spec.hostId,
-    mounts: spec.mounts,
-  });
-}
-
-interface BoxLike {
-  boxId: string;
-  id: string;
-  name: string;
-  createdBy: string | null;
-  labels: Record<string, string>;
-  mounts: { volume: string }[];
-}
-
-function isBox(value: unknown): value is BoxLike {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "boxId" in value &&
-    "createdBy" in value &&
-    "name" in value &&
-    "mounts" in value &&
-    "id" in value
-  );
-}
+const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
+  ["box.list", noAccess],
+  ["box.get", boxRule],
+  ["box.create", createRule],
+  ["box.delete", boxRule],
+  ["box.action", boxRule],
+  ["box.resources", boxRule],
+  ["box.update", changeRule],
+  ["box.rebuild", changeRule],
+  ["box.logs", boxRule],
+  ["box.stats", boxRule],
+  ["snapshot.create", boxRule],
+  ["snapshot.fork", forkRule],
+  ["snapshot.list", noAccess],
+  [
+    "snapshot.delete",
+    async ({ principal, host, input }) => assertOwnedImage(principal, host, String(input.ref), "snapshot"),
+  ],
+  ["template.list", noAccess],
+  [
+    "template.promote",
+    async ({ principal, host, input }) => {
+      await assertOwnedImage(principal, host, String(input.ref), "snapshot");
+      await assertTemplateNameFree(host, String(input.name));
+    },
+  ],
+  [
+    "template.delete",
+    async ({ principal, host, input }) => assertOwnedImage(principal, host, String(input.ref), "template"),
+  ],
+  ["volume.list", noAccess],
+  ["volume.get", volumeRule],
+  ["volume.create", noAccess],
+  ["volume.delete", volumeDeleteRule],
+  ["volume.attach", volumeAttachRule],
+  ["volume.detach", volumeAttachRule],
+  ["volume.usage", volumeRule],
+  ["task.list", noAccess],
+  ["task.get", noAccess],
+  ["session.list", boxRule],
+  ["session.start", boxRule],
+  ["session.read", boxRule],
+  ["session.send", boxRule],
+  ["session.close", boxRule],
+  ["exec.run", boxRule],
+  ["exec.get", execRule],
+  ["exec.kill", execRule],
+  ["exec.output", execRule],
+  ["events.list", noAccess],
+]);

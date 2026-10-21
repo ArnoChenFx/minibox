@@ -1,7 +1,7 @@
-import { chmodSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
-import { ensureDataDir, SECRET_FILE_MODE } from "../data-dir";
+import { ensureDataDir, SECRET_FILE_MODE, writeFileAtomic } from "../data-dir";
 import { log } from "../lib/logger";
 import { isBoxId } from "./revision";
 import { SPEC_VERSION, type BoxSpec } from "./types";
@@ -24,14 +24,26 @@ function isSpec(value: unknown): value is BoxSpec {
   );
 }
 
+/** A spec was written, or a box was removed. Listeners hear it after the file has changed. */
+export type SpecChange = { kind: "write"; spec: BoxSpec } | { kind: "remove"; id: string };
+
 /**
  * `DATA_DIR/boxes/<id>.json`. Writes are atomic (temp file in the same directory, then rename)
  * and the file mode is 600, matching the other control-plane files. One store is shared by every host.
  */
 export class SpecStore {
   private tail: Promise<void> = Promise.resolve();
+  private readonly listeners = new Set<(change: SpecChange) => void>();
 
   constructor(private readonly dataDir: string) {}
+
+  /** Returns the function that removes the listener. A listener that throws is logged and the others still hear it. */
+  subscribe(listener: (change: SpecChange) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
 
   dir(): string {
     return join(this.dataDir, "boxes");
@@ -95,6 +107,7 @@ export class SpecStore {
       log.warn("box.spec_unreadable", { id, error: "not a box spec" });
       return null;
     }
+    if (!Array.isArray(parsed.history)) parsed.history = [];
     return parsed;
   }
 
@@ -108,22 +121,8 @@ export class SpecStore {
 
   write(spec: BoxSpec): void {
     ensureDataDir(this.dataDir);
-    const path = this.pathFor(spec.id);
-    const tmp = `${path}.${process.pid}.tmp`;
-    const body = `${JSON.stringify(spec, null, 2)}\n`;
-    try {
-      writeFileSync(tmp, body, { mode: SECRET_FILE_MODE });
-      chmodSync(tmp, SECRET_FILE_MODE);
-      renameSync(tmp, path);
-      chmodSync(path, SECRET_FILE_MODE);
-    } catch (e) {
-      try {
-        unlinkSync(tmp);
-      } catch {
-        // The temp file was already renamed, or it was never created.
-      }
-      throw e;
-    }
+    writeFileAtomic(this.pathFor(spec.id), `${JSON.stringify(spec, null, 2)}\n`, SECRET_FILE_MODE);
+    this.notify({ kind: "write", spec });
   }
 
   remove(id: string): void {
@@ -132,6 +131,17 @@ export class SpecStore {
       unlinkSync(this.pathFor(id));
     } catch (e) {
       if (!isEnoent(e)) throw e;
+    }
+    this.notify({ kind: "remove", id });
+  }
+
+  private notify(change: SpecChange): void {
+    for (const listener of new Set(this.listeners)) {
+      try {
+        listener(change);
+      } catch (e) {
+        log.error("box.spec_listener_failed", { kind: change.kind, error: String(e) });
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { notFound } from "../lib/errors";
+import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { accept, type Checked, NAME_RE, reject } from "../lib/validation";
 import { deleteBox } from "../services/boxes";
@@ -130,12 +131,12 @@ function checkBoxes(value: unknown): Checked<BoxScope | undefined> {
 
 function checkNameList(value: unknown, max: number, pattern: RegExp): string[] | null {
   if (!Array.isArray(value) || value.length > max) return null;
-  const names: string[] = [];
+  const ids: string[] = [];
   for (const item of value) {
-    if (typeof item !== "string" || !pattern.test(item) || names.includes(item)) return null;
-    names.push(item);
+    if (typeof item !== "string" || !pattern.test(item) || ids.includes(item)) return null;
+    ids.push(item);
   }
-  return names;
+  return ids;
 }
 
 function checkVolumes(value: unknown): Checked<VolumeScope | undefined> {
@@ -143,8 +144,8 @@ function checkVolumes(value: unknown): Checked<VolumeScope | undefined> {
     value,
     (raw): Checked<VolumeScope> => {
       if (raw === "*") return accept({ type: "all" });
-      const names = checkNameList(raw, LIST_MAX, ID_RE);
-      if (names) return accept({ type: "list", names });
+      const ids = checkNameList(raw, LIST_MAX, ID_RE);
+      if (ids) return accept({ type: "list", ids });
       return reject(msg("token_volumes_invalid"), "volumes");
     },
     "volumes",
@@ -227,7 +228,7 @@ const BoxScopeSchema = z.discriminatedUnion("type", [
 ]);
 
 const VolumeScopeSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("list"), names: z.array(z.string()) }),
+  z.object({ type: z.literal("list"), ids: z.array(z.string()) }),
   z.object({ type: z.literal("all") }),
 ]);
 
@@ -300,7 +301,7 @@ const tokenCreateInput = z
     }).optional(),
     volumes: field(checkVolumes, {
       description:
-        'Volumes the token may mount. "*" or a list of names. Empty grants nothing. Naming a volume also grants volume:attach. Shared volumes themselves are #24.',
+        'Volumes the token may attach, by volume id (vol_…). "*" or a list. Empty grants nothing. Naming a volume also grants volume:attach.',
     }).optional(),
     hosts: field(checkHosts, {
       description:
@@ -421,10 +422,14 @@ export const tokenRevoke = defineOperation({
     if (!token) throw notFound(msg("token_not_found"));
     const deletedBoxes: string[] = [];
     if (input.deleteCreated) {
-      const specs = host.specs.list().filter((spec) => spec.createdBy === input.id);
+      const specs = host.specs.list().filter((spec) => spec.createdBy === input.id && spec.hostId === host.host.id);
       for (const spec of specs) {
-        const removed = await deleteBox(host, spec.id, true);
-        deletedBoxes.push(removed.name);
+        try {
+          const removed = await deleteBox(host, spec.id, true);
+          deletedBoxes.push(removed.name);
+        } catch (error) {
+          log.warn("token.revoke_box_failed", { tokenId: input.id, boxId: spec.id, error: String(error) });
+        }
       }
     }
     return { token, deletedBoxes };

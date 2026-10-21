@@ -1,14 +1,15 @@
-import { readFileSync, statfsSync } from "node:fs";
+import { existsSync, readFileSync, statfsSync } from "node:fs";
 import os from "node:os";
 
 import { log } from "../lib/logger";
-import { listBoxes } from "../services/boxes";
+import { type LiveSink, NO_LIVE } from "./live";
 import { type CpuTimes, cpuPercent, parseMeminfo, parseProcStat } from "./procfs";
 import type { HostCtx } from "./registry";
+import { type BoxTotals, summarizeBoxes } from "./sampler";
 
 export interface DiskUsage {
   mount: string;
-  /** Stable id translated by the UI: "root" | "docker" | "root+docker". */
+  /** Stable id translated by the UI: "root" | "root+docker" | "docker" | "container" | "container+docker". */
   label: string;
   total: number;
   used: number;
@@ -50,20 +51,46 @@ function readText(path: string): string | null {
   }
 }
 
-function disk(mount: string, label: string): DiskUsage | null {
+type Usage = Omit<DiskUsage, "label">;
+
+function disk(mount: string): Usage | null {
   try {
     const s = statfsSync(mount);
     const total = s.blocks * s.bsize;
     const free = s.bavail * s.bsize;
-    return { mount, label, total, free, used: total - s.bfree * s.bsize };
+    return { mount, total, free, used: total - s.bfree * s.bsize };
   } catch {
     return null;
   }
 }
 
+/** Docker and Podman each create one of these files in the containers they start. */
+const CONTAINER_MARKERS = ["/.dockerenv", "/run/.containerenv"];
+
+export function runsInContainer(exists: (path: string) => boolean = existsSync): boolean {
+  return CONTAINER_MARKERS.some((path) => exists(path));
+}
+
+/**
+ * Labels the disks to show. Inside a container, "/" is the container's own filesystem rather than the host's, so it
+ * is labelled "container". The Docker data root is listed on its own only when its total size differs from the root's,
+ * since statfs gives no device id to compare.
+ */
+export function assembleDisks(root: Usage | null, docker: Usage | null, inContainer: boolean): DiskUsage[] {
+  const rootLabel = inContainer ? "container" : "root";
+  if (!root) return docker ? [{ ...docker, label: "docker" }] : [];
+  if (!docker) return [{ ...root, label: rootLabel }];
+  if (docker.total === root.total) return [{ ...root, label: `${rootLabel}+docker` }];
+  return [
+    { ...root, label: rootLabel },
+    { ...docker, label: "docker" },
+  ];
+}
+
 /**
  * Samples host CPU/memory on a fixed interval into a ring buffer, and assembles a full
- * metrics snapshot (incl. Docker info, cached briefly) on demand.
+ * metrics snapshot (incl. Docker info, cached briefly) on demand. Each tick also publishes the
+ * metrics on the live sink, so an open page needs no request of its own to stay current.
  */
 export class HostMonitor {
   private prev: CpuTimes | null = null;
@@ -71,22 +98,37 @@ export class HostMonitor {
   private history: HostSample[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private dockerCache: { at: number; value: HostMetrics["docker"] & { boxes: HostMetrics["boxes"] } } | null = null;
+  private readonly inContainer = runsInContainer();
 
   constructor(
     private readonly currentHost: () => HostCtx,
     private readonly intervalMs: number,
     private readonly maxSamples: number,
+    private readonly live: LiveSink = NO_LIVE,
   ) {}
 
   start(): void {
-    this.sample();
-    this.timer = setInterval(() => this.sample(), this.intervalMs);
+    this.tick();
+    this.timer = setInterval(() => this.tick(), this.intervalMs);
     this.timer.unref?.();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  private tick(): void {
+    this.sample();
+    this.snapshot()
+      .then(({ history, ...metrics }) => {
+        this.live.publish("host", {
+          hostId: this.currentHost().host.id,
+          metrics,
+          sample: history.at(-1) ?? null,
+        });
+      })
+      .catch((e: unknown) => log.warn("host.metrics_failed", { error: String(e) }));
   }
 
   private sample(): void {
@@ -113,26 +155,27 @@ export class HostMonitor {
     return { total, used: total - free, available: free, swapTotal: 0, swapUsed: 0 };
   }
 
+  /** The totals the sampler keeps. One listing of the engine stands in while the sampler's cache is not current. */
+  private async boxTotals(host: HostCtx): Promise<BoxTotals> {
+    const cached = host.sampler.summary();
+    if (cached) return cached;
+    return summarizeBoxes(await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } }));
+  }
+
   private async dockerInfo(): Promise<HostMetrics["docker"] & { boxes: HostMetrics["boxes"] }> {
     const now = Date.now();
     if (this.dockerCache && now - this.dockerCache.at < 2500) return this.dockerCache.value;
     let value: HostMetrics["docker"] & { boxes: HostMetrics["boxes"] };
     try {
       const host = this.currentHost();
-      const [info, boxes] = await Promise.all([host.runtime.info(), listBoxes(host)]);
+      const [info, totals] = await Promise.all([host.runtime.info(), this.boxTotals(host)]);
       value = {
         available: true,
         version: info.version,
         rootDir: info.rootDir,
         containers: info.containers,
         images: info.images,
-        boxes: {
-          total: boxes.length,
-          running: boxes.filter((b) => b.running).length,
-          allocatedCpus: Math.round(boxes.filter((b) => b.running).reduce((s, b) => s + (b.cpus ?? 0), 0) * 100) / 100,
-          allocatedMemory: boxes.filter((b) => b.running).reduce((s, b) => s + (b.memory ?? 0), 0),
-          unlimited: boxes.filter((b) => b.cpus === null || b.memory === null).length,
-        },
+        boxes: totals,
       };
     } catch (e) {
       log.warn("host.docker_info_failed", { error: String(e) });
@@ -153,13 +196,7 @@ export class HostMonitor {
     const d = await this.dockerInfo();
     const { boxes, ...docker } = d;
     const cpus = os.cpus();
-    const disks = [disk("/", "root")];
-    if (docker.rootDir) {
-      const dd = disk(docker.rootDir, "docker");
-      // Only list separately when on a different filesystem.
-      if (dd && disks[0] && dd.total !== disks[0].total) disks.push(dd);
-      else if (dd && disks[0]) disks[0].label = "root+docker";
-    }
+    const disks = assembleDisks(disk("/"), docker.rootDir ? disk(docker.rootDir) : null, this.inContainer);
     const load = os.loadavg();
     return {
       hostname: os.hostname(),
@@ -178,7 +215,7 @@ export class HostMonitor {
         ],
       },
       memory: this.memory(),
-      disks: disks.filter((x): x is DiskUsage => x !== null),
+      disks,
       docker,
       boxes,
       history: this.history,

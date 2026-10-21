@@ -5,7 +5,7 @@ import type { EventFilter } from "../events/store";
 import type { EventStatus } from "../events/types";
 import { msg } from "../lib/messages";
 import { accept, type Checked, reject } from "../lib/validation";
-import { viewsFromSpecs } from "../tokens/model";
+import { specViews } from "../tokens/model";
 import { defineOperation } from "./define";
 import { EventPageSchema } from "./schemas";
 import { field } from "./validation";
@@ -142,7 +142,7 @@ export const eventList = defineOperation({
     },
   ],
   run: async ({ events, principal, host }, input) =>
-    events.list(scopedFilter(filterOf(input), principal, viewsFromSpecs(host.specs.list())), {
+    events.list(scopedFilter(filterOf(input), principal, specViews(host.specs.list())), {
       before: input.cursor,
       limit: input.limit,
     }),

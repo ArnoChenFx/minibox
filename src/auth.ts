@@ -1,6 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 
+import type { App } from "./app";
+import { AppError } from "./lib/errors";
+import { log } from "./lib/logger";
+import { msg } from "./lib/messages";
 import { OWNER, type Principal } from "./operations/types";
 import type { SessionStore } from "./sessions";
 import type { TokenStore } from "./tokens/store";
@@ -34,40 +38,31 @@ export function parseCookies(header: string | null): Record<string, string> {
 }
 
 /**
- * Who a request acts for. `sessionId` is set for a browser session and null for a bearer request.
- * A bearer request is the owner when the secret is the access key, or a token principal when it is an agent API token.
+ * Who a request acts for. `principal` is the owner for a browser session or the access key, or the agent token whose
+ * secret the request presented. `sessionId` is set only for a browser session.
  */
 export interface Caller {
-  sessionId: string | null;
-  principal: Principal;
+  readonly principal: Principal;
+  readonly sessionId: string | null;
+}
+
+/** The key that an `Authorization: Bearer` header presents, `""` when it is empty, or `null` when there is no such header. */
+export function bearerKey(req: Request): string | null {
+  const auth = req.headers.get("authorization");
+  if (!auth || !/^bearer\s+/i.test(auth)) return null;
+  return auth.replace(/^bearer\s+/i, "").trim();
 }
 
 /**
- * Resolves a request to its caller, or `null` when it is not signed in. A request with an `Authorization: Bearer`
- * header is judged by that header alone, so a wrong key cannot fall back to a cookie. The access key is the owner.
- * Any other bearer secret is an agent API token: the server compares its hash, and a revoked or unknown token is
- * rejected. A token past its rate limit throws 429. Otherwise the session cookie must hold a live session token.
- * Resolving a session counts as use, which renews it under sliding renewal.
+ * The caller a browser session makes, or `null`. Pages and the public routes judge the cookie alone, so a Bearer header
+ * (the access key or an agent token) never signs a page in. Resolving a session counts as use, which renews it under
+ * sliding renewal.
  */
-export function authenticate(
-  req: Request,
-  accessKey: string,
-  sessions: SessionStore,
-  tokens?: TokenStore,
-  ip = "unknown",
-): Caller | null {
-  const auth = req.headers.get("authorization");
-  if (auth && /^bearer\s+/i.test(auth)) {
-    const key = auth.replace(/^bearer\s+/i, "").trim();
-    if (key === "") return null;
-    if (safeEqual(key, accessKey)) return { sessionId: null, principal: OWNER };
-    const principal = tokens?.authenticate(key, ip) ?? null;
-    return principal ? { sessionId: null, principal } : null;
-  }
+export function sessionCaller(req: Request, sessions: SessionStore): Caller | null {
   const token = parseCookies(req.headers.get("cookie"))[COOKIE_NAME];
   if (!token) return null;
   const session = sessions.touch(token);
-  return session ? { sessionId: session.id, principal: OWNER } : null;
+  return session ? { principal: OWNER, sessionId: session.id } : null;
 }
 
 export const MIN_ACCESS_KEY_LENGTH = 20;
@@ -328,4 +323,39 @@ export class LoginLimiter {
     this.byAddress.stop();
     this.overall.stop();
   }
+}
+
+export interface CallerGate {
+  readonly accessKey: string;
+  readonly sessions: SessionStore;
+  readonly tokens: TokenStore;
+  readonly throttle: LoginLimiter;
+}
+
+/**
+ * Resolves a request to its caller. A browser session is judged by its cookie. A Bearer header is the access key, an
+ * agent token secret, or neither. A valid token is always accepted, even while its address is over the limit, so a
+ * right key is never refused. Anything else counts toward the same limiter as a wrong login key, and over the limit it
+ * waits out the penalty and gets 429. A request without a key, or with an empty one, is neither allowed nor counted.
+ */
+export async function resolveCaller(req: Request, gate: CallerGate, address: string): Promise<Caller | null> {
+  const presented = bearerKey(req);
+  if (presented === null) return sessionCaller(req, gate.sessions);
+  if (presented === "") return null;
+  if (safeEqual(presented, gate.accessKey)) return { principal: OWNER, sessionId: null };
+  const token = gate.tokens.authenticate(presented, address);
+  if (token) return { principal: token, sessionId: null };
+  const ip = rateLimitKey(address);
+  const refused = gate.throttle.refuses(ip);
+  gate.throttle.recordFailure(ip);
+  log.warn("auth.bearer_failed", { ip, refused, path: new URL(req.url).pathname });
+  if (refused) {
+    await gate.throttle.delayRefusal();
+    throw new AppError(429, "too_many_requests", msg("too_many_attempts"));
+  }
+  return null;
+}
+
+export function callerGate(app: Pick<App, "cfg" | "sessions" | "tokens" | "throttle">): CallerGate {
+  return { accessKey: app.cfg.accessKey, sessions: app.sessions, tokens: app.tokens, throttle: app.throttle };
 }

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { type Redactor, redactEvent } from "./redact";
 import type { EventInput, EventStatus } from "./types";
 
-/** `audit` events are kept longest. `activity` events are reads, which are merged per minute, and go first when pruned. */
+/** `audit` events are kept longest. `activity` holds reads and exec events. Only reads are merged per minute. */
 export type Tier = "audit" | "activity";
 
 /** A recorded event: the redacted input, its cursor, its tier, and how many reads it stands for. */
@@ -130,9 +130,19 @@ interface Row {
   count: number;
 }
 
-/** Which tier an execution is recorded in. Reads that succeed or fail are activity; refusals and changes are audit. */
-export function tierOf(event: Pick<EventInput, "kind" | "status">): Tier {
-  return event.kind === "read" && event.status !== "denied" ? "activity" : "audit";
+/** Operations whose events are activity: terminal session start, sends and close (design §8.3). */
+const ACTIVITY_OPS: ReadonlySet<string> = new Set(["session.start", "session.send", "session.close"]);
+/** Event families that are activity: exec, terminal attachments and container events from Docker. */
+const ACTIVITY_PREFIXES = ["exec.", "terminal.", "container."] as const;
+
+/**
+ * Which tier an execution is recorded in. A refusal is always audit. Exec, terminal, session send and container events
+ * are activity and are not merged. Other reads are activity; other writes, such as a takeover, are audit.
+ */
+export function tierOf(event: Pick<EventInput, "op" | "kind" | "status">): Tier {
+  if (event.status === "denied") return "audit";
+  if (ACTIVITY_OPS.has(event.op) || ACTIVITY_PREFIXES.some((prefix) => event.op.startsWith(prefix))) return "activity";
+  return event.kind === "read" ? "activity" : "audit";
 }
 
 function detailJson(detail: unknown): string | null {
@@ -292,7 +302,7 @@ export class EventStore {
   append(input: EventInput): AppendResult {
     const event = redactEvent(input, this.redactor);
     const tier = tierOf(event);
-    const key = tier === "activity" ? coalesceKeyOf(event) : null;
+    const key = tier === "activity" && event.kind === "read" ? coalesceKeyOf(event) : null;
     return this.db.transaction((): AppendResult => {
       if (key !== null) {
         const earlier = this.db

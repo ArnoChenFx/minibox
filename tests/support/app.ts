@@ -29,6 +29,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     dockerSocket: "/nonexistent-minibox-test.sock",
     labelPrefix,
     baseTemplateTag: `${labelPrefix}-template:base`,
+    stopTimeoutSec: 3,
     webDir: join(ROOT, "web"),
     templatesDir: join(ROOT, "templates"),
     metricsIntervalMs: 60_000,
@@ -46,6 +47,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     containerRuntime: null,
     sessionTtlMs: DEFAULT_SESSION_TTL_MS,
     sessionIdleMs: null,
+    streamMaxConnections: 256,
+    takeoverIdleSec: 300,
     ...overrides,
   };
 }

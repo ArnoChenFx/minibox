@@ -1,26 +1,29 @@
 import type { z } from "zod";
 
 import type { EventReader } from "../events/store";
-import type { EventTarget, Source } from "../events/types";
+import type { AuditNote, EventRefs, EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
+import type { ExecService } from "../services/exec";
+import type { TerminalService } from "../services/terminals";
+import type { TaskHandle, TaskReader } from "../tasks/types";
 import type { TokenGrants } from "../tokens/model";
 import type { TokenStore } from "../tokens/store";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
 
-export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta";
+export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild";
 
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-/** The access key or a browser session. `id` is `owner` for both; other owner ids exist only in tests. */
+/** The access key, or a browser session. Every owner credential has the id `owner`. */
 export interface OwnerPrincipal {
   readonly type: "owner";
   readonly id: string;
   readonly name: string;
 }
 
-/** An agent API token. `grants` is the policy checked by the authorizer and the event filter. */
+/** An agent API token. `grants` is the policy the authorizer and the event filter check. */
 export interface TokenPrincipal {
   readonly type: "token";
   readonly id: string;
@@ -28,26 +31,20 @@ export interface TokenPrincipal {
   readonly grants: TokenGrants;
 }
 
+/** Who is calling. A principal's id is what boxes, volumes, snapshots and tasks record as their creator. */
+export type Principal = OwnerPrincipal | TokenPrincipal;
+
+export const OWNER: OwnerPrincipal = { type: "owner", id: "owner", name: "owner" };
+
 /**
- * Reserved for a token a box uses on itself (#13 defers issuing these). `id` is the box id.
- * Nothing in this process creates one.
+ * A volume named in a volume scope check. `id` is the record's stable id and is absent for a name that has no record
+ * yet, which a create or a mount of a new name passes.
  */
-export interface BoxSelfPrincipal {
-  readonly type: "box-self";
-  readonly id: string;
+export interface VolumeResource {
+  readonly kind: "volume";
+  readonly id?: string;
   readonly name: string;
 }
-
-/** A call MiniBox makes itself, such as a future scheduler. Not issued to clients. */
-export interface SystemPrincipal {
-  readonly type: "system";
-  readonly id: string;
-  readonly name: string;
-}
-
-export type Principal = OwnerPrincipal | TokenPrincipal | BoxSelfPrincipal | SystemPrincipal;
-
-export const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 
 export interface OperationContext {
   readonly host: HostCtx;
@@ -61,13 +58,28 @@ export interface OperationContext {
   readonly events: EventReader;
   /** Agent API tokens. Token operations read and change this store. */
   readonly tokens: TokenStore;
+  /** Set on the background run of an async operation, so the handler can log and watch for cancellation. */
+  readonly task?: TaskHandle;
+  /** The task manager. The executor fills it in; task operations read it. */
+  readonly tasks?: TaskReader;
+  /** Command exec. Present on REST, MCP and the CLI. */
+  readonly execs?: ExecService;
+  /** Terminal sessions (tmux in the box). Present on REST, MCP and the CLI. */
+  readonly terminals?: TerminalService;
+  /** Records an audit event parented to this operation. Exec uses it for start, finish and kill. */
+  record?(note: AuditNote): void;
+  /**
+   * Asks the authorize hook again for one scope and resource. The executor fills this in.
+   * Absent in tests that call a service directly; those callers are already inside the process.
+   */
+  authorize?(request: { scope: string; resource?: VolumeResource }): boolean | Promise<boolean>;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */
 export interface RestBinding {
   readonly method: HttpMethod;
   readonly path: string;
-  readonly status?: 200 | 201;
+  readonly status?: 200 | 201 | 202;
   /** Input keys read from the query string, one per parameter of the same name. */
   readonly query?: readonly string[];
   /** Whether a JSON object body is read into the input. */
@@ -109,8 +121,13 @@ export interface OperationMeta {
 export interface AuditSpec<I, O, R> {
   /** The object acted on. `resolved` is `undefined` when resolution failed or never ran; `result` only on success. */
   target?(input: I, resolved: R | undefined, result: O | undefined): EventTarget | undefined;
-  /** Structured detail to record. Never include file contents, and name environment variables without their values. */
-  detail?(input: I, resolved: R | undefined): unknown;
+  /**
+   * Structured detail to record. `result` is only set on success, so a refused call can say that nothing happened.
+   * Never include file contents, and name environment variables without their values.
+   */
+  detail?(input: I, resolved: R | undefined, result: O | undefined): unknown;
+  /** Links the event to an exec or its saved output. Set only when the call produced one. */
+  ref?(input: I, resolved: R | undefined, result: O | undefined): EventRefs | undefined;
 }
 
 /** Everything the registry needs to know about one operation. Handlers only ever see validated input. */
@@ -127,6 +144,11 @@ export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> ex
     target(input: z.output<I>, resolved: R): string;
   };
   readonly audit?: AuditSpec<z.output<I>, z.input<O>, R>;
+  /**
+   * While a task with this key is running, another call is refused. Async operations use it as their single-instance
+   * mutex. The key should use the resolved id, so a name and an id share one lock.
+   */
+  readonly exclusive?: (ctx: OperationContext, input: z.output<I>, resolved: R) => string | undefined;
   run(ctx: OperationContext, input: z.output<I>, resolved: R): Promise<z.input<O>>;
 }
 
@@ -143,7 +165,9 @@ export interface Operation extends OperationMeta {
   };
   audit?: {
     target?(input: unknown, resolved: unknown, result: unknown): EventTarget | undefined;
-    detail?(input: unknown, resolved: unknown): unknown;
+    detail?(input: unknown, resolved: unknown, result: unknown): unknown;
+    ref?(input: unknown, resolved: unknown, result: unknown): EventRefs | undefined;
   };
+  exclusive?(ctx: OperationContext, input: unknown, resolved: unknown): string | undefined;
   run(ctx: OperationContext, input: unknown, resolved: unknown): Promise<unknown>;
 }

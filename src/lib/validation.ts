@@ -16,12 +16,16 @@ export const LIMITS = {
 export interface Failure {
   readonly message: Msg;
   readonly field?: string;
+  readonly hint?: Msg;
 }
 
 export type Checked<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly failure: Failure };
 
 export const accept = <T>(value: T): Checked<T> => ({ ok: true, value });
-export const reject = (message: Msg, field?: string): Checked<never> => ({ ok: false, failure: { message, field } });
+export const reject = (message: Msg, field?: string, hint?: Msg): Checked<never> => ({
+  ok: false,
+  failure: { message, field, hint },
+});
 
 export function asObject(body: unknown): Record<string, unknown> {
   if (body === null || typeof body !== "object" || Array.isArray(body)) {

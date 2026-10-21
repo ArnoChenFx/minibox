@@ -23,15 +23,22 @@ const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as Host
  */
 export function normalize(text: string): string {
   return text
-    .replace(/bx_[0-9a-z]+/g, "<boxId>")
     .replace(/mbx_[A-Za-z0-9_-]{20,}/g, "<token>")
     .replace(/"prefix":"mbx_[A-Za-z0-9_-]+"/g, '"prefix":"<prefix>"')
+    .replace(/vol_[0-9a-z]+/g, "<volumeId>")
+    .replace(/\bbx_[0-9a-z]+/g, "<boxId>")
     .replace(/tok_[0-9a-f]+/g, "<tokenId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
+    .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
     .replace(/[0-9a-f]{64}/g, "<id>")
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<time>")
     .replace(/-\d{8}-\d{6}/g, "-<stamp>")
+    .replace(/"parentId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"parentId":"<ulid>"')
     .replace(/"id":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"id":"<ulid>"')
+    .replace(/"taskId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"taskId":"<ulid>"')
+    .replace(/"parentId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"parentId":"<ulid>"')
+    .replace(/\/api\/tasks\/[0-9A-HJKMNP-TV-Z]{26}/g, "/api/tasks/<ulid>")
+    .replace(/"cursor":"[0-9a-f]{12}\./g, '"cursor":"<epoch>.')
     .replace(/"ts":\d+/g, '"ts":0')
     .replace(/"durationMs":\d+/g, '"durationMs":0');
 }
@@ -41,7 +48,21 @@ function boxId(json: Record<string, unknown> | null): string {
 }
 
 function snapshotRef(json: Record<string, unknown> | null): string {
-  return String((json?.snapshot as { ref?: string } | undefined)?.ref ?? "");
+  const direct = (json?.snapshot as { ref?: string } | undefined)?.ref;
+  const nested = (json?.result as { snapshot?: { ref?: string } } | undefined)?.snapshot?.ref;
+  return String(direct ?? nested ?? "");
+}
+
+/** Polls off the transcript until the task is finished, so the recorded GET is a stable terminal view. */
+async function waitTask(base: string, json: Record<string, unknown> | null): Promise<Record<string, unknown>> {
+  const id = String(json?.taskId ?? "");
+  const deadline = Date.now() + 2000;
+  for (;;) {
+    const res = await fetch(`${base}/api/tasks/${id}`, { headers: { authorization: `Bearer ${TEST_KEY}` } });
+    const view = (await res.json()) as Record<string, unknown>;
+    if (view.status !== "running" || Date.now() > deadline) return view;
+    await Bun.sleep(5);
+  }
 }
 
 /**
@@ -183,6 +204,22 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("stop alpha again", "POST", `/api/boxes/${alpha}/stop`);
     await send("start alpha", "POST", `/api/boxes/${alpha}/start`);
     await send("restart alpha", "POST", `/api/boxes/${alpha}/restart`);
+    const ran = await post("exec true in alpha", `/api/boxes/${alpha}/exec`, { argv: ["true"] });
+    const execId = String(ran.json?.execId ?? "");
+    await send("get the exec", "GET", `/api/execs/${execId}`);
+    await send("read exec output", "GET", `/api/execs/${execId}/output`);
+    await post("exec with neither cmd nor argv", `/api/boxes/${alpha}/exec`, {});
+    await post("kill an exec that has finished", `/api/execs/${execId}/kill`, {});
+    runtime.execScript = null;
+    const background = await post("exec sleep in the background", `/api/boxes/${alpha}/exec`, {
+      argv: ["sleep", "30"],
+      background: true,
+      timeoutSec: 30,
+    });
+    const sleepId = String(background.json?.execId ?? "");
+    await post("kill the background exec", `/api/execs/${sleepId}/kill`, {});
+    await send("get the killed exec", "GET", `/api/execs/${sleepId}?waitMs=0`);
+    runtime.execScript = { stdout: "", stderr: "", code: 0 };
     await raw("start ignores a malformed body", "POST", `/api/boxes/${alpha}/start`, "{not json");
     await send("start a missing box", "POST", "/api/boxes/missing/start");
     await send("stop a missing box", "POST", "/api/boxes/missing/stop");
@@ -207,12 +244,15 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await raw("resize with an array body", "PATCH", `/api/boxes/${alpha}/resources`, "[1]");
 
     const first = await post("snapshot alpha as nightly", `/api/boxes/${alpha}/snapshots`, { name: "nightly" });
-    const nightly = snapshotRef(first.json);
+    const nightly = snapshotRef(await waitTask(base, first.json));
     await send("list snapshots", "GET", "/api/snapshots");
 
     // Default-named snapshots share a second-resolution tag, so each is removed before the next is taken.
-    const discard = (step: string, created: { json: Record<string, unknown> | null }) =>
-      send(step, "DELETE", `/api/snapshots/${encodeURIComponent(snapshotRef(created.json))}`);
+    // The create calls return 202; the image exists only after the task finishes.
+    const discard = async (step: string, created: { json: Record<string, unknown> | null }) => {
+      const ref = snapshotRef(await waitTask(base, created.json));
+      return send(step, "DELETE", `/api/snapshots/${encodeURIComponent(ref)}`);
+    };
     await discard(
       "discard snapshot taken with no body",
       await send("snapshot alpha with no body", "POST", `/api/boxes/${alpha}/snapshots`),
@@ -267,7 +307,8 @@ export async function runParityScenario(): Promise<Exchange[]> {
     });
     // Templates are sorted by creation time at millisecond resolution; the pause keeps the rebuilt base after gold.
     await Bun.sleep(5);
-    await send("build the base template", "POST", "/api/templates/base/build");
+    const built = await send("build the base template", "POST", "/api/templates/base/build");
+    await waitTask(base, built.json);
     await send("list templates", "GET", "/api/templates");
     await send("delete gold", "DELETE", `/api/templates/${encodeURIComponent("mbtest-template:gold")}`);
     await send("delete a missing snapshot", "DELETE", "/api/snapshots/missing");
@@ -279,12 +320,65 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("delete a missing box", "DELETE", "/api/boxes/missing");
     await send("delete restored with its volume", "DELETE", `/api/boxes/${restored}?deleteVolume=true`);
     await send("delete restored-2", "DELETE", `/api/boxes/${restoredWithTemplate}`);
-    await send("delete alpha, keeping its volume", "DELETE", `/api/boxes/${alpha}`);
+    runtime.seedDiff(alpha, [{ path: "/etc/motd", kind: "modified" }]);
+    await send("rebuild alpha without confirm", "POST", `/api/boxes/${alpha}/rebuild`, {
+      body: JSON.stringify({ profile: "strict" }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(alphaRev) },
+    });
+    const rebuilt = await send("rebuild alpha", "POST", `/api/boxes/${alpha}/rebuild`, {
+      body: JSON.stringify({ profile: "strict", confirm: true }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(alphaRev) },
+    });
+    await send("delete alpha, keeping its volume", "DELETE", `/api/boxes/${boxId(rebuilt.json)}`);
 
     await send("delete nightly snapshot", "DELETE", `/api/snapshots/${encodeURIComponent(nightly)}`);
     await send("list snapshots after delete", "GET", "/api/snapshots");
     await send("activity feed", "GET", "/api/activity");
     await send("final box list", "GET", "/api/boxes");
+
+    const gammaRes = await post("create gamma for volumes", "/api/boxes", { name: "gamma", cpus: 1, memoryMb: 256 });
+    const gamma = boxId(gammaRes.json);
+    const gammaRev = (gammaRes.json?.box as { revision?: number } | undefined)?.revision ?? 1;
+    await send("list pools", "GET", "/api/pools");
+    await send("list volumes", "GET", "/api/volumes");
+    await send("get gamma workspace", "GET", "/api/volumes/gamma-workspace");
+    await send("create spare volume without confirm", "POST", "/api/volumes", {
+      body: JSON.stringify({ name: "spare" }),
+      contentType: JSON_TYPE,
+    });
+    const spare = await post("create spare volume", "/api/volumes", { name: "spare", confirm: true });
+    const spareId = String((spare.json?.volume as { id?: string } | undefined)?.id ?? "");
+    await send("measure spare", "POST", `/api/volumes/${spareId}/usage`);
+    await send("attach spare without confirm", "POST", `/api/volumes/${spareId}/attach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", mode: "ro" }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(gammaRev) },
+    });
+    const attached = await send("attach spare read-only", "POST", `/api/volumes/${spareId}/attach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", mode: "ro", confirm: true }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(gammaRev) },
+    });
+    const attachedRevision = (attached.json?.box as { revision?: number } | undefined)?.revision ?? 1;
+    await send("detach spare", "POST", `/api/volumes/${spareId}/detach`, {
+      body: JSON.stringify({ box: gamma, path: "/srv/data", confirm: true }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": String(attachedRevision) },
+    });
+    await send("delete spare volume without confirm", "DELETE", `/api/volumes/${spareId}`);
+    await send("delete spare volume", "DELETE", `/api/volumes/${spareId}?confirm=true`);
+    const pools = [{ name: "local", backend: "local", default: true }];
+    await send("replace pools without confirm", "PUT", "/api/pools", {
+      body: JSON.stringify({ pools }),
+      contentType: JSON_TYPE,
+    });
+    await send("replace pools", "PUT", "/api/pools", {
+      body: JSON.stringify({ pools, confirm: true }),
+      contentType: JSON_TYPE,
+    });
+    await send("delete gamma", "DELETE", `/api/boxes/${gamma}`);
 
     await send("events without a key", "GET", "/api/events", { authed: false });
     await send("events from another site", "GET", "/api/events", { origin: "https://evil.example" });
@@ -296,6 +390,39 @@ export async function runParityScenario(): Promise<Exchange[]> {
     );
     await send("events with limit 0", "GET", "/api/events?limit=0");
     await send("events of alpha that failed", "GET", "/api/events?box=alpha&status=error");
+    await send("list tasks", "GET", "/api/tasks");
+    const finished = await send("read the base build task", "GET", `/api/tasks/${String(built.json?.taskId ?? "")}`);
+    await send("read a missing task", "GET", "/api/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    await send("read a malformed task id", "GET", "/api/tasks/not-a-task");
+    await send("cancel a missing task", "POST", "/api/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/cancel");
+    await send("cancel a finished task", "POST", `/api/tasks/${String(finished.json?.id ?? "")}/cancel`);
+
+    const term = boxId(
+      (await post("create the session box", "/api/boxes", { name: "term", cpus: 1, memoryMb: 256 })).json,
+    );
+    await send("list sessions of a box with none", "GET", `/api/boxes/${term}/sessions`);
+    await post("start a session", `/api/boxes/${term}/sessions`, { name: "work" });
+    await post("start the same session again", `/api/boxes/${term}/sessions`, { name: "work" });
+    await post("start a session with a bad name", `/api/boxes/${term}/sessions`, { name: "bad name!" });
+    await post("start a session in a missing box", "/api/boxes/missing/sessions", { name: "work" });
+    await send("list sessions", "GET", `/api/boxes/${term}/sessions`);
+    await post("type text into a session", `/api/boxes/${term}/sessions/work/input`, { text: "echo hi\n" });
+    await post("press Enter in a session", `/api/boxes/${term}/sessions/work/input`, { keys: ["Enter"] });
+    await post("send keys and text together", `/api/boxes/${term}/sessions/work/input`, { keys: ["Enter"], text: "x" });
+    await post("send neither keys nor text", `/api/boxes/${term}/sessions/work/input`, {});
+    await send("read the session", "GET", `/api/boxes/${term}/sessions/work?lines=10`);
+    await send("read with an invalid since", "GET", `/api/boxes/${term}/sessions/work?since=bogus`);
+    await send(
+      "read with a cursor that cannot be continued",
+      "GET",
+      `/api/boxes/${term}/sessions/work?lines=5&since=000000000000.1`,
+    );
+    await send("read with zero lines", "GET", `/api/boxes/${term}/sessions/work?lines=0`);
+    await send("read a missing session", "GET", `/api/boxes/${term}/sessions/nope`);
+    await send("close the session", "DELETE", `/api/boxes/${term}/sessions/work`);
+    await send("close the session again", "DELETE", `/api/boxes/${term}/sessions/work`);
+    await send("read a closed session", "GET", `/api/boxes/${term}/sessions/work`);
+    await send("delete the session box", "DELETE", `/api/boxes/${term}`);
 
     const minted = await post("create a readonly token", "/api/tokens", { name: "ci", preset: "readonly" });
     const tokenId = String((minted.json?.record as { id?: string } | undefined)?.id ?? "");

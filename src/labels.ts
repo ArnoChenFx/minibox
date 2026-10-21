@@ -14,6 +14,8 @@ export interface LabelKeys {
   templateDesc: string;
   snapshot: string;
   snapshotOf: string;
+  /** Stable box id (`bx_…`) of the box a snapshot was taken from. Visibility is decided by this, never by the name. */
+  snapshotOfId: string;
   profile: string;
   /** Stable box id (`bx_…`). Absent on boxes created before specs existed. */
   id: string;
@@ -23,6 +25,13 @@ export interface LabelKeys {
   memory: string;
   pids: string;
   createdBy: string;
+  /** Set on engine volumes MiniBox created or recognized. Existing volumes cannot be relabelled. */
+  volume: string;
+  /** `workspace`, `home`, `tools` or `cache` when the volume was created for a role. */
+  role: string;
+  pool: string;
+  /** Probe and helper objects. Claim ignores them. */
+  internal: string;
 }
 
 export function labelKeys(prefix: string): LabelKeys {
@@ -35,6 +44,7 @@ export function labelKeys(prefix: string): LabelKeys {
     templateDesc: `${prefix}.template.description`,
     snapshot: `${prefix}.snapshot`,
     snapshotOf: `${prefix}.snapshot.of`,
+    snapshotOfId: `${prefix}.snapshot.of-id`,
     profile: `${prefix}.profile`,
     id: `${prefix}.id`,
     digest: `${prefix}.digest`,
@@ -43,6 +53,10 @@ export function labelKeys(prefix: string): LabelKeys {
     memory: `${prefix}.memory`,
     pids: `${prefix}.pids`,
     createdBy: `${prefix}.createdBy`,
+    volume: `${prefix}.volume`,
+    role: `${prefix}.role`,
+    pool: `${prefix}.pool`,
+    internal: `${prefix}.internal`,
   };
 }
 
@@ -73,6 +87,8 @@ export interface ImageLabels {
   templateName: string | null;
   description: string | null;
   snapshotOf: string | null;
+  sourceId: string | null;
+  createdBy: string | null;
   created: string | null;
 }
 
@@ -84,6 +100,8 @@ export function parseImageLabels(labels: Record<string, string> | undefined | nu
     templateName: l[keys.templateName] || null,
     description: l[keys.templateDesc] || null,
     snapshotOf: l[keys.snapshotOf] || null,
+    sourceId: l[keys.snapshotOfId] || null,
+    createdBy: l[keys.createdBy] || null,
     created: l[keys.created] || null,
   };
 }

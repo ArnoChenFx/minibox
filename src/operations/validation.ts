@@ -15,6 +15,7 @@ import {
   NAME_RE,
   reject,
 } from "../lib/validation";
+import type { BoxEnv, BoxMount } from "../specs/types";
 
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
@@ -126,6 +127,27 @@ export const boxName = () =>
       "Box name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed.",
   });
 
+export const volumeName = () =>
+  field((value) => checkName(value, "name"), {
+    ...NAME_META,
+    description:
+      "Volume name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed.",
+  });
+
+function checkRefresh(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null || value === "") return accept(false);
+  if (value === true || value === "true" || value === "1") return accept(true);
+  if (value === false || value === "false" || value === "0") return accept(false);
+  return reject(msg("not_boolean", { field: "refresh" }), "refresh");
+}
+
+/** Query flag. `true` or `1` probes pools again instead of using the short cache. */
+export const refreshFlag = () =>
+  field(checkRefresh, {
+    type: "boolean",
+    description: withDefault("Probe storage pools again instead of using the cached result.", false),
+  }).default(false);
+
 export const snapshotName = () =>
   field(
     (value): Checked<string | undefined> =>
@@ -219,6 +241,23 @@ export const statsFlag = () =>
     description: withDefault("Include current resource usage of running boxes. Send false to skip it.", true),
   }).default(true);
 
+function checkHistory(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null) return accept(false);
+  if (typeof value === "boolean") return accept(value);
+  if (value === "true" || value === "1") return accept(true);
+  if (value === "false" || value === "0") return accept(false);
+  return reject(msg("not_boolean", { field: "history" }), "history");
+}
+
+export const historyFlag = () =>
+  field(checkHistory, {
+    type: "boolean",
+    description: withDefault(
+      "Also return the recent samples of the box, oldest first. Accepts true, false, 1 or 0.",
+      false,
+    ),
+  }).default(false);
+
 function checkPids(value: unknown): Checked<number> {
   const n = toNumber(value);
   if (n === undefined || !Number.isInteger(n)) return reject(msg("not_a_number", { label: "pids" }), "pids");
@@ -274,8 +313,9 @@ export function requireResources(
 }
 
 const UPDATE_FIELDS = ["name", "cpus", "memoryMb", "pids", "labels", "idleTimeoutSec", "ttlSec"] as const;
+const REBUILD_INPUTS = ["template", "mounts", "env", "network", "profile"] as const;
 
-/** An in-place update has to change something. Template, mounts, env and profile are not accepted here. */
+/** An update has to change an in-place field or name a rebuild field. The handler rejects rebuild fields without confirm. */
 export function requireUpdate(
   ctx: z.RefinementCtx,
   input: {
@@ -286,9 +326,23 @@ export function requireUpdate(
     labels?: unknown;
     idleTimeoutSec?: unknown;
     ttlSec?: unknown;
+    template?: unknown;
+    mounts?: unknown;
+    env?: unknown;
+    network?: unknown;
+    profile?: unknown;
   },
 ): void {
-  if (UPDATE_FIELDS.every((key) => input[key] === undefined)) addFailure(ctx, { message: msg("box_update_empty") });
+  const present = (key: string) => input[key as keyof typeof input] !== undefined;
+  if (![...UPDATE_FIELDS, ...REBUILD_INPUTS].some(present)) addFailure(ctx, { message: msg("box_update_empty") });
+}
+
+/** A rebuild request has to name at least one rebuild field. Whether it differs is checked against the spec. */
+export function requireRebuild(
+  ctx: z.RefinementCtx,
+  input: { template?: unknown; mounts?: unknown; env?: unknown; network?: unknown; profile?: unknown },
+): void {
+  if (REBUILD_INPUTS.every((key) => input[key] === undefined)) addFailure(ctx, { message: msg("rebuild_empty") });
 }
 
 export const optionalBoxName = () =>
@@ -314,7 +368,7 @@ export const idleTimeout = () =>
   }).optional();
 
 const TTL_CREATE =
-  "Time to live in seconds. A positive integer, at most 365 days, or null for none. When omitted, none is stored, unless the caller is a token with a max TTL, which stores that cap. Nothing stops or deletes the box when the time elapses.";
+  "Time to live in seconds. A positive integer, at most 365 days, or null for none. Omitted or null stores no TTL, except for an agent token with a max TTL, which stores that cap. A value above the cap is refused. Nothing stops or deletes the box when the time elapses.";
 
 /** `create` is box create and snapshot fork. `update` changes a box that already has a value. */
 export const ttl = (mode: "create" | "update" = "update") =>
@@ -331,6 +385,125 @@ export const userLabels = () =>
     maxProperties: LABEL_COUNT_MAX,
     additionalProperties: { type: "string", maxLength: LABEL_VALUE_MAX },
   }).optional();
+
+const MOUNT_MAX = 16;
+const ENV_MAX = 64;
+const ENV_VALUE_MAX = 8192;
+const IDENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+function checkMounts(value: unknown): Checked<BoxMount[] | undefined> {
+  if (value === undefined) return accept(undefined);
+  if (!Array.isArray(value) || value.length > MOUNT_MAX)
+    return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+  const mounts: BoxMount[] = [];
+  const paths = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    const mount = item as Partial<BoxMount>;
+    const path = mount.path;
+    if (typeof mount.volume !== "string" || !IDENT_RE.test(mount.volume)) {
+      return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    }
+    if (
+      typeof path !== "string" ||
+      !path.startsWith("/") ||
+      path.length > 256 ||
+      /\s/u.test(path) ||
+      /\p{Cc}/u.test(path)
+    ) {
+      return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    }
+    if (path.split("/").includes("..")) return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    if (mount.mode !== "rw" && mount.mode !== "ro") return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    if (paths.has(path)) return reject(msg("mount_invalid", { max: MOUNT_MAX }), "mounts");
+    paths.add(path);
+    mounts.push({ volume: mount.volume, path, mode: mount.mode });
+  }
+  return accept(mounts);
+}
+
+function checkEnv(value: unknown): Checked<BoxEnv[] | undefined> {
+  if (value === undefined) return accept(undefined);
+  if (!Array.isArray(value) || value.length > ENV_MAX) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+  const env: BoxEnv[] = [];
+  const names = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    const entry = item as Partial<BoxEnv>;
+    if (typeof entry.name !== "string" || !ENV_NAME_RE.test(entry.name) || names.has(entry.name)) {
+      return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    }
+    const value = entry.value;
+    const secretRef = entry.secretRef;
+    const hasValue = typeof value === "string";
+    const hasRef = typeof secretRef === "string";
+    if (hasValue && (value.length > ENV_VALUE_MAX || /\p{Cc}/u.test(value))) {
+      return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    }
+    if (hasRef && !IDENT_RE.test(secretRef)) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    if (!hasValue && !hasRef) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    if (entry.value !== undefined && !hasValue) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    if (entry.secretRef !== undefined && !hasRef) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    const next: BoxEnv = { name: entry.name };
+    if (hasValue) next.value = value;
+    if (hasRef) next.secretRef = secretRef;
+    names.add(entry.name);
+    env.push(next);
+  }
+  return accept(env);
+}
+
+function checkNetwork(value: unknown): Checked<string | undefined> {
+  if (value === undefined || value === null || value === "") return accept(undefined);
+  if (typeof value !== "string" || !IDENT_RE.test(value)) return reject(msg("network_invalid"), "network");
+  return accept(value);
+}
+
+function checkConfirm(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null || value === "") return accept(false);
+  if (value === true || value === "true") return accept(true);
+  if (value === false || value === "false") return accept(false);
+  return reject(msg("not_boolean", { field: "confirm" }), "confirm");
+}
+
+export const rebuildMounts = () =>
+  field(checkMounts, {
+    type: "array",
+    maxItems: MOUNT_MAX,
+    description:
+      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A recorded volume can be mounted by several boxes unless another box owns it. A new or changed mount needs volume:attach on its volume, and a read-write one also needs volume:write. A name that does not exist yet creates a standalone volume, which needs volume:write. Refused: minibox-data, volumes without the MiniBox label, internal helper volumes, pool roots, volumes another box owns, and names that start with the label prefix followed by -ws- or -pool-.",
+  }).optional();
+
+export const rebuildEnv = () =>
+  field(checkEnv, {
+    type: "array",
+    maxItems: ENV_MAX,
+    description:
+      "Environment entries that replace the box's env list. Each entry is { name, value? , secretRef? } and needs a value or a secretRef. secretRef is stored and not injected yet. Omitted, the current env stays. Values are not written to container labels.",
+  }).optional();
+
+export const rebuildNetwork = () =>
+  field(checkNetwork, {
+    type: "string",
+    maxLength: 128,
+    description:
+      "Docker network the rebuilt container joins: the host's box network (created when missing) or the network the box already uses. Host, none and container networks, and any other network, are refused.",
+  }).optional();
+
+export const confirmFlag = () =>
+  field(checkConfirm, {
+    type: "boolean",
+    description:
+      "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false.",
+  }).default(false);
+
+export const storageConfirmFlag = () =>
+  field(checkConfirm, {
+    type: "boolean",
+    description:
+      "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false.",
+  }).default(false);
 
 /**
  * Present so MCP and direct callers can pass the revision. REST overwrites it with the If-Match header.
@@ -354,6 +527,7 @@ export function parseInput<T extends z.ZodObject>(schema: T, raw: unknown): z.ou
     "validation_failed",
     failure.message,
     failure.field === undefined ? undefined : { field: failure.field },
+    failure.hint ? { hint: failure.hint } : undefined,
   );
 }
 

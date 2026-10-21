@@ -97,6 +97,11 @@ describe("credential fields", () => {
     expect(redactor.value({ env: { PATH: "/usr/bin", DATABASE_URL: "postgres://u:p@h/db" } })).toEqual({
       env: ["PATH", "DATABASE_URL"],
     });
+    expect(
+      redactor.value({
+        env: [{ name: "TOKEN", value: "supersecret", secretRef: "vault" }, "FOO=bar", "PLAIN"],
+      }),
+    ).toEqual({ env: ["TOKEN", "FOO", "PLAIN"] });
   });
 
   test("the value passed in is not modified", () => {

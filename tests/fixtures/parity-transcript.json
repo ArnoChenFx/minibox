@@ -5,7 +5,7 @@
     "path": "/api/boxes",
     "status": 401,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"key\":\"unauthorized\"}}"
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"retryable\":false,\"key\":\"unauthorized\"}}"
   },
   {
     "step": "unknown api path",
@@ -13,7 +13,7 @@
     "path": "/api/nope",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"API endpoint not found.\",\"key\":\"api_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"API endpoint not found.\",\"retryable\":false,\"key\":\"api_not_found\"}}"
   },
   {
     "step": "wrong method",
@@ -21,7 +21,7 @@
     "path": "/api/boxes",
     "status": 405,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"method_not_allowed\",\"message\":\"Method not allowed.\",\"key\":\"method_not_allowed\"}}"
+    "body": "{\"error\":{\"code\":\"method_not_allowed\",\"message\":\"Method not allowed.\",\"retryable\":false,\"key\":\"method_not_allowed\"}}"
   },
   {
     "step": "health",
@@ -37,7 +37,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"key\":\"invalid_json\"}}"
+    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"retryable\":false,\"key\":\"invalid_json\"}}"
   },
   {
     "step": "array body",
@@ -45,7 +45,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"retryable\":false,\"key\":\"invalid_json_object\"}}"
   },
   {
     "step": "form body refused",
@@ -53,7 +53,7 @@
     "path": "/api/boxes",
     "status": 415,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"unsupported_media_type\",\"message\":\"Use Content-Type: application/json (requests without a body may omit it).\",\"key\":\"unsupported_media_type\"}}"
+    "body": "{\"error\":{\"code\":\"unsupported_media_type\",\"message\":\"Use Content-Type: application/json (requests without a body may omit it).\",\"retryable\":false,\"key\":\"unsupported_media_type\"}}"
   },
   {
     "step": "cross-site write refused",
@@ -61,7 +61,7 @@
     "path": "/api/boxes",
     "status": 403,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"key\":\"origin_forbidden\"}}"
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"retryable\":false,\"key\":\"origin_forbidden\"}}"
   },
   {
     "step": "create without name",
@@ -69,7 +69,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "create with bad name",
@@ -77,7 +77,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"retryable\":false,\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "create with blank name",
@@ -85,7 +85,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "create with numeric name",
@@ -93,7 +93,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "create with cpus over the limit",
@@ -101,7 +101,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"retryable\":false,\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "create with null cpus",
@@ -109,7 +109,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"retryable\":false,\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "create with text cpus",
@@ -117,7 +117,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"retryable\":false,\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "create with memory below the minimum",
@@ -125,7 +125,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"retryable\":false,\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "create with fractional memory",
@@ -133,7 +133,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"retryable\":false,\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "create with text memory",
@@ -141,7 +141,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"retryable\":false,\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "create from a missing image",
@@ -149,7 +149,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"retryable\":false,\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "create with a malformed template",
@@ -157,7 +157,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"retryable\":false,\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "create with a null template",
@@ -165,7 +165,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"retryable\":false,\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "create with a blank template",
@@ -173,7 +173,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"retryable\":false,\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "create over host cpu capacity",
@@ -181,7 +181,7 @@
     "path": "/api/boxes",
     "status": 422,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"retryable\":false,\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "create over host memory capacity",
@@ -189,7 +189,7 @@
     "path": "/api/boxes",
     "status": 422,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"Memory exceeds the host limit (8.0 GB).\",\"key\":\"memory_over_host\",\"params\":{\"gb\":\"8.0\"},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"Memory exceeds the host limit (8.0 GB).\",\"retryable\":false,\"key\":\"memory_over_host\",\"params\":{\"gb\":\"8.0\"},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "create alpha",
@@ -197,7 +197,7 @@
     "path": "/api/boxes",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "create alpha again",
@@ -205,7 +205,7 @@
     "path": "/api/boxes",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “alpha” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"alpha\"}}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “alpha” already exists.\",\"retryable\":false,\"key\":\"box_exists\",\"params\":{\"name\":\"alpha\"}}}"
   },
   {
     "step": "create beta with an empty template",
@@ -213,7 +213,7 @@
     "path": "/api/boxes",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-beta\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "create beta",
@@ -221,7 +221,7 @@
     "path": "/api/boxes",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “beta” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"beta\"}}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “beta” already exists.\",\"retryable\":false,\"key\":\"box_exists\",\"params\":{\"name\":\"beta\"}}}"
   },
   {
     "step": "list boxes with stats",
@@ -229,7 +229,7 @@
     "path": "/api/boxes",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-beta\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
   },
   {
     "step": "list boxes without stats",
@@ -237,7 +237,7 @@
     "path": "/api/boxes?stats=false",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-beta\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}]}"
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}]}"
   },
   {
     "step": "list boxes, stats=0 still includes stats",
@@ -245,7 +245,7 @@
     "path": "/api/boxes?stats=0",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-beta\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-beta\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
+    "body": "{\"boxes\":[{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}},{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"beta\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-beta\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"beta-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}]}"
   },
   {
     "step": "get alpha",
@@ -253,7 +253,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":134217728,\"memLimit\":536870912,\"memPercent\":25}}}"
   },
   {
     "step": "get a missing box",
@@ -261,7 +261,7 @@
     "path": "/api/boxes/missing",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "get an unlabelled container",
@@ -269,7 +269,7 @@
     "path": "/api/boxes/<id>",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "logs with default tail",
@@ -301,7 +301,7 @@
     "path": "/api/boxes/<id>/logs?tail=0",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"retryable\":false,\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
   },
   {
     "step": "logs with tail=abc",
@@ -309,7 +309,7 @@
     "path": "/api/boxes/<id>/logs?tail=abc",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"retryable\":false,\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
   },
   {
     "step": "logs with tail=2.5",
@@ -317,7 +317,7 @@
     "path": "/api/boxes/<id>/logs?tail=2.5",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"retryable\":false,\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
   },
   {
     "step": "logs of a missing box",
@@ -325,7 +325,7 @@
     "path": "/api/boxes/missing/logs",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "stats of alpha",
@@ -341,7 +341,7 @@
     "path": "/api/boxes/missing/stats",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "stop alpha",
@@ -349,7 +349,7 @@
     "path": "/api/boxes/<id>/stop",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":2,\"desired\":\"stopped\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"stopped\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "stop alpha again",
@@ -357,7 +357,7 @@
     "path": "/api/boxes/<id>/stop",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":2,\"desired\":\"stopped\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"stopped\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "start alpha",
@@ -365,7 +365,7 @@
     "path": "/api/boxes/<id>/start",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "restart alpha",
@@ -373,7 +373,71 @@
     "path": "/api/boxes/<id>/restart",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "exec true in alpha",
+    "method": "POST",
+    "path": "/api/boxes/<id>/exec",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":false,\"woke\":false,\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"exited\"}"
+  },
+  {
+    "step": "get the exec",
+    "method": "GET",
+    "path": "/api/execs/ex_<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":false,\"woke\":false,\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"exited\"}"
+  },
+  {
+    "step": "read exec output",
+    "method": "GET",
+    "path": "/api/execs/ex_<ulid>/output",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"stdoutBytes\":0,\"stderrBytes\":0}"
+  },
+  {
+    "step": "exec with neither cmd nor argv",
+    "method": "POST",
+    "path": "/api/boxes/<id>/exec",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide exactly one of cmd or argv.\",\"retryable\":false,\"hint\":\"cmd runs through /bin/sh -c. argv is the program and its arguments, with no shell.\",\"key\":\"exec_command_required\",\"hintKey\":\"exec_command_hint\",\"details\":{\"field\":\"cmd\"}}}"
+  },
+  {
+    "step": "kill an exec that has finished",
+    "method": "POST",
+    "path": "/api/execs/ex_<ulid>/kill",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"That exec is not running.\",\"retryable\":false,\"hint\":\"It has already exited. Read the result with exec_get.\",\"key\":\"exec_not_running\",\"hintKey\":\"exec_not_running_hint\"}}"
+  },
+  {
+    "step": "exec sleep in the background",
+    "method": "POST",
+    "path": "/api/boxes/<id>/exec",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":true,\"woke\":false,\"exitCode\":null,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"running\"}"
+  },
+  {
+    "step": "kill the background exec",
+    "method": "POST",
+    "path": "/api/execs/ex_<ulid>/kill",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"status\":\"killed\"}"
+  },
+  {
+    "step": "get the killed exec",
+    "method": "GET",
+    "path": "/api/execs/ex_<ulid>?waitMs=0",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":true,\"woke\":false,\"exitCode\":137,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"killed\"}"
   },
   {
     "step": "start ignores a malformed body",
@@ -381,7 +445,7 @@
     "path": "/api/boxes/<id>/start",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "start a missing box",
@@ -389,7 +453,7 @@
     "path": "/api/boxes/missing/start",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "stop a missing box",
@@ -397,7 +461,7 @@
     "path": "/api/boxes/missing/stop",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "resize cpus",
@@ -405,7 +469,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":4,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":4,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "resize memory",
@@ -413,7 +477,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":5,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":5,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "resize without If-Match",
@@ -421,7 +485,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 428,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"precondition_required\",\"message\":\"Send the request header If-Match with this box's current revision.\",\"key\":\"revision_required\"}}"
+    "body": "{\"error\":{\"code\":\"precondition_required\",\"message\":\"Send the request header If-Match with this box's current revision.\",\"retryable\":false,\"key\":\"revision_required\"}}"
   },
   {
     "step": "resize with a stale If-Match",
@@ -429,7 +493,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 412,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"precondition_failed\",\"message\":\"This box is at revision 5, not 1. Refresh it and try again.\",\"key\":\"revision_mismatch\",\"params\":{\"revision\":5,\"expected\":1},\"details\":{\"revision\":5,\"expected\":1}}}"
+    "body": "{\"error\":{\"code\":\"precondition_failed\",\"message\":\"This box is at revision 5, not 1. Refresh it and try again.\",\"retryable\":false,\"key\":\"revision_mismatch\",\"params\":{\"revision\":5,\"expected\":1},\"details\":{\"revision\":5,\"expected\":1}}}"
   },
   {
     "step": "update idle timeout",
@@ -437,7 +501,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":6,\"desired\":\"running\",\"idleTimeoutSec\":60,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":6,\"desired\":\"running\",\"idleTimeoutSec\":60,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "resize with nothing",
@@ -445,7 +509,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"key\":\"resources_required\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"retryable\":false,\"key\":\"resources_required\"}}"
   },
   {
     "step": "resize with null cpus only",
@@ -453,7 +517,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"key\":\"resources_required\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"retryable\":false,\"key\":\"resources_required\"}}"
   },
   {
     "step": "resize cpus over the limit",
@@ -461,7 +525,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"retryable\":false,\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "resize with text memory",
@@ -469,7 +533,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"retryable\":false,\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "resize beyond host capacity",
@@ -477,7 +541,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 422,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"retryable\":false,\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "resize a missing box",
@@ -485,7 +549,7 @@
     "path": "/api/boxes/missing/resources",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "resize with a malformed body",
@@ -493,7 +557,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"key\":\"invalid_json\"}}"
+    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"retryable\":false,\"key\":\"invalid_json\"}}"
   },
   {
     "step": "resize with an array body",
@@ -501,15 +565,15 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"retryable\":false,\"key\":\"invalid_json_object\"}}"
   },
   {
     "step": "snapshot alpha as nightly",
     "method": "POST",
     "path": "/api/boxes/<id>/snapshots",
-    "status": 201,
+    "status": 202,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"snapshot\":{\"ref\":\"mbtest-snap:nightly-<stamp>\",\"source\":\"alpha\"}}"
+    "body": "{\"taskId\":\"<ulid>\"}"
   },
   {
     "step": "list snapshots",
@@ -517,15 +581,15 @@
     "path": "/api/snapshots",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"snapshots\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-snap:nightly-<stamp>\",\"tags\":[\"mbtest-snap:nightly-<stamp>\"],\"name\":\"nightly\",\"description\":\"Snapshot of box alpha\",\"source\":\"alpha\",\"createdAt\":\"<time>\",\"size\":1024}]}"
+    "body": "{\"snapshots\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-snap:nightly-<stamp>\",\"tags\":[\"mbtest-snap:nightly-<stamp>\"],\"name\":\"nightly\",\"description\":\"Snapshot of box alpha\",\"source\":\"alpha\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024}]}"
   },
   {
     "step": "snapshot alpha with no body",
     "method": "POST",
     "path": "/api/boxes/<id>/snapshots",
-    "status": 201,
+    "status": 202,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}}"
+    "body": "{\"taskId\":\"<ulid>\"}"
   },
   {
     "step": "discard snapshot taken with no body",
@@ -539,9 +603,9 @@
     "step": "snapshot alpha with an empty name",
     "method": "POST",
     "path": "/api/boxes/<id>/snapshots",
-    "status": 201,
+    "status": 202,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}}"
+    "body": "{\"taskId\":\"<ulid>\"}"
   },
   {
     "step": "discard snapshot taken with an empty name",
@@ -555,9 +619,9 @@
     "step": "snapshot alpha with a null name",
     "method": "POST",
     "path": "/api/boxes/<id>/snapshots",
-    "status": 201,
+    "status": 202,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}}"
+    "body": "{\"taskId\":\"<ulid>\"}"
   },
   {
     "step": "discard snapshot taken with a null name",
@@ -573,7 +637,7 @@
     "path": "/api/boxes/<id>/snapshots",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"retryable\":false,\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "snapshot alpha with a numeric name",
@@ -581,7 +645,7 @@
     "path": "/api/boxes/<id>/snapshots",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "snapshot a missing box",
@@ -589,7 +653,7 @@
     "path": "/api/boxes/missing/snapshots",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "snapshot a missing box with a bad name",
@@ -597,7 +661,7 @@
     "path": "/api/boxes/missing/snapshots",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"retryable\":false,\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "restore snapshot as restored",
@@ -605,7 +669,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"restored\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-restored\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-restored\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-restored\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"restored\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-restored\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"restored-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"restored-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"restored-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "restore snapshot with a body template",
@@ -613,7 +677,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"restored-2\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":4294967296,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-restored-2\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-restored-2\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-restored-2\",\"path\":\"/workspace\",\"mode\":\"rw\"}]}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"restored-2\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-snap:nightly-<stamp>\",\"template\":\"snapshot:mbtest-snap:nightly-<stamp>\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":4294967296,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-restored-2\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"restored-2-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"restored-2-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"restored-2-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "restore snapshot with a duplicate name",
@@ -621,7 +685,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “restored” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"restored\"}}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “restored” already exists.\",\"retryable\":false,\"key\":\"box_exists\",\"params\":{\"name\":\"restored\"}}}"
   },
   {
     "step": "restore snapshot with a bad box name",
@@ -629,7 +693,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"retryable\":false,\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "restore snapshot with cpus 0",
@@ -637,7 +701,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"retryable\":false,\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "restore a missing image",
@@ -645,7 +709,7 @@
     "path": "/api/snapshots/ghost%3A1/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"retryable\":false,\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "restore a malformed ref",
@@ -653,7 +717,7 @@
     "path": "/api/snapshots/bad%20ref/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"retryable\":false,\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "restore with a non-object body",
@@ -661,7 +725,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"retryable\":false,\"key\":\"invalid_json_object\"}}"
   },
   {
     "step": "promote nightly to gold",
@@ -675,9 +739,9 @@
     "step": "build the base template",
     "method": "POST",
     "path": "/api/templates/base/build",
-    "status": 200,
+    "status": 202,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"ref\":\"mbtest-template:base\",\"output\":\"Successfully built fake\\n\"}"
+    "body": "{\"taskId\":\"<ulid>\"}"
   },
   {
     "step": "list templates",
@@ -685,7 +749,7 @@
     "path": "/api/templates",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:gold\",\"tags\":[\"mbtest-template:gold\"],\"name\":\"gold\",\"description\":\"Gold image\",\"source\":\"alpha\",\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"createdAt\":\"<time>\",\"size\":1024}],\"baseTemplate\":\"mbtest-template:base\"}"
+    "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:gold\",\"tags\":[\"mbtest-template:gold\"],\"name\":\"gold\",\"description\":\"Gold image\",\"source\":\"alpha\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024}],\"baseTemplate\":\"mbtest-template:base\"}"
   },
   {
     "step": "delete gold",
@@ -701,7 +765,7 @@
     "path": "/api/snapshots/missing",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Snapshot not found.\",\"key\":\"snapshot_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Snapshot not found.\",\"retryable\":false,\"key\":\"snapshot_not_found\"}}"
   },
   {
     "step": "delete beta with a bad deleteVolume",
@@ -709,7 +773,7 @@
     "path": "/api/boxes/<id>?deleteVolume=yes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"retryable\":false,\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
   },
   {
     "step": "delete beta with an empty deleteVolume",
@@ -717,7 +781,7 @@
     "path": "/api/boxes/<id>?deleteVolume=",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"retryable\":false,\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
   },
   {
     "step": "delete beta, keeping its volume",
@@ -733,7 +797,7 @@
     "path": "/api/boxes/<id>",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "delete a missing box",
@@ -741,7 +805,7 @@
     "path": "/api/boxes/missing",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "delete restored with its volume",
@@ -758,6 +822,22 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"name\":\"restored-2\",\"volumeDeleted\":false}"
+  },
+  {
+    "step": "rebuild alpha without confirm",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rebuild",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change rebuilds the box and was not applied. Send the same request with confirm set to true to apply the preview. Volumes, the stable id and the name are kept. The writable layer, running processes and the container IP are lost.\",\"retryable\":false,\"key\":\"rebuild_confirm_required\",\"details\":{\"preview\":{\"changes\":[{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-alpha\",\"to\":\"mbtest-<boxId>\"}],\"diff\":[{\"path\":\"/etc/motd\",\"kind\":\"modified\"}],\"keeps\":[\"volumes\",\"id\",\"name\",\"history\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"containerName\":{\"from\":\"mbtest-alpha\",\"to\":\"mbtest-<boxId>\"},\"revision\":{\"current\":6,\"next\":7}}}}}"
+  },
+  {
+    "step": "rebuild alpha",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rebuild",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"strict\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":7,\"desired\":\"running\",\"idleTimeoutSec\":60,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[{\"field\":\"digest\",\"expected\":\"sha256:<image>\",\"actual\":\"sha256:<image>\"}],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
     "step": "delete alpha, keeping its volume",
@@ -789,7 +869,7 @@
     "path": "/api/activity",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"activity\":[{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:nightly-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"restored-2\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"restored\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"beta\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"missing\",\"ok\":false,\"message\":\"Snapshot not found.\"},{\"t\":\"<time>\",\"action\":\"template.delete\",\"target\":\"mbtest-template:gold\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"template.build\",\"target\":\"mbtest-template:base\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"template.promote\",\"target\":\"gold\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"ok-4\",\"ok\":false,\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\"},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored\",\"ok\":false,\"message\":\"A box named “restored” already exists.\"},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored-2\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true}]}"
+    "body": "{\"activity\":[{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:nightly-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.rebuild\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"restored-2\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"restored\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.delete\",\"target\":\"beta\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"missing\",\"ok\":false,\"message\":\"Snapshot not found.\"},{\"t\":\"<time>\",\"action\":\"template.delete\",\"target\":\"mbtest-template:gold\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"template.build\",\"target\":\"mbtest-template:base\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"template.promote\",\"target\":\"gold\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"ok-4\",\"ok\":false,\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\"},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored\",\"ok\":false,\"message\":\"A box named “restored” already exists.\"},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored-2\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"box.create\",\"target\":\"restored\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.delete\",\"target\":\"mbtest-snap:alpha-<stamp>\",\"ok\":true},{\"t\":\"<time>\",\"action\":\"snapshot.create\",\"target\":\"alpha\",\"ok\":true}]}"
   },
   {
     "step": "final box list",
@@ -800,12 +880,132 @@
     "body": "{\"boxes\":[]}"
   },
   {
+    "step": "create gamma for volumes",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"gamma\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-gamma\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "list pools",
+    "method": "GET",
+    "path": "/api/pools",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"pools\":[{\"name\":\"local\",\"backend\":\"local\",\"default\":true,\"server\":null,\"export\":null,\"options\":[],\"root\":null,\"marker\":null,\"capabilities\":{\"shareable\":true,\"snapshots\":false,\"quota\":false,\"clone\":false,\"crossHost\":false}}],\"roles\":{\"workspace\":null,\"home\":null,\"tools\":null,\"cache\":null},\"health\":[{\"pool\":\"local\",\"hostId\":\"local\",\"status\":\"reachable\",\"message\":null,\"checkedAt\":\"<time>\",\"totalBytes\":100000000000,\"freeBytes\":40000000000,\"lowSpace\":false}]}"
+  },
+  {
+    "step": "list volumes",
+    "method": "GET",
+    "path": "/api/volumes",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volumes\":[{\"id\":\"<volumeId>\",\"name\":\"alpha-cache\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"cache\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":false,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"alpha-home\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"home\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":true,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"alpha-workspace\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"workspace\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"beta-cache\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"cache\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":false,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"beta-home\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"home\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":true,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"beta-workspace\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"workspace\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"gamma-cache\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"cache\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":false,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[{\"boxId\":\"<boxId>\",\"boxName\":\"gamma\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\"}],\"unattached\":false,\"rwMounts\":1},{\"id\":\"<volumeId>\",\"name\":\"gamma-home\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"home\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":true,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[{\"boxId\":\"<boxId>\",\"boxName\":\"gamma\",\"path\":\"/home/dev\",\"mode\":\"rw\"}],\"unattached\":false,\"rwMounts\":1},{\"id\":\"<volumeId>\",\"name\":\"gamma-workspace\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"workspace\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[{\"boxId\":\"<boxId>\",\"boxName\":\"gamma\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"unattached\":false,\"rwMounts\":1},{\"id\":\"<volumeId>\",\"name\":\"mbtest-tools-local\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"tools\",\"ownership\":\"independent\",\"ownerBoxId\":null,\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[{\"boxId\":\"<boxId>\",\"boxName\":\"gamma\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\"}],\"unattached\":false,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"restored-2-cache\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"cache\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":false,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"restored-2-home\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"home\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":true,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0},{\"id\":\"<volumeId>\",\"name\":\"restored-2-workspace\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"workspace\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0}]}"
+  },
+  {
+    "step": "get gamma workspace",
+    "method": "GET",
+    "path": "/api/volumes/gamma-workspace",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":{\"id\":\"<volumeId>\",\"name\":\"gamma-workspace\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"workspace\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[{\"boxId\":\"<boxId>\",\"boxName\":\"gamma\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"unattached\":false,\"rwMounts\":1}}"
+  },
+  {
+    "step": "create spare volume without confirm",
+    "method": "POST",
+    "path": "/api/volumes",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.\",\"retryable\":false,\"key\":\"storage_confirm_required\",\"details\":{\"preview\":{\"action\":\"create_volume\",\"name\":\"spare\",\"pool\":\"local\",\"backend\":\"local\",\"role\":null,\"ownership\":\"independent\"}}}}"
+  },
+  {
+    "step": "create spare volume",
+    "method": "POST",
+    "path": "/api/volumes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":{\"id\":\"<volumeId>\",\"name\":\"spare\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":null,\"ownership\":\"independent\",\"ownerBoxId\":null,\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0}}"
+  },
+  {
+    "step": "measure spare",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/usage",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":{\"id\":\"<volumeId>\",\"name\":\"spare\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":null,\"ownership\":\"independent\",\"ownerBoxId\":null,\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":0,\"bytesAt\":\"<time>\",\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0}}"
+  },
+  {
+    "step": "attach spare without confirm",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/attach",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change rebuilds the box and was not applied. Send the same request with confirm set to true to apply the preview. Volumes, the stable id and the name are kept. The writable layer, running processes and the container IP are lost.\",\"retryable\":false,\"key\":\"rebuild_confirm_required\",\"details\":{\"preview\":{\"changes\":[{\"field\":\"mounts\",\"from\":\"[{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/home/dev/.cache\\\",\\\"mode\\\":\\\"rw\\\"},{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/home/dev\\\",\\\"mode\\\":\\\"rw\\\"},{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/opt/minibox/tools\\\",\\\"mode\\\":\\\"ro\\\"},{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/workspace\\\",\\\"mode\\\":\\\"rw\\\"}]\",\"to\":\"[{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/home/dev/.cache\\\",\\\"mode\\\":\\\"rw\\\"},{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/home/dev\\\",\\\"mode\\\":\\\"rw\\\"},{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/opt/minibox/tools\\\",\\\"mode\\\":\\\"ro\\\"},{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/srv/data\\\",\\\"mode\\\":\\\"ro\\\"},{\\\"volume\\\":\\\"<volumeId>\\\",\\\"path\\\":\\\"/workspace\\\",\\\"mode\\\":\\\"rw\\\"}]\"},{\"field\":\"containerName\",\"from\":\"mbtest-gamma\",\"to\":\"mbtest-<boxId>\"}],\"diff\":[],\"keeps\":[\"volumes\",\"id\",\"name\",\"history\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"containerName\":{\"from\":\"mbtest-gamma\",\"to\":\"mbtest-<boxId>\"},\"revision\":{\"current\":1,\"next\":2}}}}}"
+  },
+  {
+    "step": "attach spare read-only",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/attach",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"gamma\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-cache\",\"role\":\"cache\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/srv/data\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"spare\",\"role\":null,\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-workspace\",\"role\":\"workspace\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}},\"warning\":null}"
+  },
+  {
+    "step": "detach spare",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/detach",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "delete spare volume without confirm",
+    "method": "DELETE",
+    "path": "/api/volumes/<volumeId>",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Volume spare is mounted by gamma.\",\"retryable\":false,\"key\":\"volume_mounted\",\"params\":{\"name\":\"spare\",\"box\":\"gamma\"}}}"
+  },
+  {
+    "step": "delete spare volume",
+    "method": "DELETE",
+    "path": "/api/volumes/<volumeId>?confirm=true",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Volume spare is mounted by gamma.\",\"retryable\":false,\"key\":\"volume_mounted\",\"params\":{\"name\":\"spare\",\"box\":\"gamma\"}}}"
+  },
+  {
+    "step": "replace pools without confirm",
+    "method": "PUT",
+    "path": "/api/pools",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.\",\"retryable\":false,\"key\":\"storage_confirm_required\",\"details\":{\"preview\":{\"action\":\"replace_pools\",\"pools\":[{\"name\":\"local\",\"backend\":\"local\",\"default\":true}],\"roles\":{\"workspace\":null,\"home\":null,\"tools\":null,\"cache\":null},\"added\":[],\"removed\":[]}}}}"
+  },
+  {
+    "step": "replace pools",
+    "method": "PUT",
+    "path": "/api/pools",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"pools\":[{\"name\":\"local\",\"backend\":\"local\",\"default\":true,\"server\":null,\"export\":null,\"options\":[],\"root\":null,\"marker\":null,\"capabilities\":{\"shareable\":true,\"snapshots\":false,\"quota\":false,\"clone\":false,\"crossHost\":false}}],\"roles\":{\"workspace\":null,\"home\":null,\"tools\":null,\"cache\":null},\"health\":[{\"pool\":\"local\",\"hostId\":\"local\",\"status\":\"reachable\",\"message\":null,\"checkedAt\":\"<time>\",\"totalBytes\":100000000000,\"freeBytes\":40000000000,\"lowSpace\":false}]}"
+  },
+  {
+    "step": "delete gamma",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
+  },
+  {
     "step": "events without a key",
     "method": "GET",
     "path": "/api/events",
     "status": 401,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"key\":\"unauthorized\"}}"
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"retryable\":false,\"key\":\"unauthorized\"}}"
   },
   {
     "step": "events from another site",
@@ -813,7 +1013,7 @@
     "path": "/api/events",
     "status": 403,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"key\":\"origin_forbidden\"}}"
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"retryable\":false,\"key\":\"origin_forbidden\"}}"
   },
   {
     "step": "events of box creation",
@@ -821,15 +1021,15 @@
     "path": "/api/events?op=box.create&limit=2",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"events\":[{\"seq\":20,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: beta\",\"target\":{\"kind\":\"box\",\"name\":\"beta\"},\"detail\":{\"name\":\"beta\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":19,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"ok\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: beta\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"beta\"},\"detail\":{\"name\":\"beta\",\"cpus\":1,\"memoryMb\":256}}],\"nextCursor\":19}"
+    "body": "{\"events\":[{\"seq\":100,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"ok\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: gamma\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"gamma\"},\"detail\":{\"name\":\"gamma\",\"cpus\":1,\"memoryMb\":256}},{\"seq\":20,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: beta\",\"target\":{\"kind\":\"box\",\"name\":\"beta\"},\"detail\":{\"name\":\"beta\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}}],\"nextCursor\":20}"
   },
   {
     "step": "older events of box creation",
     "method": "GET",
-    "path": "/api/events?op=box.create&limit=2&cursor=19",
+    "path": "/api/events?op=box.create&limit=2&cursor=20",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"events\":[{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":17,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"ok\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":2,\"memoryMb\":512}}],\"nextCursor\":17}"
+    "body": "{\"events\":[{\"seq\":19,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"ok\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: beta\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"beta\"},\"detail\":{\"name\":\"beta\",\"cpus\":1,\"memoryMb\":256}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}}],\"nextCursor\":18}"
   },
   {
     "step": "events with limit 0",
@@ -837,7 +1037,7 @@
     "path": "/api/events?limit=0",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"limit must be an integer between 1 and 200.\",\"key\":\"event_limit_range\",\"params\":{\"max\":200},\"details\":{\"field\":\"limit\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"limit must be an integer between 1 and 200.\",\"retryable\":false,\"key\":\"event_limit_range\",\"params\":{\"max\":200},\"details\":{\"field\":\"limit\"}}}"
   },
   {
     "step": "events of alpha that failed",
@@ -845,7 +1045,215 @@
     "path": "/api/events?box=alpha&status=error",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"events\":[{\"seq\":39,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"1\"},\"error\":{\"code\":\"precondition_failed\",\"status\":412}},{\"seq\":38,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"\"},\"error\":{\"code\":\"precondition_required\",\"status\":428}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
+    "body": "{\"events\":[{\"seq\":96,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.rebuild\",\"kind\":\"destructive\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Rebuild a box from its spec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"confirm\":false,\"profile\":\"strict\"},\"error\":{\"code\":\"confirmation_required\",\"status\":409}},{\"seq\":51,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"1\"},\"error\":{\"code\":\"precondition_failed\",\"status\":412}},{\"seq\":50,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"\"},\"error\":{\"code\":\"precondition_required\",\"status\":428}},{\"seq\":39,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"exec.kill\",\"kind\":\"write\",\"tier\":\"activity\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Kill an exec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"execId\":\"ex_<ulid>\"},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
+  },
+  {
+    "step": "list tasks",
+    "method": "GET",
+    "path": "/api/tasks",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tasks\":[{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"truncated\":false,\"logSeq\":2},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:nightly-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3}]}"
+  },
+  {
+    "step": "read the base build task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
+  },
+  {
+    "step": "read a missing task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Task not found.\",\"retryable\":false,\"key\":\"task_not_found\"}}"
+  },
+  {
+    "step": "read a malformed task id",
+    "method": "GET",
+    "path": "/api/tasks/not-a-task",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Task id must be a 26-character ULID.\",\"retryable\":false,\"key\":\"task_id_invalid\",\"details\":{\"field\":\"id\"}}}"
+  },
+  {
+    "step": "cancel a missing task",
+    "method": "POST",
+    "path": "/api/tasks/<ulid>/cancel",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Task not found.\",\"retryable\":false,\"key\":\"task_not_found\"}}"
+  },
+  {
+    "step": "cancel a finished task",
+    "method": "POST",
+    "path": "/api/tasks/<ulid>/cancel",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"This task is not running.\",\"retryable\":false,\"key\":\"task_not_running\"}}"
+  },
+  {
+    "step": "create the session box",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"term\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-term\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"term-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"term-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"term-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "list sessions of a box with none",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"sessions\":[]}"
+  },
+  {
+    "step": "start a session",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":{\"name\":\"work\",\"origin\":\"agent\",\"controller\":\"agent\",\"takenOver\":false},\"created\":true,\"woke\":false}"
+  },
+  {
+    "step": "start the same session again",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":{\"name\":\"work\",\"origin\":\"agent\",\"controller\":\"agent\",\"takenOver\":false},\"created\":false,\"woke\":false}"
+  },
+  {
+    "step": "start a session with a bad name",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Session name must start with a letter or digit, use only letters, digits, dashes and underscores, and be at most 32 characters.\",\"retryable\":false,\"key\":\"session_name_invalid\",\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "start a session in a missing box",
+    "method": "POST",
+    "path": "/api/boxes/missing/sessions",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "list sessions",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"sessions\":[{\"name\":\"work\",\"origin\":\"agent\",\"controller\":\"agent\",\"takenOver\":false,\"createdAt\":\"<time>\",\"attached\":0}]}"
+  },
+  {
+    "step": "type text into a session",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions/work/input",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"keys\":0,\"bytes\":8}"
+  },
+  {
+    "step": "press Enter in a session",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions/work/input",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"keys\":1,\"bytes\":0}"
+  },
+  {
+    "step": "send keys and text together",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions/work/input",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide exactly one of keys or text.\",\"retryable\":false,\"key\":\"session_input_required\",\"details\":{\"field\":\"keys\"}}}"
+  },
+  {
+    "step": "send neither keys nor text",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions/work/input",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide exactly one of keys or text.\",\"retryable\":false,\"key\":\"session_input_required\",\"details\":{\"field\":\"keys\"}}}"
+  },
+  {
+    "step": "read the session",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work?lines=10",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"cursor\":\"<epoch>.1\",\"reset\":false,\"truncated\":false,\"lines\":[\"echo hi\"],\"controller\":\"agent\"}"
+  },
+  {
+    "step": "read with an invalid since",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work?since=bogus",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"since must be the cursor that the previous session_read of this session returned.\",\"retryable\":false,\"key\":\"session_since_invalid\",\"details\":{\"field\":\"since\"}}}"
+  },
+  {
+    "step": "read with a cursor that cannot be continued",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work?lines=5&since=000000000000.1",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"cursor\":\"<epoch>.2\",\"reset\":true,\"truncated\":false,\"lines\":[\"echo hi\"],\"controller\":\"agent\"}"
+  },
+  {
+    "step": "read with zero lines",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work?lines=0",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"lines must be an integer between 1 and 2000.\",\"retryable\":false,\"key\":\"session_lines_range\",\"params\":{\"max\":2000},\"details\":{\"field\":\"lines\"}}}"
+  },
+  {
+    "step": "read a missing session",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/nope",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Session not found.\",\"retryable\":false,\"hint\":\"List the box's sessions, or start one with session_start.\",\"key\":\"session_not_found\",\"hintKey\":\"session_not_found_hint\"}}"
+  },
+  {
+    "step": "close the session",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/sessions/work",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"status\":\"closed\"}"
+  },
+  {
+    "step": "close the session again",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/sessions/work",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Session not found.\",\"retryable\":false,\"hint\":\"List the box's sessions, or start one with session_start.\",\"key\":\"session_not_found\",\"hintKey\":\"session_not_found_hint\"}}"
+  },
+  {
+    "step": "read a closed session",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Session not found.\",\"retryable\":false,\"hint\":\"List the box's sessions, or start one with session_start.\",\"key\":\"session_not_found\",\"hintKey\":\"session_not_found_hint\"}}"
+  },
+  {
+    "step": "delete the session box",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"term\",\"volumeDeleted\":false}"
   },
   {
     "step": "create a readonly token",
@@ -853,7 +1261,7 @@
     "path": "/api/tokens",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"names\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
   },
   {
     "step": "list tokens",
@@ -861,7 +1269,7 @@
     "path": "/api/tokens",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"tokens\":[{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"names\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}]}"
+    "body": "{\"tokens\":[{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}]}"
   },
   {
     "step": "create a token with no scope",
@@ -869,7 +1277,7 @@
     "path": "/api/tokens",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Choose a preset or at least one scope.\",\"key\":\"token_scope_required\",\"details\":{\"field\":\"scopes\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Choose a preset or at least one scope.\",\"retryable\":false,\"key\":\"token_scope_required\",\"details\":{\"field\":\"scopes\"}}}"
   },
   {
     "step": "create a duplicate token name",
@@ -877,7 +1285,7 @@
     "path": "/api/tokens",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A token named “ci” already exists.\",\"key\":\"token_name_taken\",\"params\":{\"name\":\"ci\"}}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A token named “ci” already exists.\",\"retryable\":false,\"key\":\"token_name_taken\",\"params\":{\"name\":\"ci\"}}}"
   },
   {
     "step": "revoke the readonly token",
@@ -885,7 +1293,7 @@
     "path": "/api/tokens/<tokenId>?deleteCreated=false",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"token\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"names\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"},\"deletedBoxes\":[]}"
+    "body": "{\"token\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"},\"deletedBoxes\":[]}"
   },
   {
     "step": "revoke the readonly token again",
@@ -893,7 +1301,7 @@
     "path": "/api/tokens/<tokenId>",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Token not found.\",\"key\":\"token_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Token not found.\",\"retryable\":false,\"key\":\"token_not_found\"}}"
   },
   {
     "step": "revoke a missing token",
@@ -901,6 +1309,6 @@
     "path": "/api/tokens/missing",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Token not found.\",\"key\":\"token_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Token not found.\",\"retryable\":false,\"key\":\"token_not_found\"}}"
   }
 ]

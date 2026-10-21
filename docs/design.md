@@ -82,7 +82,7 @@ MiniBox 面向个人用户，灵感来自 Upstash Box，但不做多租户平台
 | 存算耦合 | 每个 Box 自带一个 `minibox-ws-<名称>` 卷，不能共享，不能放到存储盘 |
 | 状态只在内存 | 活动记录最多 50 条，重启即丢；审计靠部分路由手动套 `tracked()` |
 | 权限只有一把钥匙 | 单一 `ACCESS_KEY` 等同宿主机 root，Cookie 里直接存放原始密钥 |
-| 长请求无任务模型 | 模板构建、快照提交是同步 HTTP 请求，`idleTimeout: 60` 下可能被中途断开（待复现） |
+| 长请求无任务模型 | 已由任务模型解决，见 [§8.10](#810-实现说明16)。模板构建与快照提交返回 202，进度走事件总线 |
 | 轮询架构 | 前端多处定时轮询，每个标签页都对 Docker 产生同样的调用 |
 
 安全问题（限流可被 `X-Forwarded-For` 绕过、缺少 Origin 校验与 CSP、Box 缺少加固等）见 [14](#14-安全设计) 与 issue #1 #3 #4 #5 #7。
@@ -211,16 +211,25 @@ flowchart LR
 
 `delete_box` 单独成工具，便于单独授权。
 
+已实现的是 box 的 6 个工具加上 `exec`、`exec_get`、`exec_kill`，共 9 个，属于默认工具集。`rebuild_box` 不在上表的 27 个工具里，它需要显式确认，不属于 `core`（决策 45），因此单独放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`）。`storage` 工具集已实现 9 个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`（决策 50）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`（决策 49）；`measure_volume` 只刷新缓存的大小，不需要。实现的工具共 19 个：默认工具集 9 个，`rebuild` 1 个，`storage` 9 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 9 个，而不是表里的 15 个。`session`、`network`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具不在本阶段。
+
 ### 4.3 执行模型
 
-- **`exec` 是一次性命令**：`{cmd | argv, cwd?, env?, timeoutSec?, stdin?, user?}`，返回 `{exitCode, stdout, stderr, truncated, durationMs}`。通过 `exec.inspect()` 取真实退出码；超时后终止整个进程树。
-- **输出上限**：默认保留头尾共 32 KB，其余给 `output_ref`，需要时再取。
-- **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, wait_ms)` 长轮询（不依赖客户端是否支持流式输出）；`exec_kill` 终止。
-- **自动唤醒**：对已停止的 Box 执行 `exec` 默认自动启动。
-- **默认用户**：非 root 用户 `dev`。
+- **`exec` 是一次性命令**：`{cmd | argv, cwd?, env?, timeoutSec?, stdin?, user?, background?}`，返回 `{execId, background, woke, status, exitCode, stdout, stderr, truncated, durationMs, outputRef, timedOut}`，其中 `status` 为 `running`、`exited` 或 `killed`。通过 `exec.inspect()` 取真实退出码；超时或 `exec_kill` 后在箱内终止整个进程树（见下）。
+- **输出上限**：接口内联每个流的头尾各约 16 KiB（合计约 32 KB）。超出部分用 `outputRef` 表示，`GET /api/execs/{execId}/output` 返回保存的窗口（每个流头尾各 64 KiB）。
+- **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, waitMs)` 长轮询（最长 25000 毫秒，不依赖客户端是否支持流式输出）；`exec_kill` 终止进程树。
+- **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。空闲超时与 TTL 仍是 #12，这里只做这一次启动。
+- **默认用户**：非 root 用户 `dev`。工作目录默认 `/workspace`。
+- **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
+- **并发上限**：后台 exec 每个 Box 最多 8 个，全部 MiniBox 最多 64 个。超限的调用返回 `429`，且不会唤醒已停止的 Box（决策 47）。前台调用不计入。
+- **终止在箱内完成**（决策 44）：非 TTY 的命令经包装 shell 运行，包装 shell 的参数中带有一个随机令牌。终止时，箱内的脚本在 `/proc` 中按命令行找到包装 shell；`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选，同样要核对命令行。「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本冻结整棵进程树（沿父进程号收集；包装 shell 自己是会话或进程组首进程时，同一会话与进程组也一并收集），再逐个 `SIGKILL`，并重新扫描直到没有新进程。宿主机从不向 Docker 报告的宿主机 pid 发送信号。Docker 报告 exec 已结束后才算成功；否则返回 `502`，exec 保持 `running`，可以重试。不在保证范围内的进程：调用 `setsid` 换了会话、且父进程已先退出的进程；命令结束后留在箱内的后台进程；处于不可中断睡眠的进程。Box 需要 `/bin/sh`、`cat`、`rm` 与 `sleep`。
+- **权限**：`exec` 意味着可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。挂载卷需要对该卷的 `volume:attach`，读写挂载或新建卷还需要 `volume:write`（见 [9.2](#92-必须写进文档与测试的安全约束)）。所有者密钥拥有全部范围；按令牌限定范围（#13）尚未实现。
+- **执行用户**：「严格」档位的 exec 只允许 `dev` 或 `1000`，其他用户在唤醒 Box 之前返回 `403`。其他档位可以用 `root`，审计记录标记 `privileged: true`（决策 48）。
 - **会话** `session_*` 用于长任务和需要观察的交互式程序，见 [10](#10-会话与接管)。
 
 ### 4.4 文件接口
+
+文件接口尚未实现。本阶段交付 exec、`/mcp` 与 CLI（Refs #9）。`read_file`、`write_file`、`list_files`、`copy_files` 以及下面的归档与辅助容器留到 Volume（#24）之后。
 
 - `read_file` / `write_file` / `list_files` / `copy_files`，以及上传下载（目录打包为 tar）。
 - **以 Volume 为对象，而不是 Box**：Box 停止时也可用。
@@ -286,7 +295,7 @@ BoxSpec（期望，存控制端）              BoxStatus（观测，来自 Dock
 ### 5.3 标识
 
 - Box 的稳定 ID 与容器 ID 脱钩；**名称全局唯一，与宿主机无关**，迁移后 URL 与令牌授权不变。
-- 新建容器名仍是 `minibox-<名称>`。认领已有 Box 时不改名（决策 42）。改成 `minibox-<id>` 留到重建，不在规格存储这一步做。
+- 新建容器名仍是 `minibox-<名称>`。认领已有 Box 时不改名（决策 42）。重建把容器名改为 `minibox-<id>`。之后的原地重命名仍用 `docker rename` 改成 `minibox-<新名称>`。降级恢复时，若容器名后缀就是该容器的稳定 ID，名称以标签里的当前名称为准，而不是这个 ID。
 - 现有「容器 ID 或 `minibox-<名称>`」形式的路由继续兼容，并同时接受稳定 ID 与 Box 名称。
 
 ### 5.4 变更分两类
@@ -298,8 +307,8 @@ BoxSpec（期望，存控制端）              BoxStatus（观测，来自 Dock
 
 Docker 不能给运行中的容器加挂载，所以「挂载共享卷」和「换模板」必然是一次重建。工具安装通过 `exec` 完成，不属于这两类。原地更新的字段只改 `DATA_DIR` 里的规格（资源另外用 `docker update`，重命名用 `docker rename`），不会去改容器标签。
 
-- 修改接口使用 `If-Match: <revision>` 乐观并发，防止人和 Agent 同时修改互相覆盖；保留最近 N 个版本，可回滚。
-- **重建必须显式确认**：用 `docker diff` 预览可写层会丢失的改动，可选先创建含系统层的检查点。
+- 修改接口使用 `If-Match: <revision>` 乐观并发，防止人和 Agent 同时修改互相覆盖；规格保留最近 20 个版本（`SPEC_HISTORY_LIMIT`），失败的重建回滚到上一版。
+- **重建必须显式确认**：用 `docker diff` 预览可写层会丢失的改动。未带 `confirm: true` 时返回 `409 confirmation_required` 和预览，不改容器。可选的重建前检查点不在这一步（#11）。
 
 ### 5.5 重建时什么保留、什么丢失
 
@@ -311,7 +320,7 @@ Docker 不能给运行中的容器加挂载，所以「挂载共享卷」和「�
 1. 用新规格创建新容器（不启动），验证镜像与配置；
 2. 停旧容器并改名为 `-old`；
 3. 新容器改为正式名称并启动；
-4. 启动检查通过后删除旧容器；失败则恢复旧容器，并把规格回滚到上一版。
+4. 启动检查通过后删除旧容器；失败则恢复旧容器，并把规格回滚到上一版。回滚写回的是变更前的规格，这样在历史已经存满 20 条时也不会丢掉更早的一条。期望状态为 `stopped` 时，新容器仍会先启动作为健康检查，通过后再停掉。重启策略保持 `no`（决策 43）。
 
 ### 5.7 状态机
 
@@ -335,6 +344,7 @@ stateDiagram-v2
 
 - 创建 Box 时**自动新建**的卷标记为「随 Box 拥有」，删除时询问是否一并删除，**默认保留**（与现在一致）。
 - 显式创建或被多个 Box 共享的卷是「独立」的，删除 Box 永不带走。
+- 删除 Box 只删除记录中所有者为本 Box、且没有其它 Box 挂载的卷。没有记录的卷、所有者为空的记录、属于其它 Box 的记录，即使本 Box 的规格仍挂着它们，也不删除。
 - 无任何 Box 挂载的卷在库里标「未挂载」，并给出清理建议。
 
 ### 5.9 与其它特性的关系
@@ -359,7 +369,7 @@ stateDiagram-v2
 同一个 Volume 可同时挂载到多个 Box。**默认可读写，由用户负责**，每次挂载仍可单独选只读。
 
 - 界面补偿：把已被其它 Box 读写挂载的卷再挂载时提示风险；工具卷默认以只读方式挂给其它 Box。
-- 安全：挂载某卷等同于获得该卷的读权限，创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权（见 [9](#9-令牌与权限)）。
+- 安全：挂载某卷等同于获得该卷的读权限，创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权；读写挂载、新建卷以及新建 Box 自动创建的卷还需要 `volume:write`（见 [9](#9-令牌与权限)）。
 - 所有模板统一 uid/gid，否则共享卷会出现权限问题（见 [11](#11-工具目录与基础模板)）。
 - Docker 不管文件锁，并发写冲突由应用自己负责。
 
@@ -424,6 +434,28 @@ pools:
 - SQLite、文件锁、inotify 在 NFS 上行为可能异常。
 
 详细的部署步骤见 issue #30 的文档。
+
+### 6.8 实现说明（#24）
+
+第一版实现与上文的差异如下。
+
+- **引擎名**：新建卷的 Docker 卷名就是卷 id（`vol_…`），显示名另存。Docker 不能在创建后补标签，所以已有的 `<prefix>-ws-*` 只写入所有权记录，不改名、不补标签、不 chown。认领容器也不改名。
+- **chown**：新建的本地卷用基础模板镜像的辅助容器（root，`0:0`）执行 `chown -R 1000:1000`，失败则创建失败。镜像不存在时跳过并记 `volume.chown_skipped`。NFS 与 path 必须先建子目录；chown 尽力而为（`root_squash` 常见，辅助容器打印 `MINIBOX_CHOWN_SKIPPED`）。重建不递归 chown 已有数据。遗留的 root 属主工作区仍用 README 中的一次性命令。
+- **重建改名**：挂载变更会重建容器，新容器名为 `<prefix>-<box id>`。失败则回滚名称，并在原先处于运行时重新启动旧容器，不写规格。界面在容器 id 变化后跳到新 id；稳定 box id 在 API 里仍然有效。
+- **探测**：池健康缓存在 `VolumeStore` 的内存里，15 秒。`GET /api/pools` 会探测（`refresh=true` 强制）。列出 Box 不探测 NFS，因此 `storage.status` 在探测前是 `unknown`；界面只把 `unreachable` 标成警告。启动、重启和创建在非本地池不是 `reachable`（含缺少基础镜像时的 `unknown`）时返回 503 `docker_unavailable`，消息键 `storage_unreachable`。本地池只有引擎探测失败才算不可达。协调器捕获该错误，记 `reconcile.start_failed` 后继续。
+- **NFS**：数据卷使用用户选项（通常 `hard`）。探测根卷 `<prefix>-pool-<pool>` 强制 `soft,timeo=10,retrans=1`，并在驱动选项变化时重建，避免死服务器挂起探测。已有数据卷保持创建时的选项。不要把 Docker data-root 搬到网络存储上。
+- **path**：辅助容器以只读方式绑定根目录，并 `test -f` 标记文件（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在则为不可达，不写入、不创建标记。
+- **能力**：由后端计算，用户不能设置。全部可共享；`snapshots`、`quota`、`clone` 为 false；只有 nfs 的 `crossHost` 为 true。无每卷配额。
+- **授权**：`volume:attach`、`volume:write` 与 `pool:admin` 各自是一次 `authorize()` 调用，带 `scope` 与资源：有记录的卷带 `id`，尚无记录的名字只带 `name`。操作级调用的 `scope` 为空，钩子可以区分「能否执行操作」和「能否挂这只卷」。`pool.replace` 在操作内单独检查 `pool:admin`，`volume:write` 不能代替它。读写挂载计为写入。所有者是目前唯一的主体，浏览器会话以所有者身份访问，因此始终允许。令牌范围留到 #13。拒绝时审计状态为 `denied`。
+- **确认**：`create_volume`、`delete_volume` 与 `replace_pools` 没有 `confirm: true` 时不改动任何内容，返回 `409 confirmation_required` 与 `details.preview`，预览即将发生的改动：新卷的池与名称、将删除的卷、将新增与移除的池。`delete_volume` 对已挂载的卷直接返回 `volume_mounted`，不生成预览。`volume.attach` 与 `volume.detach` 会重建容器，沿用 `box.rebuild` 的确认与重建预览。`volume.usage`（测量）只刷新缓存的大小，因此不加确认（决策 49）。
+- **MCP 存储工具集**：卷与存储池工具放在非默认的 `storage` 工具集（决策 50）。MCP 工具的错误结果带上 `details`（`structuredContent.details`），代理因此能读到 `details.preview`。挂载与卸载经 `rebuildBox`，适用与 `rebuild_box` 相同的记录规则（见 §9.2）。
+- **位置**：池配置是控制面全局的（`DATA_DIR/pools.json`）。每条 Volume 记录带 `hostId`，挂到另一台主机上的卷会被拒绝。文件原子写入，模式 600，目录 700。损坏的池文件不覆盖，记 `pools.unreadable`，并按隐式本地池处理。
+- **失败的创建**：一次创建产生的容器、规格、卷记录、引擎卷与子目录，失败时按相反顺序撤销（`VolumeChanges`）。NFS 池根卷若是这次创建或其可达性探测首次建立的，同样撤销；池根卷原本就存在则保留。遗留的 `<prefix>-ws-*` 只恢复原来的记录，不删除引擎卷。引擎拒绝删除容器时，保留规格和卷，避免仍在使用的资源失去记录。
+- **工具卷与引擎名**：共享工具卷名为 `<prefix>-tools-<主机 id>`，同名检查只在同一主机内进行。已有的工具卷按记录复用，不论叫什么名字。引擎名若已被引擎中的其它卷占用，返回 409 `volume_engine_exists`：不接管，也不删除该卷。
+- **丢失的卷**：记录存在而引擎中已没有该卷时，启动、重启、创建、重建、挂载和测量都返回 409 `volume_missing`，不交给 Docker 自动建一个空卷（创建容器、启动容器和运行辅助容器时，Docker 都会自动创建缺失的命名卷）。检查在每次引擎调用之前进行；创建时在规格锁内再查一次。遗留的 `<prefix>-ws-*` 若有记录而引擎卷已不存在，同样拒绝，不另建新工作区。删除记录仍可用：引擎卷已不存在时视为已删除。列出卷时尚不标记 `missing`，留待后续。
+- **删除 Box**：`deleteVolume=true` 只删除记录中所有者为本 Box（`ownerBoxId` 相等）、且没有其它规格挂载它的卷，并在删除卷之前先删容器。没有记录的引擎卷即使仍被本 Box 的规格挂着也不删除，按名字回退删除的分支已经移除。引擎拒绝删除时保留记录，并以 `volumeError` 返回原因。
+- **辅助容器**：`runHelper` 的容器不接入网络，根文件系统只读，`/tmp` 是 16 MiB 的 tmpfs，丢掉全部能力，只加回调用方列出的能力，禁止提权，内存 256 MiB、进程数 64，由引擎在退出后删除（`AutoRemove`）。命名卷以 `NoCopy` 挂载，否则 Docker 会把镜像里的 `/mnt` 复制进空卷，覆盖刚 chown 的属主。池探测以 `1000:1000` 运行、不带能力，因此 path 池的挂载根若对该用户不可搜索，会被判为不可达（`unreachable`）。
+- **暂缓**：文件 API（#9）、restic 检查点（#11）、存储节点代理（#28 / #29）、每卷配额。更长的 NAS 部署说明仍是 #30。
 
 ---
 
@@ -520,6 +552,8 @@ Event
 
 `run` 是将来「任务」层的挂载点，无需改事件模型。
 
+`source` 由服务端决定：REST 与 CLI 的调用都记为 `rest`，MCP 记为 `mcp`。客户端请求头 `X-Minibox-Client` 只是声明，不改变来源（决策 48）。`cli` 仍在枚举中，但只有在能验证 CLI 身份时才会使用。
+
 ### 8.3 分档与保留
 
 | 档位 | 内容 | 默认保留 |
@@ -570,17 +604,29 @@ Event
 
 第一版实现与上文的差异如下。
 
-- **分档**：目前由种类与结果决定。非拒绝的读取进入「活动」档（30 天）；写操作（含删除）与被拒绝的调用进入「审计」档（1 年）。§8.3 中的 exec、文件写入、会话发送与终端开闭属于「活动」档，但这些操作尚未存在。它们落地（#9、#14）时需要显式声明档位，否则会按写操作归入审计档。
-- **合并**：§8.3 的「文件读取按主体 + Box + 每分钟合并」推广为所有非拒绝的读取：同一主体、同一操作、同一对象、相同结果、同一分钟内合并为一条，带 `count`。被合并的事件不再推送。
+- **分档**：非拒绝的读取，以及 `exec.*`（含 `exec.run`、`exec.get`、`exec.output`、`exec.start`、`exec.finish`、`exec.killed`），进入「活动」档（30 天）。其它写操作（含删除）与被拒绝的调用进入「审计」档（1 年）。被拒绝的 exec 仍是审计档，因为拒绝先于操作名判断。会话发送与终端开闭按 §8.3 属于「活动」档，已实现（#14，见 §10.5）。接管与归还是写操作，进入「审计」档。文件写入仍未实现，文件 API 在 Volume #24 之后。
+- **合并**：同一主体、同一操作、同一对象、相同结果、同一分钟内，非拒绝的读取合并为一条，带 `count`。`exec.*` 不合并。被合并的事件不再推送。
 - **SSE**：`id` 即事件序号（`seq`）。新连接先收到 `retry: 3000`，之后只收到连接后记录的事件。`Last-Event-ID` 之后最多重放 500 条，超出则发送 `event: reset`（`{"after": N}`），客户端改用 `GET /api/events` 补齐缺口，再继续接收流。未读取期间排队超过 1000 条消息时同样重置，并丢弃已排队未发送的帧。心跳为每 15 秒一条 `: keep-alive` 注释。以浏览器会话发起的流会在该会话结束（登出、撤销或到期）时关闭，与终端一致。所有者的访问密钥不绑定会话。Agent 令牌的流使用同一套可见性，并在令牌吊销或到期时结束；没有 `box:read` 的令牌不能打开流。
 - **列表是操作，流不是**：`events.list` 通过操作注册表定义（REST 为 `GET /api/events`），因此出现在 OpenAPI 中，读取日志本身也会被记录。SSE 流不是 JSON 请求与响应，不进入注册表，也不在 OpenAPI 中，但沿用同样的鉴权与同源检查。
 - **范围钩子**：`visibilityOf()`（`src/events/scope.ts`）决定主体能看到哪些事件。所有者不加限制。带授权的令牌只看自己造成的事件，以及其 Box 范围内的事件；未改范围的 `admin` 预设看全部。没有授权的令牌、以及 `system` 等尚未定义规则的主体类型会抛出错误，即失败关闭。`box-self` 只看它自己的 Box，但目前不签发这种主体。
-- **来源与预留字段**：`ui` 保留给控制台自身的会话（#2）；`started` 保留给长任务（#16）；`parentId` 与 `ref` 已在模型中，待重建流程（#23）、exec（#9）等调用方填写。目前都不会产生。
+- **来源与预留字段**：`ui` 保留给控制台自身的会话（#2）。`started` 由长任务（#16，见 §8.10）和 `exec.start` 写入。长任务的终端事件用 `parentId` 指向这条 `started`，并填写 `ref.taskId`。`exec.start`、`exec.finish` 与 `exec.killed` 用 `parentId` 挂到产生它们的 `exec.run` 上，并填写 `ref.execId`；`exec.finish` 同时填写 `ref.outputRef`。重建流程（#23）可继续使用 `parentId`。
 - **脱敏**：精确匹配包含访问密钥，以及本进程内创建的 API 令牌。重启之后，形如 `mbx_` 再加至少 20 个字符的值仍会打码；设置页列表里的 12 字符前缀短于这个长度，不会被当成完整密钥。环境变量里的其他密钥仍待后续凭据存储。`detail` 超过 8 KB 时替换为 `{"truncated": true, "bytes": N}`。
 - **写入失败**：审计写入失败只记录 `audit.failed`，不影响操作结果。
 - **存储**：`events.db` 使用 WAL、`synchronous=NORMAL`、`busy_timeout=5000`，并以 `PRAGMA user_version` 记录迁移版本。
 - **总线**：`src/lib/bus.ts` 是类型化的进程内总线，主题在 `AppTopics` 中声明。#16、#17 增加主题即可复用，不必另起通道。
-- **暂缓**：JSONL 导出（§8.5）；「清除该 Box 全部历史」（§8.3）；按令牌或按 Box 关闭输出采集（§8.6）；exec 输出采集（#9）；终端与文件事件（#14、#9）；登录事件与按 IP 合并的登录失败（#2）；活动信号（§8.4，#17）；MCP `get_activity`（随 #9 的 MCP 服务）。令牌范围过滤与 API 令牌的已知密钥已在 #13 实现。
+- **暂缓**：JSONL 导出（§8.5）；「清除该 Box 全部历史」（§8.3）；按令牌或按 Box 关闭输出采集（§8.6）；文件事件（文件 API 在 Volume #24 之后）；tmux 会话录制（`pipe-pane`，§8.7）；登录事件与按 IP 合并的登录失败（#2）；活动信号（§8.4，#17）；MCP `get_activity`（随 #9 的 MCP 服务）；凭据存储中的其他已知值（#13）。
+
+### 8.10 实现说明（#16）
+
+长操作不再占用一条 HTTP 连接直到结束。
+
+- **受理**：`template.build` 与 `snapshot.create` 在校验、前置条件和解析通过后写入一条 `started` 审计事件（`ref.taskId`），立刻返回 `202` `{ "taskId" }`。领域结果（模板的 `{ ref }`、快照的 `{ snapshot }`）写在任务的 `result` 上，OpenAPI 用 `x-task-result` 标出。校验失败和互斥冲突不创建任务。
+- **进度**：日志和状态变更发布到总线主题 `task`，经 `GET /api/tasks/:id/events` 流出。这条 SSE 复用事件流的心跳、重放上限和 `reset`，不另建一套。它和事件流一样不进操作注册表。新连接不回放历史；界面先 `GET` 任务上保留的输出，再用 `after` 续上（浏览器的 `EventSource` 第一次请求带不上 `Last-Event-ID`）。
+- **存储**：`DATA_DIR/tasks.db`（WAL）。每个任务只保留最新 64 KB 日志，避免把构建输出写进一年期的审计库（审计明细还有 8 KB 上限）。
+- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`），每个 Box 同时只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。冲突返回 `409`，`details.taskId` 指向持有锁的任务：正在运行的任务，或已取消但后台工作尚未返回的任务。
+- **取消**：把任务标为 `cancelled` 并中止 `AbortSignal`。构建关掉引擎的输出流，并在连接关闭后才返回（引擎在此之前可能仍在构建）。`docker commit` 无法中途取消：开始前和返回后各检查一次；若提交已经完成，镜像留下，任务仍可以是 `cancelled`，不回滚。互斥锁在后台工作返回之后才释放，所以取消后，同一主机或同一 Box 的新任务要等到引擎调用结束才能开始，期间返回 `409`。
+- **重启**：启动时把上次仍为 `running` 的任务标为 `interrupted`，不续跑，并释放所有互斥锁（包括已取消但工作未返回的任务持有的锁，持锁的进程已经不在了）。关闭时同样中止、标记并释放。
+- **空闲超时**：Bun 的 `idleTimeout` 从请求开始计算，按 4 秒进位，写出的字节（包括 SSE 心跳）不会延长它。只有 `server.timeout(req, 0)` 能关掉它。因此心跳只对付反向代理的 `proxy_read_timeout`，对付不了 Bun 自己。构建改为 202 之后，那条会被掐断的长连接不复存在；进度流显式关掉计时。这一点在 Bun 1.4.3 上用 4 秒上限核实过：静默处理和每秒心跳的流都会在约 4 秒被断开，`timeout 0` 可以撑过更长的等待。仓库不保留测 Bun 内部的用例（那类用例靠时间阈值判断，在 CI 上不稳定）；`tests/long-work-routes.test.ts` 只断言 MiniBox 自己的保证：202 立即返回，进度流和事件流调用 `server.timeout(req, 0)`，普通请求保留 Bun 的上限。生产配置保持 60 秒。
 
 ---
 
@@ -593,7 +639,8 @@ Event
 ```text
 Token
 ├ scopes      box:read · box:write · box:delete · exec · files:read/write
-│             port:expose · checkpoint:create/restore · volume:attach · tool:install
+│             port:expose · checkpoint:create/restore · tool:install
+│             volume:read · volume:write · volume:attach · pool:admin
 ├ 资源范围     boxes:   created-by-me（默认）| 指定 ID/标签 | *
 │             volumes: 显式授予列表
 │             hosts:   允许的宿主机
@@ -613,7 +660,19 @@ Token
 
 - **`exec` 隐含该 Box 所有挂载卷的读写能力**，所以细分的 `files:*` 权限只对没有 `exec` 的令牌有意义。
 - **挂载某卷等于获得该卷的读权限**：创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权，否则 Agent 可以新建 Box 把别人的卷挂进去读走。
-
+- **写入也是权限（N5）**：读写挂载（`rw`）还需要 `volume:write`，只读的 `volume:attach` 不能让 Agent 写入别人的卷。新建卷需要 `volume:write`，不带 `mounts` 的新建 Box 会创建自己的工作区、主目录与缓存卷，因此也需要 `volume:write`。`box.update` 与 `box.rebuild` 的挂载变更同样检查。配额（§6.6）尚无后端，因此 rw 挂载暂不计入配额。
+- **存储池是管理员操作（N2）**：`pool.replace` 需要 `pool:admin`，`volume:write` 不能代替它。存储池决定之后所有新卷放在哪里，只有所有者可以修改。
+- **存储写入需要确认**：`create_volume`、`delete_volume` 与 `replace_pools` 没有 `confirm: true` 时不改动任何内容，返回 `409 confirmation_required` 与 `details.preview`；`attach_volume` 与 `detach_volume` 沿用重建的确认。确认防的是误操作和 Agent 的误调用，不替代权限：有写权限的主体仍可以带上 `confirm: true`（决策 49）。
+- **`volume:attach` 授权落地（#13）之前的过渡规则**：创建 Box、重建与挂载变更共用同一套检查（`src/services/attachments.ts` 的 `assertMountAllowed`），违反时在改动容器之前返回 `403 forbidden`，或 `409 volume_missing`。检查以 Volume 记录为准：引擎中带 MiniBox 标签、还没有记录的卷先被认领，再判断。
+  - 一律拒绝，不论卷是否存在、是否已挂载：`minibox-data`（保存访问密钥与会话）、池根卷 `<prefix>-pool-<pool>`、带 `<prefix>.internal` 标签的辅助卷，以及没有 MiniBox 标签的卷。
+  - 记录的所有者是另一个仍然存在的 Box（`owned`）时拒绝挂载，因此别的 Box 的工作区不能被挂走。独立记录（`independent`）可以被多个 Box 挂载，§6.2 的共享工具卷因此可用。所有者已删除的记录视为无主。
+  - 记录存在、或 Box 已经挂载的卷，若引擎中已不存在，返回 `409 volume_missing`，不会静默重建：Docker 在容器创建或启动时会自动建一个同名空卷，那就等于悄悄替换了数据。
+  - 不存在的名字可以新建为独立记录（引擎名为 `vol_…`，与 `volume.create` 一致），但以 `<prefix>-ws-` 或 `<prefix>-pool-` 开头的名字拒绝挂载，`vol_…` 形式的 id 没有记录时返回 `404 volume_not_found`。创建 Box 时的显式挂载只接受已有记录，因此优先使用已记录的卷。
+  - Box 已经挂载的卷不做标签与所有权检查，所以只改其它字段的重建照常进行（上面一律拒绝的卷除外）。
+  - 挂载变更（创建、`box.update`、`box.rebuild`）只检查新增或改变的挂载：卷、路径、模式都与现有挂载相同的，视为保留，不再检查。新挂载需要 `volume:attach`，读写挂载还需要 `volume:write`；尚无记录的新名字需要 `volume:write`，因为它会被新建为独立卷。`volume.attach` 按同一规则检查；`volume.detach` 检查被卸下的那只卷的 `volume:attach`。
+  - 不带 `mounts` 的新建 Box 需要 `volume:write`。若采用了遗留的 `<prefix>-ws-<名称>` 工作区，它按读写挂载检查（`volume:attach` 与 `volume:write`）；复用已有的共享工具卷，需要对它的 `volume:attach`。
+  - 网络只允许宿主机的 Box 网络（默认 `minibox-boxes`）和 Box 当前已在使用的网络，早于 Box 网络创建的 `bridge` Box 因此可以保持原样。`host`、`none` 与 `container:*` 始终拒绝。
+- **`/mcp` 目前认证使用主访问密钥**：在令牌（#13）实现之前，持有密钥的 MCP 客户端拥有全部所有者权限，包括以 root 执行 `exec`（非「严格」档）、`delete_box` 与 `rebuild_box`。README 与 `docs/agents.md` 必须写明这一点。错误的 Bearer 密钥与错误的登录密钥共享同一限流（`/api/`、`/mcp` 与终端）（决策 48）。
 ### 9.3 浏览器会话
 
 已实现（#2）。此前 Cookie 里直接存放原始 `ACCESS_KEY`，有效期 30 天，泄露即永久 root 且无法单独撤销。现在登录后签发随机会话令牌（32 字节，即 256 bit，来自 CSPRNG），Cookie 只保存该令牌；服务端在 `DATA_DIR/sessions.json` 中只保存其 SHA-256 哈希，以及创建时间、过期时间、最后活动时间、User-Agent 与地址，写入采用临时文件加重命名。登出立即作废；`ACCESS_KEY` 变更后，下次启动时全部会话失效（文件中保存的是密钥的 scrypt 校验值，用于检测变更）；绝对有效期由 `SESSION_TTL_DAYS` 决定（默认 30 天），`SESSION_IDLE_DAYS` 可选开启滑动过期；设置页提供会话列表，可撤销单个会话或「退出其他会话」。`Authorization: Bearer <ACCESS_KEY>` 保留，用于脚本。
@@ -653,6 +712,8 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - 打开 Agent 正在驱动的会话时**默认只读观察**；点「接管」才可输入。
 - 接管期间会话进入「人控制」状态：Agent 的 `session_send` 被拒绝并返回结构化错误 `taken_over`（提示稍后重试），`session_read` 仍可用，Agent 能看到人在做什么。
 - 手动「还给 Agent」，或空闲超时自动归还（可配置）。
+- 接管期间，Agent 的关闭（`DELETE` 与 `minibox session close`）同样被拒绝并返回 `taken_over`：会话保持存在，只有控制台能关闭被人持有的会话。
+- 锁的边界：它约束会话 API 与终端，不约束箱内的 `exec`。`exec` 以 `dev` 运行时与 tmux 服务器同属一个用户，可直接调用 `tmux send-keys` 或 `tmux kill-session`。因此接管是对 Agent 的协调信号，不是沙箱。要让锁也约束箱内命令，需要把 tmux 服务器与 exec 分到不同用户，或为会话另设权限，这不在 #14 的范围内。
 - 理由：不加锁时，人和 Agent 同时往同一个 tmux 敲字，输入会互相穿插，结果不可预测。
 
 ### 10.3 活动标签页取代日志页
@@ -662,6 +723,23 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 ### 10.4 终端健壮性
 
 心跳与超时清理；处理 `ws.send` 的返回值实现背压；退出时确保终止对应 exec 进程；可选保存最近 N KB 输出用于重连回放。WebSocket 升级需要 Origin 校验。
+
+### 10.5 实现说明（#14）
+
+第一版实现与上文的差异如下。
+
+- **tmux 会话**：每个会话是 Box 内 `dev` 用户的一个 tmux 会话（`tmux -u`，名称 1 到 32 位，字母或数字开头，可含 `-` 与 `_`）。tmux 的每条命令都是一次短的 `dev` exec，服务端不持有会话进程。发起方（`agent` 或 `human`）记在 tmux 的用户选项 `@minibox-origin` 中，重启后仍可读到。
+- **控制方与接管只在内存中**：控制方（`controller`）与接管状态不落盘。重启后，每个会话的控制方回到其发起方的默认值：Agent 发起的会话归 Agent，控制台发起的会话归人。
+- **空闲归还**：接管后超过 `SESSION_TAKEOVER_IDLE_SEC`（默认 300 秒）没有人的输入，会话自动归还 Agent。`0` 关闭自动归还，接管持续到手动归还，即使页面已经关闭。计时只针对接管：控制台发起的会话不因空闲而归还。
+- **读取游标**：`session_read` 的游标保存在内存中，只接续最新的一次读取。过期的游标，以及重启之后的第一次读取，返回 `reset: true` 并给出当前窗口。
+- **只读的 Bearer 终端**：`/api/boxes/:id/terminal` 的 Bearer 调用者只能读取输出。输入与接管、归还等控制帧被拒绝，返回 `forbidden` 错误帧（`terminal_read_only`）。这是相对早期版本的行为变化：早期的终端对 Bearer 调用者可以输入。
+- **箱内终止**：终端的附着进程（`tmux attach-session`）与其它 exec 一样经由 §10.4 的包装脚本结束。WebSocket 关闭（包括异常断开）时在箱内终止附着进程，tmux 会话保持运行。
+- **心跳与背压**：Bun 的 WebSocket `idleTimeout` 设为 30 秒，静默的连接被关闭。`ws.send` 返回背压时暂停读取 tmux 输出，`drain` 时恢复；未读的数据超过 4 MiB 时关闭连接（`closeOnBackpressureLimit`），不再无限缓冲。
+- **事件**：`session.start`、`session.send`、`session.close`、`terminal.open` 与 `terminal.close` 属于活动档。`session.takeover` 与 `session.release` 是写操作，进入审计档。`session.send` 只记录按键数与字节数，`terminal.close` 记录两个方向的字节数与时长。键入的内容从不记录。
+- **会话身份**：一个会话的身份是 tmux 的会话 id（如 `$3`）与创建时间，不是 `@minibox-origin` 选项。Agent 改写该选项不会重置接管。同名的新会话（id 或创建时间不同）是另一个会话，从其发起方的默认控制方重新开始。
+- **资源上限**：每个 Box 最多 16 个 tmux 会话，启动第 17 个时返回 `429 too_many_requests`；每个会话最多 8 个同时打开的终端（含正在启动的），超过时返回同样的错误码；其中 Bearer 终端最多 6 个（`VIEWER_ATTACHES_MAX`），其余 2 个留给控制台，因此 Bearer 终端无法把人挡在门外。`session_read` 的 `capture-pane` 只回看 4000 行（`READ_LINES_MAX` 的两倍），而不是整个回滚缓冲。每条 tmux 命令的输出最多保留最新的 4 MiB，超出部分从完整的一行开始截取；若其中没有换行，则从完整的字符开始，不留下 `U+FFFD`。这防止异常大的输出（例如没有换行的超长行）耗尽内存。
+- **只读的 Bearer 附着**：Bearer 调用者以 `tmux attach-session -r -f ignore-size` 附着，即只读客户端，且忽略窗口尺寸；服务端同时丢弃它发来的 `resize` 消息。`-f ignore-size` 需要 tmux 3.2 或更高版本：附着前先执行 `tmux -V`，更旧的 tmux 返回 `409 conflict` 并说明版本，而不是让 tmux 的通用用法错误原样返回。控制台（浏览器会话）仍以可写方式附着，输入是否送达由接管锁决定。
+- **暂缓**：`pipe-pane` 录制（§8.7）与服务端回放缓冲（§10.4）不在 #14 的验收标准之内，尚未实现。重连时由 tmux 重绘屏幕。
 
 ---
 
@@ -794,7 +872,7 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 3. 各类对象体验一致：列表、详情、活动、权限。
 4. 改动前先说清影响：热更新立即生效，需要重建的变更先暂存后统一确认。
 
-### 13.2 导航（6 项）
+### 13.2 导航（7 项）
 
 | 导航 | 内容 |
 | --- | --- |
@@ -804,6 +882,7 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 | 库 | 模板、工具目录 |
 | 活动 | 全局审计时间线，可按 Box、令牌、操作、状态过滤 |
 | 设置 | 宿主机 · 令牌与会话 · 默认值 · 备份 · 安全与审计 · 系统 |
+| 关于 | 版本与运行信息，项目链接（README、文档、更新日志、问题反馈、许可证） |
 
 宿主机筛选器只在配置了不止一台宿主机时才出现在顶栏；宿主机管理在「设置 → 宿主机」。
 
@@ -851,6 +930,7 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 ### 13.7 存储页
 
 - **Volume 表**：名称、大小、已挂载的 Box（带读写标签）、拥有者（随 Box / 独立）、所在存储池与能力、最近检查点、状态。没有任何 Box 挂载的标「未挂载」并给出清理建议。操作：浏览文件、快照、挂载到 Box、删除。
+- **确认流程（已实现）**：保存存储池前先请求预览，界面列出保存后的池、新增与移除的池，确认后带 `confirm: true` 重发。删除卷前先确认，然后请求 `DELETE /api/volumes/:id?confirm=true`。挂载与卸载显示与 §13.6 相同的重建预览，确认后才应用。
 - **Checkpoint**：按 Box 的时间线分组，显示时间、标签、手动/自动/置顶、包含的内容和大小。操作：派生新 Box、回滚、置顶、删除。
 
 ### 13.8 首次引导
@@ -880,6 +960,10 @@ MiniBox 的前提是**一个可信用户在自己的机器上使用**。Docker S
 | `restart.sh` 的 `chmod 666 docker.sock` | 改为把用户加入 `docker` 组 |
 | 镜像以 root 运行 | 挂载 Socket 的代价；文档给出 socket proxy 或 rootless 方案 |
 | 自动生成密钥会覆盖整个 `.env` | 自动生成的密钥写入 `DATA_DIR/access_key`（权限 600），**MiniBox 不再写 `.env`**；读取优先级为进程环境变量 > `.env` > `DATA_DIR/access_key`；已有部署里写在 `.env` 的密钥照常生效 |
+| `/mcp` 只认主访问密钥，错误的 Bearer 密钥不计入限流，`rebuild_box` 在默认工具集中 | 错误的 Bearer 密钥计入登录限流（决策 48）；`/mcp` 仍用主密钥，直到令牌（#13）实现，文档写明其权限范围；`rebuild_box` 移入非默认的 `rebuild` 工具集（决策 45） |
+| exec 终止时用宿主机 `SIGKILL` 发给 Docker 报告的宿主机 pid，可能误杀无关进程（pid 复用），或因 uid 不同而失败却被吞掉 | 终止在箱内完成，以包装 shell 命令行中的随机令牌找到进程树（标记文件只作线索），标准与宽松档位以 root 执行，失败返回 `502` 并保持 `running`，超时终止按递增间隔重试（决策 44） |
+| 后台 exec 没有上限；结束后的 `durationMs` 仍随时间增长；`x-minibox-client` 头可以伪造审计来源 | 后台 exec 每箱 8 个、全局 64 个，超限返回 `429` 且不唤醒 Box（决策 47）；结束时冻结 `durationMs`；审计来源由服务端决定（决策 48） |
+| 「严格」档位下 exec 可以用 `root` 运行 | 「严格」档位只允许 `dev` 或 `1000`，其他用户返回 `403`；其他档位的 `root` 运行在审计中标记为 `privileged`（决策 48） |
 
 ### 升级注意事项：隧道无需改动，改写 Host 的反向代理需要 ALLOWED_ORIGINS
 
@@ -901,13 +985,13 @@ OpenTunnel 已在线上实测（tcpdump 验证）：隧道保留 `Host` 与 `Ori
 | **严格** | 是 | 已安装，但无法提权 | `ALL`，不加回任何能力 | 不需要提权的环境；系统包只能放进模板（与「系统包归模板」一致）。`ping` 也不可用（没有 `NET_RAW`） |
 | **宽松** | 否 | 有（无密码，仅限 Box 内） | 不做 `CapDrop`，保留引擎默认能力集（即标准的 11 项再加 `MKNOD`、`SETPCAP`、`SYS_CHROOT`） | 其它档位拦截了工具时手动选用，默认不用 |
 
-三个档位都默认带 `PidsLimit`（`BOX_PIDS_LIMIT`，默认 1024）与 ulimit（core 为 0，nofile 为 65536），并放在独立网络 `minibox-boxes` 上，其中的 Box 之间不能互相访问。档位是规格里的 `securityProfile` 字段（API 中为 `profile`），属于「重建」类变更：在重建流程（#23）落地之前，已有 Box 不能改档位，需要新建。
+三个档位都默认带 `PidsLimit`（`BOX_PIDS_LIMIT`，默认 1024）与 ulimit（core 为 0，nofile 为 65536），并放在独立网络 `minibox-boxes` 上，其中的 Box 之间不能互相访问。档位是规格里的 `securityProfile` 字段（API 中为 `profile`），属于「重建」类变更：改档位走 `POST /api/boxes/:id/rebuild`，未带 `confirm: true` 时返回预览，不在原地更新里生效。
 
 **暂缓：出站策略与磁盘配额。** 本阶段不为 Box 实现出站（egress）策略：Box 的出站流量经 Docker 的普通 NAT 转发，不做过滤，也能访问宿主机在网桥网关上提供的服务。磁盘配额依赖存储节点代理，同样暂缓。两者都不随 #5 交付，动手前需要单独评估范围。
 
 另有两条贯穿全文的约束：
 
-- `exec` 隐含该 Box 所有挂载卷的读写能力；挂载某卷需要 `volume:attach` 授权（见 [9.2](#92-必须写进文档与测试的安全约束)）。
+- `exec` 隐含该 Box 所有挂载卷的读写能力；挂载某卷需要 `volume:attach` 授权，读写挂载还需要 `volume:write`（见 [9.2](#92-必须写进文档与测试的安全约束)）。
 - 共享可写卷是横向移动通道：一个被攻破的 Box 可以改 `.bashrc`、git hook 或脚本，污染另一个 Box。默认可读写是产品决策，但界面要给出提示，工具卷默认只读。
 
 ---
@@ -991,7 +1075,7 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | Agent 程序的实现语言与体积（后移） | 倾向与控制端同一个 TypeScript/Bun 代码库（`bun build --compile`），体积是否可接受需评估；随 #28 一并评估 |
 | 存储节点代理保存 restic 密钥的方式（后移） | 本地保存（权限 600）还是由控制端按操作传入 |
 | 辅助容器使用什么镜像 | 文件 API 的列目录需要 `find` 等工具，可复用基础模板或使用精简镜像；需权衡体积与是否需要预先构建 |
-| 模板构建超过 60 秒是否真的被 `idleTimeout` 断开 | 需要用一次超过 60 秒的构建复现并记录结论 |
+| 模板构建超过 60 秒是否真的被 `idleTimeout` 断开 | 会。Bun 从请求开始计时，写出的字节不延长它；4 秒一档，故 60 秒同样会断。在 Bun 1.4.3 上以 4 秒上限核实过。202 立即返回，进度流和事件流调用 `server.timeout(req, 0)`（`tests/long-work-routes.test.ts`）。见 [§8.10](#810-实现说明16) |
 | 端口预览的路径前缀与子域名两种模式 | 路径模式下很多前端框架有 base path 问题，倾向优先子域名模式；预览页与控制台同源的隔离方案需细化（issue #10） |
 | 各 NAS 型号的 NFS 权限与 squash 选项 | 实现前按具体型号核对 |
 
@@ -1042,8 +1126,15 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | 39 | 阶段 1 拆分 | 拆为 8 个 PR（模板 / 加固 A / 加固 B / 规格 / 事件 / 任务与总线 / 变更与重建 / 令牌），见 [15](#15-实施路线) |
 | 40 | 阶段 0 顺序 | 先 #1 #3 #4 的现成代码整理为第一个 PR，再并行 #32 #6 #18，最后 #22；第一个 PR 合并前，改写 `Host` 的反向代理需先配好 `ALLOWED_ORIGINS` 并实测登录（OpenTunnel 已实测，无需改动，见 [15](#15-实施路线)） |
 | 41 | Box 加固（#5） | 新增「宽松」档（引擎默认能力集，不做 `CapDrop`，有 `sudo`）；「严格」档的 `sudo` 行为见第 37 条。出站策略与磁盘配额暂缓，不随 #5 交付。已有 Box 保留创建时的网络与配置，早于此功能创建的 Box 仍在默认 `bridge` 网络上，不强制重建 |
-| 42 | 认领不改名（D6） | 认领已有容器时不 `docker rename`，容器名保持创建时的 `minibox-<名称>`。改成 `minibox-<id>` 只在以后的重建里做。工作区属主修正（`chown`）留给 #24，认领不自动执行 |
-| 43 | 重启策略 `no`（D8） | 规格中的重启策略恒为 `no`，由协调器按期望状态 `running` 或 `stopped` 启动或停止，不让引擎自行重启。漂移比较 `inspect` 与规格，不比较标签哈希；资源、挂载和镜像的漂移只报告，不在这一步自动改回。规格只保留当前版本号，最近 N 个版本的历史留到重建那一步 |
+| 42 | 认领不改名（D6） | 认领已有容器时不 `docker rename`，容器名保持创建时的 `minibox-<名称>`。改成 `minibox-<id>` 在重建时做。工作区属主修正（`chown`）留给 #24，认领不自动执行 |
+| 43 | 重启策略 `no`（D8） | 规格中的重启策略恒为 `no`，由协调器按期望状态 `running` 或 `stopped` 启动或停止，不让引擎自行重启。漂移比较 `inspect` 与规格，不比较标签哈希；资源、挂载、网络和镜像的漂移只报告，不在这一步自动改回。规格保留最近 20 个版本，原地更新和重建都会写入；失败的重建回滚到上一版 |
+| 44 | exec 进程树的终止位置 | 终止在箱内完成，宿主机不对 Docker 报告的宿主机 pid 发信号。「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。进程树由包装 shell 命令行中的随机令牌找到，标记文件只作线索。失败时 exec 保持 `running`，调用返回 `502`，可以重试；超时的终止按递增间隔重试。（原先的宿主机 `SIGKILL` 在 uid 不同时失败，且失败被吞掉；原先以 exec 用户在箱内终止时，setuid 子进程改为 root 后无法被结束，标记文件也可被改写。） |
+| 45 | `rebuild_box` 工具集 | `rebuild_box` 不在 27 个工具的 `core` 中，也不进入默认工具集。它放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`），仍需 `confirm: true`。默认工具集因此是 9 个工具，而不是 10 个 |
+| 46 | exec 唤醒与 revision | 保留 `revision` 加 1。唤醒把期望状态改为 `running`，期望状态属于规格（§5.1、§5.2、§5.7、§5.9），每次修改都加 1。若唤醒不改 `revision`，期望状态的变化就不在 `If-Match` 的保护之内。客户端唤醒后要重新读取 `revision`，文档与 MCP 说明都写明这一点 |
+| 47 | exec 资源上限 | 前台 `timeoutSec` 最多 55 秒（服务器空闲超时是 60 秒）；后台最多 3600 秒；后台 exec 每箱 8 个、全局 64 个。超限返回 `429`，并在唤醒 Box 之前拒绝 |
+| 48 | MCP 认证与审计 | `/mcp` 暂用主访问密钥，文档写明它拥有完全的所有者权限，直到令牌（#13）实现。错误的 Bearer 密钥计入登录限流。审计来源只由服务端决定：REST 与 CLI 记为 `rest`，MCP 记为 `mcp`。「严格」档位的 exec 只允许 `dev` 或 `1000`；其他档位允许 `root`，审计标记 `privileged` |
+| 49 | 存储写入确认 | `create_volume`、`delete_volume`、`replace_pools` 没有 `confirm: true` 时不改动任何内容，返回 `409 confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 沿用重建的确认。`delete_volume` 对已挂载的卷直接返回 `volume_mounted`，不生成预览。`measure_volume` 只刷新缓存的大小，不加确认。确认是防误操作的闸，不是权限；权限仍由 `volume:*` 与 `pool:admin` 决定 |
+| 50 | 存储工具集 | 卷与存储池工具放在非默认的 `storage` 工具集（`/mcp?toolsets=storage`），共 9 个。MCP 错误结果带上 `details`，代理因此能读到 `details.preview`。挂载与卸载经 `rebuildBox`，适用与 `rebuild_box` 相同的记录规则。设计目录中 `storage` 行列出的检查点工具仍未实现 |
 
 ---
 

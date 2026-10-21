@@ -155,6 +155,39 @@ describe("EventStore", () => {
     expect(s.list({}, { limit: 10 }).events.map((e) => e.count)).toEqual([1, 1, 2]);
   });
 
+  test("exec events stay on the activity tier and are not merged", () => {
+    const s = open();
+    const finish = () => input({ op: "exec.finish", kind: "write", status: "ok", summary: "Exec finished: alpha" });
+    expect(tierOf(finish())).toBe("activity");
+    expect(tierOf(input({ op: "exec.start", kind: "write", status: "started" }))).toBe("activity");
+    expect(tierOf(input({ op: "exec.run", status: "denied" }))).toBe("audit");
+    expect(s.append(finish()).merged).toBe(false);
+    expect(s.append(finish()).merged).toBe(false);
+    expect(s.list({ op: "exec.finish" }, { limit: 10 }).events).toHaveLength(2);
+    expect(s.append(read()).merged).toBe(false);
+    expect(s.append(read()).merged).toBe(true);
+  });
+
+  test("session sends, terminal and container events are activity and never merged", () => {
+    const s = open();
+    const activity = [
+      "session.start",
+      "session.send",
+      "session.close",
+      "terminal.open",
+      "terminal.close",
+      "container.oom",
+    ];
+    for (const op of activity) {
+      expect({ op, tier: tierOf(input({ op, kind: "write", status: "ok" })) }).toEqual({ op, tier: "activity" });
+    }
+    expect(tierOf(input({ op: "session.takeover", kind: "write", status: "ok" }))).toBe("audit");
+    expect(tierOf(input({ op: "session.release", kind: "write", status: "ok" }))).toBe("audit");
+    expect(tierOf(input({ op: "session.send", kind: "write", status: "denied" }))).toBe("audit");
+    expect(s.append(input({ op: "session.send", kind: "write", status: "ok" })).merged).toBe(false);
+    expect(s.append(input({ op: "session.send", kind: "write", status: "ok" })).merged).toBe(false);
+  });
+
   test("denied operations and changes are audited one by one, never merged", () => {
     const s = open();
     expect(tierOf(denied())).toBe("audit");

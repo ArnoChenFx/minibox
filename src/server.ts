@@ -2,48 +2,64 @@ import type { Server } from "bun";
 
 import { type App, createApp } from "./app";
 import {
-  authenticate,
+  type Caller,
+  callerGate,
   clearLegacyKeyCookie,
   clientAddress,
   isSecureRequest,
   isWeakAccessKey,
   MIN_ACCESS_KEY_LENGTH,
   proxyHeaderWarner,
+  resolveCaller,
+  sessionCaller,
 } from "./auth";
 import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
 import { guardRequest } from "./guard";
-import { AppError } from "./lib/errors";
+import { AppError, badRequest } from "./lib/errors";
 import { errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
+import { handleMcp } from "./mcp/http";
 import { routes } from "./routes";
-import { matchRoute } from "./routes/router";
+import { matchRoute, routeAllows } from "./routes/router";
 import { getBox } from "./services/boxes";
 import { reconcileHost } from "./services/reconcile";
 import { serveFile } from "./static";
-import { canExec, viewFromBox } from "./tokens/model";
+import { isSessionName } from "./tmux/format";
+import { boxVisible, scopeAllowed, viewOfBox } from "./tokens/model";
 import { resolveVersion } from "./version";
-import { type TerminalData, terminalHandlers } from "./ws/terminal";
+import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData, terminalHandlers } from "./ws/terminal";
 
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
 const PROXY_HINT =
   "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
+/** The address a request is counted under: the TCP peer, or the proxy's entry when TRUST_PROXY is set. */
+function addressOf(app: App, req: Request, server: Pick<Server<unknown>, "requestIP">): string {
+  return clientAddress(req, server.requestIP(req)?.address, app.cfg.trustProxy);
+}
+
+/**
+ * The caller of an API or terminal request. A Bearer header is the access key or an agent token, and a wrong one
+ * counts toward the login limit. Without one, the session cookie decides.
+ */
+function callerOf(app: App, req: Request, server: Pick<Server<unknown>, "requestIP">): Promise<Caller | null> {
+  return resolveCaller(req, callerGate(app), addressOf(app, req, server));
+}
+
 async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
   const m = matchRoute(routes, req.method, url.pathname);
   if (m === null) throw new AppError(404, "not_found", msg("api_not_found"));
   if (m === "method_not_allowed") throw new AppError(405, "method_not_allowed", msg("method_not_allowed"));
-  const caller = authenticate(
-    req,
-    app.cfg.accessKey,
-    app.sessions,
-    app.tokens,
-    clientAddress(req, server.requestIP(req)?.address, app.cfg.trustProxy),
-  );
-  if (!m.route.public && caller === null) {
-    throw new AppError(401, "unauthorized", msg("unauthorized"));
+  // Public routes judge the cookie only, so a stray Bearer header cannot count against a login.
+  const caller = m.route.public ? sessionCaller(req, app.sessions) : await callerOf(app, req, server);
+  if (!m.route.public) {
+    if (caller === null) throw new AppError(401, "unauthorized", msg("unauthorized"));
+    if (!routeAllows(m.route, caller.principal)) {
+      throw new AppError(403, "forbidden", msg("operation_forbidden", { op: `${req.method} ${url.pathname}` }));
+    }
   }
   return m.route.handler({
     app,
@@ -61,14 +77,7 @@ const redirect = (location: string) => new Response(null, { status: 302, headers
 
 async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
   const path = url.pathname;
-  const authed =
-    authenticate(
-      req,
-      app.cfg.accessKey,
-      app.sessions,
-      app.tokens,
-      clientAddress(req, undefined, app.cfg.trustProxy),
-    ) !== null;
+  const authed = sessionCaller(req, app.sessions) !== null;
   if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) {
     const file = await serveFile(app.cfg.webDir, path === "/favicon.ico" ? "/assets/favicon-32.png" : path);
     if (file) return file;
@@ -89,13 +98,16 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
 }
 
 export function startServer(app: App): Server<TerminalData> {
-  const term = terminalHandlers(app.sessions, app.tokens);
+  const term = terminalHandlers({ sessions: app.sessions, tokens: app.tokens, terminals: app.terminals });
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
   );
   return Bun.serve<TerminalData>({
     hostname: app.cfg.host,
     port: app.cfg.port,
+    // Bun's idle timer is a hard cap measured from the start of the request, in 4-second steps, and writes do not
+    // extend it. A handler that stays silent for longer than this is reset. Long work returns 202 and keeps running;
+    // progress streams call server.timeout(req, 0), which disables the cap (tests/long-work-routes.test.ts).
     idleTimeout: 60,
     async fetch(req, server) {
       warnIgnoredProxyHeaders(req);
@@ -106,38 +118,43 @@ export function startServer(app: App): Server<TerminalData> {
         guardRequest(req, app.cfg);
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-          const caller = authenticate(
-            req,
-            app.cfg.accessKey,
-            app.sessions,
-            app.tokens,
-            clientAddress(req, server.requestIP(req)?.address, app.cfg.trustProxy),
-          );
+          const caller = await callerOf(app, req, server);
           if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
           const host = app.hosts.get();
           const box = await getBox(host, decodeURIComponent(tm[1] ?? ""));
-          if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
-          if (!canExec(caller.principal, viewFromBox(box))) {
-            throw new AppError(403, "forbidden", msg("operation_forbidden", { op: "exec" }));
+          const principal = caller.principal;
+          if (
+            principal.type === "token" &&
+            (!scopeAllowed(principal.grants, "box:session") || !boxVisible(principal, viewOfBox(box, host.host.id)))
+          ) {
+            throw new AppError(403, "forbidden", msg("box_out_of_scope"));
           }
+          if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
+          const name = url.searchParams.get("session") ?? "";
+          if (!isSessionName(name)) throw badRequest(msg("session_name_invalid"), { field: "session" });
           const data: TerminalData = {
             boxId: box.id,
+            box,
             host,
+            name,
+            source: caller.sessionId ? "ui" : "rest",
             sessionId: caller.sessionId,
-            tokenId: caller.principal.type === "token" ? caller.principal.id : null,
+            principal,
           };
           if (server.upgrade(req, { data })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
-        res = url.pathname.startsWith("/api/")
-          ? await handleApi(app, req, url, server)
-          : await handlePage(app, req, url);
+        if (url.pathname === "/mcp") res = await handleMcp(app, req, url, addressOf(app, req, server));
+        else
+          res = url.pathname.startsWith("/api/")
+            ? await handleApi(app, req, url, server)
+            : await handlePage(app, req, url);
       } catch (e) {
         res = errorResponse(e);
         if (res.status >= 500)
           log.error("request.failed", { method: req.method, path: url.pathname, error: String(e) });
       }
-      if (url.pathname.startsWith("/api/") && url.pathname !== "/api/host/metrics") {
+      if ((url.pathname.startsWith("/api/") && url.pathname !== "/api/host/metrics") || url.pathname === "/mcp") {
         log.debug("request", {
           method: req.method,
           path: url.pathname,
@@ -150,8 +167,11 @@ export function startServer(app: App): Server<TerminalData> {
     websocket: {
       open: term.open,
       message: term.message,
+      drain: term.drain,
       close: term.close,
-      idleTimeout: 0,
+      idleTimeout: HEARTBEAT_SEC,
+      backpressureLimit: BACKPRESSURE_LIMIT_BYTES,
+      closeOnBackpressureLimit: true,
     },
   });
 }
@@ -191,8 +211,10 @@ async function boot(): Promise<void> {
       log.error("box.reconcile_failed", { host: host.host.id, error: String(e) });
     }
   }
+  for (const host of app.hosts.list()) host.sampler.start();
   app.monitor.start();
   app.retention.start();
+  app.containers.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
 
@@ -202,13 +224,16 @@ async function boot(): Promise<void> {
     stopping = true;
     log.info("server.stopping", { signal });
     app.monitor.stop();
+    for (const host of app.hosts.list()) host.sampler.stop();
     app.retention.stop();
+    app.containers.stop();
     app.throttle.stop();
     app.sessions.stop();
-    app.tokens.stop();
+    app.terminals.shutdown();
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);
+    await app.tasks.shutdown();
     app.events.close();
     log.info("server.stopped");
     process.exit(0);

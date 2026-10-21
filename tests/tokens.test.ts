@@ -7,9 +7,7 @@ import type { App } from "../src/app";
 import type { HostMetrics } from "../src/host/metrics";
 import { AppError } from "../src/lib/errors";
 import { sha256 } from "../src/lib/hash";
-import { OPERATIONS } from "../src/operations/registry";
 import { startServer } from "../src/server";
-import { authorizeOperation } from "../src/tokens/authorize";
 import { canExec, compileToken, fileAccess, type TokenGrants } from "../src/tokens/model";
 import { TokenStore } from "../src/tokens/store";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
@@ -74,6 +72,15 @@ function start(): Running {
   return started;
 }
 
+async function finishedTask(base: string, taskId: string) {
+  for (;;) {
+    const view = await fetch(`${base}/api/tasks/${taskId}`, { headers: ownerHeaders() });
+    const json = (await view.json()) as { status: string; result?: { snapshot?: { ref?: string } } };
+    if (json.status !== "running") return json;
+    await Bun.sleep(5);
+  }
+}
+
 const ownerHeaders = (extra: Record<string, string> = {}) => ({
   authorization: `Bearer ${TEST_KEY}`,
   ...extra,
@@ -94,9 +101,12 @@ async function call(
   });
   const json = (await res.json()) as {
     token?: string;
+    volume?: { id: string };
+    taskId?: string;
+    result?: { snapshot?: { ref?: string } };
     record?: TokenRecord;
     tokens?: TokenRecord[];
-    box?: { id: string; name: string; ttlSec: number | null; createdBy: string };
+    box?: { id: string; boxId: string; name: string; ttlSec: number | null; createdBy: string };
     boxes?: { name: string; createdBy: string }[];
     snapshots?: { ref: string; source: string | null }[];
     deletedBoxes?: string[];
@@ -211,7 +221,7 @@ describe("presets and file access", () => {
     const readonly = compileToken({ name: "r", preset: "readonly" });
     expect(readonly.scopes).toEqual(["box:read", "files:read"]);
     expect(readonly.boxes).toEqual({ type: "created-by-me" });
-    expect(readonly.volumes).toEqual({ type: "list", names: [] });
+    expect(readonly.volumes).toEqual({ type: "list", ids: [] });
     expect(readonly.audit).toBe("scoped");
 
     const sandbox = compileToken({ name: "s", preset: "sandboxed-agent" });
@@ -225,7 +235,7 @@ describe("presets and file access", () => {
       rateLimit: 60,
     });
 
-    const named = compileToken({ name: "v", preset: "readonly", volumes: { type: "list", names: ["data"] } });
+    const named = compileToken({ name: "v", preset: "readonly", volumes: { type: "list", ids: ["vol_data"] } });
     expect(named.scopes).toContain("volume:attach");
 
     const admin = compileToken({ name: "a", preset: "admin" });
@@ -238,7 +248,7 @@ describe("presets and file access", () => {
   test("exec implies read and write on every mount of a visible box; files:* applies only without exec", () => {
     const exec = grantsOf(compileToken({ name: "e", scopes: ["exec"] }));
     const reader = grantsOf(compileToken({ name: "f", scopes: ["files:read"] }));
-    const mine = { boxId: "bx_1", name: "mine", createdBy: "tok_1", labels: {} };
+    const mine = { boxId: "bx_1", name: "mine", createdBy: "tok_1", labels: {}, hostId: "local" };
     const execPrincipal = { type: "token" as const, id: "tok_1", grants: exec };
     expect(fileAccess(execPrincipal, mine)).toEqual({ read: true, write: true });
     expect(canExec(execPrincipal, mine)).toBe(true);
@@ -291,8 +301,8 @@ describe("HTTP tokens", () => {
       token: secret,
       body: { name: "forever", cpus: 1, memoryMb: 256, ttlSec: null },
     });
-    expect(clearTtl.status).toBe(403);
-    expect(clearTtl.json.error?.key).toBe("quota_ttl");
+    expect(clearTtl.status).toBe(201);
+    expect(clearTtl.json.box?.ttlSec).toBe(14_400);
 
     const minted = await call(base, "/api/tokens", { token: secret, body: { name: "child", preset: "admin" } });
     expect(minted.status).toBe(403);
@@ -307,7 +317,7 @@ describe("HTTP tokens", () => {
 
     const revoked = await call(base, `/api/tokens/${id}?deleteCreated=true`, { method: "DELETE" });
     expect(revoked.status).toBe(200);
-    expect(revoked.json.deletedBoxes).toEqual(["mine"]);
+    expect([...(revoked.json.deletedBoxes ?? [])].toSorted()).toEqual(["forever", "mine"]);
     const revokedToken = revoked.json as { token?: TokenRecord };
     expect(revokedToken.token?.revokedAt).toEqual(expect.any(String));
     const after = await call(base, "/api/boxes", { token: secret });
@@ -321,6 +331,9 @@ describe("HTTP tokens", () => {
   test("quotas count the token's boxes, and a missing volume:attach cannot reuse a volume", async () => {
     const { runtime, base } = start();
     runtime.volumes.set("mbtest-ws-reuse", { name: "mbtest-ws-reuse", labels: {} });
+    const shared = await call(base, "/api/volumes", { body: { name: "shared", confirm: true } });
+    expect(shared.status).toBe(201);
+    const sharedId = shared.json.volume?.id ?? "";
     const created = await call(base, "/api/tokens", {
       body: {
         name: "tight",
@@ -351,15 +364,15 @@ describe("HTTP tokens", () => {
 
     const reused = await call(base, "/api/boxes", { token: secret, body: { name: "reuse", cpus: 1, memoryMb: 256 } });
     expect(reused.status).toBe(403);
-    expect(reused.json.error?.key).toBe("volume_not_granted");
+    expect(reused.json.error?.key).toBe("volume_attach_forbidden");
 
     const attached = await call(base, "/api/tokens", {
-      body: { name: "mount", preset: "operator", volumes: ["mbtest-ws-reuse"] },
+      body: { name: "mount", preset: "operator", volumes: [sharedId] },
     });
     expect(attached.json.record?.scopes).toContain("volume:attach");
     const ok = await call(base, "/api/boxes", {
       token: attached.json.token,
-      body: { name: "reuse", cpus: 1, memoryMb: 256 },
+      body: { name: "reuse", cpus: 1, memoryMb: 256, mounts: [{ volume: sharedId, path: "/data", mode: "ro" }] },
     });
     expect(ok.status).toBe(201);
 
@@ -382,43 +395,36 @@ describe("HTTP tokens", () => {
   });
 
   test("an explicit mount is refused without volume:attach, and granted when the volume is named", async () => {
-    const { app } = start();
-    const update = OPERATIONS.find((op) => op.name === "box.update");
-    if (!update) throw new Error("box.update missing");
-    const denied = app.tokens.create(compileToken({ name: "plain", scopes: ["box:write"] }), "owner");
-    const allowed = app.tokens.create(
-      compileToken({ name: "vols", scopes: ["box:write"], volumes: { type: "list", names: ["foreign"] } }),
-      "owner",
-    );
-    const principal = app.tokens.authenticate(denied.secret, "127.0.0.1");
-    const granted = app.tokens.authenticate(allowed.secret, "127.0.0.1");
-    if (!principal || !granted) throw new Error("token did not authenticate");
-    const missing = await rejectionOf(
-      authorizeOperation({
-        principal,
-        operation: update,
-        phase: "access",
-        host: app.hosts.get(),
-        input: { mounts: [{ volume: "foreign" }], volumes: ["other"], volume: "third" },
-      }),
-    );
-    expect(missing).toBeInstanceOf(AppError);
-    expect((missing as AppError).key).toBe("volume_not_granted");
-    expect(
-      await authorizeOperation({
-        principal: granted,
-        operation: update,
-        phase: "access",
-        host: app.hosts.get(),
-        input: { mounts: [{ volume: "foreign" }] },
-      }),
-    ).toBe(true);
+    const { base } = start();
+    const made = await call(base, "/api/volumes", { body: { name: "notes", confirm: true } });
+    expect(made.status).toBe(201);
+    const volumeId = made.json.volume?.id ?? "";
+    const plain = await call(base, "/api/tokens", { body: { name: "plain", scopes: ["box:write"] } });
+    const named = await call(base, "/api/tokens", {
+      body: { name: "named", scopes: ["box:write"], volumes: [volumeId] },
+    });
+    const mount = { volume: volumeId, path: "/data", mode: "ro" };
+
+    const denied = await call(base, "/api/boxes", {
+      token: plain.json.token,
+      body: { name: "plain-box", cpus: 1, memoryMb: 256, mounts: [mount] },
+    });
+    expect(denied.status).toBe(403);
+    expect(denied.json.error?.key).toBe("volume_attach_forbidden");
+
+    const granted = await call(base, "/api/boxes", {
+      token: named.json.token,
+      body: { name: "named-box", cpus: 1, memoryMb: 256, mounts: [mount] },
+    });
+    expect(granted.status).toBe(201);
+    expect(granted.json.box?.createdBy).toBe(named.json.record?.id);
   });
 
   test("ids and tags select boxes, and a snapshot of an unseen box cannot be forked or deleted", async () => {
     const { base } = start();
     const created = await call(base, "/api/boxes", { body: { name: "alpha", cpus: 1, memoryMb: 256 } });
     const id = created.json.box?.id ?? "";
+    const boxId = created.json.box?.boxId ?? "";
     const tag = await fetch(`${base}/api/boxes/${id}`, {
       method: "PATCH",
       headers: ownerHeaders({ "content-type": "application/json", "if-match": "1" }),
@@ -427,7 +433,7 @@ describe("HTTP tokens", () => {
     expect(tag.status).toBe(200);
 
     const byId = await call(base, "/api/tokens", {
-      body: { name: "ids", preset: "readonly", boxes: { ids: ["alpha"] } },
+      body: { name: "ids", preset: "readonly", boxes: { ids: [boxId] } },
     });
     const seen = await call(base, "/api/boxes/alpha", { token: byId.json.token });
     expect(seen.status).toBe(200);
@@ -439,8 +445,9 @@ describe("HTTP tokens", () => {
     ]);
 
     const snap = await call(base, `/api/boxes/${id}/snapshots`, { body: { name: "nightly" } });
-    expect(snap.status).toBe(201);
-    const ref = (snap.json as { snapshot?: { ref?: string } }).snapshot?.ref ?? "";
+    expect(snap.status).toBe(202);
+    const ref = (await finishedTask(base, snap.json.taskId ?? "")).result?.snapshot?.ref ?? "";
+    expect(ref).not.toBe("");
     const agent = await call(base, "/api/tokens", { body: { name: "forker", preset: "sandboxed-agent" } });
     const secret = agent.json.token ?? "";
     expect((await call(base, "/api/snapshots", { token: secret })).json.snapshots).toEqual([]);

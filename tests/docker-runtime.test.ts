@@ -1,10 +1,14 @@
 /**
  * Runs the Docker adapter and the box/snapshot/template services against a real engine.
  *
- *   MINIBOX_TEST_DOCKER=1 bun test tests/docker-runtime.test.ts
+ *   bun run test:docker
+ *
+ * That script (scripts/docker-integration.ts) pulls the image, picks a fresh label prefix and sweeps what the run left
+ * behind. To run this file directly: MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbit<id> bun test tests/docker-runtime.test.ts
  *
  * Optional: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20, must already be
- * present locally). Every resource is labelled with a unique prefix and removed afterwards.
+ * present locally, and must contain /bin/busybox for the sudo test). The prefix must start with "mbit", so the cleanup
+ * can never touch a real MiniBox install.
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -14,12 +18,20 @@ import { join } from "node:path";
 import Docker from "dockerode";
 
 import { BOX_PROFILES, type BoxProfile } from "../src/box-profile";
-import { createDockerRuntime } from "../src/docker/runtime";
+import { createDockerRuntime, toHelperOptions } from "../src/docker/runtime";
+import { OutputStore } from "../src/events/outputs";
+import { createRedactor } from "../src/events/redact";
 import { createLocalHost } from "../src/host/registry";
+import type { HostSampler } from "../src/host/sampler";
 import type { Runtime } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
+import { ExecManager } from "../src/services/exec";
+import { rebuildBox } from "../src/services/rebuild";
 import { createSnapshot, deleteSnapshot } from "../src/services/snapshots";
 import { deleteTemplate, promoteSnapshot } from "../src/services/templates";
+import { attachVolume, createVolume, measureVolume } from "../src/services/volumes";
+import type { RebuildRequest } from "../src/specs/plan";
+import type { BoxMount } from "../src/specs/types";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
@@ -27,7 +39,9 @@ const SOCKET = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
 const IMAGE = process.env.MINIBOX_TEST_IMAGE ?? "alpine:3.20";
 const LONG = 60_000;
 
-const prefix = `mbit${Date.now().toString(36)}`;
+const PREFIX_PATTERN = /^mbit[a-z0-9-]{3,40}$/;
+const prefix = process.env.MINIBOX_TEST_PREFIX ?? `mbit${Date.now().toString(36)}`;
+if (enabled && !PREFIX_PATTERN.test(prefix)) throw new Error(`MINIBOX_TEST_PREFIX must match ${PREFIX_PATTERN}`);
 const runtime: Runtime = createDockerRuntime(SOCKET);
 const cfg = testConfig({
   labelPrefix: prefix,
@@ -52,6 +66,20 @@ async function waitUntil(check: () => Promise<boolean>, what: string, timeoutMs 
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     await Bun.sleep(100);
   }
+}
+
+async function volumeExists(name: string): Promise<boolean> {
+  return docker
+    .getVolume(name)
+    .inspect()
+    .then(
+      () => true,
+      () => false,
+    );
+}
+
+async function boxIds(): Promise<string[]> {
+  return (await runtime.listContainers({ labels: owned })).map((c) => c.id).toSorted();
 }
 
 async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T | "timeout"> {
@@ -107,6 +135,24 @@ async function shell(id: string, script: string): Promise<string> {
     exec.stream.destroy();
   }
   return text.slice(0, text.indexOf("MB_DONE")).replace(/\r/g, "").trim();
+}
+
+/**
+ * How many processes in the box have a command line that matches `pattern` (a grep pattern, matched per line). Anchor
+ * it with `^` and bracket a letter, as in `^[s]leep 317`, so the probe does not count its own command line.
+ */
+async function countProcesses(id: string, pattern: string): Promise<number> {
+  const found = await shell(
+    id,
+    `for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline 2>/dev/null; echo; done | grep -c '${pattern}' || true`,
+  );
+  return Number(found);
+}
+
+/** The exec service the app runs, over this test's runtime and output directory. */
+function execService(): ExecManager {
+  const redactor = createRedactor();
+  return new ExecManager(new OutputStore(join(cfg.dataDir, "exec"), redactor), (text) => redactor.text(text));
 }
 
 /** The address and gateway a box has on one network, as the engine reports them. */
@@ -197,6 +243,84 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "a stats call gives up when its signal aborts, so a sampler's timeout ends the engine request",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-stats-abort`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+      });
+      try {
+        await runtime.startContainer(id);
+        const began = performance.now();
+        const timedOut = await rejectionOf(runtime.containerStats(id, { signal: AbortSignal.timeout(20) }));
+        expect((timedOut as Error).name).toBe("AbortError");
+        expect(performance.now() - began).toBeLessThan(1000);
+        const preAborted = await rejectionOf(runtime.containerStats(id, { signal: AbortSignal.abort() }));
+        expect((preAborted as Error).name).toBe("AbortError");
+        const stats = await runtime.containerStats(id, { signal: new AbortController().signal });
+        expect(stats.memLimit).toBeGreaterThan(0);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "an inspect and a listing give up when their signal is already aborted, and answer when it is not",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-inspect-abort`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+      });
+      try {
+        await runtime.startContainer(id);
+        const inspected = await rejectionOf(runtime.inspectContainer(id, { signal: AbortSignal.abort() }));
+        expect((inspected as Error).name).toBe("AbortError");
+        const listed = await rejectionOf(runtime.listContainers({ labels: owned }, { signal: AbortSignal.abort() }));
+        expect((listed as Error).name).toBe("AbortError");
+
+        const live = new AbortController().signal;
+        expect((await runtime.inspectContainer(id, { signal: live })).running).toBe(true);
+        expect((await runtime.listContainers({ labels: owned }, { signal: live })).map((c) => c.id)).toEqual([id]);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "containerDiff lists a file written in the writable layer",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-diff`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+      });
+      expect(await runtime.containerDiff(id)).toEqual([]);
+      await runtime.startContainer(id);
+      try {
+        const exec = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo hi > /tmp/mb-diff"],
+          env: [],
+          workingDir: "/",
+        });
+        await waitUntil(async () => !(await exec.inspect()).running, "the diff command to finish");
+        expect(await runtime.containerDiff(id)).toContainEqual({ path: "/tmp/mb-diff", kind: "added" });
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "exec runs under a TTY, accepts resize and reports the exit code",
     async () => {
       const { id } = await runtime.createContainer({
@@ -223,6 +347,351 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         await waitUntil(async () => !(await exec.inspect()).running, "the exec to finish");
         expect(await exec.inspect()).toMatchObject({ running: false, exitCode: 3 });
         expect(output).toContain("hello-tty");
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "exec without a TTY separates stdout and stderr, reports the exit code, and kill stops the process",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-exec-notty`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const finished = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo out-text; echo err-text >&2; exit 3"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let stdout = "";
+        let stderr = "";
+        finished.stdout.on("data", (chunk: Buffer) => {
+          stdout += chunk.toString("utf8");
+        });
+        finished.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString("utf8");
+        });
+        await waitUntil(async () => !(await finished.inspect()).running, "the non-tty command to finish");
+        expect(await finished.inspect()).toMatchObject({ running: false, exitCode: 3 });
+        expect(stdout).toContain("out-text");
+        expect(stderr).toContain("err-text");
+
+        const hanging = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo started; sleep 30"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let started = "";
+        hanging.stdout.on("data", (chunk: Buffer) => {
+          started += chunk.toString("utf8");
+        });
+        await waitUntil(async () => started.includes("started"), "the sleep command to print");
+        await hanging.kill();
+        await waitUntil(async () => !(await hanging.inspect()).running, "the sleep command to stop");
+        expect((await hanging.inspect()).running).toBe(false);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "kill stops a command running as another uid and its children, from inside the box",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-exec-uid`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      const probe = async (cmd: string): Promise<string> => {
+        const run = await runtime.startExec(id, { cmd: ["sh", "-c", cmd], env: [], workingDir: "/", tty: false });
+        let out = "";
+        run.stdout.on("data", (chunk: Buffer) => {
+          out += chunk.toString("utf8");
+        });
+        await waitUntil(async () => !(await run.inspect()).running, "the probe to finish");
+        return out.trim();
+      };
+      try {
+        const hanging = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "sleep 317 & echo started $(id -u); wait"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+          user: "65534",
+        });
+        let started = "";
+        hanging.stdout.on("data", (chunk: Buffer) => {
+          started += chunk.toString("utf8");
+        });
+        await waitUntil(async () => started.includes("started 65534"), "the command to run as uid 65534");
+
+        await hanging.kill();
+        await waitUntil(async () => !(await hanging.inspect()).running, "the command to stop");
+        expect(await hanging.inspect()).toMatchObject({ running: false, exitCode: 137 });
+        await waitUntil(async () => (await probe("ps | grep -c '[s]leep 317' || true")) === "0", "the child to stop");
+        // The probe runs through the exec wrapper too, so its own marker is the only one left.
+        expect(await probe("ls -a /tmp | grep -c minibox-exec || true")).toBe("1");
+        await expect(hanging.kill()).resolves.toBeUndefined();
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a command that deletes its own marker is stopped with its children",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-marker`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const exec = await runtime.startExec(id, {
+          cmd: [
+            "sh",
+            "-c",
+            "test -e /tmp/.minibox-exec-*.$PPID && echo marked; rm -f /tmp/.minibox-exec-*.$PPID; echo started; sleep 317",
+          ],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let out = "";
+        exec.stdout.on("data", (chunk: Buffer) => {
+          out += chunk.toString("utf8");
+        });
+        await waitUntil(async () => out.includes("started"), "the command to start");
+        expect(out).toContain("marked");
+        expect(await shell(id, `ls -a /tmp | grep minibox-exec | grep -vF ".$PPID" | grep -c . || true`)).toBe("0");
+
+        await exec.kill();
+        await waitUntil(async () => !(await exec.inspect()).running, "the command to stop");
+        expect(await exec.inspect()).toMatchObject({ running: false, exitCode: 137 });
+        expect(await countProcesses(id, "^[s]leep 317")).toBe(0);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a command that overwrites its marker with another pid is stopped, and the process that pid names is left alone",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-decoy`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const decoy = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo $$; exec sleep 600"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let decoyOut = "";
+        decoy.stdout.on("data", (chunk: Buffer) => {
+          decoyOut += chunk.toString("utf8");
+        });
+        await waitUntil(async () => decoyOut.includes("\n"), "the decoy to print its pid");
+        const decoyPid = Number(decoyOut.trim());
+
+        const victim = await runtime.startExec(id, {
+          cmd: [
+            "sh",
+            "-c",
+            `for m in /tmp/.minibox-exec-*.$PPID; do echo ${decoyPid} > "$m"; : > "\${m%.*}.${decoyPid}"; done; echo started; sleep 317`,
+          ],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let victimOut = "";
+        victim.stdout.on("data", (chunk: Buffer) => {
+          victimOut += chunk.toString("utf8");
+        });
+        await waitUntil(async () => victimOut.includes("started"), "the victim to overwrite its marker");
+
+        await victim.kill();
+        await waitUntil(async () => !(await victim.inspect()).running, "the victim to stop");
+        expect(await victim.inspect()).toMatchObject({ running: false, exitCode: 137 });
+        expect(await countProcesses(id, "^[s]leep 317")).toBe(0);
+
+        expect((await decoy.inspect()).running).toBe(true);
+        expect(await countProcesses(id, "^[s]leep 600")).toBe(1);
+        await decoy.kill();
+        await waitUntil(async () => !(await decoy.inspect()).running, "the decoy to stop");
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a sudo child that becomes root is stopped by the kill, which the exec user cannot do on its own",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const box = await boxes.createBox(host, {
+          name: "sudo",
+          image: IMAGE,
+          cpus: 0.5,
+          memoryMb: 64,
+          profile: "standard",
+        });
+        try {
+          // busybox su is setuid root and sets its real uid to 0 after a password check, as sudo does.
+          expect(
+            await shell(
+              box.id,
+              "mkdir -p /tmp/mb-suid && cp -L /bin/busybox /tmp/mb-suid/su && chown root:root /tmp/mb-suid/su && chmod 4755 /tmp/mb-suid/su && echo 'root:mbpass' | chpasswd >/dev/null 2>&1 && echo ready",
+            ),
+          ).toBe("ready");
+          const command = "printf 'mbpass\\n' | /tmp/mb-suid/su -c 'echo started; sleep 317' root";
+          const sleepUids = `for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline 2>/dev/null | grep -q '^sleep 317' && awk '/^Uid/{print $2, $3}' $p/status; done`;
+
+          const service = execService();
+          const run = await service.run(host, box, {
+            cmd: command,
+            cwd: "/",
+            env: {},
+            timeoutSec: 60,
+            user: "65534",
+            background: true,
+          });
+          await waitUntil(async () => (await countProcesses(box.id, "^[s]leep 317")) === 1, "the sudo child to start");
+          expect(await shell(box.id, sleepUids)).toBe("0 0");
+
+          await service.kill(run.execId);
+          expect(await service.get(run.execId, 0)).toMatchObject({ status: "killed", exitCode: 137 });
+          expect(await countProcesses(box.id, "^[s]leep 317")).toBe(0);
+
+          const stuck = await runtime.startExec(box.id, {
+            cmd: ["sh", "-c", command],
+            env: [],
+            workingDir: "/",
+            tty: false,
+            user: "65534",
+            stopAs: "65534",
+          });
+          await waitUntil(async () => (await countProcesses(box.id, "^[s]leep 317")) === 1, "the second sudo child");
+          expect(await rejectionOf(stuck.kill())).toMatchObject({ kind: "engine" });
+          expect((await stuck.inspect()).running).toBe(true);
+        } finally {
+          await boxes.deleteBox(host, box.id, true);
+        }
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a timeout whose kill fails while the box is paused is retried until the exec stops",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const box = await boxes.createBox(host, {
+          name: "retry",
+          image: IMAGE,
+          cpus: 0.5,
+          memoryMb: 64,
+          profile: "standard",
+        });
+        try {
+          const service = execService();
+          const run = await service.run(host, box, {
+            cmd: "sleep 317",
+            cwd: "/",
+            env: {},
+            timeoutSec: 3,
+            user: "65534",
+            background: true,
+          });
+          await waitUntil(async () => (await countProcesses(box.id, "^[s]leep 317")) === 1, "the sleep to start");
+          const container = docker.getContainer(box.id);
+          await container.pause();
+          try {
+            await waitUntil(
+              async () => (await service.get(run.execId, 0)).timedOut,
+              "the timeout to fire while the box is paused",
+              10_000,
+            );
+            await Bun.sleep(300);
+            expect(await service.get(run.execId, 0)).toMatchObject({ status: "running", timedOut: true });
+          } finally {
+            await container.unpause();
+          }
+          await waitUntil(
+            async () => (await service.get(run.execId, 0)).status === "killed",
+            "the timed-out exec to be stopped",
+            15_000,
+          );
+          expect(await service.get(run.execId, 0)).toMatchObject({ status: "killed", exitCode: 137, timedOut: true });
+        } finally {
+          await boxes.deleteBox(host, box.id, true);
+        }
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "kill stops a terminal exec and its children from inside the box",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-exec-tty-kill`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const terminal = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "sleep 317 & echo started; wait"],
+          env: ["TERM=xterm-256color"],
+          workingDir: "/",
+        });
+        let started = "";
+        terminal.stream.on("data", (chunk: Buffer) => {
+          started += chunk.toString("utf8");
+        });
+        await waitUntil(async () => started.includes("started"), "the terminal command to print");
+
+        await terminal.kill();
+        await waitUntil(async () => !(await terminal.inspect()).running, "the terminal command to stop");
+        terminal.stream.destroy();
+        expect(await shell(id, "ps | grep -c '[s]leep 317' || true")).toBe("0");
+        await expect(terminal.kill()).resolves.toBeUndefined();
       } finally {
         await runtime.removeContainer(id, { force: true });
       }
@@ -258,19 +727,52 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
-    "a box can be created, snapshotted, restored from the snapshot and promoted to a template",
+    "events since a second before a change replay it, so a subscriber that starts after the change misses nothing",
+    async () => {
+      const { id } = await runtime.createContainer({ image: IMAGE, name: `${prefix}-replay`, labels: owned });
+      try {
+        const since = Math.floor(Date.now() / 1000) - 1;
+        await runtime.startContainer(id);
+        const controller = new AbortController();
+        const seen: string[] = [];
+        const consumer = (async () => {
+          for await (const event of runtime.events({ labels: owned, since }, controller.signal)) {
+            if (event.id === id) seen.push(event.action);
+          }
+          return "ended";
+        })();
+
+        await waitUntil(async () => seen.includes("start"), "the replayed start event");
+        controller.abort();
+        expect(await settleWithin(consumer, 5000)).toBe("ended");
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a box is written to, snapshotted, restored from the snapshot, promoted to a template and deleted",
     async () => {
       const restore = silenceLogs();
       try {
         const alpha = await boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 });
-        expect(alpha).toMatchObject({ running: true, volume: `${prefix}-ws-a` });
-        expect(await runtime.inspectVolume(`${prefix}-ws-a`)).toMatchObject({ name: `${prefix}-ws-a` });
+        expect(alpha).toMatchObject({ running: true });
+        expect(alpha.volume).toMatch(/^vol_/);
+        expect(await runtime.inspectVolume(alpha.volume)).toMatchObject({ name: alpha.volume });
+        expect(
+          await rejectionOf(boxes.createBox(host, { name: "a", image: IMAGE, cpus: 0.5, memoryMb: 64 })),
+        ).toMatchObject({ status: 409, key: "box_exists" });
+        expect((await runtime.inspectContainer(alpha.id)).running).toBe(true);
+        expect(await shell(alpha.id, "echo snapshot-marker > /opt/marker")).toBe("");
 
         const { ref } = await createSnapshot(host, alpha.id, "base");
         expect(ref).toMatch(new RegExp(`^${prefix}-snap:base-`));
 
         const beta = await boxes.createBox(host, { name: "b", image: ref, cpus: 0.5, memoryMb: 64 });
         expect(beta).toMatchObject({ running: true, template: ref });
+        expect(await shell(beta.id, "cat /opt/marker")).toBe("snapshot-marker");
 
         const promoted = await promoteSnapshot(host, ref, "gold", "Gold");
         expect(promoted.ref).toBe(`${prefix}-template:gold`);
@@ -279,9 +781,10 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
           [`${prefix}.snapshot`]: "false",
         });
 
-        await boxes.deleteBox(host, alpha.id, true);
-        await boxes.deleteBox(host, beta.id, true);
-        expect(await rejectionOf(runtime.inspectVolume(`${prefix}-ws-a`))).toMatchObject({ kind: "not_found" });
+        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "a", volumeDeleted: true });
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "b", volumeDeleted: true });
+        expect(await rejectionOf(runtime.inspectContainer(alpha.id))).toMatchObject({ kind: "not_found" });
+        expect(await rejectionOf(runtime.inspectVolume(alpha.volume))).toMatchObject({ kind: "not_found" });
 
         await deleteSnapshot(host, ref);
         await deleteTemplate(host, promoted.ref);
@@ -425,6 +928,526 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       });
       await docker.getNetwork(gone).remove();
       expect(await rejectionOf(runtime.reattachNetwork(id, gone))).toMatchObject({ kind: "not_found" });
+    },
+    LONG,
+  );
+
+  test(
+    "rebuilds keep to the attachment rules, and a volume MiniBox created can be attached",
+    async () => {
+      const restore = silenceLogs();
+      const plain = `${prefix}-plain`;
+      const managed = `${prefix}-extra`;
+      try {
+        const box = await boxes.createBox(host, { name: "guard", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const workspace = { volume: box.volume, path: "/workspace", mode: "rw" as const };
+        await docker.createVolume({ Name: plain });
+
+        const refused = (request: RebuildRequest) => rejectionOf(rebuildBox(host, box.id, box.revision, request, true));
+        expect(await refused({ mounts: [workspace, { volume: plain, path: "/plain", mode: "ro" }] })).toMatchObject({
+          status: 403,
+          key: "volume_unmanaged",
+          params: { volume: plain },
+        });
+        expect(
+          await refused({ mounts: [workspace, { volume: "minibox-data", path: "/data", mode: "ro" }] }),
+        ).toMatchObject({ status: 403, key: "volume_reserved" });
+        expect(await refused({ network: "bridge" })).toMatchObject({ status: 403, key: "network_not_managed" });
+        expect(await refused({ network: "host" })).toMatchObject({ status: 403, key: "network_reserved" });
+        expect((await runtime.inspectContainer(box.id)).running).toBe(true);
+        expect(host.specs.read(box.boxId)).toMatchObject({ revision: box.revision, network: host.security.network });
+
+        await runtime.createVolume(managed, { [host.keys.box]: "true", [host.keys.name]: "guard" });
+        const rebuilt = await rebuildBox(
+          host,
+          box.id,
+          box.revision,
+          { mounts: [workspace, { volume: managed, path: "/extra", mode: "ro" }] },
+          true,
+        );
+        const mounted = (await docker.getContainer(rebuilt.id).inspect()).Mounts.map((mount) => mount.Name);
+        expect(mounted).toEqual(expect.arrayContaining([workspace.volume, managed]));
+        expect((await runtime.inspectContainer(rebuilt.id)).running).toBe(true);
+        await boxes.deleteBox(host, rebuilt.id, true);
+      } finally {
+        await docker
+          .getVolume(plain)
+          .remove()
+          .catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "another box's workspace, the data volume, pool roots and reserved names are refused on the real engine",
+    async () => {
+      const restore = silenceLogs();
+      const pool = `${prefix}-pool-nfs`;
+      const absent = `${prefix}-pool-absent`;
+      const fresh = `${prefix}-ws-fresh`;
+      try {
+        const alpha = await boxes.createBox(host, { name: "owner-a", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const beta = await boxes.createBox(host, { name: "owner-b", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        await docker.createVolume({ Name: pool, Labels: { ...owned, [host.keys.internal]: "true" } });
+        const attempt = (mounts: BoxMount[]) => rejectionOf(rebuildBox(host, beta.id, beta.revision, { mounts }, true));
+
+        expect(await attempt([{ volume: alpha.volume, path: "/workspace", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_in_use",
+          params: { volume: "owner-a-workspace" },
+        });
+        expect(await attempt([{ volume: "minibox-data", path: "/data", mode: "ro" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: "minibox-data" },
+        });
+        expect(await attempt([{ volume: pool, path: "/pool", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: pool },
+        });
+        expect(await attempt([{ volume: absent, path: "/pool", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: absent },
+        });
+        expect(await attempt([{ volume: fresh, path: "/fresh", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: fresh },
+        });
+
+        expect(await volumeExists(absent)).toBe(false);
+        expect(await volumeExists(fresh)).toBe(false);
+        expect((await runtime.inspectContainer(beta.id)).running).toBe(true);
+        expect(host.specs.read(beta.boxId)?.revision).toBe(beta.revision);
+        await boxes.deleteBox(host, alpha.id, true);
+        await boxes.deleteBox(host, beta.id, true);
+      } finally {
+        await docker
+          .getVolume(pool)
+          .remove()
+          .catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "deleting a box removes the volumes it owns and keeps the shared tools volume and another box's volumes",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const alpha = await boxes.createBox(host, { name: "del-alpha", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const beta = await boxes.createBox(host, { name: "del-beta", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const toolsOf = (boxId: string) =>
+          host.specs.read(boxId)?.mounts.find((mount) => mount.path === "/opt/minibox/tools")?.volume ?? "";
+        const tools = toolsOf(alpha.boxId);
+        expect(toolsOf(beta.boxId)).toBe(tools);
+        const owned = (host.specs.read(alpha.boxId)?.mounts ?? [])
+          .map((mount) => mount.volume)
+          .filter((name) => name !== tools);
+        expect(owned).toHaveLength(3);
+
+        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "del-alpha", volumeDeleted: true });
+        for (const name of owned) expect(await volumeExists(name)).toBe(false);
+        expect(host.volumes.findByEngine(host.host.id, alpha.volume)).toBeNull();
+        expect(await volumeExists(tools)).toBe(true);
+        expect(await volumeExists(beta.volume)).toBe(true);
+
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "del-beta", volumeDeleted: true });
+        expect(await volumeExists(beta.volume)).toBe(false);
+        expect(await volumeExists(tools)).toBe(true);
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a create the engine refuses leaves no volume, record, container or spec behind",
+    async () => {
+      const restore = silenceLogs();
+      const broken = { ...host, security: { ...host.security, runtime: `${prefix}-missing-runtime` } };
+      const volumeNames = async () =>
+        ((await docker.listVolumes({ filters: { label: [`${prefix}=true`] } })).Volumes ?? [])
+          .map((volume) => volume.Name)
+          .toSorted();
+      const recordIds = () =>
+        host.volumes
+          .list()
+          .map((volume) => volume.id)
+          .toSorted();
+      try {
+        const volumesBefore = await volumeNames();
+        const recordsBefore = recordIds();
+        const boxesBefore = await boxIds();
+
+        const error = await rejectionOf(
+          boxes.createBox(broken, { name: "rollback", image: IMAGE, cpus: 0.5, memoryMb: 64 }),
+        );
+        expect(error).toBeInstanceOf(Error);
+        expect(await volumeNames()).toEqual(volumesBefore);
+        expect(recordIds()).toEqual(recordsBefore);
+        expect(await boxIds()).toEqual(boxesBefore);
+        expect(host.specs.findByName("rollback")).toBeNull();
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a standalone volume the engine lost is refused by measure and attach, and the engine does not recreate it",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const box = await boxes.createBox(host, { name: "gone-owner", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const notes = await createVolume(host, { name: `${prefix}-notes`, role: null, createdBy: "owner" });
+        expect(await volumeExists(notes.engineName)).toBe(true);
+        await runtime.removeVolume(notes.engineName);
+
+        expect(await rejectionOf(measureVolume(host, notes.id))).toMatchObject({
+          status: 409,
+          key: "volume_missing",
+          params: { volume: notes.name },
+        });
+        expect(await volumeExists(notes.engineName)).toBe(false);
+
+        expect(
+          await rejectionOf(
+            attachVolume(host, notes.id, {
+              box: box.boxId,
+              path: "/srv/notes",
+              mode: "rw",
+              revision: box.revision,
+              confirm: true,
+            }),
+          ),
+        ).toMatchObject({ status: 409, key: "volume_missing", params: { volume: notes.name } });
+        expect(await volumeExists(notes.engineName)).toBe(false);
+        expect((await runtime.inspectContainer(box.id)).running).toBe(true);
+        await boxes.deleteBox(host, box.id, true);
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "helpers return their output and exit code, and none is left behind",
+    async () => {
+      for (let i = 0; i < 5; i++) {
+        expect(await runtime.runHelper({ image: IMAGE, cmd: ["sh", "-c", `echo run-${i}`] })).toEqual({
+          exitCode: 0,
+          logs: `run-${i}\n`,
+        });
+      }
+      expect(await runtime.runHelper({ image: IMAGE, cmd: ["sh", "-c", "echo failed >&2; exit 3"] })).toEqual({
+        exitCode: 3,
+        logs: "failed\n",
+      });
+      expect(await runtime.runHelper({ image: IMAGE, cmd: ["sleep", "30"], timeoutSec: 1 })).toEqual({
+        exitCode: 124,
+        logs: "",
+      });
+      const leftover = (await docker.listContainers({ all: true })).filter((c) =>
+        c.Names.some((name) => name.startsWith("/mbxhlp")),
+      );
+      expect(leftover).toEqual([]);
+    },
+    LONG,
+  );
+
+  test(
+    "a helper has no network, a read-only root, only the capabilities it names, and cannot gain privileges",
+    async () => {
+      const probe = [
+        "awk '/^(CapBnd|CapEff|NoNewPrivs):/ {print $1, $2}' /proc/self/status",
+        "echo nics=$(ls /sys/class/net)",
+        "touch /rootfile 2>/dev/null && echo rootfs=writable || echo rootfs=read-only",
+        "touch /tmp/scratch 2>/dev/null && echo tmp=writable || echo tmp=read-only",
+        "echo pids=$(cat /sys/fs/cgroup/pids.max)",
+        "echo memory=$(cat /sys/fs/cgroup/memory.max)",
+      ].join("; ");
+      const root = await runtime.runHelper({
+        image: IMAGE,
+        user: "0:0",
+        capAdd: ["CHOWN"],
+        cmd: ["sh", "-c", probe],
+      });
+      expect(root.exitCode).toBe(0);
+      const lines = root.logs.split("\n");
+      for (const line of [
+        "CapBnd: 0000000000000001",
+        "CapEff: 0000000000000001",
+        "NoNewPrivs: 1",
+        "nics=lo",
+        "rootfs=read-only",
+        "tmp=writable",
+        "pids=64",
+        "memory=268435456",
+      ]) {
+        expect(lines).toContain(line);
+      }
+
+      const plain = await runtime.runHelper({ image: IMAGE, user: "1000:1000", cmd: ["sh", "-c", probe] });
+      expect(plain.logs).toContain("CapBnd: 0000000000000000");
+      expect(plain.logs).toContain("CapEff: 0000000000000000");
+    },
+    LONG,
+  );
+
+  test(
+    "a root helper without DAC_OVERRIDE cannot write into a directory owned by someone else, and CHOWN still works",
+    async () => {
+      const volume = `${prefix}-helper-owner`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const mounts = [{ source: volume, target: "/mnt" }];
+        const chown = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts,
+          cmd: ["chown", "1000:1000", "/mnt"],
+        });
+        expect(chown.exitCode).toBe(0);
+
+        const denied = await runtime.runHelper({ image: IMAGE, user: "0:0", mounts, cmd: ["mkdir", "/mnt/denied"] });
+        expect(denied.exitCode).not.toBe(0);
+        expect(denied.logs).toContain("Permission denied");
+
+        const allowed = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["DAC_OVERRIDE"],
+          mounts,
+          cmd: ["sh", "-c", "mkdir /mnt/allowed && rmdir /mnt/allowed"],
+        });
+        expect(allowed).toEqual({ exitCode: 0, logs: "" });
+        const owner = await runtime.runHelper({
+          image: IMAGE,
+          user: "1000:1000",
+          mounts,
+          cmd: ["stat", "-c", "%u:%g", "/mnt"],
+        });
+        expect(owner.logs.trim()).toBe("1000:1000");
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a helper that mounts an empty volume where the image has a directory leaves the volume's owner alone",
+    async () => {
+      const volume = `${prefix}-helper-nocopy`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const chown = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts: [{ source: volume, target: "/mnt/0" }],
+          cmd: ["chown", "1000:1000", "/mnt/0"],
+        });
+        expect(chown.exitCode).toBe(0);
+
+        // The image's /mnt is root-owned. Without NoCopy Docker would copy that over the still-empty volume here.
+        const seen = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          mounts: [{ source: volume, target: "/mnt" }],
+          cmd: ["stat", "-c", "%u:%g", "/mnt"],
+        });
+        expect(seen).toEqual({ exitCode: 0, logs: "1000:1000\n" });
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "measuring reads another owner's directory only with DAC_READ_SEARCH",
+    async () => {
+      const volume = `${prefix}-helper-measure`;
+      await runtime.createVolume(volume, owned);
+      try {
+        const mounts = [{ source: volume, target: "/mnt" }];
+        const setup = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["CHOWN"],
+          mounts,
+          cmd: ["sh", "-c", "mkdir /mnt/private && chmod 700 /mnt/private && chown 1000:1000 /mnt/private"],
+        });
+        expect(setup.exitCode).toBe(0);
+
+        const blind = await runtime.runHelper({ image: IMAGE, user: "0:0", mounts, cmd: ["du", "-sb", "/mnt"] });
+        expect(blind.exitCode).not.toBe(0);
+        const reading = await runtime.runHelper({
+          image: IMAGE,
+          user: "0:0",
+          capAdd: ["DAC_READ_SEARCH"],
+          mounts,
+          cmd: ["du", "-sb", "/mnt"],
+        });
+        expect(reading.exitCode).toBe(0);
+        expect(reading.logs).toMatch(/^\d+\t\/mnt\n$/);
+      } finally {
+        await docker
+          .getVolume(volume)
+          .remove()
+          .catch(() => {});
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "the engine removes a helper container by itself once it exits",
+    async () => {
+      const name = `mbxhlp${prefix.slice(-8)}auto`;
+      const exists = async (id: string) =>
+        docker
+          .getContainer(id)
+          .inspect()
+          .then(
+            () => true,
+            () => false,
+          );
+      const created = await docker.createContainer(toHelperOptions({ image: IMAGE, cmd: ["true"] }, name));
+      const container = docker.getContainer(created.id);
+      const exited = container.wait({ condition: "next-exit" });
+      await container.start();
+      await exited;
+      await waitUntil(async () => !(await exists(created.id)), "the engine to remove the exited helper");
+    },
+    LONG,
+  );
+});
+
+/** Counts the calls made through a runtime, by operation. The calls reach the engine unchanged. */
+function countingRuntime(target: Runtime): {
+  runtime: Runtime;
+  count: (op: keyof Runtime) => number;
+  reset: () => void;
+} {
+  const counts = new Map<string, number>();
+  const runtime = new Proxy(target, {
+    get(obj, prop) {
+      const value: unknown = Reflect.get(obj, prop, obj);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        counts.set(String(prop), (counts.get(String(prop)) ?? 0) + 1);
+        return Reflect.apply(value, obj, args);
+      };
+    },
+  });
+  return { runtime, count: (op) => counts.get(op) ?? 0, reset: () => counts.clear() };
+}
+
+/**
+ * A stream replays the last second or so of events when it opens, and the cache applies them after its first listing.
+ * Waiting that out keeps the replayed reads out of the counts.
+ */
+async function quiesce(sampler: HostSampler): Promise<void> {
+  await Bun.sleep(1_500);
+  await sampler.settle();
+}
+
+describe.skipIf(!enabled)("the box cache against a real engine", () => {
+  test(
+    "listing boxes and their usage costs the engine nothing, however many boxes exist",
+    async () => {
+      const restore = silenceLogs();
+      const counter = countingRuntime(runtime);
+      const reader = createLocalHost(cfg, counter.runtime, host.specs);
+      const made: boxes.Box[] = [];
+      const cachedRunning = (box: boxes.Box) => reader.sampler.find(box.boxId)?.running === true;
+      const engineReads = () =>
+        counter.count("listContainers") + counter.count("inspectContainer") + counter.count("containerStats");
+      try {
+        for (const name of ["cache-a", "cache-b", "cache-c"]) {
+          made.push(await boxes.createBox(host, { name, image: IMAGE, cpus: 0.5, memoryMb: 64 }));
+        }
+        reader.sampler.start();
+        await waitUntil(
+          async () => reader.sampler.ready() && made.every(cachedRunning),
+          "the first boxes in the cache",
+        );
+        await quiesce(reader.sampler);
+        // Boxes that earlier tests left running are in the cache too, so the totals count from what it already holds.
+        const known = reader.sampler.boxes({ withStats: false }).length;
+        counter.reset();
+        for (let tab = 0; tab < 10; tab++) await boxes.listBoxes(reader, { withStats: true });
+        expect(engineReads()).toBe(0);
+
+        for (const name of ["cache-d", "cache-e", "cache-f", "cache-g", "cache-h"]) {
+          made.push(await boxes.createBox(host, { name, image: IMAGE, cpus: 0.5, memoryMb: 64 }));
+        }
+        await waitUntil(async () => made.every(cachedRunning), "the new boxes in the cache");
+        await quiesce(reader.sampler);
+        counter.reset();
+
+        await reader.sampler.sampleNow();
+        const running = reader.sampler.boxes({ withStats: false }).filter((box) => box.running).length;
+        expect(running).toBeGreaterThan(0);
+        expect(counter.count("containerStats")).toBe(running);
+
+        counter.reset();
+        let listed: boxes.Box[] = [];
+        for (let tab = 0; tab < 10; tab++) listed = await boxes.listBoxes(reader, { withStats: true });
+        expect(listed).toHaveLength(known + 5);
+        expect(engineReads()).toBe(0);
+        expect(listed.filter((box) => box.running).every((box) => box.stats !== null)).toBe(true);
+      } finally {
+        reader.sampler.stop();
+        for (const box of made) await boxes.deleteBox(host, box.id, true).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a box stopped outside MiniBox reaches the cache through the engine's events, not a listing",
+    async () => {
+      const restore = silenceLogs();
+      const counter = countingRuntime(runtime);
+      const reader = createLocalHost(cfg, counter.runtime, host.specs);
+      const made: boxes.Box[] = [];
+      try {
+        const box = await boxes.createBox(host, { name: "cache-stop", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        made.push(box);
+        reader.sampler.start();
+        await waitUntil(async () => reader.sampler.find(box.boxId)?.running === true, "the box in the cache");
+        counter.reset();
+
+        await runtime.stopContainer(box.id, { timeoutSec: 1 });
+        await waitUntil(async () => reader.sampler.find(box.boxId)?.running === false, "the stop in the cache");
+        expect(counter.count("listContainers")).toBe(0);
+        expect(counter.count("inspectContainer")).toBeGreaterThan(0);
+      } finally {
+        reader.sampler.stop();
+        for (const box of made) await boxes.deleteBox(host, box.id, true).catch(() => {});
+        restore();
+      }
     },
     LONG,
   );

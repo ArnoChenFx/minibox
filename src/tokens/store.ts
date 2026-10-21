@@ -357,7 +357,7 @@ function cloneBoxes(scope: BoxScope): BoxScope {
 }
 
 function cloneVolumes(scope: VolumeScope): VolumeScope {
-  return scope.type === "all" ? { type: "all" } : { type: "list", names: [...scope.names] };
+  return scope.type === "all" ? { type: "all" } : { type: "list", ids: [...scope.ids] };
 }
 
 function cloneHosts(scope: HostScope): HostScope {
@@ -462,8 +462,8 @@ function parseBoxes(value: unknown): BoxScope | null {
 function parseVolumes(value: unknown): VolumeScope | null {
   if (!isObject(value)) return null;
   if (value.type === "all") return { type: "all" };
-  if (value.type === "list" && Array.isArray(value.names) && value.names.every((name) => typeof name === "string")) {
-    return { type: "list", names: value.names };
+  if (value.type === "list" && Array.isArray(value.ids) && value.ids.every((id) => typeof id === "string")) {
+    return { type: "list", ids: value.ids };
   }
   return null;
 }
