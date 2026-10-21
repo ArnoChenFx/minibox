@@ -783,7 +783,7 @@ export default {
   "st.tokenTagsHelp": "每行一个：标签键，或键=值。",
   "st.tokenVolumes": "卷",
   "st.tokenVolumesHelp":
-    "此令牌可以挂载的卷名，每行一个。留空则不授权任何卷。新建 Box 时为其创建的工作区卷不必列出；复用已有卷则需要。共享卷对象还不是单独的 API。",
+    "此令牌可以挂载的卷 id（vol_…），每行一个。留空则不授权任何卷。新建 Box 的默认挂载包含共享工具卷，因此也需要列出它，或改为显式指定挂载。池根卷任何时候都不能挂载。",
   "st.tokenVolumesAll": "全部卷",
   "st.tokenHosts": "宿主机",
   "st.tokenHostsLocal": "本机（local）",
@@ -796,8 +796,7 @@ export default {
   "st.tokenQuotaMemory": "内存上限（MB，合计）",
   "st.tokenQuotaTtl": "TTL 上限（小时）",
   "st.tokenQuotaRate": "每分钟请求数",
-  "st.tokenQuotaHelp":
-    "留空则沿用预设。CPU 和内存是该令牌全部 Box 的合计。TTL 会记在 Box 上；时间到达后自动停止尚未实现。",
+  "st.tokenQuotaHelp": "留空则沿用预设。CPU 和内存是该令牌全部 Box 的合计。TTL 会记在 Box 上，时间到达后 Box 会停止。",
   "st.tokenOnce": "请立即复制此密钥。MiniBox 不会再次显示。",
   "st.tokenCurl": "REST",
   "st.tokenMcp": "MCP 客户端配置",

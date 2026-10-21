@@ -832,7 +832,7 @@ export default {
   "st.tokenTagsHelp": "One per line: a label key, or key=value.",
   "st.tokenVolumes": "Volumes",
   "st.tokenVolumesHelp":
-    "Names this token may mount, one per line. Empty grants none. A workspace volume created for a new box does not need to be listed; reusing one that already exists does. Shared volume objects are not a separate API yet.",
+    "Volume ids (vol_…) this token may mount, one per line. Empty grants none. A new box's default mounts include the shared tools volume, so list it too, or send explicit mounts. A pool root can never be mounted.",
   "st.tokenVolumesAll": "Every volume",
   "st.tokenHosts": "Hosts",
   "st.tokenHostsLocal": "This host (local)",
@@ -846,7 +846,7 @@ export default {
   "st.tokenQuotaTtl": "Max TTL (hours)",
   "st.tokenQuotaRate": "Requests per minute",
   "st.tokenQuotaHelp":
-    "Empty keeps the preset. CPU and memory are totals across this token's boxes. TTL is stored on the box; MiniBox does not stop the box when it elapses yet.",
+    "Empty keeps the preset. CPU and memory are totals across this token's boxes. TTL is stored on the box, and the box stops when it elapses.",
   "st.tokenOnce": "Copy this secret now. MiniBox will not show it again.",
   "st.tokenCurl": "REST",
   "st.tokenMcp": "MCP client config",
