@@ -1,13 +1,20 @@
 import { deleteBox, editResources, lifecycle, openRebuild, snapshotBox } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
 import { api, enc } from "../lib/api.js";
+import { applySamples } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, dateTime, duration, gbOrMb, mem, pct, shortId } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
+import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
 import { emptyState, stateBadge, toastError, usageBar } from "../lib/ui.js";
+
+/** The points a chart keeps. The server keeps its own ring; this bounds what the page holds. */
+const CHART_POINTS = 240;
+/** How often the box and its history are read again while the live stream is down. */
+const FALLBACK_MS = 3000;
 
 function joined(names, translate) {
   return esc((names ?? []).map((name) => (translate ? t(`reset.${name}`) : name)).join(t("reset.sep")));
@@ -49,11 +56,31 @@ export function render(view, id, tab = "overview") {
   if (!TABS.some(([k]) => k === tab)) tab = "overview";
   let box = null;
   let disposed = false;
+  let painted = false;
+  let missing = false;
+  let mounts = 0;
   let tabCleanup = null;
+  let frames = 0;
+  let headShown = "";
+  let lastSampleAt = 0;
   const history = [];
+  const listeners = new Set();
   view.innerHTML = `<div class="detail-head"><div class="skeleton" style="width:44px;height:44px;border-radius:12px"></div><div style="flex:1"><div class="skeleton sk-line" style="width:200px"></div><div class="skeleton sk-line" style="width:320px"></div></div></div>`;
 
-  const header = () => `
+  const ref = () => box?.boxId ?? id;
+
+  const onChange = (fn) => {
+    listeners.add(fn);
+    return () => {
+      listeners.delete(fn);
+    };
+  };
+
+  const notify = () => {
+    for (const fn of listeners) fn();
+  };
+
+  const headHtml = () => `
     <div class="detail-head">
       <span class="avatar">${icon("box", "icon-lg")}</span>
       <div><h1>${esc(box.name)} ${stateBadge(box.state)}</h1>
@@ -65,30 +92,66 @@ export function render(view, id, tab = "overview") {
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
-    </div>
-    <div class="tabs" role="tablist">${TABS.map(
-      ([k, label, ic]) =>
-        `<a class="tab" role="tab" aria-selected="${k === tab}" href="#/boxes/${enc(box.id)}/${k}">${icon(ic)}${t(label)}</a>`,
-    ).join("")}</div>
-    <div id="tabBody"></div>`;
+    </div>`;
 
-  const refreshBox = async () => {
-    const r = await api(`/api/boxes/${enc(id)}`);
-    box = r.box;
-    if (box.stats) {
-      history.push({
-        cpu: box.cpus ? box.stats.cpuPercent / box.cpus : box.stats.cpuPercent,
-        mem: box.stats.memPercent,
-      });
-      if (history.length > 60) history.shift();
+  const paintHead = () => {
+    if (!painted) return;
+    const next = headHtml();
+    if (next === headShown) return;
+    headShown = next;
+    view.querySelector(".detail-head").outerHTML = next;
+  };
+
+  const setBox = (next) => {
+    if (disposed) return;
+    box = next;
+    paintHead();
+    notify();
+  };
+
+  const pushPoint = (point) => {
+    if (point.t <= lastSampleAt) return;
+    lastSampleAt = point.t;
+    history.push(point);
+    if (history.length > CHART_POINTS) history.splice(0, history.length - CHART_POINTS);
+  };
+
+  /** Replaces the chart with the engine's ring, keeping the points that arrived while the request was in flight. */
+  const loadHistory = async () => {
+    const { history: samples = [] } = await api(`/api/boxes/${enc(ref())}/stats?history=true`);
+    const served = samples.map((s) => ({ t: s.t, cpu: s.cpuPercent, mem: s.memPercent }));
+    const newest = served.at(-1)?.t ?? 0;
+    const later = history.filter((point) => point.t > newest);
+    history.splice(0, history.length, ...[...served, ...later].slice(-CHART_POINTS));
+    lastSampleAt = history.at(-1)?.t ?? 0;
+    notify();
+  };
+
+  /** The fetched box is applied unless a box frame changed the page while the request was in flight. */
+  const fetchBox = async () => {
+    const seen = frames;
+    const { box: fresh } = await api(`/api/boxes/${enc(ref())}`);
+    if (!box || seen === frames) setBox(fresh);
+  };
+
+  const refresh = async () => {
+    if (missing) return rerender();
+    try {
+      await fetchBox();
+      await loadHistory();
+    } catch (e) {
+      if (e.status === 404) await rerender();
     }
-    return box;
   };
 
   const mount = async () => {
+    const token = ++mounts;
     try {
-      await refreshBox();
+      await fetchBox();
     } catch (e) {
+      if (disposed || token !== mounts) return;
+      painted = false;
+      missing = e.status === 404;
       view.innerHTML = emptyState({
         iconName: "alert",
         title: e.status === 404 ? t("bd.notFound") : t("bd.loadFailed"),
@@ -97,15 +160,27 @@ export function render(view, id, tab = "overview") {
       });
       return;
     }
-    if (disposed) return;
+    if (disposed || token !== mounts) return;
+    missing = false;
+    await loadHistory().catch(() => {});
+    if (disposed || token !== mounts) return;
     setCrumbs([{ label: t("nav.boxes"), href: "#/boxes" }, box.name]);
     document.title = `${box.name} · MiniBox`;
-    view.innerHTML = header();
-    tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), { box: () => box, refreshBox, history, rerender });
+    headShown = headHtml();
+    view.innerHTML = `${headShown}
+    <div class="tabs" role="tablist">${TABS.map(
+      ([k, label, ic]) =>
+        `<a class="tab" role="tab" aria-selected="${k === tab}" href="#/boxes/${enc(box.id)}/${k}">${icon(ic)}${t(label)}</a>`,
+    ).join("")}</div>
+    <div id="tabBody"></div>`;
+    painted = true;
+    tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), { box: () => box, history, onChange, rerender });
   };
 
   const rerender = async () => {
+    if (disposed) return;
     tabCleanup?.();
+    tabCleanup = null;
     await mount();
   };
 
@@ -123,15 +198,35 @@ export function render(view, id, tab = "overview") {
       openCreateBox({ snapshot: b.dataset.ref, onCreated: (nb) => (location.hash = `#/boxes/${nb.id}`) }),
   });
 
+  const offs = [
+    subscribe("box", (frame) => {
+      if (!box || frame.boxId !== box.boxId) return;
+      frames += 1;
+      if (frame.op === "remove" || missing) {
+        void rerender();
+        return;
+      }
+      setBox({ ...frame.box, stats: frame.box.running ? box.stats : null });
+    }),
+    subscribe("sample", (frame) => {
+      if (!box || !applySamples([box], frame.boxes)) return;
+      pushPoint({ t: frame.t, cpu: box.stats.cpuPercent, mem: box.stats.memPercent });
+      notify();
+    }),
+    subscribe("sync", () => void refresh()),
+  ];
+  const stopFallback = pollWhileDown(() => void refresh(), FALLBACK_MS);
   mount();
   return () => {
     disposed = true;
+    for (const off of offs) off();
+    stopFallback();
     tabCleanup?.();
   };
 }
 
 const TAB_RENDER = {
-  overview(root, { box, refreshBox }) {
+  overview(root, { box, onChange }) {
     const draw = () => {
       const b = box();
       const s = b.stats;
@@ -167,14 +262,7 @@ const TAB_RENDER = {
         </dl></div></div>`;
     };
     draw();
-    const timer = setInterval(
-      () =>
-        refreshBox()
-          .then(draw)
-          .catch(() => {}),
-      3000,
-    );
-    return () => clearInterval(timer);
+    return onChange(draw);
   },
 
   terminal(root, { box }) {
@@ -277,10 +365,11 @@ const TAB_RENDER = {
     return () => clearInterval(timer);
   },
 
-  resources(root, { box, refreshBox, history }) {
+  resources(root, { box, history, onChange }) {
     const draw = () => {
       const b = box();
       const s = b.stats;
+      const relative = (h) => (b.cpus ? h.cpu / b.cpus : h.cpu);
       root.innerHTML = `<div class="grid grid-2">
         <div class="card"><div class="card-head"><h3>${t("bd.quotaTitle")}</h3><button class="btn btn-sm" data-action="resources">${icon("sliders")}${t("bd.adjust")}</button></div>
           <div class="card-body"><dl class="kv">
@@ -294,7 +383,7 @@ const TAB_RENDER = {
           <div class="card-body stack">${
             s
               ? `<div><div class="bar-label"><span>CPU ${pct(s.cpuPercent)}</span><span>${b.cpus ? t("bd.ofQuota", { p: pct(s.cpuPercent / b.cpus, 0) }) : ""}</span></div>${sparkline(
-                  history.map((h) => h.cpu),
+                  history.map(relative),
                   { color: "var(--chart-cpu)", id: "bcpu", height: 56 },
                 )}</div>
                  <div><div class="bar-label"><span>${t("ov.memory")} ${gbOrMb(s.memUsage)}</span><span>${pct(s.memPercent, 0)} / ${bytes(s.memLimit)}</span></div>${sparkline(
@@ -306,14 +395,7 @@ const TAB_RENDER = {
       root.querySelectorAll(".spark").forEach((sv) => (sv.style.height = "56px"));
     };
     draw();
-    const timer = setInterval(
-      () =>
-        refreshBox()
-          .then(draw)
-          .catch(() => {}),
-      3000,
-    );
-    return () => clearInterval(timer);
+    return onChange(draw);
   },
 
   snapshots(root, { box }) {
