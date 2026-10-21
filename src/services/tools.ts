@@ -6,7 +6,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { TaskHandle } from "../tasks/types";
 import { findCatalogEntry, loadCatalog, requireCatalogEntry } from "../tools/catalog";
-import { commandFor, detectCommand } from "../tools/commands";
+import { assertSafeToolVersion, commandFor, detectCommand } from "../tools/commands";
 import { TOOLS_BIN, TOOLS_PREFIX, type CatalogEntry, type ToolAction, type ToolStatus } from "../tools/types";
 import { findSharedTools } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
@@ -158,7 +158,7 @@ async function runAction(
   const box = await getBox(host, boxRef);
   const catalog = loadCatalog(dirname(host.specs.dir()));
   const entry = requireCatalogEntry(catalog, toolId);
-  const resolvedVersion = version.trim() || "latest";
+  const resolvedVersion = assertSafeToolVersion(version);
   const shell = commandFor(entry, action, resolvedVersion);
   task?.log(`${action} ${entry.id}@${resolvedVersion}\n$ ${shell}\n`);
   const result = await runToolsHelper(host, {

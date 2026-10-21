@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getBox } from "../services/boxes";
 import { installTool, listToolStatuses, reconcileTools, uninstallTool, upgradeTool } from "../services/tools";
 import { loadCatalog } from "../tools/catalog";
+import { TOOL_VERSION_RE } from "../tools/commands";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
 import { boxId } from "./validation";
@@ -33,7 +34,17 @@ const toolId = () =>
     .meta({ description: "Catalog tool id, such as claude-code." });
 
 const toolVersion = () =>
-  z.string().trim().min(1).max(64).default("latest").meta({ description: "Desired package version, or latest." });
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(TOOL_VERSION_RE, "tool version")
+    .default("latest")
+    .meta({
+      description:
+        "Desired package version, or latest. Letters, digits, dots, underscores, plus and hyphen only (optional leading v).",
+    });
 
 export const toolList = defineOperation({
   name: "tool.list",
@@ -80,7 +91,7 @@ export const toolInstall = defineOperation({
       "Install an Agent CLI from the catalog into the shared tools volume for a box. Updates BoxSpec.tools. Long-running; returns a task id.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
-  exclusive: (_ctx, _input, box) => `tool:${box.boxId}`,
+  exclusive: ({ host }) => `tool.write:${host.host.id}`,
   activity: { action: () => "tool.install", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, task }, input) => installTool(host, input.id, input.tool, input.version, task),
@@ -108,7 +119,7 @@ export const toolUpgrade = defineOperation({
     description: "Upgrade an Agent CLI already recorded on a box. Returns a task id.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
-  exclusive: (_ctx, _input, box) => `tool:${box.boxId}`,
+  exclusive: ({ host }) => `tool.write:${host.host.id}`,
   activity: { action: () => "tool.upgrade", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, task }, input) => upgradeTool(host, input.id, input.tool, input.version, task),
@@ -136,7 +147,7 @@ export const toolUninstall = defineOperation({
     description: "Remove an Agent CLI from the shared tools volume and from the box spec. Returns a task id.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
-  exclusive: (_ctx, _input, box) => `tool:${box.boxId}`,
+  exclusive: ({ host }) => `tool.write:${host.host.id}`,
   activity: { action: () => "tool.uninstall", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, task }, input) => uninstallTool(host, input.id, input.tool, task),
@@ -165,7 +176,7 @@ export const toolReconcile = defineOperation({
       "Idempotently install every tool listed on the box spec that is not detected on the shared tools volume. Used after create and rebuild.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
-  exclusive: (_ctx, _input, box) => `tool:${box.boxId}`,
+  exclusive: ({ host }) => `tool.write:${host.host.id}`,
   activity: { action: () => "tool.reconcile", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, task }, input) => reconcileTools(host, input.id, task),

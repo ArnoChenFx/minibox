@@ -882,4 +882,6 @@ export default {
   "err.tool_install_timeout": "安装 “{id}” 超时。",
   "err.tool_reconcile_failed": "无法安装所请求的工具：{detail}。",
   "err.tool_ids_invalid": "tools 须为目录 id 数组（字母、数字与连字符），最多 32 项。",
+  "err.tool_version_invalid":
+    "工具版本须为 latest，或以可选 v 开头的字母、数字、点、下划线、加号与连字符组成的固定版本，最长 64 字符。",
 };
