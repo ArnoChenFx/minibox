@@ -396,6 +396,21 @@ describe("terminal service: takeover", () => {
     env.terminals.release(viewer);
     expect(await env.terminals.read(env.host, box, "work", { lines: 5 })).toMatchObject({ controller: "agent" });
   });
+
+  test("the view carries the idle return time in seconds, so the console can say when a takeover ends", async () => {
+    const env = setup(300_000);
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    expect(viewer.view()).toMatchObject({ idleReturnSec: 300, controller: "agent" });
+
+    const none = setup(0);
+    const idle = await runningBox(none);
+    await none.terminals.start(none.host, idle, "work", "rest");
+    const bearer = await none.terminals.attach(none.host, idle, "work", { source: "rest" });
+    expect(bearer.view()).toMatchObject({ idleReturnSec: 0 });
+    env.terminals.shutdown();
+  });
 });
 
 describe("terminal service: attachments", () => {

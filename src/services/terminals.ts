@@ -51,6 +51,8 @@ export interface SessionView extends SessionInfo {
   readonly canType: boolean;
   readonly canTakeOver: boolean;
   readonly canRelease: boolean;
+  /** Seconds without human input after which a takeover returns to the agent. 0 keeps it until released. */
+  readonly idleReturnSec: number;
 }
 
 export interface ReadOptions {
@@ -146,7 +148,8 @@ export class Attachment {
     readonly source: Source,
     private readonly where: { readonly hostId: string; readonly box: EventTarget },
     private readonly record: RecordNote,
-    private readonly onChange?: (view: SessionView) => void,
+    private readonly onChange: ((view: SessionView) => void) | undefined,
+    private readonly idleReturnSec: number,
   ) {}
 
   get name(): string {
@@ -158,7 +161,7 @@ export class Attachment {
   }
 
   view(): SessionView {
-    return viewOf(this.tracked, this.source);
+    return viewOf(this.tracked, this.source, this.idleReturnSec);
   }
 
   /** Forwards input to the session. Returns false, and forwards nothing, unless this viewer may type right now. */
@@ -363,6 +366,7 @@ export class TerminalService {
       { hostId: host.host.id, box: tracked.target },
       this.options.record,
       options.onChange,
+      this.options.takeoverIdleMs / 1000,
     );
     tracked.attachments.add(attachment);
     this.options.record(host.host.id, options.source, {
@@ -559,13 +563,14 @@ function infoOf(tracked: Tracked): SessionInfo {
   };
 }
 
-function viewOf(tracked: Tracked, source: Source): SessionView {
+function viewOf(tracked: Tracked, source: Source, idleReturnSec: number): SessionView {
   const browser = source === "ui";
   return {
     ...infoOf(tracked),
     canType: browser && tracked.controller === "human",
     canTakeOver: browser && tracked.controller === "agent",
     canRelease: browser && tracked.controller === "human",
+    idleReturnSec,
   };
 }
 
