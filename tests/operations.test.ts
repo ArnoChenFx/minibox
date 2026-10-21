@@ -42,6 +42,17 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "port.list": (id) => ({ id }),
   "port.expose": (id) => ({ id, port: 3000 }),
   "port.unexpose": (id) => ({ id, port: 3000 }),
+  "files.read": () => ({ id: "workspace", path: "hello.txt" }),
+  "files.write": () => ({ id: "workspace", path: "hello.txt", content: "hi\n" }),
+  "files.list": () => ({ id: "workspace", path: "/" }),
+  "files.copy": () => ({ id: "workspace", from: "hello.txt", to: "hello2.txt" }),
+  "files.download": () => ({ id: "workspace", path: "/" }),
+  "files.upload": () => ({
+    id: "workspace",
+    path: "/",
+    content: Buffer.from("not-a-real-tar").toString("base64"),
+    encoding: "base64" as const,
+  }),
   "volume.list": () => ({}),
   "volume.get": () => ({ id: "alpha-workspace" }),
   "volume.create": () => ({ name: "extra", confirm: true }),
@@ -131,6 +142,21 @@ async function preparedInput(
   }
   if (operation.name === "port.unexpose") {
     await app.operations.run("port.expose", ctx, { id: boxId, port: 3000 });
+  }
+  if (operation.name.startsWith("files.")) {
+    const box = (await app.operations.run("box.get", ctx, { id: boxId })) as {
+      box: { mounts: { path: string; volumeId: string | null; volume: string }[] };
+    };
+    const workspace = box.box.mounts.find((mount) => mount.path === "/workspace");
+    const volumeId = workspace?.volumeId ?? workspace?.volume;
+    if (!volumeId) throw new Error("the sample box has no workspace volume");
+    if (operation.name !== "files.write" && operation.name !== "files.upload") {
+      await app.operations.run("files.write", ctx, { id: volumeId, path: "hello.txt", content: "hi\n" });
+    }
+    const sample = SAMPLES[operation.name];
+    if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
+    const input = sample(boxId, app) as Record<string, unknown>;
+    return { input: { ...input, id: volumeId } };
   }
   const sample = SAMPLES[operation.name];
   if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
@@ -715,6 +741,10 @@ describe("projections", () => {
       "exec",
       "exec_get",
       "exec_kill",
+      "read_file",
+      "write_file",
+      "list_files",
+      "copy_files",
     ]);
     expect(
       mcpTools(OPERATIONS, ["storage"])

@@ -6,7 +6,7 @@ An agent token is held to its scopes. `tools/list` offers it only the tools thos
 
 > **Warning: the main access key grants full owner access over `/mcp`.** Any client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Give an agent an agent token ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) rather than the key. Keep the key out of prompts, logs and repositories, and change `ACCESS_KEY` if it leaks.
 
-`?toolsets=` selects toolsets: `core`, `session`, `network`, `storage`, `tools`, `meta` and `rebuild`. The query wins over the session. The default is `core,meta`. `rebuild_box` is in the `rebuild` toolset, so it is not in the default list: use `/mcp?toolsets=rebuild`, or `/mcp?toolsets=core,meta,rebuild`, to enable it. The design catalog is 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`), and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools`. `get_activity` and `task_wait` are not implemented yet. `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (list_ports, expose_port), `meta` are accepted; enable `tools` for Agent CLI install operations (`list_tools`, `install_tool`, `upgrade_tool`, `uninstall_tool`, `reconcile_tools`). File tools are not implemented.
+`?toolsets=` selects toolsets: `core`, `session`, `network`, `storage`, `tools`, `meta` and `rebuild`. The query wins over the session. The default is `core,meta`. `rebuild_box` is in the `rebuild` toolset, so it is not in the default list: use `/mcp?toolsets=rebuild`, or `/mcp?toolsets=core,meta,rebuild`, to enable it. The design catalog is 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`), and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools`. `get_activity` and `task_wait` are not implemented yet. `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (list_ports, expose_port) and `meta` are accepted; enable `tools` for Agent CLI install operations (`list_tools`, `install_tool`, `upgrade_tool`, `uninstall_tool`, `reconcile_tools`). File tools `read_file`, `write_file`, `list_files` and `copy_files` are in `core` (volume-scoped; helper + archive API).
 
 `minibox mcp` proxies newline-delimited JSON-RPC from stdio to `/mcp`. Build the binary with `bun run build:cli`.
 
@@ -16,7 +16,7 @@ The `initialize` result includes the block below. [`README.md`](../README.md) in
 
 Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work inside a box.
 
-- list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision. Read the revision again before an update that sends expectedRevision.
+- list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision, unless the box's TTL has passed: then exec fails with box_ttl_expired. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
 - Pass secrets in env, not in argv or cmd. The audit log keeps commands and argv, but never env values.
 - The result includes status, exitCode, stdout, stderr, truncated and durationMs. A non-zero exit code is the program's status.
@@ -31,7 +31,8 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool and reconcile_tools. Installs write to the shared tools volume and update BoxSpec.tools.
 - The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
 - The network toolset (`/mcp?toolsets=network`) holds list_ports and expose_port for path-mode previews under `/box/<name>/<port>/`.
-- File tools are not available yet. The default toolsets are core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
+- read_file, write_file, list_files and copy_files act on volumes (not boxes). They work when no box is running, via a helper container and the Docker archive API. A call keeps the boxes that mount the volume awake while it runs, and it never starts a stopped box. Paths are jailed inside the volume. write_file stamps uid/gid 1000 (dev). exec already implies volume RW on mounts of boxes the token may use; files:* only matters without exec.
+- The default toolsets are core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
 
 ## Exec
 
@@ -39,13 +40,13 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 
 A foreground call may set `timeoutSec` up to 55 seconds, which stays under the server's 60-second idle timeout. Longer commands use `background: true` with a larger `timeoutSec` (up to 3600) and `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and returns `timedOut: true`, with the exit code from `exec.inspect`, or 137 when the engine does not report one. If the stop fails, the exec stays `running`, a foreground call returns with `timedOut: true`, the stop is retried after a growing delay, and `exec_kill` can retry too.
 
-Stopping a box is not required before `exec`: a stopped box is started, and that changes its revision, so read the revision again before an update that sends `expectedRevision`. Idle timeout and TTL remain #12.
+Stopping a box is not required before `exec`: a stopped box is started, and that changes its revision, so read the revision again before an update that sends `expectedRevision`. A box past its TTL stays stopped: exec returns `409` with `box_ttl_expired` and does not start it (see [Idle sleep](../README.md#idle-sleep)).
 
 Commands and argv are written to the audit log, so pass secrets in `env`, not in `argv` or `cmd`. Under the `strict` profile exec runs only as `dev` or `1000`. Other profiles may run as `root`, and the audit marks those runs `privileged: true`. The `X-Minibox-Client` header does not change the audit source: REST calls are recorded as `rest` and MCP calls as `mcp`.
 
 The box needs `/bin/sh`, `cat`, `rm` and `sleep`: the exec wrapper and the process-tree stop run them inside the box.
 
-File read and write, including archive access and a helper container for a stopped box, are not in this server. They follow Volume (#24).
+Volume file tools (`read_file` / `write_file` / `list_files` / `copy_files`, plus archive upload/download) use a helper container and the Docker archive API, so they work when no box is running.
 
 ## Sessions
 

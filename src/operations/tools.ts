@@ -6,6 +6,7 @@ import { getBox } from "../services/boxes";
 import { installTool, listToolStatuses, reconcileTools, uninstallTool, upgradeTool } from "../services/tools";
 import { loadCatalog } from "../tools/catalog";
 import { TOOL_VERSION_RE } from "../tools/commands";
+import { TOOL_CATEGORIES } from "../tools/types";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
 import { boxId } from "./validation";
@@ -14,14 +15,26 @@ const ToolStatusSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
+  category: z.enum(TOOL_CATEGORIES).meta({ description: "UI group: agents, languages, terminal or networking." }),
   source: z.enum(["npm", "pip", "script"]),
   package: z.string(),
   bin: z.string(),
   estimatedMb: z.number().int(),
   requires: z.string().nullable(),
+  needsRoot: z.boolean().meta({
+    description:
+      "True when the install needs root, which MiniBox never runs. Install, upgrade and uninstall are refused.",
+  }),
   desiredVersion: z.string().nullable(),
-  installed: z.boolean(),
+  installed: z.boolean().meta({
+    description:
+      "True when the detect command succeeds inside the box, whether MiniBox, the image or the home volume put the tool there.",
+  }),
   installedVersion: z.string().nullable(),
+  managed: z.boolean().meta({
+    description:
+      "True when the entry point is on the shared tools volume. Only then may upgrade or uninstall change it.",
+  }),
 });
 
 const toolId = () =>
@@ -56,7 +69,7 @@ export const toolList = defineOperation({
     toolset: "tools",
     name: "list_tools",
     description:
-      "List the Agent CLI catalog with installed status and version. Pass id to include the desired tools from that box's spec.",
+      "List the Agent CLI catalog with installed status and version. Installed is detected in the box's own image and home volume, so tools baked into the image are reported too. Pass id to include the desired tools from that box's spec.",
   },
   run: async ({ host }, input) => ({ tools: await listToolStatuses(host, input.id) }),
 });
@@ -181,9 +194,11 @@ export function catalogSummary(dataDir: string) {
     id: entry.id,
     name: entry.name,
     description: entry.description,
+    category: entry.category,
     estimatedMb: entry.estimatedMb,
     requires: entry.requires ?? null,
     source: entry.source,
+    needsRoot: entry.needsRoot,
   }));
 }
 
@@ -201,9 +216,11 @@ export const toolCatalog = defineOperation({
         id: z.string(),
         name: z.string(),
         description: z.string(),
+        category: z.enum(TOOL_CATEGORIES),
         estimatedMb: z.number().int(),
         requires: z.string().nullable(),
         source: z.enum(["npm", "pip", "script"]),
+        needsRoot: z.boolean(),
       }),
     ),
   }),

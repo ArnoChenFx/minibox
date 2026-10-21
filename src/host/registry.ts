@@ -3,6 +3,7 @@ import type { Config } from "../config";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
 import { ActivityPulse } from "../services/activity-pulse";
+import { BoxPower } from "../services/power";
 import { SpecStore } from "../specs/store";
 import { VolumeStore } from "../volumes/store";
 import { type LiveSink, NO_LIVE } from "./live";
@@ -52,6 +53,14 @@ export interface HostCtx {
   volumes: VolumeStore;
   /** In-memory activity heartbeats for idle sleep (#12). Shared across hosts of one control plane. */
   pulse: ActivityPulse;
+  /** Serializes start, stop, sleep and wake of this host's boxes (#12). */
+  power: BoxPower;
+}
+
+export interface LocalHostOptions {
+  /** Host id. Defaults to `local`; a second host needs its own id. */
+  readonly id?: string;
+  readonly name?: string;
 }
 
 /**
@@ -66,11 +75,12 @@ export function createLocalHost(
   volumes: VolumeStore = new VolumeStore(cfg.dataDir),
   live: LiveSink = NO_LIVE,
   pulse: ActivityPulse = new ActivityPulse(),
+  options: LocalHostOptions = {},
 ): HostCtx {
   const ctx: HostCtx = {
     host: {
-      id: LOCAL_HOST_ID,
-      name: "Local",
+      id: options.id ?? LOCAL_HOST_ID,
+      name: options.name ?? "Local",
       kind: "docker",
       endpoint: `unix://${cfg.dockerSocket}`,
       labels: {},
@@ -94,6 +104,7 @@ export function createLocalHost(
     specs,
     volumes,
     pulse,
+    power: new BoxPower(),
   };
   return ctx;
 }

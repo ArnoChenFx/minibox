@@ -1,0 +1,15 @@
+{
+  "id": "oh-my-pi",
+  "name": "oh-my-pi",
+  "description": "Coding agent CLI with subagents and LSP, built by Stencil Labs (binary omp). Installed from the prebuilt release, which the installer checks against its sha256.",
+  "category": "agents",
+  "source": "script",
+  "package": "omp.sh",
+  "bin": "omp",
+  "needsRoot": false,
+  "estimatedMb": 245,
+  "install": "mkdir -p {{prefix}}/bin; t=$(mktemp) && curl -fsSL https://omp.sh/install -o \"$t\" && PI_INSTALL_DIR={{prefix}}/bin sh \"$t\" --binary; rc=$?; rm -f \"$t\"; exit $rc",
+  "upgrade": "mkdir -p {{prefix}}/bin; t=$(mktemp) && curl -fsSL https://omp.sh/install -o \"$t\" && PI_INSTALL_DIR={{prefix}}/bin sh \"$t\" --binary; rc=$?; rm -f \"$t\"; exit $rc",
+  "uninstall": "rm -f {{prefix}}/bin/omp",
+  "detect": "command -v omp >/dev/null && omp --version 2>/dev/null"
+}

@@ -276,17 +276,28 @@ docker run -d --name minibox --restart unless-stopped \
 
 ## Agent CLI 工具
 
-创建 Box 时可勾选 Agent CLI（Claude Code、Codex、Gemini CLI、OpenCode、Aider）。运行中可在 Box 详情「工具」页安装 / 升级 / 卸载。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成。目录在仓库 `catalog/*.json`，可用 `DATA_DIR/tools.d/*.json` 覆盖。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
+创建 Box 时可勾选 Agent CLI 与其他工具。列表按 AI 编程助手、语言与运行时、终端与开发工具、网络四组展示，上方的搜索框可按名称、说明或分组过滤。Box 详情的「工具」页使用同样的分组与搜索，安装 / 升级 / 卸载也在那里完成。目录包括 Claude Code、Codex、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust、Zig 与 Tailscale，每一项都从其官方来源安装（见仓库 `catalog/*.json`），`DATA_DIR/tools.d/*.json` 可追加或覆盖条目。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成，从不以 root 运行。镜像或家目录里已有的工具显示为已安装并附版本，MiniBox 不会重复安装；升级与卸载只作用于 MiniBox 自己装在 tools 卷上的工具。Tailscale 需要 root，MiniBox 只列出它，拒绝安装或卸载。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
 
 ## 空闲休眠
 
-Box 可以在空闲时自行停止，并在下一次终端 / exec / 会话请求时唤醒（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。
+Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。
 
-- **休眠**把期望状态改为 `stopped`（原因 `idle`）并执行 `docker stop`，**不删除容器**（工作区卷保留）。
-- **空闲**条件：没有打开的 WebSocket 终端、没有后台 exec、没有针对该 Box 的运行中异步任务、活动心跳超过 N 秒无更新，且 CPU 低于 `BOX_IDLE_CPU_PERCENT`。
-- 活动心跳只存在内存中（不用事件表）。终端、exec、会话与端口预览请求会刷新心跳。
-- **TTL**（创建/更新时的 `ttlSec`）从创建时刻起算；到期后 MiniBox **停止**该 Box（不删除），原因记为 `ttl`。
-- 控制台在因空闲或 TTL 停止时显示「休眠中」，并展示最近活动时间。
+- **休眠**把期望状态改为 `stopped`（原因 `idle`）并执行 `docker stop`，**不删除容器**，工作区卷也保留。
+- **超时。** `BOX_IDLE_TIMEOUT_SEC` 是全局默认值，`0` 关闭空闲休眠。Box 的 `idleTimeoutSec` 可以覆盖它：`0` 表示该 Box 永不休眠，`null` 表示继承默认值。
+- **活动**是每个 Box 在内存中的心跳，不写入事件。以下操作计入：终端的输入、输出与关闭，以及打开的终端；exec 从开始到结束；会话的启动、读取与发送；端口预览请求（包括流式响应），以及预览 WebSocket 直到关闭；卷上的文件调用，计入挂载该卷的每个 Box，且在调用期间保持唤醒；Box 上的异步任务结束时。读取 Box 记录或其统计不计入。
+- **空闲**指以上都没有进行中，最近一次心跳距今不少于超时时长，且最近的 CPU 采样低于 `BOX_IDLE_CPU_PERCENT`。尚无 CPU 采样的 Box 保持唤醒。
+- **唤醒**取决于请求：
+  - `exec` 会启动任何已停止的 Box，与以前一样。唤醒记入该次 exec 的审计。
+  - `session_start`（REST、MCP 与 CLI）会启动任何已停止的 Box。
+  - 终端 WebSocket 与端口预览只唤醒处于休眠中的 Box。被人停止的 Box 返回 `409`，错误分别为 `terminal_not_running` 与 `preview_box_stopped`。
+  - 读取、发送、关闭或列出会话不会唤醒 Box。会话随容器结束，因此在休眠中的 Box 上打开终端会唤醒它，随后以 `session_not_found` 关闭。
+  - 卷上的文件调用不会启动 Box。文件接口在 Box 停止时也可用，因此已停止的 Box 保持停止。
+- **TTL**（创建/更新时的 `ttlSec`）是从创建时刻起算的绝对寿命。到期后 MiniBox **停止**该 Box（不删除），原因记为 `ttl`。已到期的 Box 不会再次启动：启动、重启、重建、exec、会话、终端与预览都会以 `409` 与 `box_ttl_expired` 拒绝。清除 TTL，或用 `PATCH /api/boxes/:id` 设置更晚的 TTL，然后再启动 Box。
+- **重启**不会让所有 Box 同时休眠：没有心跳的 Box 从 MiniBox 开始监视时起算空闲时间，而不是从创建时刻起算。
+- **多宿主机。** 终端与预览会在所有已注册的 Docker 主机上查找 Box，空闲监视也会检查每台主机。
+- 控制台在因空闲停止时显示「休眠中」，因 TTL 停止且已到期时显示「TTL 已到期」，并展示最近活动时间。终端页会说明 Box 未运行的原因，并为休眠中的 Box 提供唤醒按钮。
+- **已知限制。** 对因空闲而休眠（未到期）的 Box 执行重建时，容器会短暂启动后再停止。预览的响应体在读完或取消之前，会让 Box 保持唤醒。
+  - **分离的会话。** 没有附着终端的会话不会让 Box 保持唤醒：超过空闲时长没有会话请求时，会话中安静运行的任务会随 Box 休眠而结束。保持一个终端打开，或把任务作为后台 exec 运行（运行期间计为活动），即可避免。
 
 ## 端口预览
 
@@ -625,7 +636,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 > **警告：主访问密钥在 `/mcp` 上拥有完全的所有者权限。** 持有密钥的客户端可以调用其所请求工具集中的每一个工具，包括在非「严格」档位的 Box 中以 root 执行 `exec`、`delete_box` 与 `rebuild_box`。请把 Agent 令牌（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）交给 Agent，而不是主密钥，并确保密钥不出现在提示词、日志和仓库中。
 
-设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`，它们属于默认工具集（共 9 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集（`/mcp?toolsets=storage`）加入九个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`（启用这些工具集时共 22 个）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `tools`（`list_tools`、`install_tool` 等）已有工具；`meta` 可被接受，目前没有工具。文件工具尚未实现，留到 Volume（[#24](https://github.com/ArnoChenFx/minibox/issues/24)）之后。说明见 [`docs/agents.md`](docs/agents.md)。
+设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用 Agent CLI 安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
 
 用 `bun run build:cli` 编译 CLI（`bun build --compile`，输出 `dist/minibox`，不提交）。它访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。
 
@@ -638,7 +649,7 @@ minibox mcp
 
 可以贴进 Agent 的 `AGENTS.md` 的中文说明：
 
-- 先 `list_boxes` 或 `create_box`。`exec` 会启动已停止的 Box，这会改变它的版本号（revision）。在发送 `expectedRevision` 的更新之前重新读取版本号。
+- 先 `list_boxes` 或 `create_box`。`exec` 会启动已停止的 Box，这会改变它的版本号（revision）；若该 Box 的 TTL 已到期，`exec` 不会启动它，而是返回 `box_ttl_expired`。在发送 `expectedRevision` 的更新之前重新读取版本号。
 - `argv` 不经过 shell，`cmd` 经 `/bin/sh -c`。默认用户 `dev`，默认目录 `/workspace`。严格 Box 只允许 `dev` 或 `1000` 作为用户。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep`。
 - 把密钥放在 `env` 里，不要放在 `argv` 或 `cmd` 中。审计日志会记录命令与 argv，但从不记录 env 的值。
 - 结果包含 `status`、`exitCode`、`stdout`、`stderr`、`truncated` 与 `durationMs`。非零退出码是程序自己的状态。
@@ -651,7 +662,7 @@ minibox mcp
 - `session_read` 返回 `lines` 与游标。把最新的游标作为 `since` 传入，只读取新增内容。`reset: true` 表示屏幕被重绘，此时 `lines` 是当前窗口。
 - `session_send` 接受 `keys`（tmux 键名，如 Enter、Tab、Escape 或 C-c）或 `text`，二者只能提供一个。审计日志只记录数量，从不记录输入内容。
 - `storage` 工具集（`/mcp?toolsets=storage`）包含卷与存储池工具。`create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`。没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 会重建 Box，因此适用与 `rebuild_box` 相同的挂载规则。`measure_volume` 只刷新缓存的大小。
-- 文件工具还没有。默认工具集是 core 与 meta。设计目录 27 个工具，默认工具集 15 个；当前服务只暴露已经实现的工具。
+- 文件工具：`read_file` / `write_file` / `list_files` / `copy_files`（作用于卷；Box 停止时也可用）。默认工具集是 core 与 meta。设计目录 27 个工具，默认工具集 15 个；当前服务只暴露已经实现的工具。
 
 ## 项目结构
 
@@ -800,7 +811,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 ### M2 · 存储与 Agent 接口
 
 - [x] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volume 与存储池（`local` / `nfs` / `path`）
-- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI。exec、MCP 与 CLI 已落地；文件 API 仍留到 Volume（#24）之后
+- [x] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI。exec、MCP 与 CLI 已落地；文件 API 已实现；Volume（#24）之后
 - [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
 - [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) 通过 SSE 推送 Box 状态与资源占用，取代轮询
 - [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS 部署指南

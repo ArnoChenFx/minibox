@@ -4,11 +4,12 @@ import type { Server, ServerWebSocket, Socket } from "bun";
 
 import type { App } from "../src/app";
 import { COOKIE_NAME, LEGACY_KEY_COOKIE } from "../src/auth";
+import type { StoredEvent } from "../src/events/store";
 import type { Source } from "../src/events/types";
 import { OWNER } from "../src/operations/types";
 import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
-import { getBox } from "../src/services/boxes";
+import { getBox, sleepBox } from "../src/services/boxes";
 import { type TerminalData, parseControl, terminalHandlers } from "../src/ws/terminal";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeExec, FakeRuntime } from "./support/fake-runtime";
@@ -65,11 +66,11 @@ async function signIn(): Promise<string> {
   return decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1).split(";")[0] ?? "");
 }
 
-async function createBox(name: string): Promise<string> {
+async function createBox(name: string, extra: Record<string, unknown> = {}): Promise<string> {
   const res = await fetch(`${base}/api/boxes`, {
     method: "POST",
     headers: { ...AUTH, "content-type": "application/json" },
-    body: JSON.stringify({ name, cpus: 1, memoryMb: 256 }),
+    body: JSON.stringify({ name, cpus: 1, memoryMb: 256, ...extra }),
   });
   expect(res.status).toBe(201);
   return ((await res.json()) as { box: { id: string } }).box.id;
@@ -719,5 +720,106 @@ describe("terminal backpressure", () => {
     await handlers.close(ws);
     expect(attach.killed).toBe(true);
     expect(closed).toEqual([]);
+  });
+});
+
+/** Puts a box's creation time far enough back that its TTL has run out, as a long-lived box would be. */
+function backdate(name: string, ms: number): void {
+  const host = app.hosts.get();
+  const spec = host.specs.findByName(name);
+  if (!spec) throw new Error(`no spec for ${name}`);
+  host.specs.write({ ...spec, createdAt: new Date(Date.now() - ms).toISOString() });
+}
+
+describe("terminal and idle sleep (#12)", () => {
+  test("an upgrade wakes an idle-sleeping box and audits the wake, and a session started after it attaches", async () => {
+    const id = await createBox("alpha");
+    const host = app.hosts.get();
+    await startSession(id, "work", "rest");
+    expect(await sleepBox(host, id, "idle")).toBe(true);
+    const starts = runtime.callsTo("startContainer").length;
+    const published: StoredEvent[] = [];
+    app.bus.subscribe("event", (event) => published.push(event));
+
+    const lost = connect(`/api/boxes/${id}/terminal?session=work`, AUTH);
+    await lost.opened;
+    expect((await lost.closed).code).toBe(1011);
+    expect(lost.frames()).toContainEqual(
+      expect.objectContaining({ type: "error", error: expect.objectContaining({ key: "session_not_found" }) }),
+    );
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts + 1);
+    expect(await getBox(host, id)).toMatchObject({ running: true, sleeping: false });
+    expect(published.find((event) => event.op === "box.wake")).toMatchObject({
+      source: "rest",
+      detail: { from: "idle" },
+    });
+
+    await startSession(id, "work", "rest");
+    const term = connect(`/api/boxes/${id}/terminal?session=work`, AUTH);
+    await term.opened;
+    await waitFor(() => lastState(term) !== undefined, "the state frame");
+    term.ws.close(1000, "done");
+    await term.closed;
+  });
+
+  test("an upgrade for a sleeping box whose TTL has expired is refused with 409, and starts nothing", async () => {
+    const id = await createBox("alpha", { ttlSec: 60 });
+    backdate("alpha", 120_000);
+    expect(await sleepBox(app.hosts.get(), id, "ttl")).toBe(true);
+    const starts = runtime.callsTo("startContainer").length;
+
+    const res = await fetch(`${base}/api/boxes/${id}/terminal?session=work`, { headers: { ...UPGRADE, ...AUTH } });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: { code: "conflict", key: "box_ttl_expired" } });
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
+    expect(await getBox(app.hosts.get(), id)).toMatchObject({ running: false, sleeping: true, stopReason: "ttl" });
+  });
+
+  test("a session name that is not valid does not wake a sleeping box", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "rest");
+    expect(await sleepBox(app.hosts.get(), id, "idle")).toBe(true);
+    const starts = runtime.callsTo("startContainer").length;
+
+    const res = await fetch(`${base}/api/boxes/${id}/terminal?session=bad%20name!`, {
+      headers: { ...UPGRADE, ...AUTH },
+    });
+    expect(res.status).toBe(400);
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
+    expect(await getBox(app.hosts.get(), id)).toMatchObject({ running: false, sleeping: true });
+  });
+
+  test("a token without box:session is refused before a sleeping box wakes", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "rest");
+    expect(await sleepBox(app.hosts.get(), id, "idle")).toBe(true);
+    const starts = runtime.callsTo("startContainer").length;
+    const token = mint(app, { name: "reader", scopes: ["box:read", "box:write"], boxes: { type: "all" } });
+
+    const res = await fetch(`${base}/api/boxes/${id}/terminal?session=work`, {
+      headers: { ...UPGRADE, ...bearer(token.secret) },
+    });
+    expect(res.status).toBe(403);
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
+    expect(await getBox(app.hosts.get(), id)).toMatchObject({ running: false, sleeping: true });
+  });
+
+  test("an open browser terminal is an attachment until it closes, and typing in it refreshes the heartbeat", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "ui");
+    const { token } = signedInSession();
+    const box = await getBox(app.hosts.get(), id);
+    const term = connect(`/api/boxes/${id}/terminal?session=work`, sessionCookie(token));
+    await term.opened;
+    await waitFor(() => lastState(term)?.canType === true, "a state frame that lets the console type");
+    expect(app.terminals.hasOpenAttachment(box.id)).toBe(true);
+
+    app.pulse.touch(box.boxId, "exec", Date.now() - 600_000);
+    term.ws.send("pwd\n");
+    await waitFor(() => (app.pulse.lastAt(box.boxId) ?? 0) > Date.now() - 5_000, "the typing to refresh the heartbeat");
+
+    term.ws.close(1000, "done");
+    await term.closed;
+    await waitFor(() => !app.terminals.hasOpenAttachment(box.id), "the attachment to close");
   });
 });

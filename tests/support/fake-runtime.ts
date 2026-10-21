@@ -20,6 +20,7 @@ import {
   type HelperSpec,
   type ImageSummary,
   type Mount,
+  type PathStat,
   type Runtime,
   type RuntimeEvent,
   type RuntimeInfo,
@@ -65,6 +66,15 @@ export interface FakeImage {
   labels: Record<string, string>;
   createdAt: string;
   size: number;
+}
+
+export interface FakeFsEntry {
+  type: "file" | "dir" | "symlink";
+  content?: Buffer;
+  target?: string;
+  mode?: number;
+  uid?: number;
+  gid?: number;
 }
 
 export interface FakeNetwork {
@@ -272,6 +282,18 @@ export class FakeRuntime implements Runtime {
    * `/workspace` by an image that names one, as Docker's copy-up gives it. Otherwise it is owned by root.
    */
   readonly volumeOwners = new Map<string, VolumeOwner>();
+  /**
+   * In-memory files per named volume, keyed by relative path without a leading slash. The volume root is `""`.
+   * getArchive / putArchive and find/cp helpers read and write this map when a mount points at the volume.
+   */
+  readonly volumeFiles = new Map<string, Map<string, FakeFsEntry>>();
+  /**
+   * Host/container paths outside any named volume. Used when archive/cp follow a symlink that leaves the volume
+   * (mirrors Docker Engine), so regression tests can prove the escape without the service-level jail.
+   */
+  readonly outsideFiles = new Map<string, FakeFsEntry>();
+  /** Archive bytes callers actually pulled from getArchive streams (sent in 16 KiB chunks, so destroy stops it). */
+  archiveBytesRead = 0;
   readonly networks = new Map<string, FakeNetwork>();
   readonly execs: FakeExec[] = [];
   /** When true, every call fails as if the engine socket were unreachable. */
@@ -397,6 +419,43 @@ export class FakeRuntime implements Runtime {
   /** Owner of a volume root, as a volume left behind by an earlier box has it. Seeding does not record a call. */
   seedVolumeOwner(volume: string, owner: VolumeOwner): void {
     this.volumeOwners.set(volume, { ...owner });
+  }
+
+  /** Seed a file, directory or symlink on a volume. Paths are volume-relative without a leading slash. */
+  seedVolumeFile(volume: string, path: string, entry: FakeFsEntry): void {
+    let files = this.volumeFiles.get(volume);
+    if (!files) {
+      files = new Map();
+      this.volumeFiles.set(volume, files);
+    }
+    if (path !== "") {
+      const parts = path.split("/");
+      let built = "";
+      for (let i = 0; i < parts.length - 1; i++) {
+        built = built === "" ? parts[i]! : `${built}/${parts[i]}`;
+        if (!files.has(built)) files.set(built, { type: "dir", mode: 0o755, uid: 1000, gid: 1000 });
+      }
+    }
+    files.set(path, { ...entry, content: entry.content ? Buffer.from(entry.content) : entry.content });
+  }
+
+  /** Seed an absolute path outside volumes (e.g. `/tmp/secret`) for symlink-escape regression tests. */
+  seedOutsideFile(absPath: string, entry: FakeFsEntry): void {
+    const path = absPath.startsWith("/") ? absPath : `/${absPath}`;
+    if (path !== "/") {
+      const parts = path.split("/").filter(Boolean);
+      let built = "";
+      for (let i = 0; i < parts.length - 1; i++) {
+        built += `/${parts[i]}`;
+        if (!this.outsideFiles.has(built)) {
+          this.outsideFiles.set(built, { type: "dir", mode: 0o755, uid: 0, gid: 0 });
+        }
+      }
+    }
+    this.outsideFiles.set(path, {
+      ...entry,
+      content: entry.content ? Buffer.from(entry.content) : entry.content,
+    });
   }
 
   /** `null` limits model a box created without them (unlimited). */
@@ -776,18 +835,80 @@ export class FakeRuntime implements Runtime {
     if (spec.signal?.aborted) throw abortError();
   }
 
-  /** Keeps the last archive per container; paths are not interpreted. */
   async putArchive(id: string, path: string, tar: Readable | Buffer): Promise<void> {
     this.enter("putArchive", [id, path, tar]);
     const c = this.getContainer(id);
-    this.archives.set(c.id, Buffer.isBuffer(tar) ? tar : await collect(tar));
+    const bytes = Buffer.isBuffer(tar) ? tar : await collect(tar);
+    this.archives.set(c.id, bytes);
+    const resolved = resolveMountPath(c, path);
+    if (!resolved) return;
+    // Engine follows intermediate *and* final directory symlinks for putArchive destinations.
+    const walked = walkVolumePath(this, resolved.volume, resolved.relative, {
+      followFinal: true,
+      allowMissing: true,
+      mountRoot: resolved.root,
+    });
+    if (!walked) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
+    applyTarToVolume(walked.store, walked.relative, bytes);
   }
 
   async getArchive(id: string, path: string): Promise<Readable> {
     this.enter("getArchive", [id, path]);
-    const bytes = this.archives.get(this.getContainer(id).id);
+    const c = this.getContainer(id);
+    const resolved = resolveMountPath(c, path);
+    if (resolved) {
+      // Follow intermediate directory symlinks; leave a final symlink as metadata (Engine behaviour).
+      const walked = walkVolumePath(this, resolved.volume, resolved.relative, {
+        followFinal: false,
+        mountRoot: resolved.root,
+      });
+      if (!walked) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
+      const bytes = tarFromVolume(walked.store, walked.relative);
+      if (!bytes) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
+      return this.countedStream(bytes);
+    }
+    const bytes = this.archives.get(c.id);
     if (!bytes) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
     return Readable.from([bytes]);
+  }
+
+  private countedStream(bytes: Buffer): Readable {
+    return Readable.from(
+      chunked(bytes, (n) => (this.archiveBytesRead += n)),
+      { objectMode: false, highWaterMark: 1 },
+    );
+  }
+
+  /** HEAD archive stat: metadata only, the final component is not followed (Engine behaviour). */
+  async statPath(id: string, path: string): Promise<PathStat> {
+    this.enter("statPath", [id, path]);
+    const c = this.getContainer(id);
+    const resolved = resolveMountPath(c, path);
+    const walked = resolved
+      ? walkVolumePath(this, resolved.volume, resolved.relative, { followFinal: false, mountRoot: resolved.root })
+      : null;
+    const entry = walked?.store.get(walked.relative);
+    if (!walked || !entry) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
+    const name = walked.relative.split("/").pop() ?? "";
+    const typeBits = entry.type === "dir" ? 2 ** 31 : entry.type === "symlink" ? 2 ** 27 : 0;
+    return {
+      name,
+      type: entry.type,
+      size: entry.type === "file" ? (entry.content?.length ?? 0) : 0,
+      mode: typeBits + (entry.mode ?? 0o644),
+      linkTarget: entry.type === "symlink" ? (entry.target ?? "") : "",
+    };
+  }
+
+  filesOf(volume: string): Map<string, FakeFsEntry> {
+    let files = this.volumeFiles.get(volume);
+    if (!files) {
+      files = new Map([["", { type: "dir", mode: 0o755, uid: 1000, gid: 1000 }]]);
+      this.volumeFiles.set(volume, files);
+    } else if (!files.has("")) {
+      files.set("", { type: "dir", mode: 0o755, uid: 1000, gid: 1000 });
+    }
+    return files;
   }
 
   /** Only a mounted path has an owner in the fake, which is its volume's root owner. */
@@ -1105,13 +1226,15 @@ export class FakeRuntime implements Runtime {
     if (inUse) throw new RuntimeError("conflict", `remove ${name}: volume is in use`);
     this.volumes.delete(name);
     this.volumeOwners.delete(name);
+    this.volumeFiles.delete(name);
   }
 
   async runHelper(spec: HelperSpec): Promise<HelperResult> {
     this.enter("runHelper", [spec]);
     this.getImage(spec.image);
     this.ensureVolumes(spec.mounts);
-    return this.helperHandler(spec);
+    if (this.helperHandler !== defaultHelper) return this.helperHandler(spec);
+    return volumeAwareHelper(this, spec);
   }
 
   async diskUsage(path: string): Promise<DiskUsage> {
@@ -1142,4 +1265,299 @@ export class FakeRuntime implements Runtime {
     if (!network) throw new RuntimeError("not_found", `network ${name} not found`);
     c.networkId = network.id;
   }
+}
+
+/**
+ * Resolve a volume-relative path the way the kernel does under Docker archive/cp: the volume is mounted at
+ * `mountRoot` in a single absolute namespace, every intermediate symlink is followed (and the final one when
+ * `followFinal` is set, as putArchive does), chains are re-looked-up hop by hop, `..` is walked against the physical
+ * path, and absolute targets restart at `/`. Anything that lands outside the mount resolves onto `outsideFiles`,
+ * keyed by absolute path. Returns null for a missing intermediate (unless `allowMissing`) or a symlink loop.
+ */
+function walkVolumePath(
+  rt: FakeRuntime,
+  volume: string,
+  relative: string,
+  opts: { followFinal: boolean; allowMissing?: boolean; mountRoot?: string },
+): { store: Map<string, FakeFsEntry>; relative: string } | null {
+  const rootParts = (opts.mountRoot ?? "/minibox-volume").split("/").filter(Boolean);
+  const locate = (abs: string[]): { store: Map<string, FakeFsEntry>; key: string } => {
+    const inVolume = abs.length >= rootParts.length && rootParts.every((part, i) => abs[i] === part);
+    if (inVolume) return { store: rt.filesOf(volume), key: abs.slice(rootParts.length).join("/") };
+    return { store: rt.outsideFiles, key: `/${abs.join("/")}` };
+  };
+  const entryAt = (abs: string[]): FakeFsEntry | undefined => {
+    const { store, key } = locate(abs);
+    if (store === rt.outsideFiles && key === "/") return { type: "dir", mode: 0o755, uid: 0, gid: 0 };
+    return store.get(key);
+  };
+
+  const queue = relative.split("/").filter((part) => part !== "" && part !== ".");
+  let current = [...rootParts];
+  let missing = false;
+  let hops = 0;
+  while (queue.length > 0) {
+    const part = queue.shift() as string;
+    if (part === ".") continue;
+    if (part === "..") {
+      if (missing) return null;
+      current.pop();
+      continue;
+    }
+    if (missing) {
+      current.push(part);
+      continue;
+    }
+    const isFinal = queue.length === 0;
+    const next = [...current, part];
+    const entry = entryAt(next);
+    if (!entry) {
+      if (!isFinal && !opts.allowMissing) return null;
+      missing = true;
+      current = next;
+      continue;
+    }
+    if (entry.type === "symlink" && (!isFinal || opts.followFinal)) {
+      hops += 1;
+      if (hops > 40) return null;
+      const target = entry.target ?? "";
+      if (target.startsWith("/")) current = [];
+      queue.unshift(...target.split("/").filter((seg) => seg !== "" && seg !== "."));
+      continue;
+    }
+    current = next;
+  }
+  const { store, key } = locate(current);
+  return { store, relative: key };
+}
+
+function* chunked(bytes: Buffer, onChunk: (n: number) => void): Generator<Buffer> {
+  for (let at = 0; at < bytes.length; at += 16 * 1024) {
+    const chunk = bytes.subarray(at, at + 16 * 1024);
+    onChunk(chunk.length);
+    yield chunk;
+  }
+}
+
+function resolveMountPath(
+  c: FakeContainer,
+  absPath: string,
+): { volume: string; relative: string; root: string } | null {
+  const mounts = [...(c.spec.mounts ?? [])].toSorted((a, b) => b.target.length - a.target.length);
+  for (const mount of mounts) {
+    const root = mount.target.replace(/\/+$/, "") || "/";
+    if (absPath === root || absPath.startsWith(`${root}/`)) {
+      const relative = absPath === root ? "" : absPath.slice(root.length + 1);
+      return { volume: mount.source, relative, root };
+    }
+  }
+  return null;
+}
+
+const BLOCK = 512;
+function octal(value: number, width: number): string {
+  return `${value.toString(8).padStart(width - 1, "0")}\0`;
+}
+function seal(block: Buffer): Buffer {
+  block.fill(0x20, 148, 156);
+  block.write(
+    `${octal(
+      block.reduce((sum, byte) => sum + byte, 0),
+      7,
+    )} `,
+    148,
+    "ascii",
+  );
+  return block;
+}
+function tarHeader(name: string, type: string, size: number, uid: number, gid: number, link = ""): Buffer {
+  const block = Buffer.alloc(BLOCK);
+  block.write(name.slice(0, 100), 0, 100, "utf8");
+  block.write(octal(type === "5" ? 0o755 : 0o644, 8), 100, "ascii");
+  block.write(octal(uid, 8), 108, "ascii");
+  block.write(octal(gid, 8), 116, "ascii");
+  block.write(octal(size, 12), 124, "ascii");
+  block.write(octal(0, 12), 136, "ascii");
+  block.write(type, 156, "ascii");
+  if (link) block.write(link.slice(0, 100), 157, "utf8");
+  block.write("ustar\0", 257, "ascii");
+  block.write("00", 263, "ascii");
+  return seal(block);
+}
+function tarPad(data: Buffer): Buffer {
+  const padding = (BLOCK - (data.length % BLOCK)) % BLOCK;
+  return padding === 0 ? data : Buffer.concat([data, Buffer.alloc(padding)]);
+}
+
+function tarFromVolume(files: Map<string, FakeFsEntry>, relative: string): Buffer | null {
+  const entry = files.get(relative);
+  if (!entry) return null;
+  const base =
+    relative === "" ? "." : relative.includes("/") ? relative.slice(relative.lastIndexOf("/") + 1) : relative;
+  if (entry.type === "file") {
+    const data = entry.content ?? Buffer.alloc(0);
+    return Buffer.concat([
+      tarHeader(base, "0", data.length, entry.uid ?? 1000, entry.gid ?? 1000),
+      tarPad(data),
+      Buffer.alloc(BLOCK * 2),
+    ]);
+  }
+  if (entry.type === "symlink") {
+    return Buffer.concat([
+      tarHeader(base, "2", 0, entry.uid ?? 1000, entry.gid ?? 1000, entry.target ?? ""),
+      Buffer.alloc(BLOCK * 2),
+    ]);
+  }
+  // Directory: include the directory and its immediate... actually for getArchive of a dir Docker includes the tree.
+  const chunks: Buffer[] = [];
+  const prefix = relative === "" ? "" : relative;
+  const names = [...files.keys()]
+    .filter((name) => name === prefix || (prefix === "" ? name !== "" : name.startsWith(`${prefix}/`)))
+    .toSorted();
+  for (const name of names) {
+    const node = files.get(name)!;
+    const entryName = name === prefix ? base : prefix === "" ? name : name.slice(prefix.length + 1);
+    const shown = entryName === "" ? base : entryName;
+    if (node.type === "dir") {
+      chunks.push(tarHeader(shown.endsWith("/") ? shown : `${shown}/`, "5", 0, node.uid ?? 1000, node.gid ?? 1000));
+    } else if (node.type === "symlink") {
+      chunks.push(tarHeader(shown, "2", 0, node.uid ?? 1000, node.gid ?? 1000, node.target ?? ""));
+    } else {
+      const data = node.content ?? Buffer.alloc(0);
+      chunks.push(tarHeader(shown, "0", data.length, node.uid ?? 1000, node.gid ?? 1000), tarPad(data));
+    }
+  }
+  chunks.push(Buffer.alloc(BLOCK * 2));
+  return Buffer.concat(chunks);
+}
+
+function applyTarToVolume(files: Map<string, FakeFsEntry>, destRelative: string, tar: Buffer): void {
+  let offset = 0;
+  let pendingName: string | null = null;
+  while (offset + BLOCK <= tar.length) {
+    const block = tar.subarray(offset, offset + BLOCK);
+    if (block.every((b) => b === 0)) break;
+    const typeFlag = String.fromCharCode(block[156] ?? 0);
+    const sizeText = (block.subarray(124, 136).toString("ascii").split("\0")[0] ?? "").trim();
+    const size = /^[0-7]+$/.test(sizeText) ? Number.parseInt(sizeText, 8) : 0;
+    const uidText = (block.subarray(108, 116).toString("ascii").split("\0")[0] ?? "").trim();
+    const gidText = (block.subarray(116, 124).toString("ascii").split("\0")[0] ?? "").trim();
+    const uid = /^[0-7]+$/.test(uidText) ? Number.parseInt(uidText, 8) : 1000;
+    const gid = /^[0-7]+$/.test(gidText) ? Number.parseInt(gidText, 8) : 1000;
+    const nameField = block.subarray(0, 100).toString("utf8").replace(/\0.*$/, "");
+    const linkField = block.subarray(157, 257).toString("utf8").replace(/\0.*$/, "");
+    const bodyStart = offset + BLOCK;
+    const data = Buffer.from(tar.subarray(bodyStart, bodyStart + size));
+    offset = bodyStart + Math.ceil(size / BLOCK) * BLOCK;
+    if (typeFlag === "L") {
+      pendingName = data.toString("utf8").replace(/\0.*$/, "");
+      continue;
+    }
+    if (typeFlag === "x" || typeFlag === "g" || typeFlag === "K") continue;
+    const rawName = (pendingName ?? nameField).replace(/^\.\//, "").replace(/\/$/, "");
+    pendingName = null;
+    const full = destRelative === "" ? rawName : rawName === "." ? destRelative : `${destRelative}/${rawName}`;
+    // Ensure parents
+    if (full.includes("/")) {
+      const parts = full.split("/");
+      let built = "";
+      for (let i = 0; i < parts.length - 1; i++) {
+        built = built === "" ? parts[i]! : `${built}/${parts[i]}`;
+        if (!files.has(built)) files.set(built, { type: "dir", mode: 0o755, uid, gid });
+      }
+    }
+    if (typeFlag === "5" || nameField.endsWith("/")) {
+      files.set(full, { type: "dir", mode: 0o755, uid, gid });
+    } else if (typeFlag === "2") {
+      files.set(full, { type: "symlink", target: linkField, uid, gid });
+    } else {
+      files.set(full, { type: "file", content: data, mode: 0o644, uid, gid });
+    }
+  }
+  if (!files.has("")) files.set("", { type: "dir", mode: 0o755, uid: 1000, gid: 1000 });
+}
+
+function volumeAwareHelper(rt: FakeRuntime, spec: HelperSpec): HelperResult {
+  const mount = spec.mounts?.[0];
+  const volume = mount?.source;
+  const root = (mount?.target ?? "/minibox-volume").replace(/\/+$/, "");
+  const files = volume ? rt.filesOf(volume) : new Map<string, FakeFsEntry>();
+  const cmd0 = spec.cmd[0] ?? "";
+
+  if (cmd0 === "find") {
+    // find -P <search> -maxdepth N ( -type f -o ... ) -printf ...
+    const searchIdx = spec.cmd.indexOf("-P") >= 0 ? spec.cmd.indexOf("-P") + 1 : 1;
+    const search = spec.cmd[searchIdx] ?? root;
+    const depthIdx = spec.cmd.indexOf("-maxdepth");
+    const maxDepth = depthIdx >= 0 ? Number(spec.cmd[depthIdx + 1] ?? "2") : 2;
+    if (!search.startsWith(root)) return { exitCode: 1, logs: "find: path escapes mount\n" };
+    const relRoot = search === root ? "" : search.slice(root.length + 1);
+    if (relRoot !== "" && !files.has(relRoot)) return { exitCode: 1, logs: "No such file or directory\n" };
+    const lines: string[] = [];
+    for (const [name, entry] of [...files.entries()].toSorted((a, b) => a[0].localeCompare(b[0]))) {
+      if (relRoot !== "" && name !== relRoot && !name.startsWith(`${relRoot}/`)) continue;
+      const depth =
+        name === relRoot
+          ? 0
+          : name === ""
+            ? 0
+            : (relRoot === "" ? name : name.slice(relRoot.length + 1)).split("/").length;
+      if (name !== relRoot && depth > maxDepth) continue;
+      if (name === "" && relRoot !== "") continue;
+      const kind = entry.type === "file" ? "f" : entry.type === "dir" ? "d" : entry.type === "symlink" ? "l" : "o";
+      const size = entry.type === "file" ? String(entry.content?.length ?? 0) : "0";
+      const full = name === "" ? root : `${root}/${name}`;
+      lines.push(`${kind}\t${size}\t${full}`);
+    }
+    return { exitCode: 0, logs: `${lines.join("\n")}\n` };
+  }
+
+  if (cmd0 === "sh" && spec.cmd.includes("minibox-cp")) {
+    // sh -c '...' minibox-cp fromAbs toAbs — follow intermediate symlinks like the Engine.
+    const fromAbs = spec.cmd[spec.cmd.length - 2] ?? "";
+    const toAbs = spec.cmd[spec.cmd.length - 1] ?? "";
+    if (!fromAbs.startsWith(root) || !toAbs.startsWith(root)) return { exitCode: 1, logs: "cp: path escapes\n" };
+    const fromRel = fromAbs === root ? "" : fromAbs.slice(root.length + 1);
+    const toRel = toAbs === root ? "" : toAbs.slice(root.length + 1);
+    if (!volume) return { exitCode: 1, logs: "cp: no volume\n" };
+    const walkedFrom = walkVolumePath(rt, volume, fromRel, { followFinal: false, mountRoot: root });
+    if (!walkedFrom) return { exitCode: 1, logs: "No such file or directory\n" };
+    const src = walkedFrom.store.get(walkedFrom.relative);
+    if (!src) return { exitCode: 1, logs: "No such file or directory\n" };
+    const walkedTo = walkVolumePath(rt, volume, toRel, { followFinal: true, allowMissing: true, mountRoot: root });
+    if (!walkedTo) return { exitCode: 1, logs: "cp: destination escapes\n" };
+    const destStore = walkedTo.store;
+    const to = walkedTo.relative;
+    // Copy the source node (and children when it is a directory still on the volume map).
+    const fromStore = walkedFrom.store;
+    const from = walkedFrom.relative;
+    const toCopy =
+      src.type === "dir" && fromStore === rt.filesOf(volume)
+        ? [...fromStore.entries()].filter(([name]) => name === from || name.startsWith(from === "" ? "" : `${from}/`))
+        : ([[from, src]] as [string, FakeFsEntry][]);
+    for (const [name, entry] of toCopy) {
+      const suffix = name === from ? "" : name.slice(from.length + (from === "" ? 0 : 1));
+      const dest = suffix === "" ? to : to === "" ? suffix : `${to}/${suffix}`;
+      const absStyle = dest.startsWith("/");
+      if (dest.includes("/")) {
+        const parentParts = absStyle ? dest.split("/").filter(Boolean).slice(0, -1) : dest.split("/").slice(0, -1);
+        let built = "";
+        for (const part of parentParts) {
+          built = absStyle ? `${built}/${part}` : built === "" ? part : `${built}/${part}`;
+          if (!destStore.has(built)) destStore.set(built, { type: "dir", mode: 0o755, uid: 1000, gid: 1000 });
+        }
+      }
+      destStore.set(dest, {
+        type: entry.type,
+        content: entry.content ? Buffer.from(entry.content) : undefined,
+        target: entry.target,
+        mode: entry.mode,
+        uid: entry.uid,
+        gid: entry.gid,
+      });
+    }
+    return { exitCode: 0, logs: "" };
+  }
+
+  return defaultHelper(spec);
 }

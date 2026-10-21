@@ -15,6 +15,7 @@ import {
 } from "./auth";
 import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
+import type { Source } from "./events/types";
 import { guardRequest } from "./guard";
 import { AppError, badRequest } from "./lib/errors";
 import { errorResponse, withSecurityHeaders } from "./lib/http";
@@ -26,7 +27,7 @@ import { proxyHttp, resolvePreview } from "./preview/proxy";
 import { attachPreviewUpstream, type PreviewSocketData } from "./preview/ws";
 import { routes } from "./routes";
 import { matchRoute, routeAllows } from "./routes/router";
-import { getBox } from "./services/boxes";
+import { type Box, locateBox, wakeIfSleeping } from "./services/boxes";
 import { reconcileHost } from "./services/reconcile";
 import { serveFile } from "./static";
 import { isSessionName } from "./tmux/format";
@@ -129,37 +130,53 @@ export function startServer(app: App): Server<SocketData> {
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           const caller = await callerOf(app, req, server);
           if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
-          const host = app.hosts.get();
-          const box = await getBox(host, decodeURIComponent(tm[1] ?? ""));
+          const name = url.searchParams.get("session") ?? "";
+          if (!isSessionName(name)) throw badRequest(msg("session_name_invalid"), { field: "session" });
+          const { host, box: found } = await locateBox(app.hosts, decodeURIComponent(tm[1] ?? ""));
           const principal = caller.principal;
+          const source: Source = caller.sessionId ? "ui" : "rest";
           if (
             principal.type === "token" &&
-            (!scopeAllowed(principal.grants, "box:session") || !boxVisible(principal, viewOfBox(box, host.host.id)))
+            (!scopeAllowed(principal.grants, "box:session") || !boxVisible(principal, viewOfBox(found, host.host.id)))
           ) {
             throw new AppError(403, "forbidden", msg("box_out_of_scope"));
           }
-          if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
-          const name = url.searchParams.get("session") ?? "";
-          if (!isSessionName(name)) throw badRequest(msg("session_name_invalid"), { field: "session" });
+          // The hold spans the wake and the attach, so the idle sweep cannot stop the box in between (#12).
+          const release = app.pulse.hold(found.boxId);
+          let box: Box;
+          try {
+            box = await wakeIfSleeping(host, found.boxId, {
+              record: (note) => app.record(host.host.id, source, principal, note),
+            });
+            if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
+          } catch (e) {
+            release();
+            throw e;
+          }
           const data: TerminalData = {
             boxId: box.id,
             box,
             host,
             name,
-            source: caller.sessionId ? "ui" : "rest",
+            source,
             sessionId: caller.sessionId,
             principal,
+            releaseHold: release,
           };
           if (server.upgrade(req, { data })) return undefined;
+          release();
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
         if (isPreviewPath(url.pathname)) {
           // Path-mode preview: session cookie only (share links deferred). Proxied pages get CSP sandbox.
-          if (sessionCaller(req, app.sessions) === null) {
+          const caller = sessionCaller(req, app.sessions);
+          if (caller === null) {
             throw new AppError(401, "unauthorized", msg("preview_unauthorized"));
           }
-          const host = app.hosts.get();
-          const resolved = await resolvePreview(host, url);
+          const resolved = await resolvePreview(app.hosts, url, {
+            pulse: app.pulse,
+            audit: (hostId, note) => app.record(hostId, "ui", caller.principal, note),
+          });
           if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
             const upstreamUrl =
               resolved.upstreamOrigin.replace(/^http/, "ws") +
@@ -171,13 +188,13 @@ export function startServer(app: App): Server<SocketData> {
               boxId: resolved.box.boxId,
               pendingUpstream: upstreamUrl,
               pendingHeaders: req.headers,
+              release: resolved.release,
             };
-            if (!server.upgrade(req, { data })) {
-              throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
-            }
-            return undefined;
+            if (server.upgrade(req, { data })) return undefined;
+            resolved.release();
+            throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
           }
-          res = await proxyHttp(req, resolved, app.pulse);
+          res = await proxyHttp(req, resolved);
         } else if (url.pathname === "/mcp") res = await handleMcp(app, req, url, addressOf(app, req, server));
         else
           res = url.pathname.startsWith("/api/")

@@ -1,0 +1,16 @@
+{
+  "id": "qoder",
+  "name": "Qoder CLI",
+  "description": "Qoder's terminal coding assistant, installed from the official npm package @qoder-ai/qodercli.",
+  "category": "agents",
+  "source": "npm",
+  "package": "@qoder-ai/qodercli",
+  "bin": "qodercli",
+  "needsRoot": false,
+  "estimatedMb": 95,
+  "requires": "Node ≥ 20",
+  "install": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "upgrade": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "uninstall": "npm uninstall -g --prefix {{prefix}} {{package}}",
+  "detect": "command -v qodercli >/dev/null && qodercli --version 2>/dev/null"
+}

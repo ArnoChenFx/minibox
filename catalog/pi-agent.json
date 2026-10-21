@@ -1,0 +1,16 @@
+{
+  "id": "pi-agent",
+  "name": "Pi coding agent",
+  "description": "Coding agent CLI with read, bash, edit and write tools and session management (npm @earendil-works/pi-coding-agent).",
+  "category": "agents",
+  "source": "npm",
+  "package": "@earendil-works/pi-coding-agent",
+  "bin": "pi",
+  "needsRoot": false,
+  "estimatedMb": 154,
+  "requires": "Node ≥ 22.19",
+  "install": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "upgrade": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "uninstall": "npm uninstall -g --prefix {{prefix}} {{package}}",
+  "detect": "command -v pi >/dev/null && pi --version 2>/dev/null"
+}
