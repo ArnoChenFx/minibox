@@ -10,7 +10,7 @@
  * present locally, and must contain /bin/busybox for the sudo test). The prefix must start with "mbit", so the cleanup
  * can never touch a real MiniBox install.
  */
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1211,6 +1211,119 @@ describe.skipIf(!enabled)("volume root owners against a real engine", () => {
         expect(leftover).toHaveLength(0);
       } finally {
         await runtime.removeImage(`${repo}:1`, { force: true }).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+});
+
+describe.skipIf(!enabled)("workspace root owner on create and rebuild against a real engine", () => {
+  const dev = `${prefix}-dev`;
+  const devTemplate = `${dev}:1`;
+
+  /** A dev template: user dev at uid and gid 1000, a /workspace that user owns, and the labels that name that owner. */
+  async function buildDevTemplate(): Promise<void> {
+    const { id } = await runtime.createContainer({
+      image: IMAGE,
+      name: `${prefix}-dev-builder`,
+      cmd: ["sleep", "300"],
+      labels: owned,
+    });
+    try {
+      await runtime.startContainer(id);
+      const built = await shell(
+        id,
+        "addgroup -g 1000 dev && adduser -D -u 1000 -G dev dev && mkdir /workspace && chown 1000:1000 /workspace && echo built",
+      );
+      expect(built).toBe("built");
+      await runtime.commitContainer(id, {
+        repo: dev,
+        tag: "1",
+        pause: true,
+        changes: ['LABEL minibox.template.uid="1000"', 'LABEL minibox.template.gid="1000"', "USER dev"],
+      });
+    } finally {
+      await runtime.removeContainer(id, { force: true });
+    }
+  }
+
+  beforeAll(buildDevTemplate, LONG);
+  afterAll(async () => {
+    await runtime.removeImage(devTemplate, { force: true }).catch(() => {});
+  });
+
+  test(
+    "a box created onto the dev template reuses a populated, root-owned workspace and hands its root to the template's owner",
+    async () => {
+      const restore = silenceLogs();
+      const name = "reuse";
+      const volume = `${prefix}-ws-${name}`;
+      let box: boxes.Box | undefined;
+      try {
+        await runtime.createVolume(volume, { [host.keys.box]: "true", [host.keys.name]: name });
+        const { id: holder } = await runtime.createContainer({
+          image: IMAGE,
+          name: `${prefix}-holder-${name}`,
+          cmd: ["sleep", "300"],
+          labels: owned,
+          mounts: [{ source: volume, target: "/workspace" }],
+        });
+        await runtime.startContainer(holder);
+        await shell(holder, "touch /workspace/seed");
+        expect(await runtime.volumeRootOwner(holder, "/workspace")).toEqual({ uid: 0, gid: 0 });
+        await runtime.removeContainer(holder, { force: true });
+
+        box = await boxes.createBox(host, { name, image: devTemplate, cpus: 0.5, memoryMb: 64 });
+        expect(await runtime.volumeRootOwner(box.id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+        expect(await shell(box.id, "id -u && touch /workspace/written && echo written")).toBe("1000\nwritten");
+      } finally {
+        if (box) await boxes.deleteBox(host, box.id, true).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a fresh workspace volume takes the template's owner at copy-up, so create reads the root and sets nothing",
+    async () => {
+      const restore = silenceLogs();
+      const counter = countingRuntime(runtime);
+      const counted = createLocalHost(cfg, counter.runtime, host.specs);
+      let box: boxes.Box | undefined;
+      try {
+        box = await boxes.createBox(counted, { name: "fresh", image: devTemplate, cpus: 0.5, memoryMb: 64 });
+        expect(counter.count("volumeRootOwner")).toBe(1);
+        expect(counter.count("setVolumeRootOwner")).toBe(0);
+        expect(await runtime.volumeRootOwner(box.id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+      } finally {
+        if (box) await boxes.deleteBox(host, box.id, true).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a rebuild onto the dev template hands the root of a populated, root-owned workspace to the template's owner",
+    async () => {
+      const restore = silenceLogs();
+      let box: boxes.Box | undefined;
+      try {
+        box = await boxes.createBox(host, { name: "onto-dev", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        await shell(box.id, "touch /workspace/seed");
+        expect(await runtime.volumeRootOwner(box.id, "/workspace")).toEqual({ uid: 0, gid: 0 });
+
+        const rebuilt = await rebuildBox(host, box.id, box.revision, { template: devTemplate }, true);
+        box = rebuilt;
+        expect(rebuilt).toMatchObject({ template: devTemplate, running: true });
+        expect(await runtime.volumeRootOwner(rebuilt.id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+        expect(
+          await shell(rebuilt.id, "id -u && touch /workspace/written && test -f /workspace/seed && echo kept"),
+        ).toBe("1000\nkept");
+      } finally {
+        if (box) await boxes.deleteBox(host, box.id, true).catch(() => {});
         restore();
       }
     },
