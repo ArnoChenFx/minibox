@@ -29,10 +29,13 @@ const STATS_CONCURRENCY = 8;
 const STATS_TIMEOUT_MS = 5000;
 const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
+const IDLE_INTERVAL_MS = 30_000;
 
 export interface SamplerOptions {
-  /** Time between two sample rounds. Host metrics use the same interval. */
+  /** Time between two sample rounds while a live subscriber watches. Host metrics use the same interval. */
   intervalMs: number;
+  /** Time between two sample rounds while none does. Never shorter than `intervalMs`. */
+  idleIntervalMs?: number;
   /** Samples kept per box. The oldest are dropped first. */
   history: number;
   backoffMinMs?: number;
@@ -120,7 +123,14 @@ export class HostSampler {
   private rounds: Promise<void> = Promise.resolve();
   private abort: AbortController | null = null;
   private unsubscribe: (() => void) | null = null;
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  /** Live subscribers that asked for samples at the live interval. See `watch`. */
+  private watchers = 0;
+  /** Set when a subscriber has just arrived, so the next round runs without waiting for the cadence. */
+  private expedited = false;
+  /** When the last round ended, in epoch milliseconds. The next round is due one cadence later. */
+  private roundEndedAt = 0;
+  /** Ends the sample loop's current wait early, so it reads the cadence and the expedite flag again. */
+  private wakeLoop: (() => void) | null = null;
 
   constructor(
     private readonly currentHost: () => HostCtx,
@@ -146,8 +156,9 @@ export class HostSampler {
     }
     this.unsubscribe = host.specs.subscribe((change) => this.onSpec(change));
     this.abort = new AbortController();
+    this.roundEndedAt = Date.now();
     void this.run(this.abort.signal);
-    this.scheduleRound(this.options.intervalMs);
+    void this.sampleLoop(this.abort.signal);
   }
 
   stop(): void {
@@ -155,10 +166,10 @@ export class HostSampler {
     this.started = false;
     this.abort?.abort();
     this.abort = null;
+    this.wakeLoop?.();
     this.unsubscribe?.();
     this.unsubscribe = null;
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
+    this.expedited = false;
     this.dirty.clear();
     this.containers.clear();
     this.specs.clear();
@@ -242,9 +253,26 @@ export class HostSampler {
     return summarizeBoxes(infos);
   }
 
-  /** Samples every running box now, as the timer does once per interval. */
+  /** Samples every running box now, outside the cadence. */
   sampleNow(): Promise<void> {
     return this.sampleRound();
+  }
+
+  /**
+   * Asks for samples at the live interval until the returned function is called, and the first watcher gets a round at
+   * once. While nobody watches, the boxes are sampled only at the idle interval, so an unwatched host costs one stats
+   * call per running box per idle interval.
+   */
+  watch(): () => void {
+    this.watchers += 1;
+    if (this.watchers === 1) this.expedite();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.watchers -= 1;
+      this.wakeLoop?.();
+    };
   }
 
   private async run(signal: AbortSignal): Promise<void> {
@@ -388,7 +416,10 @@ export class HostSampler {
       .then(() => this.round())
       .catch((e: unknown) =>
         log.error("sampler.round_failed", { host: this.currentHost().host.id, error: errorText(e) }),
-      );
+      )
+      .finally(() => {
+        this.roundEndedAt = Date.now();
+      });
     this.rounds = run;
     return run;
   }
@@ -457,14 +488,47 @@ export class HostSampler {
     return info?.id === target.containerId && info.running;
   }
 
-  private scheduleRound(delay: number): void {
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      void this.sampleRound().finally(() => {
-        if (this.started) this.scheduleRound(this.options.intervalMs);
-      });
-    }, delay);
-    this.timer.unref?.();
+  /** Runs a round whenever one is due, until the sampler stops. */
+  private async sampleLoop(signal: AbortSignal): Promise<void> {
+    while (await this.roundDue(signal)) {
+      this.expedited = false;
+      await this.sampleRound();
+    }
+  }
+
+  /** Resolves true when a round is due, and false once the sampler stops. */
+  private async roundDue(signal: AbortSignal): Promise<boolean> {
+    while (!signal.aborted) {
+      const wait = this.roundEndedAt + this.cadence() - Date.now();
+      if (this.expedited || wait <= 0) return true;
+      await this.pause(wait);
+    }
+    return false;
+  }
+
+  /** Resolves after `ms`, or sooner when the loop is woken. Only one wait is pending at a time. */
+  private pause(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => this.wakeLoop?.(), ms);
+      timer.unref?.();
+      this.wakeLoop = () => {
+        clearTimeout(timer);
+        this.wakeLoop = null;
+        resolve();
+      };
+    });
+  }
+
+  private cadence(): number {
+    if (this.watchers > 0) return this.options.intervalMs;
+    return Math.max(this.options.intervalMs, this.options.idleIntervalMs ?? IDLE_INTERVAL_MS);
+  }
+
+  /** Makes the next round run without waiting for the cadence. Does nothing while the sampler is stopped. */
+  private expedite(): void {
+    if (!this.abort) return;
+    this.expedited = true;
+    this.wakeLoop?.();
   }
 
   private onSpec(change: SpecChange): void {

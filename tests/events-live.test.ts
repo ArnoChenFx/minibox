@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
+import { HostSampler } from "../src/host/sampler";
 import { startServer } from "../src/server";
 import type { TaskStreamEvent } from "../src/tasks/types";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
@@ -205,5 +206,52 @@ describe("the live state on the event stream", () => {
     await app.hosts.get().sampler.settle();
 
     expect(stored()).toBe(before);
+  });
+});
+
+/** Gives the host a sampler with a short live interval, so a test sees the cadence without waiting a minute for it. */
+function shortCadence(): void {
+  const host = app.hosts.get();
+  host.sampler.stop();
+  host.sampler = new HostSampler(() => host, { intervalMs: 5, idleIntervalMs: 60_000, history: 10 }, app.bus);
+}
+
+function statsCalls(): number {
+  return runtime.callsTo("containerStats").length;
+}
+
+/** Resolves with the count once it has not moved for `quietMs`. A count that keeps moving fails the wait. */
+async function untilQuiet(count: () => number, quietMs = 30, timeoutMs = 2000): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  let last = count();
+  let since = Date.now();
+  while (Date.now() - since < quietMs) {
+    if (Date.now() > deadline) throw new Error("the count keeps moving");
+    await Bun.sleep(5);
+    const now = count();
+    if (now !== last) {
+      last = now;
+      since = Date.now();
+    }
+  }
+  return last;
+}
+
+describe("the sample cadence on the event stream", () => {
+  test("box stats are sampled only while a stream is open: a stream samples at once, and sampling stops when it closes", async () => {
+    seedBox("nu", true);
+    shortCadence();
+    const base = await startApp();
+    await Bun.sleep(40);
+    expect(statsCalls()).toBe(1);
+
+    const sse = await openStream(base);
+    await sse.until(isLive("sample"));
+    expect(statsCalls()).toBeGreaterThan(1);
+
+    await sse.close();
+    const settled = await untilQuiet(statsCalls);
+    await Bun.sleep(40);
+    expect(statsCalls()).toBe(settled);
   });
 });

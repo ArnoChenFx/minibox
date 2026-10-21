@@ -20,6 +20,7 @@ export function liveFrame(kind: string, data: unknown): string {
  * The live state of the app as its bus carries it. A stream subscribes to the box, sample, link and host frames, and to
  * the status changes of tasks, which are the only task frames that carry no output. `sync` reads each host's cache in
  * the same synchronous step that subscribes, so no frame can fall between the state and the first frame after it.
+ * A subscription also has every host's sampler sample at the live interval until the subscription ends.
  */
 export function liveSource(bus: Bus<AppTopics>, hosts: HostRegistry): LiveSource {
   return {
@@ -32,6 +33,7 @@ export function liveSource(bus: Bus<AppTopics>, hosts: HostRegistry): LiveSource
         })),
       } satisfies SyncFrame),
     subscribe(send) {
+      const watches = hosts.list().map((host) => host.sampler.watch());
       const unsubscribes = [
         bus.subscribe("box", (frame) => send(liveFrame("box", frame))),
         bus.subscribe("sample", (frame) => send(liveFrame("sample", frame))),
@@ -43,6 +45,7 @@ export function liveSource(bus: Bus<AppTopics>, hosts: HostRegistry): LiveSource
       ];
       return () => {
         for (const unsubscribe of unsubscribes) unsubscribe();
+        for (const release of watches) release();
       };
     },
   };

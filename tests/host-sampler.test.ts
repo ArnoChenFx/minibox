@@ -243,6 +243,76 @@ describe("resource samples", () => {
   });
 });
 
+describe("the sample cadence", () => {
+  test("with no watcher, the boxes are sampled once when the listing lands, and not again before the idle interval", async () => {
+    seedBox("kappa", true);
+    const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+
+    await Bun.sleep(60);
+    await sampler.settle();
+    expect(runtime.callsTo("containerStats")).toHaveLength(1);
+  });
+
+  test("a watcher gets a sample at once, then one per live interval, until it is released", async () => {
+    seedBox("lambda", true);
+    const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+    const before = runtime.callsTo("containerStats").length;
+
+    const release = sampler.watch();
+    await waitFor(() => runtime.callsTo("containerStats").length >= before + 3, "samples while watched");
+    release();
+    await sampler.settle();
+    const released = runtime.callsTo("containerStats").length;
+    await Bun.sleep(60);
+    await sampler.settle();
+    expect(runtime.callsTo("containerStats")).toHaveLength(released);
+  });
+
+  test("sampling goes on while any watcher is left, and releasing one watcher twice counts once", async () => {
+    seedBox("mu", true);
+    const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+
+    const first = sampler.watch();
+    const second = sampler.watch();
+    first();
+    first();
+    const before = runtime.callsTo("containerStats").length;
+    await waitFor(() => runtime.callsTo("containerStats").length >= before + 3, "samples for the remaining watcher");
+
+    second();
+    await sampler.settle();
+    const released = runtime.callsTo("containerStats").length;
+    await Bun.sleep(60);
+    await sampler.settle();
+    expect(runtime.callsTo("containerStats")).toHaveLength(released);
+  });
+
+  test("a stopped sampler takes no samples, even while it is watched", async () => {
+    seedBox("nu", true);
+    const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    const release = sampler.watch();
+    await waitFor(() => runtime.callsTo("containerStats").length >= 3, "samples while watched");
+
+    sampler.stop();
+    await sampler.settle();
+    const stopped = runtime.callsTo("containerStats").length;
+    await Bun.sleep(60);
+    expect(runtime.callsTo("containerStats")).toHaveLength(stopped);
+    release();
+  });
+});
+
 describe("the host summary", () => {
   test("totals come from the cache, and are null until the first listing", async () => {
     seedBox("one", true);
