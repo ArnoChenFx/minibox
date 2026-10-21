@@ -41,6 +41,7 @@
 - 创建 Box 与重建时，挂载和网络都要经过检查，这是设计文档 §9.2 在 `volume:attach` 授权（#13）落地前的过渡规则。`minibox-data`（保存访问密钥与会话）一律拒绝挂载；新挂载的卷必须带 MiniBox 标签（即由 MiniBox 创建），或尚不存在；新挂载的卷不能已被其它 Box 挂载；重建时网络只能是宿主机的 Box 网络，或 Box 当前已在使用的网络，`host`、`none` 与 `container:*` 始终拒绝。不符合时返回 `403`（错误码 `forbidden`），容器与规格都不变。
 
 ### 新增
+- 实时推送（#17）：每台主机由一个采样器（`HostSampler`）维护盒子缓存与资源采样。`GET /api/events/stream` 在不带过滤条件时同时推送 `sync`、`box`、`sample`、`host`、`link` 与 `task`（仅状态变化）帧。这些帧以事件名区分、不带 `id`，因此不改变 `Last-Event-ID`，也不写入 `events.db`；审计事件与实时状态共用同一条进程内事件总线。带过滤条件的事件流只收到已存储的事件，与原来一致。`GET /api/boxes/:id/stats?history=true` 返回该盒子最近的采样（按时间从早到晚），供详情页的图表使用。
 - 异步任务（#16）：模板构建与快照创建返回 `202` 和 `taskId`，进度经现有事件总线的 `task` 主题以 SSE（`GET /api/tasks/:id/events`）推送，不再把长请求挂在 `idleTimeout` 为 60 秒的连接上。任务状态和最近 64 KB 输出保存在 `DATA_DIR/tasks.db`；进程重启后，未完成的任务记为 `interrupted`。同一时间只能构建一个模板，每个 Box 同时只能提交一个快照。控制台顶栏有任务抽屉（中英文），可看实时日志并取消。Bun 的空闲计时从请求开始计算且不会被心跳延长，`server.timeout(req, 0)` 才会关掉它（见 `tests/long-work-routes.test.ts`）。
 - 命令执行、MCP 与 CLI（Refs #9）。`POST /api/boxes/:id/exec` 在 Box 里运行命令：`argv` 直接执行，`cmd` 经 `/bin/sh -c`，默认用户 `dev`、目录 `/workspace`，可选 `cwd`、`env`（审计只记变量名）、`stdin`、`timeoutSec` 与 `user`。退出码来自 `exec.inspect`。超时会在箱内杀掉进程树，响应仍是成功，并带 `timedOut: true`（没有退出码时用 137）。终止失败时返回 `502`，exec 保持 `running`，可以用 `POST /api/execs/:execId/kill` 重试。前台 `timeoutSec` 最多 55 秒，更长的命令用 `background: true`（最多 3600 秒）；后台 exec 每个 Box 最多 8 个、全局 64 个，超限返回 `429`，且不唤醒 Box。「严格」档位只允许 `dev` 或 `1000` 作为用户，其他档位的 `root` 运行在审计中标记为 `privileged`。已停止的 Box 会先被启动，这会把期望状态改为运行，因此版本号加 1；空闲超时与 TTL 仍是 #12。结束后的 `durationMs` 不再增长。`background: true` 立即返回 `execId`，`GET /api/execs/:execId?waitMs=` 长轮询（最长 25000 毫秒），`POST /api/execs/:execId/kill` 结束进程树。内联输出保留每个流头尾各约 16 KiB；更长的内容给出 `outputRef`，`GET /api/execs/:execId/output` 读取保存的头尾窗口（各 64 KiB，`DATA_DIR/exec`）。`exec.start`、`exec.finish`、`exec.killed` 记在事件总线上，属于活动档且不合并，并用 `parentId` 挂到对应的 `exec.run`。`POST /mcp` 是带 Bearer 的 Streamable HTTP MCP（不接受浏览器 Cookie；`GET` 不提供 SSE）。`?toolsets=` 选择工具集，默认 `core,meta`。设计目录是 27 个工具、默认 15 个；当前实现是 6 个 Box 工具加上 `exec`、`exec_get`、`exec_kill`，默认工具集共 9 个。`rebuild_box` 不在默认工具集中，放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`），共 10 个。`bun run build:cli` 用 `bun build --compile` 生成 `dist/minibox`，至少提供 `minibox box ls` 与 `minibox exec`。错误体包含 `retryable`，需要时还有 `hint`。`exec` 可以读写该 Box 上挂载的每一个卷。文件 API（归档、对已停止 Box 的辅助容器读写）不在这次交付中，留到 Volume（#24）之后。
 - Box 规格写入 `DATA_DIR/boxes/<id>.json`（权限 600）。稳定 ID 形如 `bx_…`，与容器 ID 分开，名称全局唯一。已有 Box 在列出或读取时自动认领：不改容器名，也不改容器标签（D6，认领后的属主修正留给 #24）。`DATA_DIR` 丢失时从标签和 `inspect` 降级恢复；空闲超时、TTL、标签、工具、环境变量回到默认值，并在 `recovery.needsReset` 中标明需要重新设置。原地更新（CPU、内存、进程数、标签、空闲超时、TTL、重命名）走 `docker update` / `docker rename` 与规格文件，容器标签保持创建时的内容。请求须带 `If-Match: <revision>`；缺少该头返回 428，版本不一致返回 412。新建 Box 的重启策略为 `no`，启动时的协调器按期望状态 `running` 或 `stopped` 启动或停止，并把引擎上的重启策略改回 `no`（D8）。漂移比较 `inspect` 与规格，不自动改回资源或挂载。规格保留最近 20 个版本（Refs #23）。
@@ -70,6 +71,9 @@
 - 新增「关于」页面（侧边栏「设置」之后，路由 `#/about`）：显示 logo、版本、服务启动时间、Bun 运行时版本与 Docker 引擎版本（不可用时显示「不可用」），并提供 README、文档、更新日志、问题反馈与许可证的链接。中英文界面均已翻译。
 
 ### 变更
+- Box 的列表、详情、统计与主机指标改为读取每台主机的缓存。缓存由 Docker 容器事件保持最新，列表不再对每个容器调用 `inspect` 或 `docker stats`：Docker 调用次数与 Box 数量无关，也不随打开的标签页数增加。`HostMonitor` 不再每个间隔列出 Box，Box 汇总取自采样器。采样器未就绪时（启动之后、列出完成之前，或与引擎断开期间），读取退回引擎（#17）。
+- 控制台改为订阅 `GET /api/events/stream`。盒子列表、概览、详情与主机指标由推送更新，原有的 3 秒、5 秒、10 秒定时刷新取消。事件流断开时，各页面回退为轮询（主机指标与详情 3 秒，盒子列表 5 秒，概览 10 秒），并按 1 秒起、最长 30 秒的间隔重连。详情页的资源图表读取后端的采样环形缓冲，长度由 `METRICS_HISTORY` 决定。日志面板开启自动刷新时仍每 4 秒读取一次，尚未进入实时流（#17）。
+- 每台主机只有一个采样器和一条容器事件订阅。断线后按 1 秒起、最长 30 秒的退避重新订阅，并重新列出容器。`METRICS_INTERVAL_MS` 同时决定主机指标与盒子采样的间隔。同一盒子与 tail 的日志读取在 2 秒内共享一次引擎调用（#17）。
 - 设置页移除了品牌卡片（已移到「关于」页），改为单栏：运行配置（分两列展示）、外观、登录会话。「关于」页重新显示 Bun 版本（`/api/system` 的 `runtime` 字段），即 0.3.0 中去掉的那一项。
 - Box 的加固只在创建时生效。已有 Box 保留创建时的设置，不会被强制重建；早于本版本创建的 Box 没有记录档位，仍在默认的 `bridge` 网络上（#5）。
 - 登录 Cookie 改名为 `minibox_session`，存放会话令牌。不再读取旧的 `minibox_key` Cookie，登录、登出与登录页都会将其清除。`HttpOnly`、`SameSite=Strict` 与 HTTPS 下的 `Secure` 规则不变（#2）。
@@ -106,6 +110,8 @@
 - `tsconfig.json` 的类型检查范围包含 `scripts/`（#19）。
 - CI 的 `Docker build (smoke)` 任务新增基础模板的多架构构建（`linux/amd64`、`linux/arm64`），并对 amd64 镜像及模拟的 arm64 镜像运行 `scripts/check-box-image.sh`。新增的 `docker/setup-qemu-action` 同样固定到完整 commit SHA。
 - 以路由测试取代依赖 Bun 空闲计时与固定时长阈值的 `tests/idle-timeout.test.ts`，后者在 CI 中不稳定。新的 `tests/long-work-routes.test.ts` 检查 MiniBox 自身的约定：模板构建与快照提交立即返回 `202`，任务进度流与事件流对自身请求调用 `server.timeout(req, 0)`。
+- 新增 `tests/host-sampler.test.ts` 与 `tests/box-cache-api.test.ts`，以计数的 fake 运行时验证列表、详情、统计、日志与主机汇总的引擎调用次数，并验证它们不随 Box 数量增长。新增 `tests/event-stream.test.ts` 与 `tests/events-live.test.ts` 覆盖 SSE 的实时帧，`tests/web-live.test.ts` 覆盖前端的连接与轮询回退。`tests/docker-runtime.test.ts` 新增真实引擎下的缓存计数与外部变更测试（#17）。
+- `Runtime.events` 接受 `since` 参数；`FakeRuntime` 模拟 `create`、`start`、`die`、`stop`、`restart`、`rename`、`update` 与 `destroy` 等容器事件，并能断开事件流（#17）。
 
 ### 修复
 - 自动生成访问密钥时不再整体重写 `.env`。此前会把 `.env` 改写为只剩 `ACCESS_KEY`、`PORT`、`HOST` 三项，其他配置随之丢失。现在任何情况下都不修改 `.env`。
@@ -134,6 +140,7 @@
 - README 与 README-zh 新增「基础模板」章节，说明用户与 uid 约定、挂载点、缓存、标签、检查方法，以及从 root 版模板升级的步骤。
 - `docs/runtime.md` 补充真实引擎测试的运行方式（`bun run test:docker`、`MINIBOX_TEST_PREFIX`）与假引擎适配器测试，并更新已知限制。
 - README 与 README-zh 的配置表新增 `STOP_TIMEOUT_SEC`，开发命令与 CI 说明新增 `bun run test:docker` 与非必需的集成任务（#19）。
+- README 与 README-zh 的功能表、架构图、`METRICS_*` 配置说明、API 参考（`GET /api/boxes`、`GET /api/boxes/:id/stats?history=true`、日志读取窗口，以及事件流的实时帧）同步更新。`docs/runtime.md` 新增「盒子缓存与采样器」一节，修正了关于 `HostMonitor` 的说明，并补充测试与已知限制（#17）。
 
 ### 升级说明
 - 新建 Box 默认使用「标准」档位。与之前相比，它去掉了 `MKNOD`、`SETPCAP` 与 `SYS_CHROOT` 三项能力，并设置了进程数上限与 ulimit。需要这些能力的工具，请创建「宽松」档位的 Box，或设置 `BOX_PROFILE=relaxed`。已有 Box 不会被重建（#5）。
