@@ -21,6 +21,7 @@ import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState } from "../specs/types";
 import { assertMountAllowed, inspectVolumeOrNull } from "./attachments";
 import { projectBox } from "./box-view";
+import { alignVolumeRoot, type RecordNote } from "./volume-owner";
 
 export interface CreateBoxInput {
   name: string;
@@ -247,7 +248,11 @@ async function setDesired(host: HostCtx, boxId: string, desired: DesiredState): 
   });
 }
 
-export async function createBox(host: HostCtx, input: CreateBoxInput & { templateLabel?: string }): Promise<Box> {
+export async function createBox(
+  host: HostCtx,
+  input: CreateBoxInput & { templateLabel?: string },
+  record?: RecordNote,
+): Promise<Box> {
   const { runtime, keys, prefix, security } = host;
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
 
@@ -308,6 +313,18 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
         if (isRuntimeError(e, "conflict")) throw conflict(msg("box_exists", { name: input.name }));
         throw e;
       });
+    try {
+      await alignVolumeRoot(
+        host,
+        { containerId: created.id, volume, image: details.id, labels: details.labels },
+        record,
+      );
+    } catch (e) {
+      await runtime.removeContainer(created.id, { force: true }).catch((cleanup: unknown) => {
+        log.warn("box.create_rollback_failed", { container: created.id, error: String(cleanup) });
+      });
+      throw e;
+    }
     const spec: BoxSpec = {
       version: 1,
       id,

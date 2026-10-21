@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "
 import type { Server } from "bun";
 
 import type { App } from "../src/app";
+import type { AuditNote } from "../src/events/types";
 import type { HostCtx } from "../src/host/registry";
 import type { LabelKeys } from "../src/labels";
 import { AppError } from "../src/lib/errors";
@@ -540,5 +541,109 @@ describe("rebuild over HTTP", () => {
     expect(event?.detail).toMatchObject({ env: ["TOKEN"], confirm: true });
     expect(JSON.stringify(event)).not.toContain("supersecret");
     expect(JSON.stringify(event)).not.toContain("vault");
+  });
+});
+
+describe("rebuild aligns the workspace root", () => {
+  const DEV_LABELS = { "minibox.template.uid": "1000", "minibox.template.gid": "1000" };
+  const ROOT = { uid: 0, gid: 0 };
+  const DEV = { uid: 1000, gid: 1000 };
+  const WORKSPACE = "mbtest-ws-alpha";
+
+  /** A box from a dev template whose workspace root is owned by root, as a volume left by an earlier box is. */
+  async function rootOwnedBox() {
+    runtime.seedImage("dev:1", DEV_LABELS);
+    const box = await boxes.createBox(host, { name: "alpha", cpus: 1, memoryMb: 256, image: "dev:1" });
+    runtime.seedVolumeOwner(WORKSPACE, ROOT);
+    return box;
+  }
+
+  test("a rebuild sets the root to the template's owner after the old container stops and before it is renamed", async () => {
+    const box = await rootOwnedBox();
+    const notes: AuditNote[] = [];
+    const before = runtime.calls.length;
+
+    await rebuildBox(host, box.boxId, box.revision, { profile: "strict" }, true, (note) => notes.push(note));
+
+    const ops = runtime.ops().slice(before);
+    expect(ops.indexOf("stopContainer")).toBeGreaterThan(-1);
+    expect(ops.indexOf("volumeRootOwner")).toBeGreaterThan(ops.indexOf("stopContainer"));
+    expect(ops.indexOf("setVolumeRootOwner")).toBeGreaterThan(ops.indexOf("volumeRootOwner"));
+    expect(ops.indexOf("renameContainer")).toBeGreaterThan(ops.indexOf("setVolumeRootOwner"));
+    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(DEV);
+    expect(notes.map((note) => [note.op, note.status])).toEqual([["volume.chown", "ok"]]);
+  });
+
+  test("a rollback puts the owner back through the old container's image, before the old container starts again", async () => {
+    const box = await rootOwnedBox();
+    const oldImage = runtime.containers.get(box.id)?.imageId;
+    const newImage = runtime.seedImage("dev:2", DEV_LABELS);
+    const notes: AuditNote[] = [];
+    runtime.fail("startContainer", new RuntimeError("engine", "boom", "boom"));
+    const before = runtime.calls.length;
+
+    const error = await rejectionOf(
+      rebuildBox(host, box.boxId, box.revision, { template: "dev:2" }, true, (note) => notes.push(note)),
+    );
+
+    expect(error).toMatchObject({ kind: "engine" });
+    expect(runtime.callsTo("setVolumeRootOwner").map((call) => call.args)).toEqual([
+      [WORKSPACE, DEV, newImage],
+      [WORKSPACE, ROOT, oldImage],
+    ]);
+    const ops = runtime.ops().slice(before);
+    expect(ops.lastIndexOf("setVolumeRootOwner")).toBeLessThan(ops.lastIndexOf("startContainer"));
+    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(ROOT);
+    expect(runtime.containers.get(box.id)).toMatchObject({ name: "mbtest-alpha", running: true });
+    expect(host.specs.read(box.boxId)).toMatchObject({ revision: 1, containerId: box.id });
+    expect(notes.map((note) => note.op)).toEqual(["volume.chown", "volume.chown_undo"]);
+  });
+
+  test("a failed alignment rolls the rebuild back and leaves the root and the old container as they were", async () => {
+    const box = await rootOwnedBox();
+    const notes: AuditNote[] = [];
+    runtime.fail("setVolumeRootOwner", new RuntimeError("engine", "chown failed", "chown failed"));
+
+    const error = await rejectionOf(
+      rebuildBox(host, box.boxId, box.revision, { profile: "strict" }, true, (note) => notes.push(note)),
+    );
+
+    expect(error).toMatchObject({ kind: "engine" });
+    expect(runtime.callsTo("setVolumeRootOwner")).toHaveLength(1);
+    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(ROOT);
+    expect(runtime.containers.get(box.id)).toMatchObject({ name: "mbtest-alpha", running: true });
+    const owned = [...runtime.containers.values()].filter((c) => c.labels[keys.id] === box.boxId);
+    expect(owned.map((c) => c.id)).toEqual([box.id]);
+    expect(host.specs.read(box.boxId)).toMatchObject({ revision: 1, containerId: box.id });
+    expect(notes.map((note) => [note.op, note.status])).toEqual([["volume.chown", "error"]]);
+  });
+
+  test("a rebuild onto a read-only workspace makes no owner calls", async () => {
+    const box = await rootOwnedBox();
+    const before = runtime.calls.length;
+
+    await rebuildBox(
+      host,
+      box.boxId,
+      box.revision,
+      { mounts: [{ volume: WORKSPACE, path: "/workspace", mode: "ro" }] },
+      true,
+    );
+
+    const ops = runtime.ops().slice(before);
+    expect(ops).not.toContain("volumeRootOwner");
+    expect(ops).not.toContain("setVolumeRootOwner");
+    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(ROOT);
+  });
+
+  test("a rebuild from a template that names no owner reads and changes no workspace root", async () => {
+    const box = await newBox("alpha");
+    const before = runtime.calls.length;
+
+    await rebuildBox(host, box.boxId, box.revision, { profile: "strict" }, true);
+
+    const ops = runtime.ops().slice(before);
+    expect(ops).not.toContain("volumeRootOwner");
+    expect(ops).not.toContain("setVolumeRootOwner");
   });
 });

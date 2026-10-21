@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 
 import { STANDARD_CAPS } from "../src/box-profile";
+import type { AuditNote } from "../src/events/types";
 import type { HostCtx } from "../src/host/registry";
 import type { LabelKeys } from "../src/labels";
 import { AppError } from "../src/lib/errors";
@@ -530,5 +531,78 @@ describe("templates", () => {
       labels: { [keys.template]: "true", [keys.templateName]: "base" },
     });
     expect(spec.contextDir).toMatch(/templates\/base$/);
+  });
+});
+
+describe("workspace root owner on create", () => {
+  const DEV_LABELS = { "minibox.template.uid": "1000", "minibox.template.gid": "1000" };
+  const ROOT = { uid: 0, gid: 0 };
+  const DEV = { uid: 1000, gid: 1000 };
+  const WORKSPACE = "mbtest-ws-alpha";
+
+  /** A workspace volume that an earlier box left behind, with its root owned by root. */
+  async function rootOwnedVolume(): Promise<void> {
+    await runtime.createVolume(WORKSPACE, { [keys.box]: "true", [keys.name]: "alpha" });
+    runtime.seedVolumeOwner(WORKSPACE, ROOT);
+  }
+
+  test("a reused workspace root owned by root is set to the template's owner before the box starts", async () => {
+    const imageId = runtime.seedImage("dev:1", DEV_LABELS);
+    await rootOwnedVolume();
+
+    const box = await newBox("alpha", { image: "dev:1" });
+
+    expect(runtime.callsTo("setVolumeRootOwner").map((call) => call.args)).toEqual([[WORKSPACE, DEV, imageId]]);
+    const ops = runtime.ops();
+    expect(ops.indexOf("setVolumeRootOwner")).toBeGreaterThan(ops.indexOf("createContainer"));
+    expect(ops.indexOf("setVolumeRootOwner")).toBeLessThan(ops.indexOf("startContainer"));
+    expect(await runtime.volumeRootOwner(box.id, "/workspace")).toEqual(DEV);
+  });
+
+  test("a fresh workspace volume already has the template's owner, so create only reads it", async () => {
+    runtime.seedImage("dev:1", DEV_LABELS);
+
+    await newBox("alpha", { image: "dev:1" });
+
+    expect(runtime.callsTo("volumeRootOwner")).toHaveLength(1);
+    expect(runtime.callsTo("setVolumeRootOwner")).toHaveLength(0);
+  });
+
+  test("a root that cannot be set stops the create: the container is removed and no box is written or started", async () => {
+    runtime.seedImage("dev:1", DEV_LABELS);
+    await rootOwnedVolume();
+    runtime.fail("setVolumeRootOwner", new RuntimeError("engine", "chown failed", "chown failed"));
+
+    expect(await rejectionOf(newBox("alpha", { image: "dev:1" }))).toMatchObject({ kind: "engine" });
+    expect(runtime.containers.size).toBe(0);
+    expect(runtime.callsTo("startContainer")).toHaveLength(0);
+    expect(host.specs.findByName("alpha")).toBeNull();
+    expect(runtime.volumeOwners.get(WORKSPACE)).toEqual(ROOT);
+  });
+
+  test("a changed root is recorded as an audit note of the create", async () => {
+    runtime.seedImage("dev:1", DEV_LABELS);
+    await rootOwnedVolume();
+    const notes: AuditNote[] = [];
+
+    await boxes.createBox(host, { name: "alpha", cpus: 1, memoryMb: 256, image: "dev:1" }, (note) => notes.push(note));
+
+    expect(notes).toEqual([
+      {
+        op: "volume.chown",
+        kind: "write",
+        status: "ok",
+        summary: `Volume owner set: ${WORKSPACE}`,
+        target: { kind: "volume", name: WORKSPACE },
+        detail: { from: "0:0", to: "1000:1000" },
+      },
+    ]);
+  });
+
+  test("a template that names no owner reads and changes no workspace root", async () => {
+    await newBox("alpha");
+
+    expect(runtime.callsTo("volumeRootOwner")).toHaveLength(0);
+    expect(runtime.callsTo("setVolumeRootOwner")).toHaveLength(0);
   });
 });

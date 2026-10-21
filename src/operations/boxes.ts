@@ -132,15 +132,19 @@ export const boxCreate = defineOperation({
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: ({ name }, _box, result) => ({ kind: "box", id: result?.box.id, name }) },
-  run: async ({ host, principal }, input) => ({
-    box: await createBox(host, {
-      name: input.name,
-      image: input.template,
-      cpus: input.cpus,
-      memoryMb: input.memoryMb,
-      profile: input.profile,
-      createdBy: principal.type,
-    }),
+  run: async ({ host, principal, record }, input) => ({
+    box: await createBox(
+      host,
+      {
+        name: input.name,
+        image: input.template,
+        cpus: input.cpus,
+        memoryMb: input.memoryMb,
+        profile: input.profile,
+        createdBy: principal.type,
+      },
+      record,
+    ),
   }),
 });
 
@@ -346,7 +350,7 @@ export const boxRebuild = defineOperation({
       env: input.env?.map((entry) => entry.name),
     }),
   },
-  run: async ({ host }, input) => ({
+  run: async ({ host, record }, input) => ({
     box: await rebuildBox(
       host,
       input.id,
@@ -359,6 +363,7 @@ export const boxRebuild = defineOperation({
         profile: input.profile,
       },
       input.confirm,
+      record,
     ),
   }),
 });
