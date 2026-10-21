@@ -600,10 +600,10 @@ Event
 - **受理**：`template.build` 与 `snapshot.create` 在校验、前置条件和解析通过后写入一条 `started` 审计事件（`ref.taskId`），立刻返回 `202` `{ "taskId" }`。领域结果（模板的 `{ ref }`、快照的 `{ snapshot }`）写在任务的 `result` 上，OpenAPI 用 `x-task-result` 标出。校验失败和互斥冲突不创建任务。
 - **进度**：日志和状态变更发布到总线主题 `task`，经 `GET /api/tasks/:id/events` 流出。这条 SSE 复用事件流的心跳、重放上限和 `reset`，不另建一套。它和事件流一样不进操作注册表。新连接不回放历史；界面先 `GET` 任务上保留的输出，再用 `after` 续上（浏览器的 `EventSource` 第一次请求带不上 `Last-Event-ID`）。
 - **存储**：`DATA_DIR/tasks.db`（WAL）。每个任务只保留最新 64 KB 日志，避免把构建输出写进一年期的审计库（审计明细还有 8 KB 上限）。
-- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`），每个 Box 同时只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。冲突返回 `409`，`details.taskId` 指向正在运行的任务。
-- **取消**：把任务标为 `cancelled` 并中止 `AbortSignal`。构建会关掉引擎的输出流。`docker commit` 无法干净地中途取消：开始前和返回后各检查一次；若提交已经完成，镜像留下，任务仍可以是 `cancelled`，不回滚。
-- **重启**：启动时把上次仍为 `running` 的任务标为 `interrupted`，不续跑。关闭时同样中止并标记。
-- **空闲超时**：Bun 的 `idleTimeout` 从请求开始计算，按 4 秒进位，写出的字节（包括 SSE 心跳）不会延长它。只有 `server.timeout(req, 0)` 能关掉它。因此心跳只对付反向代理的 `proxy_read_timeout`，对付不了 Bun 自己。构建改为 202 之后，那条会被掐断的长连接不复存在；进度流显式关掉计时。`tests/idle-timeout.test.ts` 用 4 秒上限复现：静默处理和每秒心跳的流都会在约 4 秒被断开，`timeout 0` 可以撑过更长的等待。生产配置保持 60 秒。
+- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`），每个 Box 同时只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。冲突返回 `409`，`details.taskId` 指向持有锁的任务：正在运行的任务，或已取消但后台工作尚未返回的任务。
+- **取消**：把任务标为 `cancelled` 并中止 `AbortSignal`。构建关掉引擎的输出流，并在连接关闭后才返回（引擎在此之前可能仍在构建）。`docker commit` 无法中途取消：开始前和返回后各检查一次；若提交已经完成，镜像留下，任务仍可以是 `cancelled`，不回滚。互斥锁在后台工作返回之后才释放，所以取消后，同一主机或同一 Box 的新任务要等到引擎调用结束才能开始，期间返回 `409`。
+- **重启**：启动时把上次仍为 `running` 的任务标为 `interrupted`，不续跑，并释放所有互斥锁（包括已取消但工作未返回的任务持有的锁，持锁的进程已经不在了）。关闭时同样中止、标记并释放。
+- **空闲超时**：Bun 的 `idleTimeout` 从请求开始计算，按 4 秒进位，写出的字节（包括 SSE 心跳）不会延长它。只有 `server.timeout(req, 0)` 能关掉它。因此心跳只对付反向代理的 `proxy_read_timeout`，对付不了 Bun 自己。构建改为 202 之后，那条会被掐断的长连接不复存在；进度流显式关掉计时。这一点在 Bun 1.4.3 上用 4 秒上限核实过：静默处理和每秒心跳的流都会在约 4 秒被断开，`timeout 0` 可以撑过更长的等待。仓库不保留测 Bun 内部的用例（那类用例靠时间阈值判断，在 CI 上不稳定）；`tests/long-work-routes.test.ts` 只断言 MiniBox 自己的保证：202 立即返回，进度流和事件流调用 `server.timeout(req, 0)`，普通请求保留 Bun 的上限。生产配置保持 60 秒。
 
 ---
 
@@ -637,6 +637,7 @@ Token
 - **`exec` 隐含该 Box 所有挂载卷的读写能力**，所以细分的 `files:*` 权限只对没有 `exec` 的令牌有意义。
 - **挂载某卷等于获得该卷的读权限**：创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权，否则 Agent 可以新建 Box 把别人的卷挂进去读走。
 - **`/mcp` 目前认证使用主访问密钥**：在令牌（#13）实现之前，持有密钥的 MCP 客户端拥有全部所有者权限，包括以 root 执行 `exec`（非「严格」档）、`delete_box` 与 `rebuild_box`。README 与 `docs/agents.md` 必须写明这一点。错误的 Bearer 密钥与错误的登录密钥共享同一限流（`/api/`、`/mcp` 与终端）（决策 48）。
+- **`volume:attach` 授权落地（#13）之前的过渡规则**：创建 Box 与重建共用同一套检查，违反时返回 `403 forbidden`，并在改动容器之前拒绝。`minibox-data` 一律拒绝，它保存访问密钥与会话。新挂载的卷必须带 MiniBox 标签（由 MiniBox 创建），或尚不存在；新挂载的卷不能已被其它 Box 挂载，因此 §6.2 的共享在授权落地前不可用。网络只允许宿主机的 Box 网络（默认 `minibox-boxes`）和 Box 当前已在使用的网络，早于 Box 网络创建的 `bridge` Box 因此可以保持原样。`host`、`none` 与 `container:*` 始终拒绝。Box 已经挂载的卷不重新检查（`minibox-data` 除外），所以只改其它字段的重建照常进行。
 
 ### 9.3 浏览器会话
 
@@ -1007,7 +1008,7 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | Agent 程序的实现语言与体积（后移） | 倾向与控制端同一个 TypeScript/Bun 代码库（`bun build --compile`），体积是否可接受需评估；随 #28 一并评估 |
 | 存储节点代理保存 restic 密钥的方式（后移） | 本地保存（权限 600）还是由控制端按操作传入 |
 | 辅助容器使用什么镜像 | 文件 API 的列目录需要 `find` 等工具，可复用基础模板或使用精简镜像；需权衡体积与是否需要预先构建 |
-| 模板构建超过 60 秒是否真的被 `idleTimeout` 断开 | 会。Bun 从请求开始计时，写出的字节不延长它；4 秒一档，故 60 秒同样会断。已用 4 秒上限复现（`tests/idle-timeout.test.ts`）。202 立即返回，进度流调用 `server.timeout(req, 0)`。见 [§8.10](#810-实现说明16) |
+| 模板构建超过 60 秒是否真的被 `idleTimeout` 断开 | 会。Bun 从请求开始计时，写出的字节不延长它；4 秒一档，故 60 秒同样会断。在 Bun 1.4.3 上以 4 秒上限核实过。202 立即返回，进度流和事件流调用 `server.timeout(req, 0)`（`tests/long-work-routes.test.ts`）。见 [§8.10](#810-实现说明16) |
 | 端口预览的路径前缀与子域名两种模式 | 路径模式下很多前端框架有 base path 问题，倾向优先子域名模式；预览页与控制台同源的隔离方案需细化（issue #10） |
 | 各 NAS 型号的 NFS 权限与 squash 选项 | 实现前按具体型号核对 |
 

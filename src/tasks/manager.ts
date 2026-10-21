@@ -52,17 +52,33 @@ export class TaskManager implements TaskReader {
     return { id, handle };
   }
 
-  /** Runs `work` in the background. A rejection is logged; it does not escape to the request that started the task. */
+  /**
+   * Runs `work` in the background and frees the task's exclusive key once `work` has settled. A rejection is logged;
+   * it does not escape to the request that started the task.
+   */
   track(id: string, work: Promise<void>): void {
     const job = work
       .catch((error: unknown) => {
         log.error("task.worker_failed", { task: id, error: String(error) });
       })
       .finally(() => {
+        this.releaseLock(id);
         this.running.delete(id);
         this.jobs.delete(id);
       });
     this.jobs.set(id, job);
+  }
+
+  /**
+   * A store that `crash` or `shutdown` has closed cannot take the write. The key is then freed by the next startup,
+   * which interrupts every task left holding it.
+   */
+  private releaseLock(id: string): void {
+    try {
+      this.store.releaseLock(id);
+    } catch (error) {
+      log.warn("task.lock_release_failed", { task: id, error: String(error) });
+    }
   }
 
   /** Resolves when the background work for `id` has finished. A task that was never tracked resolves at once. */
@@ -99,7 +115,8 @@ export class TaskManager implements TaskReader {
   }
 
   /**
-   * Marks a running task cancelled and aborts its work. The engine may already have finished a commit; that image
+   * Marks a running task cancelled and aborts its work. The task keeps its exclusive key until the work has returned,
+   * so a new task for the same box or host is refused with `409` until then. A commit the engine has already finished
    * is left in place. A task that is not running is a 409.
    */
   cancel(id: string): TaskView {

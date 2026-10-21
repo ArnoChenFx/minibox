@@ -66,6 +66,8 @@ export const notFound = (message: string | Msg, extra?: ErrorExtra) =>
   new AppError(404, "not_found", message, undefined, extra);
 export const conflict = (message: string | Msg, extra?: ErrorExtra) =>
   new AppError(409, "conflict", message, undefined, extra);
+export const forbidden = (message: string | Msg, extra?: ErrorExtra) =>
+  new AppError(403, "forbidden", message, undefined, extra);
 
 function fromRuntimeError(e: RuntimeError): AppError {
   switch (e.kind) {

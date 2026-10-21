@@ -19,6 +19,8 @@ export interface TaskStreamOptions {
   /** Replay events with a cursor greater than this. A first connection omits it and receives only what happens next. */
   readonly after?: number;
   readonly signal?: AbortSignal;
+  /** Runs once when the stream ends, whether the signal aborted or the reader cancelled. */
+  readonly onEnd?: () => void;
   readonly replayLimit?: number;
   readonly pendingLimit?: number;
   readonly heartbeatMs?: number;
@@ -80,6 +82,7 @@ export function taskStream(options: TaskStreamOptions): ReadableStream<Uint8Arra
     unsubscribe = undefined;
     clearInterval(heartbeat);
     signal?.removeEventListener("abort", stop);
+    options.onEnd?.();
     notify();
   };
 

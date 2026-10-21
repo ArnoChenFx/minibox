@@ -30,6 +30,22 @@ describe("base template", () => {
     expect(scripts["build:template"]).toContain(BASE_DESCRIPTION);
   });
 
+  test("every place that names a Node.js version names the major the Dockerfile builds on", () => {
+    const major = /^FROM node:(\d+)/m.exec(dockerfile)?.[1];
+    for (const path of [
+      "templates/base/Dockerfile",
+      "src/services/templates.ts",
+      "web/js/i18n/en.js",
+      "web/js/i18n/zh-CN.js",
+      "README.md",
+      "README-zh.md",
+      "package.json",
+    ]) {
+      const named = [...read(path).matchAll(/Node\.js (\d+)/g)].map((m) => m[1]);
+      expect([path, named.length > 0, named.filter((version) => version !== major)]).toEqual([path, true, []]);
+    }
+  });
+
   test("installs the box tools and keeps the existing ones", () => {
     for (const pkg of ["tmux", "jq", "ripgrep", "openssh-client", "unzip", "sudo", "git", "curl", "python3"]) {
       expect(aptInstall).toContain(pkg);

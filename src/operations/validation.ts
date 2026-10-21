@@ -430,7 +430,7 @@ export const rebuildMounts = () =>
     type: "array",
     maxItems: MOUNT_MAX,
     description:
-      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. Stage 1 still creates one workspace volume; this does not create a volume pool.",
+      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A volume the box does not mount yet must have been created by MiniBox or must not exist (MiniBox creates it), and no other box may mount it. The data volume minibox-data is refused.",
   }).optional();
 
 export const rebuildEnv = () =>
@@ -446,7 +446,7 @@ export const rebuildNetwork = () =>
     type: "string",
     maxLength: 128,
     description:
-      "Docker network the rebuilt container joins. Omitted, the current network stays. The host box network is created when missing. Any other network must already exist.",
+      "Docker network the rebuilt container joins: the host's box network (created when missing) or the network the box already uses. Host, none and container networks, and any other network, are refused.",
   }).optional();
 
 export const confirmFlag = () =>

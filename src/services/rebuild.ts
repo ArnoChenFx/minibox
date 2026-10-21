@@ -14,9 +14,8 @@ import { pushHistory } from "../specs/history";
 import { planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxRecovery, BoxSpec } from "../specs/types";
+import { assertRebuildAttachments } from "./attachments";
 import { type Box, getBox } from "./boxes";
-
-const STOP_TIMEOUT_SEC = 3;
 
 interface SwapState {
   createdId: string | null;
@@ -49,6 +48,7 @@ export async function rebuildBox(
     const previous = structuredClone(spec);
     const planned = planRebuild(host.prefix, spec, request);
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
+    await assertRebuildAttachments(host, spec, planned.mounts, planned.network);
 
     let template = spec.template;
     if (planned.templateRef) {
@@ -74,7 +74,7 @@ async function ensureImage(host: HostCtx, image: string): Promise<ImageDetails> 
   }
 }
 
-/** The host's box network is created when the rebuild joins it. Any other network must already exist. */
+/** Creates the host's box network when a rebuild joins it. Mounts and networks are checked before the preview. */
 async function ensureBoxNetwork(host: HostCtx): Promise<void> {
   try {
     await host.runtime.ensureBridgeNetwork(host.security.network, { interContainerComm: false });
@@ -257,7 +257,7 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState): Promise
   };
   if (state.started && state.createdId) {
     const createdId = state.createdId;
-    await fail(() => host.runtime.stopContainer(createdId, { timeoutSec: STOP_TIMEOUT_SEC }));
+    await fail(() => host.runtime.stopContainer(createdId, { timeoutSec: host.stopTimeoutSec }));
   }
   if (state.createdId) {
     const createdId = state.createdId;
@@ -320,7 +320,7 @@ async function swap(
     writeNext(host, previous, planned, template, created.id, request);
     state.specWritten = true;
     if (state.wasRunning) {
-      await host.runtime.stopContainer(previous.containerId, { timeoutSec: STOP_TIMEOUT_SEC });
+      await host.runtime.stopContainer(previous.containerId, { timeoutSec: host.stopTimeoutSec });
       state.oldStopped = true;
     }
     await host.runtime.renameContainer(previous.containerId, oldAlias);
@@ -331,7 +331,7 @@ async function swap(
     const started = await host.runtime.inspectContainer(created.id);
     if (!started.running) throw new AppError(502, "docker_error", msg("rebuild_start_failed"));
     if (previous.lifecycle.desired === "stopped") {
-      await host.runtime.stopContainer(created.id, { timeoutSec: STOP_TIMEOUT_SEC });
+      await host.runtime.stopContainer(created.id, { timeoutSec: host.stopTimeoutSec });
     }
     await host.runtime.removeContainer(previous.containerId, { force: true });
     log.info("box.rebuilt", {
