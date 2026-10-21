@@ -38,7 +38,7 @@ export interface LifecycleReport {
  */
 export class LifecycleWatcher {
   private timer: ReturnType<typeof setInterval> | undefined;
-  private busy = false;
+  private ticking = false;
   private readonly everyMs: number;
   private readonly now: () => number;
   /**
@@ -46,6 +46,8 @@ export class LifecycleWatcher {
    * restart does not put every box to sleep at the first pass.
    */
   private readonly watchedSince: number;
+  /** Boxes whose latest pass saw a tmux client attached. The pass that finds it gone restarts their idle window. */
+  private readonly clientSeen = new Set<string>();
 
   constructor(private readonly options: LifecycleOptions) {
     this.everyMs = options.everyMs ?? options.cfg.lifecycleIntervalMs;
@@ -67,15 +69,15 @@ export class LifecycleWatcher {
 
   /** One pass over every host. Safe to call from tests without starting the timer. */
   async tick(): Promise<LifecycleReport> {
-    if (this.busy) return { slept: [], expired: [], failed: [] };
-    this.busy = true;
+    if (this.ticking) return { slept: [], expired: [], failed: [] };
+    this.ticking = true;
     const report: LifecycleReport = { slept: [], expired: [], failed: [] };
     try {
       for (const host of this.options.hosts.list()) {
         await this.pass(host, report);
       }
     } finally {
-      this.busy = false;
+      this.ticking = false;
     }
     return report;
   }
@@ -120,13 +122,15 @@ export class LifecycleWatcher {
 
     const info = await host.runtime.inspectContainer(spec.containerId).catch(() => null);
     if (!info?.running) return;
-    if (!this.isIdle(info.id, spec.id, spec.createdAt, idleSec)) return;
+    if (this.busy(info.id, spec.id)) return;
+    if (await this.terminalOpen(host, info.id, spec.id)) return;
+    if (!this.quietFor(spec.id, spec.createdAt, idleSec)) return;
 
     const cpu = host.sampler.statsOf(spec.id)?.cpuPercent;
     if (cpu == null) return;
     if (cpu >= this.options.cfg.boxIdleCpuPercent) return;
 
-    const slept = await sleepBox(host, spec.id, "idle", (box) => this.stillIdleBox(box, idleSec));
+    const slept = await sleepBox(host, spec.id, "idle", (box) => this.stillIdleBox(host, box, idleSec));
     if (!slept) return;
     report.slept.push(spec.id);
     this.options.record(host.host.id, "system", OWNER, {
@@ -142,19 +146,41 @@ export class LifecycleWatcher {
 
   /**
    * Checked under the box's lock. A box a person stopped in the meantime is not put to sleep as idle, because that would
-   * turn a manual stop into a sleep that wakes on the next terminal or preview request.
+   * turn a manual stop into a sleep that wakes on the next terminal or preview request. The tmux check runs again here,
+   * so a terminal opened after the decision keeps the box awake.
    */
-  private stillIdleBox(box: Box, idleSec: number): boolean {
+  private async stillIdleBox(host: HostCtx, box: Box, idleSec: number): Promise<boolean> {
     if (!box.running || box.desired !== "running") return false;
-    return this.isIdle(box.id, box.boxId, box.createdAt, idleSec);
+    if (this.busy(box.id, box.boxId)) return false;
+    if (await this.terminalOpen(host, box.id, box.boxId)) return false;
+    return this.quietFor(box.boxId, box.createdAt, idleSec);
   }
 
-  /** No hold, attachment, exec or task is using the box, and its last heartbeat is at least `idleSec` old. */
-  private isIdle(containerId: string, boxId: string, createdAt: string, idleSec: number): boolean {
-    if (this.options.pulse.isHeld(boxId)) return false;
-    if (this.options.terminals.hasOpenAttachment(containerId)) return false;
-    if (this.options.execs.hasRunning(containerId)) return false;
-    if (this.options.tasks.hasRunningForBox(boxId, containerId)) return false;
+  /** Something MiniBox started is using the box: a hold, a terminal it opened, an exec or a task. */
+  private busy(containerId: string, boxId: string): boolean {
+    if (this.options.pulse.isHeld(boxId)) return true;
+    if (this.options.terminals.hasOpenAttachment(containerId)) return true;
+    if (this.options.execs.hasRunning(containerId)) return true;
+    return this.options.tasks.hasRunningForBox(boxId, containerId);
+  }
+
+  /**
+   * True when a tmux client is attached to a session in the box, whoever attached it (#12). A pass that sees one
+   * refreshes the heartbeat. The first pass that finds it gone refreshes it once more, so the idle window starts
+   * there: not before the client closed, and at most one pass after.
+   */
+  private async terminalOpen(host: HostCtx, containerId: string, boxId: string): Promise<boolean> {
+    if (await this.options.terminals.hasAttachedClient(host, containerId)) {
+      this.clientSeen.add(boxId);
+      this.options.pulse.touch(boxId, "terminal", this.now());
+      return true;
+    }
+    if (this.clientSeen.delete(boxId)) this.options.pulse.touch(boxId, "terminal", this.now());
+    return false;
+  }
+
+  /** The last heartbeat is at least `idleSec` old. With none, the box counts from when watching began or from creation. */
+  private quietFor(boxId: string, createdAt: string, idleSec: number): boolean {
     const last = this.options.pulse.lastAt(boxId) ?? Math.max(Date.parse(createdAt), this.watchedSince);
     return Number.isFinite(last) && this.now() - last >= idleSec * 1000;
   }

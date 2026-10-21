@@ -301,6 +301,58 @@ describe("idle sleep", () => {
     expect((await idle.tick()).slept).toContain(box.boxId);
   });
 
+  test("a terminal opened outside MiniBox keeps the box awake, and the idle window starts at the first pass that finds it closed", async () => {
+    const box = await quietBox("external-terminal");
+    await app.terminals.start(host, box, "work", "rest");
+    const client = { output: () => undefined, end: () => undefined };
+    expect(runtime.tmux.attach(box.id, "work", client)).toBe(true);
+    const idle = watcher();
+
+    expect((await idle.tick()).slept).not.toContain(box.boxId);
+    runtime.tmux.detach(box.id, "work", client);
+    offsetMs = 25_000;
+    expect((await idle.tick()).slept).not.toContain(box.boxId);
+    offsetMs = 50_000;
+    expect((await idle.tick()).slept).not.toContain(box.boxId);
+    offsetMs = 56_000;
+    expect((await idle.tick()).slept).toContain(box.boxId);
+  });
+
+  test("a detached session with no client does not keep a quiet box awake", async () => {
+    const box = await newBox("detached-session", { idleTimeoutSec: 30 });
+    await app.terminals.start(host, box, "work", "rest");
+    app.pulse.touch(box.boxId, "exec", Date.now() - 120_000);
+    await primeSampler(host, box);
+
+    expect((await watcher().tick()).slept).toContain(box.boxId);
+  });
+
+  test("a box whose image has no tmux has no terminal to keep it awake, and still sleeps", async () => {
+    const box = await quietBox("no-tmux");
+    runtime.tmuxMissing = true;
+
+    expect((await watcher().tick()).slept).toContain(box.boxId);
+  });
+
+  test("a terminal opened after the decision but before the sleep keeps the box awake", async () => {
+    const box = await quietBox("late-terminal");
+    await app.terminals.start(host, box, "work", "rest");
+    const client = { output: () => undefined, end: () => undefined };
+    const checkOnce = app.terminals.hasAttachedClient.bind(app.terminals);
+    let checks = 0;
+    app.terminals.hasAttachedClient = async (on, containerId) => {
+      checks += 1;
+      const attached = await checkOnce(on, containerId);
+      if (checks === 1) runtime.tmux.attach(box.id, "work", client);
+      return attached;
+    };
+    offsetMs = 31_000;
+
+    expect((await watcher().tick()).slept).not.toContain(box.boxId);
+    expect(checks).toBe(2);
+    expect(await boxes.getBox(host, box.boxId)).toMatchObject({ running: true, desired: "running" });
+  });
+
   test("a background exec keeps the box awake until it ends, and its end starts the idle window", async () => {
     const box = await quietBox("job");
     runtime.execScript = null;

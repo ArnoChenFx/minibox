@@ -624,10 +624,10 @@ export async function sleepBox(
   host: HostCtx,
   ref: string,
   reason: "idle" | "ttl",
-  stillIdle: (box: Box) => boolean = () => true,
+  stillIdle: (box: Box) => boolean | Promise<boolean> = () => true,
 ): Promise<boolean> {
   return locked(host, ref, async (box) => {
-    if (!stillIdle(box)) return false;
+    if (!(await stillIdle(box))) return false;
     await stopLocked(host, box, reason);
     return true;
   });

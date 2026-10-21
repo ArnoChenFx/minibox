@@ -80,11 +80,15 @@ export function parseProbe(stdout: string): SessionIdentity | null {
   return { name, id, createdAt: millisecondsOf(created), origin: originOf(origin.join("\t")) };
 }
 
+/**
+ * Every session tmux lists, including one whose name MiniBox cannot use. Such a session still counts toward the box's
+ * session limit, so the caller decides which ones to show. A line without a name or with a malformed id is skipped.
+ */
 export function parseSessionList(stdout: string): TmuxSession[] {
   const sessions: TmuxSession[] = [];
   for (const line of stdout.split("\n")) {
     const [name = "", id = "", created = "", attached = "", ...origin] = line.split("\t");
-    if (!isSessionName(name) || !SESSION_ID_RE.test(id)) continue;
+    if (name === "" || !SESSION_ID_RE.test(id)) continue;
     sessions.push({
       name,
       id,
