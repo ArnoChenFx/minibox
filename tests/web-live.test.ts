@@ -63,6 +63,7 @@ const fire = (timer) => {
 };
 const live = await import(${JSON.stringify(join(LIB, "live.js"))});
 const boxState = await import(${JSON.stringify(join(LIB, "box-state.js"))});
+const logs = await import(${JSON.stringify(join(LIB, "logs-stream.js"))});
 `;
 
 /** Runs `body` in a fresh process with the prelude above. The body's return value comes back as JSON. */
@@ -166,6 +167,140 @@ describe("live stream client", () => {
         return { delays, connections: FakeEventSource.made.length };
       `),
     ).toEqual({ delays: [1000, 2000, 4000, 1000], connections: 4 });
+  });
+});
+
+describe("box log stream client", () => {
+  test("the stream opens for the box with its tail, sync replaces the lines, and each line follows", () => {
+    expect(
+      inBrowser(`
+        const seen = [];
+        const handle = logs.openBoxLogs({
+          boxId: "bx 1",
+          tail: 200,
+          onSync: (lines) => seen.push(["sync", lines]),
+          onLine: (text) => seen.push(["line", text]),
+          onClosed: () => seen.push(["closed"]),
+          onState: (live) => seen.push(["state", live]),
+        });
+        const source = FakeEventSource.made[0];
+        source.open();
+        source.emit("sync", { lines: ["2026-10-21T01:00:00.5Z a", "2026-10-21T01:00:01Z b"] });
+        source.emit("line", { text: "2026-10-21T01:00:02Z c" });
+        handle.close();
+        return { url: source.url, seen, readyState: source.readyState };
+      `),
+    ).toEqual({
+      url: "/api/boxes/bx%201/logs/stream?tail=200",
+      seen: [
+        ["state", true],
+        ["sync", ["2026-10-21T01:00:00.5Z a", "2026-10-21T01:00:01Z b"]],
+        ["line", "2026-10-21T01:00:02Z c"],
+      ],
+      readyState: 2,
+    });
+  });
+
+  test("a closed frame ends the stream: nothing reconnects, and frames after it are ignored", () => {
+    expect(
+      inBrowser(`
+        const seen = [];
+        logs.openBoxLogs({
+          boxId: "bx",
+          tail: 300,
+          onSync: () => seen.push("sync"),
+          onLine: (text) => seen.push(text),
+          onClosed: () => seen.push("closed"),
+        });
+        const source = FakeEventSource.made[0];
+        source.open();
+        source.emit("closed", {});
+        source.emit("line", { text: "late" });
+        source.fail(true);
+        return { seen, connections: FakeEventSource.made.length, pending: pending().length };
+      `),
+    ).toEqual({ seen: ["closed"], connections: 1, pending: 0 });
+  });
+
+  test("a connection the browser gives up on is reopened after a delay that grows, and onState reports each change", () => {
+    expect(
+      inBrowser(`
+        const states = [];
+        logs.openBoxLogs({ boxId: "bx", tail: 300, onSync() {}, onLine() {}, onState: (live) => states.push(live) });
+        FakeEventSource.made[0].open();
+        const delays = [];
+        for (let i = 0; i < 3; i += 1) {
+          FakeEventSource.made.at(-1).fail(true);
+          const retry = pending().filter((timer) => !timer.repeat).at(-1);
+          delays.push(retry.ms);
+          fire(retry);
+        }
+        FakeEventSource.made.at(-1).open();
+        FakeEventSource.made.at(-1).fail(true);
+        delays.push(pending().filter((timer) => !timer.repeat).at(-1).ms);
+        return { delays, connections: FakeEventSource.made.length, states };
+      `),
+    ).toEqual({ delays: [1000, 2000, 4000, 1000], connections: 4, states: [true, false, true, false] });
+  });
+
+  test("close cancels a pending reopen, and a late open of the closed connection changes nothing", () => {
+    expect(
+      inBrowser(`
+        const states = [];
+        const handle = logs.openBoxLogs({ boxId: "bx", tail: 300, onSync() {}, onLine() {}, onState: (live) => states.push(live) });
+        FakeEventSource.made[0].fail(true);
+        const waiting = pending().length;
+        handle.close();
+        FakeEventSource.made[0].open();
+        return { waiting, after: pending().length, connections: FakeEventSource.made.length, states };
+      `),
+    ).toEqual({ waiting: 1, after: 0, connections: 1, states: [false] });
+  });
+
+  test("a browser without EventSource reports the stream down and opens nothing", () => {
+    expect(
+      inBrowser(`
+        delete globalThis.EventSource;
+        const states = [];
+        logs.openBoxLogs({ boxId: "bx", tail: 300, onSync() {}, onLine() {}, onState: (live) => states.push(live) });
+        return { states, made: FakeEventSource.made.length };
+      `),
+    ).toEqual({ states: [false], made: 0 });
+  });
+
+  test("a frame that is not JSON, or lacks its field, is ignored", () => {
+    expect(
+      inBrowser(`
+        const seen = [];
+        logs.openBoxLogs({
+          boxId: "bx",
+          tail: 300,
+          onSync: (lines) => seen.push(["sync", lines]),
+          onLine: (text) => seen.push(["line", text]),
+        });
+        const source = FakeEventSource.made[0];
+        source.open();
+        source.emit("sync", "{not json");
+        source.emit("sync", { lines: "x" });
+        source.emit("line", {});
+        source.emit("line", { text: "kept" });
+        return seen;
+      `),
+    ).toEqual([["line", "kept"]]);
+  });
+
+  test("a line window keeps the newest lines up to its tail, and a replace is bounded the same way", () => {
+    expect(
+      inBrowser(`
+        const win = logs.lineWindow(3);
+        win.replace(["a", "b", "c", "d", "e"]);
+        const replaced = win.lines().slice();
+        win.push("f");
+        const pushed = win.lines().slice();
+        win.replace(["x"]);
+        return { replaced, pushed, small: win.lines() };
+      `),
+    ).toEqual({ replaced: ["c", "d", "e"], pushed: ["d", "e", "f"], small: ["x"] });
   });
 });
 
