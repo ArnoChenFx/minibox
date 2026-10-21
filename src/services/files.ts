@@ -6,7 +6,7 @@ import { AppError, badRequest, notFound, toAppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { isRuntimeError, RuntimeError } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
-import { baseOf, containerPath, jailPath, parentOf } from "./files-path";
+import { baseOf, containerPath, jailPath, parentOf, symlinkTargetEscapes } from "./files-path";
 import { DEV_GID, DEV_UID, dirArchive, fileArchive, firstFileData, parseTar } from "./files-tar";
 
 /** Where helpers and archive containers mount the target volume. Matches the chown helper's mount style. */
@@ -114,13 +114,20 @@ async function openMount(host: HostCtx, volume: VolumeRecord, mode: "rw" | "ro")
 
   const image = await requireHelperImage(host);
   const name = `${host.prefix}-file-${randomBytes(4).toString("hex")}`;
+  // Mirror runHelper hardening (NoCopy, ReadonlyRootfs, /tmp tmpfs, memory/pids, CapDrop, no network).
+  // AutoRemove is omitted on purpose: archive helpers are created but never started, so the engine would never
+  // remove them; closeMount deletes the container explicitly instead.
   const created = await host.runtime.createContainer({
     image,
     name,
     cmd: ["true"],
-    mounts: [{ source: volume.engineName, target: FILE_MOUNT, mode }],
+    mounts: [{ source: volume.engineName, target: FILE_MOUNT, mode, noCopy: true }],
     network: "none",
     labels: { [host.keys.internal]: "true" },
+    memoryBytes: 256 * 1024 * 1024,
+    swapBytes: 256 * 1024 * 1024,
+    readonlyRootfs: true,
+    tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=16m" },
     hardening: { capDrop: ["ALL"], noNewPrivileges: true, pidsLimit: 64 },
   });
   return { containerId: created.id, mountPath: FILE_MOUNT, ephemeral: true };
@@ -139,6 +146,40 @@ async function collectStream(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks);
+}
+
+/**
+ * Docker getArchive/putArchive (and kernel path lookup for `cp`) follow intermediate directory symlinks. Lexical
+ * jailPath is not enough: walk each path component with getArchive (which returns symlink metadata when the path
+ * ends on the link) and refuse any component whose target leaves the volume mount.
+ */
+async function assertPathComponentsSafe(
+  host: HostCtx,
+  access: MountAccess,
+  relative: string,
+  opts: { leaveFinalUnchecked?: boolean } = {},
+): Promise<void> {
+  if (relative === "") return;
+  const parts = relative.split("/");
+  const last = parts.length - 1;
+  let built = "";
+  for (let i = 0; i < parts.length; i++) {
+    built = built === "" ? parts[i]! : `${built}/${parts[i]}`;
+    if (opts.leaveFinalUnchecked && i === last) break;
+    const abs = containerPath(access.mountPath, built);
+    let tar: Buffer;
+    try {
+      tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
+    } catch (e) {
+      if (isRuntimeError(e, "not_found")) return;
+      throw e;
+    }
+    const first = firstFileData(tar);
+    if (!first) continue;
+    if (first.type === "symlink" && symlinkTargetEscapes(access.mountPath, built, first.linkname || "")) {
+      throw badRequest(msg("file_path_escape"), { field: "path" });
+    }
+  }
 }
 
 async function withArchive<T>(
@@ -177,15 +218,23 @@ async function ensureDir(host: HostCtx, access: MountAccess, relative: string): 
   let built = "";
   for (const part of parts) {
     built = built === "" ? part : `${built}/${part}`;
+    await assertPathComponentsSafe(host, access, built);
     const abs = containerPath(access.mountPath, built);
     try {
-      const stream = await host.runtime.getArchive(access.containerId, abs);
-      stream.destroy();
+      const tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
+      const first = firstFileData(tar);
+      if (first?.type === "symlink") {
+        // Existing component is a symlink; assertPathComponentsSafe already refused escapes. In-volume links still
+        // must not be treated as directories we can mkdir through.
+        throw badRequest(msg("file_path_escape"), { field: "path" });
+      }
       continue;
     } catch (e) {
+      if (e instanceof AppError) throw e;
       if (!isRuntimeError(e, "not_found")) throw e;
     }
     const parentAbs = containerPath(access.mountPath, parentOf(built));
+    await assertPathComponentsSafe(host, access, parentOf(built));
     await host.runtime.putArchive(access.containerId, parentAbs, dirArchive(baseOf(built)));
   }
 }
@@ -200,6 +249,7 @@ export async function readFile(
   const encoding = input.encoding ?? "utf-8";
   const maxBytes = input.maxBytes ?? FILE_CONTENT_MAX;
   return withArchive(host, volume, "ro", async (access) => {
+    await assertPathComponentsSafe(host, access, relative, { leaveFinalUnchecked: true });
     const abs = containerPath(access.mountPath, relative);
     let tar: Buffer;
     try {
@@ -267,6 +317,7 @@ export async function writeFile(
   }
   return withArchive(host, volume, "rw", async (access) => {
     await ensureDir(host, access, parentOf(relative));
+    await assertPathComponentsSafe(host, access, parentOf(relative));
     const parentAbs = containerPath(access.mountPath, parentOf(relative));
     await host.runtime.putArchive(
       access.containerId,
@@ -363,6 +414,12 @@ export async function copyFiles(
   if (to === "" || from === to) throw badRequest(msg("file_copy_invalid"), { field: "to" });
   if (to.startsWith(`${from}/`)) throw badRequest(msg("file_copy_into_self"), { field: "to" });
 
+  // cp resolves intermediate symlinks like the archive API; jail them before the helper runs.
+  await withArchive(host, volume, "ro", async (access) => {
+    await assertPathComponentsSafe(host, access, from, { leaveFinalUnchecked: true });
+    await assertPathComponentsSafe(host, access, to, { leaveFinalUnchecked: true });
+  });
+
   const image = await requireHelperImage(host);
   const fromAbs = containerPath(FILE_MOUNT, from);
   const toAbs = containerPath(FILE_MOUNT, to);
@@ -387,6 +444,7 @@ export async function downloadArchive(host: HostCtx, ref: string, input: { path:
   const volume = requireVolume(host, ref);
   const relative = input.path === "" || input.path === "/" ? "" : jailPath(input.path);
   return withArchive(host, volume, "ro", async (access) => {
+    await assertPathComponentsSafe(host, access, relative, { leaveFinalUnchecked: true });
     const abs = containerPath(access.mountPath, relative);
     let tar: Buffer;
     try {
@@ -427,6 +485,7 @@ export async function uploadArchive(
   }
   await withArchive(host, volume, "rw", async (access) => {
     await ensureDir(host, access, relative);
+    await assertPathComponentsSafe(host, access, relative);
     const dest = containerPath(access.mountPath, relative);
     await host.runtime.putArchive(access.containerId, dest, rewriteOwners(tar));
   });

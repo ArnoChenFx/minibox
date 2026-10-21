@@ -278,13 +278,22 @@ function applyHardening(hostConfig: Docker.HostConfig, hardening: ContainerHarde
 /** Only set the keys that are present: dockerode serialises `undefined` as an empty query parameter. */
 export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCreateOptions {
   const hostConfig: Docker.HostConfig = {};
-  if (spec.mounts) hostConfig.Binds = spec.mounts.map((mount) => bindOf(mount));
+  if (spec.mounts?.length) {
+    // NoCopy needs the Mounts form; mix with Binds only when every mount can stay on the bind string.
+    if (spec.mounts.some((mount) => mount.noCopy)) {
+      hostConfig.Mounts = spec.mounts.map((mount) => createMountOf(mount));
+    } else {
+      hostConfig.Binds = spec.mounts.map((mount) => bindOf(mount));
+    }
+  }
   if (spec.restart) hostConfig.RestartPolicy = { Name: spec.restart };
   if (spec.cpus !== undefined) hostConfig.NanoCpus = Math.round(spec.cpus * NANO_CPUS_PER_CPU);
   if (spec.memoryBytes !== undefined) hostConfig.Memory = spec.memoryBytes;
   if (spec.swapBytes !== undefined) hostConfig.MemorySwap = spec.swapBytes;
   if (spec.init !== undefined) hostConfig.Init = spec.init;
   if (spec.network !== undefined) hostConfig.NetworkMode = spec.network;
+  if (spec.readonlyRootfs) hostConfig.ReadonlyRootfs = true;
+  if (spec.tmpfs) hostConfig.Tmpfs = spec.tmpfs;
   if (spec.hardening) applyHardening(hostConfig, spec.hardening);
 
   const opts: Docker.ContainerCreateOptions = { Image: spec.image };
@@ -428,6 +437,16 @@ const HELPER_MEMORY_BYTES = 256 * 1024 * 1024;
 const HELPER_PIDS_LIMIT = 64;
 /** Scratch space for a helper's `/tmp`. Nothing is run from it. */
 const HELPER_TMPFS = "rw,noexec,nosuid,nodev,size=16m";
+
+/** Mounts form for `createContainer`. Named volumes with `noCopy` match helpers; binds stay Type=bind. */
+function createMountOf(mount: Mount): Docker.MountSettings {
+  const shared = { Target: mount.target, Source: mount.source, ReadOnly: mount.mode === "ro" };
+  if (mount.kind === "bind") return { ...shared, Type: "bind" };
+  if (mount.noCopy) {
+    return { ...shared, Type: "volume", VolumeOptions: { NoCopy: true } } as Docker.MountSettings;
+  }
+  return { ...shared, Type: "volume" };
+}
 
 /**
  * Helper mounts use the Mounts form, and named volumes are NoCopy. Without it Docker copies the image's directory at the

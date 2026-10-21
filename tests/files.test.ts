@@ -4,7 +4,7 @@ import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { copyFiles, downloadArchive, listFiles, readFile, uploadArchive, writeFile } from "../src/services/files";
-import { jailPath } from "../src/services/files-path";
+import { jailPath, symlinkTargetEscapes } from "../src/services/files-path";
 import { fileArchive } from "../src/services/files-tar";
 import { createVolume } from "../src/services/volumes";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
@@ -51,6 +51,13 @@ describe("path jail", () => {
     expect(() => jailPath("../etc/passwd")).toThrow();
     expect(() => jailPath("a/../../x")).toThrow();
   });
+
+  test("symlinkTargetEscapes detects absolute and .. escapes", () => {
+    expect(symlinkTargetEscapes("/minibox-volume", "escape", "/tmp")).toBe(true);
+    expect(symlinkTargetEscapes("/minibox-volume", "escape", "/minibox-volume/ok")).toBe(false);
+    expect(symlinkTargetEscapes("/minibox-volume", "a/link", "../..")).toBe(true);
+    expect(symlinkTargetEscapes("/minibox-volume", "a/link", "../b")).toBe(false);
+  });
 });
 
 describe("volume file API", () => {
@@ -89,6 +96,78 @@ describe("volume file API", () => {
     expect(read.type).toBe("symlink");
     expect(read.linkTarget).toBe("/etc/passwd");
     expect(read.content).toBe("");
+  });
+
+
+  test("FakeRuntime getArchive follows intermediate dir symlinks out of the volume", async () => {
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "escape", { type: "symlink", target: "/tmp" });
+    runtime.seedOutsideFile("/tmp/pr79_secret", { type: "file", content: Buffer.from("secret-outside") });
+    const created = await runtime.createContainer({
+      image: host.baseTemplateTag,
+      mounts: [{ source: vol.engineName, target: "/minibox-volume", mode: "ro" }],
+    });
+    const tar = await new Response(await runtime.getArchive(created.id, "/minibox-volume/escape/pr79_secret")).arrayBuffer();
+    const { firstFileData } = await import("../src/services/files-tar");
+    const first = firstFileData(Buffer.from(tar));
+    expect(first?.data.toString("utf8")).toBe("secret-outside");
+  });
+
+  test("refuses read/write/copy/upload/download through an intermediate escaping symlink", async () => {
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "escape", { type: "symlink", target: "/tmp" });
+    runtime.seedOutsideFile("/tmp/pr79_secret", { type: "file", content: Buffer.from("secret-outside") });
+    runtime.seedOutsideFile("/tmp", { type: "dir" });
+
+    const read = await rejectionOf(readFile(host, vol.id, { path: "escape/pr79_secret" }));
+    expect(read).toBeInstanceOf(AppError);
+    expect((read as AppError).status).toBe(400);
+
+    const write = await rejectionOf(writeFile(host, vol.id, { path: "escape/pwned.txt", content: "x" }));
+    expect(write).toBeInstanceOf(AppError);
+    expect((write as AppError).status).toBe(400);
+    expect(runtime.outsideFiles.get("/tmp/pwned.txt")).toBeUndefined();
+
+    const copy = await rejectionOf(copyFiles(host, vol.id, { from: "escape/pr79_secret", to: "safe.txt" }));
+    expect(copy).toBeInstanceOf(AppError);
+    expect((copy as AppError).status).toBe(400);
+
+    const dl = await rejectionOf(downloadArchive(host, vol.id, { path: "escape/pr79_secret" }));
+    expect(dl).toBeInstanceOf(AppError);
+    expect((dl as AppError).status).toBe(400);
+
+    const up = await rejectionOf(
+      uploadArchive(host, vol.id, {
+        path: "escape",
+        content: Buffer.from(fileArchive("pwned.txt", Buffer.from("nope"))).toString("base64"),
+      }),
+    );
+    expect(up).toBeInstanceOf(AppError);
+    expect((up as AppError).status).toBe(400);
+  });
+
+  test("archive helper createContainer uses NoCopy and runHelper-like hardening", async () => {
+    const vol = await volume();
+    await writeFile(host, vol.id, { path: "hello.txt", content: "hi\n" });
+    const create = runtime.callsTo("createContainer").find((c) => {
+      const spec = c.args[0] as { mounts?: { noCopy?: boolean }[]; readonlyRootfs?: boolean; tmpfs?: unknown };
+      return spec.mounts?.some((m) => m.noCopy);
+    });
+    expect(create).toBeTruthy();
+    const spec = create!.args[0] as {
+      mounts: { noCopy?: boolean; target: string }[];
+      readonlyRootfs?: boolean;
+      tmpfs?: Record<string, string>;
+      memoryBytes?: number;
+      network?: string;
+      hardening?: { capDrop?: string[]; pidsLimit?: number };
+    };
+    expect(spec.mounts[0]).toMatchObject({ target: "/minibox-volume", noCopy: true });
+    expect(spec.readonlyRootfs).toBe(true);
+    expect(spec.tmpfs?.["/tmp"]).toContain("noexec");
+    expect(spec.memoryBytes).toBe(256 * 1024 * 1024);
+    expect(spec.network).toBe("none");
+    expect(spec.hardening).toMatchObject({ capDrop: ["ALL"], pidsLimit: 64 });
   });
 
   test("download and upload round-trip a tar", async () => {

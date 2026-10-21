@@ -45,3 +45,27 @@ export function baseOf(relative: string): string {
   const i = relative.lastIndexOf("/");
   return i < 0 ? relative : relative.slice(i + 1);
 }
+
+/**
+ * Whether a symlink at `symlinkRelative` (volume-relative) whose target is `target` would leave the volume.
+ * Absolute targets escape unless they stay under `mountPath`. Relative targets escape when `..` walks above the root.
+ */
+export function symlinkTargetEscapes(mountPath: string, symlinkRelative: string, target: string): boolean {
+  if (target === "" || target.includes("\0")) return true;
+  const root = mountPath.replace(/\/+$/, "") || "/";
+  if (target.startsWith("/")) {
+    return target !== root && !target.startsWith(`${root}/`);
+  }
+  const base = symlinkRelative === "" ? [] : parentOf(symlinkRelative).split("/").filter(Boolean);
+  for (const part of target.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (base.length === 0) return true;
+      base.pop();
+      continue;
+    }
+    base.push(part);
+  }
+  return false;
+}
+

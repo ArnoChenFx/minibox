@@ -49,6 +49,11 @@ export interface Mount {
   mode?: "rw" | "ro";
   /** `bind` is a host path. Absent means a named volume. Both use the engine's bind string. */
   kind?: "volume" | "bind";
+  /**
+   * Named volumes only. When true, create via the Mounts API with NoCopy so an empty volume is not seeded from the
+   * image directory at the mount target (same as helpers).
+   */
+  noCopy?: boolean;
 }
 
 /** One writable-layer change from `docker diff`. `modified` is the engine's kind 0, `added` is 1, `deleted` is 2. */
@@ -106,6 +111,10 @@ export interface CreateContainerSpec {
   hardening?: ContainerHardening;
   /** Numeric user, such as `0:0` for a root helper. Absent keeps the image user. */
   user?: string;
+  /** Read-only container root filesystem (archive helpers mirror `runHelper`). */
+  readonlyRootfs?: boolean;
+  /** Extra tmpfs mounts, such as `{ "/tmp": "rw,noexec,nosuid,nodev,size=16m" }` for archive helpers. */
+  tmpfs?: Record<string, string>;
 }
 
 export interface ImageSummary {
