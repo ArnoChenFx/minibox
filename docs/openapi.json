@@ -172,6 +172,30 @@
                               "null"
                             ]
                           },
+                          "stopReason": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "idle",
+                                  "ttl",
+                                  "manual"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sleeping": {
+                            "type": "boolean"
+                          },
+                          "lastActivityAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "labels": {
                             "type": "object",
                             "propertyNames": {
@@ -432,6 +456,9 @@
                           "desired",
                           "idleTimeoutSec",
                           "ttlSec",
+                          "stopReason",
+                          "sleeping",
+                          "lastActivityAt",
                           "labels",
                           "createdBy",
                           "containerName",
@@ -611,6 +638,32 @@
                         "mode"
                       ]
                     }
+                  },
+                  "idleTimeoutSec": {
+                    "description": "Idle timeout in seconds. 0 disables idle sleep for this box; null inherits the global default (BOX_IDLE_TIMEOUT_SEC). A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 31536000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ttlSec": {
+                    "description": "Time to live in seconds. A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 31536000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -722,6 +775,30 @@
                         "ttlSec": {
                           "type": [
                             "number",
+                            "null"
+                          ]
+                        },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
                             "null"
                           ]
                         },
@@ -954,6 +1031,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -1207,6 +1287,30 @@
                         "ttlSec": {
                           "type": [
                             "number",
+                            "null"
+                          ]
+                        },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
                             "null"
                           ]
                         },
@@ -1470,6 +1574,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -1807,11 +1914,11 @@
                     }
                   },
                   "idleTimeoutSec": {
-                    "description": "Idle timeout in seconds. A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
+                    "description": "Idle timeout in seconds. 0 disables idle sleep for this box; null inherits the global default (BOX_IDLE_TIMEOUT_SEC). A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
                     "anyOf": [
                       {
                         "type": "integer",
-                        "minimum": 1,
+                        "minimum": 0,
                         "maximum": 31536000
                       },
                       {
@@ -1968,6 +2075,30 @@
                         "ttlSec": {
                           "type": [
                             "number",
+                            "null"
+                          ]
+                        },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
                             "null"
                           ]
                         },
@@ -2200,6 +2331,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -2486,6 +2620,30 @@
                             "null"
                           ]
                         },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "labels": {
                           "type": "object",
                           "propertyNames": {
@@ -2715,6 +2873,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -2961,6 +3122,30 @@
                             "null"
                           ]
                         },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "labels": {
                           "type": "object",
                           "propertyNames": {
@@ -3190,6 +3375,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -3436,6 +3624,30 @@
                             "null"
                           ]
                         },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "labels": {
                           "type": "object",
                           "propertyNames": {
@@ -3665,6 +3877,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -3951,6 +4166,30 @@
                             "null"
                           ]
                         },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "labels": {
                           "type": "object",
                           "propertyNames": {
@@ -4180,6 +4419,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -4507,6 +4749,30 @@
                             "null"
                           ]
                         },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "labels": {
                           "type": "object",
                           "propertyNames": {
@@ -4736,6 +5002,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -7117,6 +7386,30 @@
                             "null"
                           ]
                         },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "labels": {
                           "type": "object",
                           "propertyNames": {
@@ -7346,6 +7639,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -7674,6 +7970,30 @@
                             "null"
                           ]
                         },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "labels": {
                           "type": "object",
                           "propertyNames": {
@@ -7903,6 +8223,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",
@@ -10486,6 +10809,30 @@
                             "null"
                           ]
                         },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "labels": {
                           "type": "object",
                           "propertyNames": {
@@ -10715,6 +11062,9 @@
                         "desired",
                         "idleTimeoutSec",
                         "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
                         "labels",
                         "createdBy",
                         "containerName",

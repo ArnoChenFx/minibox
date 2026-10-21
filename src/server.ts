@@ -209,6 +209,7 @@ async function boot(): Promise<void> {
   app.monitor.start();
   app.retention.start();
   app.containers.start();
+  app.lifecycle.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
 
@@ -221,6 +222,7 @@ async function boot(): Promise<void> {
     for (const host of app.hosts.list()) host.sampler.stop();
     app.retention.stop();
     app.containers.stop();
+    app.lifecycle.stop();
     app.throttle.stop();
     app.sessions.stop();
     app.terminals.shutdown();

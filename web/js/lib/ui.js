@@ -187,7 +187,13 @@ const STATE = {
   restarting: "badge-warning",
   removing: "badge-warning",
   dead: "badge-danger",
+  sleeping: "badge-warning",
 };
+/** `boxState(box)` picks sleeping when the box was stopped for idle/TTL. */
+export function boxState(box) {
+  if (box?.sleeping) return "sleeping";
+  return box?.state ?? "unknown";
+}
 export function stateBadge(state) {
   const known = state in STATE;
   const cls = known ? STATE[state] : "";

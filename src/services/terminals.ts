@@ -121,6 +121,8 @@ export interface TerminalServiceOptions {
   readonly record: RecordNote;
   /** Milliseconds without human input before a takeover returns the session to the agent. 0 keeps it until released. */
   readonly takeoverIdleMs: number;
+  /** Idle-sleep heartbeat (#12). Called with the stable box id. */
+  readonly onActivity?: (boxId: string, kind: "terminal" | "session") => void;
 }
 
 interface Snapshot {
@@ -133,6 +135,7 @@ interface Snapshot {
 interface Tracked {
   readonly key: string;
   readonly containerId: string;
+  readonly boxId: string;
   readonly name: string;
   /** tmux's id and creation time of the session this entry follows. A different pair is a different session. */
   readonly sessionId: string;
@@ -193,6 +196,8 @@ export class Attachment {
     if (this.closed || !this.canType) return false;
     this.bytesIn += typeof data === "string" ? Buffer.byteLength(data) : data.byteLength;
     this.tracked.lastInputAt = Date.now();
+    // Activity for idle sleep is recorded by the service via onActivity when the attach is opened; keystrokes
+    // keep the takeover timer fresh. The open attach itself already exempts the box from idle sleep.
     this.exec.stream.write(data);
     return true;
   }
@@ -262,6 +267,19 @@ export class TerminalService {
 
   constructor(private readonly options: TerminalServiceOptions) {}
 
+  /** True when any WebSocket (or other) attach is open on this container. Exempts the box from idle sleep. */
+  hasOpenAttachment(containerId: string): boolean {
+    for (const tracked of this.tracked.values()) {
+      if (
+        tracked.containerId === containerId &&
+        (tracked.attachments.size > 0 || tracked.opening.console + tracked.opening.viewer > 0)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   async list(host: HostCtx, box: Box): Promise<ListedSession[]> {
     if (!box.running) {
       this.forgetBox(box.id, new Set());
@@ -282,7 +300,7 @@ export class TerminalService {
     let current = box;
     let woke = false;
     if (!box.running) {
-      current = await startBox(host, box.boxId);
+      current = await startBox(host, box.boxId, this.options.record);
       woke = true;
     }
     return this.serialized(boxKey(current.id), () =>
@@ -313,6 +331,7 @@ export class TerminalService {
           await this.mark(host, current.id, name, source === "ui" ? "human" : "agent");
         }
         const found = await this.probe(host, current, name);
+        this.options.onActivity?.(current.boxId, "session");
         return { session: infoOf(this.track(host.host.id, current, found)), created, woke };
       }),
     );
@@ -321,6 +340,7 @@ export class TerminalService {
   async read(host: HostCtx, box: Box, name: string, options: ReadOptions): Promise<ReadResult> {
     assertName(name);
     if (!box.running) throw this.stopped(box.id);
+    this.options.onActivity?.(box.boxId, "session");
     return this.serialized(keyOf(box.id, name), async () => {
       const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
       const run = await runTmux(host, box.id, [
@@ -359,6 +379,7 @@ export class TerminalService {
   async send(host: HostCtx, box: Box, name: string, input: SendInput): Promise<SendResult> {
     assertName(name);
     if (!box.running) throw this.stopped(box.id);
+    this.options.onActivity?.(box.boxId, "session");
     const keys = input.keys ?? [];
     const text = input.text ?? "";
     return this.serialized(keyOf(box.id, name), async () => {
@@ -416,6 +437,7 @@ export class TerminalService {
       this.options.takeoverIdleMs / 1000,
     );
     tracked.attachments.add(attachment);
+    this.options.onActivity?.(box.boxId, "terminal");
     this.options.record(host.host.id, options.source, {
       op: "terminal.open",
       kind: "write",
@@ -521,6 +543,7 @@ export class TerminalService {
     const tracked: Tracked = {
       key,
       containerId: box.id,
+      boxId: box.boxId,
       name: found.name,
       sessionId: found.id,
       createdAt: found.createdAt,

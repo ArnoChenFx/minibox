@@ -18,7 +18,7 @@ import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
-import { confirmDialog, emptyState, openDialog, stateBadge, toast, toastError, usageBar } from "../lib/ui.js";
+import { boxState, confirmDialog, emptyState, openDialog, stateBadge, toast, toastError, usageBar } from "../lib/ui.js";
 
 /** The points a chart keeps. The server keeps its own ring; this bounds what the page holds. */
 const CHART_POINTS = 240;
@@ -102,7 +102,7 @@ export function render(view, id, tab = "overview") {
   const headHtml = () => `
     <div class="detail-head">
       <span class="avatar">${icon("box", "icon-lg")}</span>
-      <div><h1>${esc(box.name)} ${stateBadge(box.state)}</h1>
+      <div><h1>${esc(box.name)} ${stateBadge(boxState(box))}</h1>
         <div class="meta mono">${esc(shortId(box.id))} · ${esc(box.image)} · ${cpus(box.cpus)} / ${mem(box.memory)}</div></div>
       <div class="page-actions">
         ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}${t("act.stop")}</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}${t("act.start")}</button>`}
@@ -429,6 +429,10 @@ const TAB_RENDER = {
           <dt>${t("bd.boxId")}</dt><dd class="mono">${esc(b.boxId || "—")}</dd>
           <dt>${t("bd.revision")}</dt><dd>${esc(String(b.revision ?? "—"))}</dd>
           <dt>${t("bd.desired")}</dt><dd>${b.desired === "stopped" ? t("bd.desiredStopped") : t("bd.desiredRunning")}</dd>
+          <dt>${t("bd.sleeping")}</dt><dd>${b.sleeping ? t("bd.sleepingYes") : t("bd.sleepingNo")}${b.stopReason ? ` <span class="subtle">(${esc(t(`bd.stopReason.${b.stopReason}`))})</span>` : ""}</dd>
+          <dt>${t("bd.lastActivity")}</dt><dd>${b.lastActivityAt ? dateTime(b.lastActivityAt) : t("bd.lastActivityUnknown")}</dd>
+          <dt>${t("bd.idleTimeout")}</dt><dd>${b.idleTimeoutSec === 0 ? t("bd.idleNever") : b.idleTimeoutSec != null ? t("bd.seconds", { n: b.idleTimeoutSec }) : t("bd.idleInherit")}</dd>
+          <dt>${t("bd.ttl")}</dt><dd>${b.ttlSec != null ? t("bd.seconds", { n: b.ttlSec }) : t("bd.ttlNone")}</dd>
           <dt>${t("bd.createdBy")}</dt><dd>${b.createdBy ? esc(b.createdBy) : t("bd.createdByUnknown")}</dd>
           <dt>${t("bd.containerId")}</dt><dd class="mono">${esc(b.id)}</dd>
           <dt>${t("bd.image")}</dt><dd class="mono">${esc(b.image)}</dd>

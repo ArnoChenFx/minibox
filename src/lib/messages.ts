@@ -46,7 +46,8 @@ export const MESSAGES = {
   rebuild_start_failed: "The new container did not start. The previous container and spec were restored.",
   rebuild_name_conflict: "Cannot rebuild while {name} is still in use. Remove that container and try again.",
   pids_range: "Process limit must be an integer between {min} and {max}.",
-  idle_timeout_invalid: "Idle timeout must be a positive number of seconds up to {max}, or null to clear it.",
+  idle_timeout_invalid:
+    "Idle timeout must be a whole number of seconds from 0 to {max} (0 means never sleep), or null to inherit the global default.",
   ttl_invalid: "TTL must be a positive number of seconds up to {max}, or null to clear it.",
   label_invalid:
     "Labels may have at most 32 entries. Keys follow box name rules, and each value is a single line of at most 256 characters.",

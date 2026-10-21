@@ -2,6 +2,7 @@ import type { BoxProfile } from "../box-profile";
 import type { Config } from "../config";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
+import { ActivityPulse } from "../services/activity-pulse";
 import { SpecStore } from "../specs/store";
 import { VolumeStore } from "../volumes/store";
 import { type LiveSink, NO_LIVE } from "./live";
@@ -44,6 +45,8 @@ export interface HostCtx {
   specs: SpecStore;
   /** Control-plane volume and pool store. One store is shared by every host; files live under `DATA_DIR`. */
   volumes: VolumeStore;
+  /** In-memory activity heartbeats for idle sleep (#12). Shared across hosts of one control plane. */
+  pulse: ActivityPulse;
 }
 
 /**
@@ -57,6 +60,7 @@ export function createLocalHost(
   specs: SpecStore = new SpecStore(cfg.dataDir),
   volumes: VolumeStore = new VolumeStore(cfg.dataDir),
   live: LiveSink = NO_LIVE,
+  pulse: ActivityPulse = new ActivityPulse(),
 ): HostCtx {
   const ctx: HostCtx = {
     host: {
@@ -83,6 +87,7 @@ export function createLocalHost(
     sampler: new HostSampler(() => ctx, { intervalMs: cfg.metricsIntervalMs, history: cfg.metricsHistory }, live),
     specs,
     volumes,
+    pulse,
   };
   return ctx;
 }

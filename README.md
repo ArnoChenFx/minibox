@@ -29,7 +29,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 
 | Area | What you get |
 |---|---|
-| Box lifecycle | Create, start, stop, restart, delete; on delete, keep volumes or remove the ones that box owns |
+| Box lifecycle | Create, start, stop, restart, delete; idle auto-sleep and on-demand wake; optional TTL; on delete, keep volumes or remove the ones that box owns |
 | Volumes | Independent volumes and storage pools (`local`, `nfs`, `path`). A new box mounts workspace, home, a shared read-only tools volume and a local cache. See [Volumes and storage pools](#volumes-and-storage-pools) |
 | Box user | Boxes run as the non-root `dev` user (uid/gid 1000); the web terminal and `docker exec` start as `dev`. Three [security profiles](#security-profiles) set what a box can do: `standard` (default) keeps passwordless `sudo`, and `strict` blocks escalation. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
@@ -273,6 +273,17 @@ docker run -d --name minibox --restart unless-stopped \
 - Tags: `X.Y.Z`, `X.Y` and `latest` (pre-releases such as `1.0.0-rc.1` only get their exact tag).
 - Build locally: `docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
 
+## Idle sleep
+
+Boxes can stop themselves when idle and wake on the next terminal, exec or session request ([#12](https://github.com/ArnoChenFx/minibox/issues/12)).
+
+- **Sleep** sets the desired state to `stopped` with reason `idle` and runs `docker stop`. The container is kept (workspace volumes stay).
+- **Idle** means: no WebSocket terminal attach, no background exec, no running async task for the box, no activity heartbeat for N seconds, and CPU below `BOX_IDLE_CPU_PERCENT`.
+- Activity heartbeats are in memory only (not the events table). Terminal, exec and session traffic refresh them.
+- **TTL** (`ttlSec` on create/update) is an absolute lifetime from create time. On expiry MiniBox **stops** the box (does not delete it) with reason `ttl`.
+- The dashboard shows **Sleeping** when a box was stopped for idle or TTL, plus last activity time.
+
+
 ## Configuration
 
 Precedence: process environment > `.env` file > defaults. The access key also falls back to `DATA_DIR/access_key`. See [`.env.example`](.env.example).
@@ -288,6 +299,9 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `SESSION_TTL_DAYS` | `30` | How long a sign-in lasts, counted from sign-in: a number of days above 0, at most 3650, fractions allowed. Sessions already signed in keep the lifetime they were given |
 | `SESSION_IDLE_DAYS` | empty (off) | Optional sliding renewal: a session also ends after this many days without use. Each request counts as use, and so does typing in an open terminal. A session never outlives `SESSION_TTL_DAYS` |
 | `SESSION_TAKEOVER_IDLE_SEC` | `300` | Seconds without input from the person after which a takeover of an agent's terminal session returns it to the agent. A whole number from 0 to 86400; `0` keeps a takeover until it is returned by hand, even if the page closes. Other values fall back to 300 (see [Sessions](#sessions)) |
+| `BOX_IDLE_TIMEOUT_SEC` | `0` | Global default idle timeout for boxes, in seconds. `0` disables idle sleep. A box may override with `idleTimeoutSec` (`0` = never sleep for that box; `null` inherits this default). See [Idle sleep](#idle-sleep) |
+| `BOX_IDLE_CPU_PERCENT` | `5` | A box is idle only when its recent CPU sample is strictly below this percent (0–100) |
+| `LIFECYCLE_INTERVAL_MS` | `30000` | How often MiniBox checks idle sleep and TTL |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
 | `DATA_DIR` | `./data` (`/data` in the image) | State directory, see [Data directory](#data-directory) |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
@@ -444,7 +458,7 @@ Errors use a consistent shape and the matching HTTP status:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | List boxes from the host's cache, which the engine's events keep current. While the cache is current the list makes no engine call. Running boxes carry their latest sample unless `stats=false` |
-| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults |
+| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults. `idleTimeoutSec` of `0` disables idle sleep for this box; `null`/omitted inherits `BOX_IDLE_TIMEOUT_SEC`. `ttlSec` is an absolute lifetime from create time |
 | `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. `template`, `mounts`, `env`, `network` and `profile` are not applied in place: a difference returns `409 confirmation_required` with a preview and leaves the in-place fields unchanged |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete the box. `deleteVolume=true` also deletes owned volumes that no other box mounts. Independent volumes stay |
