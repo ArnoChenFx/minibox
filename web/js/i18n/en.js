@@ -344,7 +344,7 @@ export default {
   "act.token.create": "Created token",
   "act.token.revoke": "Revoked token",
   "act.task.cancel": "Cancelled task",
-  "ov.subtitle": "Host resources and boxes at a glance. Refreshes every 3 seconds.",
+  "ov.subtitle": "Host resources and boxes at a glance. Updates live as they change.",
   "ov.stale": "Can't fetch fresh data right now; showing the last result.",
   "ov.uptimeLine": "{host} · {platform} · up {uptime}",
   "ov.viewAll": "View all",

@@ -316,7 +316,7 @@ export default {
   "act.token.create": "创建令牌",
   "act.token.revoke": "吊销令牌",
   "act.task.cancel": "取消任务",
-  "ov.subtitle": "宿主机资源与 Box 运行情况，每 3 秒自动刷新。",
+  "ov.subtitle": "宿主机资源与 Box 运行情况，实时更新。",
   "ov.stale": "暂时无法获取最新数据，显示的是上一次结果。",
   "ov.uptimeLine": "{host} · {platform} · 已运行 {uptime}",
   "ov.viewAll": "查看全部",
