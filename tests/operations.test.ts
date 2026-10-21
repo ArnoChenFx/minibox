@@ -21,6 +21,7 @@ import type { FakeRuntime } from "./support/fake-runtime";
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
 const TEMPLATE_REF = "mbtest-template:gold";
+const CHECKPOINT_PLACEHOLDER = `ck_${"0".repeat(16)}`;
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** One valid input for each operation, given the id of a box that exists; see `withBox`. */
@@ -90,6 +91,13 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "snapshot.create": (id) => ({ id, name: "nightly" }),
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
   "snapshot.delete": () => ({ ref: SNAPSHOT_REF }),
+  "checkpoint.list": () => ({}),
+  "checkpoint.get": () => ({ id: CHECKPOINT_PLACEHOLDER }),
+  "checkpoint.create": (id) => ({ id }),
+  "checkpoint.fork": () => ({ id: CHECKPOINT_PLACEHOLDER, name: "delta" }),
+  "checkpoint.update": () => ({ id: CHECKPOINT_PLACEHOLDER, pinned: true }),
+  "checkpoint.delete": () => ({ id: CHECKPOINT_PLACEHOLDER }),
+  "box.rollback": (id) => ({ id, checkpoint: CHECKPOINT_PLACEHOLDER, confirm: true, expectedRevision: "1" }),
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.build": () => ({}),
@@ -104,6 +112,25 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
     id: app.tokens.create(compileToken({ name: "gone", preset: "readonly" }), "owner").record.id,
   }),
 };
+
+/** Operations that act on a checkpoint which must already exist, so `preparedInput` takes one first. */
+const CHECKPOINT_OPERATIONS_ON_AN_EXISTING = [
+  "checkpoint.get",
+  "checkpoint.fork",
+  "checkpoint.update",
+  "checkpoint.delete",
+  "box.rollback",
+];
+
+/** Takes a checkpoint of the sample box and returns its id. The list is newest first. */
+async function takeCheckpointOf(app: App, ctx: OperationContext, boxId: string): Promise<string> {
+  await app.operations.run("checkpoint.create", ctx, { id: boxId });
+  await app.tasks.drain();
+  const { checkpoints } = (await app.operations.run("checkpoint.list", ctx, {})) as { checkpoints: { id: string }[] };
+  const [newest] = checkpoints;
+  if (!newest) throw new Error("the sample checkpoint was not listed");
+  return newest.id;
+}
 
 /** A real id for operations that cannot succeed against the placeholder in `SAMPLES`. */
 async function preparedInput(
@@ -129,6 +156,11 @@ async function preparedInput(
   }
   if (["session.read", "session.send", "session.close"].includes(operation.name)) {
     await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+  }
+  if (CHECKPOINT_OPERATIONS_ON_AN_EXISTING.includes(operation.name)) {
+    const checkpoint = await takeCheckpointOf(app, ctx, boxId);
+    const sample = SAMPLES[operation.name]?.(boxId, app) as Record<string, unknown>;
+    return { input: { ...sample, ...(operation.name === "box.rollback" ? { checkpoint } : { id: checkpoint }) } };
   }
   if (operation.name === "exec.kill") {
     runtime.execScript = null;

@@ -268,10 +268,13 @@ export function requiredScopes(operationScope: string): readonly Scope[] | "owne
     case "exec":
       return ["exec"];
     case "snapshot:read":
+    case "checkpoint:read":
       return ["box:read", "checkpoint:create", "checkpoint:restore"];
     case "snapshot:write":
     case "snapshot:delete":
     case "checkpoint:create":
+    case "checkpoint:write":
+    case "checkpoint:delete":
       return ["checkpoint:create"];
     case "checkpoint:restore":
       return ["checkpoint:restore"];

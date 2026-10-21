@@ -16,7 +16,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { type ContainerChange, type ImageDetails, isRuntimeError } from "../runtime";
 import { REBUILD_LOSES } from "../specs/plan";
-import { newBoxId } from "../specs/revision";
+import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { createRestoredVolume, provisionDefaultMounts } from "../volumes/provision";
@@ -320,6 +320,13 @@ async function discardTaken(host: HostCtx, id: string, snapshots: string[], syst
   }
 }
 
+/** Refuses a take that names a volume the box cannot include, so the request answers before any backup starts. */
+export function assertTakeable(host: HostCtx, box: Box, input: TakeCheckpointInput): void {
+  const spec = host.specs.read(box.boxId);
+  if (!spec) throw notFound(msg("box_not_found"));
+  planLayers(host, spec, input.include.volumes);
+}
+
 /**
  * Takes a checkpoint of a box. Every volume is backed up before the record is written. A failure takes back the
  * snapshots and the system image already made, so no half checkpoint is left behind, and the box is resumed either way.
@@ -428,6 +435,11 @@ function forkPlan(data: DataLayer[], copyHome: boolean): { roles: Map<VolumeRole
   return { roles, copies };
 }
 
+/** Refuses a fork whose copies would take a default mount's path, so the request answers before any volume is made. */
+export function assertForkable(checkpoint: CheckpointView, copyHome: boolean): void {
+  forkPlan(checkpoint.data, copyHome);
+}
+
 /**
  * Creates a new box from a checkpoint. The restored volumes are new, so the source box and its volumes are never
  * touched. The new box takes the checkpoint's image (its system layer, when there is one) and reserves its own id up
@@ -512,10 +524,16 @@ interface RollbackPlan {
  * Matches each owned layer of the checkpoint to the box's current owned volume at the same path. Shared volumes are not
  * part of a rollback, so they are never matched. A checkpoint of another box, or one with no volume data, is refused.
  */
-export async function planRollback(host: HostCtx, boxRef: string, checkpointRef: string): Promise<RollbackPlan> {
+export async function planRollback(
+  host: HostCtx,
+  boxRef: string,
+  checkpointRef: string,
+  revision: number,
+): Promise<RollbackPlan> {
   const box = await getBox(host, boxRef);
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
+  if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
   const checkpoint = await getCheckpoint(host, checkpointRef);
   const owned = checkpoint.data.filter((layer) => layer.ownership === "owned");
   if (owned.length === 0) throw conflict(msg("checkpoint_no_data", { id: checkpoint.id }));
@@ -542,6 +560,23 @@ export function rollbackPreview(plan: RollbackPlan, diff: ContainerChange[]): Ro
   };
 }
 
+/** What a rollback would do, read without changing anything. A revision other than the box's current one is refused. */
+export async function previewRollback(
+  host: HostCtx,
+  boxRef: string,
+  checkpointRef: string,
+  revision: number,
+): Promise<RollbackPreview> {
+  const plan = await planRollback(host, boxRef, checkpointRef, revision);
+  const diff = await host.runtime.containerDiff(plan.spec.containerId);
+  return rollbackPreview(plan, diff);
+}
+
+/** The refusal a rollback without `confirm` gets. Nothing has changed, and the preview says what a confirmed call does. */
+export function rollbackConfirmation(preview: RollbackPreview): AppError {
+  return new AppError(409, "confirmation_required", msg("checkpoint_rollback_confirm"), { preview });
+}
+
 /**
  * Rolls a box back to one of its own checkpoints. Each owned volume's data is restored into a new volume, and the box is
  * rebuilt onto those volumes, which keeps the rebuild's checks. The replaced volumes are not deleted. Without `confirm`
@@ -550,18 +585,13 @@ export function rollbackPreview(plan: RollbackPlan, diff: ContainerChange[]): Ro
 export async function rollbackBox(
   host: HostCtx,
   boxRef: string,
-  input: { checkpoint: string; confirm: boolean },
+  input: { checkpoint: string; confirm: boolean; revision: number },
   createdBy: string | null,
   progress?: Progress,
   record?: RecordNote,
 ): Promise<RollbackResult> {
-  const plan = await planRollback(host, boxRef, input.checkpoint);
-  if (!input.confirm) {
-    const diff = await host.runtime.containerDiff(plan.spec.containerId);
-    throw new AppError(409, "confirmation_required", msg("checkpoint_rollback_confirm"), {
-      preview: rollbackPreview(plan, diff),
-    });
-  }
+  if (!input.confirm) throw rollbackConfirmation(await previewRollback(host, boxRef, input.checkpoint, input.revision));
+  const plan = await planRollback(host, boxRef, input.checkpoint, input.revision);
   const known = new Set<string>();
   const changes = new VolumeChanges();
   const replacement = new Map<string, VolumeRecord>();

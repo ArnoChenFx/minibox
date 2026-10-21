@@ -168,6 +168,7 @@ export default {
   "err.checkpoint_pinned": "Checkpoint {id} is pinned. Unpin it before deleting it.",
   "err.checkpoint_rollback_confirm":
     "Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept until you confirm or undo. Send confirm: true to continue.",
+  "err.checkpoint_out_of_scope": "This credential cannot use that checkpoint.",
   "err.box_network_conflict":
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
   "err.volume_reserved": "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",

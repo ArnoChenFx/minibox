@@ -75,13 +75,39 @@ export interface Body {
     principal: { id: string; type?: string; name?: string };
     target?: { kind: string; id?: string; name: string };
   }[];
+  checkpoint?: CheckpointBody;
+  checkpoints?: CheckpointBody[];
   nextCursor?: number | null;
-  result?: { snapshot?: { ref?: string } };
+  result?: {
+    snapshot?: { ref?: string };
+    checkpoint?: CheckpointBody;
+    box?: { boxId: string; name: string };
+    replaced?: { id: string; name: string }[];
+  };
   deletedBoxes?: string[];
   failedBoxes?: { id: string; name: string; hostId: string; message: string }[];
   tools?: { name: string; description: string }[];
   isError?: boolean;
-  error?: { code: string; key?: string };
+  error?: { code: string; key?: string; details?: { field?: string; taskId?: string; preview?: RollbackPreviewBody } };
+}
+
+export interface CheckpointBody {
+  id: string;
+  legacy: boolean;
+  label: string;
+  reason: string;
+  boxId: string | null;
+  createdBy: string | null;
+  pinned: boolean;
+  consistency: string;
+  data: { volumeId: string; path: string; ownership: string; snapshotId: string; bytes: number }[];
+  system: { image: string; imageId: string } | null;
+}
+
+export interface RollbackPreviewBody {
+  checkpoint: { id: string; label: string };
+  restores: { path: string; role: string | null; volume: string }[];
+  revision: { current: number; next: number };
 }
 
 export interface CallInit {

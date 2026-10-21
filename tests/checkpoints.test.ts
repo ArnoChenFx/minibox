@@ -12,6 +12,7 @@ import {
   forkCheckpoint,
   getCheckpoint,
   listCheckpoints,
+  type RollbackResult,
   rollbackBox,
   takeCheckpoint,
   type TakeCheckpointInput,
@@ -51,6 +52,11 @@ const NOTHING: TakeCheckpointInput = {
 
 function take(ref: string, overrides: Partial<TakeCheckpointInput> = {}): Promise<CheckpointView> {
   return takeCheckpoint(host, ref, { ...NOTHING, ...overrides }, "owner");
+}
+
+function rollback(boxId: string, checkpoint: string, confirm: boolean): Promise<RollbackResult> {
+  const revision = host.specs.read(boxId)?.revision ?? 0;
+  return rollbackBox(host, boxId, { checkpoint, confirm, revision }, "owner");
 }
 
 function makeBox(name: string): Promise<Box> {
@@ -376,7 +382,7 @@ describe("rolling a box back", () => {
     const before = host.specs.read(box.boxId);
     seed(engineAt(box.boxId, "/workspace"), "later.txt", "later");
 
-    const error = await rejectionOf(rollbackBox(host, box.boxId, { checkpoint: view.id, confirm: false }, "owner"));
+    const error = await rejectionOf(rollback(box.boxId, view.id, false));
 
     expect(error).toMatchObject({ status: 409, code: "confirmation_required" });
     const preview = (error as { details?: { preview?: { restores: unknown[]; revision: unknown } } }).details?.preview;
@@ -395,7 +401,7 @@ describe("rolling a box back", () => {
     seed(workspace, "later.txt", "written after the checkpoint");
     const revision = host.specs.read(box.boxId)?.revision ?? 0;
 
-    const result = await rollbackBox(host, box.boxId, { checkpoint: view.id, confirm: true }, "owner");
+    const result = await rollback(box.boxId, view.id, true);
 
     const restored = engineAt(box.boxId, "/workspace");
     expect(restored).not.toBe(workspace);
@@ -415,7 +421,7 @@ describe("rolling a box back", () => {
     runtime.seedVolumeOwner(engineAt(box.boxId, "/workspace"), { uid: 1234, gid: 1234 });
     const view = await take(box.boxId);
 
-    await rollbackBox(host, box.boxId, { checkpoint: view.id, confirm: true }, "owner");
+    await rollback(box.boxId, view.id, true);
 
     expect(runtime.volumeOwners.get(engineAt(box.boxId, "/workspace"))).toEqual({ uid: 1234, gid: 1234 });
   });
@@ -425,7 +431,7 @@ describe("rolling a box back", () => {
     const beta = await makeBox("beta");
     const view = await take(alpha.boxId);
 
-    const error = await rejectionOf(rollbackBox(host, beta.boxId, { checkpoint: view.id, confirm: true }, "owner"));
+    const error = await rejectionOf(rollback(beta.boxId, view.id, true));
 
     expect(error).toMatchObject({ status: 409, key: "checkpoint_other_box" });
   });
@@ -435,7 +441,7 @@ describe("rolling a box back", () => {
     const box = await boxWith("alpha", [{ volume: shared.engineName, path: "/data", mode: "rw" }], false);
     const view = await take(box.boxId, { include: { system: false, volumes: [shared.id] } });
 
-    const error = await rejectionOf(rollbackBox(host, box.boxId, { checkpoint: view.id, confirm: true }, "owner"));
+    const error = await rejectionOf(rollback(box.boxId, view.id, true));
 
     expect(error).toMatchObject({ status: 409, key: "checkpoint_no_data" });
   });

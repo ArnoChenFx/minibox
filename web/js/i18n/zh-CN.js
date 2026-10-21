@@ -150,6 +150,7 @@ export default {
   "err.checkpoint_pinned": "检查点 {id} 已置顶。请先取消置顶再删除。",
   "err.checkpoint_rollback_confirm":
     "回滚会把检查点路径上的卷替换为检查点数据的副本。当前的卷会保留，直到你确认或撤销。请发送 confirm: true 以继续。",
+  "err.checkpoint_out_of_scope": "当前凭据不能使用该检查点。",
   "err.box_network_conflict":
     "网络「{network}」已存在，但不是关闭了容器间通信的 bridge 网络。请在没有 Box 使用它时删除该网络，然后重试。",
   "err.volume_reserved": "卷 {volume} 保存着 MiniBox 自身的数据，不能挂载到 Box。",

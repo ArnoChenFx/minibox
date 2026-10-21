@@ -1,4 +1,5 @@
 import { boxOperations } from "./boxes";
+import { checkpointOperations } from "./checkpoints";
 import { eventOperations } from "./events";
 import { execOperations } from "./exec";
 import { fileOperations } from "./files";
@@ -23,6 +24,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...toolOperations,
   ...sessionOperations,
   ...snapshotOperations,
+  ...checkpointOperations,
   ...templateOperations,
   ...taskOperations,
   ...eventOperations,

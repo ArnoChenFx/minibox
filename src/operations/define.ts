@@ -7,7 +7,7 @@ import { parseInput } from "./validation";
 export function defineOperation<I extends z.ZodObject, O extends z.ZodType, R = undefined>(
   spec: OperationSpec<I, O, R>,
 ): Operation {
-  const { input, output, precondition, resolve, activity, audit, exclusive, run, ...meta } = spec;
+  const { input, output, precondition, resolve, beforeTask, activity, audit, exclusive, run, ...meta } = spec;
   return {
     ...meta,
     input,
@@ -15,6 +15,7 @@ export function defineOperation<I extends z.ZodObject, O extends z.ZodType, R = 
     parse: (raw) => parseInput(input, raw),
     precondition: precondition && ((ctx, value) => precondition(ctx, value as z.output<I>)),
     resolve: resolve && ((ctx, value) => resolve(ctx, value as z.output<I>)),
+    beforeTask: beforeTask && ((ctx, value, resolved) => beforeTask(ctx, value as z.output<I>, resolved as R)),
     activity: activity && {
       action: (value) => activity.action(value as z.output<I>),
       target: (value, resolved) => activity.target(value as z.output<I>, resolved as R),

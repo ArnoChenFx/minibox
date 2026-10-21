@@ -29,6 +29,7 @@ export function normalize(text: string): string {
     .replace(/"prefix":"mbx_[A-Za-z0-9_-]+"/g, '"prefix":"<prefix>"')
     .replace(/vol_[0-9a-z]+/g, "<volumeId>")
     .replace(/\bbx_[0-9a-z]+/g, "<boxId>")
+    .replace(/\bck_[0-9a-z]{8,32}\b/g, "ck_<checkpoint>")
     .replace(/tok_[0-9a-f]+/g, "<tokenId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
@@ -48,6 +49,11 @@ export function normalize(text: string): string {
 
 function boxId(json: Record<string, unknown> | null): string {
   return String((json?.box as { id?: string } | undefined)?.id ?? "");
+}
+
+function checkpointIdOf(task: Record<string, unknown>): string {
+  const checkpoint = (task.result as { checkpoint?: { id?: string } } | undefined)?.checkpoint;
+  return String(checkpoint?.id ?? "");
 }
 
 function snapshotRef(json: Record<string, unknown> | null): string {
@@ -537,6 +543,57 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("revoke the readonly token", "DELETE", `/api/tokens/${tokenId}?deleteCreated=false`);
     await send("revoke the readonly token again", "DELETE", `/api/tokens/${tokenId}`);
     await send("revoke a missing token", "DELETE", "/api/tokens/missing");
+
+    const ckbox = boxId(
+      (await post("create the checkpoint box", "/api/boxes", { name: "ckbox", cpus: 1, memoryMb: 256 })).json,
+    );
+    const taken = await post("take a checkpoint", `/api/boxes/${ckbox}/checkpoints`, { label: "before refactor" });
+    const ckId = checkpointIdOf(await waitTask(base, taken.json));
+    await post("take a checkpoint in an unknown mode", `/api/boxes/${ckbox}/checkpoints`, { consistency: "warm" });
+    await send("list checkpoints", "GET", "/api/checkpoints");
+    await send("read the checkpoint", "GET", `/api/checkpoints/${ckId}`);
+    await send("read a missing checkpoint", "GET", "/api/checkpoints/ck_0000000000000000000000000");
+    await waitTask(base, (await patch("pin the checkpoint", `/api/checkpoints/${ckId}`, { pinned: true })).json);
+    await send("delete a pinned checkpoint", "DELETE", `/api/checkpoints/${ckId}`);
+    await waitTask(base, (await patch("unpin the checkpoint", `/api/checkpoints/${ckId}`, { pinned: false })).json);
+    const revision = (await send("read the checkpoint box", "GET", `/api/boxes/${ckbox}`)).json?.box as
+      | { revision?: number }
+      | undefined;
+    const rollbackPath = `/api/boxes/${ckbox}/rollback`;
+    const current = { "if-match": String(revision?.revision ?? 1) };
+    await send("roll back without a revision", "POST", rollbackPath, {
+      body: JSON.stringify({ checkpoint: ckId, confirm: true }),
+      contentType: JSON_TYPE,
+    });
+    await send("roll back from a stale revision", "POST", rollbackPath, {
+      body: JSON.stringify({ checkpoint: ckId, confirm: true }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": "9" },
+    });
+    await send("roll back without confirm", "POST", rollbackPath, {
+      body: JSON.stringify({ checkpoint: ckId }),
+      contentType: JSON_TYPE,
+      headers: current,
+    });
+    const rolled = await send("roll back with confirm", "POST", rollbackPath, {
+      body: JSON.stringify({ checkpoint: ckId, confirm: true }),
+      contentType: JSON_TYPE,
+      headers: current,
+    });
+    await waitTask(base, rolled.json);
+    const forked = await post("fork the checkpoint", `/api/checkpoints/${ckId}/fork`, {
+      name: "ckcopy",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    await waitTask(base, forked.json);
+    await post("fork the checkpoint under a taken name", `/api/checkpoints/${ckId}/fork`, {
+      name: "ckcopy",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    await waitTask(base, (await send("delete the checkpoint", "DELETE", `/api/checkpoints/${ckId}`)).json);
+    await send("read the deleted checkpoint", "GET", `/api/checkpoints/${ckId}`);
   } finally {
     server.stop(true);
     app.throttle.stop();
