@@ -148,6 +148,15 @@ export interface HelperResult {
   logs: string;
 }
 
+/** Where a helper finds its `HelperSpec.secrets`, read-only. */
+export const HELPER_SECRETS_DIR = "/run/secrets";
+
+/** A file-sized secret for one helper run. `name` is a plain file name, not a path. */
+export interface HelperSecret {
+  name: string;
+  value: string;
+}
+
 export interface HelperSpec {
   image: string;
   cmd: string[];
@@ -160,6 +169,12 @@ export interface HelperSpec {
   labels?: Record<string, string>;
   /** `NAME=value` entries. Used by Agent CLI installs for HTTP_PROXY and npm/pip settings. */
   env?: string[];
+  /**
+   * Secrets the helper reads from `/run/secrets/<name>`, read-only. A secret never goes into `env` or the container
+   * config, which the engine shows to anyone who can inspect the container. The engine stages them in a volume that
+   * exists only for the run.
+   */
+  secrets?: HelperSecret[];
   /**
    * When true, the helper joins the engine's default bridge so it can reach npm / PyPI / GitHub.
    * Absent or false keeps NetworkMode `none` (volume probes and chown).

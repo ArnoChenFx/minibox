@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { createSecretFile, ensureDataDir, readSecretFile } from "../data-dir";
 import type { HostCtx } from "../host/registry";
-import { type HelperResult, type Mount, RuntimeError } from "../runtime";
+import { HELPER_SECRETS_DIR, type HelperResult, type Mount, RuntimeError } from "../runtime";
 import type { BackupResult, SnapshotEngine } from "./engine";
 
 /** Pinned engine image. Its flags below follow restic 0.18. */
@@ -12,7 +12,10 @@ export const RESTIC_IMAGE = "restic/restic:0.18.1";
 const REPO_MOUNT = "/repo";
 const DATA_MOUNT = "/data";
 const TARGET_MOUNT = "/dst";
+/** The password file on the host, under `DATA_DIR/secrets`. */
 const KEY_FILE = "checkpoint-repo.key";
+/** The same password as a file inside the helper, under `HELPER_SECRETS_DIR`. */
+const HELPER_KEY_NAME = "repo.key";
 const SNAPSHOT_ID_RE = /^[0-9a-f]{64}$/;
 
 const HELPER_MEMORY_BYTES = 1024 * 1024 * 1024;
@@ -32,8 +35,8 @@ export interface ResticOptions {
 
 /**
  * Snapshots with restic, run in a short-lived helper from `RESTIC_IMAGE`. Each host has one repository, in a volume
- * named `<prefix>-checkpoints-<host>`. The repository password is generated once into `DATA_DIR/secrets` and passed
- * to the helper through its environment.
+ * named `<prefix>-checkpoints-<host>`. The repository password is generated once into `DATA_DIR/secrets`. Each helper
+ * gets it as a secret file, read through `RESTIC_PASSWORD_FILE`, so it never appears in the helper's environment.
  *
  * Operations on one host run one at a time, so the repository is never initialized twice and backups do not compete
  * for its lock. A repository the password cannot open is an error, never a reason to initialize a new one.
@@ -143,7 +146,12 @@ export class ResticEngine implements SnapshotEngine {
       user: "0:0",
       capAdd: call.capAdd,
       mounts: [{ source: repoVolume(host), target: REPO_MOUNT, mode: "rw" }, ...(call.mounts ?? [])],
-      env: [`RESTIC_PASSWORD=${this.password()}`, `RESTIC_REPOSITORY=${REPO_MOUNT}`, "HOME=/tmp"],
+      secrets: [{ name: HELPER_KEY_NAME, value: this.password() }],
+      env: [
+        `RESTIC_PASSWORD_FILE=${HELPER_SECRETS_DIR}/${HELPER_KEY_NAME}`,
+        `RESTIC_REPOSITORY=${REPO_MOUNT}`,
+        "HOME=/tmp",
+      ],
       labels: { [host.keys.internal]: "true" },
       memoryBytes: HELPER_MEMORY_BYTES,
       pidsLimit: HELPER_PIDS_LIMIT,
