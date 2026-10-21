@@ -63,10 +63,12 @@ in_box 'sudo -n true' >/dev/null 2>&1 || fail "sudo -n does not work for dev"
 [[ "$(in_box 'sudo -n id -u' 2>/dev/null)" == "0" ]] || fail "sudo does not reach root"
 echo "ok: passwordless sudo"
 
-in_box 'for t in git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny ping; do
+in_box 'for t in git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny ping socat; do
   command -v "$t" >/dev/null || { echo "missing: $t" >&2; exit 1; }
 done' || fail "a required tool is missing"
-echo "ok: git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny ping are installed"
+echo "ok: git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny ping socat are installed"
+in_box 'test -x /usr/lib/openssh/sftp-server' || fail "openssh-sftp-server is missing, so the SSH sftp subsystem cannot run"
+echo "ok: /usr/lib/openssh/sftp-server is installed for the SSH sftp subsystem"
 
 in_box 'test -O /workspace && test -w /workspace && test -O /home/dev && test -O /home/dev/.cache' \
   || fail "a writable mount point is missing or not owned by dev"

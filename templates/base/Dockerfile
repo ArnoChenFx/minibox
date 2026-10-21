@@ -16,7 +16,7 @@ RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       git curl ca-certificates python3 python3-pip python3-venv \
       build-essential procps vim-tiny less sudo \
-      tmux jq ripgrep openssh-client unzip iputils-ping \
+      tmux jq ripgrep openssh-client openssh-sftp-server socat unzip iputils-ping \
  && rm -rf /var/lib/apt/lists/*
 
 # The node image already has a `node` user on uid/gid 1000. Remove it instead of renaming it, so `dev` can take the
