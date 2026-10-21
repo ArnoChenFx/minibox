@@ -328,6 +328,7 @@ describe("CLI SSH commands", () => {
 
       const config = readFileSync(join(sshDir, "config"), "utf8");
       expect(config.startsWith("# BEGIN minibox ssh-config\nHost *.minibox\n")).toBe(true);
+      expect(config).toContain(`  UserKnownHostsFile "${join(sshDir, "minibox_known_hosts")}"\n`);
       expect(config.split("# BEGIN minibox ssh-config")).toHaveLength(2);
       expect(config.endsWith("\nHost github.com\n  User git\n")).toBe(true);
       expect(readFileSync(join(sshDir, "minibox_known_hosts"), "utf8")).toBe(

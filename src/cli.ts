@@ -340,14 +340,18 @@ function accessKey(env: Record<string, string | undefined>): string {
   return key;
 }
 
-/** The block `ssh-config` manages. It goes first in ~/.ssh/config, so its settings win over any earlier `Host *`. */
-function sshConfigBlock(): string {
+/**
+ * The block `ssh-config` manages. It goes first in ~/.ssh/config, so its settings win over any earlier `Host *`. The pin
+ * path is absolute: ssh expands `~` from the account's passwd entry, which is not always $HOME, and the pin must be
+ * where the CLI wrote it.
+ */
+function sshConfigBlock(pinPath: string): string {
   return [
     SSH_BLOCK_BEGIN,
     `Host *${SSH_SUFFIX}`,
     "  User dev",
     "  ProxyCommand minibox ssh-proxy %h",
-    "  UserKnownHostsFile ~/.ssh/minibox_known_hosts",
+    `  UserKnownHostsFile "${pinPath.replaceAll("%", "%%")}"`,
     "  StrictHostKeyChecking yes",
     "  ServerAliveInterval 15",
     SSH_BLOCK_END,
@@ -379,20 +383,21 @@ async function sshConfig(argv: string[], env: Record<string, string | undefined>
     throw new Error("The server did not publish an SSH host key.");
   }
   const pin = `*${SSH_SUFFIX} ${published.publicKey}\n`;
-  if (!argv.includes("--append")) {
-    io.stdout(`# ~/.ssh/config\n${sshConfigBlock()}\n# ~/.ssh/minibox_known_hosts\n${pin}`);
-    return 0;
-  }
   const sshDir = join(env.HOME ?? homedir(), ".ssh");
   const configPath = join(sshDir, "config");
   const pinPath = join(sshDir, "minibox_known_hosts");
+  if (!argv.includes("--append")) {
+    io.stdout(`# ~/.ssh/config\n${sshConfigBlock(pinPath)}\n# ~/.ssh/minibox_known_hosts\n${pin}`);
+    return 0;
+  }
   await mkdir(sshDir, { recursive: true, mode: 0o700 });
   const existing = await readFile(configPath, "utf8").catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return "";
     throw error;
   });
   const kept = withoutManagedBlock(existing).replace(/^\n+/, "");
-  await writeFile(configPath, kept ? `${sshConfigBlock()}\n${kept}` : sshConfigBlock(), { mode: 0o600 });
+  const block = sshConfigBlock(pinPath);
+  await writeFile(configPath, kept ? `${block}\n${kept}` : block, { mode: 0o600 });
   await writeFile(pinPath, pin, { mode: 0o600 });
   io.stdout(
     `Wrote ~/.ssh/config and ~/.ssh/minibox_known_hosts. Pinned ${published.fingerprint} for *${SSH_SUFFIX}.\n`,
