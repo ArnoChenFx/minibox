@@ -34,6 +34,9 @@
       "name": "snapshots"
     },
     {
+      "name": "checkpoints"
+    },
+    {
       "name": "templates"
     },
     {
@@ -1148,7 +1151,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1712,7 +1715,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1857,7 +1860,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2488,7 +2491,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2498,7 +2501,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3050,7 +3053,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3572,7 +3575,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4094,7 +4097,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4656,7 +4659,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5259,7 +5262,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5269,7 +5272,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5441,7 +5444,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5638,7 +5641,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5874,7 +5877,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6086,7 +6089,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6223,7 +6226,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6233,7 +6236,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6399,7 +6402,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6552,7 +6555,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6725,7 +6728,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6879,7 +6882,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7081,7 +7084,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7253,7 +7256,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7473,7 +7476,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7638,7 +7641,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7808,7 +7811,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7983,7 +7986,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8525,7 +8528,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8793,7 +8796,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8931,7 +8934,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8941,7 +8944,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9524,7 +9527,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9534,7 +9537,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10114,7 +10117,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10124,7 +10127,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10412,7 +10415,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11131,7 +11134,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11676,7 +11679,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11686,7 +11689,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11880,7 +11883,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11890,7 +11893,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12076,7 +12079,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12086,7 +12089,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12250,7 +12253,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12260,7 +12263,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12490,7 +12493,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12677,7 +12680,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12879,7 +12882,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13025,7 +13028,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13035,7 +13038,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13221,7 +13224,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13231,7 +13234,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13562,7 +13565,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13572,7 +13575,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14171,7 +14174,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14181,7 +14184,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14329,7 +14332,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14383,6 +14386,3037 @@
         "x-scope": "snapshot:delete",
         "x-async": false,
         "x-cli": "snapshot rm"
+      }
+    },
+    "/api/checkpoints": {
+      "get": {
+        "operationId": "checkpoint.list",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "List checkpoints",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "checkpoints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "legacy": {
+                            "type": "boolean"
+                          },
+                          "hostId": {
+                            "type": "string"
+                          },
+                          "boxId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "boxName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "pinned": {
+                            "type": "boolean"
+                          },
+                          "auto": {
+                            "type": "boolean"
+                          },
+                          "consistency": {
+                            "type": "string",
+                            "enum": [
+                              "live",
+                              "pause",
+                              "stop"
+                            ]
+                          },
+                          "specRevision": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "spec": {
+                            "type": "object",
+                            "properties": {
+                              "template": {
+                                "type": "object",
+                                "properties": {
+                                  "ref": {
+                                    "type": "string"
+                                  },
+                                  "image": {
+                                    "type": "string"
+                                  },
+                                  "digest": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "ref",
+                                  "image",
+                                  "digest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "cpus": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "memoryBytes": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "profile": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "standard",
+                                      "strict",
+                                      "relaxed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "template",
+                              "cpus",
+                              "memoryBytes",
+                              "profile"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "data": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "volumeId": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "rw",
+                                    "ro"
+                                  ]
+                                },
+                                "role": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "workspace",
+                                        "home",
+                                        "tools",
+                                        "cache"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "ownership": {
+                                  "type": "string",
+                                  "enum": [
+                                    "owned",
+                                    "independent"
+                                  ]
+                                },
+                                "owner": {
+                                  "type": "object",
+                                  "properties": {
+                                    "uid": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "gid": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "uid",
+                                    "gid"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "snapshotId": {
+                                  "type": "string"
+                                },
+                                "bytes": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "volumeId",
+                                "path",
+                                "mode",
+                                "role",
+                                "ownership",
+                                "owner",
+                                "snapshotId",
+                                "bytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "system": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "image": {
+                                    "type": "string"
+                                  },
+                                  "imageId": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "image",
+                                  "imageId"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "bytes": {
+                            "type": "number"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "legacy",
+                          "hostId",
+                          "boxId",
+                          "boxName",
+                          "label",
+                          "reason",
+                          "createdBy",
+                          "pinned",
+                          "auto",
+                          "consistency",
+                          "specRevision",
+                          "spec",
+                          "data",
+                          "system",
+                          "bytes",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "checkpoints"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "checkpoint:read",
+        "x-async": false,
+        "x-cli": "checkpoint list"
+      }
+    },
+    "/api/checkpoints/{id}": {
+      "get": {
+        "operationId": "checkpoint.get",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Get one checkpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Checkpoint id (ck_…), as the checkpoint list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "checkpoint": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "legacy": {
+                          "type": "boolean"
+                        },
+                        "hostId": {
+                          "type": "string"
+                        },
+                        "boxId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "boxName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "pinned": {
+                          "type": "boolean"
+                        },
+                        "auto": {
+                          "type": "boolean"
+                        },
+                        "consistency": {
+                          "type": "string",
+                          "enum": [
+                            "live",
+                            "pause",
+                            "stop"
+                          ]
+                        },
+                        "specRevision": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "spec": {
+                          "type": "object",
+                          "properties": {
+                            "template": {
+                              "type": "object",
+                              "properties": {
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "image": {
+                                  "type": "string"
+                                },
+                                "digest": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "ref",
+                                "image",
+                                "digest"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "cpus": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "memoryBytes": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "profile": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "standard",
+                                    "strict",
+                                    "relaxed"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "template",
+                            "cpus",
+                            "memoryBytes",
+                            "profile"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volumeId": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              },
+                              "role": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "workspace",
+                                      "home",
+                                      "tools",
+                                      "cache"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "ownership": {
+                                "type": "string",
+                                "enum": [
+                                  "owned",
+                                  "independent"
+                                ]
+                              },
+                              "owner": {
+                                "type": "object",
+                                "properties": {
+                                  "uid": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "gid": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "uid",
+                                  "gid"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "snapshotId": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "volumeId",
+                              "path",
+                              "mode",
+                              "role",
+                              "ownership",
+                              "owner",
+                              "snapshotId",
+                              "bytes"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "system": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "image": {
+                                  "type": "string"
+                                },
+                                "imageId": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "image",
+                                "imageId"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "bytes": {
+                          "type": "number"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "legacy",
+                        "hostId",
+                        "boxId",
+                        "boxName",
+                        "label",
+                        "reason",
+                        "createdBy",
+                        "pinned",
+                        "auto",
+                        "consistency",
+                        "specRevision",
+                        "spec",
+                        "data",
+                        "system",
+                        "bytes",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "checkpoint"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "checkpoint:read",
+        "x-async": false,
+        "x-cli": "checkpoint get"
+      },
+      "patch": {
+        "operationId": "checkpoint.update",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Pin or relabel a checkpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Checkpoint id (ck_…), as the checkpoint list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pinned": {
+                    "description": "Pin the checkpoint (true), or unpin it (false). A pinned checkpoint cannot be deleted.",
+                    "type": "boolean"
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Label shown in the checkpoint list, one line, at most 200 characters. Defaults to the box name."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "checkpoint:write",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "checkpoint": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "legacy": {
+                  "type": "boolean"
+                },
+                "hostId": {
+                  "type": "string"
+                },
+                "boxId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "boxName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "createdBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pinned": {
+                  "type": "boolean"
+                },
+                "auto": {
+                  "type": "boolean"
+                },
+                "consistency": {
+                  "type": "string",
+                  "enum": [
+                    "live",
+                    "pause",
+                    "stop"
+                  ]
+                },
+                "specRevision": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "spec": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "type": "object",
+                      "properties": {
+                        "ref": {
+                          "type": "string"
+                        },
+                        "image": {
+                          "type": "string"
+                        },
+                        "digest": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "image",
+                        "digest"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "cpus": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "memoryBytes": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "profile": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "standard",
+                            "strict",
+                            "relaxed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "template",
+                    "cpus",
+                    "memoryBytes",
+                    "profile"
+                  ],
+                  "additionalProperties": false
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "volumeId": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "rw",
+                          "ro"
+                        ]
+                      },
+                      "role": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "workspace",
+                              "home",
+                              "tools",
+                              "cache"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ownership": {
+                        "type": "string",
+                        "enum": [
+                          "owned",
+                          "independent"
+                        ]
+                      },
+                      "owner": {
+                        "type": "object",
+                        "properties": {
+                          "uid": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "gid": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "uid",
+                          "gid"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "snapshotId": {
+                        "type": "string"
+                      },
+                      "bytes": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "volumeId",
+                      "path",
+                      "mode",
+                      "role",
+                      "ownership",
+                      "owner",
+                      "snapshotId",
+                      "bytes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "system": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "image": {
+                          "type": "string"
+                        },
+                        "imageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "image",
+                        "imageId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bytes": {
+                  "type": "number"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "legacy",
+                "hostId",
+                "boxId",
+                "boxName",
+                "label",
+                "reason",
+                "createdBy",
+                "pinned",
+                "auto",
+                "consistency",
+                "specRevision",
+                "spec",
+                "data",
+                "system",
+                "bytes",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "checkpoint"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "checkpoint update"
+      },
+      "delete": {
+        "operationId": "checkpoint.delete",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Delete a checkpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Checkpoint id (ck_…), as the checkpoint list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "checkpoint:delete",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "checkpoint rm"
+      }
+    },
+    "/api/boxes/{id}/checkpoints": {
+      "post": {
+        "operationId": "checkpoint.create",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Take a checkpoint of a box",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Label shown in the checkpoint list, one line, at most 200 characters. Defaults to the box name."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Why the checkpoint is taken, one line, at most 200 characters."
+                  },
+                  "pinned": {
+                    "default": false,
+                    "description": "Keep the checkpoint until it is unpinned. A pinned checkpoint cannot be deleted.",
+                    "type": "boolean"
+                  },
+                  "include": {
+                    "default": {
+                      "system": false,
+                      "volumes": []
+                    },
+                    "description": "What to take beyond the default set: the box's owned workspace and home.",
+                    "type": "object",
+                    "properties": {
+                      "system": {
+                        "default": false,
+                        "description": "Commit the writable layer as a system image, so a fork starts from it. Off by default; the image is kept with the checkpoint.",
+                        "type": "boolean"
+                      },
+                      "volumes": {
+                        "default": [],
+                        "description": "Shared volumes the box mounts to include, by id or name. The box's owned volumes (workspace and home) are always included; cache and tools never are.",
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "consistency": {
+                    "default": "live",
+                    "description": "How the box is held for the backup. live (default) reads the volumes while the box runs, crash-consistent. pause freezes a running box for the backup. stop stops a running box and starts it again afterwards.",
+                    "type": "string",
+                    "enum": [
+                      "live",
+                      "pause",
+                      "stop"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "checkpoint:create",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "checkpoint": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "legacy": {
+                  "type": "boolean"
+                },
+                "hostId": {
+                  "type": "string"
+                },
+                "boxId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "boxName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "createdBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pinned": {
+                  "type": "boolean"
+                },
+                "auto": {
+                  "type": "boolean"
+                },
+                "consistency": {
+                  "type": "string",
+                  "enum": [
+                    "live",
+                    "pause",
+                    "stop"
+                  ]
+                },
+                "specRevision": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "spec": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "type": "object",
+                      "properties": {
+                        "ref": {
+                          "type": "string"
+                        },
+                        "image": {
+                          "type": "string"
+                        },
+                        "digest": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "image",
+                        "digest"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "cpus": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "memoryBytes": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "profile": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "standard",
+                            "strict",
+                            "relaxed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "template",
+                    "cpus",
+                    "memoryBytes",
+                    "profile"
+                  ],
+                  "additionalProperties": false
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "volumeId": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "rw",
+                          "ro"
+                        ]
+                      },
+                      "role": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "workspace",
+                              "home",
+                              "tools",
+                              "cache"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ownership": {
+                        "type": "string",
+                        "enum": [
+                          "owned",
+                          "independent"
+                        ]
+                      },
+                      "owner": {
+                        "type": "object",
+                        "properties": {
+                          "uid": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "gid": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "uid",
+                          "gid"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "snapshotId": {
+                        "type": "string"
+                      },
+                      "bytes": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "volumeId",
+                      "path",
+                      "mode",
+                      "role",
+                      "ownership",
+                      "owner",
+                      "snapshotId",
+                      "bytes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "system": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "image": {
+                          "type": "string"
+                        },
+                        "imageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "image",
+                        "imageId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bytes": {
+                  "type": "number"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "legacy",
+                "hostId",
+                "boxId",
+                "boxName",
+                "label",
+                "reason",
+                "createdBy",
+                "pinned",
+                "auto",
+                "consistency",
+                "specRevision",
+                "spec",
+                "data",
+                "system",
+                "bytes",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "checkpoint"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "checkpoint create"
+      }
+    },
+    "/api/checkpoints/{id}/fork": {
+      "post": {
+        "operationId": "checkpoint.fork",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Create a box from a checkpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Checkpoint id (ck_…), as the checkpoint list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+                    "description": "Box name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed."
+                  },
+                  "cpus": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 64,
+                    "description": "CPU cores, between 0.1 and 64, rounded to two decimals. Defaults to 2."
+                  },
+                  "memoryMb": {
+                    "type": "integer",
+                    "minimum": 128,
+                    "maximum": 262144,
+                    "description": "Memory in MB, an integer between 128 and 262144. Defaults to 4096."
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "strict",
+                      "relaxed"
+                    ],
+                    "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
+                  },
+                  "copyHome": {
+                    "default": false,
+                    "description": "Copy the checkpoint's home content into the new box. Off by default, so the new box starts with an empty home.",
+                    "type": "boolean"
+                  },
+                  "ttlSec": {
+                    "description": "Time to live in seconds. A positive integer, at most 365 days, or null for none. Omitted or null stores no TTL, except for an agent token with a max TTL, which stores that cap. A value above the cap is refused. When the time elapses the box stops, and its container is kept.",
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 31536000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:write",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "box": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "boxId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "template": {
+                  "type": "string"
+                },
+                "profile": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "standard",
+                        "strict",
+                        "relaxed"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "network": {
+                  "type": "string"
+                },
+                "cpus": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "pids": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "volume": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "number"
+                },
+                "desired": {
+                  "type": "string",
+                  "enum": [
+                    "running",
+                    "stopped"
+                  ]
+                },
+                "idleTimeoutSec": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "ttlSec": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "stopReason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "ttl",
+                        "manual"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sleeping": {
+                  "type": "boolean"
+                },
+                "lastActivityAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "labels": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "createdBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "containerName": {
+                  "type": "string"
+                },
+                "drift": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "expected": {
+                        "type": "string"
+                      },
+                      "actual": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "expected",
+                      "actual"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "recovery": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "claim",
+                            "degraded"
+                          ]
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "needsReset": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "observedRestart": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "at",
+                        "needsReset",
+                        "observedRestart"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mounts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "volume": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "rw",
+                          "ro"
+                        ]
+                      },
+                      "volumeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "volumeName": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "role": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "workspace",
+                              "home",
+                              "tools",
+                              "cache"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "pool": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "volume",
+                      "path",
+                      "mode",
+                      "volumeId",
+                      "volumeName",
+                      "role",
+                      "pool"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "env": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "secretRef": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "storage": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "unreachable",
+                        "unknown"
+                      ]
+                    },
+                    "pools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "reachable",
+                              "unreachable",
+                              "unknown"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "pools"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "boxId",
+                "name",
+                "state",
+                "status",
+                "running",
+                "image",
+                "template",
+                "profile",
+                "network",
+                "cpus",
+                "memory",
+                "pids",
+                "createdAt",
+                "startedAt",
+                "volume",
+                "revision",
+                "desired",
+                "idleTimeoutSec",
+                "ttlSec",
+                "stopReason",
+                "sleeping",
+                "lastActivityAt",
+                "labels",
+                "createdBy",
+                "containerName",
+                "drift",
+                "recovery",
+                "mounts",
+                "env",
+                "tools",
+                "storage"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "box"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "checkpoint fork"
+      }
+    },
+    "/api/boxes/{id}/rollback": {
+      "post": {
+        "operationId": "box.rollback",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Roll a box back to one of its checkpoints",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "The box's current revision: a positive integer, a quoted entity tag, or a weak tag. Missing is 428 precondition_required. A stale revision is 412 precondition_failed.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "checkpoint": {
+                    "type": "string",
+                    "description": "Checkpoint id (ck_…) taken from this box."
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false."
+                  }
+                },
+                "required": [
+                  "checkpoint"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The If-Match revision is not the box's current revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required and was not sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "checkpoint:restore",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "box": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "boxId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "template": {
+                  "type": "string"
+                },
+                "profile": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "standard",
+                        "strict",
+                        "relaxed"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "network": {
+                  "type": "string"
+                },
+                "cpus": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "pids": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "volume": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "number"
+                },
+                "desired": {
+                  "type": "string",
+                  "enum": [
+                    "running",
+                    "stopped"
+                  ]
+                },
+                "idleTimeoutSec": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "ttlSec": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "stopReason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "ttl",
+                        "manual"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sleeping": {
+                  "type": "boolean"
+                },
+                "lastActivityAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "labels": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "createdBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "containerName": {
+                  "type": "string"
+                },
+                "drift": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "expected": {
+                        "type": "string"
+                      },
+                      "actual": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "expected",
+                      "actual"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "recovery": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "claim",
+                            "degraded"
+                          ]
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "needsReset": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "observedRestart": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "at",
+                        "needsReset",
+                        "observedRestart"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mounts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "volume": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "rw",
+                          "ro"
+                        ]
+                      },
+                      "volumeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "volumeName": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "role": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "workspace",
+                              "home",
+                              "tools",
+                              "cache"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "pool": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "volume",
+                      "path",
+                      "mode",
+                      "volumeId",
+                      "volumeName",
+                      "role",
+                      "pool"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "env": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "secretRef": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "storage": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "unreachable",
+                        "unknown"
+                      ]
+                    },
+                    "pools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "reachable",
+                              "unreachable",
+                              "unknown"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "pools"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "boxId",
+                "name",
+                "state",
+                "status",
+                "running",
+                "image",
+                "template",
+                "profile",
+                "network",
+                "cpus",
+                "memory",
+                "pids",
+                "createdAt",
+                "startedAt",
+                "volume",
+                "revision",
+                "desired",
+                "idleTimeoutSec",
+                "ttlSec",
+                "stopReason",
+                "sleeping",
+                "lastActivityAt",
+                "labels",
+                "createdBy",
+                "containerName",
+                "drift",
+                "recovery",
+                "mounts",
+                "env",
+                "tools",
+                "storage"
+              ],
+              "additionalProperties": false
+            },
+            "replaced": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "box",
+            "replaced"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "box rollback"
       }
     },
     "/api/templates": {
@@ -14681,7 +17715,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14809,7 +17843,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14959,7 +17993,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15453,7 +18487,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15686,7 +18720,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15696,7 +18730,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17023,7 +20057,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17504,7 +20538,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {

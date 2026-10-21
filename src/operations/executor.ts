@@ -199,7 +199,10 @@ export class Executor {
         denied = true;
         throw new AppError(403, "forbidden", msg("operation_forbidden", { op: name }));
       }
-      if (operation.async) return await this.startAsync(operation, bound, parsed, resolved, started, id);
+      if (operation.async) {
+        await operation.beforeTask?.(bound, parsed, resolved);
+        return await this.startAsync(operation, bound, parsed, resolved, started, id);
+      }
       const recording: OperationContext = { ...bound, record: (note) => this.recordNote(bound, id, note) };
       result = await this.record(operation, parsed, resolved, () => operation.run(recording, parsed, resolved));
     } catch (e) {

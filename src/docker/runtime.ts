@@ -439,6 +439,10 @@ const HELPER_PIDS_LIMIT = 64;
 /** Scratch space for a helper's `/tmp`. Nothing is run from it. */
 const HELPER_TMPFS = "rw,noexec,nosuid,nodev,size=16m";
 
+function helperTmpfs(bytes: number | undefined): string {
+  return bytes === undefined ? HELPER_TMPFS : `rw,noexec,nosuid,nodev,size=${bytes}`;
+}
+
 /** Mounts form for `createContainer`. Named volumes with `noCopy` match helpers; binds stay Type=bind. */
 function createMountOf(mount: Mount): Docker.MountSettings {
   const shared = { Target: mount.target, Source: mount.source, ReadOnly: mount.mode === "ro" };
@@ -476,7 +480,7 @@ export function toHelperOptions(spec: HelperSpec, name: string): Docker.Containe
     MemorySwap: memory,
     AutoRemove: true,
   };
-  if (readonlyRoot) hostConfig.Tmpfs = { "/tmp": HELPER_TMPFS };
+  if (readonlyRoot) hostConfig.Tmpfs = { "/tmp": helperTmpfs(spec.tmpfsBytes) };
   applyHardening(hostConfig, {
     capDrop: ["ALL"],
     capAdd: spec.capAdd,
@@ -645,6 +649,17 @@ export function createDockerRuntime(socketPath: string): Runtime {
       await mutate(() => docker.getContainer(id).restart({ t: timeoutSec }));
     },
 
+    async pauseContainer(id) {
+      await mutate(() => docker.getContainer(id).pause());
+    },
+
+    async unpauseContainer(id) {
+      // The engine answers 500 to an unpause of a running container, so the state is read first.
+      const info = await call(() => docker.getContainer(id).inspect());
+      if (!info.State.Paused) return;
+      await mutate(() => docker.getContainer(id).unpause());
+    },
+
     async removeContainer(id, { force }) {
       await mutate(() => docker.getContainer(id).remove({ force }));
     },
@@ -805,6 +820,27 @@ export function createDockerRuntime(socketPath: string): Runtime {
     async inspectImage(ref) {
       const info = await call(() => docker.getImage(ref).inspect());
       return { id: info.Id, labels: info.Config?.Labels ?? {} };
+    },
+
+    async pullImage(ref) {
+      try {
+        await call(() => docker.getImage(ref).inspect());
+        return;
+      } catch (e) {
+        if (!isRuntimeError(e, "not_found")) throw e;
+      }
+      await call(async () => {
+        const stream = await docker.pull(ref);
+        await new Promise<void>((resolve, reject) => {
+          docker.modem.followProgress(
+            stream,
+            (err: Error | null) => (err ? reject(new RuntimeError("engine", err.message)) : resolve()),
+            (ev: { error?: string }) => {
+              if (ev.error) reject(new RuntimeError("engine", ev.error));
+            },
+          );
+        });
+      });
     },
 
     async removeImage(ref, { force }) {

@@ -197,6 +197,17 @@ describe("toHelperOptions", () => {
     );
     expect(options.HostConfig?.Mounts).toEqual([{ Type: "bind", Source: "/srv/pool", Target: "/mnt", ReadOnly: true }]);
   });
+
+  test("a helper's /tmp size can be set in bytes, and only a read-only root has a /tmp tmpfs", () => {
+    const sized = toHelperOptions({ image: "img:1", cmd: ["true"], tmpfsBytes: 64 * 1024 * 1024 }, "mbxhlp00000004");
+    expect(sized.HostConfig?.Tmpfs).toEqual({ "/tmp": "rw,noexec,nosuid,nodev,size=67108864" });
+    const writable = toHelperOptions(
+      { image: "img:1", cmd: ["true"], readonlyRoot: false, tmpfsBytes: 64 * 1024 * 1024 },
+      "mbxhlp00000005",
+    );
+    expect(writable.HostConfig?.Tmpfs).toBeUndefined();
+    expect(writable.HostConfig?.ReadonlyRootfs).toBe(false);
+  });
 });
 
 const inspect = (networkMode: string | undefined) =>
