@@ -226,9 +226,23 @@ describe("box list state", () => {
           idle: boxState.powerState(view({ sleeping: true, stopReason: "idle" })),
           ttl: boxState.powerState(view({ sleeping: true, stopReason: "ttl" })),
           manual: boxState.powerState(view({})),
+          ttlPassed: boxState.powerState(view({ sleeping: true, stopReason: "ttl", createdAt: "2026-01-01T00:00:00Z", ttlSec: 60 })),
+          ttlCleared: boxState.powerState(view({ sleeping: true, stopReason: "ttl", createdAt: "2026-01-01T00:00:00Z", ttlSec: null })),
+          ttlExtended: boxState.powerState(
+            view({ sleeping: true, stopReason: "ttl", createdAt: "2026-01-01T00:00:00Z", ttlSec: 7200 }),
+            Date.parse("2026-01-01T01:00:00Z"),
+          ),
         };
       `),
-    ).toEqual({ running: "running", idle: "sleeping", ttl: "expired", manual: "stopped" });
+    ).toEqual({
+      running: "running",
+      idle: "sleeping",
+      ttl: "expired",
+      manual: "stopped",
+      ttlPassed: "expired",
+      ttlCleared: "sleeping",
+      ttlExtended: "sleeping",
+    });
   });
 
   test("boxesOfSync keeps the list while any host's cache is not current, then merges the hosts by name", () => {

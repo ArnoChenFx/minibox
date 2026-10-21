@@ -10,10 +10,22 @@ const byName = (a, b) => a.name.localeCompare(b.name);
  * Where a box stands for the console. A box the idle timeout put to sleep can be woken. A box whose TTL has passed
  * stays stopped and cannot start. Any other stopped box was stopped by a person.
  */
-export function powerState(box) {
+export function powerState(box, now = Date.now()) {
   if (box.running) return "running";
   if (!box.sleeping) return "stopped";
-  return box.stopReason === "ttl" ? "expired" : "sleeping";
+  return box.stopReason === "ttl" && !ttlLifted(box, now) ? "expired" : "sleeping";
+}
+
+/**
+ * True when a box stopped for its TTL has since had the TTL cleared or moved past now, so it can start again. The stop
+ * reason stays `ttl` until the next start, so the console cannot rely on it alone. A view without `ttlSec` is unknown,
+ * and counts as still expired.
+ */
+export function ttlLifted(box, now = Date.now()) {
+  if (box.ttlSec === undefined) return false;
+  if (box.ttlSec === null || box.ttlSec <= 0) return true;
+  const created = Date.parse(box.createdAt ?? "");
+  return Number.isFinite(created) && now < created + box.ttlSec * 1000;
 }
 
 /** The list after one `box` frame: the view replaces the box it names, or is added, and a removal drops it. */

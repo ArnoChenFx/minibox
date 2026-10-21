@@ -214,7 +214,7 @@ describe("exec", () => {
     expect(error).toMatchObject({
       status: 409,
       key: "box_ttl_expired",
-      hint: msg("exec_wake_failed_hint").text,
+      hint: msg("box_ttl_expired_hint").text,
     });
     expect(runtime.callsTo("startContainer")).toHaveLength(starts);
     expect(runtime.callsTo("startExec")).toHaveLength(execs);

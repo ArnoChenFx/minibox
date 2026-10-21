@@ -220,6 +220,8 @@ export class ExecManager implements ExecService {
         ({ box: current, woke } = await ensureRunning(host, box.boxId, { record }));
       } catch (e) {
         const err = toAppError(e);
+        // An expired TTL already says why and what to do; the generic wake hint would hide that.
+        if (err.key === "box_ttl_expired") throw err;
         const message = err.key ? msg(err.key as MessageKey, err.params) : err.message;
         throw new AppError(err.status, err.code, message, err.details, {
           hint: msg("exec_wake_failed_hint"),

@@ -1,3 +1,4 @@
+import { powerState } from "./box-state.js";
 import { $, el, esc } from "./dom.js";
 import { lang, t } from "./i18n.js";
 import { icon } from "./icons.js";
@@ -192,7 +193,7 @@ const STATE = {
 };
 /** `boxState(box)` picks sleeping when the box was stopped for idle, and expired when its TTL has passed. */
 export function boxState(box) {
-  if (box?.sleeping) return box.stopReason === "ttl" ? "expired" : "sleeping";
+  if (box?.sleeping) return powerState(box);
   return box?.state ?? "unknown";
 }
 export function stateBadge(state) {
