@@ -21,7 +21,8 @@ import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { createRestoredVolume, provisionDefaultMounts } from "../volumes/provision";
 import { ROLE_MOUNT, type VolumeRecord, type VolumeRole } from "../volumes/types";
-import { type Box, createBox, getBox, startBox, stopBox } from "./boxes";
+import { type Box, createBox, getBox, locked, refuseExpired, startLocked, stopLocked } from "./boxes";
+import { holdVolumeBoxes } from "./files";
 import type { ImageItem } from "./images";
 import { rebuildBox } from "./rebuild";
 import { deleteSnapshot, listSnapshots } from "./snapshots";
@@ -254,8 +255,9 @@ function tagsFor(checkpointId: string, boxId: string, volume: VolumeRecord): str
 }
 
 /**
- * Makes the box consistent for the backup, and returns what undoes it. `pause` freezes a running box. `stop` stops
- * it and starts it again afterwards, when it was running. `live` leaves it alone.
+ * Makes the box consistent for the backup, and returns what undoes it. `pause` freezes a running box. `stop` stops it
+ * and starts it again afterwards, when it was running. `live` leaves it alone. A stopped or sleeping box is read as it
+ * is and nothing is started for it, so a checkpoint never wakes a box.
  */
 async function quiesce(
   host: HostCtx,
@@ -267,14 +269,47 @@ async function quiesce(
   if (consistency === "pause") {
     progress?.log?.("Pausing the box…\n");
     await host.runtime.pauseContainer(box.id);
-    return () => host.runtime.unpauseContainer(box.id);
+    return () => resumeStep(box, progress, "Unpausing the box…\n", () => host.runtime.unpauseContainer(box.id));
   }
   progress?.log?.("Stopping the box…\n");
-  await stopBox(host, box.boxId, "manual");
-  return async () => {
-    progress?.log?.("Starting the box again…\n");
-    await startBox(host, box.boxId);
-  };
+  await stopLocked(host, box, "manual");
+  return () =>
+    resumeStep(box, progress, "Starting the box again…\n", async () => {
+      await startLocked(host, await getBox(host, box.boxId), {});
+    });
+}
+
+/**
+ * Resumes a box after its backup. The checkpoint is already recorded when this runs, so a failure is reported to the
+ * task and logged rather than raised. Raising it would hide a checkpoint that exists and make a retry take another.
+ */
+async function resumeStep(
+  box: Box,
+  progress: Progress | undefined,
+  start: string,
+  step: () => Promise<unknown>,
+): Promise<void> {
+  progress?.log?.(start);
+  try {
+    await step();
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    progress?.log?.(`The box could not be resumed: ${error}\n`);
+    log.error("checkpoint.resume_failed", { box: box.name, error });
+  }
+}
+
+/**
+ * Runs `fn` under the box's power lock, and holds the box awake while it runs, so the idle watcher cannot sleep it and
+ * its end counts as activity (#12). The box is read again under the lock, so a change made while this call waited is seen.
+ */
+async function underBox<T>(host: HostCtx, boxId: string, fn: (box: Box) => Promise<T>): Promise<T> {
+  const release = host.pulse.hold(boxId);
+  try {
+    return await locked(host, boxId, fn);
+  } finally {
+    release();
+  }
 }
 
 async function commitSystemLayer(host: HostCtx, box: Box, id: string, signal?: AbortSignal): Promise<SystemLayer> {
@@ -328,8 +363,9 @@ export function assertTakeable(host: HostCtx, box: Box, input: TakeCheckpointInp
 }
 
 /**
- * Takes a checkpoint of a box. Every volume is backed up before the record is written. A failure takes back the
- * snapshots and the system image already made, so no half checkpoint is left behind, and the box is resumed either way.
+ * Takes a checkpoint of a box. The box's power lock is held for the whole backup, so a start, stop, sleep or delete of
+ * the box waits for it. Every volume is backed up before the record is written. A failure takes back the snapshots and
+ * the system image already made, so no half checkpoint is left behind, and the box is resumed either way.
  */
 export async function takeCheckpoint(
   host: HostCtx,
@@ -338,10 +374,38 @@ export async function takeCheckpoint(
   createdBy: string,
   progress?: Progress,
 ): Promise<CheckpointView> {
-  const box = await getBox(host, ref);
+  const { boxId } = await getBox(host, ref);
+  return underBox(host, boxId, (box) => backupBox(host, box, input, createdBy, progress));
+}
+
+/** Holds every box that mounts a volume the backup reads, so the backup counts as activity for each of them (decision 56). */
+async function backupBox(
+  host: HostCtx,
+  box: Box,
+  input: TakeCheckpointInput,
+  createdBy: string,
+  progress?: Progress,
+): Promise<CheckpointView> {
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
   const layers = planLayers(host, spec, input.include.volumes);
+  const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume));
+  try {
+    return await writeCheckpoint(host, box, spec, layers, input, createdBy, progress);
+  } finally {
+    for (const release of releases) release();
+  }
+}
+
+async function writeCheckpoint(
+  host: HostCtx,
+  box: Box,
+  spec: BoxSpec,
+  layers: PlannedLayer[],
+  input: TakeCheckpointInput,
+  createdBy: string,
+  progress?: Progress,
+): Promise<CheckpointView> {
   const id = host.checkpoints.allocateId();
   const resume = await quiesce(host, box, input.consistency, progress);
   const snapshots: string[] = [];
@@ -454,6 +518,32 @@ export async function forkCheckpoint(
   record?: RecordNote,
 ): Promise<Box> {
   const checkpoint = await getCheckpoint(host, ref);
+  return underSourceBox(host, checkpoint.boxId, () => forkFrom(host, checkpoint, input, createdBy, progress, record));
+}
+
+/**
+ * Runs a fork under the power lock of the box its checkpoint came from, and counts that box as active while it runs. A
+ * fork reads only snapshots, so the source is neither started nor stopped. The lock keeps a delete or sleep from landing
+ * mid-fork, and a checkpoint whose box is gone still forks.
+ */
+async function underSourceBox<T>(host: HostCtx, boxId: string | null, run: () => Promise<T>): Promise<T> {
+  if (boxId === null) return run();
+  const release = host.pulse.hold(boxId);
+  try {
+    return await host.power.run(boxId, run);
+  } finally {
+    release();
+  }
+}
+
+async function forkFrom(
+  host: HostCtx,
+  checkpoint: CheckpointView,
+  input: ForkCheckpointInput,
+  createdBy: string,
+  progress: Progress | undefined,
+  record: RecordNote | undefined,
+): Promise<Box> {
   const image = checkpoint.system?.image ?? checkpoint.spec.template.image;
   const boxId = newBoxId();
   const known = new Set<string>();
@@ -591,7 +681,24 @@ export async function rollbackBox(
   record?: RecordNote,
 ): Promise<RollbackResult> {
   if (!input.confirm) throw rollbackConfirmation(await previewRollback(host, boxRef, input.checkpoint, input.revision));
-  const plan = await planRollback(host, boxRef, input.checkpoint, input.revision);
+  const { boxId } = await getBox(host, boxRef);
+  return underBox(host, boxId, () => restoreUnderLock(host, boxId, input, createdBy, progress, record));
+}
+
+/**
+ * A confirmed rollback, run under the box's power lock. The box is refused first when its lifetime has ended, before any
+ * volume is made, as a rebuild starts the box too (decision 53).
+ */
+async function restoreUnderLock(
+  host: HostCtx,
+  boxId: string,
+  input: { checkpoint: string; revision: number },
+  createdBy: string | null,
+  progress: Progress | undefined,
+  record: RecordNote | undefined,
+): Promise<RollbackResult> {
+  refuseExpired(host, boxId);
+  const plan = await planRollback(host, boxId, input.checkpoint, input.revision);
   const known = new Set<string>();
   const changes = new VolumeChanges();
   const replacement = new Map<string, VolumeRecord>();

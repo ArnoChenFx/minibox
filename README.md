@@ -476,6 +476,8 @@ A checkpoint is a copy of a box's data, kept in a restic repository. A new box c
 
 A box that is not running is read as it is, whichever mode is chosen.
 
+A checkpoint, fork or rollback keeps the box awake while it runs, so idle sleep never stops it part way through, and the idle clock starts again when it ends. A sleeping box stays asleep. A checkpoint reads its volumes without waking it, and a fork never touches its source. A rollback also leaves the box asleep, although the rebuild starts the container briefly first, as described under [Idle sleep](#idle-sleep).
+
 ### Forking
 
 `POST /api/checkpoints/:id/fork` creates a new box with new volumes. The source box and its volumes are not touched. `copyHome` is `false` by default, so the new box starts with an empty home directory. Set it to `true` to copy the checkpoint's home too. A fork uses the quota and capacity checks of a box create.

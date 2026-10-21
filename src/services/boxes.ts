@@ -539,7 +539,7 @@ export interface EnsureResult {
  * Runs `fn` with the box's power lock held. The box is read again inside the lock, so a change made while this call was
  * waiting is seen.
  */
-async function locked<T>(host: HostCtx, ref: string, fn: (box: Box) => Promise<T>): Promise<T> {
+export async function locked<T>(host: HostCtx, ref: string, fn: (box: Box) => Promise<T>): Promise<T> {
   const { boxId } = await getBox(host, ref);
   return host.power.run(boxId, async () => fn(await getBox(host, boxId)));
 }
@@ -555,7 +555,8 @@ export function refuseExpired(host: HostCtx, boxId: string): void {
   }
 }
 
-async function startLocked(host: HostCtx, box: Box, options: StartOptions): Promise<Box> {
+/** Starts the box for a caller that already holds its power lock (see `locked`). */
+export async function startLocked(host: HostCtx, box: Box, options: StartOptions): Promise<Box> {
   if (!box.running) refuseExpired(host, box.boxId);
   const previousReason = (host.specs.read(box.boxId)?.lifecycle.stopReason ?? null) as StopReason | null;
   await ensureRunningStorage(host, box);
@@ -598,7 +599,8 @@ export async function wakeIfSleeping(host: HostCtx, ref: string, options: StartO
   return locked(host, ref, async (box) => (box.sleeping ? startLocked(host, box, options) : box));
 }
 
-async function stopLocked(host: HostCtx, box: Box, reason?: StopReason): Promise<void> {
+/** Stops the box for a caller that already holds its power lock (see `locked`). */
+export async function stopLocked(host: HostCtx, box: Box, reason?: StopReason): Promise<void> {
   await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   const existing = host.specs.read(box.boxId)?.lifecycle.stopReason ?? null;
   // Omitted reason: keep an existing idle/ttl reason (reconcile), otherwise mark manual.
