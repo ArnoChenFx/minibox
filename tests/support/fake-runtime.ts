@@ -20,6 +20,7 @@ import {
   type HelperSpec,
   type ImageSummary,
   type Mount,
+  type PathStat,
   type Runtime,
   type RuntimeEvent,
   type RuntimeInfo,
@@ -257,6 +258,8 @@ export class FakeRuntime implements Runtime {
    * (mirrors Docker Engine), so regression tests can prove the escape without the service-level jail.
    */
   readonly outsideFiles = new Map<string, FakeFsEntry>();
+  /** Archive bytes callers actually pulled from getArchive streams (sent in 16 KiB chunks, so destroy stops it). */
+  archiveBytesRead = 0;
   readonly networks = new Map<string, FakeNetwork>();
   readonly execs: FakeExec[] = [];
   /** When true, every call fails as if the engine socket were unreachable. */
@@ -746,11 +749,39 @@ export class FakeRuntime implements Runtime {
       if (!walked) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
       const bytes = tarFromVolume(walked.store, walked.relative);
       if (!bytes) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
-      return Readable.from([bytes]);
+      return this.countedStream(bytes);
     }
     const bytes = this.archives.get(c.id);
     if (!bytes) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
     return Readable.from([bytes]);
+  }
+
+  private countedStream(bytes: Buffer): Readable {
+    return Readable.from(
+      chunked(bytes, (n) => (this.archiveBytesRead += n)),
+      { objectMode: false, highWaterMark: 1 },
+    );
+  }
+
+  /** HEAD archive stat: metadata only, the final component is not followed (Engine behaviour). */
+  async statPath(id: string, path: string): Promise<PathStat> {
+    this.enter("statPath", [id, path]);
+    const c = this.getContainer(id);
+    const resolved = resolveMountPath(c, path);
+    const walked = resolved
+      ? walkVolumePath(this, resolved.volume, resolved.relative, { followFinal: false, mountRoot: resolved.root })
+      : null;
+    const entry = walked?.store.get(walked.relative);
+    if (!walked || !entry) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
+    const name = walked.relative.split("/").pop() ?? "";
+    const typeBits = entry.type === "dir" ? 2 ** 31 : entry.type === "symlink" ? 2 ** 27 : 0;
+    return {
+      name,
+      type: entry.type,
+      size: entry.type === "file" ? (entry.content?.length ?? 0) : 0,
+      mode: typeBits + (entry.mode ?? 0o644),
+      linkTarget: entry.type === "symlink" ? (entry.target ?? "") : "",
+    };
   }
 
   filesOf(volume: string): Map<string, FakeFsEntry> {
@@ -1182,6 +1213,14 @@ function walkVolumePath(
   }
   const { store, key } = locate(current);
   return { store, relative: key };
+}
+
+function* chunked(bytes: Buffer, onChunk: (n: number) => void): Generator<Buffer> {
+  for (let at = 0; at < bytes.length; at += 16 * 1024) {
+    const chunk = bytes.subarray(at, at + 16 * 1024);
+    onChunk(chunk.length);
+    yield chunk;
+  }
 }
 
 function resolveMountPath(

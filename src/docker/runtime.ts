@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { statfsSync } from "node:fs";
+import type { IncomingMessage } from "node:http";
 import { createInterface } from "node:readline";
 import { PassThrough, type Duplex, type Readable } from "node:stream";
 
@@ -24,7 +25,7 @@ import {
   RuntimeError,
   type VolumeInfo,
 } from "../runtime";
-import { readFirstEntryOwner } from "./archive";
+import { parsePathStat, readFirstEntryOwner } from "./archive";
 import { toRuntimeError } from "./errors";
 import { demuxLogs } from "./logs";
 import { computeStats } from "./stats";
@@ -687,6 +688,14 @@ export function createDockerRuntime(socketPath: string): Runtime {
 
     async getArchive(id, path) {
       return call(async () => (await docker.getContainer(id).getArchive({ path })) as Readable);
+    },
+
+    async statPath(id, path) {
+      const res = await call(
+        async () => (await docker.getContainer(id).infoArchive({ path })) as unknown as IncomingMessage,
+      );
+      res.destroy();
+      return parsePathStat(res.headers["x-docker-container-path-stat"], path);
     },
 
     async volumeRootOwner(containerId, path) {

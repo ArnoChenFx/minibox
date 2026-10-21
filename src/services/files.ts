@@ -4,10 +4,11 @@ import { Readable } from "node:stream";
 import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, notFound, toAppError } from "../lib/errors";
 import { msg } from "../lib/messages";
-import { isRuntimeError, RuntimeError } from "../runtime";
+import { readFirstEntry, type FirstEntry } from "../lib/tar";
+import { isRuntimeError, type PathStat, RuntimeError } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
 import { baseOf, containerPath, jailPath, parentOf, SYMLINK_HOP_MAX, splitLinkTarget } from "./files-path";
-import { DEV_GID, DEV_UID, dirArchive, fileArchive, firstFileData, parseTar } from "./files-tar";
+import { DEV_GID, DEV_UID, dirArchive, fileArchive, parseTar } from "./files-tar";
 
 /** Where helpers and archive containers mount the target volume. Matches the chown helper's mount style. */
 export const FILE_MOUNT = "/minibox-volume";
@@ -142,10 +143,50 @@ async function closeMount(host: HostCtx, access: MountAccess): Promise<void> {
   }
 }
 
-async function collectStream(stream: Readable): Promise<Buffer> {
+/** Buffers a stream, destroying it and refusing once more than `limit` bytes have arrived. */
+async function collectStream(stream: Readable, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
-  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  let total = 0;
+  try {
+    for await (const chunk of stream) {
+      const buf = Buffer.from(chunk);
+      total += buf.length;
+      if (total > limit) throw badRequest(msg("file_content_too_large", { max: limit }), { field: "path" });
+      chunks.push(buf);
+    }
+  } finally {
+    stream.destroy();
+  }
   return Buffer.concat(chunks);
+}
+
+const symlinkLoop = () => badRequest(msg("file_symlink_loop", { max: SYMLINK_HOP_MAX }), { field: "path" });
+
+/**
+ * Metadata of one container path without reading a directory's (or a large file's) contents (B1f). A HEAD stat says
+ * what the path is; only a symlink (for its raw target text, which the stat does not carry) or a file whose first
+ * `maxData` bytes are wanted fetches the archive, and then only its first entry is read before the stream is
+ * destroyed. The archive entry's own type wins over the stat, so a path swapped in between is still judged by what was
+ * actually read. Fails with the runtime `not_found` when the path is missing.
+ */
+async function lookupPath(host: HostCtx, access: MountAccess, abs: string, maxData = 0): Promise<FirstEntry> {
+  let stat: PathStat | null = null;
+  try {
+    stat = await host.runtime.statPath(access.containerId, abs);
+  } catch (e) {
+    if (isRuntimeError(e, "not_found")) throw e;
+    // A HEAD reply carries no error text (e.g. ELOOP on a final link); the archive call below reports it.
+  }
+  if (stat && (stat.type === "dir" || stat.type === "other" || (stat.type === "file" && maxData === 0))) {
+    return { name: stat.name, type: stat.type, size: stat.size, linkname: "", data: Buffer.alloc(0) };
+  }
+  try {
+    return await readFirstEntry(await host.runtime.getArchive(access.containerId, abs), maxData);
+  } catch (e) {
+    // The Engine evaluates a final link's target for its stat header and fails a loop with a 500 (ELOOP).
+    if (e instanceof Error && /too many links/i.test(e.message)) throw symlinkLoop();
+    throw e;
+  }
 }
 
 interface ResolvedPath {
@@ -159,11 +200,12 @@ interface ResolvedPath {
 /**
  * In-volume realpath. Docker getArchive/putArchive and `cp` follow every intermediate symlink (and the kernel walks
  * `..` against the physical path), so a lexical jail is not enough. Walk the path one component at a time with
- * getArchive, which reports a symlink as metadata when the path ends on it. When a component is a symlink, push its
- * target's components back onto the queue, so every hop of a chain is itself checked, and walk `..` against the
- * physical path resolved so far. Refuse anything that climbs above the volume root or names an absolute path outside
- * the mount, and stop after SYMLINK_HOP_MAX links (ELOOP). Callers must then operate on the returned physical path,
- * never on the lexical one, so the Engine has no symlinks left to resolve differently.
+ * lookupPath: a HEAD stat, plus the first archive header only when the component is a symlink, so a lookup never
+ * reads a directory's subtree (B1f). When a component is a symlink, push its target's components back onto the queue,
+ * so every hop of a chain is itself checked, and walk `..` against the physical path resolved so far. Refuse anything
+ * that climbs above the volume root or names an absolute path outside the mount, and stop after SYMLINK_HOP_MAX links
+ * (ELOOP). Callers must then operate on the returned physical path, never on the lexical one, so the Engine has no
+ * symlinks left to resolve differently.
  *
  * Once a component is missing, nothing after it can be a symlink, so the remaining components are appended unchecked
  * (a `..` there is refused, since the kernel would fail with ENOENT anyway).
@@ -197,27 +239,19 @@ async function resolveInVolume(
       continue;
     }
     const candidate = resolved.length === 0 ? part : `${resolved.join("/")}/${part}`;
-    let tar: Buffer;
+    let entry: FirstEntry;
     try {
-      tar = await collectStream(
-        await host.runtime.getArchive(access.containerId, containerPath(access.mountPath, candidate)),
-      );
+      entry = await lookupPath(host, access, containerPath(access.mountPath, candidate));
     } catch (e) {
-      // The Engine evaluates a final link's target for its stat header and fails a loop with a 500 (ELOOP).
-      if (e instanceof Error && /too many links/i.test(e.message)) {
-        throw badRequest(msg("file_symlink_loop", { max: SYMLINK_HOP_MAX }), { field: "path" });
-      }
       if (!isRuntimeError(e, "not_found")) throw e;
       missing = true;
       resolved.push(part);
       continue;
     }
-    const first = firstFileData(tar);
-    if (first?.type === "symlink") {
+    if (entry.type === "symlink") {
       hops += 1;
-      if (hops > SYMLINK_HOP_MAX)
-        throw badRequest(msg("file_symlink_loop", { max: SYMLINK_HOP_MAX }), { field: "path" });
-      const target = splitLinkTarget(access.mountPath, first.linkname || "");
+      if (hops > SYMLINK_HOP_MAX) throw symlinkLoop();
+      const target = splitLinkTarget(access.mountPath, entry.linkname);
       if (!target) throw badRequest(msg("file_path_escape"), { field: "path" });
       if (!target.relative) {
         resolved.length = 0;
@@ -288,19 +322,18 @@ export async function readFile(
   const volume = requireVolume(host, ref);
   const relative = jailPath(input.path);
   const encoding = input.encoding ?? "utf-8";
-  const maxBytes = input.maxBytes ?? FILE_CONTENT_MAX;
+  const maxBytes = clampInt(input.maxBytes, 0, FILE_CONTENT_MAX, FILE_CONTENT_MAX);
   return withArchive(host, volume, "ro", async (access) => {
     const physical = await resolveInVolume(host, access, relative, { followFinal: false });
-    const abs = containerPath(access.mountPath, physical.path);
-    let tar: Buffer;
+    let first: FirstEntry;
     try {
-      tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
+      // Only the first maxBytes of a file are read; a directory is judged from its stat alone (B1f).
+      first = await lookupPath(host, access, containerPath(access.mountPath, physical.path), maxBytes);
     } catch (e) {
       if (isRuntimeError(e, "not_found")) throw notFound(msg("file_not_found", { path: relative || "/" }));
       throw e;
     }
-    const first = firstFileData(tar);
-    if (!first) throw notFound(msg("file_not_found", { path: relative || "/" }));
+    if (first.type === "other") throw notFound(msg("file_not_found", { path: relative || "/" }));
     if (first.type === "symlink") {
       return {
         volume: volume.name,
@@ -322,8 +355,8 @@ export async function readFile(
         },
       );
     }
-    const truncated = first.data.length > maxBytes;
-    const slice = truncated ? first.data.subarray(0, maxBytes) : first.data;
+    const truncated = first.size > maxBytes;
+    const slice = first.data.subarray(0, maxBytes);
     if (encoding === "utf-8") {
       const text = slice.toString("utf8");
       if (text.includes("\uFFFD") && slice.includes(0)) {
@@ -335,7 +368,7 @@ export async function readFile(
       path: relative || "/",
       encoding,
       content: encodeContent(slice, encoding),
-      size: first.data.length,
+      size: first.size,
       type: "file",
       linkTarget: null,
       truncated,
@@ -495,13 +528,11 @@ export async function downloadArchive(host: HostCtx, ref: string, input: { path:
     const abs = containerPath(access.mountPath, physical.path);
     let tar: Buffer;
     try {
-      tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
+      // Stops reading (and destroys the stream) as soon as the archive passes the cap.
+      tar = await collectStream(await host.runtime.getArchive(access.containerId, abs), FILE_CONTENT_MAX * 4);
     } catch (e) {
       if (isRuntimeError(e, "not_found")) throw notFound(msg("file_not_found", { path: relative || "/" }));
       throw e;
-    }
-    if (tar.length > FILE_CONTENT_MAX * 4) {
-      throw badRequest(msg("file_content_too_large", { max: FILE_CONTENT_MAX * 4 }), { field: "path" });
     }
     return {
       volume: volume.name,

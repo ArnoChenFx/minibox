@@ -361,3 +361,126 @@ describe("volume file API", () => {
     expect(names).toContain("copy_files");
   });
 });
+
+describe("component lookups are stat-only (B1f)", () => {
+  const BIG = 8 * 1024 * 1024;
+  /** One header, or one fake 16 KiB chunk, at most. */
+  const HEADER_BUDGET = 16 * 1024;
+
+  test("paths through a directory holding a large file never stream that directory", async () => {
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "big/blob.bin", { type: "file", content: Buffer.alloc(BIG, 1) });
+    runtime.seedVolumeFile(vol.engineName, "big/n.txt", { type: "file", content: Buffer.from("small") });
+
+    runtime.archiveBytesRead = 0;
+    await writeFile(host, vol.id, { path: "big/deeper/new.txt", content: "x" });
+    expect(runtime.archiveBytesRead).toBe(0);
+
+    runtime.archiveBytesRead = 0;
+    expect((await readFile(host, vol.id, { path: "big/n.txt" })).content).toBe("small");
+    expect(runtime.archiveBytesRead).toBeLessThanOrEqual(HEADER_BUDGET);
+
+    runtime.archiveBytesRead = 0;
+    const dir = await rejectionOf(readFile(host, vol.id, { path: "big" }));
+    expect((dir as AppError).status).toBe(400);
+    expect(runtime.archiveBytesRead).toBe(0);
+
+    runtime.archiveBytesRead = 0;
+    await copyFiles(host, vol.id, { from: "big/n.txt", to: "big/m.txt" });
+    expect(runtime.archiveBytesRead).toBe(0);
+
+    // Directory components are stat'ed, never archived.
+    const archived = runtime.callsTo("getArchive").map((c) => c.args[1]);
+    expect(archived).not.toContain("/minibox-volume/big");
+    expect(runtime.callsTo("statPath").map((c) => c.args[1])).toContain("/minibox-volume/big");
+  });
+
+  test("a symlink component reads only its archive header", async () => {
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "big/blob.bin", { type: "file", content: Buffer.alloc(BIG, 1) });
+    runtime.seedVolumeFile(vol.engineName, "big/n.txt", { type: "file", content: Buffer.from("small") });
+    runtime.seedVolumeFile(vol.engineName, "via", { type: "symlink", target: "big" });
+    runtime.archiveBytesRead = 0;
+    expect((await readFile(host, vol.id, { path: "via/n.txt" })).content).toBe("small");
+    expect(runtime.archiveBytesRead).toBeLessThanOrEqual(2 * HEADER_BUDGET);
+    const archived = runtime.callsTo("getArchive").map((c) => c.args[1]);
+    expect(archived).toEqual(["/minibox-volume/via", "/minibox-volume/big/n.txt"]);
+  });
+
+  test("reading a large file pulls only maxBytes of it and reports the real size", async () => {
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "huge.txt", { type: "file", content: Buffer.alloc(BIG, 0x61) });
+    runtime.archiveBytesRead = 0;
+    const read = await readFile(host, vol.id, { path: "huge.txt", maxBytes: 1000 });
+    expect(read).toMatchObject({ size: BIG, truncated: true, type: "file" });
+    expect(read.content.length).toBe(1000);
+    expect(runtime.archiveBytesRead).toBeLessThanOrEqual(HEADER_BUDGET);
+
+    runtime.archiveBytesRead = 0;
+    const full = await readFile(host, vol.id, { path: "huge.txt" });
+    expect(full.content.length).toBe(1024 * 1024);
+    expect(runtime.archiveBytesRead).toBeLessThanOrEqual(1024 * 1024 + 2 * HEADER_BUDGET);
+  });
+
+  test("download stops streaming once the archive passes the cap", async () => {
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "big/blob.bin", { type: "file", content: Buffer.alloc(BIG, 1) });
+    runtime.archiveBytesRead = 0;
+    expect(await statusOf(downloadArchive(host, vol.id, { path: "big" }))).toBe(400);
+    expect(runtime.archiveBytesRead).toBeLessThanOrEqual(4 * 1024 * 1024 + HEADER_BUDGET);
+  });
+});
+
+function paxRecord(key: string, value: string): string {
+  const body = ` ${key}=${value}\n`;
+  let len = body.length + 1;
+  while (`${len}${body}`.length !== len) len += 1;
+  return `${len}${body}`;
+}
+
+function tarHeader(name: string, type: string, size: number, link = ""): Buffer {
+  const block = Buffer.alloc(512);
+  block.write(name, 0);
+  block.write(`${size.toString(8).padStart(11, "0")}\0`, 124);
+  block.write(type, 156);
+  if (link) block.write(link.slice(0, 100), 157);
+  block.write("ustar\0", 257);
+  return block;
+}
+
+function enc(o: object): string {
+  return Buffer.from(JSON.stringify(o)).toString("base64");
+}
+
+describe("tar first entry and engine path stat", () => {
+  test("firstEntry applies a PAX linkpath longer than the ustar field", async () => {
+    const { firstEntry } = await import("../src/lib/tar");
+    const long = `${"../".repeat(40)}etc`;
+    const paxBody = Buffer.from(paxRecord("linkpath", long));
+    const pad = Buffer.alloc((512 - (paxBody.length % 512)) % 512);
+    const tar = Buffer.concat([
+      tarHeader("PaxHeaders/l", "x", paxBody.length),
+      paxBody,
+      pad,
+      tarHeader("l", "2", 0, long),
+    ]);
+    expect(firstEntry(tar)).toMatchObject({ name: "l", type: "symlink", linkname: long });
+    // Incomplete input is not an entry yet.
+    expect(firstEntry(tar.subarray(0, 600))).toBeNull();
+  });
+
+  test("parsePathStat decodes the engine's stat header", async () => {
+    const { parsePathStat } = await import("../src/docker/archive");
+    expect(parsePathStat(enc({ name: "d", size: 4096, mode: 2147484141, linkTarget: "" }), "/v/d").type).toBe("dir");
+    expect(parsePathStat(enc({ name: "f", size: 3, mode: 420, linkTarget: "" }), "/v/f")).toMatchObject({
+      type: "file",
+      size: 3,
+    });
+    expect(parsePathStat(enc({ name: "l", size: 4, mode: 134218239, linkTarget: "/v/d" }), "/v/l")).toMatchObject({
+      type: "symlink",
+      linkTarget: "/v/d",
+    });
+    expect(parsePathStat(enc({ name: "p", size: 0, mode: 2 ** 25 + 0o644 }), "/v/p").type).toBe("other");
+    expect(() => parsePathStat(undefined, "/v/x")).toThrow();
+  });
+});

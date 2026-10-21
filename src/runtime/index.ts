@@ -182,6 +182,20 @@ export interface DiskUsage {
 }
 
 /** Numeric owner of a file or directory. */
+/** Metadata of one path in a container, without its contents (`HEAD /containers/{id}/archive`). */
+export interface PathStat {
+  name: string;
+  type: "file" | "dir" | "symlink" | "other";
+  size: number;
+  /** Go `os.FileMode` bits as the engine reports them. */
+  mode: number;
+  /**
+   * For a symlink, the engine's fully evaluated container path of its target (not the raw `readlink` text). Empty
+   * otherwise. Read the raw target from the first archive entry when the literal link text matters.
+   */
+  linkTarget: string;
+}
+
 export interface VolumeOwner {
   uid: number;
   gid: number;
@@ -332,6 +346,12 @@ export interface Runtime {
   putArchive(id: string, path: string, tar: Readable | Buffer): Promise<void>;
   /** Tar archive of `path`. Works on created containers that are not running. */
   getArchive(id: string, path: string): Promise<Readable>;
+  /**
+   * Stat of `path` (the final component is not followed) with no archive body, so it costs the same for a directory
+   * of any size. Works on created containers that are not running. Fails with `not_found` when `path` does not exist;
+   * a symlink loop on the final component fails as an engine error with no detail.
+   */
+  statPath(id: string, path: string): Promise<PathStat>;
   /**
    * Owner of the directory or file at `path` in the container, read from the first entry of the engine's archive for
    * it. Only that entry is read, so a large directory is not streamed. Works on created containers that are not
