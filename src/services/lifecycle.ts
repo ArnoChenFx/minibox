@@ -115,6 +115,7 @@ export class LifecycleWatcher {
     const last = this.options.pulse.lastAt(spec.id) ?? Date.parse(spec.createdAt);
     if (!Number.isFinite(last) || this.now() - last < idleSec * 1000) return;
 
+    await host.sampler.sampleSoon();
     const cpu = host.sampler.statsOf(spec.id)?.cpuPercent;
     if (cpu == null) return;
     if (cpu >= this.options.cfg.boxIdleCpuPercent) return;

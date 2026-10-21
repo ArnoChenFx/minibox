@@ -207,7 +207,10 @@ export async function readBox(host: HostCtx, ref: string): Promise<Box> {
  * when it does not.
  */
 export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {}): Promise<Box[]> {
-  if (host.sampler.ready()) return host.sampler.boxes({ withStats: opts.withStats === true });
+  if (host.sampler.ready()) {
+    if (opts.withStats) await host.sampler.sampleSoon();
+    return host.sampler.boxes({ withStats: opts.withStats === true });
+  }
   const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
   const boxes: Box[] = [];
   for (const info of infos) {
@@ -231,7 +234,8 @@ export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {
 }
 
 async function listedStats(host: HostCtx, boxId: string, containerId: string): Promise<ContainerStats | null> {
-  if (host.sampler.isStarted()) return host.sampler.statsOf(boxId);
+  const sampled = host.sampler.statsOf(boxId);
+  if (sampled) return sampled;
   return host.runtime.containerStats(containerId).catch(() => null);
 }
 
@@ -758,12 +762,16 @@ export async function getLogs(host: HostCtx, ref: string, tail: number): Promise
 }
 
 /**
- * Current usage of a box. While the cache is current this is the latest sample, so any number of tabs asking costs the
- * engine nothing. Otherwise it is one read of the engine, and only for a running box.
+ * Current usage of a box. While the cache is current this is the latest sample. A sample older than a cadence is first
+ * refreshed by one shared round, so any number of tabs asking costs the engine one round, not one call each. Otherwise
+ * it is one read of the engine, and only for a running box.
  */
 export async function statsOf(host: HostCtx, box: Box): Promise<ContainerStats | null> {
   if (!box.running) return null;
-  if (host.sampler.ready()) return host.sampler.statsOf(box.boxId);
+  if (host.sampler.ready()) {
+    await host.sampler.sampleSoon();
+    return host.sampler.statsOf(box.boxId);
+  }
   return host.runtime.containerStats(box.id);
 }
 

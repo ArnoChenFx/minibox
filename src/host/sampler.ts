@@ -30,6 +30,13 @@ const STATS_TIMEOUT_MS = 5000;
 const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 const IDLE_INTERVAL_MS = 30_000;
+/**
+ * How long one `need()` keeps the samples going while no live subscriber watches. A reader of usage renews it, so
+ * a host that nobody reads costs no stats call once the lease runs out.
+ */
+export const DEMAND_LEASE_MS = 5 * 60_000;
+/** A sample older than this is not reported. The idle cadence sits well inside it, so a leased sampler keeps it current. */
+const STALE_AFTER_MS = 60_000;
 /** How often the containers are listed again, so a change the event stream never reported is caught up. */
 const RELIST_MS = 60_000;
 /** Longest a re-list waits for the engine's listing. A listing that is still pending past this is given up. */
@@ -46,6 +53,8 @@ export interface SamplerOptions {
   intervalMs: number;
   /** Time between two sample rounds while none does. Never shorter than `intervalMs`. */
   idleIntervalMs?: number;
+  /** Age past which a sample is no longer reported. See `STALE_AFTER_MS`. */
+  staleAfterMs?: number;
   /** Time between two full listings of the containers. A stalled event stream hides a change for at most this long. */
   relistMs?: number;
   /** Longest a re-list waits for its listing. See `RELIST_TIMEOUT_MS`. */
@@ -164,6 +173,10 @@ export class HostSampler {
   private expedited = false;
   /** When the last round ended, in epoch milliseconds. The next round is due one cadence later. */
   private roundEndedAt = 0;
+  /** Sampling is wanted until this time while no live subscriber watches. See `need`. */
+  private needUntil = 0;
+  /** The round queued or running now, so the callers that ask meanwhile share it. */
+  private pendingRound: Promise<void> | null = null;
   /** Ends the sample loop's current wait early, so it reads the cadence and the expedite flag again. */
   private wakeLoop: (() => void) | null = null;
   /** Counts the changes the cache takes in, so a listing taken before one of them is not applied over it. */
@@ -195,7 +208,6 @@ export class HostSampler {
     }
     this.unsubscribe = host.specs.subscribe((change) => this.onSpec(change));
     this.abort = new AbortController();
-    this.roundEndedAt = Date.now();
     void this.run(this.abort.signal);
     void this.sampleLoop(this.abort.signal);
   }
@@ -209,6 +221,8 @@ export class HostSampler {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.expedited = false;
+    this.needUntil = 0;
+    this.roundEndedAt = 0;
     this.dirty.clear();
     this.stale.clear();
     this.containers.clear();
@@ -271,9 +285,10 @@ export class HostSampler {
     return info && spec ? projectBox(host, spec, info) : null;
   }
 
+  /** The newest sample of a box, or `null` when there is none, or the newest is older than the stale age. */
   statsOf(boxId: string): ContainerStats | null {
     const last = this.rings.get(boxId)?.at(-1);
-    if (!last) return null;
+    if (!last || Date.now() - last.t >= this.staleMs()) return null;
     return {
       cpuPercent: last.cpuPercent,
       memUsage: last.memUsage,
@@ -303,9 +318,33 @@ export class HostSampler {
   }
 
   /**
+   * Keeps samples going for `ms` from now while no live subscriber watches. Every reader of usage calls this, so a host
+   * is sampled while its usage is read, and stops once nobody has read it for the lease.
+   */
+  need(ms: number = DEMAND_LEASE_MS): void {
+    this.needUntil = Math.max(this.needUntil, Date.now() + ms);
+    this.wakeLoop?.();
+  }
+
+  /** True while a live subscriber watches. The host metrics are published, and the engine read for them, only then. */
+  watched(): boolean {
+    return this.watchers > 0;
+  }
+
+  /**
+   * Resolves once the samples are current: at once when the last round is recent, else when a round has run, or after
+   * `ms`, whichever comes first. Callers that ask while a round is queued or running share that round.
+   */
+  sampleSoon(ms: number = STATS_TIMEOUT_MS): Promise<void> {
+    this.need();
+    if (Date.now() - this.roundEndedAt < this.staleMs()) return Promise.resolve();
+    return waitUpTo(this.sampleRound(), ms);
+  }
+
+  /**
    * Asks for samples at the live interval until the returned function is called, and the first watcher gets a round at
-   * once. While nobody watches, the boxes are sampled only at the idle interval, so an unwatched host costs one stats
-   * call per running box per idle interval.
+   * once. While nobody watches, samples go on only at the idle interval, and only within a lease taken by `need`: once
+   * the lease runs out, an unwatched host makes no stats call at all.
    */
   watch(): () => void {
     this.watchers += 1;
@@ -485,7 +524,7 @@ export class HostSampler {
     this.failures = 0;
     this.setState("live", null);
     this.reconcile();
-    void this.sampleRound();
+    if (this.wanted()) void this.sampleRound();
   }
 
   /**
@@ -560,18 +599,31 @@ export class HostSampler {
   /**
    * Runs one sample round after the rounds before it. The targets are picked in the queue, so they follow every change
    * queued before the round. The stats calls run outside the queue, and only the write of their results is queued again.
+   * A round that is queued or running already is returned instead of a second one.
    */
   private sampleRound(): Promise<void> {
-    const run = this.rounds
+    if (this.pendingRound) return this.pendingRound;
+    const run: Promise<void> = this.rounds
       .then(() => this.round())
       .catch((e: unknown) =>
         log.error("sampler.round_failed", { host: this.currentHost().host.id, error: errorText(e) }),
       )
       .finally(() => {
         this.roundEndedAt = Date.now();
+        if (this.pendingRound === run) this.pendingRound = null;
       });
+    this.pendingRound = run;
     this.rounds = run;
     return run;
+  }
+
+  private staleMs(): number {
+    return this.options.staleAfterMs ?? STALE_AFTER_MS;
+  }
+
+  /** True while a live subscriber watches, or a reader asked for samples within the lease. */
+  private wanted(now = Date.now()): boolean {
+    return this.watchers > 0 || now < this.needUntil;
   }
 
   private async round(): Promise<void> {
@@ -641,7 +693,7 @@ export class HostSampler {
     return info?.id === target.containerId && info.running;
   }
 
-  /** Runs a round whenever one is due, until the sampler stops. */
+  /** Runs a round whenever one is due and sampling is wanted, until the sampler stops. */
   private async sampleLoop(signal: AbortSignal): Promise<void> {
     while (await this.roundDue(signal)) {
       this.expedited = false;
@@ -649,21 +701,32 @@ export class HostSampler {
     }
   }
 
-  /** Resolves true when a round is due, and false once the sampler stops. */
+  /**
+   * Resolves true when a round is due, and false once the sampler stops. While nothing is wanted the loop parks until a
+   * watcher or a reader wakes it. A lease is waited out only up to its end, so the loop parks again once it runs out.
+   */
   private async roundDue(signal: AbortSignal): Promise<boolean> {
     while (!signal.aborted) {
-      const wait = this.roundEndedAt + this.cadence() - Date.now();
+      const now = Date.now();
+      if (!this.wanted(now)) {
+        await this.pause();
+        continue;
+      }
+      const wait = this.roundEndedAt + this.cadence() - now;
       if (this.expedited || wait <= 0) return true;
-      await this.pause(wait);
+      await this.pause(this.watchers > 0 ? wait : Math.min(wait, this.needUntil - now));
     }
     return false;
   }
 
-  /** Resolves after `ms`, or sooner when the loop is woken. Only one wait is pending at a time. */
-  private pause(ms: number): Promise<void> {
+  /**
+   * Resolves after `ms`, or sooner when the loop is woken. Without `ms` it resolves only when woken. Only one wait is
+   * pending at a time.
+   */
+  private pause(ms?: number): Promise<void> {
     return new Promise((resolve) => {
-      const timer = setTimeout(() => this.wakeLoop?.(), ms);
-      timer.unref?.();
+      const timer = ms === undefined ? undefined : setTimeout(() => this.wakeLoop?.(), Math.max(0, ms));
+      timer?.unref?.();
       this.wakeLoop = () => {
         clearTimeout(timer);
         this.wakeLoop = null;

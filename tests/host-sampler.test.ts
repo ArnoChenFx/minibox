@@ -192,11 +192,11 @@ describe("resource samples", () => {
     seedBox("beta", false);
     seedBox("gamma", true);
     const sampler = await started();
-    expect(runtime.callsTo("containerStats")).toHaveLength(2);
+    expect(runtime.callsTo("containerStats")).toHaveLength(0);
     sampleFrames = [];
 
     for (let i = 0; i < 12; i++) await sampler.sampleNow();
-    expect(runtime.callsTo("containerStats")).toHaveLength(2 * 13);
+    expect(runtime.callsTo("containerStats")).toHaveLength(2 * 12);
 
     const alpha = sampler.boxes({ withStats: true }).find((box) => box.name === "alpha");
     expect(alpha?.stats).toEqual({ cpuPercent: 1.5, memUsage: 64 * MB, memLimit: 256 * MB, memPercent: 25 });
@@ -216,7 +216,7 @@ describe("resource samples", () => {
     const hold = runtime.hold("containerStats");
     try {
       const round = sampler.sampleNow();
-      await waitFor(() => runtime.callsTo("containerStats").length === 2, "the held stats call");
+      await waitFor(() => runtime.callsTo("containerStats").length === 1, "the held stats call");
       const began = performance.now();
       const box = await stopBox(app.hosts.get(), id);
       expect(performance.now() - began).toBeLessThan(500);
@@ -234,6 +234,7 @@ describe("resource samples", () => {
     sampler.start();
     await waitFor(() => sampler.ready(), "the first listing");
     await sampler.settle();
+    await sampler.sampleNow();
     const boxId = sampler.boxes({ withStats: false })[0]?.boxId ?? "";
     expect(sampler.historyOf(boxId)).toHaveLength(1);
     sampleFrames = [];
@@ -253,7 +254,7 @@ describe("resource samples", () => {
 });
 
 describe("the sample cadence", () => {
-  test("with no watcher, the boxes are sampled once when the listing lands, and not again before the idle interval", async () => {
+  test("with no watcher and no reader, nothing is sampled, and a reader gets one round at once", async () => {
     seedBox("kappa", true);
     const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
     sampler.start();
@@ -262,7 +263,52 @@ describe("the sample cadence", () => {
 
     await Bun.sleep(60);
     await sampler.settle();
+    expect(runtime.callsTo("containerStats")).toHaveLength(0);
+
+    sampler.need();
+    await waitFor(() => runtime.callsTo("containerStats").length === 1, "the round a reader asked for");
+    await Bun.sleep(60);
+    await sampler.settle();
     expect(runtime.callsTo("containerStats")).toHaveLength(1);
+  });
+
+  test("a reader's lease keeps samples going only until it runs out, and then sampling stops", async () => {
+    seedBox("xi", true);
+    const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 5 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+
+    sampler.need(60);
+    await waitFor(() => runtime.callsTo("containerStats").length >= 2, "samples within the lease");
+    await Bun.sleep(120);
+    await sampler.settle();
+    const ended = runtime.callsTo("containerStats").length;
+    await Bun.sleep(60);
+    await sampler.settle();
+    expect(runtime.callsTo("containerStats")).toHaveLength(ended);
+  });
+
+  test("callers that ask while a round is queued share that one round", async () => {
+    seedBox("omicron", true);
+    const sampler = await started();
+    const before = runtime.callsTo("containerStats").length;
+
+    await Promise.all([sampler.sampleSoon(), sampler.sampleSoon(), sampler.sampleSoon()]);
+    expect(runtime.callsTo("containerStats").length - before).toBe(1);
+  });
+
+  test("a sample older than the stale age is not reported", async () => {
+    seedBox("pi", true);
+    const sampler = fastSampler({ intervalMs: 5, staleAfterMs: 30 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.sampleNow();
+    const boxId = sampler.boxes({ withStats: false })[0]?.boxId ?? "";
+    expect(sampler.statsOf(boxId)).not.toBeNull();
+
+    await Bun.sleep(40);
+    expect(sampler.statsOf(boxId)).toBeNull();
   });
 
   test("a watcher gets a sample at once, then one per live interval, until it is released", async () => {
@@ -502,6 +548,25 @@ describe("reads that do not answer in time", () => {
     }
     await waitFor(() => sampler.ready(), "the listing once the engine answers");
     expect(stateOf(sampler, "phi")).toBe(false);
+  });
+});
+
+describe("the host metrics", () => {
+  test("the engine is read for them only while a live subscriber watches, and the local reading goes on regardless", async () => {
+    const host = app.hosts.get();
+    host.monitor.start();
+    host.monitor.stop();
+    expect(runtime.callsTo("info")).toHaveLength(0);
+
+    const release = host.sampler.watch();
+    host.monitor.start();
+    host.monitor.stop();
+    release();
+    expect(runtime.callsTo("info")).toHaveLength(1);
+
+    host.monitor.start();
+    host.monitor.stop();
+    expect(runtime.callsTo("info")).toHaveLength(1);
   });
 });
 
