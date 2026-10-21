@@ -371,15 +371,15 @@ describe("ending a feed", () => {
     expect(engine.callsTo("followLogs")).toHaveLength(2);
   });
 
-  test("stop closes every feed", async () => {
+  test("stop ends every feed as stopped, not closed, because the boxes still exist", async () => {
     seed("november");
     seed("oscar");
     const a = subscribe("november");
     const b = subscribe("oscar");
 
     follows.stop();
-    expect(a.events).toEqual([{ kind: "closed" }]);
-    expect(b.events).toEqual([{ kind: "closed" }]);
+    expect(a.events).toEqual([{ kind: "stopped" }]);
+    expect(b.events).toEqual([{ kind: "stopped" }]);
   });
 
   test("a feed with no subscriber is kept for its lease, so a reader that comes back finds it", async () => {

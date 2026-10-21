@@ -37,12 +37,14 @@ export interface LogLine {
 
 /**
  * What a subscriber hears. `line` is a new line. `reset` means the box now runs a different container, so the lines held
- * before are not its lines any more. `closed` means the box has no feed: its follow has ended for good.
+ * before are not its lines any more. `closed` means the box was removed and its follow has ended for good. `stopped`
+ * means the host stopped its follows while the box still exists, so a subscriber should read it again later.
  */
 export type LogEvent =
   | { readonly kind: "line"; readonly line: LogLine }
   | { readonly kind: "reset" }
-  | { readonly kind: "closed" };
+  | { readonly kind: "closed" }
+  | { readonly kind: "stopped" };
 
 export type LogListener = (event: LogEvent) => void;
 
@@ -150,10 +152,13 @@ export class LogFollows {
     this.stopFeed(feed);
   }
 
-  /** The host has stopped. Every feed ends, and its subscribers hear it. */
+  /** The host has stopped. Every feed ends. Its boxes still exist, so subscribers hear `stopped`, not `closed`. */
   stop(): void {
-    const boxIds = Array.from(this.feeds.keys());
-    for (const boxId of boxIds) this.close(boxId);
+    for (const feed of Array.from(this.feeds.values())) {
+      this.feeds.delete(feed.boxId);
+      this.emit(feed, { kind: "stopped" });
+      this.stopFeed(feed);
+    }
   }
 
   private feedOf(boxId: string): Feed {

@@ -238,6 +238,17 @@ describe("GET /api/boxes/:id/logs/stream", () => {
     await reader.untilEnd();
   });
 
+  test("stopping the host ends the stream without a closed frame, so the client reconnects", async () => {
+    const box = await createBox("juliet");
+    await startSampler();
+    const reader = await openLogs(box.boxId);
+    await reader.until((frame) => frame.event === "sync");
+
+    harness.app.hosts.get().sampler.stop();
+    const rest = await reader.framesUntilEnd();
+    expect(rest.map((frame) => frame.event)).not.toContain("closed");
+  });
+
   test("revoking the token that opened the stream ends it", async () => {
     const watcher = mint(harness.app, { name: "watcher", preset: "readonly", boxes: { type: "all" } });
     const box = await createBox("india");

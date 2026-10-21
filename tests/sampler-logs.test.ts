@@ -149,13 +149,13 @@ describe("the log of a box, followed once by its host's sampler", () => {
     expect(sub.events.at(-1)).toEqual({ kind: "closed" });
   });
 
-  test("stopping the sampler closes every subscriber", async () => {
+  test("stopping the sampler tells every subscriber it stopped, since the boxes still exist", async () => {
     seedBox("zeta", true);
     const sampler = await started();
     const sub = listen(sampler, boxIdOf(sampler, "zeta"));
     await waitFor(() => runtime.callsTo("followLogs").length === 1, "the follow");
 
     sampler.stop();
-    expect(sub.events).toEqual([{ kind: "closed" }]);
+    expect(sub.events).toEqual([{ kind: "stopped" }]);
   });
 });

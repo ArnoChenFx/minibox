@@ -13,7 +13,7 @@ export interface LogStreamOptions {
   /** Lines the `sync` frames hold: the newest ones the feed has, at most this many. */
   readonly tail: number;
   readonly signal?: AbortSignal;
-  /** Runs once when the stream ends: the signal aborted, the reader cancelled, or the box was removed. */
+  /** Runs once when the stream ends: the signal aborted, the reader cancelled, the box was removed, or the host stopped. */
   readonly onEnd?: () => void;
   readonly pendingLimit?: number;
   readonly pendingBytes?: number;
@@ -26,7 +26,8 @@ const frame = (kind: string, data: unknown) => `event: ${kind}\ndata: ${JSON.str
  * Server-sent events for the log of one box. The first frame is `sync`, which holds the newest lines the feed has, and
  * each new line follows as a `line` frame. A `sync` replaces what the client shows, so the stream sends one again
  * whenever it cannot send lines in order: when the box's container changed, and when a slow client overflowed its
- * queue, which is cleared first. A `closed` frame ends the stream when the box is removed.
+ * queue, which is cleared first. A `closed` frame ends the stream when the box is removed. When the host stops, the stream
+ * ends without a frame, so the client reads the box again once it reconnects.
  */
 export function logStream(options: LogStreamOptions): ReadableStream<Uint8Array> {
   const { follows, boxId, tail, signal } = options;
@@ -68,6 +69,11 @@ export function logStream(options: LogStreamOptions): ReadableStream<Uint8Array>
     if (event.kind === "closed") {
       frames.clear();
       frames.force(frame("closed", {}));
+      ending = true;
+      notify();
+      return;
+    }
+    if (event.kind === "stopped") {
       ending = true;
       notify();
       return;

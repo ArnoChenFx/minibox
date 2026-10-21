@@ -167,6 +167,19 @@ describe("the log stream of a box", () => {
     expect(ended).toBe(1);
   });
 
+  test("a stopped host ends the stream without a closed frame, so the box can be read again", async () => {
+    boxWith("echo-stop", "x\n");
+    await holdFeed("echo-stop", 1);
+    let ended = 0;
+    const reader = open("echo-stop", { onEnd: () => (ended += 1) });
+    await reader.until((frame) => frame.event === "sync");
+
+    follows.stop();
+    const rest = await reader.framesUntilEnd();
+    expect(rest.map((frame) => frame.event)).not.toContain("closed");
+    expect(ended).toBe(1);
+  });
+
   test("an aborted signal ends the stream and reports the end", async () => {
     boxWith("foxtrot", "");
     let ended = 0;
