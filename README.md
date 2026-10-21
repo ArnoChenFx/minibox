@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="web/assets/logo-dark.svg" />
-    <img src="web/assets/logo.svg" alt="MiniBox" height="56" />
-  </picture>
+  <img src="web/assets/logo-readme.svg" alt="MiniBox" height="56" />
 </p>
 
 <p align="center"><strong>Personal, self-hosted dev environments for AI agents — Docker boxes with a dashboard.</strong></p>

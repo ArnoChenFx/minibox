@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="web/assets/logo-dark.svg" />
-    <img src="web/assets/logo.svg" alt="MiniBox" height="56" />
-  </picture>
+  <img src="web/assets/logo-readme.svg" alt="MiniBox" height="56" />
 </p>
 
 <p align="center"><strong>为 AI Agent 准备的个人自托管开发环境：基于 Docker 的 Box 与管理面板。</strong></p>
