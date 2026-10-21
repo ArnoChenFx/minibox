@@ -711,6 +711,32 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "events since a second before a change replay it, so a subscriber that starts after the change misses nothing",
+    async () => {
+      const { id } = await runtime.createContainer({ image: IMAGE, name: `${prefix}-replay`, labels: owned });
+      try {
+        const since = Math.floor(Date.now() / 1000) - 1;
+        await runtime.startContainer(id);
+        const controller = new AbortController();
+        const seen: string[] = [];
+        const consumer = (async () => {
+          for await (const event of runtime.events({ labels: owned, since }, controller.signal)) {
+            if (event.id === id) seen.push(event.action);
+          }
+          return "ended";
+        })();
+
+        await waitUntil(async () => seen.includes("start"), "the replayed start event");
+        controller.abort();
+        expect(await settleWithin(consumer, 5000)).toBe("ended");
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "a box is written to, snapshotted, restored from the snapshot, promoted to a template and deleted",
     async () => {
       const restore = silenceLogs();

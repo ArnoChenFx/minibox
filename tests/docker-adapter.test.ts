@@ -122,6 +122,15 @@ async function slowBuild(req: Request): Promise<Response> {
   return new Response(body, { headers: { "content-type": "application/json" } });
 }
 
+/** Two events for "ok", one JSON object per line as the engine streams them, and then the stream ends. */
+function eventsStream(): Response {
+  const events = [
+    { Type: "container", Action: "start", Actor: { ID: "ok", Attributes: { name: "alpha" } }, time: 1_700_000_000 },
+    { Type: "container", Action: "die", Actor: { ID: "ok", Attributes: { name: "alpha" } }, time: 1_700_000_001 },
+  ];
+  return new Response(events.map((event) => `${JSON.stringify(event)}\n`).join(""));
+}
+
 async function engine(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/v[\d.]+(?=\/)/, "");
@@ -132,6 +141,7 @@ async function engine(req: Request): Promise<Response> {
     if (listHung) return hang(req);
     return json(listed.map((id) => ({ Id: id, Names: [`/${id}`], Labels: {}, State: listStates[id] ?? "running" })));
   }
+  if (req.method === "GET" && path === "/events") return eventsStream();
   const inspect = /^\/containers\/([^/]+)\/json$/.exec(path);
   if (req.method === "GET" && inspect) {
     if (inspect[1] === "hung") return hang(req);
@@ -373,6 +383,19 @@ describe("Docker adapter against a fake engine socket", () => {
     const closedSince = () => buildCloses > closes;
     for (let i = 0; i < 400 && !closedSince(); i++) await Bun.sleep(5);
     expect(closedSince()).toBe(true);
+  });
+
+  test("events send the filters and since to the engine, and yield each event it streams", async () => {
+    const before = recorded.length;
+    const seen: string[] = [];
+    const events = runtime().events({ labels: { minibox: "true" }, types: ["container"], since: 1_700_000_000 });
+    for await (const event of events) seen.push(`${event.action} ${event.id} ${event.time}`);
+
+    const request = recorded.slice(before).find((r) => r.path === "/events");
+    const query = new URLSearchParams(request?.search);
+    expect(query.get("since")).toBe("1700000000");
+    expect(JSON.parse(query.get("filters") ?? "null")).toEqual({ label: ["minibox=true"], type: ["container"] });
+    expect(seen).toEqual(["start ok 2023-11-14T22:13:20.000Z", "die ok 2023-11-14T22:13:21.000Z"]);
   });
 });
 
