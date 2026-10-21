@@ -17,12 +17,13 @@ export function errorHint(err) {
 }
 
 export class ApiError extends Error {
-  constructor(status, code, message, details, hint = "") {
+  constructor(status, code, message, details, hint = "", key = "") {
     super(message);
     this.status = status;
     this.code = code;
     this.details = details;
     this.hint = hint;
+    this.key = key;
   }
 }
 
@@ -55,7 +56,14 @@ export async function api(path, { method = "GET", body, signal, headers } = {}) 
   }
   if (!res.ok) {
     const err = data?.error ?? {};
-    throw new ApiError(res.status, err.code ?? "http_error", errorText(err, res.status), err.details, errorHint(err));
+    throw new ApiError(
+      res.status,
+      err.code ?? "http_error",
+      errorText(err, res.status),
+      err.details,
+      errorHint(err),
+      err.key,
+    );
   }
   return data;
 }

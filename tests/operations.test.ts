@@ -738,8 +738,9 @@ describe("projections", () => {
       "cpus",
       "memoryMb",
       "profile",
-      "ttlSec",
       "mounts",
+      "idleTimeoutSec",
+      "ttlSec",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });

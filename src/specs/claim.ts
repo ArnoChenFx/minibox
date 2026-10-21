@@ -120,6 +120,7 @@ export function specFromContainer(host: HostCtx, info: ContainerInfo, now: strin
       desired: info.running ? "running" : "stopped",
       idleTimeoutSec: null,
       ttlSec: null,
+      stopReason: info.running ? null : "manual",
     },
     profile,
     network: info.network,

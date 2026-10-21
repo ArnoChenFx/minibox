@@ -407,8 +407,8 @@ export function volumeWritable(principal: Subject, volume: VolumeView, boxes: re
 }
 
 /**
- * TTL stored on a new box. A token with `maxTtlSec` that omits TTL gets that cap. Stopping the box when it elapses
- * is #12; this only records the limit the quota already enforced.
+ * TTL stored on a new box. A token with `maxTtlSec` that omits TTL, or sends null, gets that cap. The lifecycle
+ * watcher stops the box when the TTL elapses (#12); this only records the limit.
  */
 export function ttlFor(
   principal: { type: string; grants?: TokenGrants },

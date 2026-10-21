@@ -49,6 +49,9 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     sessionIdleMs: null,
     streamMaxConnections: 256,
     takeoverIdleSec: 300,
+    boxIdleTimeoutSec: 0,
+    boxIdleCpuPercent: 5,
+    lifecycleIntervalMs: 30_000,
     ...overrides,
   };
 }

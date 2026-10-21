@@ -29,7 +29,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 
 | 模块 | 说明 |
 |---|---|
-| Box 生命周期 | 创建、启动、停止、重启、删除；删除时可保留卷，或只删除该 Box 拥有的卷 |
+| Box 生命周期 | 创建、启动、停止、重启、删除；空闲自动休眠与按需唤醒；可选 TTL；删除时可保留卷，或只删除该 Box 拥有的卷 |
 | 数据卷 | 独立的 Volume 与存储池（`local`、`nfs`、`path`）。新建 Box 会挂载工作区、主目录、一只共享只读的工具卷，以及本地缓存。见[数据卷与存储池](#数据卷与存储池) |
 | 资源配额 | 按预设（小型 2 核 4 GB / 中型 4 核 8 GB / 大型 8 核 16 GB）或自定义设置 CPU、内存，并按宿主机容量校验；运行中可热更新（`docker update`） |
 | Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行；Web 终端与 `docker exec` 默认以 `dev` 进入。三个[安全档位](#安全档位)决定 Box 能做什么：默认的「标准」档位保留无密码 `sudo`，「严格」档位禁止提权。见[基础模板](#基础模板) |
@@ -274,6 +274,17 @@ docker run -d --name minibox --restart unless-stopped \
 - 镜像标签：`X.Y.Z`、`X.Y` 和 `latest`（`1.0.0-rc.1` 这类预发布版本只打完整版本号标签）。
 - 本地构建：`docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
 
+## 空闲休眠
+
+Box 可以在空闲时自行停止，并在下一次终端 / exec / 会话请求时唤醒（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。
+
+- **休眠**把期望状态改为 `stopped`（原因 `idle`）并执行 `docker stop`，**不删除容器**（工作区卷保留）。
+- **空闲**条件：没有打开的 WebSocket 终端、没有后台 exec、没有针对该 Box 的运行中异步任务、活动心跳超过 N 秒无更新，且 CPU 低于 `BOX_IDLE_CPU_PERCENT`。
+- 活动心跳只存在内存中（不用事件表）。终端、exec、会话请求会刷新心跳。
+- **TTL**（创建/更新时的 `ttlSec`）从创建时刻起算；到期后 MiniBox **停止**该 Box（不删除），原因记为 `ttl`。
+- 控制台在因空闲或 TTL 停止时显示「休眠中」，并展示最近活动时间。
+
+
 ## 配置
 
 优先级：进程环境变量 > `.env` 文件 > 默认值。访问密钥还会回退到 `DATA_DIR/access_key`。参考 [`.env.example`](.env.example)。
@@ -289,6 +300,9 @@ docker run -d --name minibox --restart unless-stopped \
 | `SESSION_TTL_DAYS` | `30` | 一次登录的有效期，从登录时起算，单位为天，大于 0 且至多 3650，可用小数。已登录的会话保持其创建时的有效期 |
 | `SESSION_IDLE_DAYS` | 留空（关闭） | 可选的滑动续期：会话在这么多天未被使用后也会结束。每个请求都算作使用，打开的终端里有输入也算。会话永远不会超过 `SESSION_TTL_DAYS` |
 | `SESSION_TAKEOVER_IDLE_SEC` | `300` | 接管 Agent 的终端会话后，人在这么多秒内没有输入，会话便还给 Agent。取值为 0 到 86400 的整数；`0` 表示接管一直持续到手动归还，即使页面已经关闭。其他取值回退为 300（见[会话](#会话)） |
+| `BOX_IDLE_TIMEOUT_SEC` | `0` | Box 空闲休眠的全局默认秒数。`0` 关闭休眠。每个 Box 可用 `idleTimeoutSec` 覆盖（`0` = 该 Box 永不休眠；`null` 继承此默认）。见[空闲休眠](#空闲休眠) |
+| `BOX_IDLE_CPU_PERCENT` | `5` | 仅当最近 CPU 采样严格低于此百分比（0–100）时才视为空闲 |
+| `LIFECYCLE_INTERVAL_MS` | `30000` | 检查空闲休眠与 TTL 的间隔（毫秒） |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
 | `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
@@ -377,6 +391,8 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 省略 `mounts` 时，新建 Box 得到这四只。`"mounts": []` 表示一只都不挂。显式列表会替换默认值。同一只卷可以挂到多只 Box，每次单独选择读写或只读。第二次读写挂载是允许的，API 返回 `warning: "shared_rw"`；控制台会先询问。Docker 不提供文件锁。
 
+创建 Box 对话框中的「卷」区域遵循同样的规则。选择「默认」时不发送 `mounts`；选择「自定义」时，列表从四个默认挂载开始、作为可编辑的行，并发送界面中显示的完整列表，因此这样创建的 Box 只挂载列出的卷。要在默认卷之外再挂载卷，请在 Box 创建后到它的页面挂载。
+
 `DELETE /api/boxes/:id?deleteVolume=true` 只删除**没有被其他 Box 挂载的自有卷**（随该 Box 创建的工作区、主目录和缓存）。独立卷会留下，包括共享工具卷，以及在数据卷页面单独创建的卷。没有记录的卷，或者属于其他 Box 的卷，即使本 Box 仍挂载着它们，也不会被删除。只有至少删除了一只自有卷时，`volumeDeleted` 才为 true。删除 Box 从不删除独立卷。
 
 新建的引擎卷名为 `vol_…`，并带标签 `minibox.volume=true`。已有的 `minibox-ws-*` 会在启动时、以及创建同名 Box 时被识别：MiniBox 写入所有权记录，不改名、不补标签、不删除。Docker 不能在卷创建之后追加标签。如果 `minibox-ws-<名称>` 已经存在，新建的同名 Box 会把它当作工作区，而不是再创建一只。
@@ -446,7 +462,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | 从主机的缓存列出 Box，缓存由引擎事件保持最新。缓存就绪时列表不调用引擎；除非 `stats=false`，否则运行中的 Box 附带最近一次采样 |
-| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载 |
+| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载。`idleTimeoutSec` 为 `0` 时该 Box 永不休眠；省略或 `null` 继承 `BOX_IDLE_TIMEOUT_SEC`。`ttlSec` 为自创建起的绝对寿命 |
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除 Box。`deleteVolume=true` 还会删除没有被其他 Box 挂载的自有卷。独立卷会留下 |

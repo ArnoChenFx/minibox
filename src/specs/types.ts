@@ -4,6 +4,7 @@ import type { BoxProfile } from "../box-profile";
 export const SPEC_VERSION = 1;
 
 export type DesiredState = "running" | "stopped";
+export type StopReason = "idle" | "ttl" | "manual";
 export type MountMode = "rw" | "ro";
 export type RecoverySource = "claim" | "degraded";
 
@@ -74,6 +75,11 @@ export interface BoxSpec {
     desired: DesiredState;
     idleTimeoutSec: number | null;
     ttlSec: number | null;
+    /**
+     * Why desired is `stopped`. `idle` / `ttl` come from the lifecycle watcher (#12); `manual` from stop/restart.
+     * Cleared when desired becomes `running`. Absent on specs written before #12 (readers treat that as null).
+     */
+    stopReason?: StopReason | null;
   };
   profile: BoxProfile | null;
   network: string;

@@ -48,6 +48,15 @@ export interface Config {
   streamMaxConnections: number;
   /** Seconds without input before a human's takeover of an agent's terminal session returns it to the agent. 0 keeps it until released. */
   takeoverIdleSec: number;
+  /**
+   * Global default idle timeout for boxes, in seconds. `0` disables idle sleep unless a box sets its own timeout.
+   * Per-box `idleTimeoutSec` of `0` also disables sleep; `null` inherits this default.
+   */
+  boxIdleTimeoutSec: number;
+  /** A box is idle only when its recent CPU sample is strictly below this percent. */
+  boxIdleCpuPercent: number;
+  /** How often the lifecycle watcher checks idle sleep and TTL. */
+  lifecycleIntervalMs: number;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -202,6 +211,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     sessionIdleMs: parseDays(get("SESSION_IDLE_DAYS"), "SESSION_IDLE_DAYS"),
     streamMaxConnections: intOr(get("STREAM_MAX_CONNECTIONS"), 256),
     takeoverIdleSec: intInRange(get("SESSION_TAKEOVER_IDLE_SEC"), 300, 0, 86400),
+    boxIdleTimeoutSec: intInRange(get("BOX_IDLE_TIMEOUT_SEC"), 0, 0, 31_536_000),
+    boxIdleCpuPercent: intInRange(get("BOX_IDLE_CPU_PERCENT"), 5, 0, 100),
+    lifecycleIntervalMs: intOr(get("LIFECYCLE_INTERVAL_MS"), 30_000),
   };
 }
 

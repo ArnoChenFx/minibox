@@ -8,7 +8,7 @@ import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
 import { onHost } from "../lib/store.js";
-import { emptyState, stateBadge } from "../lib/ui.js";
+import { boxState, emptyState, stateBadge } from "../lib/ui.js";
 
 const ACTION_ICON = {
   "box.create": "plus",
@@ -188,7 +188,7 @@ function renderBoxes(view, boxes) {
     .slice(0, 6)
     .map(
       (b) => `<li><span class="ico">${icon("box")}</span><a href="#/boxes/${b.id}"><strong>${esc(b.name)}</strong></a>
-      <span class="subtle">${cpus(b.cpus)} · ${mem(b.memory)}</span><span class="time">${stateBadge(b.state)}</span></li>`,
+      <span class="subtle">${cpus(b.cpus)} · ${mem(b.memory)}</span><span class="time">${stateBadge(boxState(b))}</span></li>`,
     )
     .join("")}</ul>`;
 }

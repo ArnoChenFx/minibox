@@ -6,6 +6,7 @@ import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { NAME_RE } from "../lib/validation";
+import { OWNER } from "../operations/types";
 import {
   type ContainerInfo,
   type ContainerStats,
@@ -18,7 +19,7 @@ import {
 import { ClaimError, ensureSpec } from "../specs/claim";
 import { pushHistory } from "../specs/history";
 import { newBoxId, revisionMismatch } from "../specs/revision";
-import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState, MountMode } from "../specs/types";
+import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec, DesiredState, MountMode, StopReason } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent, poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
@@ -27,6 +28,7 @@ import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
 import type { VolumeRecord, VolumeRole } from "../volumes/types";
 import { assertMountAllowed, mountTarget } from "./attachments";
 import { projectBox } from "./box-view";
+import type { RecordNote as AuditRecord } from "./terminals";
 import { alignVolumeRoot, type RecordNote, writableWorkspaceVolume } from "./volume-owner";
 
 export interface CreateBoxInput {
@@ -38,13 +40,15 @@ export interface CreateBoxInput {
   profile?: BoxProfile;
   /** Id of the principal that created the box: `owner`, or a token id. Defaults to `owner`. */
   createdBy?: string;
-  /** Seconds until the box is due to stop. Null or absent means no TTL. The stop itself is #12. */
-  ttlSec?: number | null;
   /**
    * Engine mounts to use instead of the four role volumes. `volume` is a volume id or name.
    * An empty list creates a box with no mounts.
    */
   mounts?: BoxMount[];
+  /** `null` inherits the global default. `0` disables idle sleep for this box. */
+  idleTimeoutSec?: number | null;
+  /** Absolute lifetime from create time. `null` means no TTL. */
+  ttlSec?: number | null;
 }
 
 export interface BoxUpdate {
@@ -85,6 +89,12 @@ export interface Box {
   desired: DesiredState;
   idleTimeoutSec: number | null;
   ttlSec: number | null;
+  /** Why the box is stopped. Null when running or when the reason is unknown. */
+  stopReason: StopReason | null;
+  /** True when the box is stopped because of idle sleep or TTL expiry. */
+  sleeping: boolean;
+  /** Last in-memory activity heartbeat, or null when none has been recorded this process. */
+  lastActivityAt: string | null;
   /** User labels. These live in the spec and are never written onto the container. */
   labels: Record<string, string>;
   createdBy: string | null;
@@ -284,16 +294,25 @@ async function attachToBoxNetwork(host: HostCtx, box: Box): Promise<void> {
 }
 
 /** Bumps the revision only when the desired state actually changes, so a reconcile does not invalidate If-Match. */
-async function setDesired(host: HostCtx, boxId: string, desired: DesiredState): Promise<void> {
+async function setDesired(
+  host: HostCtx,
+  boxId: string,
+  desired: DesiredState,
+  stopReason: StopReason | null = desired === "stopped" ? "manual" : null,
+): Promise<void> {
   await host.specs.exclusive(async () => {
     const spec = host.specs.read(boxId);
-    if (!spec || spec.lifecycle.desired === desired) return;
+    if (!spec) return;
+    const prevReason = spec.lifecycle.stopReason ?? null;
+    const nextReason = desired === "running" ? null : stopReason;
+    if (spec.lifecycle.desired === desired && prevReason === nextReason) return;
+    const bumpDesired = spec.lifecycle.desired !== desired;
     host.specs.write({
       ...spec,
-      lifecycle: { ...spec.lifecycle, desired },
-      revision: spec.revision + 1,
+      lifecycle: { ...spec.lifecycle, desired, stopReason: nextReason },
+      revision: bumpDesired ? spec.revision + 1 : spec.revision,
       updatedAt: new Date().toISOString(),
-      history: pushHistory(spec),
+      history: bumpDesired ? pushHistory(spec) : spec.history,
     });
   });
 }
@@ -444,7 +463,12 @@ async function buildBox(
       env: [],
       tools: [],
       labels: {},
-      lifecycle: { desired: "running", idleTimeoutSec: null, ttlSec: input.ttlSec ?? null },
+      lifecycle: {
+        desired: "running",
+        idleTimeoutSec: input.idleTimeoutSec === undefined ? null : input.idleTimeoutSec,
+        ttlSec: input.ttlSec === undefined ? null : input.ttlSec,
+        stopReason: null,
+      },
       profile,
       network: security.network,
       restart: "no",
@@ -462,6 +486,7 @@ async function buildBox(
 
   await runtime.startContainer(containerId);
   await host.sampler.observe(containerId);
+  host.pulse.touch(id, "create");
   log.info("box.created", { name: input.name, image, profile, cpus: input.cpus, memoryMb: input.memoryMb });
   return containerId;
 }
@@ -477,20 +502,35 @@ async function ensureRunningStorage(host: HostCtx, box: Box): Promise<void> {
   );
 }
 
-export async function startBox(host: HostCtx, ref: string): Promise<Box> {
+export async function startBox(host: HostCtx, ref: string, audit?: AuditRecord): Promise<Box> {
   const box = await getBox(host, ref);
+  const previousReason = (host.specs.read(box.boxId)?.lifecycle.stopReason ?? null) as StopReason | null;
   await ensureRunningStorage(host, box);
   await attachToBoxNetwork(host, box);
   await host.runtime.startContainer(box.id);
-  await setDesired(host, box.boxId, "running");
+  await setDesired(host, box.boxId, "running", null);
   await host.sampler.observe(box.id);
+  host.pulse.touch(box.boxId, "wake");
+  if (audit && (previousReason === "idle" || previousReason === "ttl")) {
+    audit(host.host.id, "system", OWNER, {
+      op: "box.wake",
+      kind: "write",
+      status: "ok",
+      summary: `Box woke: ${box.name}`,
+      target: { kind: "box", id: box.id, name: box.name },
+      detail: { boxId: box.boxId, from: previousReason },
+    });
+  }
   return getBox(host, box.boxId);
 }
 
-export async function stopBox(host: HostCtx, ref: string): Promise<Box> {
+export async function stopBox(host: HostCtx, ref: string, reason?: StopReason): Promise<Box> {
   const box = await getBox(host, ref);
   await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
-  await setDesired(host, box.boxId, "stopped");
+  const existing = host.specs.read(box.boxId)?.lifecycle.stopReason ?? null;
+  // Omitted reason: keep an existing idle/ttl reason (reconcile), otherwise mark manual.
+  const next: StopReason = reason ?? existing ?? "manual";
+  await setDesired(host, box.boxId, "stopped", next);
   await host.sampler.observe(box.id);
   return getBox(host, box.boxId);
 }
@@ -500,8 +540,10 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   await ensureRunningStorage(host, box);
   await attachToBoxNetwork(host, box);
   await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
-  await setDesired(host, box.boxId, "running");
+  await setDesired(host, box.boxId, "running", null);
   await host.sampler.observe(box.id);
+  // Same as startBox wake: clear a stale idle heartbeat so LifecycleWatcher does not re-sleep immediately.
+  host.pulse.touch(box.boxId, "wake");
   return getBox(host, box.boxId);
 }
 
@@ -523,6 +565,7 @@ export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolea
     host.specs.remove(box.boxId);
   });
   await host.sampler.observe(box.id);
+  host.pulse.clear(box.boxId);
   const result: DeleteBoxResult = { name: box.name, volumeDeleted: false };
   if (deleteVolume) await removeOwnedVolumes(host, box.boxId, mounted, result);
   log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
