@@ -1131,3 +1131,89 @@ describe.skipIf(!enabled)("the box cache against a real engine", () => {
     LONG,
   );
 });
+
+/** Ids of every container on the engine, MiniBox's or not. */
+const allContainerIds = async (): Promise<string[]> => (await docker.listContainers({ all: true })).map((c) => c.Id);
+
+describe.skipIf(!enabled)("volume root owners against a real engine", () => {
+  const MOUNT = "/minibox-volume";
+
+  test(
+    "the root owner of a volume is read and set, and what the volume holds keeps its owners",
+    async () => {
+      const restore = silenceLogs();
+      const volume = `${prefix}-owner`;
+      try {
+        await runtime.createVolume(volume, owned);
+        const { id } = await runtime.createContainer({
+          image: IMAGE,
+          name: `${prefix}-owner`,
+          cmd: ["sleep", "300"],
+          labels: owned,
+          mounts: [{ source: volume, target: MOUNT }],
+        });
+        expect(await runtime.volumeRootOwner(id, MOUNT)).toEqual({ uid: 0, gid: 0 });
+        expect(await rejectionOf(runtime.volumeRootOwner(id, "/minibox-absent"))).toMatchObject({ kind: "not_found" });
+
+        await runtime.startContainer(id);
+        await shell(id, `mkdir ${MOUNT}/sub && touch ${MOUNT}/seed ${MOUNT}/sub/inner`);
+        await runtime.setVolumeRootOwner(volume, { uid: 1000, gid: 1000 }, IMAGE);
+
+        expect(await runtime.volumeRootOwner(id, MOUNT)).toEqual({ uid: 1000, gid: 1000 });
+        expect(await shell(id, `stat -c '%u:%g %n' ${MOUNT} ${MOUNT}/seed ${MOUNT}/sub ${MOUNT}/sub/inner`)).toBe(
+          [`1000:1000 ${MOUNT}`, `0:0 ${MOUNT}/seed`, `0:0 ${MOUNT}/sub`, `0:0 ${MOUNT}/sub/inner`].join("\n"),
+        );
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "setting the owner of a volume that does not exist is not_found, and leaves no volume or helper behind",
+    async () => {
+      const missing = `${prefix}-missing`;
+      const before = await allContainerIds();
+
+      expect(await rejectionOf(runtime.setVolumeRootOwner(missing, { uid: 1000, gid: 1000 }, IMAGE))).toMatchObject({
+        kind: "not_found",
+      });
+      expect(await rejectionOf(runtime.inspectVolume(missing))).toMatchObject({ kind: "not_found" });
+      expect(await allContainerIds()).toEqual(before);
+    },
+    LONG,
+  );
+
+  test(
+    "a helper that cannot run chown is an engine error, and the helper is removed",
+    async () => {
+      const restore = silenceLogs();
+      const repo = `${prefix}-nochown`;
+      const volume = `${prefix}-nochown`;
+      try {
+        const { id } = await runtime.createContainer({
+          image: IMAGE,
+          name: repo,
+          cmd: ["sleep", "300"],
+          labels: owned,
+        });
+        await runtime.startContainer(id);
+        expect(await shell(id, "rm -f /bin/chown /usr/bin/chown; command -v chown || echo gone")).toBe("gone");
+        await runtime.commitContainer(id, { repo, tag: "1", pause: true, changes: [] });
+        await runtime.createVolume(volume, owned);
+
+        const failed = await rejectionOf(runtime.setVolumeRootOwner(volume, { uid: 1000, gid: 1000 }, `${repo}:1`));
+        expect(failed).toMatchObject({ kind: "engine" });
+        const leftover = (await docker.listContainers({ all: true })).filter((c) =>
+          c.Mounts.some((mount) => mount.Name === volume),
+        );
+        expect(leftover).toHaveLength(0);
+      } finally {
+        await runtime.removeImage(`${repo}:1`, { force: true }).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+});

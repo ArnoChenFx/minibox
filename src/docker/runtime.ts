@@ -6,6 +6,7 @@ import Docker from "dockerode";
 
 import { stripSlash } from "../labels";
 import { abortError, isAbortError } from "../lib/abort";
+import { log } from "../lib/logger";
 import {
   type CommitSpec,
   type ContainerChange,
@@ -18,7 +19,9 @@ import {
   type Runtime,
   type RuntimeEvent,
   RuntimeError,
+  type VolumeOwner,
 } from "../runtime";
+import { readFirstEntryOwner } from "./archive";
 import { toRuntimeError } from "./errors";
 import { demuxLogs } from "./logs";
 import { computeStats } from "./stats";
@@ -278,10 +281,45 @@ export function toCreateOptions(spec: CreateContainerSpec): Docker.ContainerCrea
   if (spec.cmd !== undefined) opts.Cmd = spec.cmd;
   if (spec.workingDir !== undefined) opts.WorkingDir = spec.workingDir;
   if (spec.hostname !== undefined) opts.Hostname = spec.hostname;
+  if (spec.user !== undefined) opts.User = spec.user;
   if (spec.labels !== undefined) opts.Labels = spec.labels;
   if (spec.env !== undefined) opts.Env = spec.env;
   if (Object.keys(hostConfig).length > 0) opts.HostConfig = hostConfig;
   return opts;
+}
+
+const HELPER_MOUNT = "/minibox-volume";
+
+/** The helper that chowns a volume root: root with CHOWN only, and no network. It has no box labels, so listings skip it. */
+function rootOwnerHelper(volume: string, owner: VolumeOwner, image: string): CreateContainerSpec {
+  return {
+    image,
+    cmd: ["chown", `${owner.uid}:${owner.gid}`, HELPER_MOUNT],
+    user: "0:0",
+    mounts: [{ source: volume, target: HELPER_MOUNT, mode: "rw" }],
+    network: "none",
+    hardening: { capDrop: ["ALL"], capAdd: ["CHOWN"], noNewPrivileges: true },
+  };
+}
+
+/** What the helper printed, as context for its failure. A failure to read it is not reported. */
+async function helperOutput(docker: Docker, id: string): Promise<string> {
+  try {
+    const out = await docker.getContainer(id).logs({ stdout: true, stderr: true });
+    return demuxLogs(Buffer.isBuffer(out) ? out : Buffer.from(String(out))).trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The helper could not be created or started. MiniBox built that container from its own settings, so the engine's
+ * refusal is an engine failure, whatever status it sent. An unreachable engine stays unavailable.
+ */
+function helperFailure(volume: string, e: unknown): RuntimeError {
+  if (isRuntimeError(e, "unavailable")) return e;
+  const reason = e instanceof RuntimeError ? e.detail : String(e);
+  return new RuntimeError("engine", `the chown helper for ${volume} could not run: ${reason}`, reason);
 }
 
 /** An existing network can be used only if it is a bridge with the requested inter-container communication setting. */
@@ -507,6 +545,42 @@ export function createDockerRuntime(socketPath: string): Runtime {
 
     async getArchive(id, path) {
       return call(async () => (await docker.getContainer(id).getArchive({ path })) as Readable);
+    },
+
+    async volumeRootOwner(containerId, path) {
+      const stream = await call(() => docker.getContainer(containerId).getArchive({ path }) as Promise<Readable>);
+      try {
+        return await readFirstEntryOwner(stream);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        throw new RuntimeError("engine", `could not read the owner of ${path} in ${containerId}: ${reason}`);
+      }
+    },
+
+    async setVolumeRootOwner(volume, owner, image) {
+      await call(() => docker.getVolume(volume).inspect());
+      // Inspecting first matters: a bind of a missing named volume makes the engine create it.
+      const helper = await mutate(() =>
+        docker.createContainer(toCreateOptions(rootOwnerHelper(volume, owner, image))),
+      ).catch((e: unknown) => {
+        if (isRuntimeError(e, "not_found")) throw new RuntimeError("engine", `helper image ${image} is missing`);
+        throw helperFailure(volume, e);
+      });
+      try {
+        await mutate(() => docker.getContainer(helper.id).start()).catch((e: unknown) => {
+          throw helperFailure(volume, e);
+        });
+        const { StatusCode } = (await call(() => docker.getContainer(helper.id).wait())) as { StatusCode: number };
+        if (StatusCode !== 0) {
+          const output = await helperOutput(docker, helper.id);
+          const suffix = output ? `: ${output}` : "";
+          throw new RuntimeError("engine", `chown of ${volume} exited with status ${StatusCode}${suffix}`);
+        }
+      } finally {
+        await mutate(() => docker.getContainer(helper.id).remove({ force: true })).catch((e: unknown) => {
+          log.warn("volume.chown_helper_not_removed", { container: helper.id, error: String(e) });
+        });
+      }
     },
 
     async startExec(containerId, spec) {

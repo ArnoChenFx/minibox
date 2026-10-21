@@ -85,6 +85,8 @@ export interface CreateContainerSpec {
   cmd?: string[];
   workingDir?: string;
   hostname?: string;
+  /** Container user as `name`, `uid` or `uid:gid`. Absent keeps the image's user. */
+  user?: string;
   labels?: Record<string, string>;
   mounts?: Mount[];
   /** `NAME=value` entries merged over the image environment. Secrets are not passed here. */
@@ -116,6 +118,15 @@ export interface VolumeInfo {
   name: string;
   labels: Record<string, string>;
 }
+
+/** Numeric owner of a file or directory. */
+export interface VolumeOwner {
+  uid: number;
+  gid: number;
+}
+
+/** Largest uid or gid a `VolumeOwner` can hold. 4294967295 is -1, which chown reads as "leave the owner as it is". */
+export const MAX_OWNER_ID = 4294967294;
 
 export interface CommitSpec {
   repo: string;
@@ -259,6 +270,19 @@ export interface Runtime {
   putArchive(id: string, path: string, tar: Readable | Buffer): Promise<void>;
   /** Tar archive of `path`. Works on created containers that are not running. */
   getArchive(id: string, path: string): Promise<Readable>;
+  /**
+   * Owner of the directory or file at `path` in the container, read from the first entry of the engine's archive for
+   * it. Only that entry is read, so a large directory is not streamed. Works on created containers that are not
+   * running. Fails with `not_found` when `path` does not exist.
+   */
+  volumeRootOwner(containerId: string, path: string): Promise<VolumeOwner>;
+  /**
+   * Sets the owner of the root directory of `volume`, and not of its contents. A short-lived helper runs `chown` from
+   * `image` as root with CHOWN as its only capability, no network and no new privileges, and is removed however the
+   * chown ends. Fails with `not_found` when the volume does not exist, and with `engine` when the helper cannot run or
+   * its chown fails.
+   */
+  setVolumeRootOwner(volume: string, owner: VolumeOwner, image: string): Promise<void>;
   startExec(containerId: string, spec: ExecSpec): Promise<ExecSession>;
   /**
    * Stops when the consumer stops iterating or `signal` aborts. `since` (Unix seconds) also yields the events the

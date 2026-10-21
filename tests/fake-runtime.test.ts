@@ -5,6 +5,7 @@ import { rejectionOf } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 
 const labels = { mbtest: "true" };
+const devTemplate = { "minibox.template.uid": "1000", "minibox.template.gid": "1000" };
 
 describe("FakeRuntime follows engine semantics the services rely on", () => {
   test("names are unique and missing objects are not_found", async () => {
@@ -243,5 +244,75 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     const { id } = await rt.createContainer({ image: "alpine:3.20" });
     await rt.startContainer(id);
     expect(await rt.inspectContainer(id)).toMatchObject({ network: "bridge", running: true });
+  });
+
+  test("a volume takes the owner its template names when first mounted at /workspace, and root otherwise", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("dev:1", devTemplate);
+    rt.seedImage("plain:1", {});
+    const dev = await rt.createContainer({ image: "dev:1", mounts: [{ source: "ws", target: "/workspace" }] });
+    const data = await rt.createContainer({ image: "dev:1", mounts: [{ source: "data", target: "/data" }] });
+    const plain = await rt.createContainer({ image: "plain:1", mounts: [{ source: "plain", target: "/workspace" }] });
+
+    expect(await rt.volumeRootOwner(dev.id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+    expect(await rt.volumeRootOwner(data.id, "/data")).toEqual({ uid: 0, gid: 0 });
+    expect(await rt.volumeRootOwner(plain.id, "/workspace")).toEqual({ uid: 0, gid: 0 });
+  });
+
+  test("a volume keeps the owner it has once it has been mounted, whatever template mounts it later", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("dev:1", devTemplate);
+    rt.seedImage("root:1", {});
+    await rt.createContainer({ image: "root:1", mounts: [{ source: "ws", target: "/workspace" }] });
+    const later = await rt.createContainer({ image: "dev:1", mounts: [{ source: "ws", target: "/workspace" }] });
+
+    expect(await rt.volumeRootOwner(later.id, "/workspace")).toEqual({ uid: 0, gid: 0 });
+  });
+
+  test("the owner of a path that no mount of the container has is not_found", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("dev:1", devTemplate);
+    const { id } = await rt.createContainer({ image: "dev:1" });
+
+    expect(await rejectionOf(rt.volumeRootOwner(id, "/workspace"))).toMatchObject({ kind: "not_found" });
+  });
+
+  test("setting a volume's owner needs the volume and the helper image, and a later mount keeps the owner", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("dev:1", devTemplate);
+    rt.seedImage("helper:1", {});
+    const owner = { uid: 1000, gid: 1000 };
+
+    expect(await rejectionOf(rt.setVolumeRootOwner("ws", owner, "helper:1"))).toMatchObject({ kind: "not_found" });
+    await rt.createVolume("ws", labels);
+    expect(await rejectionOf(rt.setVolumeRootOwner("ws", owner, "ghost:1"))).toMatchObject({ kind: "engine" });
+    await rt.setVolumeRootOwner("ws", owner, "helper:1");
+
+    const { id } = await rt.createContainer({ image: "dev:1", mounts: [{ source: "ws", target: "/workspace" }] });
+    expect(await rt.volumeRootOwner(id, "/workspace")).toEqual(owner);
+    expect(rt.callsTo("setVolumeRootOwner")).toHaveLength(3);
+  });
+
+  test("removing a volume forgets its owner, so the volume created again takes its next mount's owner", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("dev:1", devTemplate);
+    rt.seedImage("helper:1", {});
+    await rt.createVolume("ws", labels);
+    await rt.setVolumeRootOwner("ws", { uid: 0, gid: 0 }, "helper:1");
+    await rt.removeVolume("ws");
+
+    await rt.createVolume("ws", labels);
+    const { id } = await rt.createContainer({ image: "dev:1", mounts: [{ source: "ws", target: "/workspace" }] });
+    expect(await rt.volumeRootOwner(id, "/workspace")).toEqual({ uid: 1000, gid: 1000 });
+  });
+
+  test("seeding a volume's owner records no call, and the owner is what a later mount sees", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("dev:1", devTemplate);
+    rt.seedVolumeOwner("ws", { uid: 0, gid: 0 });
+    const { id } = await rt.createContainer({ image: "dev:1", mounts: [{ source: "ws", target: "/workspace" }] });
+
+    expect(await rt.volumeRootOwner(id, "/workspace")).toEqual({ uid: 0, gid: 0 });
+    expect(rt.callsTo("setVolumeRootOwner")).toHaveLength(0);
   });
 });

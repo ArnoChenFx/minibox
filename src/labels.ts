@@ -1,4 +1,5 @@
 import { type BoxProfile, isBoxProfile } from "./box-profile";
+import { MAX_OWNER_ID, type VolumeOwner } from "./runtime";
 
 /**
  * Label keys derived from a configurable prefix.
@@ -106,3 +107,21 @@ export function quoteLabelValue(value: string): string {
 }
 
 export const labelChange = (key: string, value: string): string => `LABEL ${key}=${quoteLabelValue(value)}`;
+
+/** Fixed, unprefixed: the base template Dockerfile writes these, whatever the configured prefix. */
+export const TEMPLATE_UID_LABEL = "minibox.template.uid";
+export const TEMPLATE_GID_LABEL = "minibox.template.gid";
+
+/**
+ * The owner a template gives `/workspace`, from its uid and gid labels. Both must be decimal ids in range. Otherwise the
+ * template names no owner, and null is returned.
+ */
+export function templateOwnerOf(labels: Record<string, string> | undefined | null): VolumeOwner | null {
+  const uid = labels?.[TEMPLATE_UID_LABEL];
+  const gid = labels?.[TEMPLATE_GID_LABEL];
+  if (!isOwnerId(uid) || !isOwnerId(gid)) return null;
+  return { uid: Number(uid), gid: Number(gid) };
+}
+
+const isOwnerId = (value: string | undefined): value is string =>
+  value !== undefined && /^\d+$/.test(value) && Number(value) <= MAX_OWNER_ID;
