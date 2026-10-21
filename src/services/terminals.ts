@@ -741,8 +741,8 @@ async function runTmux(host: HostCtx, containerId: string, args: readonly string
 
 /**
  * Collects a command's output as text and keeps only its newest `limit` bytes. The buffer is trimmed once it holds twice
- * that, so the copying stays proportional to the output. A trimmed text starts mid-line, so its first line is dropped,
- * unless no line break is left to start from.
+ * that, so the copying stays proportional to the output. A trimmed text starts mid-line, so its first line is dropped. If
+ * no line break is left, it starts at the first whole character instead of a cut one.
  */
 export function collectText(stream: Readable, limit = OUTPUT_LIMIT_BYTES): () => string {
   let chunks: Buffer[] = [];
@@ -767,11 +767,19 @@ export function collectText(stream: Readable, limit = OUTPUT_LIMIT_BYTES): () =>
   stream.on("error", () => undefined);
   return () => {
     trim();
-    const text = Buffer.concat(chunks).toString("utf8");
-    if (!trimmed) return text;
-    const lineBreak = text.indexOf("\n");
-    return lineBreak === -1 ? text : text.slice(lineBreak + 1);
+    const bytes = Buffer.concat(chunks);
+    if (!trimmed) return bytes.toString("utf8");
+    const lineBreak = bytes.indexOf("\n");
+    if (lineBreak !== -1) return bytes.subarray(lineBreak + 1).toString("utf8");
+    return bytes.subarray(wholeCharacterAt(bytes)).toString("utf8");
   };
+}
+
+/** A cut can leave up to three bytes of a split character at the front, since a character is at most four bytes. */
+function wholeCharacterAt(bytes: Buffer): number {
+  let start = 0;
+  while (start < 3 && start < bytes.length && ((bytes[start] ?? 0) & 0xc0) === 0x80) start += 1;
+  return start;
 }
 
 async function exitCodeOf(session: ExecSession): Promise<number> {

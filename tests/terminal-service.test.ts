@@ -55,6 +55,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function keptAfterCut(limit: number, text: string): Promise<string> {
+  const stream = new PassThrough();
+  const kept = collectText(stream, limit);
+  stream.end(text);
+  await finished(stream);
+  return kept();
+}
+
 describe("terminal service: sessions", () => {
   let restoreLogs: () => void;
   beforeEach(() => {
@@ -786,6 +794,11 @@ describe("terminal service: output and history", () => {
     long.end("z".repeat(5000));
     await finished(long);
     expect(longText()).toBe("z".repeat(1024));
+  });
+
+  test("collectText starts at a whole character when a cut splits one and no line break is left", async () => {
+    expect(await keptAfterCut(10, "€".repeat(10))).toBe("€€€");
+    expect(await keptAfterCut(8, "€".repeat(6))).toBe("€€");
   });
 
   test("collectText keeps about 4 MiB of the newest output, so a runaway command cannot grow memory without limit", async () => {
