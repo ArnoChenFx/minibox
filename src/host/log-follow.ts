@@ -70,6 +70,8 @@ export interface LogFollowOptions {
 interface Feed {
   readonly boxId: string;
   containerId: string | null;
+  /** True once the container's log was read to its end while the cache showed it stopped. It is read again once it runs. */
+  drained: boolean;
   lines: LogLine[];
   bytes: number;
   next: number;
@@ -167,6 +169,7 @@ export class LogFollows {
       feed = {
         boxId,
         containerId: null,
+        drained: false,
         lines: [],
         bytes: 0,
         next: 1,
@@ -228,6 +231,11 @@ export class LogFollows {
         continue;
       }
       if (feed.containerId !== target.containerId) this.adopt(feed, target.containerId);
+      if (target.running) feed.drained = false;
+      else if (feed.drained) {
+        await this.park(feed, signal);
+        continue;
+      }
 
       const read = new AbortController();
       const stopRead = () => read.abort();
@@ -261,6 +269,7 @@ export class LogFollows {
       if (!failed) {
         if (received > 0) failures = 0;
         if (!this.runs(feed)) {
+          feed.drained = !target.running;
           await this.park(feed, signal);
           continue;
         }
@@ -312,6 +321,7 @@ export class LogFollows {
       this.emit(feed, { kind: "reset" });
     }
     feed.containerId = containerId;
+    feed.drained = false;
   }
 
   /**

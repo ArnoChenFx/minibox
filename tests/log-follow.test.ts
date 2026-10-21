@@ -319,6 +319,27 @@ describe("the box's container", () => {
     expect(bodies(sub.events)).toEqual(["start", "again"]);
   });
 
+  test("a stopped box is read once, and changes that leave it stopped do not read it again", async () => {
+    const id = seed("lima", false);
+    engine.appendLogs(id, "last\n");
+    const sub = subscribe("lima");
+    await waitFor(() => bodies(sub.events).length === 1, "the last line of the stopped box");
+
+    for (let round = 0; round < 3; round += 1) {
+      follows.changed();
+      await Bun.sleep(5);
+    }
+    expect(engine.callsTo("followLogs")).toHaveLength(1);
+    expect(bodies(sub.events)).toEqual(["last"]);
+
+    await engine.startContainer(id);
+    retarget("lima", id, true);
+    await waitFor(() => engine.callsTo("followLogs").length === 2, "the follow after the start");
+    engine.appendLogs(id, "again\n");
+    await waitFor(() => bodies(sub.events).length === 2, "the line after the start");
+    expect(bodies(sub.events)).toEqual(["last", "again"]);
+  });
+
   test("a follow in flight ends when the cache is not current, and resumes once it is", async () => {
     const id = seed("kilo");
     const sub = subscribe("kilo");
