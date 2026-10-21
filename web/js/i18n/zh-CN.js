@@ -629,6 +629,10 @@ export default {
   "sn.deleted": "快照已删除",
   "tp.subtitle": "模板是创建 Box 时使用的基础镜像。可以构建内置的基础模板，或将快照提升为自定义模板。",
   "tp.build": "构建基础模板",
+  "tp.search": "搜索模板",
+  "tp.searchPlaceholder": "名称、标签、描述或镜像 ID",
+  "tp.noMatch": "没有匹配的模板",
+  "tp.noMatchText": "没有与“{q}”匹配的模板。",
   "tp.loadFailed": "无法加载模板",
   "tp.empty": "还没有模板",
   "tp.emptyText":

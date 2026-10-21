@@ -670,6 +670,10 @@ export default {
   "tp.subtitle":
     "Templates are the base images for new boxes. Build the bundled base template, or promote a snapshot to a custom template.",
   "tp.build": "Build base template",
+  "tp.search": "Search templates",
+  "tp.searchPlaceholder": "Name, tag, description or image ID",
+  "tp.noMatch": "No matching templates",
+  "tp.noMatchText": "No template matches “{q}”.",
   "tp.loadFailed": "Couldn't load templates",
   "tp.empty": "No templates yet",
   "tp.emptyText":

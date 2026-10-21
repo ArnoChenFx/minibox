@@ -33,6 +33,7 @@ function inBrowser<T>(browser: Browser, expression: string): T {
     `const format = await import(${JSON.stringify(join(LIB, "format.js"))});`,
     `const search = await import(${JSON.stringify(join(LIB, "search.js"))});`,
     `const volumeList = await import(${JSON.stringify(join(LIB, "volume-list.js"))});`,
+    `const templateList = await import(${JSON.stringify(join(LIB, "template-list.js"))});`,
     `const en = (await import(${JSON.stringify(join(I18N, "en.js"))})).default;`,
     `const zh = (await import(${JSON.stringify(join(I18N, "zh-CN.js"))})).default;`,
     `console.log(JSON.stringify(${expression}));`,
@@ -459,5 +460,47 @@ describe("volume search and groups", () => {
         })`,
       ),
     ).toEqual({ choices: [], missing: [] });
+  });
+});
+
+describe("template search", () => {
+  test("a query finds a template by its name, tags, reference, description, image id or badge", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          const templates = [
+            { id: "sha256:aaa111", ref: "minibox-template:base", tags: ["minibox-template:base"], name: "base", description: "Debian 12 · Node.js 26" },
+            { id: "sha256:bbb222", ref: "minibox-template:snap-dev", tags: ["minibox-template:snap-dev", "minibox-template:nightly"], name: "snap-dev", description: null },
+          ];
+          const badge = (tp) => (tp.ref === "minibox-template:base" ? "Built-in" : "Custom");
+          const find = (query) =>
+            search.filterBySearch(templates, query, (tp) => templateList.templateSearchFields(tp, badge(tp))).map((tp) => tp.id);
+          return {
+            name: find("SNAP"),
+            tag: find("nightly"),
+            ref: find("minibox-template:base"),
+            description: find("node.js"),
+            digest: find("bbb222"),
+            badge: find("custom"),
+            builtIn: find("built-in"),
+            allTermsMustMatch: find("custom base"),
+            nothing: find("missing"),
+            blank: find("  ").length,
+          };
+        })()`,
+      ),
+    ).toEqual({
+      name: ["sha256:bbb222"],
+      tag: ["sha256:bbb222"],
+      ref: ["sha256:aaa111"],
+      description: ["sha256:aaa111"],
+      digest: ["sha256:bbb222"],
+      badge: ["sha256:bbb222"],
+      builtIn: ["sha256:aaa111"],
+      allTermsMustMatch: [],
+      nothing: [],
+      blank: 2,
+    });
   });
 });
