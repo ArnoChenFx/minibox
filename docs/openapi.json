@@ -10101,7 +10101,7 @@
           }
         },
         "x-kind": "write",
-        "x-scope": "box:write",
+        "x-scope": "tool:install",
         "x-async": true,
         "x-task-result": {
           "type": "object",
@@ -10305,7 +10305,7 @@
           }
         },
         "x-kind": "write",
-        "x-scope": "box:write",
+        "x-scope": "tool:install",
         "x-async": true,
         "x-task-result": {
           "type": "object",
@@ -10501,7 +10501,7 @@
           }
         },
         "x-kind": "destructive",
-        "x-scope": "box:write",
+        "x-scope": "tool:install",
         "x-async": true,
         "x-task-result": {
           "type": "object",
@@ -10675,7 +10675,7 @@
           }
         },
         "x-kind": "write",
-        "x-scope": "box:write",
+        "x-scope": "tool:install",
         "x-async": true,
         "x-task-result": {
           "type": "object",
