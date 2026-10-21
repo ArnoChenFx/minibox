@@ -141,6 +141,11 @@ async function attachedClients(box: Box): Promise<number> {
   return Number(await shell(box.id, "ps -o args | grep -c '[t]mux: client' || true"));
 }
 
+/** The flags tmux reports for each client attached to the session, such as read-only or ignore-size. */
+async function clientFlags(box: Box, name: string): Promise<string[]> {
+  return (await shell(box.id, `tmux -u list-clients -F '#{client_flags}' -t '=${name}'`)).split("\n").filter(Boolean);
+}
+
 async function signIn(): Promise<string> {
   const res = await fetch(`${base}/api/auth/login`, {
     method: "POST",
@@ -359,6 +364,61 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
   );
 
   test(
+    "an agent cannot close a session during a takeover, the session survives it, and the console can close it",
+    async () => {
+      const cookie = await signIn();
+      const box = await newBox("guard");
+      await app.terminals.start(host, box, "guarded", "rest");
+
+      const tab = consoleOn(box, "guarded", cookie);
+      await tab.opened;
+      await waitFor(() => tab.state() !== undefined, "the first state frame");
+      tab.control({ type: "takeover" });
+      await waitFor(() => tab.state()?.controller === "human", "the takeover");
+
+      expect(await rejectionOf(app.terminals.close(host, box, "guarded", "rest"))).toMatchObject({
+        status: 409,
+        code: "taken_over",
+      });
+      const refused = await fetch(`${base}/api/boxes/${box.id}/sessions/guarded`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${TEST_KEY}` },
+      });
+      expect(refused.status).toBe(409);
+      expect(await refused.json()).toMatchObject({ error: { code: "taken_over", retryable: true } });
+      expect(await app.terminals.list(host, box)).toEqual([
+        expect.objectContaining({ name: "guarded", controller: "human" }),
+      ]);
+
+      const closed = await fetch(`${base}/api/boxes/${box.id}/sessions/guarded`, {
+        method: "DELETE",
+        headers: { cookie: `${COOKIE_NAME}=${cookie}`, origin: base },
+      });
+      expect(closed.status).toBe(200);
+      expect(await app.terminals.list(host, box)).toEqual([]);
+      await tab.closed;
+    },
+    LONG,
+  );
+
+  test(
+    "a person's hold survives an agent rewriting the session's origin mark inside the box",
+    async () => {
+      const box = await newBox("mark");
+      await app.terminals.start(host, box, "held", "ui");
+      await shell(box.id, "tmux -u set-option -t '=held:' @minibox-origin agent");
+      expect(await shell(box.id, "tmux -u display-message -p -t '=held:' '#{@minibox-origin}'")).toBe("agent");
+
+      expect(await app.terminals.read(host, box, "held", { lines: 5 })).toMatchObject({ controller: "human" });
+      expect(await rejectionOf(app.terminals.send(host, box, "held", { text: "echo x\n" }))).toMatchObject({
+        status: 409,
+        code: "taken_over",
+      });
+    },
+    LONG,
+  );
+
+  test(
     "a bearer terminal is read-only: it can watch the session and is refused any input",
     async () => {
       const box = await newBox("bearer");
@@ -376,6 +436,33 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       expect(await paneHas(box, "shared", "nothing-typed")).toBe(false);
       client.ws.close(1000, "done");
       await client.closed;
+    },
+    LONG,
+  );
+
+  test(
+    "a bearer terminal is a read-only tmux client that ignores size, so input written past the service never reaches the pane",
+    async () => {
+      const box = await newBox("readonly");
+      await app.terminals.start(host, box, "shared", "ui");
+
+      const bearer = await app.terminals.attach(host, box, "shared", { source: "rest" });
+      await waitFor(
+        async () => (await clientFlags(box, "shared")).some((flags) => flags.includes("read-only")),
+        "the read-only client",
+      );
+      expect(await clientFlags(box, "shared")).toEqual(
+        expect.arrayContaining([expect.stringContaining("read-only"), expect.stringContaining("ignore-size")]),
+      );
+
+      bearer.exec.stream.write("bypass-attempt\n");
+      const human = await app.terminals.attach(host, box, "shared", { source: "ui" });
+      expect(human.write("positive-control\n")).toBe(true);
+      await waitFor(() => paneHas(box, "shared", "positive-control"), "the control line to run");
+      expect(await paneHas(box, "shared", "bypass-attempt")).toBe(false);
+
+      await bearer.close();
+      await human.close();
     },
     LONG,
   );
@@ -419,7 +506,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       const terminal = await app.terminals.attach(host, box, "doomed", { source: "ui" });
       expect(await runningExecs(box)).toBe(1);
 
-      await app.terminals.close(host, box, "doomed");
+      await app.terminals.close(host, box, "doomed", "ui");
       await waitFor(async () => !(await terminal.exec.inspect()).running, "the attach to end");
       expect(await runningExecs(box)).toBe(0);
       expect(await app.terminals.list(host, box)).toEqual([]);

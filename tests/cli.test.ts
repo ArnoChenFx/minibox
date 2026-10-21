@@ -201,7 +201,7 @@ describe("CLI", () => {
       const refused = io();
       expect(await runCli(["session", "send", "alpha", "desk", "--key", "Enter"], env.env, refused, lines([]))).toBe(1);
       expect(refused.err).toContain("under human control");
-      expect(refused.err).toContain("send again");
+      expect(refused.err).toContain("try again");
 
       const read = io();
       expect(await runCli(["session", "read", "alpha", "desk"], env.env, read, lines([]))).toBe(0);

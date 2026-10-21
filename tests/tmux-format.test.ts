@@ -34,22 +34,35 @@ describe("session names", () => {
 
 describe("session list", () => {
   test("parses the format the service asks tmux for", () => {
-    expect(LIST_SESSIONS_FORMAT).toBe("#{session_name}\t#{@minibox-origin}\t#{session_created}\t#{session_attached}");
-    const stdout = ["build\tagent\t1750000000\t0", "shell\thuman\t1750000100\t1", ""].join("\n");
+    expect(LIST_SESSIONS_FORMAT).toBe(
+      "#{session_name}\t#{session_id}\t#{session_created}\t#{session_attached}\t#{@minibox-origin}",
+    );
+    const stdout = ["build\t$1\t1750000000\t0\tagent", "shell\t$2\t1750000100\t1\thuman", ""].join("\n");
     expect(parseSessionList(stdout)).toEqual([
-      { name: "build", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
-      { name: "shell", origin: "human", createdAt: 1_750_000_100_000, attached: 1 },
+      { name: "build", id: "$1", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
+      { name: "shell", id: "$2", origin: "human", createdAt: 1_750_000_100_000, attached: 1 },
     ]);
   });
 
   test("a session without the mark is treated as agent-driven", () => {
-    expect(parseSessionList("legacy\t\t1750000000\t0")).toEqual([
-      { name: "legacy", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
+    expect(parseSessionList("legacy\t$3\t1750000000\t0\t")).toEqual([
+      { name: "legacy", id: "$3", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
     ]);
   });
 
-  test("skips lines whose name is not a valid session name", () => {
-    expect(parseSessionList("bad:name\tagent\t1\t0\n\n")).toEqual([]);
+  test("an origin that holds a tab does not move the fields before it", () => {
+    expect(parseSessionList("tabbed\t$4\t1750000000\t2\tagent\thuman")).toEqual([
+      { name: "tabbed", id: "$4", origin: "agent", createdAt: 1_750_000_000_000, attached: 2 },
+    ]);
+    expect(parseSessionList("spoof\t$5\t1750000000\t0\thuman\tx")).toEqual([
+      { name: "spoof", id: "$5", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
+    ]);
+  });
+
+  test("skips lines whose name or id is not valid", () => {
+    expect(parseSessionList("bad:name\t$1\t1\t0\tagent\n\n")).toEqual([]);
+    expect(parseSessionList("noid\t1\t1\t0\tagent")).toEqual([]);
+    expect(parseSessionList("noid\t\t1\t0\tagent")).toEqual([]);
   });
 
   test("an empty server prints nothing", () => {
@@ -58,10 +71,29 @@ describe("session list", () => {
 });
 
 describe("probe", () => {
-  test("reads the name and origin of a session in one line", () => {
-    expect(PROBE_FORMAT).toContain("#{session_name}\t#{@minibox-origin}");
-    expect(parseProbe("work\thuman\n")).toEqual({ name: "work", origin: "human" });
-    expect(parseProbe("work\t\n")).toEqual({ name: "work", origin: "agent" });
+  test("reads the name, id, creation time and origin of a session in one line", () => {
+    expect(PROBE_FORMAT).toBe("#{session_name}\t#{session_id}\t#{session_created}\t#{@minibox-origin}");
+    expect(parseProbe("work\t$3\t1750000000\thuman\n")).toEqual({
+      name: "work",
+      id: "$3",
+      createdAt: 1_750_000_000_000,
+      origin: "human",
+    });
+    expect(parseProbe("work\t$3\t1750000000\t\n")).toEqual({
+      name: "work",
+      id: "$3",
+      createdAt: 1_750_000_000_000,
+      origin: "agent",
+    });
+  });
+
+  test("an origin with a tab in it is not the human origin", () => {
+    expect(parseProbe("work\t$3\t1750000000\thuman\tx")).toMatchObject({ origin: "agent" });
+  });
+
+  test("an answer without a valid id is not a session", () => {
+    expect(parseProbe("work\tnot-an-id\t1750000000\thuman")).toBeNull();
+    expect(parseProbe("work\t\t1750000000\thuman")).toBeNull();
   });
 
   test("an empty answer means the session is not there, whatever tmux's exit status says", () => {

@@ -1,11 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { PassThrough } from "node:stream";
+import { finished } from "node:stream/promises";
 
 import type { AuditNote, Source } from "../src/events/types";
 import type { HostCtx } from "../src/host/registry";
 import type { AppError } from "../src/lib/errors";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { type Box, getBox, stopBox } from "../src/services/boxes";
-import { type Attachment, TerminalService } from "../src/services/terminals";
+import {
+  ATTACHES_PER_SESSION_MAX,
+  type Attachment,
+  collectText,
+  SESSIONS_PER_BOX_MAX,
+  TerminalService,
+} from "../src/services/terminals";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import type { FakeExec } from "./support/fake-runtime";
 
@@ -31,15 +39,15 @@ function setup(takeoverIdleMs = 0) {
   return { app, runtime, host, ctx, terminals, recorded };
 }
 
-async function createBox(app: ReturnType<typeof setup>["app"], ctx: OperationContext): Promise<string> {
-  const created = (await app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 })) as {
+async function createBox(app: ReturnType<typeof setup>["app"], ctx: OperationContext, name = "alpha"): Promise<string> {
+  const created = (await app.operations.run("box.create", ctx, { name, cpus: 1, memoryMb: 256 })) as {
     box: { id: string };
   };
   return created.box.id;
 }
 
-async function runningBox(env: ReturnType<typeof setup>): Promise<Box> {
-  return getBox(env.host, await createBox(env.app, env.ctx));
+async function runningBox(env: ReturnType<typeof setup>, name = "alpha"): Promise<Box> {
+  return getBox(env.host, await createBox(env.app, env.ctx, name));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -158,10 +166,83 @@ describe("terminal service: sessions", () => {
     await env.terminals.start(env.host, box, "work", "rest");
     const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
 
-    await env.terminals.close(env.host, box, "work");
+    await env.terminals.close(env.host, box, "work", "ui");
     expect(await viewer.exec.inspect()).toMatchObject({ running: false });
     expect(await env.terminals.list(env.host, box)).toEqual([]);
     await viewer.close();
+  });
+
+  test("an agent closes a session it controls, but not one a person created", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    await env.terminals.start(env.host, box, "mine", "ui");
+
+    const refused = await rejectionOf(env.terminals.close(env.host, box, "mine", "mcp"));
+    expect(refused).toMatchObject({ status: 409, code: "taken_over", key: "session_taken_over" });
+    expect(env.runtime.tmux.sessionNames(box.id).toSorted()).toEqual(["mine", "work"]);
+
+    await env.terminals.close(env.host, box, "work", "mcp");
+    expect(env.runtime.tmux.sessionNames(box.id)).toEqual(["mine"]);
+    await env.terminals.close(env.host, box, "mine", "ui");
+    expect(env.runtime.tmux.sessionNames(box.id)).toEqual([]);
+  });
+
+  test("closing a session that does not exist is reported as not found, whoever asks", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+
+    const error = await rejectionOf(env.terminals.close(env.host, box, "nope", "rest"));
+    expect(error).toMatchObject({ status: 404, key: "session_not_found" });
+  });
+
+  test("a session made again under the same name starts with its own controller, not the old takeover", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    env.terminals.takeOver(viewer);
+
+    env.runtime.tmux.run(box.id, ["-u", "kill-session", "-t", "=work"]);
+    env.runtime.tmux.run(box.id, ["-u", "new-session", "-d", "-s", "work", "--", "sh"]);
+    expect(await env.terminals.read(env.host, box, "work", { lines: 5 })).toMatchObject({
+      controller: "agent",
+    });
+    expect(await env.terminals.send(env.host, box, "work", { text: "fresh\n" })).toEqual({ keys: 0, bytes: 6 });
+    await viewer.close();
+  });
+
+  test("a box holds at most 16 sessions, a seventeenth is refused with 429, and closing one makes room", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    for (let i = 1; i <= SESSIONS_PER_BOX_MAX; i++) {
+      await env.terminals.start(env.host, box, `s${i}`, "rest");
+    }
+
+    const refused = await rejectionOf(env.terminals.start(env.host, box, "extra", "rest"));
+    expect(refused).toMatchObject({
+      status: 429,
+      code: "too_many_requests",
+      key: "session_box_limit",
+      params: { max: SESSIONS_PER_BOX_MAX },
+    });
+    expect((refused as AppError).hintKey).toBe("session_box_limit_hint");
+    expect(env.runtime.tmux.sessionNames(box.id)).toHaveLength(SESSIONS_PER_BOX_MAX);
+
+    expect(await env.terminals.start(env.host, box, "s1", "rest")).toMatchObject({ created: false });
+    await env.terminals.close(env.host, box, "s2", "rest");
+    expect(await env.terminals.start(env.host, box, "extra", "rest")).toMatchObject({ created: true });
+  });
+
+  test("the session limit is per box, so another box can still start sessions", async () => {
+    const env = setup();
+    const full = await runningBox(env);
+    for (let i = 1; i <= SESSIONS_PER_BOX_MAX; i++) {
+      await env.terminals.start(env.host, full, `s${i}`, "rest");
+    }
+    const other = await runningBox(env, "beta");
+
+    expect(await env.terminals.start(env.host, other, "s1", "rest")).toMatchObject({ created: true });
   });
 });
 
@@ -397,6 +478,57 @@ describe("terminal service: takeover", () => {
     expect(await env.terminals.read(env.host, box, "work", { lines: 5 })).toMatchObject({ controller: "agent" });
   });
 
+  test("an agent cannot close a session a person has taken over, and the console still can", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    env.terminals.takeOver(viewer);
+
+    const refused = await rejectionOf(env.terminals.close(env.host, box, "work", "rest"));
+    expect(refused).toMatchObject({
+      status: 409,
+      code: "taken_over",
+      key: "session_taken_over",
+      retryable: true,
+      details: { session: "work" },
+    });
+    expect((refused as AppError).hintKey).toBe("session_taken_over_hint");
+    expect(env.runtime.tmux.sessionNames(box.id)).toEqual(["work"]);
+    expect(await viewer.exec.inspect()).toMatchObject({ running: true });
+
+    await env.terminals.close(env.host, box, "work", "ui");
+    expect(env.runtime.tmux.sessionNames(box.id)).toEqual([]);
+    await viewer.close();
+  });
+
+  test("once a person hands a session back, an agent may close it", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    env.terminals.takeOver(viewer);
+    env.terminals.release(viewer);
+
+    await env.terminals.close(env.host, box, "work", "rest");
+    expect(env.runtime.tmux.sessionNames(box.id)).toEqual([]);
+    await viewer.close();
+  });
+
+  test("changing the origin mark inside the box does not reset a human hold", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "mine", "ui");
+
+    env.runtime.tmux.run(box.id, ["set-option", "-t", "=mine:", "@minibox-origin", "agent"]);
+    expect(await env.terminals.read(env.host, box, "mine", { lines: 5 })).toMatchObject({ controller: "human" });
+    const refused = await rejectionOf(env.terminals.send(env.host, box, "mine", { text: "x" }));
+    expect(refused).toMatchObject({ status: 409, code: "taken_over" });
+    expect(await env.terminals.list(env.host, box)).toEqual([
+      expect.objectContaining({ name: "mine", origin: "human", controller: "human" }),
+    ]);
+  });
+
   test("the view carries the idle return time in seconds, so the console can say when a takeover ends", async () => {
     const env = setup(300_000);
     const box = await runningBox(env);
@@ -462,5 +594,143 @@ describe("terminal service: attachments", () => {
       workingDir: "/workspace",
     });
     await viewer.close();
+  });
+
+  test("a bearer terminal attaches read-only and ignoring size, and its resize never reaches the session", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "mine", "ui");
+
+    const bearer = await env.terminals.attach(env.host, box, "mine", { source: "rest" });
+    expect((bearer.exec as FakeExec).spec.cmd).toEqual([
+      "tmux",
+      "-u",
+      "attach-session",
+      "-r",
+      "-f",
+      "ignore-size",
+      "-t",
+      "=mine",
+    ]);
+    bearer.resize({ cols: 80, rows: 24 });
+    expect((bearer.exec as FakeExec).sizes).toEqual([]);
+    await bearer.close();
+
+    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui" });
+    expect((human.exec as FakeExec).spec.cmd).toEqual(["tmux", "-u", "attach-session", "-t", "=mine"]);
+    human.resize({ cols: 80, rows: 24 });
+    expect((human.exec as FakeExec).sizes).toEqual([{ cols: 80, rows: 24 }]);
+    await human.close();
+  });
+
+  test("a session takes at most 8 terminals at once, including a burst that starts together", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "mine", "ui");
+
+    const attempts = await Promise.allSettled(
+      Array.from({ length: ATTACHES_PER_SESSION_MAX + 2 }, () =>
+        env.terminals.attach(env.host, box, "mine", { source: "rest" }),
+      ),
+    );
+    const opened = attempts.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+    const refused = attempts.flatMap((a) => (a.status === "rejected" ? [a.reason] : []));
+    expect(opened).toHaveLength(ATTACHES_PER_SESSION_MAX);
+    expect(refused).toHaveLength(2);
+    expect(refused[0]).toMatchObject({ status: 429, code: "too_many_requests", key: "session_attach_limit" });
+    expect((refused[0] as AppError).hintKey).toBe("session_attach_limit_hint");
+
+    await opened[0]?.close();
+    const next = await env.terminals.attach(env.host, box, "mine", { source: "rest" });
+    expect(await next.exec.inspect()).toMatchObject({ running: true });
+    await next.close();
+    for (const attachment of opened.slice(1)) await attachment.close();
+  });
+
+  test("the attach limit is per session, so another session can still be opened", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "one", "ui");
+    await env.terminals.start(env.host, box, "two", "ui");
+    const held: Attachment[] = [];
+    for (let i = 0; i < ATTACHES_PER_SESSION_MAX; i++) {
+      held.push(await env.terminals.attach(env.host, box, "one", { source: "rest" }));
+    }
+    await rejectionOf(env.terminals.attach(env.host, box, "one", { source: "rest" }));
+
+    const other = await env.terminals.attach(env.host, box, "two", { source: "rest" });
+    await other.close();
+    for (const attachment of held) await attachment.close();
+  });
+});
+
+describe("terminal service: output and history", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("a read captures a bounded window of history, not the whole scrollback", async () => {
+    const env = setup();
+    const box = await runningBox(env);
+    await env.terminals.start(env.host, box, "work", "rest");
+    await env.terminals.read(env.host, box, "work", { lines: 5 });
+
+    const capture = env.runtime
+      .callsTo("startExec")
+      .map((call) => (call.args[1] as { cmd: string[] }).cmd)
+      .findLast((cmd) => cmd.includes("capture-pane"));
+    expect(capture).toEqual(["tmux", "-u", "capture-pane", "-p", "-J", "-S", "-4000", "-t", "=work:"]);
+  });
+
+  test("collectText keeps only the newest output and starts at a whole line once it has cut", async () => {
+    const stream = new PassThrough();
+    const text = collectText(stream, 1024);
+    for (let i = 0; i < 10_000; i++) stream.write(`line-${String(i).padStart(4, "0")}\n`);
+    stream.end();
+    await finished(stream);
+
+    const kept = text();
+    expect(Buffer.byteLength(kept)).toBeLessThanOrEqual(1024);
+    expect(Buffer.byteLength(kept)).toBeGreaterThan(1024 - 20);
+    const lines = kept.split("\n").filter(Boolean);
+    expect(lines.every((line) => /^line-\d{4}$/.test(line))).toBe(true);
+    expect(lines.at(-1)).toBe("line-9999");
+  });
+
+  test("collectText returns short output unchanged, and a huge single line is kept rather than lost", async () => {
+    const short = new PassThrough();
+    const shortText = collectText(short, 1024);
+    short.end("a\nb\n");
+    await finished(short);
+    expect(shortText()).toBe("a\nb\n");
+
+    const long = new PassThrough();
+    const longText = collectText(long, 1024);
+    long.end("z".repeat(5000));
+    await finished(long);
+    expect(longText()).toBe("z".repeat(1024));
+  });
+
+  test("collectText keeps about 4 MiB of the newest output, so a runaway command cannot grow memory without limit", async () => {
+    const stream = new PassThrough();
+    const text = collectText(stream);
+    const line = `${"y".repeat(64 * 1024 - 1)}\n`;
+    for (let i = 0; i < 96; i++) stream.write(line);
+    stream.write("end\n");
+    stream.end();
+    await finished(stream);
+
+    const kept = text();
+    expect(Buffer.byteLength(kept)).toBeLessThanOrEqual(4 * 1024 * 1024);
+    expect(Buffer.byteLength(kept)).toBeGreaterThan(3 * 1024 * 1024);
+    expect(kept.endsWith("\nend\n")).toBe(true);
+    expect(
+      kept
+        .split("\n")
+        .filter(Boolean)
+        .every((l) => /^y*$|^end$/.test(l)),
+    ).toBe(true);
   });
 });

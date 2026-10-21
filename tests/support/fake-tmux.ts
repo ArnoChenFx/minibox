@@ -13,6 +13,8 @@ export interface TmuxClient {
 
 interface FakeSession {
   readonly name: string;
+  /** tmux's session id, such as `$3`. A session made again under the same name gets a new one. */
+  readonly id: string;
   readonly created: number;
   readonly options: Map<string, string>;
   /** The pane transcript. The last line is the one being typed on. */
@@ -95,6 +97,7 @@ function ok(stdout = ""): TmuxRun {
  */
 export class FakeTmux {
   private readonly servers = new Map<string, Map<string, FakeSession>>();
+  private nextSessionId = 0;
 
   /** Runs `tmux <args>` inside container `containerId`. A leading `-u` is accepted and ignored. */
   run(containerId: string, argv: readonly string[]): TmuxRun {
@@ -186,6 +189,7 @@ export class FakeTmux {
     }
     sessions.set(name, {
       name,
+      id: `$${this.nextSessionId++}`,
       created: Math.floor(Date.now() / 1000),
       options: new Map(),
       lines: [""],
@@ -233,6 +237,7 @@ function screenOf(session: FakeSession): string[] {
 function expand(format: string, session: FakeSession): string {
   return format.replace(/#\{([^}]+)\}/g, (_match, key: string) => {
     if (key === "session_name") return session.name;
+    if (key === "session_id") return session.id;
     if (key === "session_created") return String(session.created);
     if (key === "session_attached") return String(session.clients.size);
     return session.options.get(key) ?? "";

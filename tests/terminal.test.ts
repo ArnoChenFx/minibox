@@ -334,8 +334,9 @@ describe("terminal session with the console", () => {
 
   test("resize frames are clamped to the terminal limits", async () => {
     const id = await createBox("alpha");
-    await startSession(id, "work", "rest");
-    const term = connect(`/api/boxes/${id}/terminal?session=work`);
+    const { token } = signedInSession();
+    await startSession(id, "work", "ui");
+    const term = connect(`/api/boxes/${id}/terminal?session=work`, sessionCookie(token));
     await term.opened;
     await waitFor(() => lastState(term) !== undefined, "the state frame");
     const attach = attachExec();
@@ -346,6 +347,50 @@ describe("terminal session with the console", () => {
     expect(attach.sizes).toEqual([{ cols: 500, rows: 5 }]);
     term.ws.close(1000, "done");
     await term.closed;
+  });
+
+  test("a bearer terminal attaches read-only and ignoring size, and its resize frames are dropped", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "rest");
+    const term = connect(`/api/boxes/${id}/terminal?session=work`);
+    await term.opened;
+    await waitFor(() => lastState(term) !== undefined, "the state frame");
+    const attach = attachExec();
+    if (!attach) throw new Error("no attach exec was started");
+    expect(attach.spec.cmd).toEqual(["tmux", "-u", "attach-session", "-r", "-f", "ignore-size", "-t", "=work"]);
+
+    term.ws.send(JSON.stringify({ type: "resize", cols: 120, rows: 40 }));
+    term.ws.send("typed");
+    await waitFor(() => term.frames().some((f) => f.type === "error"), "the refusal that follows the resize");
+    expect(attach.sizes).toEqual([]);
+    term.ws.close(1000, "done");
+    await term.closed;
+  });
+
+  test("an agent's DELETE is refused with 409 while a person holds the session, and the console's DELETE closes it", async () => {
+    const id = await createBox("alpha");
+    const { token } = signedInSession();
+    await startSession(id, "work", "rest");
+    const term = connect(`/api/boxes/${id}/terminal?session=work`, sessionCookie(token));
+    await term.opened;
+    await waitFor(() => lastState(term)?.canTakeOver === true, "the console may take the session over");
+    term.ws.send('{"type":"takeover"}');
+    await waitFor(() => lastState(term)?.controller === "human", "the takeover");
+
+    const refused = await fetch(`${base}/api/boxes/${id}/sessions/work`, { method: "DELETE", headers: AUTH });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: { code: "taken_over", retryable: true, details: { session: "work" } },
+    });
+    expect(runtime.tmux.sessionNames(id)).toEqual(["work"]);
+
+    const closed = await fetch(`${base}/api/boxes/${id}/sessions/work`, {
+      method: "DELETE",
+      headers: { ...sessionCookie(token), origin: base },
+    });
+    expect(closed.status).toBe(200);
+    expect(runtime.tmux.sessionNames(id)).toEqual([]);
+    expect((await term.closed).code).toBe(1000);
   });
 
   test("control frames are consumed by the server and never reach the session", async () => {
