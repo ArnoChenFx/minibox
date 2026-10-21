@@ -14,7 +14,7 @@ const ERROR_RESPONSES: Record<string, string> = {
   "403": "Refused: a cross-site write, or an operation this credential may not run.",
   "404": "The box, snapshot, template, task or exec named in the path does not exist.",
   "409":
-    "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+    "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
   "415": "The request declares a body that is not JSON.",
   "412": "The If-Match revision is not the box's current revision.",
   "422": "The box would exceed the host's CPU or memory.",

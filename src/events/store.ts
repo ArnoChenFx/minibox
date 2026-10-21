@@ -115,13 +115,18 @@ interface Row {
   count: number;
 }
 
+/** Operations whose events are activity: terminal session start, sends and close (design §8.3). */
+const ACTIVITY_OPS: ReadonlySet<string> = new Set(["session.start", "session.send", "session.close"]);
+/** Event families that are activity: exec, terminal attachments and container events from Docker. */
+const ACTIVITY_PREFIXES = ["exec.", "terminal.", "container."] as const;
+
 /**
- * Which tier an execution is recorded in. A refusal is always audit. Exec events are activity (they are not merged).
- * Other reads are activity; other writes are audit.
+ * Which tier an execution is recorded in. A refusal is always audit. Exec, terminal, session send and container events
+ * are activity and are not merged. Other reads are activity; other writes, such as a takeover, are audit.
  */
 export function tierOf(event: Pick<EventInput, "op" | "kind" | "status">): Tier {
   if (event.status === "denied") return "audit";
-  if (event.op.startsWith("exec.")) return "activity";
+  if (ACTIVITY_OPS.has(event.op) || ACTIVITY_PREFIXES.some((prefix) => event.op.startsWith(prefix))) return "activity";
   return event.kind === "read" ? "activity" : "audit";
 }
 

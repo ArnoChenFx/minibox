@@ -36,8 +36,8 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Templates | Bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
-| Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
-| Logs | Main-process output with selectable line count and auto-refresh |
+| Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window. Named tmux sessions survive a page refresh or a dropped connection. An agent's session opens read-only until you take it over |
+| Activity | Per-box history: commands run through MiniBox, container start, stop and out-of-memory events, and terminal sessions opened and closed. Keystrokes are never recorded. `docker logs` stays below it |
 | Access control | Single access key, exchanged at sign-in for a revocable session token in an HttpOnly, `SameSite=Strict` cookie, or sent as `Authorization: Bearer`; login rate limiting per client address; cross-site requests refused |
 | Languages | English and Simplified Chinese; toggle with the language icon button in the top-right corner (console header and login page). Defaults to the browser language and is remembered per browser |
 | UI | Light / dark theme (follows the system, manual toggle), responsive layout, empty states, skeleton loaders, toasts, confirmation for destructive actions |
@@ -83,7 +83,7 @@ flowchart LR
   HTTP -- box routes --> OPS
   HTTP -- other routes --> D
   OPS -- Runtime --> D
-  WS -- exec / TTY --> D
+  WS -- tmux attach / TTY --> D
   MON --> PROC
   D --> B1 & B2
   B1 & B2 --- V
@@ -91,6 +91,7 @@ flowchart LR
 ```
 
 - **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`). The restart policy is `no`: a startup reconciler starts or stops the container to match the spec's desired state (`running` or `stopped`). The spec file under `DATA_DIR/boxes/` is the authority for mutable state. Container labels are written once, at create, and are not changed later. `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. The container runs as the non-root user `dev` (see [Base template](#base-template)).
+- **Session** = a named tmux session inside a box, run as `dev`. The web terminal attaches to it, and agents send keys and read the screen through the session tools. Closing the page only detaches, so the session keeps running until it is closed or the box stops (see [Sessions](#sessions)).
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
@@ -274,6 +275,7 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `COOKIE_SECURE` | `false` | Always set the `Secure` flag on the session cookie. Usually unnecessary: browsers send an `https://` Origin on login, which already sets it. Only use over HTTPS, because browsers drop `Secure` cookies from plain HTTP |
 | `SESSION_TTL_DAYS` | `30` | How long a sign-in lasts, counted from sign-in: a number of days above 0, at most 3650, fractions allowed. Sessions already signed in keep the lifetime they were given |
 | `SESSION_IDLE_DAYS` | empty (off) | Optional sliding renewal: a session also ends after this many days without use. Each request counts as use, and so does typing in an open terminal. A session never outlives `SESSION_TTL_DAYS` |
+| `SESSION_TAKEOVER_IDLE_SEC` | `300` | Seconds without input from the person after which a takeover of an agent's terminal session returns it to the agent. A whole number from 0 to 86400; `0` keeps a takeover until it is returned by hand, even if the page closes. Other values fall back to 300 (see [Sessions](#sessions)) |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
 | `DATA_DIR` | `./data` (`/data` in the image) | State directory, see [Data directory](#data-directory) |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
@@ -285,7 +287,7 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `METRICS_INTERVAL_MS` | `3000` | Host metrics sampling interval (ms) |
 | `METRICS_HISTORY` | `120` | Number of samples kept (≈ 6 minutes at the default interval) |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
-| `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | Days to keep read events. Repeated reads are merged per minute |
+| `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | Days to keep activity: command runs, container events, terminal sessions and reads. Repeated reads are merged per minute |
 | `EVENT_OUTPUT_RETENTION_DAYS` | `7` | Days to keep command output in `DATA_DIR/exec`. `exec` writes a head-and-tail window there when a command finishes |
 | `EVENT_OUTPUT_MAX_MB` | `512` | Total size cap for stored command output, in MB. The oldest output is removed first |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
@@ -388,7 +390,7 @@ Errors use a consistent shape and the matching HTTP status:
 | `GET` | `/api/boxes/:id/stats` | Live usage |
 | `GET` | `/api/boxes/:id/logs?tail=300` | Container logs (1–5000 lines) |
 | `POST` | `/api/boxes/:id/snapshots` | Start a snapshot `{ "name"? }`. Returns `202` `{ "taskId" }` |
-| `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket terminal. Send `{"type":"resize","cols":N,"rows":N}` to resize; any other message is stdin |
+| `GET` (WS) | `/api/boxes/:id/terminal?session=NAME` | WebSocket terminal attached to a named session (see [Sessions](#sessions)). Binary frames and other text frames are typed input. The text frames `{"type":"takeover"}` and `{"type":"release"}` take the session over and return it, and `{"type":"resize","cols":N,"rows":N}` resizes it. Only a browser session can type, take over or resize; a Bearer caller reads the output, its input gets a `forbidden` error frame with `terminal_read_only`, and its resize frames are ignored |
 | `POST` | `/api/boxes/:id/exec` | Run a command. Body `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`. Send exactly one of `argv` (no shell) or `cmd` (`/bin/sh -c`). Defaults: user `dev`, directory `/workspace`, timeout 30s. A foreground call takes at most 55s, and `background: true` takes up to 3600s. A stopped box is started, which changes its revision. The result includes `status` (`running`, `exited` or `killed`), `exitCode`, `stdout`, `stderr`, `truncated`, `durationMs`, `timedOut` and `woke`. A non-zero exit is the program's status. Inline output keeps about 16 KiB from each end of each stream; `outputRef` names the saved window. Under the `strict` profile only `dev` or `1000` may be the user; other profiles may use `root`, and those runs are marked `privileged` in the audit. The box needs `/bin/sh`, `cat`, `rm` and `sleep` |
 | `GET` | `/api/execs/:execId?waitMs=` | Read an exec. `waitMs` long-polls while it is running, up to 25000 ms. `status` is `running`, `exited` or `killed` |
 | `GET` | `/api/execs/:execId/output` | Saved stdout and stderr (about 64 KiB from each end). Available after the in-memory record is gone, until retention deletes the file |
@@ -397,6 +399,22 @@ Errors use a consistent shape and the matching HTTP status:
 `:id` is a container id, a container name (`minibox-<name>`), a stable box id (`bx_…`), or the box name. Updates that change a box require `If-Match` set to its current revision (a bare number, a quoted tag, or a weak tag). A missing header is `428 precondition_required`; a stale revision is `412 precondition_failed`. Limits: CPU 0.1–64, memory 128–262144 MB, process limit 1–1000000, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
 
 A rebuild keeps mounted volumes, the stable id, the box name and the last 20 spec revisions. It drops the writable layer outside volumes, running processes (including tmux) and the container IP. Claim does not rename; the rename to `<LABEL_PREFIX>-<id>` happens on rebuild (decision D6). `secretRef` is stored and not injected. Stage 1 still creates one workspace volume; adding or removing a mount is a rebuild, not a volume pool. A checkpoint before rebuild is not part of this step. The public container id changes; the stable id and the box name do not. Restart policy stays `no`.
+
+### Sessions
+
+A session is a named tmux session in a box. The web terminal attaches to one session at a time, and agents use `session_start`, `session_send` and `session_read` (see [Agents](#agents)). A session runs as `dev` in every profile, keeps running after the caller disconnects, and ends when it is closed or the box stops. Starting a name that already exists returns that session. Starting one in a stopped box starts the box first (`woke: true`).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/boxes/:id/sessions` | List sessions: `name`, `origin` (`agent` for the API and MCP, `human` for the console), `controller` (`agent` or `human`, who may type now), `takenOver`, `createdAt` and `attached` (terminals open on it) |
+| `POST` | `/api/boxes/:id/sessions` | Start a session, or return the one with that name. Body `{ "name" }`: 1 to 32 characters, a letter or digit first, then letters, digits, `-` or `_`. Returns `session`, `created` (false when it already existed) and `woke` |
+| `GET` | `/api/boxes/:id/sessions/:name?lines=100&since=CURSOR` | Read the screen and its history, at most 4000 lines back. `lines` is 1 to 2000, 100 by default. Pass the newest `cursor` back as `since` to get only the lines that are new. `reset: true` means the screen was redrawn or the cursor is stale, and `lines` is then the current window. `truncated` means more lines exist than were returned |
+| `POST` | `/api/boxes/:id/sessions/:name/input` | Send input. Body `{ "keys": [...] }` (tmux key names such as `Enter`, `Tab`, `Escape`, `C-c` or `Up`, at most 32) or `{ "text": "..." }` (literal UTF-8, at most 16 KiB), exactly one. Returns the number of `keys` and `bytes` sent. While a person holds the session, it returns `409 taken_over` with `retryable: true` |
+| `DELETE` | `/api/boxes/:id/sessions/:name` | Close the session and stop the programs in it. While a person holds it, an agent or a Bearer caller gets `409 taken_over` with `retryable: true`; only the console can close it |
+
+Taking over and returning a session are terminal control frames, not REST calls: the console sends them over its WebSocket. A session an agent started opens read-only in the console until someone takes it over. A takeover returns to the agent when the person returns it, or after `SESSION_TAKEOVER_IDLE_SEC` seconds without input from them (300 by default). A session the console started stays with the person until they return it. A restart of MiniBox resets every session to the controller its origin implies, because takeover state is kept in memory. The takeover lock covers the session API, close and the terminal, but not `exec`: an agent that runs `exec` in the box as `dev` can still reach a session with `tmux send-keys` or `tmux kill-session` (see [Agents](#agents)). A box holds at most 16 sessions, and a session at most 8 terminals. Bearer terminals may hold at most 6 of those 8, so 2 stay free for the console. Past any of these limits the call returns `429` with `too_many_requests`.
+
+The terminal socket sends output as binary frames and `state` or `error` frames as text. It closes with `1000` when the session ends and with `1008` when the browser session ends. A socket that stays silent for 30 seconds is closed. Browsers answer the server's pings, so an open page is not. Output waits while the browser is behind, and a client that leaves more than 4 MiB unread is closed. However a terminal ends, its attach process is stopped inside the box, so no exec is left behind.
 
 ### Snapshots & templates
 
@@ -433,7 +451,7 @@ Bun's HTTP idle timer is 60 seconds, measured from the start of the request, and
 
 A synchronous operation is recorded once in the event log, `events.db` in the [data directory](#data-directory), whichever interface it came through: REST, the [MCP server](#agents) or the CLI. The CLI's calls are REST calls, recorded as `rest`; the `X-Minibox-Client` header is only a claim and never sets the source. A task records `started` when it is accepted and one terminal event when it finishes; `ref.taskId` links them, and the terminal event's `parentId` is the started event. The build log is not copied into the event log. `exec` also records `exec.start` (`status: started`), `exec.finish` and `exec.killed` on the same bus. Those three are parented to the `exec.run` event. An event says who made the call (`principal`), what it touched (`op`, `target`), when and for how long (`ts`, `durationMs`), the outcome (`status`) and the client session (`run`, from `X-Minibox-Run`, or the MCP session id).
 
-The log covers calls made through MiniBox. It does not record what runs inside a box, including commands an agent runs in its own shell there. Requests refused before they reach an operation, such as a missing key (`401`) or a cross-site request (`403`), are not recorded either.
+The log covers calls made through MiniBox. It does not record what runs inside a box, including commands an agent runs in its own shell there. Keystrokes are never recorded: a terminal records when it opens and closes, with the bytes sent in each direction, and a session send records how many keys and bytes it sent, never the text. Requests refused before they reach an operation, such as a missing key (`401`) or a cross-site request (`403`), are not recorded either.
 
 | Method | Path | Description |
 |---|---|---|
@@ -446,8 +464,8 @@ Events are redacted before they are written. The access key is replaced wherever
 
 | Tier | What it holds | Default |
 |---|---|---|
-| Audit | Writes and deletes in any outcome, and refused calls. A refused `exec` is audit as well | 365 days (`EVENT_RETENTION_AUDIT_DAYS`) |
-| Activity | Reads that were not refused, and every `exec.*` event (`exec.run`, `exec.get`, `exec.output`, `exec.start`, `exec.finish`, `exec.killed`). Reads with the same operation and outcome, by one principal on one target, within a minute are merged into one event with a `count`. Exec events are kept one by one | 30 days (`EVENT_RETENTION_ACTIVITY_DAYS`) |
+| Audit | Writes and deletes in any outcome, and refused calls. A refused `exec` is audit as well. Session takeovers and returns (`session.takeover`, `session.release`) are writes, so they are audit too | 365 days (`EVENT_RETENTION_AUDIT_DAYS`) |
+| Activity | Reads that were not refused; every `exec.*` event (`exec.run`, `exec.get`, `exec.output`, `exec.start`, `exec.finish`, `exec.killed`); terminal sessions opened and closed (`terminal.open`, `terminal.close`); session starts, sends and closes (`session.start`, `session.send`, `session.close`); and container start, stop and out-of-memory events (`container.start`, `container.stop`, `container.oom`), which MiniBox records from the engine. Reads with the same operation and outcome, by one principal on one target, within a minute are merged into one event with a `count`. Exec, terminal and container events are kept one by one | 30 days (`EVENT_RETENTION_ACTIVITY_DAYS`) |
 | Output | Command output in `DATA_DIR/exec`, written when an exec finishes. Each stream keeps its head and tail | 7 days, at most 512 MB in total (`EVENT_OUTPUT_RETENTION_DAYS`, `EVENT_OUTPUT_MAX_MB`) |
 
 Pruning runs at startup and then every hour. Events older than their tier's window are deleted. Output is deleted by age, then oldest first until the total fits the cap. Retention settings must be positive whole numbers; any other value falls back to its default.
@@ -482,7 +500,7 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 > **Warning: `/mcp` authenticates with the main access key, which grants full owner access.** A client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Scoped tokens are not built yet ([#13](https://github.com/ArnoChenFx/minibox/issues/13)). Give an agent the key only if that is acceptable, and keep it out of prompts, logs and repositories.
 
-The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), and `rebuild_box` in `rebuild` (10 tools in total). `session`, `network`, `storage`, `tools` and `meta` are accepted and currently add no tools. File tools are not implemented; they follow Volume ([#24](https://github.com/ArnoChenFx/minibox/issues/24)). See [`docs/agents.md`](docs/agents.md).
+The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), `rebuild_box` in `rebuild`, and `session_start`, `session_send` and `session_read` in `session` (13 tools in total). `network`, `storage`, `tools` and `meta` are accepted and currently add no tools. File tools are not implemented; they follow Volume ([#24](https://github.com/ArnoChenFx/minibox/issues/24)). See [`docs/agents.md`](docs/agents.md).
 
 Build the CLI with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). It talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token.
 
@@ -507,7 +525,11 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key) to work inside a box.
 - A foreground exec may set timeoutSec up to 55. For a longer command, use exec with background true and a larger timeoutSec (up to 3600), then exec_get with waitMs (max 25000). exec_kill stops the process tree.
 - exec can read and write every volume mounted on that box.
 - rebuild_box is in the rebuild toolset (`/mcp?toolsets=rebuild`) and needs confirm true.
-- File tools are not available yet. Ask for toolsets with /mcp?toolsets=core,session. The default is core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
+- session_start, session_send and session_read drive a tmux session in the box. They are in the session toolset (`/mcp?toolsets=core,session`). A session keeps running after you disconnect. Use exec for one-off commands and a session for long-running or interactive programs. Listing and closing sessions are in the REST API and the CLI only.
+- A session started through MCP has origin agent. A person can take it over in the console. While they hold it, session_send fails with taken_over and retryable true: wait a little, read the session with session_read, and send again. session_read still works during a takeover.
+- session_read returns lines and a cursor. Pass the newest cursor as since to read only what is new. reset true means the screen was redrawn, and lines is the current window.
+- session_send takes keys (tmux names such as Enter, Tab, Escape or C-c) or text, but not both. The audit log keeps the counts, never the input.
+- File tools are not available yet. The default toolsets are core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
 
 ## Project structure
 
@@ -526,7 +548,8 @@ minibox/
 │   ├── runtime/             # Runtime interface and RuntimeError (the engine seam)
 │   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats / proc
 │   ├── specs/               # Box spec store, claim, drift, history and rebuild plan
-│   ├── services/            # Business logic on Runtime: boxes / exec / rebuild / images / snapshots / templates / reconcile
+│   ├── services/            # Business logic on Runtime: boxes / exec / rebuild / images / snapshots / templates / reconcile / terminals
+│   ├── tmux/                # tmux command lines, session names and parsing of tmux output
 │   ├── mcp/                 # Streamable HTTP MCP at /mcp
 │   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy
 │   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
@@ -534,7 +557,7 @@ minibox/
 │   ├── tasks/               # Task store (SQLite), manager, progress stream on the event bus
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
 │   ├── routes/              # Router, route groups (auth / system / images) and the REST adapter for operations
-│   ├── ws/terminal.ts       # WebSocket terminal
+│   ├── ws/terminal.ts       # WebSocket terminal: attach, control frames, heartbeat, backpressure
 │   └── lib/                 # errors / http / logger / bus (in-process event bus) / validation
 ├── web/
 │   ├── index.html · login.html
@@ -653,7 +676,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 
 - [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volumes and storage pools (`local`, `nfs`, `path`)
 - [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) Exec and file API for agents, with an MCP server and CLI. Exec, MCP and the CLI are in place; the file API remains, after Volume (#24)
-- [ ] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux sessions with human takeover
+- [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux sessions with human takeover
 - [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) Stream box state and resource usage over SSE instead of polling
 - [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS setup guide
 

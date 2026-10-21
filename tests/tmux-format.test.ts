@@ -1,0 +1,246 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  acceptsIgnoreSize,
+  appendedLines,
+  classifyTmuxFailure,
+  hexBytes,
+  isKeyName,
+  isSessionName,
+  LIST_SESSIONS_FORMAT,
+  PROBE_FORMAT,
+  paneLines,
+  paneTarget,
+  parseProbe,
+  parseSessionList,
+  parseTmuxVersion,
+  sessionTarget,
+} from "../src/tmux/format";
+
+describe("session names", () => {
+  test("accept short alphanumeric names with dashes and underscores", () => {
+    for (const name of ["main", "build-1", "a_b", "X", "s".repeat(32)]) expect(isSessionName(name)).toBe(true);
+  });
+
+  test("refuse names tmux would rewrite or that could be read as flags or targets", () => {
+    for (const name of ["", "-x", "a:b", "a.b", "a=b", "a b", "a;b", "a/b", "_lead", "s".repeat(33), "é"]) {
+      expect(isSessionName(name)).toBe(false);
+    }
+  });
+
+  test("session and pane targets", () => {
+    expect(sessionTarget("main")).toBe("=main");
+    expect(paneTarget("main")).toBe("=main:");
+  });
+});
+
+describe("session list", () => {
+  test("parses the format the service asks tmux for", () => {
+    expect(LIST_SESSIONS_FORMAT).toBe(
+      "#{session_name}\t#{session_id}\t#{session_created}\t#{session_attached}\t#{@minibox-origin}",
+    );
+    const stdout = ["build\t$1\t1750000000\t0\tagent", "shell\t$2\t1750000100\t1\thuman", ""].join("\n");
+    expect(parseSessionList(stdout)).toEqual([
+      { name: "build", id: "$1", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
+      { name: "shell", id: "$2", origin: "human", createdAt: 1_750_000_100_000, attached: 1 },
+    ]);
+  });
+
+  test("a session without the mark is treated as agent-driven", () => {
+    expect(parseSessionList("legacy\t$3\t1750000000\t0\t")).toEqual([
+      { name: "legacy", id: "$3", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
+    ]);
+  });
+
+  test("an origin that holds a tab does not move the fields before it", () => {
+    expect(parseSessionList("tabbed\t$4\t1750000000\t2\tagent\thuman")).toEqual([
+      { name: "tabbed", id: "$4", origin: "agent", createdAt: 1_750_000_000_000, attached: 2 },
+    ]);
+    expect(parseSessionList("spoof\t$5\t1750000000\t0\thuman\tx")).toEqual([
+      { name: "spoof", id: "$5", origin: "agent", createdAt: 1_750_000_000_000, attached: 0 },
+    ]);
+  });
+
+  test("skips lines whose name or id is not valid", () => {
+    expect(parseSessionList("bad:name\t$1\t1\t0\tagent\n\n")).toEqual([]);
+    expect(parseSessionList("noid\t1\t1\t0\tagent")).toEqual([]);
+    expect(parseSessionList("noid\t\t1\t0\tagent")).toEqual([]);
+  });
+
+  test("an empty server prints nothing", () => {
+    expect(parseSessionList("")).toEqual([]);
+  });
+});
+
+describe("probe", () => {
+  test("reads the name, id, creation time and origin of a session in one line", () => {
+    expect(PROBE_FORMAT).toBe("#{session_name}\t#{session_id}\t#{session_created}\t#{@minibox-origin}");
+    expect(parseProbe("work\t$3\t1750000000\thuman\n")).toEqual({
+      name: "work",
+      id: "$3",
+      createdAt: 1_750_000_000_000,
+      origin: "human",
+    });
+    expect(parseProbe("work\t$3\t1750000000\t\n")).toEqual({
+      name: "work",
+      id: "$3",
+      createdAt: 1_750_000_000_000,
+      origin: "agent",
+    });
+  });
+
+  test("an origin with a tab in it is not the human origin", () => {
+    expect(parseProbe("work\t$3\t1750000000\thuman\tx")).toMatchObject({ origin: "agent" });
+  });
+
+  test("an answer without a valid id is not a session", () => {
+    expect(parseProbe("work\tnot-an-id\t1750000000\thuman")).toBeNull();
+    expect(parseProbe("work\t\t1750000000\thuman")).toBeNull();
+  });
+
+  test("an empty answer means the session is not there, whatever tmux's exit status says", () => {
+    expect(parseProbe("\n")).toBeNull();
+    expect(parseProbe("")).toBeNull();
+  });
+});
+
+describe("pane lines", () => {
+  test("drops the final newline and trailing blank rows, keeps blank rows in the middle", () => {
+    expect(paneLines("one\r\n\ntwo\n\n\n")).toEqual(["one", "", "two"]);
+  });
+
+  test("an empty pane has no lines", () => {
+    expect(paneLines("\n\n")).toEqual([]);
+    expect(paneLines("")).toEqual([]);
+  });
+});
+
+describe("hexBytes", () => {
+  test("encodes UTF-8 bytes as two-digit lowercase hex", () => {
+    expect(hexBytes("a\n")).toEqual(["61", "0a"]);
+    expect(hexBytes("é")).toEqual(["c3", "a9"]);
+  });
+
+  test("round-trips arbitrary text", () => {
+    const text = "echo 'hi' && ls -la; 中文 🙂";
+    const bytes = Buffer.from(hexBytes(text).map((hex) => Number.parseInt(hex, 16)));
+    expect(bytes.toString("utf8")).toBe(text);
+  });
+});
+
+describe("key names", () => {
+  test("accept named keys, modifiers, and single characters", () => {
+    for (const key of [
+      "Enter",
+      "Tab",
+      "BTab",
+      "Escape",
+      "BSpace",
+      "PPage",
+      "F1",
+      "F12",
+      "Up",
+      "C-c",
+      "M-x",
+      "C-M-a",
+      "a",
+      "7",
+      "/",
+      "&",
+    ]) {
+      expect(isKeyName(key)).toBe(true);
+    }
+  });
+
+  test("refuse separators, flags, unknown names, and too many modifiers", () => {
+    for (const key of ["-", ";", "-x", "C-", "F13", "enter", "C-S-M-a", "ab", "", "\n", "$"]) {
+      expect(isKeyName(key)).toBe(false);
+    }
+  });
+});
+
+describe("classifyTmuxFailure", () => {
+  test("maps a missing binary, a missing server, a missing target, and a duplicate", () => {
+    expect(classifyTmuxFailure(127, "")).toBe("missing");
+    expect(classifyTmuxFailure(1, "no server running on /tmp/tmux-1000/default")).toBe("no_server");
+    expect(classifyTmuxFailure(1, "error connecting to /tmp/tmux-1000/default (No such file or directory)")).toBe(
+      "no_server",
+    );
+    expect(classifyTmuxFailure(1, "can't find session: =build")).toBe("not_found");
+    expect(classifyTmuxFailure(1, "can't find pane: =build:")).toBe("not_found");
+    expect(classifyTmuxFailure(1, "duplicate session: build")).toBe("duplicate");
+  });
+
+  test("anything else is a plain failure", () => {
+    expect(classifyTmuxFailure(1, "unknown key: Foo")).toBe("failed");
+  });
+});
+
+function ignoreSizeAccepted(stdout: string): boolean {
+  const version = parseTmuxVersion(stdout);
+  return version !== null && acceptsIgnoreSize(version);
+}
+
+describe("tmux version", () => {
+  test("reads the version from tmux -V, keeping a letter suffix and a development build's name", () => {
+    expect(parseTmuxVersion("tmux 3.4\n")).toEqual({ text: "3.4", major: 3, minor: 4 });
+    expect(parseTmuxVersion("tmux 3.1c")).toEqual({ text: "3.1c", major: 3, minor: 1 });
+    expect(parseTmuxVersion("tmux next-3.5\n")).toEqual({ text: "next-3.5", major: 3, minor: 5 });
+  });
+
+  test("an answer without a numbered version reads as no version", () => {
+    expect(parseTmuxVersion("")).toBeNull();
+    expect(parseTmuxVersion("sh: tmux: not found")).toBeNull();
+    expect(parseTmuxVersion("tmux master")).toBeNull();
+  });
+
+  test("ignore-size is accepted from tmux 3.2 on, and refused before it", () => {
+    expect(ignoreSizeAccepted("tmux 2.9a")).toBe(false);
+    expect(ignoreSizeAccepted("tmux 3.1c")).toBe(false);
+    expect(ignoreSizeAccepted("tmux 3.2")).toBe(true);
+    expect(ignoreSizeAccepted("tmux 3.2a")).toBe(true);
+    expect(ignoreSizeAccepted("tmux 3.3a")).toBe(true);
+    expect(ignoreSizeAccepted("tmux 4.0")).toBe(true);
+  });
+});
+
+describe("appendedLines", () => {
+  test("returns what was appended after the previous snapshot", () => {
+    expect(appendedLines(["$ ls", "a"], ["$ ls", "a", "b", "$ "])).toEqual(["b", "$ "]);
+  });
+
+  test("nothing new when the snapshot is unchanged", () => {
+    expect(appendedLines(["a", "b"], ["a", "b"])).toEqual([]);
+  });
+
+  test("skips lines that scrolled out of history", () => {
+    expect(appendedLines(["x", "x", "x", "y"], ["x", "x", "y", "z"])).toEqual(["z"]);
+  });
+
+  test("everything is new when nothing was read before", () => {
+    expect(appendedLines([], ["a", "b"])).toEqual(["a", "b"]);
+  });
+
+  test("no overlap means the screen was redrawn, so the caller resets", () => {
+    expect(appendedLines(["a", "b"], ["c", "d"])).toBeUndefined();
+    expect(appendedLines(["a", "b"], [])).toBeUndefined();
+  });
+
+  test("a shorter snapshot that is a prefix of the old one resets", () => {
+    expect(appendedLines(["a", "b"], ["a"])).toBeUndefined();
+  });
+
+  test("the prompt line grows when a command is typed, and that line is returned in full", () => {
+    expect(appendedLines(["$ "], ["$ echo one", "one", "$ "])).toEqual(["$ echo one", "one", "$ "]);
+    expect(appendedLines(["$ echo one", "one", "$ "], ["$ echo one", "one", "$ echo two", "two", "$ "])).toEqual([
+      "$ echo two",
+      "two",
+      "$ ",
+    ]);
+  });
+
+  test("a last line that grew is returned in full, and the lines before it are not", () => {
+    expect(appendedLines(["a", "$ "], ["a", "$ ec"])).toEqual(["$ ec"]);
+    expect(appendedLines(["a", "$ "], ["a", "$ "])).toEqual([]);
+  });
+});
