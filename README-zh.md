@@ -393,7 +393,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `GET` | `/api/boxes/:id/stats` | 实时占用 |
 | `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行） |
 | `POST` | `/api/boxes/:id/snapshots` | 开始创建快照 `{ "name"? }`。返回 `202` `{ "taskId" }` |
-| `GET` (WS) | `/api/boxes/:id/terminal?session=NAME` | 附着到具名会话的 WebSocket 终端（见[会话](#会话)）。二进制帧与其他文本帧是键入的输入。文本帧 `{"type":"takeover"}` 与 `{"type":"release"}` 用于接管与归还，`{"type":"resize","cols":N,"rows":N}` 调整窗口。只有浏览器会话能输入或接管；Bearer 调用者只能读取输出，输入会收到带 `terminal_read_only` 的 `forbidden` 错误帧 |
+| `GET` (WS) | `/api/boxes/:id/terminal?session=NAME` | 附着到具名会话的 WebSocket 终端（见[会话](#会话)）。二进制帧与其他文本帧是键入的输入。文本帧 `{"type":"takeover"}` 与 `{"type":"release"}` 用于接管与归还，`{"type":"resize","cols":N,"rows":N}` 调整窗口。只有浏览器会话能输入、接管或调整窗口；Bearer 调用者只能读取输出，输入会收到带 `terminal_read_only` 的 `forbidden` 错误帧，其调整窗口的消息会被忽略 |
 | `POST` | `/api/boxes/:id/exec` | 在 Box 里运行命令。请求体 `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`。`argv`（不经 shell）与 `cmd`（`/bin/sh -c`）只能提供一个。默认用户 `dev`，目录 `/workspace`，超时 30 秒；前台调用最长 55 秒，`background: true` 最长 3600 秒。已停止的 Box 会先启动，这会改变它的版本号。结果包含 `status`（`running`、`exited` 或 `killed`）、`exitCode`、`stdout`、`stderr`、`truncated`、`durationMs`、`timedOut` 与 `woke`。非零退出码是程序自己的状态。内联输出保留每个流头尾各约 16 KiB；`outputRef` 指向保存的窗口。「严格」档位下用户只能是 `dev` 或 `1000`；其他档位可以用 `root`，这类执行在审计中标记为 `privileged`。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep` |
 | `GET` | `/api/execs/:execId?waitMs=` | 读取一次 exec。`waitMs` 在命令仍在运行时最长等待 25000 毫秒。`status` 为 `running`、`exited` 或 `killed` |
 | `GET` | `/api/execs/:execId/output` | 已保存的 stdout 与 stderr（每个流头尾各约 64 KiB）。内存记录消失后，在保留期内仍可读取 |
@@ -411,11 +411,11 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 |---|---|---|
 | `GET` | `/api/boxes/:id/sessions` | 列出会话：`name`、`origin`（`agent` 表示 API 与 MCP 创建，`human` 表示控制台创建）、`controller`（`agent` 或 `human`，表示现在谁能输入）、`takenOver`、`createdAt`，以及 `attached`（当前附着在该会话上的终端数） |
 | `POST` | `/api/boxes/:id/sessions` | 启动会话，或返回同名的已有会话。请求体 `{ "name" }`：1 到 32 位，以字母或数字开头，其后可含字母、数字、`-` 或 `_`。返回 `session`、`created`（会话已存在时为 false）与 `woke` |
-| `GET` | `/api/boxes/:id/sessions/:name?lines=100&since=CURSOR` | 读取屏幕及其历史。`lines` 取 1 到 2000，默认 100。把最新的 `cursor` 作为 `since` 传回，只取新增的行。`reset: true` 表示屏幕被重绘或游标已过期，此时 `lines` 为当前窗口。`truncated` 表示还有未返回的行 |
+| `GET` | `/api/boxes/:id/sessions/:name?lines=100&since=CURSOR` | 读取屏幕及其历史，最多回看 4000 行。`lines` 取 1 到 2000，默认 100。把最新的 `cursor` 作为 `since` 传回，只取新增的行。`reset: true` 表示屏幕被重绘或游标已过期，此时 `lines` 为当前窗口。`truncated` 表示还有未返回的行 |
 | `POST` | `/api/boxes/:id/sessions/:name/input` | 发送输入。请求体为 `{ "keys": [...] }`（tmux 键名，如 `Enter`、`Tab`、`Escape`、`C-c` 或 `Up`，最多 32 个）或 `{ "text": "..." }`（字面 UTF-8，最多 16 KiB），二者只能提供一个。返回发送的 `keys` 数与 `bytes` 字节数。人正在接管该会话时返回 `409 taken_over`，并带 `retryable: true` |
-| `DELETE` | `/api/boxes/:id/sessions/:name` | 关闭会话，并结束其中正在运行的程序 |
+| `DELETE` | `/api/boxes/:id/sessions/:name` | 关闭会话，并结束其中正在运行的程序。人正在持有该会话时，Agent 或 Bearer 调用者会收到 `409 taken_over`，并带 `retryable: true`；只有控制台能关闭它 |
 
-接管与归还是终端的控制帧，不是 REST 调用：控制台通过它的 WebSocket 发送。Agent 发起的会话在控制台中默认只读，直到有人接管。接管会在人手动归还，或人在 `SESSION_TAKEOVER_IDLE_SEC` 秒（默认 300 秒）没有输入后还给 Agent。控制台发起的会话留在人手中，直到人归还。接管状态只保存在内存中，因此 MiniBox 重启后，每个会话的控制方都会回到其发起方对应的默认值。
+接管与归还是终端的控制帧，不是 REST 调用：控制台通过它的 WebSocket 发送。Agent 发起的会话在控制台中默认只读，直到有人接管。接管会在人手动归还，或人在 `SESSION_TAKEOVER_IDLE_SEC` 秒（默认 300 秒）没有输入后还给 Agent。控制台发起的会话留在人手中，直到人归还。接管状态只保存在内存中，因此 MiniBox 重启后，每个会话的控制方都会回到其发起方对应的默认值。接管锁约束会话 API、关闭与终端，但不约束 `exec`：在箱内以 `dev` 运行 `exec` 的 Agent 仍可用 `tmux send-keys` 或 `tmux kill-session` 直接操作会话（见 [Agent](#agent)）。每个 Box 最多 16 个会话，每个会话最多 8 个终端；超过任一上限时，调用返回 `429` 与 `too_many_requests`。
 
 终端 WebSocket 以二进制帧输出，以文本帧发送 `state` 或 `error` 帧。会话结束时以关闭码 `1000` 关闭，浏览器会话结束时以 `1008` 关闭。连接 30 秒没有任何数据时会被关闭，浏览器会自动回应服务器的 ping，因此正常打开的页面不会被断开。浏览器来不及接收时输出会暂停；未读数据超过 4 MiB 的客户端会被关闭。无论终端如何结束，其附着进程都会在 Box 内结束，不会残留 exec。
 

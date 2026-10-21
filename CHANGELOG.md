@@ -42,11 +42,16 @@
 - 交互终端的 exec 也经由同一个包装脚本运行，因此网页终端断开时，附着进程可以在箱内结束（#14）。
 - 会话（tmux）的所有命令与附着进程都以 `dev` 身份运行，包括「严格」档位，不以 root 运行（#14）。
 - 会话的输入从不写入审计日志：`session_send` 只记录按键数与字节数，终端只记录开启、关闭以及两个方向的字节数（#14）。
+- 接管锁同样约束关闭：接管期间，Agent 的 `DELETE /api/boxes/:id/sessions/:name` 与 `minibox session close` 返回 `409 taken_over`（可重试），会话保持存在；只有控制台能关闭被人持有的会话（#14）。
+- Bearer 终端以只读的 tmux 客户端附着（`attach-session -r -f ignore-size`），忽略窗口尺寸；服务端丢弃它发来的 `resize` 消息，因此不会改变控制台的窗口大小（#14）。
+- 会话的资源上限：每个 Box 最多 16 个 tmux 会话，每个会话最多 8 个同时打开的终端，超限返回 `429 too_many_requests`。`session_read` 只回看 4000 行历史，单条 tmux 命令的输出最多保留最新的 4 MiB（#14）。
+- 会话按 tmux 的会话 id 与创建时间识别，改写 `@minibox-origin` 选项不会重置接管（#14）。
+- 接管锁不约束在箱内以 `dev` 运行的 `exec`：它与 tmux 服务器同属一个用户，可直接调用 `tmux send-keys` 或 `tmux kill-session`。README、README-zh 与 `docs/agents.md` 已说明这一边界（#14）。
 
 ### 新增
 - 终端会话（#14）：每个 Box 可以有多个具名的 tmux 会话，名称 1 到 32 位，以字母或数字开头，其后可含字母、数字、`-` 与 `_`。会话在 Box 内运行，关闭页面或断开连接后继续运行，刷新页面后控制台回到上次打开的会话。会话的发起方（`agent` 或 `human`）保存在 tmux 中；接管状态只保存在内存中，MiniBox 重启后每个会话的控制方回到其发起方的默认值。
 - 会话接口：`GET` 与 `POST /api/boxes/:id/sessions`，`GET`（支持 `lines` 与 `since`）与 `DELETE /api/boxes/:id/sessions/:name`，以及 `POST /api/boxes/:id/sessions/:name/input`（`keys` 或 `text`，二者只能提供一个）。MCP 的 `session` 工具集提供 `session_start`、`session_send` 与 `session_read`（`/mcp?toolsets=core,session`）；CLI 提供 `minibox session ls`、`start`、`read`、`send` 与 `close`。这些操作在操作注册表中各定义一次，REST、OpenAPI、MCP 与 CLI 由此生成。
-- 人工接管（#14）：Agent 发起的会话在控制台中默认只读，点击「接管」后由人输入。接管期间，Agent 的 `session_send` 返回 `409`，错误码为 `taken_over`，`retryable` 为 true，并附重试提示；`session_read` 仍可用。点击「还给 Agent」手动归还。人在 `SESSION_TAKEOVER_IDLE_SEC` 秒内没有输入（默认 300，`0` 表示关闭）时，接管自动归还。
+- 人工接管（#14）：Agent 发起的会话在控制台中默认只读，点击「接管」后由人输入。接管期间，Agent 的 `session_send` 与关闭会话（`DELETE`）返回 `409`，错误码为 `taken_over`，`retryable` 为 true，并附重试提示；`session_read` 仍可用。点击「还给 Agent」手动归还。人在 `SESSION_TAKEOVER_IDLE_SEC` 秒内没有输入（默认 300，`0` 表示关闭）时，接管自动归还。
 - `session_read` 返回 `lines` 与游标 `cursor`。把最新的游标作为 `since` 传回，只读取新增的行；无法接续时返回 `reset: true` 并给出当前窗口。
 - 活动标签页（#14）：Box 详情的「日志」标签页改为「活动」，合并 exec 历史、容器启动 / 停止 / 内存溢出（OOM）事件（`container.*`）、终端会话的开启与关闭（`terminal.*`），以及会话的启动、发送与关闭（`session.*`）。`docker logs` 保留在页面下方的折叠区域。默认不记录键入的内容。
 - 新增配置 `SESSION_TAKEOVER_IDLE_SEC`（默认 `300`，取值 0 到 86400 的整数）。README、README-zh 与 `.env.example` 均有说明（#14）。
@@ -152,6 +157,7 @@
 - README 与 README-zh 新增「基础模板」章节，说明用户与 uid 约定、挂载点、缓存、标签、检查方法，以及从 root 版模板升级的步骤。
 - `docs/runtime.md` 补充真实引擎测试的运行方式（`bun run test:docker`、`MINIBOX_TEST_PREFIX`）与假引擎适配器测试，并更新已知限制。
 - README 与 README-zh 的配置表新增 `STOP_TIMEOUT_SEC`，开发命令与 CI 说明新增 `bun run test:docker` 与非必需的集成任务（#19）。
+- README、README-zh、`docs/agents.md` 与 `docs/design.md` §10.2 说明接管锁覆盖关闭、不约束箱内的 `exec`，以及会话与终端的上限（#14）。
 
 ### 升级说明
 - 终端 WebSocket 地址必须带 `session` 参数。使用 `/api/boxes/:id/terminal` 而不带参数的脚本，需改为 `?session=<名称>`，或先调用 `POST /api/boxes/:id/sessions`（#14）。
