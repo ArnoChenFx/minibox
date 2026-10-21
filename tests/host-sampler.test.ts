@@ -7,7 +7,7 @@ import type { LabelKeys } from "../src/labels";
 import { RuntimeError } from "../src/runtime";
 import { createBox, stopBox } from "../src/services/boxes";
 import { createTestApp, silenceLogs } from "./support/app";
-import type { FakeRuntime } from "./support/fake-runtime";
+import type { Call, FakeRuntime } from "./support/fake-runtime";
 
 const MB = 1024 * 1024;
 
@@ -79,6 +79,15 @@ function fastSampler(overrides: Partial<SamplerOptions> = {}): HostSampler {
 
 function stateOf(sampler: HostSampler, name: string): boolean | undefined {
   return sampler.boxes({ withStats: false }).find((box) => box.name === name)?.running;
+}
+
+/** The abort signal a recorded call was made with. Every call that takes options has them second. */
+function signalOf(call: Call | undefined): AbortSignal | undefined {
+  return (call?.args[1] as { signal?: AbortSignal } | undefined)?.signal;
+}
+
+function inspectsOf(containerId: string): Call[] {
+  return runtime.callsTo("inspectContainer").filter((call) => call.args[0] === containerId);
 }
 
 describe("the box cache", () => {
@@ -416,7 +425,7 @@ describe("the periodic re-list", () => {
     expect(stateOf(sampler, "sigma")).toBe(false);
   });
 
-  test("a listing that does not answer in time is given up, the link stays up, and the re-lists go on", async () => {
+  test("a listing that does not answer in time is given up, and no second listing starts behind it", async () => {
     seedBox("tau", true);
     const sampler = fastSampler({ relistMs: 5, relistTimeoutMs: 20 });
     sampler.start();
@@ -426,15 +435,73 @@ describe("the periodic re-list", () => {
 
     const listed = runtime.callsTo("listContainers").length;
     const hold = runtime.hold("listContainers");
+    let pending = 0;
     try {
       await waitFor(() => runtime.callsTo("listContainers").length > listed, "the held re-list");
-      const pending = runtime.callsTo("listContainers").length;
-      await waitFor(() => runtime.callsTo("listContainers").length > pending, "a re-list after the timeout");
+      pending = runtime.callsTo("listContainers").length;
+      await waitFor(() => signalOf(runtime.callsTo("listContainers")[pending - 1])?.aborted === true, "its deadline");
+      await Bun.sleep(60);
+      expect(runtime.callsTo("listContainers")).toHaveLength(pending);
       expect(sampler.ready()).toBe(true);
       expect(linkFrames).toHaveLength(links);
     } finally {
       hold.release();
     }
+    await waitFor(() => runtime.callsTo("listContainers").length > pending, "a re-list once the held one has settled");
+  });
+});
+
+describe("reads that do not answer in time", () => {
+  test("a hung inspect of one box does not hold up a write to another, and that box keeps its last state", async () => {
+    const x = seedBox("xi", true);
+    const y = seedBox("upsilon", true);
+    const sampler = fastSampler({ intervalMs: 60_000, inspectTimeoutMs: 800, observeWaitMs: 20 });
+    sampler.start();
+    await waitFor(() => sampler.ready(), "the first listing");
+    await sampler.settle();
+
+    const hold = runtime.hold("inspectContainer", ([id]) => id === x);
+    try {
+      await runtime.stopContainer(x, { timeoutSec: 1 });
+      await waitFor(() => inspectsOf(x).length === 1, "the held inspect of xi");
+      const began = performance.now();
+      const box = await stopBox(app.hosts.get(), y);
+      expect(performance.now() - began).toBeLessThan(400);
+      expect(box.running).toBe(false);
+
+      await waitFor(() => stateOf(sampler, "upsilon") === false, "the stop of upsilon in the cache");
+      expect(stateOf(sampler, "xi")).toBe(true);
+      expect(signalOf(inspectsOf(x)[0])?.aborted).toBe(true);
+    } finally {
+      hold.release();
+    }
+
+    await sampler.sampleNow();
+    expect(inspectsOf(x).length).toBeGreaterThan(1);
+    expect(stateOf(sampler, "xi")).toBe(false);
+  });
+
+  test("a first listing that does not answer in time takes the link down, and the next brings it back", async () => {
+    const id = seedBox("phi", true);
+    const sampler = fastSampler({ listTimeoutMs: 800, observeWaitMs: 20 });
+    const hold = runtime.hold("listContainers");
+    try {
+      sampler.start();
+      await waitFor(() => runtime.callsTo("listContainers").length === 1, "the held first listing");
+      const began = performance.now();
+      const box = await stopBox(app.hosts.get(), id);
+      expect(performance.now() - began).toBeLessThan(400);
+      expect(box.running).toBe(false);
+      expect(sampler.ready()).toBe(false);
+
+      await waitFor(() => runtime.callsTo("listContainers").length >= 2, "the listing retried after the backoff");
+      expect(signalOf(runtime.callsTo("listContainers")[0])?.aborted).toBe(true);
+      expect(sampler.ready()).toBe(false);
+    } finally {
+      hold.release();
+    }
+    await waitFor(() => sampler.ready(), "the listing once the engine answers");
+    expect(stateOf(sampler, "phi")).toBe(false);
   });
 });
 

@@ -34,6 +34,12 @@ const IDLE_INTERVAL_MS = 30_000;
 const RELIST_MS = 60_000;
 /** Longest a re-list waits for the engine's listing. A listing that is still pending past this is given up. */
 const RELIST_TIMEOUT_MS = 30_000;
+/** Longest a container inspect may take. A longer one keeps the cached entry, and the next round reads it again. */
+const INSPECT_TIMEOUT_MS = 5000;
+/** Longest the first listing after a subscription may take. A longer one takes the link down, and backoff retries. */
+const LIST_TIMEOUT_MS = 30_000;
+/** Longest `observe()` waits for the queued writes. Past it, the caller goes on, and the writes still run in order. */
+const OBSERVE_WAIT_MS = 5000;
 
 export interface SamplerOptions {
   /** Time between two sample rounds while a live subscriber watches. Host metrics use the same interval. */
@@ -44,6 +50,12 @@ export interface SamplerOptions {
   relistMs?: number;
   /** Longest a re-list waits for its listing. See `RELIST_TIMEOUT_MS`. */
   relistTimeoutMs?: number;
+  /** Longest a container inspect may take. See `INSPECT_TIMEOUT_MS`. */
+  inspectTimeoutMs?: number;
+  /** Longest the first listing after a subscription may take. See `LIST_TIMEOUT_MS`. */
+  listTimeoutMs?: number;
+  /** Longest `observe()` waits for the queued writes. See `OBSERVE_WAIT_MS`. */
+  observeWaitMs?: number;
   /** Samples kept per box. The oldest are dropped first. */
   history: number;
   backoffMinMs?: number;
@@ -88,6 +100,18 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** Resolves once `promise` settles, or after `ms`, whichever comes first. The promise itself is left to finish. */
+function waitUpTo(promise: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      resolve();
+    }
+    promise.then(done, done);
+  });
+}
+
 /** A running box and the container a sample of it is taken from. */
 interface Target {
   boxId: string;
@@ -114,7 +138,8 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
  *
  * Every engine read that updates the cache and every cache update runs in one queue, in the order the work arrived.
  * An inspect issued before a later event therefore cannot overwrite what that event reported. The subscription opens
- * before the listing, so a change made while the listing runs is applied after it.
+ * before the listing, so a change made while the listing runs is applied after it. A read that does not answer in time
+ * is given up, so one hung engine call holds the queue for a bounded time only (see `refresh` and `resync`).
  */
 export class HostSampler {
   private started = false;
@@ -125,6 +150,8 @@ export class HostSampler {
   private readonly shown = new Map<string, { containerId: string; json: string }>();
   private readonly rings = new Map<string, StatSample[]>();
   private readonly dirty = new Map<string, "refresh" | "remove">();
+  /** Containers whose inspect got no answer in time. Their entries are kept, and the next round reads them again. */
+  private readonly stale = new Set<string>();
   private drainQueued = false;
   private queue: Promise<void> = Promise.resolve();
   /** The sample rounds, in order. A round's stats calls run here, outside the queue, so a slow engine stalls no write. */
@@ -183,6 +210,7 @@ export class HostSampler {
     this.unsubscribe = null;
     this.expedited = false;
     this.dirty.clear();
+    this.stale.clear();
     this.containers.clear();
     this.specs.clear();
     this.shown.clear();
@@ -193,12 +221,16 @@ export class HostSampler {
 
   /**
    * Re-reads the given containers once the changes queued before this call are applied, so a caller that just changed a
-   * box sees the change in the cache. Does nothing when not started.
+   * box sees the change in the cache. Resolves after `observeWaitMs` at the latest, even when the queue is still held
+   * up by a read that has not answered: the writes still run in order once it does. Does nothing when not started.
    */
   observe(...containerIds: string[]): Promise<void> {
     if (!this.started) return Promise.resolve();
     for (const containerId of containerIds) this.markDirty(containerId, "refresh");
-    return this.enqueue(() => this.drain());
+    return waitUpTo(
+      this.enqueue(() => this.drain()),
+      this.options.observeWaitMs ?? OBSERVE_WAIT_MS,
+    );
   }
 
   /** Resolves once every queued engine read, cache update and sample round has finished. */
@@ -323,7 +355,7 @@ export class HostSampler {
       );
       const streamed = this.consume(events);
       streamed.catch(end);
-      await this.enqueue(() => this.resync()).catch((e: unknown) => {
+      await this.enqueue(() => this.resync(parent)).catch((e: unknown) => {
         end();
         throw e;
       });
@@ -365,12 +397,18 @@ export class HostSampler {
     this.drainQueued = false;
     if (!this.started) return;
     try {
-      while (this.dirty.size > 0) {
+      while (this.started && this.dirty.size > 0) {
         const batch = [...this.dirty];
         this.dirty.clear();
         for (const [containerId, op] of batch) {
-          if (op === "remove") this.containers.delete(containerId);
-          else await this.refresh(containerId);
+          if (op === "remove") {
+            this.containers.delete(containerId);
+            this.stale.delete(containerId);
+          } else if (await this.refresh(containerId)) {
+            this.stale.delete(containerId);
+          } else {
+            this.stale.add(containerId);
+          }
         }
       }
       await this.claimUnclaimed();
@@ -380,20 +418,68 @@ export class HostSampler {
     }
   }
 
-  private async refresh(containerId: string): Promise<void> {
+  /**
+   * Reads one container into the cache. Returns false when the engine has not answered within the inspect timeout. The
+   * cached entry is then kept, and the container is read again in the next round rather than right away: a retry in the
+   * same drain would hold the queue for another timeout, and so on.
+   */
+  private async refresh(containerId: string): Promise<boolean> {
+    const epoch = this.abort?.signal;
+    if (!epoch) return true;
     const host = this.currentHost();
+    const timeoutMs = this.options.inspectTimeoutMs ?? INSPECT_TIMEOUT_MS;
+    const deadline = AbortSignal.any([epoch, AbortSignal.timeout(timeoutMs)]);
     try {
-      const info = await host.runtime.inspectContainer(containerId);
+      const info = await untilAborted(host.runtime.inspectContainer(containerId, { signal: deadline }), deadline);
       if (this.started) this.containers.set(containerId, info);
     } catch (e) {
+      if (epoch.aborted) return true;
+      if (deadline.aborted) {
+        log.warn("sampler.inspect_failed", {
+          host: host.host.id,
+          container: containerId,
+          error: `no answer within ${timeoutMs} ms`,
+        });
+        return false;
+      }
       if (isRuntimeError(e, "not_found")) this.containers.delete(containerId);
       else log.warn("sampler.inspect_failed", { host: host.host.id, container: containerId, error: errorText(e) });
     }
+    return true;
   }
 
-  private async resync(): Promise<void> {
+  /**
+   * Reads again the containers whose inspect got no answer. Runs once per round, in the queue, and only while the
+   * cache is current.
+   */
+  private async retryStale(): Promise<void> {
+    if (this.stale.size === 0 || !this.ready()) return;
+    for (const containerId of this.stale) {
+      if (!this.dirty.has(containerId)) this.dirty.set(containerId, "refresh");
+    }
+    this.stale.clear();
+    await this.drain();
+  }
+
+  /**
+   * Lists the containers after a subscription, and marks the link live once the listing is in the cache. A listing that
+   * does not answer within the list timeout fails the session, so the backoff in `run` retries it. Until then the reads
+   * fall back to the engine.
+   */
+  private async resync(parent: AbortSignal): Promise<void> {
     const host = this.currentHost();
-    const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
+    const timeoutMs = this.options.listTimeoutMs ?? LIST_TIMEOUT_MS;
+    const deadline = AbortSignal.any([parent, AbortSignal.timeout(timeoutMs)]);
+    let infos: ContainerInfo[];
+    try {
+      infos = await untilAborted(
+        host.runtime.listContainers({ labels: { [host.keys.box]: "true" } }, { signal: deadline }),
+        deadline,
+      );
+    } catch (e) {
+      if (deadline.aborted && !parent.aborted) throw new Error(`no answer within ${timeoutMs} ms`, { cause: e });
+      throw e;
+    }
     if (!this.started) return;
     await this.adopt(infos);
     this.failures = 0;
@@ -408,6 +494,10 @@ export class HostSampler {
    * applied in the queue only if the cache took no change while it was listed: a change made meanwhile may be newer than
    * the listing, and the next re-list catches up. The link is left as it is: the event stream still decides whether it
    * is up, and this only catches up what that stream never reported.
+   *
+   * The deadline signal goes to the engine, so an adapter that honours it cancels the request. The guard against a
+   * second listing lifts only when the listing itself settles: a listing that ignores the signal and never answers
+   * keeps the guard, so the lists do not pile up behind it.
    */
   private async relist(): Promise<void> {
     const epoch = this.abort?.signal;
@@ -417,8 +507,13 @@ export class HostSampler {
     const timeoutMs = this.options.relistTimeoutMs ?? RELIST_TIMEOUT_MS;
     const deadline = AbortSignal.any([epoch, AbortSignal.timeout(timeoutMs)]);
     this.relisting = true;
+    const listing = host.runtime.listContainers({ labels: { [host.keys.box]: "true" } }, { signal: deadline });
+    const release = () => {
+      this.relisting = false;
+    };
+    listing.then(release, release);
     try {
-      const infos = await untilAborted(host.runtime.listContainers({ labels: { [host.keys.box]: "true" } }), deadline);
+      const infos = await untilAborted(listing, deadline);
       await this.enqueue(async () => {
         if (!this.ready() || this.changes !== seen) return;
         await this.adopt(infos);
@@ -430,8 +525,6 @@ export class HostSampler {
         host: host.host.id,
         error: deadline.aborted ? `no answer within ${timeoutMs} ms` : errorText(e),
       });
-    } finally {
-      this.relisting = false;
     }
   }
 
@@ -439,6 +532,7 @@ export class HostSampler {
   private async adopt(infos: ContainerInfo[]): Promise<void> {
     this.changes += 1;
     this.containers.clear();
+    this.stale.clear();
     for (const info of infos) this.containers.set(info.id, info);
     await this.claimUnclaimed();
   }
@@ -482,7 +576,10 @@ export class HostSampler {
 
   private async round(): Promise<void> {
     const epoch = this.abort?.signal;
-    const targets = await this.enqueue(async () => this.runningBoxes());
+    const targets = await this.enqueue(async () => {
+      await this.retryStale();
+      return this.runningBoxes();
+    });
     if (!epoch || targets.length === 0) return;
     const timeoutMs = Math.min(this.options.intervalMs, STATS_TIMEOUT_MS);
     const samples = await mapLimit(targets, STATS_CONCURRENCY, (target) => this.sampleBox(target, epoch, timeoutMs));

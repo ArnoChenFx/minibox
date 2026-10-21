@@ -219,23 +219,24 @@ export class FakeRuntime implements Runtime {
   private readonly faults = new Map<Op, RuntimeError[]>();
   private readonly execKillFaults: RuntimeError[] = [];
   private readonly execKillHold: { gate: Promise<void> | null } = { gate: null };
-  private readonly gates = new Map<Op, Promise<void>>();
+  private readonly gates = new Map<Op, { promise: Promise<void>; where?: (args: unknown[]) => boolean }>();
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
   private readonly interrupts = new Set<(error: RuntimeError) => void>();
   private execCount = 0;
 
   /**
-   * Holds the next calls to `op` until `release`. `buildImage` reports its log before waiting. A held call does not
-   * return when `signal` aborts, as an engine call already in flight does not: once released, it fails with
-   * `AbortError` if `signal` has aborted.
+   * Holds the next calls to `op` until `release`. With `where`, only the calls whose arguments it accepts are held,
+   * so a test can hang the inspect of one container and leave the others answering. `buildImage` reports its log
+   * before waiting. A held call does not return when `signal` aborts, as an engine call already in flight does not:
+   * once released, it fails with `AbortError` if `signal` has aborted.
    */
-  hold(op: Op): { release(): void } {
+  hold(op: Op, where?: (args: unknown[]) => boolean): { release(): void } {
     let resolveGate: GateResolve | undefined;
     const promise = new Promise<void>((resolve) => {
       resolveGate = resolve;
     });
-    this.gates.set(op, promise);
+    this.gates.set(op, { promise, where });
     return {
       release: () => {
         this.gates.delete(op);
@@ -339,8 +340,9 @@ export class FakeRuntime implements Runtime {
     });
   }
 
-  private async gate(op: Op): Promise<void> {
-    await this.gates.get(op);
+  private async gate(op: Op, args: unknown[]): Promise<void> {
+    const held = this.gates.get(op);
+    if (held && (held.where?.(args) ?? true)) await held.promise;
   }
 
   private enter(op: Op, args: unknown[]): void {
@@ -439,19 +441,26 @@ export class FakeRuntime implements Runtime {
     };
   }
 
-  /** The listing is read when the call is made, and a held call returns it, as a delayed engine response does. */
-  async listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]> {
-    this.enter("listContainers", [filter]);
+  /** The listing is read when the call is made. A held call returns it unless its signal has aborted by then. */
+  async listContainers(
+    filter: { labels: Record<string, string> },
+    opts?: { signal?: AbortSignal },
+  ): Promise<ContainerInfo[]> {
+    const args = [filter, opts];
+    this.enter("listContainers", args);
     const infos = [...this.containers.values()].filter((c) => matchesLabels(c.labels, filter.labels)).map(toInfo);
-    await this.gate("listContainers");
+    await this.gate("listContainers", args);
+    if (opts?.signal?.aborted) throw abortError();
     return infos;
   }
 
-  /** The state is read when the call is made, and a held call returns that state, as a delayed engine response does. */
-  async inspectContainer(id: string): Promise<ContainerInfo> {
-    this.enter("inspectContainer", [id]);
+  /** The state is read when the call is made. A held call returns it unless its signal has aborted by then. */
+  async inspectContainer(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerInfo> {
+    const args = [id, opts];
+    this.enter("inspectContainer", args);
     const info = toInfo(this.getContainer(id));
-    await this.gate("inspectContainer");
+    await this.gate("inspectContainer", args);
+    if (opts?.signal?.aborted) throw abortError();
     return info;
   }
 
@@ -546,7 +555,7 @@ export class FakeRuntime implements Runtime {
 
   async containerStats(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerStats> {
     this.enter("containerStats", [id, opts]);
-    await this.gate("containerStats");
+    await this.gate("containerStats", [id, opts]);
     if (opts?.signal?.aborted) throw abortError();
     const memLimit = this.getContainer(id).memoryBytes ?? 1024 ** 3;
     return { cpuPercent: 1.5, memUsage: Math.round(memLimit / 4), memLimit, memPercent: 25 };
@@ -554,7 +563,7 @@ export class FakeRuntime implements Runtime {
 
   async commitContainer(id: string, spec: CommitSpec): Promise<void> {
     this.enter("commitContainer", [id, spec]);
-    await this.gate("commitContainer");
+    await this.gate("commitContainer", [id, spec]);
     if (spec.signal?.aborted) throw abortError();
     const c = this.getContainer(id);
     const image: FakeImage = {
@@ -731,7 +740,7 @@ export class FakeRuntime implements Runtime {
   async buildImage(spec: BuildSpec): Promise<string> {
     this.enter("buildImage", [spec]);
     spec.onLog?.(this.buildLog);
-    await this.gate("buildImage");
+    await this.gate("buildImage", [spec]);
     if (spec.signal?.aborted) throw abortError();
     const image: FakeImage = { id: newImageId(), tags: [], labels: { ...spec.labels }, createdAt: now(), size: 1024 };
     this.images.set(image.id, image);
