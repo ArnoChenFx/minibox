@@ -203,6 +203,17 @@ export const templateDescription = () =>
     description: `One line, at most ${DESCRIPTION_MAX} characters. Line breaks and other control characters are refused.`,
   }).optional();
 
+const oneLine = (description: string) =>
+  field(checkDescription, { type: "string", maxLength: DESCRIPTION_MAX, description }).optional();
+
+export const checkpointLabel = () =>
+  oneLine(
+    `Label shown in the checkpoint list, one line, at most ${DESCRIPTION_MAX} characters. Defaults to the box name.`,
+  );
+
+export const checkpointReason = () =>
+  oneLine(`Why the checkpoint is taken, one line, at most ${DESCRIPTION_MAX} characters.`);
+
 export const cpusWithDefault = (defaultValue: number) =>
   field(checkCpus, { ...CPUS_META, description: withDefault(CPUS_HELP, defaultValue) }).default(defaultValue);
 

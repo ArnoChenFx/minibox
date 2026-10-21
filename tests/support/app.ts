@@ -8,6 +8,7 @@ import { DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT } from "../../src/box-profile";
 import { type Config, DEFAULT_SESSION_TTL_MS, ROOT } from "../../src/config";
 import type { ExecutorHooks } from "../../src/operations/executor";
 import { FakeRuntime } from "./fake-runtime";
+import { FakeCheckpointEngine } from "./fake-snapshots";
 
 export const TEST_KEY = "k".repeat(64);
 
@@ -60,11 +61,12 @@ export function createTestApp(
   overrides: Partial<Config> = {},
   runtime = new FakeRuntime(),
   hooks: Partial<ExecutorHooks> = {},
-): { app: App; runtime: FakeRuntime } {
+): { app: App; runtime: FakeRuntime; checkpoints: FakeCheckpointEngine } {
   const cfg = testConfig(overrides);
   if (overrides.dataDir === undefined) cfg.dataDir = mkdtempSync(join(tmpdir(), "minibox-test-"));
-  const app = createApp(cfg, "0.0.0-test", { runtime, hooks, eventsPath: ":memory:" });
-  return { app, runtime };
+  const checkpoints = new FakeCheckpointEngine(runtime);
+  const app = createApp(cfg, "0.0.0-test", { runtime, hooks, eventsPath: ":memory:", checkpointEngine: checkpoints });
+  return { app, runtime, checkpoints };
 }
 
 /** The logger writes expected failures (e.g. 5xx responses) to the console. Mute it so test output stays readable. */

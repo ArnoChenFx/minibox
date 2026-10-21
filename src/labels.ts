@@ -33,6 +33,8 @@ export interface LabelKeys {
   pool: string;
   /** Probe and helper objects. Claim ignores them. */
   internal: string;
+  /** Set on the checkpoint repository volume (value: host id) and on a checkpoint's system image (value: checkpoint id). */
+  checkpoint: string;
 }
 
 export function labelKeys(prefix: string): LabelKeys {
@@ -58,6 +60,7 @@ export function labelKeys(prefix: string): LabelKeys {
     role: `${prefix}.role`,
     pool: `${prefix}.pool`,
     internal: `${prefix}.internal`,
+    checkpoint: `${prefix}.checkpoint`,
   };
 }
 

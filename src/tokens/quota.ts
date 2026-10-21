@@ -71,6 +71,24 @@ export function assertQuota(principal: TokenPrincipal, specs: readonly BoxSpec[]
 }
 
 /**
+ * Refuses a change the token's quota does not allow, without taking a place in the token's queue. An answer before a
+ * task starts uses it; the check that counts for a create is `underQuota`'s, which runs inside the queue.
+ */
+export function assertWithinQuota(
+  ctx: Pick<OperationContext, "principal" | "host" | "allHosts">,
+  change: QuotaChange,
+): void {
+  const { principal } = ctx;
+  if (principal.type !== "token") return;
+  const hosts = ctx.allHosts?.() ?? [ctx.host];
+  assertQuota(
+    principal,
+    hosts.flatMap((host) => host.specs.list()),
+    change,
+  );
+}
+
+/**
  * Checks the token's quota and then runs `work`, both inside the token's queue. Two creates by one token therefore
  * cannot both pass a count that only one of them fits, on any host. The owner has no quota and runs `work` directly.
  */
@@ -82,12 +100,7 @@ export function underQuota<T>(
   const { principal } = ctx;
   if (principal.type !== "token") return work();
   return serialized(`quota:${principal.id}`, async () => {
-    const hosts = ctx.allHosts?.() ?? [ctx.host];
-    assertQuota(
-      principal,
-      hosts.flatMap((host) => host.specs.list()),
-      change,
-    );
+    assertWithinQuota(ctx, change);
     return work();
   });
 }

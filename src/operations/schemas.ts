@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import { BOX_PROFILES } from "../box-profile";
+import { CONSISTENCY_MODES } from "../checkpoints/types";
+import { VOLUME_ROLES } from "../volumes/types";
 
 export const StatsSchema = z.object({
   cpuPercent: z.number(),
@@ -100,6 +102,44 @@ export const BoxWithStatsSchema = BoxSchema.extend({
 export const SnapshotSchema = z.object({
   ref: z.string(),
   source: z.string(),
+});
+
+const CheckpointDataSchema = z.object({
+  volumeId: z.string(),
+  path: z.string(),
+  mode: z.enum(["rw", "ro"]),
+  role: z.enum(VOLUME_ROLES).nullable(),
+  ownership: z.enum(["owned", "independent"]),
+  owner: z.object({ uid: z.number().int(), gid: z.number().int() }),
+  snapshotId: z.string(),
+  bytes: z.number(),
+});
+
+/** A checkpoint as the API shows it. A snapshot from before checkpoints is listed with `legacy` true and no data layers. */
+export const CheckpointSchema = z.object({
+  id: z.string(),
+  legacy: z.boolean(),
+  hostId: z.string(),
+  boxId: z.string().nullable(),
+  boxName: z.string().nullable(),
+  label: z.string(),
+  reason: z.string(),
+  createdBy: z.string().nullable(),
+  pinned: z.boolean(),
+  auto: z.boolean(),
+  consistency: z.enum(CONSISTENCY_MODES),
+  specRevision: z.number().nullable(),
+  spec: z.object({
+    template: z.object({ ref: z.string(), image: z.string(), digest: z.string().nullable() }),
+    cpus: z.number().nullable(),
+    memoryBytes: z.number().nullable(),
+    profile: z.enum(BOX_PROFILES).nullable(),
+  }),
+  data: z.array(CheckpointDataSchema),
+  system: z.object({ image: z.string(), imageId: z.string() }).nullable(),
+  bytes: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 /** A snapshot or template image, as the image list shows it. */

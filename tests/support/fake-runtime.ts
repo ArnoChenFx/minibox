@@ -46,6 +46,8 @@ export interface FakeContainer {
   spec: CreateContainerSpec;
   created: string;
   running: boolean;
+  /** A paused container is still running, as the engine reports it. */
+  paused: boolean;
   startedAt: string | null;
   cpus: number | null;
   memoryBytes: number | null;
@@ -234,7 +236,7 @@ function toInfo(c: FakeContainer): ContainerInfo {
     imageId: c.imageId,
     labels: { ...c.labels },
     created: c.created,
-    state: c.running ? "running" : c.startedAt ? "exited" : "created",
+    state: c.paused ? "paused" : c.running ? "running" : c.startedAt ? "exited" : "created",
     running: c.running,
     startedAt: c.startedAt,
     cpus: c.cpus,
@@ -582,6 +584,7 @@ export class FakeRuntime implements Runtime {
       spec,
       created: now(),
       running,
+      paused: false,
       startedAt: running ? now() : null,
       ...limits,
       pidsLimit: spec.hardening?.pidsLimit ?? null,
@@ -672,6 +675,7 @@ export class FakeRuntime implements Runtime {
     this.tmux.stop(c.id);
     if (!c.running) return;
     c.running = false;
+    c.paused = false;
     this.announce("die", c);
     this.announce("stop", c);
     this.endLogFollows(c.id);
@@ -687,6 +691,23 @@ export class FakeRuntime implements Runtime {
     c.startedAt = now();
     this.announce("restart", c);
     this.endLogFollows(c.id);
+  }
+
+  async pauseContainer(id: string): Promise<void> {
+    this.enter("pauseContainer", [id]);
+    const c = this.getContainer(id);
+    if (!c.running) throw new RuntimeError("conflict", `Container ${c.id} is not running`);
+    if (c.paused) throw new RuntimeError("conflict", `Container ${c.id} is already paused`);
+    c.paused = true;
+    this.announce("pause", c);
+  }
+
+  async unpauseContainer(id: string): Promise<void> {
+    this.enter("unpauseContainer", [id]);
+    const c = this.getContainer(id);
+    if (!c.paused) return;
+    c.paused = false;
+    this.announce("unpause", c);
   }
 
   async removeContainer(id: string, opts: { force: boolean }): Promise<void> {
@@ -1158,6 +1179,12 @@ export class FakeRuntime implements Runtime {
     this.enter("inspectImage", [ref]);
     const img = this.getImage(ref);
     return { id: img.id, labels: { ...img.labels } };
+  }
+
+  /** Any reference the registry is assumed to have. A test that needs a missing registry image fails the pull with `fail`. */
+  async pullImage(ref: string): Promise<void> {
+    this.enter("pullImage", [ref]);
+    if (!this.findImage(ref)) this.seedImage(ref);
   }
 
   /** Removes one reference. The image stays as a dangling image while a container still uses it. */

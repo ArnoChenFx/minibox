@@ -1,9 +1,12 @@
 import type { HostCtx } from "../host/registry";
+import { notFound } from "../lib/errors";
+import { msg } from "../lib/messages";
 import type { AuthorizeRequest } from "../operations/executor";
 import type { TokenPrincipal } from "../operations/types";
 import { isRuntimeError } from "../runtime";
 import type { Box } from "../services/boxes";
 import { getBox } from "../services/boxes";
+import { type CheckpointView, getCheckpoint } from "../services/checkpoints";
 import type { ExecTarget } from "../services/exec";
 import { inspectVolumeOrNull } from "../volumes/engine";
 import type { VolumeRecord } from "../volumes/types";
@@ -116,6 +119,80 @@ function resolvedBox(resolved: unknown): Box {
 
 const boxRule: Rule = async ({ principal, host, resolved }) => {
   assertBoxVisible(principal, boxViewOf(host, resolvedBox(resolved)));
+};
+
+/** A checkpoint is visible as a snapshot is: to its creator, and to a token that sees the box it was taken from. */
+function assertCheckpointVisible(principal: TokenPrincipal, host: HostCtx, checkpoint: CheckpointView): void {
+  const visible = snapshotVisible(
+    principal,
+    { createdBy: checkpoint.createdBy, sourceId: checkpoint.boxId },
+    specViews(host.specs.list()),
+  );
+  if (!visible) throw refusal("checkpoint_out_of_scope");
+}
+
+function resolvedCheckpoint(resolved: unknown): CheckpointView {
+  if (typeof resolved !== "object" || resolved === null || !("createdBy" in resolved)) {
+    throw refusal("checkpoint_out_of_scope");
+  }
+  return resolved as CheckpointView;
+}
+
+const checkpointRule: Rule = async ({ principal, host, resolved }) => {
+  assertCheckpointVisible(principal, host, resolvedCheckpoint(resolved));
+};
+
+/** Changing or deleting a checkpoint is its creator's alone, as it is for a snapshot. */
+const ownedCheckpointRule: Rule = async ({ principal, host, resolved }) => {
+  const checkpoint = resolvedCheckpoint(resolved);
+  assertCheckpointVisible(principal, host, checkpoint);
+  if (checkpoint.createdBy !== principal.id) throw refusal("checkpoint_out_of_scope");
+};
+
+/** A volume a checkpoint reads or restores is one the token may see, as it is one it may mount. */
+function assertVolumeVisible(principal: TokenPrincipal, host: HostCtx, record: VolumeRecord | null): void {
+  if (!record || !volumeVisible(principal, record, specViews(host.specs.list()))) {
+    throw refusal("checkpoint_out_of_scope");
+  }
+}
+
+/**
+ * A take reads the box's owned volumes and any shared volume the request names, so each named one must be visible. A
+ * name that matches no volume is a 404, as it is for a volume operation; one that exists but is not visible is a 403.
+ */
+const checkpointCreateRule: Rule = async (check) => {
+  await boxRule(check);
+  const include = check.input.include as { volumes?: string[] } | undefined;
+  for (const ref of include?.volumes ?? []) {
+    const record = check.host.volumes.resolve(ref, check.host.host.id);
+    if (!record) throw notFound(msg("volume_not_found", { volume: ref }));
+    assertVolumeVisible(check.principal, check.host, record);
+  }
+};
+
+/**
+ * A fork creates a box, so the profile it gets and its TTL are checked as for a box create. Without a system layer it
+ * starts from the source box's template, which the token must be allowed to use. Each shared volume the checkpoint
+ * holds is copied, so the token must see that volume too.
+ */
+const checkpointForkRule: Rule = async ({ principal, host, input, resolved }) => {
+  const checkpoint = resolvedCheckpoint(resolved);
+  assertCheckpointVisible(principal, host, checkpoint);
+  const profile =
+    typeof input.profile === "string" ? input.profile : (checkpoint.spec.profile ?? host.security.defaultProfile);
+  assertProfile(profile, undefined);
+  if (!checkpoint.system) await assertImageUsable(principal, host, checkpoint.spec.template.image, "template");
+  assertTtl(principal, input.ttlSec as number | null | undefined);
+  for (const layer of checkpoint.data) {
+    if (layer.ownership === "independent") assertVolumeVisible(principal, host, host.volumes.read(layer.volumeId));
+  }
+};
+
+/** A rollback rebuilds the box, so the box and the checkpoint it names must both be visible to the token. */
+const rollbackRule: Rule = async (check) => {
+  await boxRule(check);
+  const checkpoint = await getCheckpoint(check.host, String(check.input.checkpoint ?? ""));
+  assertCheckpointVisible(check.principal, check.host, checkpoint);
 };
 
 /** An exec names its box by container id. Anything that cannot be matched to a visible spec is refused. */
@@ -313,6 +390,13 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
     "snapshot.delete",
     async ({ principal, host, input }) => assertOwnedImage(principal, host, String(input.ref), "snapshot"),
   ],
+  ["checkpoint.list", noAccess],
+  ["checkpoint.get", checkpointRule],
+  ["checkpoint.create", checkpointCreateRule],
+  ["checkpoint.fork", checkpointForkRule],
+  ["checkpoint.update", ownedCheckpointRule],
+  ["checkpoint.delete", ownedCheckpointRule],
+  ["box.rollback", rollbackRule],
   ["template.list", noAccess],
   [
     "template.promote",

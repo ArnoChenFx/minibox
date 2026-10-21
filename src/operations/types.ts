@@ -142,6 +142,11 @@ export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> ex
   readonly precondition?: (ctx: OperationContext, input: z.output<I>) => Promise<void>;
   /** Finds the target, so that a missing one is a 404 before the handler runs. */
   readonly resolve?: (ctx: OperationContext, input: z.output<I>) => Promise<R>;
+  /**
+   * Runs for an async operation after the access check and before its task starts. A refusal is the response to the
+   * caller, not a failed task, so a confirmation that needs the target's preview can be answered at once.
+   */
+  readonly beforeTask?: (ctx: OperationContext, input: z.output<I>, resolved: R) => Promise<void>;
   /** Recorded in the activity feed while the handler runs. Reads leave it out. */
   readonly activity?: {
     action(input: z.output<I>): string;
@@ -163,6 +168,7 @@ export interface Operation extends OperationMeta {
   parse(raw: unknown): Record<string, unknown>;
   precondition?(ctx: OperationContext, input: unknown): Promise<void>;
   resolve?(ctx: OperationContext, input: unknown): Promise<unknown>;
+  beforeTask?(ctx: OperationContext, input: unknown, resolved: unknown): Promise<void>;
   activity?: {
     action(input: unknown): string;
     target(input: unknown, resolved: unknown): string;

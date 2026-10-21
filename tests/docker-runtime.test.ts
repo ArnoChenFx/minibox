@@ -191,6 +191,26 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "pausing freezes a running container, and pulling a present image is a no-op",
+    async () => {
+      const name = `${prefix}-pause`;
+      const { id } = await runtime.createContainer({ image: IMAGE, name, cmd: ["sleep", "300"], labels: owned });
+      expect(await rejectionOf(runtime.pauseContainer(id))).toMatchObject({ kind: "conflict" });
+      await runtime.startContainer(id);
+      await runtime.pauseContainer(id);
+      expect(await runtime.inspectContainer(id)).toMatchObject({ running: true, state: "paused" });
+      expect(await rejectionOf(runtime.pauseContainer(id))).toMatchObject({ kind: "conflict" });
+      await runtime.unpauseContainer(id);
+      expect(await runtime.inspectContainer(id)).toMatchObject({ running: true, state: "running" });
+      await runtime.unpauseContainer(id);
+      expect(await runtime.inspectContainer(id)).toMatchObject({ running: true, state: "running" });
+      await runtime.pullImage(IMAGE);
+      await runtime.removeContainer(id, { force: true });
+    },
+    LONG,
+  );
+
+  test(
     "container lifecycle, limits, logs and error kinds",
     async () => {
       const name = `${prefix}-lifecycle`;
