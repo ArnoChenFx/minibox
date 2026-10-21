@@ -33,6 +33,7 @@ export const eventRoutes: Route[] = [
   route("GET", "/api/events/stream", ({ app, req, url, server, caller }) => {
     const filter = scopedFilter(filterOf(parseInput(eventFilterInput, Object.fromEntries(url.searchParams))), OWNER);
     const lastId = lastEventIdOf(req);
+    const release = app.streams.acquire();
     server.timeout(req, 0);
     // A browser that signs out or is revoked must stop receiving events now, not at its next reconnect.
     const sessionEnded = new AbortController();
@@ -44,7 +45,10 @@ export const eventRoutes: Route[] = [
       lastId,
       live: carriesLiveState(filter) ? liveSource(app.bus, app.hosts) : undefined,
       signal: AbortSignal.any([req.signal, sessionEnded.signal]),
-      onEnd: unwatch,
+      onEnd: () => {
+        unwatch?.();
+        release();
+      },
     });
     return new Response(stream, { headers: STREAM_HEADERS });
   }),

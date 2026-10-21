@@ -83,6 +83,7 @@ export const MESSAGES = {
   terminal_not_running: "The box is not running, so a terminal can't be opened.",
   ws_upgrade_failed: "WebSocket upgrade failed.",
   too_many_attempts: "Too many attempts. Please try again in 5 minutes.",
+  stream_limit: "Too many live connections are open (at most {max}). Close a MiniBox tab or wait, then try again.",
   wrong_key: "Incorrect access key.",
   box_not_found: "Box not found.",
   session_not_found: "Session not found.",

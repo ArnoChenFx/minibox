@@ -8,6 +8,7 @@ import { createDockerRuntime } from "./docker/runtime";
 import { OutputStore } from "./events/outputs";
 import { createRedactor, type Redactor } from "./events/redact";
 import { RetentionJob } from "./events/retention";
+import { StreamSlots } from "./events/slots";
 import { EventStore, type StoredEvent } from "./events/store";
 import type { LiveTopics } from "./host/live";
 import type { HostMonitor } from "./host/metrics";
@@ -56,6 +57,7 @@ export interface App {
   operations: Executor;
   throttle: LoginLimiter;
   sessions: SessionStore;
+  streams: StreamSlots;
   version: string;
   startedAt: Date;
 }
@@ -150,6 +152,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
         ttlMs: cfg.sessionTtlMs,
         idleMs: cfg.sessionIdleMs,
       }),
+    streams: new StreamSlots(cfg.streamMaxConnections),
     version,
     startedAt: new Date(),
   };

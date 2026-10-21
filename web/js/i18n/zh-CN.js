@@ -120,6 +120,7 @@ export default {
   "err.terminal_not_running": "Box 未运行，无法打开终端。",
   "err.ws_upgrade_failed": "WebSocket 升级失败。",
   "err.too_many_attempts": "尝试次数过多，请 5 分钟后再试。",
+  "err.stream_limit": "实时连接已达上限（最多 {max} 个）。请关闭一个 MiniBox 标签页或稍候再试。",
   "err.wrong_key": "访问密钥不正确。",
   "err.session_not_found": "找不到该会话。",
   "err.box_not_found": "找不到该 Box。",
