@@ -640,7 +640,7 @@ Event
 
 ```text
 Token
-├ scopes      box:read · box:write · box:delete · exec · files:read/write
+├ scopes      box:read · box:write · box:delete · exec · box:ssh · files:read/write
 │             port:expose · checkpoint:create/restore · tool:install
 │             volume:read · volume:write · volume:attach
 │             （pool:admin 只属于所有者，不是令牌可以持有的 scope）
@@ -687,7 +687,7 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 ### 9.5 实现说明（#13）
 
 - **存储**：`DATA_DIR/tokens.json`（权限 600）只保存 SHA-256。明文 `mbx_…` 只出现在创建响应里。与浏览器会话分文件。更换 `ACCESS_KEY` 会结束会话，**不会**吊销 API 令牌；吊销在设置页或 `DELETE /api/tokens/:id`。
-- **预设**：`readonly`（`box:read` 与 `files:read`）、`operator`（除了不能签发令牌之外的全部 scope）、`sandboxed-agent`（operator 去掉 `volume:attach` 和 `tool:install`）、`admin`（全部 scope，Box 与宿主机为 `*`）。`sandboxed-agent` 的默认配额是 5 个 Box、合计 8 个 CPU、16 GB、TTL 4 小时、每 60 秒 60 次请求。未改 scope、且 Box 与宿主机都是 `*` 的 admin 可以读全部审计；其余令牌只看自己的事件和范围内 Box 的事件。任何预设都不能创建或吊销令牌。
+- **预设**：`readonly`（`box:read` 与 `files:read`）、`operator`（除了不能签发令牌之外的全部 scope）、`sandboxed-agent`（operator 去掉 `volume:attach`、`tool:install` 和 `box:ssh`）、`admin`（全部 scope，Box 与宿主机为 `*`）。`sandboxed-agent` 的默认配额是 5 个 Box、合计 8 个 CPU、16 GB、TTL 4 小时、每 60 秒 60 次请求。未改 scope、且 Box 与宿主机都是 `*` 的 admin 可以读全部审计；其余令牌只看自己的事件和范围内 Box 的事件。任何预设都不能创建或吊销令牌。
 - **默认范围**：Box 为 `created-by-me`，宿主机为 `local`，卷为空。只读预设不能创建 Box，因此在改成 `*` 或列出 id / 标签之前，它看不到已经存在的 Box。
 - **授权**：仍是执行器上的 `authorize` 钩子，操作定义没有改。调用前检查 scope；输入合法且目标解析之后，再检查宿主机、卷、Box、TTL 和配额。直接读取范围外的已有 Box 返回 403，不存在的 Box 仍是 404。列表在处理函数里过滤，因为钩子只能拒绝整次调用。
 - **`exec`**：对令牌可见的 Box，`exec` 隐含其全部挂载的读写，所以 `files:*` 只对没有 `exec` 的令牌有意义。文件 API 还没有（#9）。终端要求 `exec` 且 Box 在范围内。
@@ -703,6 +703,7 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - **宿主机**：Box 没有记录宿主机时，只有 `all` 的宿主机授权才允许访问（失败关闭，N4）。
 - **活动**：`/api/activity` 只对所有者开放（路由默认 `OWNER_ONLY`）。令牌使用按范围过滤的 `/api/events`。
 - **会话与 exec**：`box:exec` 与 `box:session`（终端与会话 API）都映射到 `exec` scope，因为它们能在 Box 内执行命令。
+- **SSH**（`box:ssh`）：`GET /api/ssh/:box` 升级为 WebSocket，承载一条 SSH 连接。握手即完成鉴权（访问密钥或令牌的 Bearer，浏览器会话不可用），因此 SSH 层接受任何认证方式，用户只能是 `dev` 或 Box id。`box:ssh` 与 `exec` 一样能在 Box 内以 `dev` 执行任意命令、读写全部挂载，因此 `sandboxed-agent` 不包含它，授予时应同样谨慎。`-L` 另需 `port:expose`，且只转发到 Box 的回环地址；`-R`、Unix 套接字转发、X11 与 agent 转发一律拒绝并审计。打开的连接计入空闲休眠判断。主机密钥保存在 `DATA_DIR/ssh_host_ed25519_key`。
 
 ---
 
