@@ -14,9 +14,10 @@ Use the MiniBox MCP server (\`/mcp\`, Bearer access key) to work inside a box.
 - A foreground exec may set timeoutSec up to 55. For a longer command, use exec with background true and a larger timeoutSec (up to 3600), then exec_get with waitMs (max 25000). exec_kill stops the process tree.
 - exec can read and write every volume mounted on that box.
 - rebuild_box is in the rebuild toolset (\`/mcp?toolsets=rebuild\`) and needs confirm true.
+- The storage toolset (\`/mcp?toolsets=storage\`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
 - File tools are not available yet. Ask for toolsets with /mcp?toolsets=core,session. The default is core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.`;
 
 /** What the MCP initialize result tells the client. Checkpoints and file tools are named so an agent does not invent them. */
-export const MCP_INSTRUCTIONS = `Recommended flow: list_boxes or create_box, then exec. Checkpoints are not available yet. File tools are not available yet. The design catalog has 27 tools and the default toolsets are core and meta (15 tools). This server exposes the implemented tools in the requested toolsets. rebuild_box is in the rebuild toolset.
+export const MCP_INSTRUCTIONS = `Recommended flow: list_boxes or create_box, then exec. Checkpoints are not available yet. File tools are not available yet. The design catalog has 27 tools and the default toolsets are core and meta (15 tools). This server exposes the implemented tools in the requested toolsets. rebuild_box is in the rebuild toolset, and the volume and pool tools are in the storage toolset.
 
 ${AGENTS_MD_SNIPPET}`;
