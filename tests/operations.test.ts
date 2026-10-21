@@ -638,7 +638,6 @@ describe("projections", () => {
       "delete_box",
       "box_action",
       "update_box",
-      "rebuild_box",
       "exec",
       "exec_get",
       "exec_kill",
@@ -646,8 +645,15 @@ describe("projections", () => {
     expect(mcpTools(OPERATIONS, ["storage"])).toEqual([]);
   });
 
+  test("rebuild_box is outside the default toolsets and only in the rebuild toolset", () => {
+    expect(mcpTools(OPERATIONS, ["rebuild"]).map((tool) => tool.name)).toEqual(["rebuild_box"]);
+    expect(mcpTools(OPERATIONS, ["rebuild"])[0]?.toolset).toBe("rebuild");
+  });
+
   test("each tool carries the operation's input and output schemas and its read or destructive hint", () => {
-    const tools = new Map(mcpTools(OPERATIONS).map((tool) => [tool.name, tool]));
+    const tools = new Map(
+      [...mcpTools(OPERATIONS), ...mcpTools(OPERATIONS, ["rebuild"])].map((tool) => [tool.name, tool]),
+    );
     const create = tools.get("create_box");
     expect(create?.inputSchema).toMatchObject({ type: "object", required: ["name"] });
     expect(Object.keys((create?.inputSchema.properties ?? {}) as object)).toEqual([

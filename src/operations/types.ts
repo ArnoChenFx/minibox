@@ -9,7 +9,7 @@ import type { TaskHandle, TaskReader } from "../tasks/types";
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
 
-export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta";
+export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild";
 
 export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 

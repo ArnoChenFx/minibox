@@ -4109,7 +4109,7 @@
         "x-cli": "box rebuild",
         "x-mcp": {
           "name": "rebuild_box",
-          "toolset": "core"
+          "toolset": "rebuild"
         }
       }
     },

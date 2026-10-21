@@ -324,7 +324,7 @@ export const boxRebuild = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/rebuild", body: true, ifMatch: true }],
   cli: "box rebuild",
   mcp: {
-    toolset: "core",
+    toolset: "rebuild",
     name: "rebuild_box",
     description:
       "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). Pass expectedRevision, the box's current revision.",

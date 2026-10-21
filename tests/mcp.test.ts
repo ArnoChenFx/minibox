@@ -139,11 +139,11 @@ describe("MCP", () => {
         "delete_box",
         "box_action",
         "update_box",
-        "rebuild_box",
         "exec",
         "exec_get",
         "exec_kill",
       ]);
+      expect(tools).not.toContain("rebuild_box");
       expect(tools).not.toContain("read_file");
       expect(tools).not.toContain("get_activity");
 
@@ -186,6 +186,24 @@ describe("MCP", () => {
 
       const storage = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=storage");
       expect(((await storage.json()) as { result: { tools: unknown[] } }).result.tools).toEqual([]);
+
+      const rebuild = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=rebuild");
+      expect(
+        ((await rebuild.json()) as { result: { tools: { name: string }[] } }).result.tools.map((t) => t.name),
+      ).toEqual(["rebuild_box"]);
+
+      const notRebuild = await post(
+        env.base,
+        rpc(6, "tools/call", { name: "rebuild_box", arguments: { id: "missing", confirm: true } }),
+        {},
+        "/mcp?toolsets=core",
+      );
+      const notRebuildBody = (await notRebuild.json()) as {
+        result: { isError: boolean; structuredContent: { message: string; hint: string } };
+      };
+      expect(notRebuildBody.result.isError).toBe(true);
+      expect(notRebuildBody.result.structuredContent.message).toContain("rebuild toolset");
+      expect(notRebuildBody.result.structuredContent.hint).toContain("rebuild");
 
       const hidden = await post(
         env.base,
