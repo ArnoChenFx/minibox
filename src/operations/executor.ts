@@ -155,7 +155,9 @@ export class Executor {
       result = await this.record(operation, parsed, resolved, () => operation.run(recording, parsed, resolved));
     } catch (e) {
       const error = toAppError(e);
-      const status: EventStatus = denied ? "denied" : "error";
+      // A 403 is a refusal whoever raised it: the authorize hook, or an operation's own rule such as the
+      // strict profile.
+      const status: EventStatus = denied || error.status === 403 ? "denied" : "error";
       this.emit(eventOf(id, operation, bound, started, { status, input, resolved, error }));
       throw e;
     }

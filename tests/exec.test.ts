@@ -392,6 +392,14 @@ describe("exec", () => {
     expect(runtime.callsTo("startExec").length).toBe(execs + 2);
   });
 
+  test("a strict refusal is audited as denied, not as an error", async () => {
+    const { app, ctx } = setup();
+    const id = await createBox(app, ctx, "locked", "strict");
+    await rejectionOf(app.operations.run("exec.run", ctx, { id, argv: ["id", "-u"], user: "root" }));
+    expect(app.events.list({ op: "exec.run", status: "denied" }, { limit: 5 }).events).toHaveLength(1);
+    expect(app.events.list({ op: "exec.run", status: "error" }, { limit: 5 }).events).toHaveLength(0);
+  });
+
   test("root runs are marked privileged in the audit, and a finished exec keeps its duration", async () => {
     const { app, runtime, ctx } = setup();
     runtime.execScript = { stdout: "", stderr: "", code: 0 };
