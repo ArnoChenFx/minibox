@@ -227,6 +227,32 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "a stats call gives up when its signal aborts, so a sampler's timeout ends the engine request",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-stats-abort`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+      });
+      try {
+        await runtime.startContainer(id);
+        const began = performance.now();
+        const timedOut = await rejectionOf(runtime.containerStats(id, { signal: AbortSignal.timeout(20) }));
+        expect((timedOut as Error).name).toBe("AbortError");
+        expect(performance.now() - began).toBeLessThan(1000);
+        const preAborted = await rejectionOf(runtime.containerStats(id, { signal: AbortSignal.abort() }));
+        expect((preAborted as Error).name).toBe("AbortError");
+        const stats = await runtime.containerStats(id, { signal: new AbortController().signal });
+        expect(stats.memLimit).toBeGreaterThan(0);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "containerDiff lists a file written in the writable layer",
     async () => {
       const { id } = await runtime.createContainer({
