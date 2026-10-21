@@ -70,12 +70,12 @@ export const taskList = defineOperation({
   }),
   output: z.object({ tasks: z.array(TaskSchema) }),
   rest: [{ method: "GET", path: "/api/tasks", query: ["status", "limit"] }],
-  run: async ({ tasks, host, principal }, input) => {
+  run: async ({ tasks, host, principal, boxViews }, input) => {
     const reader = tasksOf(tasks);
     if (principal.type === "owner") {
       return { tasks: reader.list({ status: input.status, limit: input.limit }).map(publicTask) };
     }
-    const boxes = specViews(host.specs.list());
+    const boxes = boxViews?.() ?? specViews(host.specs.list());
     const visible = reader
       .list({ status: input.status, limit: TASK_LIMIT.max })
       .filter((task) => taskVisible(principal, task, boxes));
@@ -93,10 +93,10 @@ export const taskGet = defineOperation({
   input: z.object({ id: taskId() }),
   output: TaskSchema,
   rest: [{ method: "GET", path: "/api/tasks/:id" }],
-  run: async ({ tasks, host, principal }, input) => {
+  run: async ({ tasks, host, principal, boxViews }, input) => {
     const task = tasksOf(tasks).get(input.id, { output: true });
     if (!task) throw notFound(msg("task_not_found"));
-    if (principal.type !== "owner" && !taskVisible(principal, task, specViews(host.specs.list()))) {
+    if (principal.type !== "owner" && !taskVisible(principal, task, boxViews?.() ?? specViews(host.specs.list()))) {
       throw notFound(msg("task_not_found"));
     }
     return publicTask(task);

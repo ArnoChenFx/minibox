@@ -3,7 +3,7 @@ import { msg } from "../lib/messages";
 import { parseSequence } from "../operations/events";
 import { taskStream } from "../tasks/stream";
 import { TASK_ID_RE } from "../tasks/types";
-import { taskVisible, specViews } from "../tokens/model";
+import { allBoxViews, taskVisible } from "../tokens/model";
 import { abortWhenEnded, principalOf, type Route, route, scopedAccess } from "./router";
 
 const STREAM_HEADERS = {
@@ -48,7 +48,7 @@ export const taskRoutes: Route[] = [
         throw new AppError(400, "validation_failed", msg("task_id_invalid"), { field: "id" });
       }
       const task = app.tasks.get(params.id ?? "", { output: false });
-      if (!task || !taskVisible(principal, task, specViews(ctx.host.specs.list()))) {
+      if (!task || !taskVisible(principal, task, allBoxViews(app.hosts.list()))) {
         throw new AppError(404, "not_found", msg("task_not_found"));
       }
       const after = cursorOf(req, url);
