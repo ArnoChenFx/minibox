@@ -335,6 +335,48 @@ describe("deleteBox", () => {
     expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
   });
 
+  test("a workspace with no record is never removed, even when its volume is asked for", async () => {
+    const box = await newBox("alpha");
+    const workspace = host.volumes.findByEngine(host.host.id, box.volume);
+    if (!workspace) throw new Error("the workspace has no record");
+    host.volumes.remove(workspace.id);
+
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(runtime.callsTo("removeVolume").map((call) => call.args[0])).not.toContain(box.volume);
+    expect(runtime.volumes.has(box.volume)).toBe(true);
+  });
+
+  test("a volume another box owns is kept, even when the box being deleted still mounts it", async () => {
+    const alpha = await newBox("alpha");
+    const beta = await newBox("beta");
+    const alphaSpec = host.specs.read(alpha.boxId);
+    const betaSpec = host.specs.read(beta.boxId);
+    if (!alphaSpec || !betaSpec) throw new Error("both boxes need a spec");
+    const workspace = alphaSpec.mounts.find((mount) => mount.path === "/workspace");
+    if (!workspace) throw new Error("alpha has no workspace mount");
+    host.specs.write({ ...alphaSpec, mounts: alphaSpec.mounts.filter((mount) => mount.path !== "/workspace") });
+    host.specs.write({ ...betaSpec, mounts: [...betaSpec.mounts, workspace] });
+
+    expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "beta", volumeDeleted: true });
+    expect(runtime.callsTo("removeVolume").map((call) => call.args[0])).not.toContain(alpha.volume);
+    expect(runtime.volumes.has(alpha.volume)).toBe(true);
+    expect(host.volumes.findByEngine(host.host.id, alpha.volume)).toMatchObject({
+      ownership: "owned",
+      ownerBoxId: alpha.boxId,
+    });
+  });
+
+  test("an owned record with no owner is never removed", async () => {
+    const box = await newBox("alpha");
+    const workspace = host.volumes.findByEngine(host.host.id, box.volume);
+    if (!workspace) throw new Error("the workspace has no record");
+    host.volumes.write({ ...workspace, ownerBoxId: null });
+
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(runtime.volumes.has(box.volume)).toBe(true);
+    expect(host.volumes.read(workspace.id)).toMatchObject({ ownership: "owned", ownerBoxId: null });
+  });
+
   test("containers without the MiniBox label are never removed", async () => {
     const id = runtime.seedContainer({ image: host.baseTemplateTag, name: "plain" });
     expect(await rejectionOf(boxes.deleteBox(host, id, true))).toMatchObject({

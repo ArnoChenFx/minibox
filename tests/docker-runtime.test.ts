@@ -591,6 +591,38 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "deleting a box removes the volumes it owns and keeps the shared tools volume and another box's volumes",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const alpha = await boxes.createBox(host, { name: "del-alpha", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const beta = await boxes.createBox(host, { name: "del-beta", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const toolsOf = (boxId: string) =>
+          host.specs.read(boxId)?.mounts.find((mount) => mount.path === "/opt/minibox/tools")?.volume ?? "";
+        const tools = toolsOf(alpha.boxId);
+        expect(toolsOf(beta.boxId)).toBe(tools);
+        const owned = (host.specs.read(alpha.boxId)?.mounts ?? [])
+          .map((mount) => mount.volume)
+          .filter((name) => name !== tools);
+        expect(owned).toHaveLength(3);
+
+        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "del-alpha", volumeDeleted: true });
+        for (const name of owned) expect(await volumeExists(name)).toBe(false);
+        expect(host.volumes.findByEngine(host.host.id, alpha.volume)).toBeNull();
+        expect(await volumeExists(tools)).toBe(true);
+        expect(await volumeExists(beta.volume)).toBe(true);
+
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "del-beta", volumeDeleted: true });
+        expect(await volumeExists(beta.volume)).toBe(false);
+        expect(await volumeExists(tools)).toBe(true);
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
     "a create the engine refuses leaves no volume, record, container or spec behind",
     async () => {
       const restore = silenceLogs();

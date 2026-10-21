@@ -23,7 +23,7 @@ import { assertVolumesPresent, poolsUsed, trackPoolRoots } from "../volumes/engi
 import { assertPoolsReachable } from "../volumes/health";
 import { validMountPath } from "../volumes/mounts";
 import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
-import type { VolumeRole } from "../volumes/types";
+import type { VolumeRecord, VolumeRole } from "../volumes/types";
 import { assertMountAllowed, mountTarget } from "./attachments";
 
 export interface CreateBoxInput {
@@ -540,40 +540,43 @@ export interface DeleteBoxResult {
 export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolean): Promise<DeleteBoxResult> {
   const box = await getBox(host, ref);
   const spec = host.specs.read(box.boxId);
-  const owned = (spec?.mounts ?? [])
+  const mounted = (spec?.mounts ?? [])
     .map((mount) => host.volumes.findByEngine(host.host.id, mount.volume))
-    .filter((volume): volume is NonNullable<typeof volume> => volume !== null);
+    .filter((volume): volume is VolumeRecord => volume !== null);
   await host.specs.exclusive(async () => {
     await host.runtime.removeContainer(box.id, { force: true });
     host.specs.remove(box.boxId);
   });
   const result: DeleteBoxResult = { name: box.name, volumeDeleted: false };
-  if (deleteVolume) {
-    const remaining = host.specs.list();
-    let removed = 0;
-    for (const volume of owned) {
-      if (volume.ownership !== "owned") continue;
-      if (volume.ownerBoxId && volume.ownerBoxId !== box.boxId) continue;
-      const used = remaining.some((other) => other.mounts.some((mount) => mount.volume === volume.engineName));
-      if (used) continue;
-      const outcome = await removeEngine(host, volume.engineName);
-      if (outcome.status === "failed") {
-        result.volumeError ??= outcome.detail;
-        continue;
-      }
-      host.volumes.remove(volume.id);
-      removed += 1;
-    }
-    const recorded = owned.some((volume) => volume.engineName === box.volume);
-    if (box.volume && !recorded) {
-      const outcome = await removeEngine(host, box.volume);
-      if (outcome.status === "failed") result.volumeError ??= outcome.detail;
-      else removed += 1;
-    }
-    result.volumeDeleted = removed > 0 && result.volumeError === undefined;
-  }
+  if (deleteVolume) await removeOwnedVolumes(host, box.boxId, mounted, result);
   log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
   return result;
+}
+
+/**
+ * Removes the volumes this box owns that no other box mounts. Only a record that names this box as owner is removed.
+ * A volume with no record, or one owned by another box, is never touched. Failures are reported, not thrown.
+ */
+async function removeOwnedVolumes(
+  host: HostCtx,
+  boxId: string,
+  mounted: VolumeRecord[],
+  result: DeleteBoxResult,
+): Promise<void> {
+  const remaining = host.specs.list();
+  let removed = 0;
+  for (const volume of mounted) {
+    if (volume.ownership !== "owned" || volume.ownerBoxId !== boxId) continue;
+    if (remaining.some((other) => other.mounts.some((mount) => mount.volume === volume.engineName))) continue;
+    const outcome = await removeEngine(host, volume.engineName);
+    if (outcome.status === "failed") {
+      result.volumeError ??= outcome.detail;
+      continue;
+    }
+    host.volumes.remove(volume.id);
+    removed += 1;
+  }
+  result.volumeDeleted = removed > 0 && result.volumeError === undefined;
 }
 
 /** The spec behind a box reference. Missing containers are a 404, same as `getBox`. */
