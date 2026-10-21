@@ -1,5 +1,5 @@
 import { type ActivityLog, tracked } from "../activity";
-import type { EventInput, EventRefs, EventStatus, EventTarget } from "../events/types";
+import type { AuditNote, EventInput, EventRefs, EventStatus, EventTarget } from "../events/types";
 import { ulid } from "../events/ulid";
 import { isAbortError } from "../lib/abort";
 import { AppError, toAppError } from "../lib/errors";
@@ -97,6 +97,8 @@ function eventOf(
   const audit = operation.audit;
   const target = input === undefined ? undefined : audit?.target?.(input, resolved, result);
   const detail = input === undefined ? undefined : audit?.detail ? audit.detail(input, resolved) : input;
+  const fromAudit = input === undefined ? undefined : audit?.ref?.(input, resolved, result);
+  const ref = fromAudit || outcome.ref ? { ...fromAudit, ...outcome.ref } : undefined;
   return {
     id,
     ts: started.ts,
@@ -112,7 +114,7 @@ function eventOf(
     detail,
     run: ctx.run,
     parentId: ctx.parentId,
-    ref: outcome.ref,
+    ref,
     error: error && { code: error.code, status: error.status },
   };
 }
@@ -149,7 +151,8 @@ export class Executor {
       if (operation.precondition) await operation.precondition(bound, parsed);
       resolved = operation.resolve ? await operation.resolve(bound, parsed) : undefined;
       if (operation.async) return await this.startAsync(operation, bound, parsed, resolved, started, id);
-      result = await this.record(operation, parsed, resolved, () => operation.run(bound, parsed, resolved));
+      const recording: OperationContext = { ...bound, record: (note) => this.recordNote(bound, id, note) };
+      result = await this.record(operation, parsed, resolved, () => operation.run(recording, parsed, resolved));
     } catch (e) {
       const error = toAppError(e);
       const status: EventStatus = denied ? "denied" : "error";
@@ -265,6 +268,29 @@ export class Executor {
       target: operation.activity.target(input, resolved),
       ok,
       ...(message === undefined ? {} : { message }),
+    });
+  }
+
+  /** An extra event parented to the operation that is running. Exec start, finish and kill use this. */
+  private recordNote(ctx: OperationContext, parentId: string, note: AuditNote): void {
+    const ts = Date.now();
+    this.emit({
+      id: ulid(ts),
+      ts,
+      durationMs: note.durationMs ?? 0,
+      status: note.status,
+      op: note.op,
+      kind: note.kind,
+      principal: ctx.principal,
+      source: ctx.source,
+      hostId: ctx.host.host.id,
+      summary: note.summary,
+      target: note.target,
+      detail: note.detail,
+      run: ctx.run,
+      parentId,
+      ref: note.ref,
+      error: note.error,
     });
   }
 

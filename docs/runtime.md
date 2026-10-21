@@ -24,7 +24,7 @@
 
 - 连通性：`ping`、`info`
 - 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerDiff`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`
-- exec：`startExec` 返回带 TTY 的会话，包含 `stream`、`resize()` 与 `inspect()`
+- exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。非 TTY 命令经一层 `/bin/sh` 包装运行：包装脚本把自己的 pid 写进 `/tmp/.minibox-exec-<随机>.pid`，命令结束后删除该文件。`kill()` 在容器内、以该 exec 的同一用户执行一段脚本：先用 `SIGSTOP` 冻结整棵进程树，再逐个 `SIGKILL`。它从不向宿主机发信号，Docker 报告的宿主机 pid 只作参考，因此不会误伤宿主机上的其它进程，也不受运行 MiniBox 的 uid 限制。任一进程未能结束时 `kill()` 抛出 `engine` 错误，exec 仍在运行，pid 文件保留，可以再次调用。exec 已结束时 `kill()` 直接返回。交互终端没有 pid 文件，`kill()` 会被拒绝。这一层要求容器里有 `/bin/sh`、`cat` 与 `rm`。
 - 事件：`events`，按标签与类型过滤；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
 - 卷：`inspectVolume`、`createVolume`、`removeVolume`
@@ -92,6 +92,7 @@
   - `fail(op, error)` 让下一次该操作失败，`down = true` 模拟引擎不可达。
   - 网络有 ID，容器第一次启动时固定在当前网络的 ID 上。网络被删除并重建后，启动该容器返回 `not_found`，直到调用 `reattachNetwork`，与真实引擎一致。
   - `seedImage()` 与 `seedContainer()` 预置状态，不记录调用。
+  - 非 TTY exec（`spec.tty === false`）使用 `execScript`（默认空输出、退出码 0）。设为 `null` 时一直运行，直到 `kill()`，退出码 137。TTY 路径仍在返回前打印 `$ `。
 - `tests/support/app.ts` 的 `createTestApp(overrides, runtime)` 创建使用 fake 的应用：端口 0，不访问真实 socket，标签前缀为 `mbtest`。`silenceLogs()` 静默日志输出，`rejectionOf()` 取得 rejected 的错误。
 - 假引擎适配器测试：`tests/docker-adapter.test.ts` 在一个 unix socket 上启动最小的 Engine API（不需要 daemon），经由真实的 `createDockerRuntime()` 检查状态码到 `kind` 的映射、列出时跳过已消失的容器、`stopContainer` 发送的 `t` 参数等，并检查列表的 `inspect` 缓存：复用、按状态失效、变更后失效、过期，以及变更期间尚未返回的 `inspect` 不会被缓存。
 - 真实引擎测试：运行 `bun run test:docker`（`scripts/docker-integration.ts`）。脚本检查引擎，缺少镜像时拉取 `MINIBOX_TEST_IMAGE`（默认 `alpine:3.20`），用新的 `mbit` 前缀运行 `tests/docker-runtime.test.ts`，结束后按前缀删除容器、模板与快照镜像和卷。测试失败时会再清理一次，以覆盖仍在进行中的快照提交。可选环境变量为 `DOCKER_SOCKET`（默认 `/var/run/docker.sock`）。
@@ -100,6 +101,7 @@
 
 ## 已知限制
 
+- exec 的 `kill()` 只能结束仍挂在该 exec 进程树上的进程。父进程先退出、被 init 收养的孤儿进程找不到；命令结束后留在容器里的后台进程也不会被结束。切换到别的 uid 的进程无法由 exec 的用户结束，此时 `kill()` 报错，而不是静默成功。
 - 没有同时运行于 fake 与真实后端的契约测试套件。两者的一致性分别由 `tests/fake-runtime.test.ts` 的断言与真实引擎测试保证。
 - 镜像构建时，引擎在输出流中报告的错误仍是普通 `Error`，因此映射为 500。这与改动前一致，统一为 `engine` 错误留待后续处理。
 - `listContainers` 的 `inspect` 结果在适配器内缓存。引擎的列表接口不返回 CPU 与内存限制，也不返回启动时间，因此每个容器首次列出时仍需一次 `inspect`。之后只有以下情况才会再次 `inspect`：列表显示的状态与缓存时不同、缓存超过 30 秒，或经由该适配器做过任何容器变更（创建、启动、停止、重启、删除、重命名、更新资源、网络重连）。容器不再出现在列表中时，缓存项会被删除。代价是：引擎外部的变更（例如手动 `docker update` 或 `docker rename`）在状态变化或 30 秒后才会出现在列表中。`inspectContainer` 不使用缓存，详情页与各操作前的检查总是读取引擎的最新状态。`HostMonitor` 的指标快照通过 `listBoxes` 统计 Box，结果另外缓存 2.5 秒。

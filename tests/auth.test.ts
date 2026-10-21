@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   authenticate,
+  bearerAllowed,
   clearLegacyKeyCookie,
   clearSessionCookie,
   clientAddress,
@@ -13,6 +14,7 @@ import {
   isWeakAccessKey,
   LEGACY_KEY_COOKIE,
   LoginLimiter,
+  type LoginLimits,
   LoginThrottle,
   parseCookies,
   proxyHeaderWarner,
@@ -350,6 +352,69 @@ describe("login limiter", () => {
     } finally {
       none.stop();
       full.stop();
+    }
+  });
+});
+
+const gateWith = (limits: Partial<LoginLimits> = {}) => ({
+  accessKey: KEY,
+  throttle: new LoginLimiter({ penaltyMs: 0, perAddress: 1, total: 100, ...limits }),
+});
+
+describe("bearer keys", () => {
+  test("the access key passes and is never counted", async () => {
+    const gate = gateWith();
+    try {
+      expect(await bearerAllowed(req({ authorization: `Bearer ${KEY}` }), gate, "198.51.100.1")).toBe(true);
+      expect(await bearerAllowed(req({ authorization: `Bearer ${KEY}` }), gate, "198.51.100.1")).toBe(true);
+      expect(gate.throttle.refuses(rateLimitKey("198.51.100.1"))).toBe(false);
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("a wrong key is counted, and the next one from that address is refused with 429", async () => {
+    const gate = gateWith();
+    try {
+      expect(await bearerAllowed(req({ authorization: "Bearer wrong" }), gate, "198.51.100.2")).toBe(false);
+      expect(gate.throttle.refuses(rateLimitKey("198.51.100.2"))).toBe(true);
+      await expect(bearerAllowed(req({ authorization: "Bearer wrong" }), gate, "198.51.100.2")).rejects.toMatchObject({
+        status: 429,
+        code: "too_many_requests",
+      });
+      expect(await bearerAllowed(req({ authorization: `Bearer ${KEY}` }), gate, "198.51.100.2")).toBe(true);
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("a missing, empty or non-bearer credential is neither allowed nor counted", async () => {
+    const gate = gateWith();
+    try {
+      const credentials: Record<string, string>[] = [
+        {},
+        { authorization: "Bearer " },
+        { authorization: "Basic xyz" },
+        { cookie: "a=b" },
+      ];
+      for (const headers of credentials) {
+        expect(await bearerAllowed(req(headers), gate, "198.51.100.3")).toBe(false);
+      }
+      expect(gate.throttle.refuses(rateLimitKey("198.51.100.3"))).toBe(false);
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("the total counts wrong keys from addresses that have never failed", async () => {
+    const gate = gateWith({ perAddress: 100, total: 1 });
+    try {
+      expect(await bearerAllowed(req({ authorization: "Bearer wrong" }), gate, "198.51.100.4")).toBe(false);
+      await expect(bearerAllowed(req({ authorization: "Bearer wrong" }), gate, "198.51.100.5")).rejects.toMatchObject({
+        status: 429,
+      });
+    } finally {
+      gate.throttle.stop();
     }
   });
 });

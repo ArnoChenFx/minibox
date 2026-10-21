@@ -37,7 +37,7 @@ export interface CliCommand {
   readonly kind: Kind;
 }
 
-/** The CLI commands the operations name, in registry order. The binary that runs them is not built yet. */
+/** The CLI commands the operations name, in registry order. `src/cli.ts` is the client; `bun run build:cli` compiles it. */
 export function cliCommands(operations: readonly Operation[]): CliCommand[] {
   return operations.flatMap((op) =>
     op.cli ? [{ command: op.cli, operation: op.name, summary: op.summary, kind: op.kind }] : [],

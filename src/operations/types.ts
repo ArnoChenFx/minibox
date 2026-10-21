@@ -1,14 +1,15 @@
 import type { z } from "zod";
 
 import type { EventReader } from "../events/store";
-import type { EventTarget, Source } from "../events/types";
+import type { AuditNote, EventRefs, EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
+import type { ExecService } from "../services/exec";
 import type { TaskHandle, TaskReader } from "../tasks/types";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
 
-export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta";
+export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild";
 
 export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
@@ -33,6 +34,10 @@ export interface OperationContext {
   readonly task?: TaskHandle;
   /** The task manager. The executor fills it in; task operations read it. */
   readonly tasks?: TaskReader;
+  /** Command exec. Present on REST, MCP and the CLI. */
+  readonly execs?: ExecService;
+  /** Records an audit event parented to this operation. Exec uses it for start, finish and kill. */
+  record?(note: AuditNote): void;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */
@@ -83,6 +88,8 @@ export interface AuditSpec<I, O, R> {
   target?(input: I, resolved: R | undefined, result: O | undefined): EventTarget | undefined;
   /** Structured detail to record. Never include file contents, and name environment variables without their values. */
   detail?(input: I, resolved: R | undefined): unknown;
+  /** Links the event to an exec or its saved output. Set only when the call produced one. */
+  ref?(input: I, resolved: R | undefined, result: O | undefined): EventRefs | undefined;
 }
 
 /** Everything the registry needs to know about one operation. Handlers only ever see validated input. */
@@ -121,6 +128,7 @@ export interface Operation extends OperationMeta {
   audit?: {
     target?(input: unknown, resolved: unknown, result: unknown): EventTarget | undefined;
     detail?(input: unknown, resolved: unknown): unknown;
+    ref?(input: unknown, resolved: unknown, result: unknown): EventRefs | undefined;
   };
   exclusive?(ctx: OperationContext, input: unknown, resolved: unknown): string | undefined;
   run(ctx: OperationContext, input: unknown, resolved: unknown): Promise<unknown>;

@@ -1,5 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
-import type { Duplex, Readable } from "node:stream";
+import { PassThrough, type Duplex, type Readable } from "node:stream";
 
 import Docker from "dockerode";
 
@@ -21,6 +22,63 @@ import {
 import { toRuntimeError } from "./errors";
 import { demuxLogs } from "./logs";
 import { computeStats } from "./stats";
+
+/**
+ * Records this shell's pid in the marker (`$1`), runs the command as its child, then removes the marker. The shell
+ * is not replaced, so the marker is also removed when the command ends normally. Needs /bin/sh in the box.
+ */
+const RUN_WRAPPER = `
+marker=$1
+shift
+echo "$$" > "$marker" || { echo "minibox: cannot record the exec pid in $marker" >&2; exit 1; }
+"$@"
+status=$?
+rm -f "$marker"
+exit "$status"
+`.trim();
+
+/**
+ * Stops the process tree whose root pid is recorded in the marker (`$1`). Every process is frozen before any is
+ * killed, so a fork during the walk cannot escape it. Exit 0: the tree is gone and the marker is removed. Exit 1: a
+ * process survived, so the survivors are resumed and the marker is kept for a retry. Exit 3: no pid is recorded.
+ */
+const KILL_TREE_SCRIPT = `
+marker=$1
+pid=$(cat "$marker" 2>/dev/null) || exit 3
+case "$pid" in
+  '' | *[!0-9]*) exit 3 ;;
+esac
+[ "$pid" -gt 1 ] || exit 3
+failed=0
+children() { cat "/proc/$1/task/$1/children" 2>/dev/null; }
+freeze() {
+  kill -STOP "$1" 2>/dev/null
+  for child in $(children "$1"); do freeze "$child"; done
+}
+stop_tree() {
+  for child in $(children "$1"); do stop_tree "$child"; done
+  kill -KILL "$1" 2>/dev/null || { [ -e "/proc/$1" ] && failed=1; }
+}
+resume() {
+  for child in $(children "$1"); do resume "$child"; done
+  kill -CONT "$1" 2>/dev/null
+}
+freeze "$pid"
+stop_tree "$pid"
+if [ "$failed" -ne 0 ]; then
+  resume "$pid"
+  exit 1
+fi
+rm -f "$marker"
+exit 0
+`.trim();
+
+/** How often a kill re-checks for the pid, and how many times it tries before giving up. */
+const KILL_RETRY_MS = 60;
+const KILL_ATTEMPTS = 10;
+/** Upper bounds on waiting for the kill exec's own output to end and for its exit code to be readable. */
+const KILL_STREAM_MS = 5000;
+const KILL_EXIT_MS = 2000;
 
 const NANO_CPUS_PER_CPU = 1e9;
 const ICC_OPTION = "com.docker.network.bridge.enable_icc";
@@ -339,27 +397,47 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
 
     async startExec(containerId, spec) {
+      // Absent tty is the web terminal: one stream, no wrapper. Command exec sets tty false so stdout and stderr stay
+      // separate, and the wrapper records the command's in-box pid so kill() can find its process tree.
+      const tty = spec.tty !== false;
+      const marker = tty ? null : `/tmp/.minibox-exec-${randomBytes(8).toString("hex")}.pid`;
       const exec = await call(() =>
         docker.getContainer(containerId).exec({
-          Cmd: spec.cmd,
+          Cmd: marker ? ["/bin/sh", "-c", RUN_WRAPPER, "minibox-exec", marker, ...spec.cmd] : spec.cmd,
           AttachStdin: true,
           AttachStdout: true,
           AttachStderr: true,
-          Tty: true,
+          Tty: tty,
           Env: spec.env,
           WorkingDir: spec.workingDir,
+          ...(spec.user ? { User: spec.user } : {}),
         }),
       );
-      const stream = (await call(() => exec.start({ hijack: true, stdin: true, Tty: true }))) as Duplex;
+      const stream = (await call(() => exec.start({ hijack: true, stdin: true, Tty: tty }))) as Duplex;
+      const stdout = tty ? stream : new PassThrough();
+      const stderr = new PassThrough();
+      if (!tty) docker.modem.demuxStream(stream, stdout, stderr);
+      const finishOutputs = () => {
+        if (!tty && !stdout.writableEnded) stdout.end();
+        if (!stderr.writableEnded) stderr.end();
+      };
+      stream.on("end", finishOutputs);
+      stream.on("close", finishOutputs);
       return {
         id: exec.id,
         stream,
+        stdout,
+        stderr,
         async resize({ cols, rows }) {
           await call(() => docker.getExec(exec.id).resize({ h: rows, w: cols }));
         },
         async inspect() {
           const info = await call(() => docker.getExec(exec.id).inspect());
           return { running: info.Running, exitCode: info.ExitCode, pid: info.Pid || null };
+        },
+        async kill() {
+          if (!marker) throw new RuntimeError("invalid", "a terminal exec has no recorded process to stop");
+          await stopExec(docker, containerId, exec.id, marker, spec.user);
         },
       };
     },
@@ -483,6 +561,89 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
   };
 }
+
+/**
+ * Stops an exec's process tree from inside the box, as the exec's own user, so the kill has no more authority than
+ * the command had. Docker's pid is a host pid and is never signalled from the host: it can belong to another uid,
+ * or to an unrelated process once the command has exited. An exec that has already ended has nothing left to stop.
+ * A pid that is not recorded yet is retried briefly, because the wrapper writes it just after the exec starts.
+ */
+async function stopExec(
+  docker: Docker,
+  containerId: string,
+  execId: string,
+  marker: string,
+  user: string | undefined,
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    if (!(await execRunning(docker, execId))) return;
+    const code = await runKillScript(docker, containerId, marker, user);
+    if (code === 0) return;
+    if (code === 3 && attempt < KILL_ATTEMPTS) {
+      await sleep(KILL_RETRY_MS);
+      continue;
+    }
+    const reason =
+      code === 3
+        ? "its process id was never recorded"
+        : code === 1
+          ? "a process survived the kill"
+          : "the result of the kill could not be read";
+    throw new RuntimeError("engine", `exec ${execId} could not be stopped: ${reason}`);
+  }
+}
+
+/** A raw engine exec, not `startExec`, so a kill is never wrapped or recorded as a command of its own. */
+async function runKillScript(
+  docker: Docker,
+  containerId: string,
+  marker: string,
+  user: string | undefined,
+): Promise<number | null> {
+  const exec = await call(() =>
+    docker.getContainer(containerId).exec({
+      Cmd: ["/bin/sh", "-c", KILL_TREE_SCRIPT, "minibox-kill", marker],
+      AttachStdout: true,
+      AttachStderr: true,
+      ...(user ? { User: user } : {}),
+    }),
+  );
+  const stream = (await call(() => exec.start({ hijack: true }))) as Duplex;
+  stream.resume();
+  await streamEnds(stream, KILL_STREAM_MS);
+  return exitStatusOf(docker, exec.id);
+}
+
+async function execRunning(docker: Docker, execId: string): Promise<boolean> {
+  return (await call(() => docker.getExec(execId).inspect())).Running;
+}
+
+/** The exit code of an ended exec, or null if it is still running after KILL_EXIT_MS. */
+async function exitStatusOf(docker: Docker, execId: string): Promise<number | null> {
+  const deadline = Date.now() + KILL_EXIT_MS;
+  for (;;) {
+    const info = await call(() => docker.getExec(execId).inspect());
+    if (!info.Running) return info.ExitCode;
+    if (Date.now() >= deadline) return null;
+    await sleep(50);
+  }
+}
+
+/** Resolves when the stream ends or fails, or after `ms`. The kill's output is discarded, so this only bounds the wait. */
+function streamEnds(stream: Duplex, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(finish, ms);
+    function finish(): void {
+      clearTimeout(timer);
+      resolve();
+    }
+    stream.on("end", finish);
+    stream.on("close", finish);
+    stream.on("error", finish);
+  });
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 async function inspectNetwork(docker: Docker, name: string): Promise<Docker.NetworkInspectInfo | undefined> {
   try {

@@ -176,8 +176,12 @@ export const ErrorSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
+    hint: z.string().optional(),
+    retryable: z.boolean(),
     key: z.string().optional(),
     params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+    hintKey: z.string().optional(),
+    hintParams: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
     details: z.record(z.string(), z.unknown()).optional(),
   }),
 });

@@ -5,7 +5,7 @@
     "path": "/api/boxes",
     "status": 401,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"key\":\"unauthorized\"}}"
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"retryable\":false,\"key\":\"unauthorized\"}}"
   },
   {
     "step": "unknown api path",
@@ -13,7 +13,7 @@
     "path": "/api/nope",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"API endpoint not found.\",\"key\":\"api_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"API endpoint not found.\",\"retryable\":false,\"key\":\"api_not_found\"}}"
   },
   {
     "step": "wrong method",
@@ -21,7 +21,7 @@
     "path": "/api/boxes",
     "status": 405,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"method_not_allowed\",\"message\":\"Method not allowed.\",\"key\":\"method_not_allowed\"}}"
+    "body": "{\"error\":{\"code\":\"method_not_allowed\",\"message\":\"Method not allowed.\",\"retryable\":false,\"key\":\"method_not_allowed\"}}"
   },
   {
     "step": "health",
@@ -37,7 +37,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"key\":\"invalid_json\"}}"
+    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"retryable\":false,\"key\":\"invalid_json\"}}"
   },
   {
     "step": "array body",
@@ -45,7 +45,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"retryable\":false,\"key\":\"invalid_json_object\"}}"
   },
   {
     "step": "form body refused",
@@ -53,7 +53,7 @@
     "path": "/api/boxes",
     "status": 415,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"unsupported_media_type\",\"message\":\"Use Content-Type: application/json (requests without a body may omit it).\",\"key\":\"unsupported_media_type\"}}"
+    "body": "{\"error\":{\"code\":\"unsupported_media_type\",\"message\":\"Use Content-Type: application/json (requests without a body may omit it).\",\"retryable\":false,\"key\":\"unsupported_media_type\"}}"
   },
   {
     "step": "cross-site write refused",
@@ -61,7 +61,7 @@
     "path": "/api/boxes",
     "status": 403,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"key\":\"origin_forbidden\"}}"
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"retryable\":false,\"key\":\"origin_forbidden\"}}"
   },
   {
     "step": "create without name",
@@ -69,7 +69,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "create with bad name",
@@ -77,7 +77,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"retryable\":false,\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "create with blank name",
@@ -85,7 +85,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "create with numeric name",
@@ -93,7 +93,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "create with cpus over the limit",
@@ -101,7 +101,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"retryable\":false,\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "create with null cpus",
@@ -109,7 +109,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"retryable\":false,\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "create with text cpus",
@@ -117,7 +117,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be a number.\",\"retryable\":false,\"key\":\"not_a_number\",\"params\":{\"label\":\"cpus\"},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "create with memory below the minimum",
@@ -125,7 +125,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"retryable\":false,\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "create with fractional memory",
@@ -133,7 +133,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be an integer between 128 and 262144 (MB).\",\"retryable\":false,\"key\":\"memory_range\",\"params\":{\"min\":128,\"max\":262144},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "create with text memory",
@@ -141,7 +141,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"retryable\":false,\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "create from a missing image",
@@ -149,7 +149,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"retryable\":false,\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "create with a malformed template",
@@ -157,7 +157,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"retryable\":false,\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "create with a null template",
@@ -165,7 +165,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"retryable\":false,\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "create with a blank template",
@@ -173,7 +173,7 @@
     "path": "/api/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Please choose a template.\",\"retryable\":false,\"key\":\"template_required\",\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "create over host cpu capacity",
@@ -181,7 +181,7 @@
     "path": "/api/boxes",
     "status": 422,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"retryable\":false,\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "create over host memory capacity",
@@ -189,7 +189,7 @@
     "path": "/api/boxes",
     "status": 422,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"Memory exceeds the host limit (8.0 GB).\",\"key\":\"memory_over_host\",\"params\":{\"gb\":\"8.0\"},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"Memory exceeds the host limit (8.0 GB).\",\"retryable\":false,\"key\":\"memory_over_host\",\"params\":{\"gb\":\"8.0\"},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "create alpha",
@@ -205,7 +205,7 @@
     "path": "/api/boxes",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “alpha” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"alpha\"}}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “alpha” already exists.\",\"retryable\":false,\"key\":\"box_exists\",\"params\":{\"name\":\"alpha\"}}}"
   },
   {
     "step": "create beta with an empty template",
@@ -221,7 +221,7 @@
     "path": "/api/boxes",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “beta” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"beta\"}}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “beta” already exists.\",\"retryable\":false,\"key\":\"box_exists\",\"params\":{\"name\":\"beta\"}}}"
   },
   {
     "step": "list boxes with stats",
@@ -261,7 +261,7 @@
     "path": "/api/boxes/missing",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "get an unlabelled container",
@@ -269,7 +269,7 @@
     "path": "/api/boxes/<id>",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "logs with default tail",
@@ -301,7 +301,7 @@
     "path": "/api/boxes/<id>/logs?tail=0",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"retryable\":false,\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
   },
   {
     "step": "logs with tail=abc",
@@ -309,7 +309,7 @@
     "path": "/api/boxes/<id>/logs?tail=abc",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"retryable\":false,\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
   },
   {
     "step": "logs with tail=2.5",
@@ -317,7 +317,7 @@
     "path": "/api/boxes/<id>/logs?tail=2.5",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"tail must be an integer between 1 and 5000.\",\"retryable\":false,\"key\":\"tail_range\",\"params\":{\"max\":5000},\"details\":{\"field\":\"tail\"}}}"
   },
   {
     "step": "logs of a missing box",
@@ -325,7 +325,7 @@
     "path": "/api/boxes/missing/logs",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "stats of alpha",
@@ -341,7 +341,7 @@
     "path": "/api/boxes/missing/stats",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "stop alpha",
@@ -376,6 +376,70 @@
     "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":2,\"memory\":536870912,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"mbtest-ws-alpha\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-alpha\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"mbtest-ws-alpha\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"env\":[]}}"
   },
   {
+    "step": "exec true in alpha",
+    "method": "POST",
+    "path": "/api/boxes/<id>/exec",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":false,\"woke\":false,\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"exited\"}"
+  },
+  {
+    "step": "get the exec",
+    "method": "GET",
+    "path": "/api/execs/ex_<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":false,\"woke\":false,\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"exited\"}"
+  },
+  {
+    "step": "read exec output",
+    "method": "GET",
+    "path": "/api/execs/ex_<ulid>/output",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"stdoutBytes\":0,\"stderrBytes\":0}"
+  },
+  {
+    "step": "exec with neither cmd nor argv",
+    "method": "POST",
+    "path": "/api/boxes/<id>/exec",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide exactly one of cmd or argv.\",\"retryable\":false,\"hint\":\"cmd runs through /bin/sh -c. argv is the program and its arguments, with no shell.\",\"key\":\"exec_command_required\",\"hintKey\":\"exec_command_hint\",\"details\":{\"field\":\"cmd\"}}}"
+  },
+  {
+    "step": "kill an exec that has finished",
+    "method": "POST",
+    "path": "/api/execs/ex_<ulid>/kill",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"That exec is not running.\",\"retryable\":false,\"hint\":\"It has already exited. Read the result with exec_get.\",\"key\":\"exec_not_running\",\"hintKey\":\"exec_not_running_hint\"}}"
+  },
+  {
+    "step": "exec sleep in the background",
+    "method": "POST",
+    "path": "/api/boxes/<id>/exec",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":true,\"woke\":false,\"exitCode\":null,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"running\"}"
+  },
+  {
+    "step": "kill the background exec",
+    "method": "POST",
+    "path": "/api/execs/ex_<ulid>/kill",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"status\":\"killed\"}"
+  },
+  {
+    "step": "get the killed exec",
+    "method": "GET",
+    "path": "/api/execs/ex_<ulid>?waitMs=0",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"execId\":\"ex_<ulid>\",\"background\":true,\"woke\":false,\"exitCode\":137,\"stdout\":\"\",\"stderr\":\"\",\"truncated\":false,\"durationMs\":0,\"outputRef\":null,\"timedOut\":false,\"status\":\"killed\"}"
+  },
+  {
     "step": "start ignores a malformed body",
     "method": "POST",
     "path": "/api/boxes/<id>/start",
@@ -389,7 +453,7 @@
     "path": "/api/boxes/missing/start",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "stop a missing box",
@@ -397,7 +461,7 @@
     "path": "/api/boxes/missing/stop",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "resize cpus",
@@ -421,7 +485,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 428,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"precondition_required\",\"message\":\"Send the request header If-Match with this box's current revision.\",\"key\":\"revision_required\"}}"
+    "body": "{\"error\":{\"code\":\"precondition_required\",\"message\":\"Send the request header If-Match with this box's current revision.\",\"retryable\":false,\"key\":\"revision_required\"}}"
   },
   {
     "step": "resize with a stale If-Match",
@@ -429,7 +493,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 412,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"precondition_failed\",\"message\":\"This box is at revision 5, not 1. Refresh it and try again.\",\"key\":\"revision_mismatch\",\"params\":{\"revision\":5,\"expected\":1},\"details\":{\"revision\":5,\"expected\":1}}}"
+    "body": "{\"error\":{\"code\":\"precondition_failed\",\"message\":\"This box is at revision 5, not 1. Refresh it and try again.\",\"retryable\":false,\"key\":\"revision_mismatch\",\"params\":{\"revision\":5,\"expected\":1},\"details\":{\"revision\":5,\"expected\":1}}}"
   },
   {
     "step": "update idle timeout",
@@ -445,7 +509,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"key\":\"resources_required\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"retryable\":false,\"key\":\"resources_required\"}}"
   },
   {
     "step": "resize with null cpus only",
@@ -453,7 +517,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"key\":\"resources_required\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide at least one of cpus, memoryMb or pids.\",\"retryable\":false,\"key\":\"resources_required\"}}"
   },
   {
     "step": "resize cpus over the limit",
@@ -461,7 +525,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"retryable\":false,\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "resize with text memory",
@@ -469,7 +533,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Memory must be a number.\",\"retryable\":false,\"key\":\"not_a_number\",\"params\":{\"label\":\"memory\"},\"details\":{\"field\":\"memoryMb\"}}}"
   },
   {
     "step": "resize beyond host capacity",
@@ -477,7 +541,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 422,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"CPU cores exceed the host limit (4 cores).\",\"retryable\":false,\"key\":\"cpu_over_host\",\"params\":{\"cores\":4},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "resize a missing box",
@@ -485,7 +549,7 @@
     "path": "/api/boxes/missing/resources",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "resize with a malformed body",
@@ -493,7 +557,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"key\":\"invalid_json\"}}"
+    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"Request body is not valid JSON.\",\"retryable\":false,\"key\":\"invalid_json\"}}"
   },
   {
     "step": "resize with an array body",
@@ -501,7 +565,7 @@
     "path": "/api/boxes/<id>/resources",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"retryable\":false,\"key\":\"invalid_json_object\"}}"
   },
   {
     "step": "snapshot alpha as nightly",
@@ -573,7 +637,7 @@
     "path": "/api/boxes/<id>/snapshots",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"retryable\":false,\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "snapshot alpha with a numeric name",
@@ -581,7 +645,7 @@
     "path": "/api/boxes/<id>/snapshots",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name is required.\",\"key\":\"field_required\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "snapshot a missing box",
@@ -589,7 +653,7 @@
     "path": "/api/boxes/missing/snapshots",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "snapshot a missing box with a bad name",
@@ -597,7 +661,7 @@
     "path": "/api/boxes/missing/snapshots",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Snapshot name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"retryable\":false,\"key\":\"name_invalid\",\"params\":{\"label\":\"snapshotName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "restore snapshot as restored",
@@ -621,7 +685,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “restored” already exists.\",\"key\":\"box_exists\",\"params\":{\"name\":\"restored\"}}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A box named “restored” already exists.\",\"retryable\":false,\"key\":\"box_exists\",\"params\":{\"name\":\"restored\"}}}"
   },
   {
     "step": "restore snapshot with a bad box name",
@@ -629,7 +693,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Box name may only contain letters, digits, dots, underscores and hyphens, must start with a letter or digit, and be at most 63 characters.\",\"retryable\":false,\"key\":\"name_invalid\",\"params\":{\"label\":\"boxName\"},\"details\":{\"field\":\"name\"}}}"
   },
   {
     "step": "restore snapshot with cpus 0",
@@ -637,7 +701,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"CPU cores must be between 0.1 and 64.\",\"retryable\":false,\"key\":\"cpus_range\",\"params\":{\"min\":0.1,\"max\":64},\"details\":{\"field\":\"cpus\"}}}"
   },
   {
     "step": "restore a missing image",
@@ -645,7 +709,7 @@
     "path": "/api/snapshots/ghost%3A1/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template image ghost:1 does not exist. Build it on the Templates page or choose another template.\",\"retryable\":false,\"key\":\"template_image_missing\",\"params\":{\"image\":\"ghost:1\"},\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "restore a malformed ref",
@@ -653,7 +717,7 @@
     "path": "/api/snapshots/bad%20ref/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"retryable\":false,\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"template\"}}}"
   },
   {
     "step": "restore with a non-object body",
@@ -661,7 +725,7 @@
     "path": "/api/snapshots/mbtest-snap%3Anightly-<stamp>/boxes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"key\":\"invalid_json_object\"}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Request body must be a JSON object.\",\"retryable\":false,\"key\":\"invalid_json_object\"}}"
   },
   {
     "step": "promote nightly to gold",
@@ -701,7 +765,7 @@
     "path": "/api/snapshots/missing",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Snapshot not found.\",\"key\":\"snapshot_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Snapshot not found.\",\"retryable\":false,\"key\":\"snapshot_not_found\"}}"
   },
   {
     "step": "delete beta with a bad deleteVolume",
@@ -709,7 +773,7 @@
     "path": "/api/boxes/<id>?deleteVolume=yes",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"retryable\":false,\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
   },
   {
     "step": "delete beta with an empty deleteVolume",
@@ -717,7 +781,7 @@
     "path": "/api/boxes/<id>?deleteVolume=",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"deleteVolume must be a boolean.\",\"retryable\":false,\"key\":\"not_boolean\",\"params\":{\"field\":\"deleteVolume\"},\"details\":{\"field\":\"deleteVolume\"}}}"
   },
   {
     "step": "delete beta, keeping its volume",
@@ -733,7 +797,7 @@
     "path": "/api/boxes/<id>",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "delete a missing box",
@@ -741,7 +805,7 @@
     "path": "/api/boxes/missing",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"key\":\"box_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
     "step": "delete restored with its volume",
@@ -765,7 +829,7 @@
     "path": "/api/boxes/<id>/rebuild",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change rebuilds the box and was not applied. Send the same request with confirm set to true to apply the preview. Volumes, the stable id and the name are kept. The writable layer, running processes and the container IP are lost.\",\"key\":\"rebuild_confirm_required\",\"details\":{\"preview\":{\"changes\":[{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-alpha\",\"to\":\"mbtest-<boxId>\"}],\"diff\":[{\"path\":\"/etc/motd\",\"kind\":\"modified\"}],\"keeps\":[\"volumes\",\"id\",\"name\",\"history\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"containerName\":{\"from\":\"mbtest-alpha\",\"to\":\"mbtest-<boxId>\"},\"revision\":{\"current\":6,\"next\":7}}}}}"
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change rebuilds the box and was not applied. Send the same request with confirm set to true to apply the preview. Volumes, the stable id and the name are kept. The writable layer, running processes and the container IP are lost.\",\"retryable\":false,\"key\":\"rebuild_confirm_required\",\"details\":{\"preview\":{\"changes\":[{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-alpha\",\"to\":\"mbtest-<boxId>\"}],\"diff\":[{\"path\":\"/etc/motd\",\"kind\":\"modified\"}],\"keeps\":[\"volumes\",\"id\",\"name\",\"history\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"containerName\":{\"from\":\"mbtest-alpha\",\"to\":\"mbtest-<boxId>\"},\"revision\":{\"current\":6,\"next\":7}}}}}"
   },
   {
     "step": "rebuild alpha",
@@ -821,7 +885,7 @@
     "path": "/api/events",
     "status": 401,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"key\":\"unauthorized\"}}"
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"retryable\":false,\"key\":\"unauthorized\"}}"
   },
   {
     "step": "events from another site",
@@ -829,7 +893,7 @@
     "path": "/api/events",
     "status": 403,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"key\":\"origin_forbidden\"}}"
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.\",\"retryable\":false,\"key\":\"origin_forbidden\"}}"
   },
   {
     "step": "events of box creation",
@@ -853,7 +917,7 @@
     "path": "/api/events?limit=0",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"limit must be an integer between 1 and 200.\",\"key\":\"event_limit_range\",\"params\":{\"max\":200},\"details\":{\"field\":\"limit\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"limit must be an integer between 1 and 200.\",\"retryable\":false,\"key\":\"event_limit_range\",\"params\":{\"max\":200},\"details\":{\"field\":\"limit\"}}}"
   },
   {
     "step": "events of alpha that failed",
@@ -861,7 +925,7 @@
     "path": "/api/events?box=alpha&status=error",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"events\":[{\"seq\":84,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.rebuild\",\"kind\":\"destructive\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Rebuild a box from its spec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"confirm\":false,\"profile\":\"strict\"},\"error\":{\"code\":\"confirmation_required\",\"status\":409}},{\"seq\":39,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"1\"},\"error\":{\"code\":\"precondition_failed\",\"status\":412}},{\"seq\":38,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"\"},\"error\":{\"code\":\"precondition_required\",\"status\":428}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
+    "body": "{\"events\":[{\"seq\":96,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.rebuild\",\"kind\":\"destructive\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Rebuild a box from its spec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"confirm\":false,\"profile\":\"strict\"},\"error\":{\"code\":\"confirmation_required\",\"status\":409}},{\"seq\":51,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"1\"},\"error\":{\"code\":\"precondition_failed\",\"status\":412}},{\"seq\":50,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"\"},\"error\":{\"code\":\"precondition_required\",\"status\":428}},{\"seq\":39,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"exec.kill\",\"kind\":\"write\",\"tier\":\"activity\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Kill an exec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"execId\":\"ex_<ulid>\"},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
   },
   {
     "step": "list tasks",
@@ -885,7 +949,7 @@
     "path": "/api/tasks/<ulid>",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Task not found.\",\"key\":\"task_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Task not found.\",\"retryable\":false,\"key\":\"task_not_found\"}}"
   },
   {
     "step": "read a malformed task id",
@@ -893,7 +957,7 @@
     "path": "/api/tasks/not-a-task",
     "status": 400,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Task id must be a 26-character ULID.\",\"key\":\"task_id_invalid\",\"details\":{\"field\":\"id\"}}}"
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Task id must be a 26-character ULID.\",\"retryable\":false,\"key\":\"task_id_invalid\",\"details\":{\"field\":\"id\"}}}"
   },
   {
     "step": "cancel a missing task",
@@ -901,7 +965,7 @@
     "path": "/api/tasks/<ulid>/cancel",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Task not found.\",\"key\":\"task_not_found\"}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Task not found.\",\"retryable\":false,\"key\":\"task_not_found\"}}"
   },
   {
     "step": "cancel a finished task",
@@ -909,6 +973,6 @@
     "path": "/api/tasks/<ulid>/cancel",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"This task is not running.\",\"key\":\"task_not_running\"}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"This task is not running.\",\"retryable\":false,\"key\":\"task_not_running\"}}"
   }
 ]

@@ -155,6 +155,47 @@ export default {
   "err.task_id_invalid": "Task id must be a 26-character ULID.",
   "err.task_status_invalid": "status must be one of running, succeeded, failed, cancelled or interrupted.",
   "err.task_limit_range": "limit must be an integer between 1 and {max}.",
+  "err.exec_command_required": "Provide exactly one of cmd or argv.",
+  "err.exec_command_hint": "cmd runs through /bin/sh -c. argv is the program and its arguments, with no shell.",
+  "err.exec_cmd_invalid": "cmd must be a string of at most {max} bytes and must not contain NUL.",
+  "err.exec_argv_invalid":
+    "argv must contain 1 to {max} non-empty strings. Each string is at most 16384 bytes and must not contain NUL.",
+  "err.exec_cwd_invalid": "cwd must be an absolute path of at most {max} bytes, without NUL or line breaks.",
+  "err.exec_env_invalid":
+    "env must be an object of at most 64 names. A name starts with a letter or underscore, and a value is a string of at most 32768 bytes without NUL.",
+  "err.exec_timeout_range": "timeoutSec must be an integer between {min} and {max}.",
+  "err.exec_timeout_foreground": "A foreground exec may use at most {max} seconds of timeoutSec.",
+  "err.exec_timeout_foreground_hint": "For a longer command, set background to true and poll it with exec_get.",
+  "err.exec_stdin_invalid": "stdin must be a string of at most {max} bytes.",
+  "err.exec_user_invalid": "user must be a user name or id, optionally with a group, such as dev or 1000:1000.",
+  "err.exec_user_strict": "The strict profile runs exec only as dev or 1000, not as {user}.",
+  "err.exec_user_strict_hint":
+    "Use the default user. Other users need a box with the standard or relaxed profile, which is set when the box is created.",
+  "err.exec_wait_range": "waitMs must be an integer between 0 and {max}.",
+  "err.exec_id_invalid": "execId must be ex_ followed by 26 Crockford base32 characters.",
+  "err.exec_not_found": "No exec with that id is known.",
+  "err.exec_not_found_hint":
+    "Finished commands stay in memory only until the server restarts or the in-memory list drops them. Saved output is available from the output endpoint while the file is kept.",
+  "err.exec_not_running": "That exec is not running.",
+  "err.exec_not_running_hint": "It has already exited. Read the result with exec_get.",
+  "err.exec_kill_failed": "The exec could not be stopped: {detail}",
+  "err.exec_kill_failed_hint":
+    "The exec is still running. Call exec_kill again, or check its processes inside the box.",
+  "err.exec_background_box_limit": "This box already has {max} background execs running.",
+  "err.exec_background_total_limit": "MiniBox already has {max} background execs running.",
+  "err.exec_background_limit_hint": "Wait for one to finish, or stop one with exec_kill, then try again.",
+  "err.exec_wake_failed_hint": "The box was stopped and starting it failed. Check the box, then retry exec.",
+  "err.exec_output_missing": "No saved output for that exec.",
+  "err.exec_output_missing_hint":
+    "Output is kept for a limited time. If the command is still running, call exec_get and try again.",
+  "err.mcp_bearer_required": "MCP requires an Authorization Bearer access key.",
+  "err.mcp_bearer_hint":
+    "Send the header Authorization: Bearer and the access key. A browser session cookie is not accepted on /mcp.",
+  "err.mcp_toolset_invalid": "Unknown MCP toolset.",
+  "err.mcp_toolset_hint":
+    "Use core, session, network, storage, tools, meta or rebuild, for example /mcp?toolsets=core,session.",
+  "err.mcp_not_sse": "GET /mcp does not stream events.",
+  "err.mcp_not_sse_hint": "Post JSON-RPC to /mcp. DELETE /mcp closes a session.",
   "ui.nameRequired": "Please enter a {what}.",
   "ui.nameInvalid":
     "{what} may only contain letters, digits, dots, underscores and hyphens, and must start with a letter or digit.",

@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Redactor } from "./redact";
@@ -15,6 +15,27 @@ export function headAndTail(text: string, limit = OUTPUT_HEAD_TAIL_BYTES): strin
   const head = bytes.subarray(0, limit).toString("utf8");
   const tail = bytes.subarray(bytes.length - limit).toString("utf8");
   return `${head}\n… ${bytes.length - limit * 2} bytes omitted …\n${tail}`;
+}
+
+export interface StoredOutput {
+  stdout: string;
+  stderr: string;
+  stdoutBytes?: number;
+  stderrBytes?: number;
+  truncated?: boolean;
+  exitCode?: number | null;
+  timedOut?: boolean;
+  status?: "exited" | "killed";
+}
+
+interface SaveOptions {
+  /** The text is already cut to a head and a tail. Do not cut it again. */
+  capped?: boolean;
+  stdoutBytes?: number;
+  stderrBytes?: number;
+  exitCode?: number | null;
+  timedOut?: boolean;
+  status?: "exited" | "killed";
 }
 
 interface StoredFile {
@@ -34,15 +55,43 @@ export class OutputStore {
   ) {}
 
   /** Writes one record and returns the reference an event uses to point at it. */
-  save(name: string, output: { stdout: string; stderr: string }): string {
+  save(name: string, output: { stdout: string; stderr: string }, opts?: SaveOptions): string {
     if (!NAME.test(name)) throw new Error(`output name is not a plain identifier: ${name}`);
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    const record = {
-      stdout: headAndTail(this.redactor.text(output.stdout)),
-      stderr: headAndTail(this.redactor.text(output.stderr)),
-    };
+    const stdout = this.redactor.text(output.stdout);
+    const stderr = this.redactor.text(output.stderr);
+    const record: StoredOutput = opts?.capped
+      ? {
+          stdout,
+          stderr,
+          stdoutBytes: opts.stdoutBytes,
+          stderrBytes: opts.stderrBytes,
+          truncated:
+            (opts.stdoutBytes ?? 0) > OUTPUT_HEAD_TAIL_BYTES * 2 ||
+            (opts.stderrBytes ?? 0) > OUTPUT_HEAD_TAIL_BYTES * 2,
+          ...(opts.exitCode !== undefined ? { exitCode: opts.exitCode } : {}),
+          ...(opts.timedOut ? { timedOut: true } : {}),
+          ...(opts.status ? { status: opts.status } : {}),
+        }
+      : { stdout: headAndTail(stdout), stderr: headAndTail(stderr) };
     writeFileSync(this.pathOf(name), JSON.stringify(record), { mode: 0o600 });
     return `exec/${name}`;
+  }
+
+  /** Reads a record saved earlier. `ref` is `exec/<name>`. Anything else, including a path, is refused. */
+  load(ref: string): StoredOutput | null {
+    if (!ref.startsWith("exec/")) return null;
+    const name = ref.slice("exec/".length);
+    if (!NAME.test(name)) return null;
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(this.pathOf(name), "utf8"));
+      if (typeof parsed !== "object" || parsed === null) return null;
+      const record = parsed as StoredOutput;
+      if (typeof record.stdout !== "string" || typeof record.stderr !== "string") return null;
+      return record;
+    } catch {
+      return null;
+    }
   }
 
   /**
