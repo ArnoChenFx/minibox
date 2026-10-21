@@ -113,6 +113,28 @@ describe("LifecycleWatcher", () => {
     app.terminals.hasOpenAttachment = original;
   });
 
+  test("an open SSH connection prevents idle sleep", async () => {
+    const box = await newBox("busy-ssh", { idleTimeoutSec: 30 });
+    app.pulse.touch(box.boxId, "create", Date.now() - 120_000);
+    host.sampler.start();
+    await host.sampler.observe(box.id);
+    await host.sampler.sampleNow();
+
+    const watcher = new LifecycleWatcher({
+      hosts: app.hosts,
+      pulse: app.pulse,
+      terminals: app.terminals,
+      execs: app.execs,
+      tasks: app.tasks,
+      cfg: app.cfg,
+      record: () => undefined,
+      ssh: { hasOpenConnection: (boxId) => boxId === box.boxId },
+    });
+    const report = await watcher.tick();
+    expect(report.slept).not.toContain(box.boxId);
+    expect((await boxes.getBox(host, box.boxId)).running).toBe(true);
+  });
+
   test("TTL expiry stops the box without deleting the container", async () => {
     const box = await newBox("agent-ttl", { ttlSec: 60 });
     // Backdate createdAt so TTL has elapsed.

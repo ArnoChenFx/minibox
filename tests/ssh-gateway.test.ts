@@ -396,16 +396,24 @@ describe("SSH lifecycle", () => {
     expect((await closed).code).toBe(1008);
   });
 
+  test("an open connection keeps its box awake until the client disconnects", async () => {
+    const box = await makeBox("tango");
+    expect(app.ssh.hasOpenConnection(box.boxId)).toBe(false);
+    const { client } = await connectSsh(box.name);
+    await waitFor(() => app.ssh.hasOpenConnection(box.boxId), "the connection to be counted");
+    client.end();
+    await waitFor(() => !app.ssh.hasOpenConnection(box.boxId), "the connection to leave the count");
+  });
+
   test("ending the connection stops the processes it started and audits the disconnect", async () => {
     const box = await makeBox("sierra");
     const { client } = await connectSsh(box.name);
     runtime.execScript = null;
     client.exec("sleep 100", () => undefined);
-    await waitFor(() => app.ssh.hasCommandRunning(box.boxId), "the command to count as running");
+    await waitFor(() => runtime.execs.length > 0, "the command to start");
     const sleeper = runtime.execs.at(-1);
     client.end();
     await waitFor(() => sleeper?.killed === true, "the sleeping command to be stopped");
-    await waitFor(() => !app.ssh.hasCommandRunning(box.boxId), "the command to leave the count");
     await waitFor(() => audits.some((event) => event.op === "ssh.disconnect"), "the disconnect audit");
   });
 

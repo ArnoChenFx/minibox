@@ -6,7 +6,6 @@ import type { ActivityPulse } from "../services/activity-pulse";
 import { type Box, getBox } from "../services/boxes";
 import type { RecordNote } from "../services/terminals";
 import { boxVisible, scopeAllowed, viewOfBox } from "../tokens/model";
-import { CommandTracker } from "./commands";
 import { awakeBox, SshConnection, type SshTarget } from "./connection";
 import type { FrameSocket } from "./duplex";
 import type { HostKey } from "./host-key";
@@ -31,7 +30,6 @@ export interface SshLease {
 export class SshGateway {
   private readonly perBox = new Map<string, number>();
   private total = 0;
-  private readonly commands = new CommandTracker();
 
   constructor(private readonly options: SshGatewayOptions) {}
 
@@ -40,9 +38,12 @@ export class SshGateway {
     return { algorithm: "ssh-ed25519", fingerprint, publicKey };
   }
 
-  /** Whether a non-interactive command the gateway started is still running in the box. Idle sleep reads it. */
-  hasCommandRunning(boxId: string): boolean {
-    return this.commands.active(boxId);
+  /**
+   * Whether an SSH connection is open to the box. Idle sleep reads it: a shell, a transfer or a forward is work in
+   * progress, as an attached terminal is, so the box stays up until the client disconnects.
+   */
+  hasOpenConnection(boxId: string): boolean {
+    return (this.perBox.get(boxId) ?? 0) > 0;
   }
 
   async enter(host: HostCtx, ref: string, caller: Caller): Promise<SshLease> {
@@ -73,7 +74,6 @@ export class SshGateway {
         hostKey: this.options.hostKey.privateKey,
         pulse: this.options.pulse,
         record: this.options.record,
-        commands: this.commands,
         onEnd: lease.release,
       },
       socket,

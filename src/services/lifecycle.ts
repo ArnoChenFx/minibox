@@ -11,9 +11,9 @@ import { stopBox } from "./boxes";
 import type { ExecManager } from "./exec";
 import type { RecordNote, TerminalService } from "./terminals";
 
-/** Commands that SSH clients run with no input. A running one keeps its box awake, as a background exec does. */
-export interface SshCommands {
-  hasCommandRunning(boxId: string): boolean;
+/** The SSH gateway's open connections. An open one keeps its box awake, as an attached terminal does. */
+export interface SshConnections {
+  hasOpenConnection(boxId: string): boolean;
 }
 
 export interface LifecycleOptions {
@@ -24,7 +24,7 @@ export interface LifecycleOptions {
   readonly tasks: TaskManager;
   readonly cfg: Config;
   readonly record: RecordNote;
-  readonly ssh?: SshCommands;
+  readonly ssh?: SshConnections;
   /** Override the tick interval in tests. */
   readonly everyMs?: number;
   /** Clock for tests. */
@@ -116,7 +116,7 @@ export class LifecycleWatcher {
 
     if (this.options.terminals.hasOpenAttachment(spec.containerId)) return;
     if (this.options.execs.hasBackground(spec.containerId)) return;
-    if (this.options.ssh?.hasCommandRunning(spec.id)) return;
+    if (this.options.ssh?.hasOpenConnection(spec.id)) return;
     if (this.options.tasks.hasRunningForBox(spec.id, spec.containerId)) return;
 
     const last = this.options.pulse.lastAt(spec.id) ?? Date.parse(spec.createdAt);

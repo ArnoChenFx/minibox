@@ -21,7 +21,6 @@ import { type ExecSession, RuntimeError } from "../runtime";
 import type { ActivityPulse } from "../services/activity-pulse";
 import { type Box, getBox, startBox } from "../services/boxes";
 import type { RecordNote } from "../services/terminals";
-import type { CommandTracker } from "./commands";
 import { type FrameSocket, WsDuplex } from "./duplex";
 import {
   commandAllowed,
@@ -70,7 +69,6 @@ export interface SshConnectionOptions {
   readonly hostKey: string;
   readonly pulse: ActivityPulse;
   readonly record: RecordNote;
-  readonly commands: CommandTracker;
   /** Called once when the connection ends, so the gateway can count it out. */
   readonly onEnd: () => void;
 }
@@ -314,12 +312,7 @@ export class SshConnection {
     channel.once("close", () => this.stop(exec));
     if (closed) this.stop(exec);
     if (request.tty && state.size) void exec.resize(state.size).catch(noop);
-    const endCommand = request.type === "exec" ? this.options.commands.begin(this.boxId) : noop;
-    try {
-      await this.pump(channel, exec, request.tty);
-    } finally {
-      endCommand();
-    }
+    await this.pump(channel, exec, request.tty);
     const code = await exitStatus(exec);
     this.live.delete(exec);
     if (state.active === exec) state.active = null;
