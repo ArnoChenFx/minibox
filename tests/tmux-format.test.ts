@@ -7,8 +7,10 @@ import {
   isKeyName,
   isSessionName,
   LIST_SESSIONS_FORMAT,
+  PROBE_FORMAT,
   paneLines,
   paneTarget,
+  parseProbe,
   parseSessionList,
   sessionTarget,
 } from "../src/tmux/format";
@@ -52,6 +54,19 @@ describe("session list", () => {
 
   test("an empty server prints nothing", () => {
     expect(parseSessionList("")).toEqual([]);
+  });
+});
+
+describe("probe", () => {
+  test("reads the name and origin of a session in one line", () => {
+    expect(PROBE_FORMAT).toContain("#{session_name}\t#{@minibox-origin}");
+    expect(parseProbe("work\thuman\n")).toEqual({ name: "work", origin: "human" });
+    expect(parseProbe("work\t\n")).toEqual({ name: "work", origin: "agent" });
+  });
+
+  test("an empty answer means the session is not there, whatever tmux's exit status says", () => {
+    expect(parseProbe("\n")).toBeNull();
+    expect(parseProbe("")).toBeNull();
   });
 });
 

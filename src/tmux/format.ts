@@ -40,6 +40,18 @@ export const LIST_SESSIONS_FORMAT = [
   "#{session_attached}",
 ].join("\t");
 
+/**
+ * The name and origin of one session, read in a single `display-message`. tmux exits 0 and prints nothing when the
+ * target does not exist, so the name in the output is what says whether the session is there.
+ */
+export const PROBE_FORMAT = ["#{session_name}", `#{${ORIGIN_OPTION}}`].join("\t");
+
+export function parseProbe(stdout: string): { name: string; origin: SessionOrigin } | null {
+  const [name, origin] = stdout.trim().split("\t");
+  if (!name || !isSessionName(name)) return null;
+  return { name, origin: origin === "human" ? "human" : "agent" };
+}
+
 export function parseSessionList(stdout: string): TmuxSession[] {
   const sessions: TmuxSession[] = [];
   for (const line of stdout.split("\n")) {

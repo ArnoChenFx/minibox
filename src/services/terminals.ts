@@ -15,8 +15,10 @@ import {
   isSessionName,
   LIST_SESSIONS_FORMAT,
   ORIGIN_OPTION,
+  PROBE_FORMAT,
   paneLines,
   paneTarget,
+  parseProbe,
   parseSessionList,
   type SessionOrigin,
   sessionTarget,
@@ -281,6 +283,7 @@ export class TerminalService {
       }
       if (created) {
         this.forget(current.id, name);
+        await this.tuneServer(host, current.id);
         await this.mark(host, current.id, name, source === "ui" ? "human" : "agent");
       }
       const origin = await this.probe(host, current, name);
@@ -413,9 +416,11 @@ export class TerminalService {
   }
 
   private async probe(host: HostCtx, box: Box, name: string): Promise<SessionOrigin> {
-    const run = await runTmux(host, box.id, ["display-message", "-p", "-t", paneTarget(name), `#{${ORIGIN_OPTION}}`]);
+    const run = await runTmux(host, box.id, ["display-message", "-p", "-t", paneTarget(name), PROBE_FORMAT]);
     if (run.code !== 0) throw this.failure(run, box.id, name);
-    return run.stdout.trim() === "human" ? "human" : "agent";
+    const probed = parseProbe(run.stdout);
+    if (!probed || probed.name !== name) throw this.missingSession(box.id, name);
+    return probed.origin;
   }
 
   private async mark(host: HostCtx, containerId: string, name: string, origin: SessionOrigin): Promise<void> {
@@ -423,6 +428,12 @@ export class TerminalService {
     if (marked.code !== 0) throw this.failure(marked, containerId, name);
     const hidden = await runTmux(host, containerId, ["set-option", "-t", paneTarget(name), "status", "off"]);
     if (hidden.code !== 0) throw this.failure(hidden, containerId, name);
+  }
+
+  /** Server-wide settings, applied once the first session starts. A short escape time keeps Esc responsive in vim. */
+  private async tuneServer(host: HostCtx, containerId: string): Promise<void> {
+    const run = await runTmux(host, containerId, ["set-option", "-s", "escape-time", "10"]);
+    if (run.code !== 0) throw this.failure(run, containerId, "");
   }
 
   /** Returns the tracked session for this name, replacing one that was made for an earlier session of the same name. */
@@ -473,15 +484,17 @@ export class TerminalService {
 
   private failure(run: TmuxRun, containerId: string, name: string): AppError {
     const kind = classifyTmuxFailure(run.code, run.stderr);
-    if (kind === "not_found" || kind === "no_server") {
-      this.forget(containerId, name);
-      return notFound(msg("session_not_found"), { hint: msg("session_not_found_hint") });
-    }
+    if (kind === "not_found" || kind === "no_server") return this.missingSession(containerId, name);
     if (kind === "missing") {
       return conflict(msg("session_tmux_missing"), { hint: msg("session_tmux_missing_hint") });
     }
     const detail = run.stderr.trim().split("\n")[0] || `exit status ${run.code}`;
     return new AppError(502, "docker_error", msg("session_tmux_failed", { detail }));
+  }
+
+  private missingSession(containerId: string, name: string): AppError {
+    this.forget(containerId, name);
+    return notFound(msg("session_not_found"), { hint: msg("session_not_found_hint") });
   }
 
   private stopped(containerId: string): AppError {

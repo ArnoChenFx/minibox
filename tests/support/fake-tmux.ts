@@ -112,11 +112,13 @@ export class FakeTmux {
       case "list-sessions":
         return ok([...sessions.values()].map((s) => expand(parsed.values.get("F") ?? "", s)).join("\n") + "\n");
       case "set-option":
+        if (parsed.switches.has("s") && !parsed.values.has("t")) return ok();
         if (!session) return fail(1, `can't find session: ${name}`);
         session.options.set(parsed.positional[0] ?? "", parsed.positional[1] ?? "");
         return ok();
       case "display-message":
-        if (!session) return fail(1, `can't find pane: ${name}`);
+        // Real tmux exits 0 with an empty line for a target it cannot find; callers tell by the output.
+        if (!session) return ok("\n");
         return ok(`${expand(parsed.positional[0] ?? "", session)}\n`);
       case "kill-session":
         if (!session) return fail(1, `can't find session: ${name}`);
