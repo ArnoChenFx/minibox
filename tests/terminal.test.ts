@@ -12,9 +12,11 @@ import { getBox } from "../src/services/boxes";
 import { type TerminalData, parseControl, terminalHandlers } from "../src/ws/terminal";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeExec, FakeRuntime } from "./support/fake-runtime";
+import { mint } from "./support/tokens";
 
 const AUTH = { authorization: `Bearer ${TEST_KEY}` };
 const sessionCookie = (token: string) => ({ cookie: `${COOKIE_NAME}=${token}` });
+const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 const UPGRADE = {
   connection: "Upgrade",
   upgrade: "websocket",
@@ -619,6 +621,60 @@ describe("terminal with a browser session", () => {
     await Bun.sleep(5);
     term.ws.send("pwd\n");
     await waitFor(() => (app.sessions.list().find((s) => s.id === sessionId)?.lastSeenAt ?? 0) > before, "the touch");
+    term.ws.close(1000, "done");
+    await term.closed;
+  });
+});
+
+describe("terminal with an agent token", () => {
+  test("a token without exec is refused the terminal before any exec starts", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "rest");
+    const token = mint(app, { name: "no-exec", scopes: ["box:read", "box:write"], boxes: { type: "all" } });
+    const execsBefore = runtime.callsTo("startExec").length;
+
+    const res = await fetch(`${base}/api/boxes/${id}/terminal?session=work`, {
+      headers: { ...UPGRADE, ...bearer(token.secret) },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: { key: "box_out_of_scope" } });
+    expect(runtime.callsTo("startExec")).toHaveLength(execsBefore);
+  });
+
+  test("a token's terminal closes with 1008 when the token is revoked, and its attach is torn down", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "rest");
+    const token = mint(app, { name: "viewer", preset: "operator", boxes: { type: "all" } });
+    const term = connect(`/api/boxes/${id}/terminal?session=work`, bearer(token.secret));
+    await term.opened;
+    await waitFor(() => lastState(term) !== undefined, "the state frame");
+    const attach = attachExec();
+    if (!attach) throw new Error("no attach exec was started");
+
+    const revoked = await fetch(`${base}/api/tokens/${token.id}`, { method: "DELETE", headers: AUTH });
+    expect(revoked.status).toBe(200);
+    const close = await term.closed;
+    expect(close.code).toBe(1008);
+    expect(close.reason).toBe("token revoked");
+    await waitFor(() => attach.killed, "the attach exec to be killed");
+  });
+
+  test("a token's terminal is a viewer: its takeover is refused and the session stays with the agent", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "rest");
+    const token = mint(app, { name: "viewer", preset: "operator", boxes: { type: "all" } });
+    const term = connect(`/api/boxes/${id}/terminal?session=work`, bearer(token.secret));
+    await term.opened;
+    await waitFor(() => lastState(term) !== undefined, "the state frame");
+
+    term.ws.send(JSON.stringify({ type: "takeover" }));
+    await waitFor(() => term.frames().some((frame) => frame.type === "error"), "the refusal");
+    expect(lastState(term)).toMatchObject({
+      canType: false,
+      canTakeOver: false,
+      controller: "agent",
+      takenOver: false,
+    });
     term.ws.close(1000, "done");
     await term.closed;
   });
