@@ -477,6 +477,13 @@ export const confirmFlag = () =>
       "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false.",
   }).default(false);
 
+export const storageConfirmFlag = () =>
+  field(checkConfirm, {
+    type: "boolean",
+    description:
+      "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false.",
+  }).default(false);
+
 /**
  * Present so MCP and direct callers can pass the revision. REST overwrites it with the If-Match header.
  * Empty means the caller did not send one; the handler rejects that with 428 after the other checks.

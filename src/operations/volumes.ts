@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { EventTarget } from "../events/types";
 import {
   attachVolume,
+  confirmationRequired,
   createVolume,
   deleteVolume,
   detachVolume,
@@ -10,6 +11,9 @@ import {
   getVolume,
   listVolumes,
   measureVolume,
+  previewCreateVolume,
+  previewDeleteVolume,
+  previewPools,
   savePools,
   type VolumeView,
 } from "../services/volumes";
@@ -18,7 +22,7 @@ import type { PoolDraft, RoleDraft } from "../volumes/pools";
 import { assertCanAdministerPools, assertCanAttach, assertCanWrite } from "./authz";
 import { defineOperation } from "./define";
 import { BoxSchema } from "./schemas";
-import { boxId, confirmFlag, expectedRevision, refreshFlag, volumeName } from "./validation";
+import { boxId, confirmFlag, expectedRevision, refreshFlag, storageConfirmFlag, volumeName } from "./validation";
 
 const ROLES = ["workspace", "home", "tools", "cache"] as const;
 
@@ -171,6 +175,7 @@ const volumeCreate = defineOperation({
       .optional()
       .meta({ description: "Storage pool. Omitted, the role rule or the default pool is used." }),
     role: z.enum(ROLES).nullable().optional().meta({ description: "Optional role. Null is a general volume." }),
+    confirm: storageConfirmFlag(),
   }),
   output: z.object({ volume: VolumeSchema }),
   rest: [{ method: "POST", path: "/api/volumes", body: true, status: 201 }],
@@ -179,18 +184,15 @@ const volumeCreate = defineOperation({
     toolset: "storage",
     name: "create_volume",
     description:
-      "Create an independent volume. It is not deleted when a box is deleted. New local volumes are chowned to uid 1000 when the base template image exists.",
+      "Create an independent volume. It is not deleted when a box is deleted. New local volumes are chowned to uid 1000 when the base template image exists. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   activity: { action: () => "volume.create", target: (input) => input.name },
   audit: { target: ({ name }, _resolved, result) => ({ kind: "volume", id: result?.volume.id, name }) },
-  run: async ({ host, principal }, input) => ({
-    volume: await createVolume(host, {
-      name: input.name,
-      pool: input.pool,
-      role: input.role ?? null,
-      createdBy: principal.type,
-    }),
-  }),
+  run: async ({ host, principal }, input) => {
+    const request = { name: input.name, pool: input.pool, role: input.role ?? null, createdBy: principal.type };
+    if (!input.confirm) throw confirmationRequired(previewCreateVolume(host, request));
+    return { volume: await createVolume(host, request) };
+  },
 });
 
 const volumeDelete = defineOperation({
@@ -203,19 +205,24 @@ const volumeDelete = defineOperation({
   conflicts: true,
   input: z.object({
     id: z.string().meta({ description: "Volume id (vol_…) or volume name." }),
+    confirm: storageConfirmFlag(),
   }),
   output: z.object({ name: z.string() }),
-  rest: [{ method: "DELETE", path: "/api/volumes/:id" }],
+  rest: [{ method: "DELETE", path: "/api/volumes/:id", query: ["confirm"] }],
   cli: "volume rm",
   mcp: {
     toolset: "storage",
     name: "delete_volume",
-    description: "Delete a volume that no box mounts. A mounted volume is refused.",
+    description:
+      "Delete a volume and its engine data. A volume that a box mounts is refused. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.delete", target: (_input, volume) => volume.name },
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
-  run: ({ host }, input) => deleteVolume(host, input.id),
+  run: async ({ host }, input, volume) => {
+    if (!input.confirm) throw confirmationRequired(previewDeleteVolume(volume));
+    return deleteVolume(host, input.id);
+  },
 });
 
 const volumeAttach = defineOperation({
@@ -246,7 +253,7 @@ const volumeAttach = defineOperation({
     toolset: "storage",
     name: "attach_volume",
     description:
-      "Mount a volume into a box. Docker cannot add a mount in place, so the container is rebuilt and renamed to prefix-<box id>. Send expectedRevision. A read-write mount also needs volume:write. warning is shared_rw when another box already mounts this volume read-write.",
+      "Mount a volume into a box. Docker cannot add a mount in place, so the container is rebuilt and renamed to prefix-<box id>. Send expectedRevision and confirm true. Without confirm the call changes nothing and returns confirmation_required with the rebuild preview. A read-write mount also needs volume:write. warning is shared_rw when another box already mounts this volume read-write.",
   },
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.attach", target: (_input, volume) => volume.name },
@@ -285,7 +292,7 @@ const volumeDetach = defineOperation({
     toolset: "storage",
     name: "detach_volume",
     description:
-      "Remove one mount of a volume from a box. The container is rebuilt and renamed to prefix-<box id>. Send expectedRevision.",
+      "Remove one mount of a volume from a box. The container is rebuilt and renamed to prefix-<box id>. Send expectedRevision and confirm true. Without confirm the call changes nothing and returns the rebuild preview.",
   },
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.detach", target: (_input, volume) => volume.name },
@@ -361,6 +368,7 @@ const poolReplace = defineOperation({
       description:
         "Role to pool name. Null or omitted uses the rule: cache on the local pool, other roles on the default pool.",
     }),
+    confirm: storageConfirmFlag(),
   }),
   output: PoolsSchema,
   rest: [{ method: "PUT", path: "/api/pools", body: true }],
@@ -369,13 +377,16 @@ const poolReplace = defineOperation({
     toolset: "storage",
     name: "replace_pools",
     description:
-      "Replace pool configuration. A pool that still has volumes cannot be removed or change backend. New volumes use the new defaults; existing engine volumes keep the options they were created with.",
+      "Replace pool configuration. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview. A pool that still has volumes cannot be removed or change backend. New volumes use the new defaults; existing engine volumes keep the options they were created with.",
   },
   activity: { action: () => "pool.replace", target: () => "pools" },
   audit: { target: () => ({ kind: "pool", name: "pools" }) },
   run: async (ctx, input) => {
     await assertCanAdministerPools(ctx);
-    return savePools(ctx.host, input.pools as PoolDraft[], input.roles as RoleDraft | undefined);
+    const pools = input.pools as PoolDraft[];
+    const roles = input.roles as RoleDraft | undefined;
+    if (!input.confirm) throw confirmationRequired(previewPools(ctx.host, pools, roles));
+    return savePools(ctx.host, pools, roles);
   },
 });
 

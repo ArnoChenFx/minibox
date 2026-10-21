@@ -17,7 +17,7 @@ import {
   type NewVolume,
 } from "./engine";
 import { poolForRole } from "./pools";
-import type { VolumeRecord, VolumeRole } from "./types";
+import type { StoragePool, VolumeRecord, VolumeRole } from "./types";
 
 /** Display names are unique per host: each host has its own engine and its own tools volume. */
 function nameTaken(host: HostCtx, name: string): boolean {
@@ -127,12 +127,8 @@ export async function createIndependentVolume(
   }
 }
 
-async function createIndependentLocked(
-  host: HostCtx,
-  input: { name: string; pool?: string; role: VolumeRole | null; createdBy: string | null },
-  known: Set<string>,
-  changes: VolumeChanges,
-): Promise<VolumeRecord> {
+/** The pool a standalone volume goes to: the one named, else the role's pool, else the default. */
+function resolvePool(host: HostCtx, input: { pool?: string; role: VolumeRole | null }): StoragePool {
   const file = host.volumes.readPools();
   const pool = input.pool
     ? file.pools.find((item) => item.name === input.pool)
@@ -140,6 +136,29 @@ async function createIndependentLocked(
       ? poolForRole(file, input.role)
       : file.pools.find((item) => item.default);
   if (!pool) throw notFound(msg("pool_not_found", { pool: input.pool ?? "default" }));
+  return pool;
+}
+
+/**
+ * What `createIndependentVolume` would create: the pool and the name. It refuses what that call would refuse and writes
+ * nothing, so a confirmation can show the change before the engine is touched.
+ */
+export function planIndependentVolume(
+  host: HostCtx,
+  input: { name: string; pool?: string; role: VolumeRole | null },
+): { name: string; pool: StoragePool } {
+  const pool = resolvePool(host, input);
+  if (nameTaken(host, input.name)) throw conflict(msg("volume_exists", { name: input.name }));
+  return { name: input.name, pool };
+}
+
+async function createIndependentLocked(
+  host: HostCtx,
+  input: { name: string; pool?: string; role: VolumeRole | null; createdBy: string | null },
+  known: Set<string>,
+  changes: VolumeChanges,
+): Promise<VolumeRecord> {
+  const pool = resolvePool(host, input);
   const created = await materialize(
     host,
     {

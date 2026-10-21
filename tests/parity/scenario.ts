@@ -340,7 +340,11 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("list pools", "GET", "/api/pools");
     await send("list volumes", "GET", "/api/volumes");
     await send("get gamma workspace", "GET", "/api/volumes/gamma-workspace");
-    const spare = await post("create spare volume", "/api/volumes", { name: "spare" });
+    await send("create spare volume without confirm", "POST", "/api/volumes", {
+      body: JSON.stringify({ name: "spare" }),
+      contentType: JSON_TYPE,
+    });
+    const spare = await post("create spare volume", "/api/volumes", { name: "spare", confirm: true });
     const spareId = String((spare.json?.volume as { id?: string } | undefined)?.id ?? "");
     await send("measure spare", "POST", `/api/volumes/${spareId}/usage`);
     await send("attach spare without confirm", "POST", `/api/volumes/${spareId}/attach`, {
@@ -359,9 +363,15 @@ export async function runParityScenario(): Promise<Exchange[]> {
       contentType: JSON_TYPE,
       headers: { "if-match": String(attachedRevision) },
     });
-    await send("delete spare volume", "DELETE", `/api/volumes/${spareId}`);
+    await send("delete spare volume without confirm", "DELETE", `/api/volumes/${spareId}`);
+    await send("delete spare volume", "DELETE", `/api/volumes/${spareId}?confirm=true`);
+    const pools = [{ name: "local", backend: "local", default: true }];
+    await send("replace pools without confirm", "PUT", "/api/pools", {
+      body: JSON.stringify({ pools }),
+      contentType: JSON_TYPE,
+    });
     await send("replace pools", "PUT", "/api/pools", {
-      body: JSON.stringify({ pools: [{ name: "local", backend: "local", default: true }] }),
+      body: JSON.stringify({ pools, confirm: true }),
       contentType: JSON_TYPE,
     });
     await send("delete gamma", "DELETE", `/api/boxes/${gamma}`);

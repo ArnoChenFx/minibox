@@ -118,6 +118,8 @@ export const MESSAGES = {
   mount_path_invalid: "Mount path {path} must be an absolute path without empty, . or .. segments.",
   mount_duplicate: "Mount path {path} is listed more than once.",
   mount_not_found: "No mount at {path}.",
+  storage_confirm_required:
+    "This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.",
   pool_not_found: "Storage pool {pool} was not found.",
   pool_admin_forbidden: "This credential may not change storage pools.",
   pool_backend_invalid: "Pool {pool} has an unknown backend.",

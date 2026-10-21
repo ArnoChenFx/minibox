@@ -912,6 +912,14 @@
     "body": "{\"volume\":{\"id\":\"<volumeId>\",\"name\":\"gamma-workspace\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"workspace\",\"ownership\":\"owned\",\"ownerBoxId\":\"<boxId>\",\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[{\"boxId\":\"<boxId>\",\"boxName\":\"gamma\",\"path\":\"/workspace\",\"mode\":\"rw\"}],\"unattached\":false,\"rwMounts\":1}}"
   },
   {
+    "step": "create spare volume without confirm",
+    "method": "POST",
+    "path": "/api/volumes",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.\",\"retryable\":false,\"key\":\"storage_confirm_required\",\"details\":{\"preview\":{\"action\":\"create_volume\",\"name\":\"spare\",\"pool\":\"local\",\"backend\":\"local\",\"role\":null,\"ownership\":\"independent\"}}}}"
+  },
+  {
     "step": "create spare volume",
     "method": "POST",
     "path": "/api/volumes",
@@ -952,12 +960,28 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
-    "step": "delete spare volume",
+    "step": "delete spare volume without confirm",
     "method": "DELETE",
     "path": "/api/volumes/<volumeId>",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Volume spare is mounted by gamma.\",\"retryable\":false,\"key\":\"volume_mounted\",\"params\":{\"name\":\"spare\",\"box\":\"gamma\"}}}"
+  },
+  {
+    "step": "delete spare volume",
+    "method": "DELETE",
+    "path": "/api/volumes/<volumeId>?confirm=true",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Volume spare is mounted by gamma.\",\"retryable\":false,\"key\":\"volume_mounted\",\"params\":{\"name\":\"spare\",\"box\":\"gamma\"}}}"
+  },
+  {
+    "step": "replace pools without confirm",
+    "method": "PUT",
+    "path": "/api/pools",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.\",\"retryable\":false,\"key\":\"storage_confirm_required\",\"details\":{\"preview\":{\"action\":\"replace_pools\",\"pools\":[{\"name\":\"local\",\"backend\":\"local\",\"default\":true}],\"roles\":{\"workspace\":null,\"home\":null,\"tools\":null,\"cache\":null},\"added\":[],\"removed\":[]}}}}"
   },
   {
     "step": "replace pools",

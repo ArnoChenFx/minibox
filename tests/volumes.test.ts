@@ -601,7 +601,7 @@ describe("write, attach and pool scopes", () => {
   test("pool.replace needs pool:admin, and refusing volume:write does not stand in for it", async () => {
     const app = guardedApp();
     app.deny("pool:admin");
-    expect(await rejectionOf(app.run("pool.replace", { pools: DISK_POOLS }))).toMatchObject({
+    expect(await rejectionOf(app.run("pool.replace", { pools: DISK_POOLS, confirm: true }))).toMatchObject({
       status: 403,
       key: "pool_admin_forbidden",
     });
@@ -610,8 +610,48 @@ describe("write, attach and pool scopes", () => {
 
     app.allow();
     app.deny("volume:write");
-    await app.run("pool.replace", { pools: DISK_POOLS });
+    await app.run("pool.replace", { pools: DISK_POOLS, confirm: true });
     expect((await getPools(app.host)).pools.map((pool) => pool.name).toSorted()).toEqual(["disk", "local"]);
+  });
+
+  test("a storage write without confirm is refused with its preview, and changes nothing", async () => {
+    const app = guardedApp();
+    expect(await rejectionOf(app.run("pool.replace", { pools: DISK_POOLS }))).toMatchObject({
+      status: 409,
+      code: "confirmation_required",
+      key: "storage_confirm_required",
+      details: { preview: { action: "replace_pools", added: ["disk"], removed: [] } },
+    });
+    expect((await getPools(app.host)).pools.map((pool) => pool.name)).toEqual(["local"]);
+
+    expect(await rejectionOf(app.run("volume.create", { name: "notes" }))).toMatchObject({
+      status: 409,
+      code: "confirmation_required",
+      details: { preview: { action: "create_volume", name: "notes", pool: "local", ownership: "independent" } },
+    });
+    expect((await listVolumes(app.host)).map((volume) => volume.name)).toEqual([]);
+
+    const notes = await createVolume(app.host, { name: "notes", role: null, createdBy: "owner" });
+    expect(await rejectionOf(app.run("volume.delete", { id: notes.id }))).toMatchObject({
+      status: 409,
+      code: "confirmation_required",
+      details: { preview: { action: "delete_volume", id: notes.id, name: "notes" } },
+    });
+    expect((await listVolumes(app.host)).map((volume) => volume.name)).toEqual(["notes"]);
+  });
+
+  test("a mounted volume is refused before a delete is offered for confirmation", async () => {
+    const app = guardedApp();
+    const box = await boxes.createBox(app.host, { name: "alpha", cpus: 1, memoryMb: 256 });
+    const notes = await createVolume(app.host, { name: "notes", role: null, createdBy: "owner" });
+    await app.run("volume.attach", attachNotes(notes.id, box.boxId, "ro"));
+
+    expect(await rejectionOf(app.run("volume.delete", { id: notes.id }))).toMatchObject({
+      status: 409,
+      code: "conflict",
+      key: "volume_mounted",
+    });
+    expect(app.runtime.containers.size).toBe(1);
   });
 
   test("a read-only mount of a recorded volume needs only volume:attach, a read-write one also needs volume:write", async () => {

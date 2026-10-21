@@ -1,5 +1,5 @@
 import type { HostCtx } from "../host/registry";
-import { badRequest, conflict, notFound } from "../lib/errors";
+import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { RuntimeError } from "../runtime";
@@ -9,8 +9,8 @@ import { assertVolumesPresent, claimEngineVolumes } from "../volumes/engine";
 import { probePools } from "../volumes/health";
 import { validMountPath } from "../volumes/mounts";
 import { normalizePools, type PoolDraft, type RoleDraft } from "../volumes/pools";
-import { createIndependentVolume, removeEngine } from "../volumes/provision";
-import type { PoolHealth, PoolsFile, VolumeRecord, VolumeRole } from "../volumes/types";
+import { createIndependentVolume, planIndependentVolume, removeEngine } from "../volumes/provision";
+import type { PoolBackend, PoolHealth, PoolsFile, RolePools, VolumeRecord, VolumeRole } from "../volumes/types";
 import { type Box, getBox, readSpec } from "./boxes";
 import { rebuildBox } from "./rebuild";
 
@@ -112,11 +112,87 @@ export async function createVolume(
   return viewOf(host, record);
 }
 
+function refuseIfMounted(name: string, mounts: VolumeMountView[]): void {
+  const user = mounts[0];
+  if (user) throw conflict(msg("volume_mounted", { name, box: user.boxName }));
+}
+
+/** The change a storage write would make. A caller sees it in `details.preview` before it sends confirm. */
+export type StoragePreview =
+  | {
+      action: "create_volume";
+      name: string;
+      pool: string;
+      backend: PoolBackend;
+      role: VolumeRole | null;
+      ownership: "independent";
+    }
+  | {
+      action: "delete_volume";
+      id: string;
+      name: string;
+      pool: string;
+      role: VolumeRole | null;
+      engineName: string;
+      bytes: number | null;
+    }
+  | {
+      action: "replace_pools";
+      pools: { name: string; backend: PoolBackend; default: boolean }[];
+      roles: RolePools;
+      added: string[];
+      removed: string[];
+    };
+
+/** Refuses a storage write that did not send confirm. Nothing has changed when this is thrown. */
+export function confirmationRequired(preview: StoragePreview): AppError {
+  return new AppError(409, "confirmation_required", msg("storage_confirm_required"), { preview });
+}
+
+export function previewCreateVolume(
+  host: HostCtx,
+  input: { name: string; pool?: string; role: VolumeRole | null },
+): StoragePreview {
+  const { name, pool } = planIndependentVolume(host, input);
+  return {
+    action: "create_volume",
+    name,
+    pool: pool.name,
+    backend: pool.backend,
+    role: input.role,
+    ownership: "independent",
+  };
+}
+
+export function previewDeleteVolume(volume: VolumeView): StoragePreview {
+  refuseIfMounted(volume.name, volume.mounts);
+  return {
+    action: "delete_volume",
+    id: volume.id,
+    name: volume.name,
+    pool: volume.pool,
+    role: volume.role,
+    engineName: volume.engineName,
+    bytes: volume.bytes,
+  };
+}
+
+export function previewPools(host: HostCtx, drafts: PoolDraft[], roles: RoleDraft | undefined): StoragePreview {
+  const { previous, file } = planPools(host, drafts, roles);
+  const before = new Set(previous.pools.map((pool) => pool.name));
+  const after = new Set(file.pools.map((pool) => pool.name));
+  return {
+    action: "replace_pools",
+    pools: file.pools.map((pool) => ({ name: pool.name, backend: pool.backend, default: pool.default })),
+    roles: file.roles,
+    added: [...after].filter((name) => !before.has(name)),
+    removed: [...before].filter((name) => !after.has(name)),
+  };
+}
+
 export async function deleteVolume(host: HostCtx, ref: string): Promise<{ name: string }> {
   const volume = requireVolume(host, ref);
-  const mounts = mountsOf(host, volume);
-  const user = mounts[0];
-  if (user) throw conflict(msg("volume_mounted", { name: volume.name, box: user.boxName }));
+  refuseIfMounted(volume.name, mountsOf(host, volume));
   const result = await removeEngine(host, volume.engineName);
   if (result.status === "failed") {
     throw conflict(msg("volume_delete_failed", { name: volume.name, detail: result.detail }));
@@ -233,7 +309,12 @@ export async function getPools(host: HostCtx, opts: { force?: boolean } = {}): P
   return { pools: file.pools, roles: file.roles, health };
 }
 
-export async function savePools(host: HostCtx, drafts: PoolDraft[], roles: RoleDraft | undefined): Promise<PoolsView> {
+/** Validates a pool replacement against the volumes that exist. Nothing is written. */
+function planPools(
+  host: HostCtx,
+  drafts: PoolDraft[],
+  roles: RoleDraft | undefined,
+): { previous: PoolsFile; file: PoolsFile } {
   const current = host.volumes.list();
   const previous = host.volumes.readPools();
   const file = normalizePools(drafts, roles, current);
@@ -242,6 +323,11 @@ export async function savePools(host: HostCtx, drafts: PoolDraft[], roles: RoleD
     const after = file.pools.find((pool) => pool.name === volume.pool);
     if (before && after && before.backend !== after.backend) failBackend(volume.pool);
   }
+  return { previous, file };
+}
+
+export async function savePools(host: HostCtx, drafts: PoolDraft[], roles: RoleDraft | undefined): Promise<PoolsView> {
+  const { file } = planPools(host, drafts, roles);
   await host.volumes.exclusive(async () => {
     host.volumes.writePools(file);
   });

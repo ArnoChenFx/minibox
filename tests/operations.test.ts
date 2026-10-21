@@ -40,8 +40,8 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "exec.output": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "volume.list": () => ({}),
   "volume.get": () => ({ id: "alpha-workspace" }),
-  "volume.create": () => ({ name: "extra" }),
-  "volume.delete": () => ({ id: "spare" }),
+  "volume.create": () => ({ name: "extra", confirm: true }),
+  "volume.delete": () => ({ id: "spare", confirm: true }),
   "volume.attach": (id) => ({
     id: "spare",
     box: id,
@@ -59,7 +59,7 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   }),
   "volume.usage": () => ({ id: "spare" }),
   "pool.list": () => ({}),
-  "pool.replace": () => ({ pools: [{ name: "local", backend: "local", default: true }] }),
+  "pool.replace": () => ({ pools: [{ name: "local", backend: "local", default: true }], confirm: true }),
   "snapshot.list": () => ({}),
   "snapshot.create": (id) => ({ id, name: "nightly" }),
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
@@ -137,7 +137,7 @@ async function withBox(app: App, ctx: OperationContext): Promise<string> {
   const { box } = (await app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 })) as {
     box: { id: string };
   };
-  await app.operations.run("volume.create", ctx, { name: "spare" });
+  await app.operations.run("volume.create", ctx, { name: "spare", confirm: true });
   return box.id;
 }
 

@@ -6223,6 +6223,10 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false."
                   }
                 },
                 "required": [
@@ -6741,6 +6745,15 @@
             "schema": {
               "type": "string",
               "description": "Volume id (vol_…) or volume name."
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false."
             }
           },
           {
@@ -8652,6 +8665,10 @@
                         ]
                       }
                     }
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false."
                   }
                 },
                 "required": [

@@ -58,6 +58,8 @@ const post = (path: string, body: unknown = {}) =>
     headers: { "content-type": "application/json" },
   });
 const del = (path: string) => api(path, { method: "DELETE" });
+const put = (path: string, body: unknown) =>
+  api(path, { method: "PUT", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 const enc = encodeURIComponent;
 
 async function errorOf(res: Response): Promise<ErrorBody> {
@@ -353,5 +355,51 @@ describe("box routes", () => {
     const res = await post(`/api/snapshots/${enc("plain:1")}/promote`, { name: "nope" });
     expect(res.status).toBe(404);
     expect(await errorOf(res)).toMatchObject({ key: "snapshot_not_found" });
+  });
+});
+
+describe("storage routes", () => {
+  test("creating and deleting a volume are refused without confirm, and confirmed they apply", async () => {
+    const refused = await post("/api/volumes", { name: "notes" });
+    expect(refused.status).toBe(409);
+    expect(await errorOf(refused)).toMatchObject({
+      code: "confirmation_required",
+      details: { preview: { action: "create_volume", name: "notes", pool: "local" } },
+    });
+    expect(await (await get("/api/volumes")).json()).toEqual({ volumes: [] });
+
+    const made = await post("/api/volumes", { name: "notes", confirm: true });
+    expect(made.status).toBe(201);
+    const { volume } = (await made.json()) as { volume: { id: string } };
+
+    const kept = await del(`/api/volumes/${enc(volume.id)}`);
+    expect(kept.status).toBe(409);
+    expect(await errorOf(kept)).toMatchObject({
+      code: "confirmation_required",
+      details: { preview: { action: "delete_volume", name: "notes" } },
+    });
+    expect(((await (await get("/api/volumes")).json()) as { volumes: unknown[] }).volumes).toHaveLength(1);
+
+    expect((await del(`/api/volumes/${enc(volume.id)}?confirm=true`)).status).toBe(200);
+    expect(((await (await get("/api/volumes")).json()) as { volumes: unknown[] }).volumes).toEqual([]);
+  });
+
+  test("replacing the pools shows the added pool first, and saves only with confirm", async () => {
+    const pools = [
+      { name: "local", backend: "local" },
+      { name: "disk", backend: "path", root: "/mnt/disk", default: true },
+    ];
+    const preview = await put("/api/pools", { pools });
+    expect(preview.status).toBe(409);
+    expect(await errorOf(preview)).toMatchObject({
+      code: "confirmation_required",
+      details: { preview: { action: "replace_pools", added: ["disk"], removed: [] } },
+    });
+    const before = (await (await get("/api/pools")).json()) as { pools: { name: string }[] };
+    expect(before.pools.map((pool) => pool.name)).toEqual(["local"]);
+
+    expect((await put("/api/pools", { pools, confirm: true })).status).toBe(200);
+    const after = (await (await get("/api/pools")).json()) as { pools: { name: string }[] };
+    expect(after.pools.map((pool) => pool.name)).toEqual(["local", "disk"]);
   });
 });
