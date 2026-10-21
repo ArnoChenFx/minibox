@@ -30,6 +30,8 @@ import { LifecycleWatcher } from "./services/lifecycle";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
+import { SshGateway } from "./ssh/gateway";
+import { loadHostKey } from "./ssh/host-key";
 import { TaskManager, type TaskSubject } from "./tasks/manager";
 import { TaskStore } from "./tasks/store";
 import type { TaskStreamEvent } from "./tasks/types";
@@ -76,6 +78,7 @@ export interface App {
   streams: StreamSlots;
   pulse: ActivityPulse;
   lifecycle: LifecycleWatcher;
+  ssh: SshGateway;
   /** Writes an audit note for a request caused by a transport, such as a wake from a terminal or preview. */
   record: RecordNote;
   version: string;
@@ -209,6 +212,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     onActivity: (boxId, kind) => pulse.touch(boxId, kind),
     hold: (boxId) => pulse.hold(boxId),
   });
+  const ssh = new SshGateway({ hostKey: loadHostKey(cfg.dataDir), pulse, record: recordNote });
+  bus.subscribe("box", (frame) => ssh.onBoxFrame(frame));
   const lifecycle = new LifecycleWatcher({
     hosts,
     pulse,
@@ -217,6 +222,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     tasks,
     cfg,
     record: recordNote,
+    ssh,
   });
   return {
     cfg,
@@ -255,6 +261,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     streams: new StreamSlots(cfg.streamMaxConnections),
     pulse,
     lifecycle,
+    ssh,
     record: recordNote,
     version,
     startedAt: new Date(),

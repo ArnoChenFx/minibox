@@ -12,6 +12,11 @@ import { type Box, sleepBox } from "./boxes";
 import type { ExecManager } from "./exec";
 import type { RecordNote, TerminalService } from "./terminals";
 
+/** The SSH gateway's open connections. An open one keeps its box awake, as an attached terminal does. */
+export interface SshConnections {
+  hasOpenConnection(boxId: string): boolean;
+}
+
 export interface LifecycleOptions {
   readonly hosts: HostRegistry;
   readonly pulse: ActivityPulse;
@@ -20,6 +25,7 @@ export interface LifecycleOptions {
   readonly tasks: TaskManager;
   readonly cfg: Config;
   readonly record: RecordNote;
+  readonly ssh?: SshConnections;
   /** Override the tick interval in tests. */
   readonly everyMs?: number;
   /** Clock for tests. */
@@ -150,10 +156,11 @@ export class LifecycleWatcher {
     return this.isIdle(box.id, box.boxId, box.createdAt, idleSec);
   }
 
-  /** No hold, attachment, exec or task is using the box, and its last heartbeat is at least `idleSec` old. */
+  /** No hold, attachment, SSH connection, exec or task is using the box, and its last heartbeat is at least `idleSec` old. */
   private isIdle(containerId: string, boxId: string, createdAt: string, idleSec: number): boolean {
     if (this.options.pulse.isHeld(boxId)) return false;
     if (this.options.terminals.hasOpenAttachment(containerId)) return false;
+    if (this.options.ssh?.hasOpenConnection(boxId)) return false;
     if (this.options.execs.hasRunning(containerId)) return false;
     if (this.options.tasks.hasRunningForBox(boxId, containerId)) return false;
     const last = this.options.pulse.lastAt(boxId) ?? Math.max(Date.parse(createdAt), this.watchedSince);

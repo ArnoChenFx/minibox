@@ -1,6 +1,6 @@
 /**
- * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-checkpoint.test.ts and
- * tests/docker-sessions.test.ts) against the local Docker engine, one file per process.
+ * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-checkpoint.test.ts,
+ * tests/docker-sessions.test.ts and tests/docker-ssh.test.ts) against the local Docker engine, one file per process.
  *
  *   bun run test:docker
  *
@@ -8,7 +8,8 @@
  * and volumes labelled with the prefix, volumes named with it (the checkpoint repository is one), and networks named
  * with it are removed afterwards, even when the tests fail.
  *
- * Environment: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20).
+ * Environment: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20). The SSH test
+ * builds its box image on debian:bookworm-slim, which is pulled here too when the engine does not have it.
  */
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
@@ -18,6 +19,7 @@ import { RESTIC_IMAGE } from "../src/checkpoints/restic";
 const ROOT = join(import.meta.dir, "..");
 const socket = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
 const image = process.env.MINIBOX_TEST_IMAGE ?? "alpine:3.20";
+const SSH_FIXTURE_BASE = "debian:bookworm-slim";
 const prefix = `mbit${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
 
 const lines = (text: string) => [
@@ -65,10 +67,15 @@ async function preflight(): Promise<void> {
       { cause: e },
     );
   }
-  for (const ref of [image, RESTIC_IMAGE]) await ensureImage(ref);
+  for (const ref of new Set([image, RESTIC_IMAGE, SSH_FIXTURE_BASE])) await ensureImage(ref);
 }
 
-const TEST_FILES = ["tests/docker-runtime.test.ts", "tests/docker-checkpoint.test.ts", "tests/docker-sessions.test.ts"];
+const TEST_FILES = [
+  "tests/docker-runtime.test.ts",
+  "tests/docker-checkpoint.test.ts",
+  "tests/docker-sessions.test.ts",
+  "tests/docker-ssh.test.ts",
+];
 
 /** Runs each file in its own process, so each one's cleanup sees only what it made. The first failure is the status. */
 async function runTests(): Promise<number> {

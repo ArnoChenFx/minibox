@@ -91,6 +91,14 @@ export const MESSAGES = {
   task_limit_range: "limit must be an integer between 1 and {max}.",
   terminal_not_running: "The box is not running, so a terminal can't be opened.",
   ws_upgrade_failed: "WebSocket upgrade failed.",
+  ssh_bearer_required:
+    "SSH needs an Authorization Bearer access key or agent token. A browser session cannot open an SSH connection.",
+  ssh_forbidden: "This credential may not open an SSH connection to a box.",
+  ssh_forbidden_hint:
+    "Give the token the box:ssh scope, for example with the operator or admin preset. Forwarding a port also needs port:expose.",
+  ssh_box_limit: "This box already has {max} SSH connections open.",
+  ssh_total_limit: "MiniBox already has {max} SSH connections open.",
+  ssh_limit_hint: "Close an SSH session you no longer need, then try again.",
   terminal_read_only: "This terminal is read-only. Take over the session in the console to type.",
   too_many_attempts: "Too many attempts. Please try again in 5 minutes.",
   stream_limit: "Too many live connections are open (at most {max}). Close a MiniBox tab or wait, then try again.",

@@ -40,6 +40,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Live updates | Box state, resource samples, host metrics, task progress and box logs are pushed over SSE (`GET /api/events/stream`, `GET /api/boxes/:id/logs/stream`). The console polls only while a stream is down |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window. Named tmux sessions survive a page refresh or a dropped connection. An agent's session opens read-only until you take it over |
+| SSH access | `ssh`, `scp`, `sftp` and `ssh -L` into a box through MiniBox, with no host port published. Needs the `box:ssh` scope for a token. See [SSH access](#ssh-access) |
 | Activity | Per-box history: commands run through MiniBox, container start, stop and out-of-memory events, and terminal sessions opened and closed. Keystrokes are never recorded. `docker logs` stays below it |
 | Logs | Main-process output with selectable line count, streamed live while auto-refresh is on |
 | Access control | Single access key, exchanged at sign-in for a revocable session token in an HttpOnly, `SameSite=Strict` cookie, or sent as `Authorization: Bearer`. Separate agent API tokens with scopes, created-by-me (or ids, tags, or every box), quotas and revoke. Login rate limiting per client address; cross-site requests refused |
@@ -287,10 +288,11 @@ A box can stop itself when it has been idle, and it wakes on demand ([#12](https
 
 - **Sleep** sets the desired state to `stopped` with reason `idle` and runs `docker stop`. The container and its workspace volumes are kept.
 - **Timeout.** `BOX_IDLE_TIMEOUT_SEC` is the global default, and `0` turns idle sleep off. A box's `idleTimeoutSec` overrides it: `0` means that box never sleeps, and `null` inherits the default.
-- **Activity** is an in-memory heartbeat per box, not an event. These count: terminal input, output and close, and an open terminal; an exec from start to finish; session start, read and send; a port-preview request, including a streamed response, and a preview WebSocket until it closes; a volume file call, for every box that mounts the volume, for as long as the call runs; and a box task, when it ends. Reading the box record or its stats does not count.
+- **Activity** is an in-memory heartbeat per box, not an event. These count: terminal input, output and close, and an open terminal; an SSH connection, for as long as it is open (its input refreshes the heartbeat at most once a minute); an exec from start to finish; session start, read and send; a port-preview request, including a streamed response, and a preview WebSocket until it closes; a volume file call, for every box that mounts the volume, for as long as the call runs; and a box task, when it ends. Reading the box record or its stats does not count.
 - **Idle** means none of those is in progress, the last heartbeat is at least the timeout old, and the latest CPU sample is below `BOX_IDLE_CPU_PERCENT`. A box with no CPU sample yet stays awake.
 - **Wake** depends on the request:
   - `exec` starts any stopped box, as before. The wake is audited under the exec run.
+  - An SSH connection starts any stopped box, as `exec` does. A wake from idle sleep is audited under the principal that connected.
   - `session_start` (REST, MCP and CLI) starts any stopped box.
   - A terminal WebSocket and a port preview wake a box only when it is asleep. A box a person stopped answers `409`, with `terminal_not_running` or `preview_box_stopped`.
   - Reading, sending to, closing or listing sessions does not wake a box. A session ends with its container, so a terminal opened on a sleeping box wakes it and then closes with `session_not_found`.
@@ -315,6 +317,28 @@ Signed-in users can open a service that listens inside a box through MiniBox, wi
 - MiniBox must reach the container IP (host-side process on the Docker bridge). A MiniBox container on `minibox-boxes` with ICC disabled cannot proxy until a follow-up network design.
 
 Framework tip: many bundlers assume `/` as the public base. For path-mode previews set the app base to `/box/<name>/<port>/` (Vite `base`, Next `assetPrefix`, etc.), or wait for subdomain mode.
+
+## SSH access
+
+`ssh`, `scp`, `sftp` and `ssh -L` reach a box through MiniBox over a WebSocket on the server's own address, so no host port is published. On the machine that runs `ssh`, build the CLI with `bun run build:cli` and put `dist/minibox` on your `PATH`.
+
+```sh
+# once: the access key, or an agent token with box:ssh
+MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
+ssh mybox.minibox
+scp ./build.tar.gz mybox.minibox:/workspace/
+sftp mybox.minibox
+ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
+```
+
+`ssh-config --append` writes a `Host *.minibox` block at the top of `~/.ssh/config`, pins the server's host key in `~/.ssh/minibox_known_hosts`, and saves the server address and key to `~/.config/minibox/ssh-credentials.json` (mode 600). The `ProxyCommand` (`minibox ssh-proxy %h`) reads that file when `MINIBOX_ACCESS_KEY` is not set, so ssh started from any shell or an IDE's Remote-SSH works. Exported `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` still take precedence.
+
+- The login user is `dev` or the box id. `root` and other names are refused. The access key or token is checked at the WebSocket handshake, so the box needs no key or password. A browser session cannot open an SSH connection.
+- A token needs the `box:ssh` scope and reaches only the boxes its selector allows. `operator` and `admin` include the scope, `sandboxed-agent` does not. Like `exec`, it can run commands and read and write every mount of the box, so grant it the same way. `-L` also needs `port:expose`.
+- Forwards reach only `localhost` and `127.0.0.1` inside the box. `-R`, Unix socket forwards, X11 and agent forwarding are refused and audited.
+- A stopped or sleeping box starts on connect. An open connection keeps the box awake, and input over it counts as activity. Stopping the box (by hand, idle or TTL), deleting it or rebuilding it ends its SSH connections, and a box whose TTL has passed refuses new ones with `409 box_ttl_expired`. Limits: 8 connections per box, 64 in total, and 16 channels per connection. Past a box or server limit the handshake returns `429`.
+- `sftp` and `-L` need `openssh-sftp-server` and `socat`, which the [base template](#base-template) installs. An older box can add them with `sudo apt-get install -y openssh-sftp-server socat` in the standard profile, or be created again.
+- The host key is `DATA_DIR/ssh_host_ed25519_key`, created on first start. If you delete it, run `minibox ssh-config --append` again so clients pin the new key. Connections, channels, refused forwards and disconnects are written to the audit log.
 
 ## Configuration
 
@@ -399,6 +423,7 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | `access_key` | `600` | Access key generated when none is set in the environment or `.env` |
 | `sessions.json` | `600` | Browser sessions: SHA-256 hashes of the tokens (never the tokens themselves), sign-in and expiry times, last use, user agent and address, and a scrypt check of the access key that ends every session when the key changes |
 | `tokens.json` | `600` | Agent API tokens: SHA-256 hashes only. Scopes, resource limits, quotas, expiry, last use and who created the token. Rotating `ACCESS_KEY` does not revoke these |
+| `ssh_host_ed25519_key` | `600` | The SSH gateway's host key, an OpenSSH ed25519 private key, created on first start. `minibox ssh-config` pins its public half. See [SSH access](#ssh-access) |
 | `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
 | `checkpoints/` | `700` | One checkpoint record per file, `ck_….json` (mode `600`): the box spec it was taken from, its volume layers and their restic snapshot ids. The data itself is in the repository volume, not here |
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per exec. The in-memory record is dropped on restart; the file stays until retention removes it |
@@ -597,6 +622,13 @@ Taking over and returning a session are terminal control frames, not REST calls:
 
 The terminal socket sends output as binary frames and `state` or `error` frames as text. It closes with `1000` when the session ends and with `1008` when the browser session ends. A socket that stays silent for 30 seconds is closed. Browsers answer the server's pings, so an open page is not. Output waits while the browser is behind, and a client that leaves more than 4 MiB unread is closed. However a terminal ends, its attach process is stopped inside the box, so no exec is left behind.
 
+### SSH
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/ssh/host-key` | The gateway's host key: `algorithm` (`ssh-ed25519`), `fingerprint` and `publicKey`. A token needs `box:ssh` |
+| `GET` | `/api/ssh/:box` | With `Upgrade: websocket`, carries one SSH connection to the box, by name or id. Without it, runs the same checks and returns `204`, or the refusal as JSON. Bearer credentials only |
+
 ### Snapshots & templates
 
 `:ref` is an image reference (e.g. `minibox-snap:demo-20261020-154259`) and must be URL-encoded.
@@ -774,6 +806,7 @@ minibox/
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
 │   ├── routes/              # Router, route groups (auth / system / images) and the REST adapter for operations
 │   ├── ws/terminal.ts       # WebSocket terminal: attach, control frames, heartbeat, backpressure
+│   ├── ssh/                 # SSH over WebSocket: host key, policy, one ssh2 server per connection
 │   └── lib/                 # errors / http / logger / bus (in-process event bus) / validation
 ├── web/
 │   ├── index.html · login.html
@@ -838,7 +871,7 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **The container runs as root**, because it needs the Docker socket, which is root-equivalent. To narrow that, put a socket proxy that forwards only the Docker API calls MiniBox uses in front of the socket, and point `DOCKER_SOCKET` at the proxy's Unix socket. Or run MiniBox against a rootless Docker or Podman socket.
 - **The access key is the only guard.** There are no user accounts, and a leaked key means full access. The key is compared in constant time. Login limiting only refuses wrong keys: a correct key always signs in, even while wrong keys are refused. Wrong keys sent as `Authorization: Bearer` to `/api/`, `/mcp` or the terminal count toward the same limit. Wrong keys are refused after 10 failures per client address (IPv6 addresses per /64) or 50 from all addresses together, within 5 minutes. The limiter does not stop guessing, because every key is still checked, so the key's length and randomness are what matter: use at least 20 random characters, such as `openssl rand -hex 32` (the generated key is 64 hex characters). At startup, a key shorter than 20 characters, or obviously low-entropy (one character class under 24 characters, or one repeated character), logs an `auth.weak_key` warning. MiniBox still starts, so existing deployments keep working. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; every browser session ends when MiniBox starts with the new key.
 - **Sessions are revocable.** A sign-in does not put the key in the browser. The cookie holds a random 32-byte session token, and `DATA_DIR/sessions.json` keeps only its SHA-256 hash, so a copy of that file cannot be replayed as a cookie. The file also holds a scrypt check of the access key, so the key's strength still matters. Sessions end on logout, when revoked in Settings, at their expiry (`SESSION_TTL_DAYS`, 30 days by default), or when the access key changes. An open terminal and an open event stream close when their session ends.
-- **Agent API tokens are separate from the access key.** Create one in Settings or with `POST /api/tokens`. The plaintext (`mbx_…`) is shown once; `DATA_DIR/tokens.json` keeps only its SHA-256 hash. A token carries scopes (`box:read`, `box:write`, `box:delete`, `exec`, `files:read`, `files:write`, `port:expose`, `checkpoint:create`, `checkpoint:restore`, `volume:read`, `volume:write`, `volume:attach`, `tool:install`), a box selector (`created-by-me` by default, or ids, tags, or `*`), an explicit volume list, allowed hosts, and optional quotas. Presets are `readonly`, `operator`, `sandboxed-agent` and `admin`. `sandboxed-agent` starts at 5 boxes, 8 CPU cores and 16 GB in total, a 4 hour TTL and 60 requests per minute. Revoke takes effect immediately, and can also delete the boxes that token created. `exec` can read and write every mount of a box the token may use. Mounting a volume that already exists requires `volume:attach` on that volume. Rotating `ACCESS_KEY` ends browser sessions and does not revoke API tokens. No preset can mint tokens: that stays with the access key or a signed-in session. A box whose TTL elapses is stopped, not deleted ([#12](https://github.com/ArnoChenFx/minibox/issues/12)). The same token is a bearer on REST and on `/mcp`, where `tools/list` and every call are held to its scopes. Revoking it also ends its MCP sessions, its terminals and its event and task streams, and deletes the boxes it created on every host when asked; a box that cannot be deleted is listed in `failedBoxes`. A read-only token limited to boxes it created sees nothing until you grant `*` or specific ids, because it cannot create a box.
+- **Agent API tokens are separate from the access key.** Create one in Settings or with `POST /api/tokens`. The plaintext (`mbx_…`) is shown once; `DATA_DIR/tokens.json` keeps only its SHA-256 hash. A token carries scopes (`box:read`, `box:write`, `box:delete`, `exec`, `box:ssh`, `files:read`, `files:write`, `port:expose`, `checkpoint:create`, `checkpoint:restore`, `volume:read`, `volume:write`, `volume:attach`, `tool:install`), a box selector (`created-by-me` by default, or ids, tags, or `*`), an explicit volume list, allowed hosts, and optional quotas. Presets are `readonly`, `operator`, `sandboxed-agent` and `admin`. `sandboxed-agent` starts at 5 boxes, 8 CPU cores and 16 GB in total, a 4 hour TTL and 60 requests per minute. Revoke takes effect immediately, and can also delete the boxes that token created. `exec` and `box:ssh` can read and write every mount of a box the token may use. Mounting a volume that already exists requires `volume:attach` on that volume. Rotating `ACCESS_KEY` ends browser sessions and does not revoke API tokens. No preset can mint tokens: that stays with the access key or a signed-in session. A box whose TTL elapses is stopped, not deleted ([#12](https://github.com/ArnoChenFx/minibox/issues/12)). The same token is a bearer on REST and on `/mcp`, where `tools/list` and every call are held to its scopes. Revoking it also ends its MCP sessions, its terminals and its event and task streams, and deletes the boxes it created on every host when asked; a box that cannot be deleted is listed in `failedBoxes`. A read-only token limited to boxes it created sees nothing until you grant `*` or specific ids, because it cannot create a box.
 - **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin listed in `ALLOWED_ORIGINS`. Requests without an `Origin` header (scripts using `Authorization: Bearer`) are accepted. Writes must declare `Content-Type: application/json` unless they carry neither a body nor a `Content-Type`, which also blocks HTML form posts. The session cookie is `SameSite=Strict`, so a link from another website may ask you to sign in once more.
 - **Strict Content-Security-Policy.** Scripts load only from MiniBox itself (`script-src 'self'`), the pages have no inline scripts, and MiniBox can't be framed (`frame-ancestors 'none'`). Requests that arrive over HTTPS (directly, with an `https://` Origin, or through a proxy when `TRUST_PROXY=true`) also get `Strict-Transport-Security` for one year, without `includeSubDomains`.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.

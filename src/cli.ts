@@ -1,10 +1,20 @@
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const DEFAULT_URL = "http://127.0.0.1:3920";
+const SSH_SUFFIX = ".minibox";
+const SSH_BLOCK_BEGIN = "# BEGIN minibox ssh-config";
+const SSH_BLOCK_END = "# END minibox ssh-config";
 
 interface CliIo {
   stdout(text: string): void;
   stderr(text: string): void;
+  /** Raw bytes to stdout. `ssh-proxy` writes SSH, which is binary. */
+  stdoutBytes(bytes: Uint8Array): void;
+  /** Raw bytes from stdin. `ssh-proxy` reads the SSH client's stream from it. */
+  stdinBytes(): AsyncIterable<Uint8Array>;
 }
 
 interface ExecResult {
@@ -51,6 +61,8 @@ Commands:
   minibox files download <volume> [path]   Print a base64 tar of the path
   minibox files upload <volume> [path]     Read a base64 tar from stdin and extract
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
+  minibox ssh-config [--append]        Print the ~/.ssh/config block and host key pin; --append writes both
+  minibox ssh-proxy <box>              Carry one SSH connection over stdio (the ProxyCommand from ssh-config)
 
 A foreground exec may use --timeout up to 55 seconds. Longer commands use --background with a larger --timeout.
 The process exit code is the command's exit code, 124 when the command times out, 1 on an API error, and 2 on usage.
@@ -330,6 +342,160 @@ async function mcpProxy(
   return 0;
 }
 
+/** Where `ssh-config --append` saves the server and key, so `ssh-proxy` works from any shell, IDE or launcher. */
+function credentialsPath(env: Record<string, string | undefined>): string {
+  return join(env.HOME ?? homedir(), ".config", "minibox", "ssh-credentials.json");
+}
+
+/**
+ * The environment `ssh-proxy` runs with. ssh starts it from whatever launched ssh, often an IDE that never saw the
+ * shell's exports, so when no key is set it reads the server and key `ssh-config --append` saved (mode 600).
+ */
+async function proxyEnv(env: Record<string, string | undefined>): Promise<Record<string, string | undefined>> {
+  if (env.MINIBOX_ACCESS_KEY ?? env.ACCESS_KEY) return env;
+  const text = await readFile(credentialsPath(env), "utf8").catch(() => null);
+  if (text === null) return env;
+  let saved: { url?: unknown; key?: unknown };
+  try {
+    saved = JSON.parse(text) as { url?: unknown; key?: unknown };
+  } catch {
+    throw new Error(`${credentialsPath(env)} is not valid JSON. Run minibox ssh-config --append again.`);
+  }
+  if (typeof saved.key !== "string" || !saved.key) return env;
+  return {
+    ...env,
+    MINIBOX_ACCESS_KEY: saved.key,
+    MINIBOX_URL: env.MINIBOX_URL ?? (typeof saved.url === "string" ? saved.url : undefined),
+  };
+}
+
+async function saveCredentials(env: Record<string, string | undefined>): Promise<void> {
+  const path = credentialsPath(env);
+  await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
+  const url = (env.MINIBOX_URL ?? DEFAULT_URL).replace(/\/$/, "");
+  await writeFile(path, `${JSON.stringify({ url, key: accessKey(env) })}\n`, { mode: 0o600 });
+  await chmod(path, 0o600);
+}
+
+function accessKey(env: Record<string, string | undefined>): string {
+  const key = env.MINIBOX_ACCESS_KEY ?? env.ACCESS_KEY;
+  if (!key) throw new Error("Set MINIBOX_ACCESS_KEY or ACCESS_KEY.");
+  return key;
+}
+
+/**
+ * The block `ssh-config` manages. It goes first in ~/.ssh/config, so its settings win over any earlier `Host *`. The pin
+ * path is absolute: ssh expands `~` from the account's passwd entry, which is not always $HOME, and the pin must be
+ * where the CLI wrote it.
+ */
+function sshConfigBlock(pinPath: string): string {
+  return [
+    SSH_BLOCK_BEGIN,
+    `Host *${SSH_SUFFIX}`,
+    "  User dev",
+    "  ProxyCommand minibox ssh-proxy %h",
+    `  UserKnownHostsFile "${pinPath.replaceAll("%", "%%")}"`,
+    "  StrictHostKeyChecking yes",
+    "  ServerAliveInterval 15",
+    SSH_BLOCK_END,
+    "",
+  ].join("\n");
+}
+
+function withoutManagedBlock(text: string): string {
+  const begin = text.indexOf(SSH_BLOCK_BEGIN);
+  if (begin === -1) return text;
+  const endMarker = text.indexOf(SSH_BLOCK_END, begin);
+  if (endMarker === -1)
+    throw new Error(`~/.ssh/config has "${SSH_BLOCK_BEGIN}" without its end marker. Fix it by hand.`);
+  const lineEnd = text.indexOf("\n", endMarker);
+  return text.slice(0, begin) + (lineEnd === -1 ? "" : text.slice(lineEnd + 1));
+}
+
+async function sshConfig(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const unknown = argv.find((token) => token !== "--append");
+  if (unknown !== undefined) throw new Error(`Unknown option ${unknown}`);
+  const res = await request(env, "GET", "/api/ssh/host-key");
+  if (res.status >= 400) {
+    fail(io, res.status, res.json, res.text);
+    if (res.status === 403) io.stderr("A token needs the box:ssh scope to set up SSH.\n");
+    return 1;
+  }
+  const published = res.json as { publicKey?: unknown; fingerprint?: unknown } | null;
+  if (typeof published?.publicKey !== "string" || typeof published.fingerprint !== "string") {
+    throw new Error("The server did not publish an SSH host key.");
+  }
+  const pin = `*${SSH_SUFFIX} ${published.publicKey}\n`;
+  const sshDir = join(env.HOME ?? homedir(), ".ssh");
+  const configPath = join(sshDir, "config");
+  const pinPath = join(sshDir, "minibox_known_hosts");
+  if (!argv.includes("--append")) {
+    io.stdout(`# ~/.ssh/config\n${sshConfigBlock(pinPath)}\n# ~/.ssh/minibox_known_hosts\n${pin}`);
+    return 0;
+  }
+  await mkdir(sshDir, { recursive: true, mode: 0o700 });
+  const existing = await readFile(configPath, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return "";
+    throw error;
+  });
+  const kept = withoutManagedBlock(existing).replace(/^\n+/, "");
+  const block = sshConfigBlock(pinPath);
+  await writeFile(configPath, kept ? `${block}\n${kept}` : block, { mode: 0o600 });
+  await writeFile(pinPath, pin, { mode: 0o600 });
+  await saveCredentials(env);
+  io.stdout(
+    `Wrote ~/.ssh/config, ~/.ssh/minibox_known_hosts and ~/.config/minibox/ssh-credentials.json (mode 600). Pinned ${published.fingerprint} for *${SSH_SUFFIX}.\n`,
+  );
+  return 0;
+}
+
+/** Feeds the SSH client's bytes into the WebSocket, and closes it when the client has nothing more to send. */
+async function forwardStdin(input: AsyncIterable<Uint8Array>, ws: WebSocket): Promise<void> {
+  for await (const chunk of input) {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(chunk);
+  }
+  if (ws.readyState === WebSocket.OPEN) ws.close(1000, "ssh finished");
+}
+
+/**
+ * Carries one SSH connection over stdio, so `ssh` can reach a box through this server. The server's checks run first,
+ * so a refusal prints its reason. A WebSocket reports only that the upgrade failed, not the status it got.
+ */
+async function sshProxy(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const [host, ...extra] = argv;
+  if (!host || host.startsWith("--") || extra.length > 0) throw new Error("minibox ssh-proxy needs one box name");
+  const name = host.endsWith(SSH_SUFFIX) ? host.slice(0, -SSH_SUFFIX.length) : host;
+  if (!name) throw new Error("minibox ssh-proxy needs one box name");
+  const path = `/api/ssh/${encodeURIComponent(name)}`;
+  const probe = await request(env, "GET", path);
+  if (probe.status >= 400) return fail(io, probe.status, probe.json, probe.text);
+  const base = (env.MINIBOX_URL ?? DEFAULT_URL).replace(/\/$/, "");
+  const ws = new WebSocket(`${base}${path}`.replace(/^http/, "ws"), {
+    headers: { authorization: `Bearer ${accessKey(env)}` },
+  });
+  ws.binaryType = "arraybuffer";
+  const opened = await new Promise<boolean>((resolve) => {
+    ws.addEventListener("open", () => resolve(true), { once: true });
+    ws.addEventListener("close", () => resolve(false), { once: true });
+  });
+  if (!opened) {
+    io.stderr(
+      `minibox: the SSH connection to ${name} could not be opened. Run minibox ssh-config to check the setup.\n`,
+    );
+    return 1;
+  }
+  const ended = new Promise<number>((resolve) => {
+    ws.addEventListener("message", (event) => io.stdoutBytes(new Uint8Array(event.data as ArrayBuffer)));
+    ws.addEventListener("close", (event) => {
+      if (event.code !== 1000 && event.reason) io.stderr(`minibox: ${event.reason}\n`);
+      resolve(event.code === 1000 ? 0 : 1);
+    });
+  });
+  void forwardStdin(io.stdinBytes(), ws).catch(() => ws.close(1011, "stdin failed"));
+  return ended;
+}
+
 async function filesCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
   const [sub, ...rest] = argv;
   if (!sub || sub.startsWith("--")) throw new Error("minibox files needs ls, read, write, cp, download or upload");
@@ -480,6 +646,9 @@ export async function runCli(
     if (command === "session") return await sessionCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "files") return await filesCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "mcp") return await mcpProxy(sub === undefined ? [] : [sub, ...rest], env, io, lines);
+    if (command === "ssh-config") return await sshConfig(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "ssh-proxy")
+      return await sshProxy(sub === undefined ? [] : [sub, ...rest], await proxyEnv(env), io);
     io.stderr(`Unknown command ${command}\n${HELP}`);
     return 2;
   } catch (e) {
@@ -497,6 +666,10 @@ if (import.meta.main) {
   const code = await runCli(process.argv.slice(2), process.env, {
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => process.stderr.write(text),
+    stdoutBytes: (bytes) => process.stdout.write(bytes),
+    stdinBytes: () => process.stdin,
   });
+  // Pipe writes can finish after exit, and the last SSH bytes must reach ssh before the process ends.
+  await new Promise<void>((resolve) => process.stdout.write("", () => resolve()));
   process.exit(code);
 }

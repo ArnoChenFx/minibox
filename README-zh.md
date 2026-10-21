@@ -40,6 +40,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 实时更新 | Box 状态、资源采样、宿主机指标、任务进度与 Box 日志通过 SSE 推送：`GET /api/events/stream` 与 `GET /api/boxes/:id/logs/stream`。控制台只在对应的流断开时轮询 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应。具名的 tmux 会话在刷新页面或连接断开后仍然保留。Agent 发起的会话默认只读，接管后才能输入 |
+| SSH 访问 | 通过 MiniBox 用 `ssh`、`scp`、`sftp` 与 `ssh -L` 进入 Box，不发布宿主机端口。令牌需要 `box:ssh` 范围。见 [SSH 访问](#ssh-访问) |
 | 活动 | Box 的历史记录：经由 MiniBox 执行的命令、容器启动 / 停止 / 内存溢出（OOM）事件，以及终端会话的开启与关闭。从不记录键入的内容。`docker logs` 保留在下方 |
 | 日志 | 查看容器主进程输出，支持行数选择；自动刷新开启时通过实时流推送 |
 | 访问控制 | 单一访问密钥；登录时换取可撤销的会话令牌，保存在 HttpOnly、`SameSite=Strict` Cookie 中，或以 `Authorization: Bearer` 发送。另有带 scope、`created-by-me`（或 id、标签、全部 Box）、配额和吊销的 Agent API 令牌。按客户端地址限制登录失败次数；拒绝跨站请求 |
@@ -285,10 +286,11 @@ Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https:/
 
 - **休眠**把期望状态改为 `stopped`（原因 `idle`）并执行 `docker stop`，**不删除容器**，工作区卷也保留。
 - **超时。** `BOX_IDLE_TIMEOUT_SEC` 是全局默认值，`0` 关闭空闲休眠。Box 的 `idleTimeoutSec` 可以覆盖它：`0` 表示该 Box 永不休眠，`null` 表示继承默认值。
-- **活动**是每个 Box 在内存中的心跳，不写入事件。以下操作计入：终端的输入、输出与关闭，以及打开的终端；exec 从开始到结束；会话的启动、读取与发送；端口预览请求（包括流式响应），以及预览 WebSocket 直到关闭；卷上的文件调用，计入挂载该卷的每个 Box，且在调用期间保持唤醒；Box 上的异步任务结束时。读取 Box 记录或其统计不计入。
+- **活动**是每个 Box 在内存中的心跳，不写入事件。以下操作计入：终端的输入、输出与关闭，以及打开的终端；SSH 连接（打开期间保持唤醒，其输入每分钟最多刷新一次心跳）；exec 从开始到结束；会话的启动、读取与发送；端口预览请求（包括流式响应），以及预览 WebSocket 直到关闭；卷上的文件调用，计入挂载该卷的每个 Box，且在调用期间保持唤醒；Box 上的异步任务结束时。读取 Box 记录或其统计不计入。
 - **空闲**指以上都没有进行中，最近一次心跳距今不少于超时时长，且最近的 CPU 采样低于 `BOX_IDLE_CPU_PERCENT`。尚无 CPU 采样的 Box 保持唤醒。
 - **唤醒**取决于请求：
   - `exec` 会启动任何已停止的 Box，与以前一样。唤醒记入该次 exec 的审计。
+  - SSH 连接会启动任何已停止的 Box，与 `exec` 相同；从休眠唤醒时，审计记在发起连接的主体名下。
   - `session_start`（REST、MCP 与 CLI）会启动任何已停止的 Box。
   - 终端 WebSocket 与端口预览只唤醒处于休眠中的 Box。被人停止的 Box 返回 `409`，错误分别为 `terminal_not_running` 与 `preview_box_stopped`。
   - 读取、发送、关闭或列出会话不会唤醒 Box。会话随容器结束，因此在休眠中的 Box 上打开终端会唤醒它，随后以 `session_not_found` 关闭。
@@ -312,6 +314,28 @@ Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https:/
 - MiniBox 必须能访问容器 IP（宿主机进程经 Docker 网桥即可）。若 MiniBox 自己跑在关闭了 ICC 的 `minibox-boxes` 网络里，预览会不通，需后续网络方案。
 
 框架提示：不少打包工具默认公共路径是 `/`。路径模式下请把应用 base 设为 `/box/<名称>/<端口>/`（如 Vite `base`、Next `assetPrefix`），或等待子域名模式。
+
+## SSH 访问
+
+`ssh`、`scp`、`sftp` 与 `ssh -L` 通过 MiniBox 连接 Box：经由服务器自身地址上的 WebSocket，不发布宿主机端口。在运行 `ssh` 的机器上，用 `bun run build:cli` 构建 CLI，并把 `dist/minibox` 放进 `PATH`。
+
+```sh
+# 只需一次：访问密钥，或带 box:ssh 的 Agent 令牌
+MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
+ssh mybox.minibox
+scp ./build.tar.gz mybox.minibox:/workspace/
+sftp mybox.minibox
+ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
+```
+
+`ssh-config --append` 在 `~/.ssh/config` 顶部写入 `Host *.minibox` 配置块，把服务器主机密钥固定在 `~/.ssh/minibox_known_hosts`，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600）。`ProxyCommand`（`minibox ssh-proxy %h`）在没有设置 `MINIBOX_ACCESS_KEY` 时读取该文件，因此从任何 shell 或 IDE 的 Remote-SSH 启动 ssh 都能使用。已导出的 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY` 仍然优先。
+
+- 登录用户为 `dev` 或 Box id，`root` 与其他名字会被拒绝。访问密钥或令牌在 WebSocket 握手时校验，Box 内不需要任何密钥或密码。浏览器会话不能建立 SSH 连接。
+- 令牌需要 `box:ssh` 范围，且只能访问其 Box 选择器允许的 Box。`operator` 与 `admin` 预设包含该范围，`sandboxed-agent` 不包含。它与 `exec` 一样能在 Box 内执行命令、读写全部挂载，因此应同样谨慎地授予。`-L` 另需 `port:expose`。
+- 转发只到 Box 内的 `localhost` 与 `127.0.0.1`。`-R`、Unix 套接字转发、X11 与 agent 转发会被拒绝并写入审计日志。
+- 已停止或休眠的 Box 会在连接时启动。打开的连接会让 Box 保持运行，连接上的输入计为活动。停止 Box（手动、空闲或 TTL）、删除或重建 Box 会断开它的 SSH 连接；TTL 已过的 Box 拒绝新连接，返回 `409 box_ttl_expired`。上限：每个 Box 8 个连接，全局 64 个，每个连接 16 个通道。超过 Box 或全局上限时，握手返回 `429`。
+- `sftp` 与 `-L` 需要 `openssh-sftp-server` 和 `socat`，[基础模板](#基础模板)已包含它们。旧 Box 可在标准档位下执行 `sudo apt-get install -y openssh-sftp-server socat` 补装，或重新创建。
+- 主机密钥位于 `DATA_DIR/ssh_host_ed25519_key`，首次启动时生成。删除后需重新运行 `minibox ssh-config --append`，让客户端固定新密钥。连接、通道、被拒绝的转发与断开都会写入审计日志。
 
 ## 配置
 
@@ -396,6 +420,7 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 | `access_key` | `600` | 环境变量和 `.env` 中都没有设置时自动生成的访问密钥 |
 | `sessions.json` | `600` | 浏览器会话：令牌的 SHA-256 哈希（从不保存令牌本身）、登录与过期时间、最后活动时间、User-Agent 与地址，以及在访问密钥变更时用于结束全部会话的 scrypt 校验值 |
 | `tokens.json` | `600` | Agent API 令牌：只保存 SHA-256。包含 scope、资源范围、配额、到期时间、最后使用，以及创建者。更换 `ACCESS_KEY` 不会吊销这些令牌 |
+| `ssh_host_ed25519_key` | `600` | 网关的 SSH 主机密钥（OpenSSH 格式的 ed25519 私钥），首次启动时生成。`minibox ssh-config` 固定的是它的公钥。见 [SSH 访问](#ssh-访问) |
 | `boxes/` | `700` | 每个 Box 一个规格文件 `<id>.json`（权限 `600`）。可变状态写在这里；标签只是创建时的副本 |
 | `checkpoints/` | `700` | 每个检查点一个记录文件 `ck_….json`（权限 `600`）：记录拍摄时的 Box 规格、各卷的数据层及其 restic 快照 id。数据本身在仓库卷中，不在这里 |
 | `exec/` | `700` | `exec` 命令保存的输出，每个 exec 一个 JSON 文件。进程重启后内存中的记录消失，文件保留到清理策略删除它 |
@@ -594,6 +619,13 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 终端 WebSocket 以二进制帧输出，以文本帧发送 `state` 或 `error` 帧。会话结束时以关闭码 `1000` 关闭，浏览器会话结束时以 `1008` 关闭。连接 30 秒没有任何数据时会被关闭，浏览器会自动回应服务器的 ping，因此正常打开的页面不会被断开。浏览器来不及接收时输出会暂停；未读数据超过 4 MiB 的客户端会被关闭。无论终端如何结束，其附着进程都会在 Box 内结束，不会残留 exec。
 
+### SSH
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/ssh/host-key` | 网关的主机密钥：`algorithm`（`ssh-ed25519`）、`fingerprint` 与 `publicKey`。令牌需要 `box:ssh` |
+| `GET` | `/api/ssh/:box` | 带 `Upgrade: websocket` 时，把一条 SSH 连接接到该 Box（按名称或 id）。不带时执行同样的检查：通过返回 `204`，拒绝则返回 JSON 错误。仅接受 Bearer 凭据 |
+
 ### 快照与模板
 
 `:ref` 为镜像引用（如 `minibox-snap:demo-20261020-154259`），需要 URL 编码。
@@ -763,6 +795,7 @@ minibox/
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
 │   ├── routes/              # router、各组路由（auth / system / images）与操作的 REST 适配层
 │   ├── ws/terminal.ts       # WebSocket 终端：附着、控制帧、心跳与背压
+│   ├── ssh/                 # SSH 网关（WebSocket）：主机密钥、策略、每个连接一个 ssh2 服务
 │   └── lib/                 # errors / http / logger / bus（进程内事件总线）/ validation
 ├── web/
 │   ├── index.html · login.html
@@ -826,7 +859,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **容器以 root 运行。** 容器需要使用 Docker Socket，而 Docker Socket 等同于 root。要缩小这部分权限，可以在 Socket 前放一个只转发 MiniBox 所需 Docker API 的 Socket 代理，并把 `DOCKER_SOCKET` 指向代理的 Unix Socket；也可以让 MiniBox 连接 rootless Docker 或 Podman 的 Socket。
 - **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。以 `Authorization: Bearer` 发送的错误密钥（发往 `/api/`、`/mcp` 或终端）计入同一限流。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以密钥的长度和随机性才是关键：请使用至少 20 位的随机字符，例如 `openssl rand -hex 32` 生成的密钥（自动生成的密钥为 64 位十六进制）。启动时，若密钥短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符），会记录 `auth.weak_key` 警告。MiniBox 仍会正常启动，已有部署不受影响。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务；使用新密钥启动时，全部浏览器会话随之结束。
 - **会话可以撤销。** 登录后密钥不会保存在浏览器里：Cookie 中是随机生成的 32 字节会话令牌，`DATA_DIR/sessions.json` 只保存它的 SHA-256 哈希，因此拿到该文件也无法用来伪造登录 Cookie。文件中还有一个用于检测密钥变更的 scrypt 校验值，所以访问密钥的强度依然重要。会话在登出、在设置页撤销、到期（`SESSION_TTL_DAYS`，默认 30 天）或访问密钥变更时结束；会话结束时，它打开的终端和事件流也会关闭。
-- **Agent API 令牌与访问密钥分开。** 在设置页或用 `POST /api/tokens` 创建。明文（`mbx_…`）只显示一次；`DATA_DIR/tokens.json` 只保存 SHA-256。令牌带有 scope（`box:read`、`box:write`、`box:delete`、`exec`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`）、Box 选择器（默认 `created-by-me`，也可以是 id、标签或 `*`）、显式的卷列表、允许的宿主机，以及可选配额。预设为 `readonly`、`operator`、`sandboxed-agent` 和 `admin`。`sandboxed-agent` 的起点是最多 5 个 Box、合计 8 个 CPU 与 16 GB 内存、4 小时 TTL、每分钟 60 次请求。吊销立即生效，也可以同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。挂载一个已经存在的卷需要对该卷的 `volume:attach`。更换 `ACCESS_KEY` 会结束浏览器会话，不会吊销 API 令牌。没有任何预设可以签发令牌：那仍属于访问密钥或已登录的会话。到期后 Box 会停止、不删除（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。同一枚令牌也是 `/mcp` 的 Bearer，`tools/list` 与每次调用都受其 scope 约束。吊销时，它的 MCP 会话、终端、事件流与任务流随之结束；删除它创建的 Box 时覆盖所有宿主机，无法删除的 Box 列在 `failedBoxes` 中。只读且限制在自己创建的 Box 上的令牌，在授予 `*` 或具体 id 之前看不到任何 Box，因为它不能创建 Box。
+- **Agent API 令牌与访问密钥分开。** 在设置页或用 `POST /api/tokens` 创建。明文（`mbx_…`）只显示一次；`DATA_DIR/tokens.json` 只保存 SHA-256。令牌带有 scope（`box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`）、Box 选择器（默认 `created-by-me`，也可以是 id、标签或 `*`）、显式的卷列表、允许的宿主机，以及可选配额。预设为 `readonly`、`operator`、`sandboxed-agent` 和 `admin`。`sandboxed-agent` 的起点是最多 5 个 Box、合计 8 个 CPU 与 16 GB 内存、4 小时 TTL、每分钟 60 次请求。吊销立即生效，也可以同时删除该令牌创建的 Box。`exec` 与 `box:ssh` 可以读写该令牌有权使用的 Box 上的全部挂载。挂载一个已经存在的卷需要对该卷的 `volume:attach`。更换 `ACCESS_KEY` 会结束浏览器会话，不会吊销 API 令牌。没有任何预设可以签发令牌：那仍属于访问密钥或已登录的会话。到期后 Box 会停止、不删除（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。同一枚令牌也是 `/mcp` 的 Bearer，`tools/list` 与每次调用都受其 scope 约束。吊销时，它的 MCP 会话、终端、事件流与任务流随之结束；删除它创建的 Box 时覆盖所有宿主机，无法删除的 Box 列在 `failedBoxes` 中。只读且限制在自己创建的 Box 上的令牌，在授予 `*` 或具体 id 之前看不到任何 Box，因为它不能创建 Box。
 - **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。写请求必须声明 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外），这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
 - **严格的内容安全策略（CSP）。** 脚本只会从 MiniBox 自身加载（`script-src 'self'`），页面没有内联脚本，且禁止被嵌入 iframe（`frame-ancestors 'none'`）。通过 HTTPS 访问（直接访问、请求带有 `https://` Origin，或在 `TRUST_PROXY=true` 时经由代理）的请求还会带上 `Strict-Transport-Security`，有效期一年，不包含子域名。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
