@@ -189,7 +189,14 @@ export function render(view, id, tab = "overview") {
     stop: (b) => lifecycle(box, "stop", b).then(rerender),
     restart: (b) => lifecycle(box, "restart", b).then(rerender),
     snapshot: () => snapshotBox(box).then((s) => s && tab === "snapshots" && rerender()),
-    rebuild: () => openRebuild(box),
+    rebuild: async () => {
+      try {
+        const { box: fresh } = await api(`/api/boxes/${enc(ref())}`);
+        openRebuild(fresh);
+      } catch (err) {
+        toastError(t("bd.loadFailed"), err);
+      }
+    },
     delete: async () => {
       if (await deleteBox(box)) location.hash = "#/boxes";
     },

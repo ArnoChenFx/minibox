@@ -109,6 +109,42 @@ describe("the live state on the event stream", () => {
     expect(frame.data).toMatchObject({ op: "upsert", containerId: id, box: { name: "gamma", running: true } });
   });
 
+  test("live frames name a box's environment variables and never their values, and REST keeps the values", async () => {
+    const id = seedBox("eta", true);
+    const base = await startApp();
+    const host = app.hosts.get();
+    const sse = await openStream(base);
+    await sse.until(isLive("sync"));
+
+    const spec = host.specs.list()[0];
+    if (!spec) throw new Error("the claimed box has no spec");
+    host.specs.write({
+      ...spec,
+      env: [
+        { name: "API_TOKEN", value: "s3cret-value" },
+        { name: "DB_PASSWORD", secretRef: "db-password" },
+      ],
+    });
+    const frame = await sse.until(isLive("box"));
+    expect(frame.data).toMatchObject({ box: { name: "eta", env: [{ name: "API_TOKEN" }, { name: "DB_PASSWORD" }] } });
+    expect(JSON.stringify(frame.data)).not.toContain("s3cret-value");
+
+    const later = await openStream(base);
+    const sync = await later.until(isLive("sync"));
+    expect(JSON.stringify(sync.data)).not.toContain("s3cret-value");
+    expect(JSON.stringify(sync.data)).toContain("API_TOKEN");
+
+    const rest = await fetch(`${base}/api/boxes/${id}`, { headers: auth });
+    expect((await rest.json()) as { box: { env: unknown } }).toMatchObject({
+      box: {
+        env: [
+          { name: "API_TOKEN", value: "s3cret-value" },
+          { name: "DB_PASSWORD", secretRef: "db-password" },
+        ],
+      },
+    });
+  });
+
   test("resource samples, link changes and host metrics are pushed while the stream is open", async () => {
     seedBox("delta", true);
     const base = await startApp();

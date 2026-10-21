@@ -1,7 +1,7 @@
 import { untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
 import { type ContainerInfo, type ContainerStats, isRuntimeError, type RuntimeEvent } from "../runtime";
-import { projectBox } from "../services/box-view";
+import { liveBox, projectBox } from "../services/box-view";
 import type { Box } from "../services/boxes";
 import { ClaimError, ensureSpec } from "../specs/claim";
 import type { SpecChange } from "../specs/store";
@@ -489,7 +489,7 @@ export class HostSampler {
       const info = this.containerOf(spec);
       if (!info) continue;
       present.add(spec.id);
-      const box = projectBox(host, spec, info);
+      const box = liveBox(projectBox(host, spec, info));
       const json = JSON.stringify(box);
       const previous = this.shown.get(spec.id);
       if (previous?.containerId === info.id && previous.json === json) continue;

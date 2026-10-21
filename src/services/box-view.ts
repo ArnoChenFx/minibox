@@ -10,6 +10,14 @@ function workspaceVolume(host: HostCtx, spec: BoxSpec): string {
   return workspace?.volume ?? volumeName(host.prefix, spec.createdName);
 }
 
+/**
+ * The box as a live frame carries it. Environment variables go out by name only: a frame reaches every open stream, and a
+ * value can be a secret. The REST reads keep the values.
+ */
+export function liveBox(box: Box): Box {
+  return { ...box, env: box.env.map(({ name }) => ({ name })) };
+}
+
 /** Observed container fields stay on the box so drift is visible. Desired fields come from the spec. */
 export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): Box {
   return {

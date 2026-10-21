@@ -2,6 +2,7 @@ import type { AppTopics } from "../app";
 import type { LinkState } from "../host/live";
 import type { HostRegistry } from "../host/registry";
 import type { Bus } from "../lib/bus";
+import { liveBox } from "../services/box-view";
 import type { Box } from "../services/boxes";
 import type { LiveSource } from "./stream";
 
@@ -27,7 +28,7 @@ export function liveSource(bus: Bus<AppTopics>, hosts: HostRegistry): LiveSource
         hosts: hosts.list().map((host) => ({
           hostId: host.host.id,
           state: host.sampler.ready() ? "live" : "down",
-          boxes: host.sampler.boxes({ withStats: true }),
+          boxes: host.sampler.boxes({ withStats: true }).map(liveBox),
         })),
       } satisfies SyncFrame),
     subscribe(send) {
