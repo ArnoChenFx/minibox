@@ -15,6 +15,7 @@ import { runOf } from "../src/routes/operations";
 import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
+import type { FakeRuntime } from "./support/fake-runtime";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
@@ -33,6 +34,10 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "box.rebuild": (id) => ({ id, profile: "strict", confirm: true, expectedRevision: "1" }),
   "box.logs": (id) => ({ id, tail: 10 }),
   "box.stats": (id) => ({ id }),
+  "exec.run": (id) => ({ id, argv: ["true"] }),
+  "exec.get": () => ({ execId: `ex_${"0".repeat(26)}` }),
+  "exec.kill": () => ({ execId: `ex_${"0".repeat(26)}` }),
+  "exec.output": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "snapshot.list": () => ({}),
   "snapshot.create": (id) => ({ id, name: "nightly" }),
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
@@ -47,11 +52,11 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "events.list": () => ({ op: "box.create" }),
 };
 
-/** A real task id for the task operations, which cannot succeed against the placeholder id. */
+/** A real id for operations that cannot succeed against the placeholder in `SAMPLES`. */
 async function preparedInput(
   app: App,
   ctx: OperationContext,
-  runtime: { hold(op: "buildImage"): { release(): void } },
+  runtime: FakeRuntime,
   operation: Operation,
   boxId: string,
 ): Promise<{ input: unknown; release?: () => void }> {
@@ -64,6 +69,20 @@ async function preparedInput(
     const held = runtime.hold("buildImage");
     const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
     return { input: { id: started.taskId }, release: held.release };
+  }
+  if (operation.name === "exec.get" || operation.name === "exec.output") {
+    const started = (await app.operations.run("exec.run", ctx, { id: boxId, argv: ["true"] })) as { execId: string };
+    return { input: { execId: started.execId } };
+  }
+  if (operation.name === "exec.kill") {
+    runtime.execScript = null;
+    const started = (await app.operations.run("exec.run", ctx, {
+      id: boxId,
+      argv: ["sleep", "30"],
+      background: true,
+      timeoutSec: 30,
+    })) as { execId: string };
+    return { input: { execId: started.execId } };
   }
   const sample = SAMPLES[operation.name];
   if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
@@ -82,7 +101,13 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
   runtime.seedImage(TEMPLATE_REF, { [keys.template]: "true", [keys.templateName]: "gold" });
-  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
+  const ctx: OperationContext = {
+    host: app.hosts.get(),
+    principal: OWNER,
+    source: "rest",
+    events: app.events,
+    execs: app.execs,
+  };
   return { app, runtime, ctx };
 }
 
@@ -146,7 +171,7 @@ describe("registry definitions", () => {
     expect(registryProblems(OPERATIONS)).toEqual([]);
   });
 
-  test("the registry holds the box, snapshot, template, task and event operations in scope", () => {
+  test("the registry holds the box, exec, snapshot, template, task and event operations in scope", () => {
     expect(OPERATIONS.map((op) => op.name)).toEqual(Object.keys(SAMPLES));
   });
 
@@ -264,6 +289,7 @@ describe("executor", () => {
           message: "This credential may not run box.list.",
           key: "operation_forbidden",
           params: { op: "box.list" },
+          retryable: false,
         },
       });
       expect(events.map((e) => [e.op, e.status])).toEqual([["box.list", "denied"]]);
@@ -476,7 +502,7 @@ describe("event log", () => {
       try {
         await app.operations.run(operation.name, ctx, prepared.input);
         await app.tasks.drain();
-        const rows = app.events.after(before, {}, 10).filter((event) => event.op === operation.name);
+        const rows = app.events.after(before, {}, 20).filter((event) => event.op === operation.name);
         expect(rows.map((event) => [event.op, event.status])).toEqual(
           operation.async
             ? [
@@ -613,6 +639,9 @@ describe("projections", () => {
       "box_action",
       "update_box",
       "rebuild_box",
+      "exec",
+      "exec_get",
+      "exec_kill",
     ]);
     expect(mcpTools(OPERATIONS, ["storage"])).toEqual([]);
   });

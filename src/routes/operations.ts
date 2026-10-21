@@ -48,9 +48,10 @@ function handlerFor(operation: Operation, binding: RestBinding): Handler {
   return async ({ app, host, req, url, params }) => {
     const run = runOf(req);
     const body = binding.body ? asObject(await readJson(req)) : {};
+    const source = req.headers.get("x-minibox-client") === "cli" ? "cli" : "rest";
     const result = await app.operations.run(
       operation.name,
-      { host, principal: OWNER, source: "rest", run, events: app.events },
+      { host, principal: OWNER, source, run, events: app.events, execs: app.execs },
       inputOf(binding, url, params, body, req.headers.get("if-match")),
     );
     const status = operation.async ? 202 : (binding.status ?? 200);

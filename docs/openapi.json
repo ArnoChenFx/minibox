@@ -13,6 +13,9 @@
       "name": "boxes"
     },
     {
+      "name": "exec"
+    },
+    {
       "name": "snapshots"
     },
     {
@@ -805,7 +808,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1241,7 +1244,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1386,7 +1389,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1889,7 +1892,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1899,7 +1902,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2323,7 +2326,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2717,7 +2720,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3111,7 +3114,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3545,7 +3548,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4020,7 +4023,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4030,7 +4033,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4202,7 +4205,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4357,7 +4360,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4401,6 +4404,758 @@
         "x-scope": "box:read",
         "x-async": false,
         "x-cli": "box stats"
+      }
+    },
+    "/api/boxes/{id}/exec": {
+      "post": {
+        "operationId": "exec.run",
+        "tags": [
+          "exec"
+        ],
+        "summary": "Run a command in a box",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cmd": {
+                    "type": "string",
+                    "maxLength": 16384,
+                    "description": "Shell command, run as /bin/sh -c. Mutually exclusive with argv."
+                  },
+                  "argv": {
+                    "type": "array",
+                    "maxItems": 256,
+                    "description": "Program and arguments, executed directly with no shell. Mutually exclusive with cmd."
+                  },
+                  "cwd": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "description": "Absolute working directory. Defaults to /workspace."
+                  },
+                  "env": {
+                    "type": "object",
+                    "description": "Environment variables for the command, by name. Values are not written to the audit log. Defaults to none."
+                  },
+                  "timeoutSec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3600,
+                    "description": "Kill the process tree after this many seconds. Defaults to 30."
+                  },
+                  "stdin": {
+                    "type": "string",
+                    "maxLength": 1048576,
+                    "description": "Bytes written to the command's stdin, then closed. Not written to the audit log."
+                  },
+                  "user": {
+                    "type": "string",
+                    "description": "Container user, as a name or id, optionally with a group. Defaults to dev."
+                  },
+                  "background": {
+                    "type": "boolean",
+                    "description": "Return immediately with execId. Poll with exec_get. Defaults to false. Foreground calls should finish within 60 seconds."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "execId": {
+                      "type": "string"
+                    },
+                    "background": {
+                      "type": "boolean"
+                    },
+                    "woke": {
+                      "type": "boolean"
+                    },
+                    "exitCode": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stdout": {
+                      "type": "string"
+                    },
+                    "stderr": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "durationMs": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "outputRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "timedOut": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "execId",
+                    "background",
+                    "woke",
+                    "exitCode",
+                    "stdout",
+                    "stderr",
+                    "truncated",
+                    "durationMs",
+                    "outputRef",
+                    "timedOut"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:exec",
+        "x-async": false,
+        "x-cli": "exec",
+        "x-mcp": {
+          "name": "exec",
+          "toolset": "core"
+        }
+      }
+    },
+    "/api/execs/{execId}": {
+      "get": {
+        "operationId": "exec.get",
+        "tags": [
+          "exec"
+        ],
+        "summary": "Read an exec",
+        "parameters": [
+          {
+            "name": "execId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^ex_[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "Exec id returned by exec (ex_ and 26 Crockford base32 characters)."
+            }
+          },
+          {
+            "name": "waitMs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 25000,
+              "description": "Long-poll for up to this many milliseconds while the command is running. Defaults to 0. The maximum is 25000."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "execId": {
+                      "type": "string"
+                    },
+                    "background": {
+                      "type": "boolean"
+                    },
+                    "woke": {
+                      "type": "boolean"
+                    },
+                    "exitCode": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stdout": {
+                      "type": "string"
+                    },
+                    "stderr": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "durationMs": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "outputRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "timedOut": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "exited",
+                        "killed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "execId",
+                    "background",
+                    "woke",
+                    "exitCode",
+                    "stdout",
+                    "stderr",
+                    "truncated",
+                    "durationMs",
+                    "outputRef",
+                    "timedOut",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:exec",
+        "x-async": false,
+        "x-cli": "exec get",
+        "x-mcp": {
+          "name": "exec_get",
+          "toolset": "core"
+        }
+      }
+    },
+    "/api/execs/{execId}/kill": {
+      "post": {
+        "operationId": "exec.kill",
+        "tags": [
+          "exec"
+        ],
+        "summary": "Kill an exec",
+        "parameters": [
+          {
+            "name": "execId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^ex_[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "Exec id returned by exec (ex_ and 26 Crockford base32 characters)."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "execId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "killed"
+                    }
+                  },
+                  "required": [
+                    "execId",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:exec",
+        "x-async": false,
+        "x-cli": "exec kill",
+        "x-mcp": {
+          "name": "exec_kill",
+          "toolset": "core"
+        }
+      }
+    },
+    "/api/execs/{execId}/output": {
+      "get": {
+        "operationId": "exec.output",
+        "tags": [
+          "exec"
+        ],
+        "summary": "Read saved exec output",
+        "parameters": [
+          {
+            "name": "execId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^ex_[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "Exec id returned by exec (ex_ and 26 Crockford base32 characters)."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "execId": {
+                      "type": "string"
+                    },
+                    "stdout": {
+                      "type": "string"
+                    },
+                    "stderr": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "stdoutBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "stderrBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "execId",
+                    "stdout",
+                    "stderr",
+                    "truncated",
+                    "stdoutBytes",
+                    "stderrBytes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:exec",
+        "x-async": false,
+        "x-cli": "exec output"
       }
     },
     "/api/snapshots": {
@@ -4660,7 +5415,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4670,7 +5425,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5128,7 +5883,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5138,7 +5893,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5286,7 +6041,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5624,7 +6379,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5752,7 +6507,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5902,7 +6657,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6396,7 +7151,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6629,7 +7384,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6639,7 +7394,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7080,10 +7835,31 @@
               "message": {
                 "type": "string"
               },
+              "hint": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
               "key": {
                 "type": "string"
               },
               "params": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "hintKey": {
+                "type": "string"
+              },
+              "hintParams": {
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
@@ -7105,7 +7881,8 @@
             },
             "required": [
               "code",
-              "message"
+              "message",
+              "retryable"
             ],
             "additionalProperties": false
           }

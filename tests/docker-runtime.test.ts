@@ -262,6 +262,58 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "exec without a TTY separates stdout and stderr, reports the exit code, and kill stops the process",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-exec-notty`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const finished = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo out-text; echo err-text >&2; exit 3"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let stdout = "";
+        let stderr = "";
+        finished.stdout.on("data", (chunk: Buffer) => {
+          stdout += chunk.toString("utf8");
+        });
+        finished.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString("utf8");
+        });
+        await waitUntil(async () => !(await finished.inspect()).running, "the non-tty command to finish");
+        expect(await finished.inspect()).toMatchObject({ running: false, exitCode: 3 });
+        expect(stdout).toContain("out-text");
+        expect(stderr).toContain("err-text");
+
+        const hanging = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "echo started; sleep 30"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+        });
+        let started = "";
+        hanging.stdout.on("data", (chunk: Buffer) => {
+          started += chunk.toString("utf8");
+        });
+        await waitUntil(async () => started.includes("started"), "the sleep command to print");
+        await hanging.kill();
+        await waitUntil(async () => !(await hanging.inspect()).running, "the sleep command to stop");
+        expect((await hanging.inspect()).running).toBe(false);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "events stop when the signal aborts",
     async () => {
       const controller = new AbortController();

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { type Redactor, redactEvent } from "./redact";
 import type { EventInput, EventStatus } from "./types";
 
-/** `audit` events are kept longest. `activity` events are reads, which are merged per minute, and go first when pruned. */
+/** `audit` events are kept longest. `activity` holds reads and exec events. Only reads are merged per minute. */
 export type Tier = "audit" | "activity";
 
 /** A recorded event: the redacted input, its cursor, its tier, and how many reads it stands for. */
@@ -115,9 +115,14 @@ interface Row {
   count: number;
 }
 
-/** Which tier an execution is recorded in. Reads that succeed or fail are activity; refusals and changes are audit. */
-export function tierOf(event: Pick<EventInput, "kind" | "status">): Tier {
-  return event.kind === "read" && event.status !== "denied" ? "activity" : "audit";
+/**
+ * Which tier an execution is recorded in. A refusal is always audit. Exec events are activity (they are not merged).
+ * Other reads are activity; other writes are audit.
+ */
+export function tierOf(event: Pick<EventInput, "op" | "kind" | "status">): Tier {
+  if (event.status === "denied") return "audit";
+  if (event.op.startsWith("exec.")) return "activity";
+  return event.kind === "read" ? "activity" : "audit";
 }
 
 function detailJson(detail: unknown): string | null {
@@ -235,7 +240,7 @@ export class EventStore {
   append(input: EventInput): AppendResult {
     const event = redactEvent(input, this.redactor);
     const tier = tierOf(event);
-    const key = tier === "activity" ? coalesceKeyOf(event) : null;
+    const key = tier === "activity" && event.kind === "read" ? coalesceKeyOf(event) : null;
     return this.db.transaction((): AppendResult => {
       if (key !== null) {
         const earlier = this.db

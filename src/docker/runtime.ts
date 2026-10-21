@@ -1,5 +1,7 @@
+import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
-import type { Duplex, Readable } from "node:stream";
+import { PassThrough, type Duplex, type Readable } from "node:stream";
 
 import Docker from "dockerode";
 
@@ -20,7 +22,32 @@ import {
 } from "../runtime";
 import { toRuntimeError } from "./errors";
 import { demuxLogs } from "./logs";
+import { killProcessTree } from "./proc";
 import { computeStats } from "./stats";
+
+/**
+ * Writes this process's pid, then replaces itself with the real command so the pid stays the command's.
+ * The marker path is `$1`, never interpolated.
+ */
+const PID_WRAPPER = 'echo "$$" > "$1"; shift; exec "$@"';
+
+/** Stops the pid recorded in `$1` and its descendants. Used when this process cannot see the host pid. */
+const KILL_TREE_SCRIPT = `
+pid=$(cat "$1" 2>/dev/null) || exit 0
+[ -n "$pid" ] || exit 0
+case "$pid" in
+  *[!0-9]*) exit 0 ;;
+esac
+[ "$pid" -gt 1 ] || exit 0
+kill_tree() {
+  for c in $(cat "/proc/$1/task/$1/children" 2>/dev/null); do
+    kill_tree "$c"
+  done
+  kill -KILL "$1" 2>/dev/null || true
+}
+kill_tree "$pid"
+rm -f "$1"
+`.trim();
 
 const NANO_CPUS_PER_CPU = 1e9;
 const ICC_OPTION = "com.docker.network.bridge.enable_icc";
@@ -321,27 +348,46 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
 
     async startExec(containerId, spec) {
+      // Absent tty is the web terminal: one stream, no pid wrapper. Command exec sets tty false so stdout and
+      // stderr stay separate, and records the in-container pid for the kill fallback below.
+      const tty = spec.tty !== false;
+      const marker = tty ? null : `/tmp/.minibox-exec-${randomBytes(8).toString("hex")}.pid`;
       const exec = await call(() =>
         docker.getContainer(containerId).exec({
-          Cmd: spec.cmd,
+          Cmd: marker ? ["/bin/sh", "-c", PID_WRAPPER, "minibox-exec", marker, ...spec.cmd] : spec.cmd,
           AttachStdin: true,
           AttachStdout: true,
           AttachStderr: true,
-          Tty: true,
+          Tty: tty,
           Env: spec.env,
           WorkingDir: spec.workingDir,
+          ...(spec.user ? { User: spec.user } : {}),
         }),
       );
-      const stream = (await call(() => exec.start({ hijack: true, stdin: true, Tty: true }))) as Duplex;
+      const stream = (await call(() => exec.start({ hijack: true, stdin: true, Tty: tty }))) as Duplex;
+      const stdout = tty ? stream : new PassThrough();
+      const stderr = new PassThrough();
+      if (!tty) docker.modem.demuxStream(stream, stdout, stderr);
+      const finishOutputs = () => {
+        if (!tty && !stdout.writableEnded) stdout.end();
+        if (!stderr.writableEnded) stderr.end();
+      };
+      stream.on("end", finishOutputs);
+      stream.on("close", finishOutputs);
       return {
         id: exec.id,
         stream,
+        stdout,
+        stderr,
         async resize({ cols, rows }) {
           await call(() => docker.getExec(exec.id).resize({ h: rows, w: cols }));
         },
         async inspect() {
           const info = await call(() => docker.getExec(exec.id).inspect());
           return { running: info.Running, exitCode: info.ExitCode, pid: info.Pid || null };
+        },
+        async kill() {
+          await stopExec(docker, containerId, exec.id, marker);
         },
       };
     },
@@ -463,6 +509,49 @@ export function createDockerRuntime(socketPath: string): Runtime {
       await mutate(() => docker.getNetwork(name).connect({ Container: containerId }));
     },
   };
+}
+
+/**
+ * Stops an exec and the processes it started. Docker's pid is a host pid, so the normal install walks `/proc` here.
+ * When that pid is not visible (MiniBox itself is containerized), a non-TTY exec is stopped from inside the box
+ * using the pid file the wrapper wrote. Interactive terminals are not wrapped and only use the host walk.
+ */
+async function stopExec(docker: Docker, containerId: string, execId: string, marker: string | null): Promise<void> {
+  const info = await call(() => docker.getExec(execId).inspect());
+  const pid = info.Pid || 0;
+  if (pid > 1 && existsSync(`/proc/${pid}`)) {
+    killProcessTree(pid);
+    return;
+  }
+  if (marker) {
+    await killInside(docker, containerId, marker);
+    return;
+  }
+  if (pid > 1) killProcessTree(pid);
+}
+
+/** A raw engine exec, not `startExec`, so stopping a command cannot recurse into another wrapped command. */
+async function killInside(docker: Docker, containerId: string, marker: string): Promise<void> {
+  const exec = await call(() =>
+    docker.getContainer(containerId).exec({
+      Cmd: ["/bin/sh", "-c", KILL_TREE_SCRIPT, "minibox-kill", marker],
+      AttachStdout: true,
+      AttachStderr: true,
+    }),
+  );
+  const stream = (await call(() => exec.start({ hijack: true }))) as Duplex;
+  stream.resume();
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 5000);
+    if (typeof timer.unref === "function") timer.unref();
+    const done = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    stream.on("end", done);
+    stream.on("close", done);
+    stream.on("error", done);
+  });
 }
 
 async function inspectNetwork(docker: Docker, name: string): Promise<Docker.NetworkInspectInfo | undefined> {

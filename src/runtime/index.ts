@@ -147,6 +147,13 @@ export interface ExecSpec {
   cmd: string[];
   env: string[];
   workingDir: string;
+  /** Container user. Absent keeps the container's own user. Command exec passes `dev`. */
+  user?: string;
+  /**
+   * Interactive terminal. Absent means a TTY, which is what the web terminal uses.
+   * Command exec sets this to false so stdout and stderr stay separate.
+   */
+  tty?: boolean;
 }
 
 export interface ExecStatus {
@@ -155,12 +162,18 @@ export interface ExecStatus {
   pid: number | null;
 }
 
-/** An attached exec in TTY mode. */
+/**
+ * An attached exec. A TTY session uses `stream` for both directions. A command exec (`tty: false`) also fills
+ * `stdout` and `stderr` separately. `inspect()` is the exit code; `kill()` stops the process and its descendants.
+ */
 export interface ExecSession {
   readonly id: string;
   readonly stream: Duplex;
+  readonly stdout: Readable;
+  readonly stderr: Readable;
   resize(size: { cols: number; rows: number }): Promise<void>;
   inspect(): Promise<ExecStatus>;
+  kill(): Promise<void>;
 }
 
 export interface RuntimeEvent {

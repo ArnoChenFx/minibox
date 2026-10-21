@@ -20,6 +20,7 @@
     "test:docker": "bun scripts/docker-integration.ts",
     "check": "bun run fmt:check && bun run lint && bun run typecheck && bun test",
     "openapi": "bun scripts/export-openapi.ts",
+    "build:cli": "bun build --compile --outfile dist/minibox src/cli.ts",
     "build:template": "docker build -t minibox-template:base --label minibox.template=true --label minibox.template.name=base --label \"minibox.template.description=Debian 12 · Node.js 24 · Python 3 · git · tmux · build-essential · non-root dev user\" templates/base",
     "check:template": "scripts/check-box-image.sh"
   },

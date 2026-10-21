@@ -16,6 +16,7 @@ import { AppError } from "./lib/errors";
 import { errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
+import { handleMcp } from "./mcp/http";
 import { routes } from "./routes";
 import { matchRoute } from "./routes/router";
 import { getBox } from "./services/boxes";
@@ -103,15 +104,17 @@ export function startServer(app: App): Server<TerminalData> {
           if (server.upgrade(req, { data })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
-        res = url.pathname.startsWith("/api/")
-          ? await handleApi(app, req, url, server)
-          : await handlePage(app, req, url);
+        if (url.pathname === "/mcp") res = await handleMcp(app, req, url);
+        else
+          res = url.pathname.startsWith("/api/")
+            ? await handleApi(app, req, url, server)
+            : await handlePage(app, req, url);
       } catch (e) {
         res = errorResponse(e);
         if (res.status >= 500)
           log.error("request.failed", { method: req.method, path: url.pathname, error: String(e) });
       }
-      if (url.pathname.startsWith("/api/") && url.pathname !== "/api/host/metrics") {
+      if ((url.pathname.startsWith("/api/") && url.pathname !== "/api/host/metrics") || url.pathname === "/mcp") {
         log.debug("request", {
           method: req.method,
           path: url.pathname,

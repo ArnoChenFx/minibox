@@ -211,16 +211,22 @@ flowchart LR
 
 `delete_box` 单独成工具，便于单独授权。
 
+已实现的是 box 的 7 个工具加上 `exec`、`exec_get`、`exec_kill`，共 10 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 10 个，而不是表里的 15 个。`session`、`network`、`storage`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具不在本阶段。
+
 ### 4.3 执行模型
 
 - **`exec` 是一次性命令**：`{cmd | argv, cwd?, env?, timeoutSec?, stdin?, user?}`，返回 `{exitCode, stdout, stderr, truncated, durationMs}`。通过 `exec.inspect()` 取真实退出码；超时后终止整个进程树。
-- **输出上限**：默认保留头尾共 32 KB，其余给 `output_ref`，需要时再取。
-- **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, wait_ms)` 长轮询（不依赖客户端是否支持流式输出）；`exec_kill` 终止。
-- **自动唤醒**：对已停止的 Box 执行 `exec` 默认自动启动。
-- **默认用户**：非 root 用户 `dev`。
+- **输出上限**：接口内联每个流的头尾各约 16 KiB（合计约 32 KB）。超出部分用 `outputRef` 表示，`GET /api/execs/{execId}/output` 返回保存的窗口（每个流头尾各 64 KiB）。
+- **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, waitMs)` 长轮询（最长 25000 毫秒，不依赖客户端是否支持流式输出）；`exec_kill` 终止进程树。
+- **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。空闲超时与 TTL 仍是 #12，这里只做这一次启动。
+- **默认用户**：非 root 用户 `dev`。工作目录默认 `/workspace`。
+- **前台时限**：前台调用应在约 60 秒内结束，这是服务器的 idle 超时。更长的命令用 `background`。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
+- **权限**：`exec` 意味着可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。把卷挂到 Box 上需要 `volume:attach`（#13，当前尚未强制执行）。
 - **会话** `session_*` 用于长任务和需要观察的交互式程序，见 [10](#10-会话与接管)。
 
 ### 4.4 文件接口
+
+文件接口尚未实现。本阶段交付 exec、`/mcp` 与 CLI（Refs #9）。`read_file`、`write_file`、`list_files`、`copy_files` 以及下面的归档与辅助容器留到 Volume（#24）之后。
 
 - `read_file` / `write_file` / `list_files` / `copy_files`，以及上传下载（目录打包为 tar）。
 - **以 Volume 为对象，而不是 Box**：Box 停止时也可用。
@@ -570,17 +576,17 @@ Event
 
 第一版实现与上文的差异如下。
 
-- **分档**：目前由种类与结果决定。非拒绝的读取进入「活动」档（30 天）；写操作（含删除）与被拒绝的调用进入「审计」档（1 年）。§8.3 中的 exec、文件写入、会话发送与终端开闭属于「活动」档，但这些操作尚未存在。它们落地（#9、#14）时需要显式声明档位，否则会按写操作归入审计档。
-- **合并**：§8.3 的「文件读取按主体 + Box + 每分钟合并」推广为所有非拒绝的读取：同一主体、同一操作、同一对象、相同结果、同一分钟内合并为一条，带 `count`。被合并的事件不再推送。
+- **分档**：非拒绝的读取，以及 `exec.*`（含 `exec.run`、`exec.get`、`exec.output`、`exec.start`、`exec.finish`、`exec.killed`），进入「活动」档（30 天）。其它写操作（含删除）与被拒绝的调用进入「审计」档（1 年）。被拒绝的 exec 仍是审计档，因为拒绝先于操作名判断。文件写入、会话发送与终端开闭按 §8.3 属于「活动」档，这些操作尚未存在（#14，文件 API 在 Volume #24 之后）。
+- **合并**：同一主体、同一操作、同一对象、相同结果、同一分钟内，非拒绝的读取合并为一条，带 `count`。`exec.*` 不合并。被合并的事件不再推送。
 - **SSE**：`id` 即事件序号（`seq`）。新连接先收到 `retry: 3000`，之后只收到连接后记录的事件。`Last-Event-ID` 之后最多重放 500 条，超出则发送 `event: reset`（`{"after": N}`），客户端改用 `GET /api/events` 补齐缺口，再继续接收流。未读取期间排队超过 1000 条消息时同样重置，并丢弃已排队未发送的帧。心跳为每 15 秒一条 `: keep-alive` 注释。以浏览器会话发起的流会在该会话结束（登出、撤销或到期）时关闭，与终端一致；Bearer 发起的流不绑定会话。
 - **列表是操作，流不是**：`events.list` 通过操作注册表定义（REST 为 `GET /api/events`），因此出现在 OpenAPI 中，读取日志本身也会被记录。SSE 流不是 JSON 请求与响应，不进入注册表，也不在 OpenAPI 中，但沿用同样的鉴权与同源检查。
 - **范围钩子**：`visibilityOf()`（`src/events/scope.ts`）决定主体能看到哪些事件。目前只有所有者，不加限制；其他主体类型会抛出错误，即失败关闭，直到 #13 为其定义范围。
-- **来源与预留字段**：`ui` 保留给控制台自身的会话（#2）。`started` 与 `ref.taskId` 由长任务写入（#16，见 §8.10）；终端事件的 `parentId` 指向这条 `started`。`execId` 仍待 exec（#9）。重建流程（#23）可继续使用 `parentId`。
+- **来源与预留字段**：`ui` 保留给控制台自身的会话（#2）。`started` 由长任务（#16，见 §8.10）和 `exec.start` 写入。长任务的终端事件用 `parentId` 指向这条 `started`，并填写 `ref.taskId`。`exec.start`、`exec.finish` 与 `exec.killed` 用 `parentId` 挂到产生它们的 `exec.run` 上，并填写 `ref.execId`；`exec.finish` 同时填写 `ref.outputRef`。重建流程（#23）可继续使用 `parentId`。
 - **脱敏**：精确匹配目前只包含访问密钥，凭据存储（#13）落地后再加入其他已知值。`detail` 超过 8 KB 时替换为 `{"truncated": true, "bytes": N}`。
 - **写入失败**：审计写入失败只记录 `audit.failed`，不影响操作结果。
 - **存储**：`events.db` 使用 WAL、`synchronous=NORMAL`、`busy_timeout=5000`，并以 `PRAGMA user_version` 记录迁移版本。
 - **总线**：`src/lib/bus.ts` 是类型化的进程内总线，主题在 `AppTopics` 中声明。#16、#17 增加主题即可复用，不必另起通道。
-- **暂缓**：令牌范围过滤（#13）；JSONL 导出（§8.5）；「清除该 Box 全部历史」（§8.3）；按令牌或按 Box 关闭输出采集（§8.6）；exec 输出采集（#9）；终端与文件事件（#14、#9）；登录事件与按 IP 合并的登录失败（#2）；活动信号（§8.4，#17）；MCP `get_activity`（#13 及 MCP 工作）；凭据存储中的其他已知值（#13）。
+- **暂缓**：令牌范围过滤（#13）；JSONL 导出（§8.5）；「清除该 Box 全部历史」（§8.3）；按令牌或按 Box 关闭输出采集（§8.6）；终端与文件事件（#14，文件 API 在 Volume #24 之后）；登录事件与按 IP 合并的登录失败（#2）；活动信号（§8.4，#17）；MCP `get_activity`（#13 及 MCP 工作）；凭据存储中的其他已知值（#13）。
 
 ### 8.10 实现说明（#16）
 

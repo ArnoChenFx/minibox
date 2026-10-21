@@ -103,7 +103,7 @@ flowchart LR
 ### Target architecture (planned)
 
 > [!NOTE]
-> Planned, not implemented yet. The full design and its rationale are in [`docs/design.md`](docs/design.md) (in Chinese).
+> Exec, `/mcp` and the CLI client are implemented. Sessions, the preview proxy, tasks, volumes, checkpoints and helper containers in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
 
 ```mermaid
 flowchart LR
@@ -289,7 +289,7 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `METRICS_HISTORY` | `120` | Number of samples kept (≈ 6 minutes at the default interval) |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
 | `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | Days to keep read events. Repeated reads are merged per minute |
-| `EVENT_OUTPUT_RETENTION_DAYS` | `7` | Days to keep command output in `DATA_DIR/exec`. Nothing writes there until `exec` arrives ([#9](https://github.com/ArnoChenFx/minibox/issues/9)) |
+| `EVENT_OUTPUT_RETENTION_DAYS` | `7` | Days to keep command output in `DATA_DIR/exec`. `exec` writes a head-and-tail window there when a command finishes |
 | `EVENT_OUTPUT_MAX_MB` | `512` | Total size cap for stored command output, in MB. The oldest output is removed first |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `MINIBOX_VERSION` | from git / `package.json` | Override the displayed version (set automatically in release images) |
@@ -340,7 +340,7 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | `access_key` | `600` | Access key generated when none is set in the environment or `.env` |
 | `sessions.json` | `600` | Browser sessions: SHA-256 hashes of the tokens (never the tokens themselves), sign-in and expiry times, last use, user agent and address, and a scrypt check of the access key that ends every session when the key changes |
 | `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
-| `exec/` | `700` | Output of `exec` commands (created now, used by later features) |
+| `exec/` | `700` | Saved output of `exec` commands, one JSON file per exec. The in-memory record is dropped on restart; the file stays until retention removes it |
 | `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
 | `events.db` (with `events.db-wal` and `events.db-shm` beside it) | inside `DATA_DIR` | Event log, SQLite in WAL mode. See [Events](#events) |
 | `tasks.db` (with `tasks.db-wal` and `tasks.db-shm` beside it) | inside `DATA_DIR` | Task status and the newest 64 KB of each task's output. See [Tasks](#tasks) |
@@ -356,10 +356,10 @@ A request may send an `X-Minibox-Run` header that names the client session it be
 Errors use a consistent shape and the matching HTTP status:
 
 ```json
-{ "error": { "code": "validation_failed", "message": "…", "details": { "field": "cpus" } } }
+{ "error": { "code": "validation_failed", "message": "…", "hint": "…", "retryable": false, "details": { "field": "cpus" } } }
 ```
 
-Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `precondition_failed` (412), `unsupported_media_type` (415), `insufficient_capacity` (422), `precondition_required` (428), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in English, with a `key` the UI translates.
+`retryable` is always present. It is true for 408, 429 and 5xx unless a handler sets it. `hint` is present when a next step would help, with `hintKey` for the UI. Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `confirmation_required` (409), `precondition_failed` (412), `unsupported_media_type` (415), `insufficient_capacity` (422), `precondition_required` (428), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in English, with a `key` the UI translates.
 
 ### Auth & system
 
@@ -392,6 +392,10 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 | `GET` | `/api/boxes/:id/logs?tail=300` | Container logs (1–5000 lines) |
 | `POST` | `/api/boxes/:id/snapshots` | Start a snapshot `{ "name"? }`. Returns `202` `{ "taskId" }` |
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket terminal. Send `{"type":"resize","cols":N,"rows":N}` to resize; any other message is stdin |
+| `POST` | `/api/boxes/:id/exec` | Run a command. Body `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`. Send exactly one of `argv` (no shell) or `cmd` (`/bin/sh -c`). Defaults: user `dev`, directory `/workspace`, timeout 30s. A stopped box is started. The result includes `exitCode`, `stdout`, `stderr`, `truncated`, `durationMs`, `timedOut` and `woke`. A non-zero exit is the program's status. Inline output keeps about 16 KiB from each end of each stream; `outputRef` names the saved window |
+| `GET` | `/api/execs/:execId?waitMs=` | Read an exec. `waitMs` long-polls while it is running, up to 25000 ms. `status` is `running`, `exited` or `killed` |
+| `GET` | `/api/execs/:execId/output` | Saved stdout and stderr (about 64 KiB from each end). Available after the in-memory record is gone, until retention deletes the file |
+| `POST` | `/api/execs/:execId/kill` | Kill a running exec and its process tree. An exec that has already exited returns `409` |
 
 `:id` is a container id, a container name (`minibox-<name>`), a stable box id (`bx_…`), or the box name. Updates that change a box require `If-Match` set to its current revision (a bare number, a quoted tag, or a weak tag). A missing header is `428 precondition_required`; a stale revision is `412 precondition_failed`. Limits: CPU 0.1–64, memory 128–262144 MB, process limit 1–1000000, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
 
@@ -430,7 +434,7 @@ Bun's HTTP idle timer is 60 seconds, measured from the start of the request, and
 
 ### Events
 
-A synchronous operation is recorded once in the event log, `events.db` in the [data directory](#data-directory), whichever interface it came through. A task records `started` when it is accepted and one terminal event when it finishes; `ref.taskId` links them, and the terminal event's `parentId` is the started event. The build log is not copied into the event log. Today the calls arrive over REST; the MCP server and the CLI arrive with [#9](https://github.com/ArnoChenFx/minibox/issues/9). An event says who made the call (`principal`), what it touched (`op`, `target`), when and for how long (`ts`, `durationMs`), the outcome (`status`) and the client session (`run`, from `X-Minibox-Run`).
+A synchronous operation is recorded once in the event log, `events.db` in the [data directory](#data-directory), whichever interface it came through: REST, the [MCP server](#agents) or the CLI (`X-Minibox-Client: cli`). A task records `started` when it is accepted and one terminal event when it finishes; `ref.taskId` links them, and the terminal event's `parentId` is the started event. The build log is not copied into the event log. `exec` also records `exec.start` (`status: started`), `exec.finish` and `exec.killed` on the same bus. Those three are parented to the `exec.run` event. An event says who made the call (`principal`), what it touched (`op`, `target`), when and for how long (`ts`, `durationMs`), the outcome (`status`) and the client session (`run`, from `X-Minibox-Run`, or the MCP session id).
 
 The log covers calls made through MiniBox. It does not record what runs inside a box, including commands an agent runs in its own shell there. Requests refused before they reach an operation, such as a missing key (`401`) or a cross-site request (`403`), are not recorded either.
 
@@ -445,9 +449,9 @@ Events are redacted before they are written. The access key is replaced wherever
 
 | Tier | What it holds | Default |
 |---|---|---|
-| Audit | Writes and deletes in any outcome, and refused calls | 365 days (`EVENT_RETENTION_AUDIT_DAYS`) |
-| Activity | Reads that were not refused. Reads with the same operation and outcome, by one principal on one target, within a minute are merged into one event with a `count` | 30 days (`EVENT_RETENTION_ACTIVITY_DAYS`) |
-| Output | Command output in `DATA_DIR/exec`. Nothing writes there yet; `exec` arrives with [#9](https://github.com/ArnoChenFx/minibox/issues/9) | 7 days, at most 512 MB in total (`EVENT_OUTPUT_RETENTION_DAYS`, `EVENT_OUTPUT_MAX_MB`) |
+| Audit | Writes and deletes in any outcome, and refused calls. A refused `exec` is audit as well | 365 days (`EVENT_RETENTION_AUDIT_DAYS`) |
+| Activity | Reads that were not refused, and every `exec.*` event (`exec.run`, `exec.get`, `exec.output`, `exec.start`, `exec.finish`, `exec.killed`). Reads with the same operation and outcome, by one principal on one target, within a minute are merged into one event with a `count`. Exec events are kept one by one | 30 days (`EVENT_RETENTION_ACTIVITY_DAYS`) |
+| Output | Command output in `DATA_DIR/exec`, written when an exec finishes. Each stream keeps its head and tail | 7 days, at most 512 MB in total (`EVENT_OUTPUT_RETENTION_DAYS`, `EVENT_OUTPUT_MAX_MB`) |
 
 Pruning runs at startup and then every hour. Events older than their tier's window are deleted. Output is deleted by age, then oldest first until the total fits the cap. Retention settings must be positive whole numbers; any other value falls back to its default.
 
@@ -466,7 +470,43 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 
 # Then work inside it, e.g. from an agent's shell tool:
 docker exec -it minibox-agent-dev bash
+
+# Or from the CLI (bun run build:cli writes dist/minibox):
+MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 ```
+
+A foreground exec should finish within about 60 seconds (the server's idle timeout). Longer commands use `background: true` or `minibox exec --background`. A timeout kills the process tree and the CLI exits 124.
+
+`exec` can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Attaching a volume requires `volume:attach` ([#13](https://github.com/ArnoChenFx/minibox/issues/13), not enforced yet).
+
+## Agents
+
+`POST /mcp` is Streamable HTTP MCP. Send `Authorization: Bearer` and the access key. A browser session cookie is refused. `GET /mcp` is not an event stream. `DELETE /mcp` closes a session. `?toolsets=core,session` selects toolsets. The default is `core,meta`.
+
+The design catalog has 27 tools, 15 of them in the default toolsets. This server exposes the tools that exist today: the box tools plus `exec`, `exec_get` and `exec_kill` (10 tools). `session`, `network`, `storage`, `tools` and `meta` are accepted and currently add no tools. File tools are not implemented; they follow Volume ([#24](https://github.com/ArnoChenFx/minibox/issues/24)). See [`docs/agents.md`](docs/agents.md).
+
+Build the CLI with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). It talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token.
+
+```bash
+minibox box ls
+minibox exec mybox -- npm test
+minibox exec mybox --background --timeout 600 -- npm test
+minibox mcp
+```
+
+Paste this into an agent's `AGENTS.md`:
+
+## MiniBox
+
+Use the MiniBox MCP server (`/mcp`, Bearer access key) to work inside a box.
+
+- list_boxes or create_box before doing work. exec starts a stopped box.
+- exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace.
+- The result includes exitCode, stdout, stderr, truncated and durationMs. A non-zero exit code is the program's status.
+- Inline output keeps about 16 KiB from the start and 16 KiB from the end of each stream. When truncated is true, outputRef names the rest: GET /api/execs/{execId}/output.
+- Commands that may run longer than 30 seconds: exec with background true, then exec_get with waitMs (max 25000). exec_kill stops the process tree.
+- exec can read and write every volume mounted on that box.
+- File tools are not available yet. Ask for toolsets with /mcp?toolsets=core,session. The default is core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
 
 ## Project structure
 
@@ -483,9 +523,11 @@ minibox/
 │   ├── activity.ts          # Recent-operations log
 │   ├── static.ts            # Static file serving (path-traversal safe)
 │   ├── runtime/             # Runtime interface and RuntimeError (the engine seam)
-│   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats
+│   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats / proc
 │   ├── specs/               # Box spec store, claim, drift, history and rebuild plan
-│   ├── services/            # Business logic on Runtime: boxes / rebuild / images / snapshots / templates / reconcile
+│   ├── services/            # Business logic on Runtime: boxes / exec / rebuild / images / snapshots / templates / reconcile
+│   ├── mcp/                 # Streamable HTTP MCP at /mcp
+│   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy
 │   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
 │   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, scope hook
 │   ├── tasks/               # Task store (SQLite), manager, progress stream on the event bus
@@ -508,6 +550,7 @@ minibox/
 ├── .github/workflows/release.yml  # Tag → image + GitHub Release
 └── docs/
     ├── design.md            # Product and architecture design (Chinese)
+    ├── agents.md            # MCP instructions and the AGENTS.md snippet
     ├── runtime.md           # Runtime interface, errors and adding a backend (Chinese)
     ├── openapi.json         # OpenAPI 3.1 document generated from the operation registry
     └── screenshots/
@@ -607,7 +650,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 ### M2 · Storage and agent interface
 
 - [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volumes and storage pools (`local`, `nfs`, `path`)
-- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) Exec and file API for agents, with an MCP server and CLI
+- [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) Exec and file API for agents, with an MCP server and CLI. Exec, MCP and the CLI are in place; the file API remains, after Volume (#24)
 - [ ] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux sessions with human takeover
 - [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) Stream box state and resource usage over SSE instead of polling
 - [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS setup guide

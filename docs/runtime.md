@@ -9,7 +9,7 @@
 | 路径 | 职责 |
 | --- | --- |
 | `src/runtime/index.ts` | `Runtime` 接口、数据类型与 `RuntimeError`，不依赖任何 SDK |
-| `src/docker/` | Docker 适配器（`runtime.ts`、`errors.ts`、`logs.ts`、`stats.ts`），唯一使用 dockerode 的代码 |
+| `src/docker/` | Docker 适配器（`runtime.ts`、`errors.ts`、`logs.ts`、`stats.ts`、`proc.ts`），唯一使用 dockerode 的代码 |
 | `src/services/` | 业务逻辑：boxes、images、snapshots、templates，只通过 `Runtime` 与 `HostCtx` 访问引擎 |
 | `src/host/` | `registry.ts`（Host、HostCtx、HostRegistry）、`metrics.ts`（HostMonitor）、`procfs.ts` |
 | `src/routes/`、`src/ws/` | HTTP 与 WebSocket 入口 |
@@ -24,7 +24,7 @@
 
 - 连通性：`ping`、`info`
 - 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerDiff`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`
-- exec：`startExec` 返回带 TTY 的会话，包含 `stream`、`resize()` 与 `inspect()`
+- exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。`kill()` 结束该进程及其子进程。Docker 报告的 pid 是宿主机 pid：本进程能看见 `/proc/<pid>` 时从叶子开始发送 `SIGKILL`（`src/docker/proc.ts`），并且不会向 pid 小于等于 1 的进程发信号。当 MiniBox 自己跑在容器里、看不见这个宿主机 pid 时，非 TTY 命令会先在容器里写下自己的 pid，再由另一次不经 `startExec` 的原始 exec 在容器内结束那棵进程树。交互终端不包这一层，只走宿主机 `/proc`。
 - 事件：`events`，按标签与类型过滤；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
 - 卷：`inspectVolume`、`createVolume`、`removeVolume`
@@ -92,6 +92,7 @@
   - `fail(op, error)` 让下一次该操作失败，`down = true` 模拟引擎不可达。
   - 网络有 ID，容器第一次启动时固定在当前网络的 ID 上。网络被删除并重建后，启动该容器返回 `not_found`，直到调用 `reattachNetwork`，与真实引擎一致。
   - `seedImage()` 与 `seedContainer()` 预置状态，不记录调用。
+  - 非 TTY exec（`spec.tty === false`）使用 `execScript`（默认空输出、退出码 0）。设为 `null` 时一直运行，直到 `kill()`，退出码 137。TTY 路径仍在返回前打印 `$ `。
 - `tests/support/app.ts` 的 `createTestApp(overrides, runtime)` 创建使用 fake 的应用：端口 0，不访问真实 socket，标签前缀为 `mbtest`。`silenceLogs()` 静默日志输出，`rejectionOf()` 取得 rejected 的错误。
 - 假引擎适配器测试：`tests/docker-adapter.test.ts` 在一个 unix socket 上启动最小的 Engine API（不需要 daemon），经由真实的 `createDockerRuntime()` 检查状态码到 `kind` 的映射、列出时跳过已消失的容器、`stopContainer` 发送的 `t` 参数等，并检查列表的 `inspect` 缓存：复用、按状态失效、变更后失效、过期，以及变更期间尚未返回的 `inspect` 不会被缓存。
 - 真实引擎测试：运行 `bun run test:docker`（`scripts/docker-integration.ts`）。脚本检查引擎，缺少镜像时拉取 `MINIBOX_TEST_IMAGE`（默认 `alpine:3.20`），用新的 `mbit` 前缀运行 `tests/docker-runtime.test.ts`，结束后按前缀删除容器、模板与快照镜像和卷。测试失败时会再清理一次，以覆盖仍在进行中的快照提交。可选环境变量为 `DOCKER_SOCKET`（默认 `/var/run/docker.sock`）。

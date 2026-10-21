@@ -42,15 +42,24 @@ export function json(data: unknown, status = 200, headers: Record<string, string
 
 export function errorResponse(e: unknown): Response {
   const err = toAppError(e);
-  const body: {
-    error: { code: string; message: string; key?: string; params?: unknown; details?: unknown };
-  } = {
-    error: { code: err.code, message: err.message },
-  };
-  if (err.key) body.error.key = err.key;
-  if (err.params) body.error.params = err.params;
-  if (err.details !== undefined) body.error.details = err.details;
-  return json(body, err.status);
+  const error: {
+    code: string;
+    message: string;
+    hint?: string;
+    retryable: boolean;
+    key?: string;
+    params?: unknown;
+    hintKey?: string;
+    hintParams?: unknown;
+    details?: unknown;
+  } = { code: err.code, message: err.message, retryable: err.retryable };
+  if (err.hint) error.hint = err.hint;
+  if (err.key) error.key = err.key;
+  if (err.params) error.params = err.params;
+  if (err.hintKey) error.hintKey = err.hintKey;
+  if (err.hintParams) error.hintParams = err.hintParams;
+  if (err.details !== undefined) error.details = err.details;
+  return json({ error }, err.status);
 }
 
 /** Parse a JSON request body. Empty body → `{}`; malformed JSON → 400. */
