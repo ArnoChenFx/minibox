@@ -2,8 +2,12 @@ import type { Server } from "bun";
 
 import { type App, createApp } from "./app";
 import {
+  type Caller,
   authenticate,
+  bearerAllowed,
+  bearerKey,
   clearLegacyKeyCookie,
+  clientAddress,
   isSecureRequest,
   isWeakAccessKey,
   MIN_ACCESS_KEY_LENGTH,
@@ -30,11 +34,31 @@ const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
 const PROXY_HINT =
   "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
+/** The address a request is counted under: the TCP peer, or the proxy's entry when TRUST_PROXY is set. */
+function addressOf(app: App, req: Request, server: Pick<Server<unknown>, "requestIP">): string {
+  return clientAddress(req, server.requestIP(req)?.address, app.cfg.trustProxy);
+}
+
+/**
+ * The caller of an API or terminal request. A Bearer key is judged alone, and a wrong one counts toward the login
+ * limit. Without a Bearer key the session cookie decides.
+ */
+async function callerOf(app: App, req: Request, server: Pick<Server<unknown>, "requestIP">): Promise<Caller | null> {
+  if (bearerKey(req) === null) return authenticate(req, app.cfg.accessKey, app.sessions);
+  const allowed = await bearerAllowed(
+    req,
+    { accessKey: app.cfg.accessKey, throttle: app.throttle },
+    addressOf(app, req, server),
+  );
+  return allowed ? { sessionId: null } : null;
+}
+
 async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
   const m = matchRoute(routes, req.method, url.pathname);
   if (m === null) throw new AppError(404, "not_found", msg("api_not_found"));
   if (m === "method_not_allowed") throw new AppError(405, "method_not_allowed", msg("method_not_allowed"));
-  const caller = authenticate(req, app.cfg.accessKey, app.sessions);
+  // Public routes judge the cookie only, so a stray Bearer header cannot count against a login.
+  const caller = m.route.public ? authenticate(req, app.cfg.accessKey, app.sessions) : await callerOf(app, req, server);
   if (!m.route.public && caller === null) {
     throw new AppError(401, "unauthorized", msg("unauthorized"));
   }
@@ -95,7 +119,7 @@ export function startServer(app: App): Server<TerminalData> {
         guardRequest(req, app.cfg);
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-          const caller = authenticate(req, app.cfg.accessKey, app.sessions);
+          const caller = await callerOf(app, req, server);
           if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
           const host = app.hosts.get();
           const box = await getBox(host, decodeURIComponent(tm[1] ?? ""));
@@ -104,7 +128,7 @@ export function startServer(app: App): Server<TerminalData> {
           if (server.upgrade(req, { data })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
-        if (url.pathname === "/mcp") res = await handleMcp(app, req, url);
+        if (url.pathname === "/mcp") res = await handleMcp(app, req, url, addressOf(app, req, server));
         else
           res = url.pathname.startsWith("/api/")
             ? await handleApi(app, req, url, server)

@@ -1,5 +1,5 @@
 import type { App } from "../app";
-import { safeEqual } from "../auth";
+import { bearerAllowed } from "../auth";
 import { AppError, toAppError } from "../lib/errors";
 import { errorResponse, json } from "../lib/http";
 import { msg } from "../lib/messages";
@@ -29,10 +29,9 @@ function methodNotAllowed(): Response {
   return res;
 }
 
-function assertBearer(req: Request, accessKey: string): void {
-  const header = req.headers.get("authorization");
-  const key = header && /^bearer\s+/i.test(header) ? header.replace(/^bearer\s+/i, "").trim() : "";
-  if (key === "" || !safeEqual(key, accessKey)) {
+async function assertBearer(app: App, req: Request, address: string): Promise<void> {
+  const allowed = await bearerAllowed(req, { accessKey: app.cfg.accessKey, throttle: app.throttle }, address);
+  if (!allowed) {
     throw new AppError(401, "unauthorized", msg("mcp_bearer_required"), undefined, { hint: msg("mcp_bearer_hint") });
   }
 }
@@ -99,11 +98,12 @@ function wireTools(toolsets: readonly Toolset[]) {
 
 /**
  * Streamable HTTP MCP at POST /mcp. There is no GET event stream. A bearer access key is required; a session cookie
- * is not accepted. `?toolsets=core,session` selects tools. The default is core and meta.
+ * is not accepted. A wrong key counts toward the login limit for `address`. `?toolsets=core,session` selects tools.
+ * The default is core and meta.
  */
-export async function handleMcp(app: App, req: Request, url: URL): Promise<Response> {
+export async function handleMcp(app: App, req: Request, url: URL, address: string): Promise<Response> {
   if (req.method === "GET" || (req.method !== "POST" && req.method !== "DELETE")) return methodNotAllowed();
-  assertBearer(req, app.cfg.accessKey);
+  await assertBearer(app, req, address);
   if (req.method === "DELETE") {
     const id = req.headers.get("mcp-session-id");
     if (id) app.mcpSessions.close(id);

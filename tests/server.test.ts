@@ -201,6 +201,77 @@ describe("login rate limit (end to end)", () => {
   });
 });
 
+const bearerSessions = (base: string, key: string) =>
+  fetch(`${base}/api/auth/sessions`, { headers: { authorization: `Bearer ${key}` } });
+
+const mcpPing = (base: string, key: string | null, headers: Record<string, string> = {}) =>
+  fetch(`${base}/mcp`, {
+    method: "POST",
+    headers: {
+      ...(key === null ? {} : { authorization: `Bearer ${key}` }),
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      ...headers,
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+  });
+
+describe("bearer keys count toward the login limit (end to end)", () => {
+  test("wrong Bearer keys on /api share the login count, and a right key is never refused", async () => {
+    await withServer({}, async ({ base }) => {
+      for (let i = 0; i < 10; i++) expect((await bearerSessions(base, "wrong")).status).toBe(401);
+      expect((await bearerSessions(base, "wrong")).status).toBe(429);
+      expect((await login(base, "wrong")).status).toBe(429);
+      expect((await bearerSessions(base, KEY)).status).toBe(200);
+    });
+  });
+
+  test("wrong Bearer keys on /mcp are refused with 429 once the address is over the limit", async () => {
+    await withServer({}, async ({ base }) => {
+      for (let i = 0; i < 10; i++) expect((await mcpPing(base, "wrong")).status).toBe(401);
+      const refused = await mcpPing(base, "wrong");
+      expect(refused.status).toBe(429);
+      expect(await refused.json()).toMatchObject({ error: { code: "too_many_requests" } });
+      const allowed = await mcpPing(base, KEY);
+      expect(allowed.status).toBe(200);
+      expect(await allowed.json()).toMatchObject({ result: {} });
+    });
+  });
+
+  test("requests without a Bearer key are refused without counting, and a session cookie does not open /mcp", async () => {
+    await withServer({}, async ({ base }) => {
+      const token = await signIn(base);
+      for (let i = 0; i < 12; i++) expect((await mcpPing(base, null)).status).toBe(401);
+      const cookied = await mcpPing(base, null, cookieFor(token));
+      expect(cookied.status).toBe(401);
+      expect((await login(base, "wrong")).status).toBe(401);
+    });
+  });
+
+  test("a wrong Bearer key is refused even when the request also carries a valid session cookie", async () => {
+    await withServer({}, async ({ base }) => {
+      const token = await signIn(base);
+      const res = await fetch(`${base}/api/auth/sessions`, {
+        headers: { ...cookieFor(token), authorization: "Bearer wrong" },
+      });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  test("a refused Bearer key waits for the penalty before its 429", async () => {
+    await withServer(
+      {},
+      async ({ base }) => {
+        for (let i = 0; i < 10; i++) await bearerSessions(base, "wrong");
+        const started = performance.now();
+        expect((await bearerSessions(base, "wrong")).status).toBe(429);
+        expect(performance.now() - started).toBeGreaterThanOrEqual(90);
+      },
+      { penaltyMs: 100 },
+    );
+  });
+});
+
 describe("proxy header warning (end to end)", () => {
   test("proxied requests without TRUST_PROXY log a single warning that names the setting", async () => {
     const lines: string[] = [];
