@@ -377,6 +377,27 @@ async function recordScenario(): Promise<Exchange[]> {
     const spare = await post("create spare volume", "/api/volumes", { name: "spare", confirm: true });
     const spareId = String((spare.json?.volume as { id?: string } | undefined)?.id ?? "");
     await send("measure spare", "POST", `/api/volumes/${spareId}/usage`);
+    await send("write a file on spare", "PUT", `/api/volumes/${spareId}/files/content`, {
+      body: JSON.stringify({ path: "hello.txt", content: "hi\n" }),
+      contentType: JSON_TYPE,
+    });
+    await send("read the file on spare", "GET", `/api/volumes/${spareId}/files/content?path=hello.txt`);
+    await send("list files on spare", "GET", `/api/volumes/${spareId}/files?path=/&maxDepth=2`);
+    await send("copy the file on spare", "POST", `/api/volumes/${spareId}/files/copy`, {
+      body: JSON.stringify({ from: "hello.txt", to: "hello2.txt" }),
+      contentType: JSON_TYPE,
+    });
+    await send("download spare root as tar", "GET", `/api/volumes/${spareId}/files/archive?path=/`);
+    const tar = await send("download hello as tar", "GET", `/api/volumes/${spareId}/files/archive?path=hello.txt`);
+    await send("upload tar onto spare", "PUT", `/api/volumes/${spareId}/files/archive`, {
+      body: JSON.stringify({
+        path: "uploaded",
+        content: (tar.json as { content?: string } | null)?.content ?? "",
+        encoding: "base64",
+      }),
+      contentType: JSON_TYPE,
+    });
+    await send("read escapes the volume", "GET", `/api/volumes/${spareId}/files/content?path=../secret`);
     await send("attach spare without confirm", "POST", `/api/volumes/${spareId}/attach`, {
       body: JSON.stringify({ box: gamma, path: "/srv/data", mode: "ro" }),
       contentType: JSON_TYPE,
