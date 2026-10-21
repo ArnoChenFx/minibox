@@ -8,6 +8,7 @@ import {
   snapshotBox,
 } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
+import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
@@ -19,6 +20,7 @@ import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
+import { filterTools, groupTools, toolAction } from "../lib/tool-list.js";
 import {
   boxState,
   confirmDialog,
@@ -206,7 +208,12 @@ export function render(view, id, tab = "overview") {
     ).join("")}</div>
     <div id="tabBody"></div>`;
     painted = true;
-    tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), { box: () => box, history, onChange, rerender });
+    tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), {
+      box: () => box,
+      history,
+      onChange,
+      refreshBox: fetchBox,
+    });
   };
 
   const rerender = async () => {
@@ -419,6 +426,50 @@ async function detachMount(box, el) {
   }
 }
 
+const TOOL_COLUMNS = 5;
+
+const categoryLabel = (id) => t(`tool.cat.${id}`);
+
+function toolGroupRow(group, collapsed) {
+  return `<tr class="group-row"><td colspan="${TOOL_COLUMNS}">
+    <button type="button" class="group-toggle" data-action="toggle-group" data-group="${esc(group.id)}" aria-expanded="${!collapsed}">
+      ${icon("chevron")}<strong>${esc(categoryLabel(group.category))}</strong><span class="badge">${group.rows.length}</span>
+    </button>
+  </td></tr>`;
+}
+
+function toolInstalledCell(tool) {
+  if (!tool.installed) return `<span class="subtle">${esc(t("bd.toolsNotInstalled"))}</span>`;
+  const version = tool.installedVersion ? `<span class="mono subtle">${esc(tool.installedVersion)}</span>` : "";
+  const outside = tool.managed ? "" : `<span class="help">${esc(t("tool.foundOutside"))}</span>`;
+  return `<div class="tool-state"><span class="badge badge-success">${esc(t("bd.toolsInstalled"))}</span>${version}${outside}</div>`;
+}
+
+function toolActionCell(tool) {
+  const id = esc(tool.id);
+  switch (toolAction(tool)) {
+    case "needsRoot":
+      return `<span class="badge badge-warning" title="${esc(t("tool.needsRootHelp"))}">${esc(t("tool.needsRoot"))}</span>`;
+    case "managed":
+      return `<button class="btn btn-sm" data-action="tool-upgrade" data-tool="${id}">${t("bd.toolsUpgrade")}</button>
+        <button class="btn btn-sm" data-action="tool-uninstall" data-tool="${id}">${t("bd.toolsUninstall")}</button>`;
+    case "outside":
+      return "";
+    default:
+      return `<button class="btn btn-sm btn-primary" data-action="tool-install" data-tool="${id}">${t("bd.toolsInstall")}</button>`;
+  }
+}
+
+function toolRow(tool) {
+  return `<tr>
+    <td><strong>${esc(tool.name)}</strong><div class="help">${esc(tool.description)}</div>${tool.requires ? `<div class="help">${esc(tool.requires)}</div>` : ""}</td>
+    <td class="mono">${esc(tool.id)}</td>
+    <td>${tool.desiredVersion ? esc(tool.desiredVersion) : "—"}</td>
+    <td>${toolInstalledCell(tool)}</td>
+    <td class="actions">${toolActionCell(tool)}</td>
+  </tr>`;
+}
+
 const TAB_RENDER = {
   overview(root, { box, onChange }) {
     const draw = () => {
@@ -605,70 +656,94 @@ const TAB_RENDER = {
     return () => {};
   },
 
-  tools(root, { box, rerender }) {
-    const draw = async () => {
-      const b = box();
-      root.innerHTML = `<div class="card"><div class="card-body"><span class="spinner"></span> ${esc(t("bd.toolsLoading"))}</div></div>`;
-      let tools = [];
-      try {
-        tools = (await api(`/api/tools?id=${enc(b.id)}`)).tools;
-      } catch (e) {
-        root.innerHTML = emptyState({ iconName: "alert", title: t("bd.toolsLoadFailed"), text: esc(e.message) });
+  tools(root, { box, refreshBox }) {
+    const collapsed = new Set();
+    const pending = new Set();
+    let tools = null;
+    let query = "";
+    root.innerHTML = `<div class="card">
+      <div class="card-head with-tools"><h3>${t("bd.toolsTitle")}</h3>
+        <div class="list-tools">
+          ${searchBoxHtml({ id: "bdToolSearch", placeholder: t("tool.searchPlaceholder"), label: t("tool.search") })}
+          <button class="btn btn-sm" data-action="tool-reconcile">${icon("refresh")}${t("bd.toolsReconcile")}</button>
+        </div></div>
+      <div class="card-body"><p class="help">${t("bd.toolsHelp")}</p></div>
+      <div class="table-wrap"><table class="table"><thead><tr>
+        <th>${t("bd.toolsColName")}</th><th>${t("bd.toolsColId")}</th><th>${t("bd.toolsColDesired")}</th><th>${t("bd.toolsColInstalled")}</th><th></th>
+      </tr></thead><tbody id="bdToolRows"><tr><td colspan="${TOOL_COLUMNS}"><span class="spinner"></span> ${esc(t("bd.toolsLoading"))}</td></tr></tbody></table></div></div>`;
+    const body = root.querySelector("#bdToolRows");
+
+    const drawRows = () => {
+      if (!tools) return;
+      const matches = filterTools(tools, query, categoryLabel);
+      if (!matches.length) {
+        body.innerHTML = `<tr><td colspan="${TOOL_COLUMNS}">${emptyState({
+          iconName: "search",
+          title: t("tool.noMatch"),
+          text: t("tool.noMatchText", { q: esc(query) }),
+          action: `<button class="btn btn-sm" data-action="clear-search">${t("common.clearSearch")}</button>`,
+        })}</td></tr>`;
         return;
       }
-      const rows = tools
-        .map((tool) => {
-          const desired = tool.desiredVersion ? esc(tool.desiredVersion) : "—";
-          const installed = tool.installed
-            ? esc(tool.installedVersion || t("bd.toolsInstalled"))
-            : t("bd.toolsNotInstalled");
-          return `<tr>
-            <td><strong>${esc(tool.name)}</strong><div class="help">${esc(tool.description)}</div></td>
-            <td class="mono">${esc(tool.id)}</td>
-            <td>${desired}</td>
-            <td>${installed}</td>
-            <td class="actions">
-              ${
-                tool.installed
-                  ? `<button class="btn btn-sm" data-action="tool-upgrade" data-tool="${esc(tool.id)}">${t("bd.toolsUpgrade")}</button>
-                     <button class="btn btn-sm" data-action="tool-uninstall" data-tool="${esc(tool.id)}">${t("bd.toolsUninstall")}</button>`
-                  : `<button class="btn btn-sm btn-primary" data-action="tool-install" data-tool="${esc(tool.id)}">${t("bd.toolsInstall")}</button>`
-              }
-            </td>
-          </tr>`;
+      body.innerHTML = groupTools(matches)
+        .map((group) => {
+          const isCollapsed = collapsed.has(group.id);
+          return toolGroupRow(group, isCollapsed) + (isCollapsed ? "" : group.rows.map(toolRow).join(""));
         })
         .join("");
-      root.innerHTML = `<div class="card"><div class="card-head"><h3>${t("bd.toolsTitle")}</h3>
-        <button class="btn btn-sm" data-action="tool-reconcile">${icon("refresh")}${t("bd.toolsReconcile")}</button></div>
-        <div class="card-body"><p class="help">${t("bd.toolsHelp")}</p></div>
-        <div class="table-wrap"><table class="table"><thead><tr>
-          <th>${t("bd.toolsColName")}</th><th>${t("bd.toolsColId")}</th><th>${t("bd.toolsColDesired")}</th><th>${t("bd.toolsColInstalled")}</th><th></th>
-        </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    };
+    const load = async () => {
+      try {
+        tools = (await api(`/api/tools?id=${enc(box().id)}`)).tools;
+      } catch (e) {
+        body.innerHTML = `<tr><td colspan="${TOOL_COLUMNS}">${emptyState({ iconName: "alert", title: t("bd.toolsLoadFailed"), text: esc(e.message) })}</td></tr>`;
+        return;
+      }
+      drawRows();
+    };
+    const search = bindSearchBox(root.querySelector("#bdToolSearch"), (text) => {
+      query = text;
+      drawRows();
+    });
+    const toggleGroup = (id) => {
+      if (collapsed.has(id)) collapsed.delete(id);
+      else collapsed.add(id);
+      drawRows();
+      [...root.querySelectorAll(".group-toggle")].find((button) => button.dataset.group === id)?.focus();
     };
     const start = async (path, tool) => {
       try {
-        const body = tool ? { tool, version: "latest" } : undefined;
-        const res = await api(path, { method: "POST", ...(body ? { body } : {}) });
-        if (res?.taskId) openTasks(res.taskId);
+        const payload = tool ? { tool, version: "latest" } : undefined;
+        const res = await api(path, { method: "POST", ...(payload ? { body: payload } : {}) });
+        if (res?.taskId) {
+          pending.add(res.taskId);
+          openTasks(res.taskId);
+        }
         toast(t("bd.toolsTaskStarted"));
-        await draw();
-        rerender?.();
+        await load();
+        void refreshBox?.().catch(() => {});
       } catch (e) {
         toastError(t("bd.toolsTaskFailed"), e);
       }
     };
+    const offTask = subscribe("task", (frame) => {
+      if (frame.kind !== "status" || frame.status === "running") return;
+      if (pending.delete(frame.taskId)) void load();
+    });
     root.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-action]");
       if (!btn) return;
       const b = box();
       const tool = btn.dataset.tool;
+      if (btn.dataset.action === "clear-search") search.clear();
+      if (btn.dataset.action === "toggle-group") toggleGroup(btn.dataset.group);
       if (btn.dataset.action === "tool-install") void start(`/api/boxes/${enc(b.id)}/tools/install`, tool);
       if (btn.dataset.action === "tool-upgrade") void start(`/api/boxes/${enc(b.id)}/tools/upgrade`, tool);
       if (btn.dataset.action === "tool-uninstall") void start(`/api/boxes/${enc(b.id)}/tools/uninstall`, tool);
       if (btn.dataset.action === "tool-reconcile") void start(`/api/boxes/${enc(b.id)}/tools/reconcile`);
     });
-    void draw();
-    return () => {};
+    void load();
+    return () => offTask();
   },
 
   snapshots(root, { box }) {
