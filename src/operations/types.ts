@@ -3,6 +3,8 @@ import type { z } from "zod";
 import type { EventReader } from "../events/store";
 import type { EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
+import type { TokenGrants } from "../tokens/model";
+import type { TokenStore } from "../tokens/store";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
@@ -11,12 +13,41 @@ export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "me
 
 export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
-/** Who is calling. Only the owner exists until scoped tokens (#13) add other principals. */
-export interface Principal {
+/** The access key or a browser session. `id` is `owner` for both; other owner ids exist only in tests. */
+export interface OwnerPrincipal {
   readonly type: "owner";
   readonly id: string;
   readonly name: string;
 }
+
+/** An agent API token. `grants` is the policy checked by the authorizer and the event filter. */
+export interface TokenPrincipal {
+  readonly type: "token";
+  readonly id: string;
+  readonly name: string;
+  readonly grants: TokenGrants;
+}
+
+/**
+ * Reserved for a token a box uses on itself (#13 defers issuing these). `id` is the box id.
+ * Nothing in this process creates one.
+ */
+export interface BoxSelfPrincipal {
+  readonly type: "box-self";
+  readonly id: string;
+  readonly name: string;
+}
+
+/** A call MiniBox makes itself, such as a future scheduler. Not issued to clients. */
+export interface SystemPrincipal {
+  readonly type: "system";
+  readonly id: string;
+  readonly name: string;
+}
+
+export type Principal = OwnerPrincipal | TokenPrincipal | BoxSelfPrincipal | SystemPrincipal;
+
+export const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 
 export interface OperationContext {
   readonly host: HostCtx;
@@ -28,6 +59,8 @@ export interface OperationContext {
   readonly parentId?: string;
   /** The event log, for operations that read it. Adapters pass the app's store. */
   readonly events: EventReader;
+  /** Agent API tokens. Token operations read and change this store. */
+  readonly tokens: TokenStore;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */
@@ -62,7 +95,7 @@ export interface OperationMeta {
   readonly kind: Kind;
   readonly scope: string;
   readonly async: boolean;
-  /** Creating a box by name can fail with a 409 when the name is taken. */
+  /** Creating a named object can fail with a 409 when the name is taken. */
   readonly conflicts?: boolean;
   readonly rest: readonly RestBinding[];
   readonly cli?: string;

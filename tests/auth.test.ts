@@ -87,8 +87,15 @@ describe("authenticate", () => {
   });
 
   test("a bearer header with the access key is a bearer caller", () => {
-    expect(authenticate(req({ authorization: `Bearer ${KEY}` }), KEY, sessions)).toEqual({ sessionId: null });
-    expect(authenticate(req({ authorization: `bearer   ${KEY}` }), KEY, sessions)).toEqual({ sessionId: null });
+    const owner = { type: "owner" as const, id: "owner", name: "owner" };
+    expect(authenticate(req({ authorization: `Bearer ${KEY}` }), KEY, sessions)).toEqual({
+      sessionId: null,
+      principal: owner,
+    });
+    expect(authenticate(req({ authorization: `bearer   ${KEY}` }), KEY, sessions)).toEqual({
+      sessionId: null,
+      principal: owner,
+    });
   });
 
   test("a wrong, empty or non-bearer header is not a caller", () => {
@@ -100,7 +107,10 @@ describe("authenticate", () => {
 
   test("a live session token in the cookie is a session caller", () => {
     const { token, session } = sessions.create({ userAgent: "test", ip: "127.0.0.1" });
-    expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, sessions)).toEqual({ sessionId: session.id });
+    expect(authenticate(cookieOnly(`${COOKIE_NAME}=${token}`), KEY, sessions)).toEqual({
+      sessionId: session.id,
+      principal: { type: "owner" as const, id: "owner", name: "owner" },
+    });
   });
 
   test("an unknown token is not a caller", () => {

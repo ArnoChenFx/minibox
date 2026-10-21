@@ -3,11 +3,10 @@ import { json, readJson } from "../lib/http";
 import { msg } from "../lib/messages";
 import { asObject } from "../lib/validation";
 import { RUN_HEADER, RUN_ID_PATTERN } from "../operations/run";
-import type { Operation, Principal, RestBinding } from "../operations/types";
+import { OWNER, type Operation, type RestBinding } from "../operations/types";
 import { type Handler, type Route, route } from "./router";
 
-/** Until scoped tokens (#13) exist, every REST request acts as the owner. */
-export const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
+export { OWNER };
 
 /** The `run` a request belongs to, or `undefined` when it does not send `X-Minibox-Run`. */
 export function runOf(req: Request): string | undefined {
@@ -45,12 +44,19 @@ function entityTag(result: unknown): Record<string, string> {
 }
 
 function handlerFor(operation: Operation, binding: RestBinding): Handler {
-  return async ({ app, host, req, url, params }) => {
+  return async ({ app, host, req, url, params, caller }) => {
     const run = runOf(req);
     const body = binding.body ? asObject(await readJson(req)) : {};
     const result = await app.operations.run(
       operation.name,
-      { host, principal: OWNER, source: "rest", run, events: app.events },
+      {
+        host,
+        principal: caller?.principal ?? OWNER,
+        source: "rest",
+        run,
+        events: app.events,
+        tokens: app.tokens,
+      },
       inputOf(binding, url, params, body, req.headers.get("if-match")),
     );
     return json(result, binding.status ?? 200, entityTag(result));

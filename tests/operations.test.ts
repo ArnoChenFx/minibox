@@ -13,6 +13,7 @@ import { OPERATIONS, registryProblems } from "../src/operations/registry";
 import type { Operation, OperationContext, Principal } from "../src/operations/types";
 import { runOf } from "../src/routes/operations";
 import { startServer } from "../src/server";
+import { compileToken } from "../src/tokens/model";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
@@ -21,7 +22,7 @@ const TEMPLATE_REF = "mbtest-template:gold";
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** One valid input for each operation, given the id of a box that exists; see `withBox`. */
-const SAMPLES: Record<string, (boxId: string) => unknown> = {
+const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.list": () => ({}),
   "box.get": (id) => ({ id }),
   "box.create": () => ({ name: "gamma", cpus: 1, memoryMb: 256 }),
@@ -40,6 +41,11 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "template.build": () => ({}),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
   "events.list": () => ({ op: "box.create" }),
+  "token.list": () => ({}),
+  "token.create": () => ({ name: "ci", preset: "readonly" }),
+  "token.revoke": (_boxId, app) => ({
+    id: app.tokens.create(compileToken({ name: "gone", preset: "readonly" }), "owner").record.id,
+  }),
 };
 
 function opNamed(name: string): Operation {
@@ -54,7 +60,13 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
   runtime.seedImage(TEMPLATE_REF, { [keys.template]: "true", [keys.templateName]: "gold" });
-  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
+  const ctx: OperationContext = {
+    host: app.hosts.get(),
+    principal: OWNER,
+    source: "rest",
+    events: app.events,
+    tokens: app.tokens,
+  };
   return { app, runtime, ctx };
 }
 
@@ -252,7 +264,7 @@ describe("executor", () => {
       const boxId = await withBox(app, ctx);
       events.length = 0;
 
-      await app.operations.run(operation.name, ctx, sample(boxId));
+      await app.operations.run(operation.name, ctx, sample(boxId, app));
       expect(events.map((event) => [event.op, event.kind, event.status])).toEqual([
         [operation.name, operation.kind, "ok"],
       ]);
@@ -402,7 +414,7 @@ describe("event log", () => {
       const { app, ctx } = appWith();
       const boxId = await withBox(app, ctx);
       const before = app.events.head();
-      await app.operations.run(operation.name, ctx, sample(boxId));
+      await app.operations.run(operation.name, ctx, sample(boxId, app));
       expect(app.events.after(before, {}, 10).map((event) => [event.op, event.status])).toEqual([
         [operation.name, "ok"],
       ]);
@@ -539,6 +551,7 @@ describe("projections", () => {
       "cpus",
       "memoryMb",
       "profile",
+      "ttlSec",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });

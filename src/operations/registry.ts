@@ -3,6 +3,7 @@ import { eventOperations } from "./events";
 import { operationIdOf } from "./openapi";
 import { snapshotOperations } from "./snapshots";
 import { templateOperations } from "./templates";
+import { tokenOperations } from "./tokens";
 import type { Operation } from "./types";
 
 /** Every operation the API serves. REST routes, OpenAPI, MCP tools and CLI commands are all derived from this list. */
@@ -11,6 +12,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...snapshotOperations,
   ...templateOperations,
   ...eventOperations,
+  ...tokenOperations,
 ];
 
 const OPERATION_NAME = /^[a-z]+(\.[a-z]+)+$/;

@@ -25,7 +25,13 @@ function setup(overrides: Parameters<typeof createTestApp>[0] = {}, hooks: Param
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
-  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
+  const ctx: OperationContext = {
+    host: app.hosts.get(),
+    principal: OWNER,
+    source: "rest",
+    events: app.events,
+    tokens: app.tokens,
+  };
   return { app, runtime, ctx };
 }
 
@@ -103,7 +109,13 @@ describe("the event store on disk", () => {
       const app = createApp(testConfig({ dataDir, accessKey: TEST_KEY }), "0.0.0-test", {
         runtime: new FakeRuntime(),
       });
-      const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
+      const ctx: OperationContext = {
+        host: app.hosts.get(),
+        principal: OWNER,
+        source: "rest",
+        events: app.events,
+        tokens: app.tokens,
+      };
       await app.operations.run("box.list", ctx, {});
       app.events.append({
         id: "01TESTTESTTESTTESTTESTTEST",
@@ -155,6 +167,9 @@ describe("the scope hook", () => {
   test("a principal type without a visibility rule is refused rather than widened", () => {
     expect(() => scopedFilter({}, { type: "token", id: "t1", name: "ci" })).toThrow(
       "no event visibility is defined for principal type token",
+    );
+    expect(() => scopedFilter({}, { type: "system", id: "scheduler", name: "scheduler" })).toThrow(
+      "no event visibility is defined for principal type system",
     );
   });
 });

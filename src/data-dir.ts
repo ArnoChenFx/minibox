@@ -41,6 +41,11 @@ export function sessionsPath(dataDir: string): string {
   return join(dataDir, "sessions.json");
 }
 
+/** Agent API tokens: hashes and policy, never the tokens. Separate from browser sessions. */
+export function tokensPath(dataDir: string): string {
+  return join(dataDir, "tokens.json");
+}
+
 /**
  * Replace `path` with `contents` so a reader sees either the old file or the new one, never a partial write.
  * The new file is flushed before the rename, and the temporary file is removed if any step fails.

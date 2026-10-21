@@ -21,6 +21,8 @@ const FORMATS: readonly (readonly [RegExp, string])[] = [
   [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, REDACTED],
   [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, REDACTED],
   [/\bAIza[0-9A-Za-z_-]{35}/g, REDACTED],
+  // Agent API tokens. The stored prefix is shorter than this, so a prefix in a list is not mistaken for the secret.
+  [/\bmbx_[A-Za-z0-9_-]{20,}\b/g, REDACTED],
 ];
 
 export interface RedactOptions {
@@ -42,11 +44,14 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 export function createRedactor(options: RedactOptions = {}): Redactor {
-  const known = (options.knownSecrets ?? []).filter((secret) => secret.length >= MIN_KNOWN_SECRET);
+  // Read the array on each call. Token creation appends secrets after the redactor already exists.
+  const known = options.knownSecrets;
 
   const text = (value: string): string => {
     let out = value;
-    for (const secret of known) out = out.replaceAll(secret, REDACTED);
+    for (const secret of known ?? []) {
+      if (secret.length >= MIN_KNOWN_SECRET) out = out.replaceAll(secret, REDACTED);
+    }
     for (const [pattern, replacement] of FORMATS) out = out.replace(pattern, replacement);
     return out;
   };

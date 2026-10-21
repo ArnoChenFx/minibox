@@ -24,6 +24,9 @@ const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as Host
 export function normalize(text: string): string {
   return text
     .replace(/bx_[0-9a-z]+/g, "<boxId>")
+    .replace(/mbx_[A-Za-z0-9_-]{20,}/g, "<token>")
+    .replace(/"prefix":"mbx_[A-Za-z0-9_-]+"/g, '"prefix":"<prefix>"')
+    .replace(/tok_[0-9a-f]+/g, "<tokenId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/[0-9a-f]{64}/g, "<id>")
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<time>")
@@ -293,6 +296,15 @@ export async function runParityScenario(): Promise<Exchange[]> {
     );
     await send("events with limit 0", "GET", "/api/events?limit=0");
     await send("events of alpha that failed", "GET", "/api/events?box=alpha&status=error");
+
+    const minted = await post("create a readonly token", "/api/tokens", { name: "ci", preset: "readonly" });
+    const tokenId = String((minted.json?.record as { id?: string } | undefined)?.id ?? "");
+    await send("list tokens", "GET", "/api/tokens");
+    await post("create a token with no scope", "/api/tokens", { name: "empty" });
+    await post("create a duplicate token name", "/api/tokens", { name: "ci", preset: "readonly" });
+    await send("revoke the readonly token", "DELETE", `/api/tokens/${tokenId}?deleteCreated=false`);
+    await send("revoke the readonly token again", "DELETE", `/api/tokens/${tokenId}`);
+    await send("revoke a missing token", "DELETE", "/api/tokens/missing");
   } finally {
     server.stop(true);
     app.throttle.stop();

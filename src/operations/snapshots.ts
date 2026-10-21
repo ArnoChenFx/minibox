@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createBox, getBox } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
 import { createSnapshot, deleteSnapshot, listSnapshots } from "../services/snapshots";
+import { snapshotVisible, ttlFor, viewsFromSpecs } from "../tokens/model";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
 import { BoxSchema, ImageSchema, OkSchema, SnapshotSchema } from "./schemas";
@@ -14,6 +15,7 @@ import {
   memoryWithDefault,
   snapshotName,
   snapshotRef,
+  ttl,
 } from "./validation";
 
 export const snapshotCreate = defineOperation({
@@ -47,6 +49,7 @@ export const snapshotFork = defineOperation({
     cpus: cpusWithDefault(DEFAULT_RESOURCES.cpus),
     memoryMb: memoryWithDefault(DEFAULT_RESOURCES.memoryMb),
     profile: boxProfile(),
+    ttlSec: ttl("create"),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/snapshots/:ref/boxes", body: true, status: 201 }],
@@ -62,7 +65,8 @@ export const snapshotFork = defineOperation({
       memoryMb: input.memoryMb,
       profile: input.profile,
       templateLabel: `snapshot:${input.ref}`,
-      createdBy: principal.type,
+      createdBy: principal.id,
+      ttlSec: ttlFor(principal, input.ttlSec),
     }),
   }),
 });
@@ -78,7 +82,11 @@ export const snapshotList = defineOperation({
   output: z.object({ snapshots: z.array(ImageSchema) }),
   rest: [{ method: "GET", path: "/api/snapshots" }],
   cli: "snapshot list",
-  run: async ({ host }) => ({ snapshots: await listSnapshots(host) }),
+  run: async ({ host, principal }) => {
+    const snapshots = await listSnapshots(host);
+    const boxes = viewsFromSpecs(host.specs.list());
+    return { snapshots: snapshots.filter((image) => snapshotVisible(principal, image.source, boxes)) };
+  },
 });
 
 export const snapshotDelete = defineOperation({

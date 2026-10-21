@@ -4,12 +4,15 @@ import type { HostCtx } from "../host/registry";
 import { log } from "../lib/logger";
 import type { ExecSession } from "../runtime";
 import type { SessionStore } from "../sessions";
+import type { TokenStore } from "../tokens/store";
 
 export interface TerminalData {
   boxId: string;
   host: HostCtx;
   /** The browser session that opened the socket, or `null` for a bearer request. */
   sessionId: string | null;
+  /** Set when an agent API token opened the socket. Revoking that token closes it. */
+  tokenId: string | null;
   exec?: ExecSession;
   stopWatching?: () => void;
   closed?: boolean;
@@ -32,19 +35,24 @@ export function parseControl(data: string): { type: "resize"; cols: number; rows
 }
 
 /**
- * The socket closes with 1008 when its browser session ends, so a revoked or expired session cannot keep a shell
- * open. Typing counts as use of the session, so an active terminal is not signed out by sliding renewal.
+ * The socket closes with 1008 when its browser session or agent token ends, so a revoked credential cannot keep a
+ * shell open. Typing counts as use of the session, so an active terminal is not signed out by sliding renewal.
  */
-export function terminalHandlers(sessions: SessionStore) {
+export function terminalHandlers(sessions: SessionStore, tokens: TokenStore) {
   return {
     async open(ws: ServerWebSocket<TerminalData>) {
       const data = ws.data;
-      if (data.sessionId) {
-        data.stopWatching = sessions.watch(data.sessionId, () => {
-          data.closed = true;
-          ws.close(1008, "signed out");
-        });
-      }
+      const stops: (() => void)[] = [];
+      const end = (reason: string) => {
+        data.closed = true;
+        ws.close(1008, reason);
+      };
+      if (data.sessionId) stops.push(sessions.watch(data.sessionId, () => end("signed out")));
+      if (data.tokenId) stops.push(tokens.watch(data.tokenId, () => end("revoked")));
+      if (stops.length > 0)
+        data.stopWatching = () => {
+          for (const stop of stops) stop();
+        };
       if (data.closed) return;
       try {
         const exec = await data.host.runtime.startExec(data.boxId, {

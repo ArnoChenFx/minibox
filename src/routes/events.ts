@@ -4,6 +4,7 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { eventFilterInput, filterOf, parseSequence } from "../operations/events";
 import { parseInput } from "../operations/validation";
+import { scopeAllowed, viewsFromSpecs } from "../tokens/model";
 import { OWNER } from "./operations";
 import { type Route, route } from "./router";
 
@@ -29,20 +30,32 @@ function lastEventIdOf(req: Request): number | undefined {
  * schema for it. It still goes through the same authentication and origin checks as every other `/api/` route.
  */
 export const eventRoutes: Route[] = [
-  route("GET", "/api/events/stream", ({ app, req, url, server, caller }) => {
-    const filter = scopedFilter(filterOf(parseInput(eventFilterInput, Object.fromEntries(url.searchParams))), OWNER);
+  route("GET", "/api/events/stream", ({ app, host, req, url, server, caller }) => {
+    const principal = caller?.principal ?? OWNER;
+    if (principal.type === "token" && !scopeAllowed(principal.grants, "events:read")) {
+      throw new AppError(403, "forbidden", msg("operation_forbidden", { op: "events.list" }));
+    }
+    const filter = scopedFilter(
+      filterOf(parseInput(eventFilterInput, Object.fromEntries(url.searchParams))),
+      principal,
+      viewsFromSpecs(host.specs.list()),
+    );
     const lastId = lastEventIdOf(req);
     server.timeout(req, 0);
-    // A browser that signs out or is revoked must stop receiving events now, not at its next reconnect.
+    // A browser session or an agent token that ends must stop receiving events now, not at its next reconnect.
     const sessionEnded = new AbortController();
-    const unwatch = caller?.sessionId ? app.sessions.watch(caller.sessionId, () => sessionEnded.abort()) : undefined;
+    const stops: (() => void)[] = [];
+    if (caller?.sessionId) stops.push(app.sessions.watch(caller.sessionId, () => sessionEnded.abort()));
+    if (principal.type === "token") stops.push(app.tokens.watch(principal.id, () => sessionEnded.abort()));
     const stream = eventStream({
       store: app.events,
       subscribe: (listener) => app.bus.subscribe("event", listener),
       filter,
       lastId,
       signal: AbortSignal.any([req.signal, sessionEnded.signal]),
-      onEnd: unwatch,
+      onEnd: () => {
+        for (const stop of stops) stop();
+      },
     });
     return new Response(stream, { headers: STREAM_HEADERS });
   }),

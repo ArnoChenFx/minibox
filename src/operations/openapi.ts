@@ -10,9 +10,9 @@ const PATH_PARAM = /:([A-Za-z]\w*)/g;
 
 const ERROR_RESPONSES: Record<string, string> = {
   "400": "Invalid input, or a malformed X-Minibox-Run header.",
-  "401": "Not signed in, or the access key is invalid.",
+  "401": "Not signed in, or the bearer credential is invalid.",
   "403": "Refused: a cross-site write, or an operation this credential may not run.",
-  "404": "The box, snapshot or template named in the path does not exist.",
+  "404": "The box, snapshot, template or token named in the path does not exist.",
   "409": "The name is already taken.",
   "415": "The request declares a body that is not JSON.",
   "412": "The If-Match revision is not the box's current revision.",
@@ -164,7 +164,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
       title: "MiniBox API",
       version,
       description:
-        "Generated from the operation registry: boxes, snapshots, templates and the event log. Sign-in, host and activity routes, and the event stream (GET /api/events/stream, text/event-stream), are not listed yet.",
+        "Generated from the operation registry: boxes, snapshots, templates, the event log and agent API tokens. Sign-in, host and activity routes, and the event stream (GET /api/events/stream, text/event-stream), are not listed yet.",
       license: { name: "MIT" },
     },
     tags,
@@ -172,7 +172,11 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
     components: {
       schemas: { Error: toJsonSchema(ErrorSchema, "output") },
       securitySchemes: {
-        bearer: { type: "http", scheme: "bearer", description: "The access key, as a Bearer token." },
+        bearer: {
+          type: "http",
+          scheme: "bearer",
+          description: "The access key, or an agent API token (mbx_…), as a Bearer token.",
+        },
         cookie: {
           type: "apiKey",
           in: "cookie",

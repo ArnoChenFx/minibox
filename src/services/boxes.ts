@@ -24,8 +24,10 @@ export interface CreateBoxInput {
   memoryMb: number;
   /** Absent means the host's default profile. */
   profile?: BoxProfile;
-  /** Principal that created the box. Defaults to `owner` until scoped tokens exist. */
+  /** Principal id that created the box. Defaults to `owner`. */
   createdBy?: string;
+  /** Stored on the spec. Stopping the box when it elapses is #12. */
+  ttlSec?: number | null;
 }
 
 export interface BoxUpdate {
@@ -323,7 +325,7 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
       env: [],
       tools: [],
       labels: {},
-      lifecycle: { desired: "running", idleTimeoutSec: null, ttlSec: null },
+      lifecycle: { desired: "running", idleTimeoutSec: null, ttlSec: input.ttlSec ?? null },
       profile,
       network: security.network,
       restart: "no",

@@ -1,6 +1,7 @@
 import { type ActivityLog, tracked } from "../activity";
 import type { EventInput, EventStatus, EventTarget } from "../events/types";
 import { ulid } from "../events/ulid";
+import type { HostCtx } from "../host/registry";
 import { AppError, toAppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
@@ -9,6 +10,15 @@ import type { Operation, OperationContext, Principal } from "./types";
 export interface AuthorizeRequest {
   readonly principal: Principal;
   readonly operation: Operation;
+  readonly host?: HostCtx;
+  /**
+   * `scope` runs before validation and only checks who may call the operation.
+   * `access` runs after the target is resolved, with the valid input, and checks the box, volumes, host and quotas.
+   * A hook that ignores `phase` is consulted twice.
+   */
+  readonly phase?: "scope" | "access";
+  readonly input?: Record<string, unknown>;
+  readonly resolved?: unknown;
 }
 
 /** One execution of an operation, as the audit hook receives it. Every execution yields exactly one. */
@@ -22,6 +32,7 @@ export interface ExecutorHooks {
   audit(event: AuditEvent): void;
 }
 
+/** The phase-0 hook: any owner principal, and nobody else. Production uses `authorizeOperation` instead. */
 export const ownerOnly = ({ principal }: AuthorizeRequest): boolean => principal.type === "owner";
 
 export function logAudit(event: AuditEvent): void {
@@ -96,7 +107,10 @@ function eventOf(
   };
 }
 
-/** The single entry point for every operation: authorize, validate, precondition, resolve, run, then audit. */
+/**
+ * The single entry point for every operation: authorize the scope, validate, precondition, resolve, authorize the
+ * resource and quotas, run, then audit. A 403 from the authorizer is recorded as denied.
+ */
 export class Executor {
   private readonly byName: ReadonlyMap<string, Operation>;
 
@@ -118,7 +132,7 @@ export class Executor {
     let resolved: unknown;
     let result: unknown;
     try {
-      if (!(await this.deps.hooks.authorize({ principal: ctx.principal, operation }))) {
+      if (!(await this.authorize(ctx, operation, "scope"))) {
         denied = true;
         throw new AppError(403, "forbidden", msg("operation_forbidden", { op: name }));
       }
@@ -126,15 +140,32 @@ export class Executor {
       input = parsed;
       if (operation.precondition) await operation.precondition(ctx, parsed);
       resolved = operation.resolve ? await operation.resolve(ctx, parsed) : undefined;
+      if (!(await this.authorize(ctx, operation, "access", parsed, resolved))) {
+        denied = true;
+        throw new AppError(403, "forbidden", msg("operation_forbidden", { op: name }));
+      }
       result = await this.record(operation, parsed, resolved, () => operation.run(ctx, parsed, resolved));
     } catch (e) {
       const error = toAppError(e);
+      if (error.status === 403) denied = true;
       const status: EventStatus = denied ? "denied" : "error";
       this.emit(eventOf(id, operation, ctx, started, { status, input, resolved, error }));
       throw e;
     }
     this.emit(eventOf(id, operation, ctx, started, { status: "ok", input, resolved, result }));
     return result;
+  }
+
+  private authorize(
+    ctx: OperationContext,
+    operation: Operation,
+    phase: "scope" | "access",
+    input?: Record<string, unknown>,
+    resolved?: unknown,
+  ): Promise<boolean> {
+    return Promise.resolve(
+      this.deps.hooks.authorize({ principal: ctx.principal, operation, host: ctx.host, phase, input, resolved }),
+    );
   }
 
   private emit(event: AuditEvent): void {

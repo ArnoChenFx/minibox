@@ -1,7 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 
+import { OWNER, type Principal } from "./operations/types";
 import type { SessionStore } from "./sessions";
+import type { TokenStore } from "./tokens/store";
 
 export const COOKIE_NAME = "minibox_session";
 /** The cookie that used to hold the raw access key. It is never read, only cleared. */
@@ -31,26 +33,41 @@ export function parseCookies(header: string | null): Record<string, string> {
   return out;
 }
 
-/** Who a request acts for. `sessionId` is `null` for a bearer request, which carries the access key itself. */
+/**
+ * Who a request acts for. `sessionId` is set for a browser session and null for a bearer request.
+ * A bearer request is the owner when the secret is the access key, or a token principal when it is an agent API token.
+ */
 export interface Caller {
   sessionId: string | null;
+  principal: Principal;
 }
 
 /**
  * Resolves a request to its caller, or `null` when it is not signed in. A request with an `Authorization: Bearer`
- * header is judged by that header alone, so a wrong key cannot fall back to a cookie. Otherwise the session cookie
- * must hold a live session token. Resolving a session counts as use, which renews it under sliding renewal.
+ * header is judged by that header alone, so a wrong key cannot fall back to a cookie. The access key is the owner.
+ * Any other bearer secret is an agent API token: the server compares its hash, and a revoked or unknown token is
+ * rejected. A token past its rate limit throws 429. Otherwise the session cookie must hold a live session token.
+ * Resolving a session counts as use, which renews it under sliding renewal.
  */
-export function authenticate(req: Request, accessKey: string, sessions: SessionStore): Caller | null {
+export function authenticate(
+  req: Request,
+  accessKey: string,
+  sessions: SessionStore,
+  tokens?: TokenStore,
+  ip = "unknown",
+): Caller | null {
   const auth = req.headers.get("authorization");
   if (auth && /^bearer\s+/i.test(auth)) {
     const key = auth.replace(/^bearer\s+/i, "").trim();
-    return key !== "" && safeEqual(key, accessKey) ? { sessionId: null } : null;
+    if (key === "") return null;
+    if (safeEqual(key, accessKey)) return { sessionId: null, principal: OWNER };
+    const principal = tokens?.authenticate(key, ip) ?? null;
+    return principal ? { sessionId: null, principal } : null;
   }
   const token = parseCookies(req.headers.get("cookie"))[COOKIE_NAME];
   if (!token) return null;
   const session = sessions.touch(token);
-  return session ? { sessionId: session.id } : null;
+  return session ? { sessionId: session.id, principal: OWNER } : null;
 }
 
 export const MIN_ACCESS_KEY_LENGTH = 20;

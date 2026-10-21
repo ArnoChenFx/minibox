@@ -17,6 +17,7 @@ import {
 } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
 import { requireRevision } from "../specs/revision";
+import { boxVisible, ttlFor, viewFromBox } from "../tokens/model";
 import { defineOperation } from "./define";
 import { BoxSchema, BoxWithStatsSchema, StatsSchema } from "./schemas";
 import {
@@ -67,7 +68,9 @@ export const boxList = defineOperation({
     name: "list_boxes",
     description: "List the boxes on this host, with the current resource usage of running boxes.",
   },
-  run: async ({ host }, input) => ({ boxes: await listBoxes(host, { withStats: input.stats }) }),
+  run: async ({ host, principal }, input) => ({
+    boxes: (await listBoxes(host, { withStats: input.stats })).filter((box) => boxVisible(principal, viewFromBox(box))),
+  }),
 });
 
 export const boxGet = defineOperation({
@@ -105,6 +108,7 @@ export const boxCreate = defineOperation({
     cpus: cpusWithDefault(DEFAULT_RESOURCES.cpus),
     memoryMb: memoryWithDefault(DEFAULT_RESOURCES.memoryMb),
     profile: boxProfile(),
+    ttlSec: ttl("create"),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/boxes", body: true, status: 201 }],
@@ -125,7 +129,8 @@ export const boxCreate = defineOperation({
       cpus: input.cpus,
       memoryMb: input.memoryMb,
       profile: input.profile,
-      createdBy: principal.type,
+      createdBy: principal.id,
+      ttlSec: ttlFor(principal, input.ttlSec),
     }),
   }),
 });

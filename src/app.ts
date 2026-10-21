@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { ActivityLog } from "./activity";
 import { LoginLimiter } from "./auth";
 import type { Config } from "./config";
-import { sessionsPath } from "./data-dir";
+import { sessionsPath, tokensPath } from "./data-dir";
 import { createDockerRuntime } from "./docker/runtime";
 import { OutputStore } from "./events/outputs";
 import { createRedactor, type Redactor } from "./events/redact";
@@ -12,11 +12,13 @@ import { EventStore, type StoredEvent } from "./events/store";
 import type { HostMonitor } from "./host/metrics";
 import { createLocalHost, HostRegistry } from "./host/registry";
 import { Bus } from "./lib/bus";
-import { Executor, type ExecutorHooks, logAudit, ownerOnly, type AuditEvent } from "./operations/executor";
+import { Executor, type ExecutorHooks, logAudit, type AuditEvent } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
 import type { Runtime } from "./runtime";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
+import { authorizeOperation } from "./tokens/authorize";
+import { TokenStore } from "./tokens/store";
 
 /** What the in-process bus carries. Later producers (task progress, box status) add their topics here. */
 export type AppTopics = {
@@ -37,6 +39,7 @@ export interface App {
   operations: Executor;
   throttle: LoginLimiter;
   sessions: SessionStore;
+  tokens: TokenStore;
   version: string;
   startedAt: Date;
 }
@@ -77,7 +80,12 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const local = createLocalHost(cfg, deps.runtime ?? createDockerRuntime(cfg.dockerSocket), specs);
   hosts.add(local);
   const activity = new ActivityLog();
-  const redactor = createRedactor({ knownSecrets: [cfg.accessKey] });
+  const knownSecrets = [cfg.accessKey];
+  const redactor = createRedactor({ knownSecrets });
+  const tokens = new TokenStore({
+    file: tokensPath(cfg.dataDir),
+    secrets: { add: (secret) => knownSecrets.push(secret) },
+  });
   const events = openEventStore(deps.eventsPath ?? join(cfg.dataDir, "events.db"), redactor);
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const bus = new Bus<AppTopics>();
@@ -99,11 +107,12 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     operations: new Executor(OPERATIONS, {
       activity,
       hooks: {
-        authorize: deps.hooks?.authorize ?? ownerOnly,
+        authorize: deps.hooks?.authorize ?? authorizeOperation,
         audit: deps.hooks?.audit ?? recordAudit(events, bus),
       },
     }),
     throttle: deps.throttle ?? new LoginLimiter(),
+    tokens,
     sessions:
       deps.sessions ??
       new SessionStore({

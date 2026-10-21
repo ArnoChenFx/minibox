@@ -846,5 +846,61 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"events\":[{\"seq\":39,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"1\"},\"error\":{\"code\":\"precondition_failed\",\"status\":412}},{\"seq\":38,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"\"},\"error\":{\"code\":\"precondition_required\",\"status\":428}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
+  },
+  {
+    "step": "create a readonly token",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"names\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+  },
+  {
+    "step": "list tokens",
+    "method": "GET",
+    "path": "/api/tokens",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tokens\":[{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"names\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}]}"
+  },
+  {
+    "step": "create a token with no scope",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Choose a preset or at least one scope.\",\"key\":\"token_scope_required\",\"details\":{\"field\":\"scopes\"}}}"
+  },
+  {
+    "step": "create a duplicate token name",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A token named “ci” already exists.\",\"key\":\"token_name_taken\",\"params\":{\"name\":\"ci\"}}}"
+  },
+  {
+    "step": "revoke the readonly token",
+    "method": "DELETE",
+    "path": "/api/tokens/<tokenId>?deleteCreated=false",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"names\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"},\"deletedBoxes\":[]}"
+  },
+  {
+    "step": "revoke the readonly token again",
+    "method": "DELETE",
+    "path": "/api/tokens/<tokenId>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Token not found.\",\"key\":\"token_not_found\"}}"
+  },
+  {
+    "step": "revoke a missing token",
+    "method": "DELETE",
+    "path": "/api/tokens/missing",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Token not found.\",\"key\":\"token_not_found\"}}"
   }
 ]

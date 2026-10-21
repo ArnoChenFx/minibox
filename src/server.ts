@@ -4,6 +4,7 @@ import { type App, createApp } from "./app";
 import {
   authenticate,
   clearLegacyKeyCookie,
+  clientAddress,
   isSecureRequest,
   isWeakAccessKey,
   MIN_ACCESS_KEY_LENGTH,
@@ -21,6 +22,7 @@ import { matchRoute } from "./routes/router";
 import { getBox } from "./services/boxes";
 import { reconcileHost } from "./services/reconcile";
 import { serveFile } from "./static";
+import { canExec, viewFromBox } from "./tokens/model";
 import { resolveVersion } from "./version";
 import { type TerminalData, terminalHandlers } from "./ws/terminal";
 
@@ -33,7 +35,13 @@ async function handleApi(app: App, req: Request, url: URL, server: Server<Termin
   const m = matchRoute(routes, req.method, url.pathname);
   if (m === null) throw new AppError(404, "not_found", msg("api_not_found"));
   if (m === "method_not_allowed") throw new AppError(405, "method_not_allowed", msg("method_not_allowed"));
-  const caller = authenticate(req, app.cfg.accessKey, app.sessions);
+  const caller = authenticate(
+    req,
+    app.cfg.accessKey,
+    app.sessions,
+    app.tokens,
+    clientAddress(req, server.requestIP(req)?.address, app.cfg.trustProxy),
+  );
   if (!m.route.public && caller === null) {
     throw new AppError(401, "unauthorized", msg("unauthorized"));
   }
@@ -53,7 +61,14 @@ const redirect = (location: string) => new Response(null, { status: 302, headers
 
 async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
   const path = url.pathname;
-  const authed = authenticate(req, app.cfg.accessKey, app.sessions) !== null;
+  const authed =
+    authenticate(
+      req,
+      app.cfg.accessKey,
+      app.sessions,
+      app.tokens,
+      clientAddress(req, undefined, app.cfg.trustProxy),
+    ) !== null;
   if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) {
     const file = await serveFile(app.cfg.webDir, path === "/favicon.ico" ? "/assets/favicon-32.png" : path);
     if (file) return file;
@@ -74,7 +89,7 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
 }
 
 export function startServer(app: App): Server<TerminalData> {
-  const term = terminalHandlers(app.sessions);
+  const term = terminalHandlers(app.sessions, app.tokens);
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
   );
@@ -91,12 +106,26 @@ export function startServer(app: App): Server<TerminalData> {
         guardRequest(req, app.cfg);
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-          const caller = authenticate(req, app.cfg.accessKey, app.sessions);
+          const caller = authenticate(
+            req,
+            app.cfg.accessKey,
+            app.sessions,
+            app.tokens,
+            clientAddress(req, server.requestIP(req)?.address, app.cfg.trustProxy),
+          );
           if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
           const host = app.hosts.get();
           const box = await getBox(host, decodeURIComponent(tm[1] ?? ""));
           if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
-          const data: TerminalData = { boxId: box.id, host, sessionId: caller.sessionId };
+          if (!canExec(caller.principal, viewFromBox(box))) {
+            throw new AppError(403, "forbidden", msg("operation_forbidden", { op: "exec" }));
+          }
+          const data: TerminalData = {
+            boxId: box.id,
+            host,
+            sessionId: caller.sessionId,
+            tokenId: caller.principal.type === "token" ? caller.principal.id : null,
+          };
           if (server.upgrade(req, { data })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
@@ -176,6 +205,7 @@ async function boot(): Promise<void> {
     app.retention.stop();
     app.throttle.stop();
     app.sessions.stop();
+    app.tokens.stop();
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);

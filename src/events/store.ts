@@ -21,6 +21,21 @@ export interface EventFilter {
   readonly run?: string;
   /** Epoch milliseconds. Events at or after this time match. */
   readonly since?: number;
+  /**
+   * Limits added for a token or a box-self principal. Combined with the caller's filters: a caller can narrow the
+   * result, not widen it. Absent for the owner and for an admin token that may read the whole log.
+   */
+  readonly visible?: EventVisibility;
+}
+
+/**
+ * Which events a non-owner may read. `boxes: null` means every event about a box, plus the principal's own events.
+ * `hosts: null` means every host. An empty id list matches no box; the principal's own events still match.
+ */
+export interface EventVisibility {
+  readonly principalId: string;
+  readonly boxes: { readonly ids: readonly string[]; readonly names: readonly string[] } | null;
+  readonly hosts: readonly string[] | null;
 }
 
 export interface EventPage {
@@ -169,7 +184,34 @@ function filterSql(filter: EventFilter): { sql: string; params: (string | number
     clauses.push("ts >= ?");
     params.push(filter.since);
   }
+  if (filter.visible) {
+    const visible = visibleSql(filter.visible);
+    clauses.push(visible.sql);
+    params.push(...visible.params);
+  }
   return { sql: clauses.map((clause) => ` AND ${clause}`).join(""), params };
+}
+
+/** `0` is a false condition, so an empty id list does not emit `IN ()`. */
+function inList(column: string, values: readonly string[], params: string[]): string {
+  if (values.length === 0) return "0";
+  params.push(...values);
+  return `${column} IN (${values.map(() => "?").join(", ")})`;
+}
+
+function visibleSql(visible: EventVisibility): { sql: string; params: string[] } {
+  const params: string[] = [visible.principalId];
+  let boxes: string;
+  if (visible.boxes === null) {
+    boxes = "target_kind = 'box'";
+  } else {
+    const ids = inList("target_id", visible.boxes.ids, params);
+    const names = inList("target_name", visible.boxes.names, params);
+    boxes = `target_kind = 'box' AND (${ids} OR ${names})`;
+  }
+  const clauses = [`(principal_id = ? OR (${boxes}))`];
+  if (visible.hosts !== null) clauses.push(inList("host_id", visible.hosts, params));
+  return { sql: clauses.join(" AND "), params };
 }
 
 /** The same rule as `filterSql`, for events that have not been read back from the database. */
@@ -183,7 +225,22 @@ export function matchesFilter(event: StoredEvent, filter: EventFilter): boolean 
   if (filter.status !== undefined && event.status !== filter.status) return false;
   if (filter.run !== undefined && event.run !== filter.run) return false;
   if (filter.since !== undefined && event.ts < filter.since) return false;
+  if (filter.visible && !matchesVisible(event, filter.visible)) return false;
   return true;
+}
+
+function matchesVisible(event: StoredEvent, visible: EventVisibility): boolean {
+  const own = event.principal.id === visible.principalId;
+  const target = event.target;
+  let aboutBox = false;
+  if (visible.boxes === null) {
+    aboutBox = target?.kind === "box";
+  } else if (target?.kind === "box") {
+    aboutBox =
+      (target.id !== undefined && visible.boxes.ids.includes(target.id)) || visible.boxes.names.includes(target.name);
+  }
+  if (!own && !aboutBox) return false;
+  return visible.hosts === null || visible.hosts.includes(event.hostId);
 }
 
 function toEvent(row: Row): StoredEvent {
