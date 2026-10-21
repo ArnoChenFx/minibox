@@ -10,11 +10,14 @@ import { type PreviewDeps, resolvePreview } from "../src/preview/proxy";
 import { ActivityPulse } from "../src/services/activity-pulse";
 import * as boxes from "../src/services/boxes";
 import type { Box } from "../src/services/boxes";
+import { copyFiles, downloadArchive, listFiles, readFile, uploadArchive, writeFile } from "../src/services/files";
+import { fileArchive } from "../src/services/files-tar";
 import { type LifecycleOptions, LifecycleWatcher } from "../src/services/lifecycle";
 import { BoxPower } from "../src/services/power";
 import { rebuildBox } from "../src/services/rebuild";
 import { reconcileHost } from "../src/services/reconcile";
 import type { RecordNote } from "../src/services/terminals";
+import { createVolume, type VolumeView } from "../src/services/volumes";
 import { ttlEndsAt, ttlExpired } from "../src/specs/lifetime";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
@@ -698,5 +701,142 @@ describe("preview resolution", () => {
     const error = await rejectionOf(resolvePreview(app.hosts, previewUrl("preview-no-ip"), previewDeps()));
     expect(error).toMatchObject({ status: 502, key: "preview_no_ip" });
     expect(app.pulse.isHeld(box.boxId)).toBe(false);
+  });
+});
+
+/** A box that mounts its own volume, quiet for two minutes, with a 30 second window and a low CPU sample. */
+async function quietMountedBox(name: string): Promise<{ box: Box; volume: VolumeView }> {
+  const volume = await createVolume(host, { name: `${name}-notes`, role: null, createdBy: "owner" });
+  const box = await boxes.createBox(host, {
+    name,
+    cpus: 1,
+    memoryMb: 256,
+    idleTimeoutSec: 30,
+    mounts: [{ volume: volume.id, path: "/workspace", mode: "rw" }],
+  });
+  app.pulse.touch(box.boxId, "exec", Date.now() - 120_000);
+  await primeSampler(host, box);
+  runtime.seedVolumeFile(volume.engineName, "seed.txt", { type: "file", content: Buffer.from("seed") });
+  return { box, volume };
+}
+
+describe("file API activity", () => {
+  const fileCalls: [string, (volumeRef: string) => Promise<unknown>][] = [
+    ["read", (ref) => readFile(host, ref, { path: "seed.txt" })],
+    ["write", (ref) => writeFile(host, ref, { path: "new.txt", content: "x" })],
+    ["list", (ref) => listFiles(host, ref, {})],
+    ["copy", (ref) => copyFiles(host, ref, { from: "seed.txt", to: "copy.txt" })],
+    ["download", (ref) => downloadArchive(host, ref, { path: "seed.txt" })],
+    [
+      "upload",
+      (ref) =>
+        uploadArchive(host, ref, {
+          path: "/",
+          content: fileArchive("up.txt", Buffer.from("up")).toString("base64"),
+          encoding: "base64",
+        }),
+    ],
+  ];
+
+  test.each(fileCalls)("a %s call refreshes the heartbeat of a box that mounts the volume", async (_label, call) => {
+    const { box, volume } = await quietMountedBox("files-touch");
+    await call(volume.id);
+    expect(app.pulse.lastAt(box.boxId)).toBeGreaterThan(Date.now() - 5_000);
+  });
+
+  test("a file call keeps its box awake while a quiet box on another volume sleeps", async () => {
+    const { box, volume } = await quietMountedBox("files-awake");
+    const neighbour = await quietMountedBox("files-neighbour");
+
+    await writeFile(host, volume.id, { path: "notes.md", content: "hello\n" });
+    const report = await watcher().tick();
+
+    expect(report.slept).toContain(neighbour.box.boxId);
+    expect(report.slept).not.toContain(box.boxId);
+    expect(await boxes.getBox(host, box.boxId)).toMatchObject({ running: true, desired: "running" });
+  });
+
+  test("a file call holds its boxes while it runs, so idle sleep cannot cut it short", async () => {
+    const { box, volume } = await quietMountedBox("files-held");
+    const gate = runtime.hold("putArchive");
+
+    const pending = writeFile(host, volume.id, { path: "slow.txt", content: "x" });
+    expect(app.pulse.isHeld(box.boxId)).toBe(true);
+    expect((await watcher().tick()).slept).not.toContain(box.boxId);
+
+    gate.release();
+    await pending;
+    expect(app.pulse.isHeld(box.boxId)).toBe(false);
+    expect(app.pulse.lastAt(box.boxId)).toBeGreaterThan(Date.now() - 5_000);
+  });
+
+  test("a failed file call still releases its boxes", async () => {
+    const { box, volume } = await quietMountedBox("files-failed");
+
+    const error = await rejectionOf(readFile(host, volume.id, { path: "missing.txt" }));
+    expect(error).toMatchObject({ status: 404 });
+    expect(app.pulse.isHeld(box.boxId)).toBe(false);
+  });
+
+  test("a file call on a volume no box mounts leaves every heartbeat alone", async () => {
+    const { box } = await quietMountedBox("files-mounted");
+    const loose = await createVolume(host, { name: "files-loose", role: null, createdBy: "owner" });
+    const before = app.pulse.lastAt(box.boxId);
+
+    await writeFile(host, loose.id, { path: "alone.txt", content: "x" });
+    expect(app.pulse.lastAt(box.boxId)).toBe(before);
+  });
+
+  test("a file call refreshes every box that mounts the volume, read-write or read-only", async () => {
+    const { box, volume } = await quietMountedBox("files-writer");
+    const reader = await boxes.createBox(host, {
+      name: "files-reader",
+      cpus: 1,
+      memoryMb: 256,
+      mounts: [{ volume: volume.id, path: "/data", mode: "ro" }],
+    });
+    app.pulse.touch(reader.boxId, "exec", Date.now() - 120_000);
+
+    await writeFile(host, volume.id, { path: "shared.txt", content: "x" });
+    expect(app.pulse.lastAt(box.boxId)).toBeGreaterThan(Date.now() - 5_000);
+    expect(app.pulse.lastAt(reader.boxId)).toBeGreaterThan(Date.now() - 5_000);
+  });
+
+  test("a file call does not start a box that is asleep", async () => {
+    const { box, volume } = await quietMountedBox("files-asleep");
+    await watcher().tick();
+    expect(await boxes.getBox(host, box.boxId)).toMatchObject({ running: false, sleeping: true });
+    const starts = runtime.callsTo("startContainer").length;
+
+    expect((await readFile(host, volume.id, { path: "seed.txt" })).content).toBe("seed");
+    await writeFile(host, volume.id, { path: "later.txt", content: "later" });
+
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
+    expect(await boxes.getBox(host, box.boxId)).toMatchObject({
+      running: false,
+      desired: "stopped",
+      sleeping: true,
+      stopReason: "idle",
+    });
+  });
+
+  test("a file call touches only the boxes that mount the volume on its own host", async () => {
+    const { lab } = addSecondHost();
+    const labVolume = await createVolume(lab, { name: "lab-notes", role: null, createdBy: "owner" });
+    const labBox = await boxes.createBox(lab, {
+      name: "lab-files",
+      cpus: 1,
+      memoryMb: 256,
+      mounts: [{ volume: labVolume.id, path: "/workspace", mode: "rw" }],
+    });
+    app.pulse.touch(labBox.boxId, "exec", Date.now() - 120_000);
+    const { volume } = await quietMountedBox("files-local");
+    const labBefore = app.pulse.lastAt(labBox.boxId);
+
+    await writeFile(host, volume.id, { path: "local.txt", content: "x" });
+    expect(app.pulse.lastAt(labBox.boxId)).toBe(labBefore);
+
+    await writeFile(lab, labVolume.id, { path: "lab.txt", content: "x" });
+    expect(app.pulse.lastAt(labBox.boxId)).toBeGreaterThan(Date.now() - 5_000);
   });
 });
