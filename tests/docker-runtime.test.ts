@@ -364,6 +364,41 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "kill stops a terminal exec and its children from inside the box",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-exec-tty-kill`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        const terminal = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "sleep 317 & echo started; wait"],
+          env: ["TERM=xterm-256color"],
+          workingDir: "/",
+        });
+        let started = "";
+        terminal.stream.on("data", (chunk: Buffer) => {
+          started += chunk.toString("utf8");
+        });
+        await waitUntil(async () => started.includes("started"), "the terminal command to print");
+
+        await terminal.kill();
+        await waitUntil(async () => !(await terminal.inspect()).running, "the terminal command to stop");
+        terminal.stream.destroy();
+        expect(await shell(id, "ps | grep -c '[s]leep 317' || true")).toBe("0");
+        await expect(terminal.kill()).resolves.toBeUndefined();
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "events stop when the signal aborts",
     async () => {
       const controller = new AbortController();

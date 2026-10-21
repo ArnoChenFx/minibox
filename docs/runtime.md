@@ -24,7 +24,7 @@
 
 - 连通性：`ping`、`info`
 - 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerDiff`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`
-- exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。非 TTY 命令经一层 `/bin/sh` 包装运行：包装脚本把自己的 pid 写进 `/tmp/.minibox-exec-<随机>.pid`，命令结束后删除该文件。`kill()` 在容器内、以该 exec 的同一用户执行一段脚本：先用 `SIGSTOP` 冻结整棵进程树，再逐个 `SIGKILL`。它从不向宿主机发信号，Docker 报告的宿主机 pid 只作参考，因此不会误伤宿主机上的其它进程，也不受运行 MiniBox 的 uid 限制。任一进程未能结束时 `kill()` 抛出 `engine` 错误，exec 仍在运行，pid 文件保留，可以再次调用。exec 已结束时 `kill()` 直接返回。交互终端没有 pid 文件，`kill()` 会被拒绝。这一层要求容器里有 `/bin/sh`、`cat` 与 `rm`。
+- exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout` 与 `stderr`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。所有 exec（包括交互终端）都经一层 `/bin/sh` 包装运行：包装脚本把自己的 pid 写进 `/tmp/.minibox-exec-<随机>.pid`，命令结束后删除该文件。`kill()` 对两种 exec 都可用，在容器内、以该 exec 的同一用户执行一段脚本：先用 `SIGSTOP` 冻结整棵进程树，再逐个 `SIGKILL`。它从不向宿主机发信号，Docker 报告的宿主机 pid 只作参考，因此不会误伤宿主机上的其它进程，也不受运行 MiniBox 的 uid 限制。任一进程未能结束时 `kill()` 抛出 `engine` 错误，exec 仍在运行，pid 文件保留，可以再次调用。exec 已结束时 `kill()` 直接返回。Web 终端断开时用它结束其中的 tmux attach 进程；tmux 服务器不在这棵进程树里，会话因此保留。这一层要求容器里有 `/bin/sh`、`cat` 与 `rm`。
 - 事件：`events`，按标签与类型过滤；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
 - 卷：`inspectVolume`、`createVolume`、`removeVolume`

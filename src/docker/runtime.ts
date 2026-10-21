@@ -397,13 +397,13 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
 
     async startExec(containerId, spec) {
-      // Absent tty is the web terminal: one stream, no wrapper. Command exec sets tty false so stdout and stderr stay
-      // separate, and the wrapper records the command's in-box pid so kill() can find its process tree.
+      // Every exec, terminal included, records its in-box pid so kill() can stop its process tree from inside the box.
+      // Absent tty is the web terminal: one stream. Command exec sets tty false so stdout and stderr stay separate.
       const tty = spec.tty !== false;
-      const marker = tty ? null : `/tmp/.minibox-exec-${randomBytes(8).toString("hex")}.pid`;
+      const marker = `/tmp/.minibox-exec-${randomBytes(8).toString("hex")}.pid`;
       const exec = await call(() =>
         docker.getContainer(containerId).exec({
-          Cmd: marker ? ["/bin/sh", "-c", RUN_WRAPPER, "minibox-exec", marker, ...spec.cmd] : spec.cmd,
+          Cmd: ["/bin/sh", "-c", RUN_WRAPPER, "minibox-exec", marker, ...spec.cmd],
           AttachStdin: true,
           AttachStdout: true,
           AttachStderr: true,
@@ -436,7 +436,6 @@ export function createDockerRuntime(socketPath: string): Runtime {
           return { running: info.Running, exitCode: info.ExitCode, pid: info.Pid || null };
         },
         async kill() {
-          if (!marker) throw new RuntimeError("invalid", "a terminal exec has no recorded process to stop");
           await stopExec(docker, containerId, exec.id, marker, spec.user);
         },
       };
