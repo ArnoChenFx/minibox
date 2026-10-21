@@ -1084,6 +1084,7 @@ export default {
     "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
   "err.tool_install_failed": "Installing “{id}” failed: {detail}",
   "err.tool_install_timeout": "Installing “{id}” timed out.",
+  "err.tool_detect_failed": "Could not check which tools are installed in this box: {detail}",
   "err.tool_reconcile_failed": "Could not install the requested tools: {detail}.",
   "err.tool_ids_invalid": "tools must be an array of catalog ids (letters, digits and hyphens), at most 32 entries.",
   "err.tool_version_invalid":
