@@ -3,6 +3,7 @@ import { authRoutes } from "./auth";
 import { eventRoutes } from "./events";
 import { operationRoutes } from "./operations";
 import type { Route } from "./router";
+import { sshRoutes } from "./ssh";
 import { systemRoutes } from "./system";
 import { taskRoutes } from "./tasks";
 
@@ -11,5 +12,6 @@ export const routes: Route[] = [
   ...systemRoutes,
   ...eventRoutes,
   ...taskRoutes,
+  ...sshRoutes,
   ...operationRoutes(OPERATIONS),
 ];

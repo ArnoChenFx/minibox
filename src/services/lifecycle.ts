@@ -11,6 +11,11 @@ import { stopBox } from "./boxes";
 import type { ExecManager } from "./exec";
 import type { RecordNote, TerminalService } from "./terminals";
 
+/** Commands that SSH clients run with no input. A running one keeps its box awake, as a background exec does. */
+export interface SshCommands {
+  hasCommandRunning(boxId: string): boolean;
+}
+
 export interface LifecycleOptions {
   readonly hosts: HostRegistry;
   readonly pulse: ActivityPulse;
@@ -19,6 +24,7 @@ export interface LifecycleOptions {
   readonly tasks: TaskManager;
   readonly cfg: Config;
   readonly record: RecordNote;
+  readonly ssh?: SshCommands;
   /** Override the tick interval in tests. */
   readonly everyMs?: number;
   /** Clock for tests. */
@@ -110,6 +116,7 @@ export class LifecycleWatcher {
 
     if (this.options.terminals.hasOpenAttachment(spec.containerId)) return;
     if (this.options.execs.hasBackground(spec.containerId)) return;
+    if (this.options.ssh?.hasCommandRunning(spec.id)) return;
     if (this.options.tasks.hasRunningForBox(spec.id, spec.containerId)) return;
 
     const last = this.options.pulse.lastAt(spec.id) ?? Date.parse(spec.createdAt);

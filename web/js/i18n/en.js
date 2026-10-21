@@ -140,6 +140,14 @@ export default {
   "err.terminal_not_running": "The box is not running, so a terminal can't be opened.",
   "err.terminal_read_only": "This terminal is read-only. Take over the session in the console to type.",
   "err.ws_upgrade_failed": "WebSocket upgrade failed.",
+  "err.ssh_bearer_required":
+    "SSH needs an Authorization Bearer access key or agent token. A browser session cannot open an SSH connection.",
+  "err.ssh_forbidden": "This credential may not open an SSH connection to a box.",
+  "err.ssh_forbidden_hint":
+    "Give the token the box:ssh scope, for example with the operator or admin preset. Forwarding a port also needs port:expose.",
+  "err.ssh_box_limit": "This box already has {max} SSH connections open.",
+  "err.ssh_total_limit": "MiniBox already has {max} SSH connections open.",
+  "err.ssh_limit_hint": "Close an SSH session you no longer need, then try again.",
   "err.too_many_attempts": "Too many attempts. Please try again in 5 minutes.",
   "err.stream_limit":
     "Too many live connections are open (at most {max}). Close a MiniBox tab or wait, then try again.",

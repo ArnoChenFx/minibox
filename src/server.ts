@@ -33,10 +33,12 @@ import { isSessionName } from "./tmux/format";
 import { boxVisible, scopeAllowed, viewOfBox } from "./tokens/model";
 import { resolveVersion } from "./version";
 import { type SocketData, socketHandlers } from "./ws/socket";
+import type { SshSocketData } from "./ws/ssh";
 import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData } from "./ws/terminal";
 
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
+const SSH_PATH = /^\/api\/ssh\/([^/]+)$/;
 const PROXY_HINT =
   "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
@@ -107,6 +109,7 @@ export function startServer(app: App): Server<SocketData> {
     tokens: app.tokens,
     terminals: app.terminals,
     pulse: app.pulse,
+    ssh: app.ssh,
   });
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
@@ -151,6 +154,16 @@ export function startServer(app: App): Server<SocketData> {
             principal,
           };
           if (server.upgrade(req, { data })) return undefined;
+          throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
+        }
+        const sm = SSH_PATH.exec(url.pathname);
+        if (sm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+          const caller = await callerOf(app, req, server);
+          if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
+          const lease = await app.ssh.enter(app.hosts.get(), decodeURIComponent(sm[1] ?? ""), caller);
+          const data: SshSocketData = { kind: "ssh", lease };
+          if (server.upgrade(req, { data })) return undefined;
+          lease.release();
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
         if (isPreviewPath(url.pathname)) {

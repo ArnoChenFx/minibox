@@ -27,6 +27,8 @@ import { LifecycleWatcher } from "./services/lifecycle";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
+import { SshGateway } from "./ssh/gateway";
+import { loadHostKey } from "./ssh/host-key";
 import { TaskManager } from "./tasks/manager";
 import { TaskStore } from "./tasks/store";
 import type { TaskStreamEvent } from "./tasks/types";
@@ -71,6 +73,7 @@ export interface App {
   streams: StreamSlots;
   pulse: ActivityPulse;
   lifecycle: LifecycleWatcher;
+  ssh: SshGateway;
   version: string;
   startedAt: Date;
 }
@@ -174,6 +177,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     takeoverIdleMs: cfg.takeoverIdleSec * 1000,
     onActivity: (boxId, kind) => pulse.touch(boxId, kind),
   });
+  const ssh = new SshGateway({ hostKey: loadHostKey(cfg.dataDir), pulse, record: recordNote });
   const lifecycle = new LifecycleWatcher({
     hosts,
     pulse,
@@ -182,6 +186,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     tasks,
     cfg,
     record: recordNote,
+    ssh,
   });
   return {
     cfg,
@@ -219,6 +224,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     streams: new StreamSlots(cfg.streamMaxConnections),
     pulse,
     lifecycle,
+    ssh,
     version,
     startedAt: new Date(),
   };
