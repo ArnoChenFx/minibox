@@ -3,7 +3,7 @@
   "info": {
     "title": "MiniBox API",
     "version": "0.3.0",
-    "description": "Generated from the operation registry: boxes, snapshots, templates and the event log. Sign-in, host and activity routes, and the event stream (GET /api/events/stream, text/event-stream), are not listed yet.",
+    "description": "Generated from the operation registry: boxes, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the event and task streams (GET /api/events/stream and GET /api/tasks/{id}/events, text/event-stream), are not listed yet.",
     "license": {
       "name": "MIT"
     }
@@ -17,6 +17,9 @@
     },
     {
       "name": "templates"
+    },
+    {
+      "name": "tasks"
     },
     {
       "name": "events"
@@ -802,7 +805,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1238,7 +1241,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1383,7 +1386,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1886,7 +1889,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1896,7 +1899,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2320,7 +2323,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2714,7 +2717,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3108,7 +3111,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3542,7 +3545,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4017,7 +4020,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4027,7 +4030,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4199,7 +4202,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4354,7 +4357,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4607,32 +4610,19 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Created.",
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "snapshot": {
-                      "type": "object",
-                      "properties": {
-                        "ref": {
-                          "type": "string"
-                        },
-                        "source": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "ref",
-                        "source"
-                      ],
-                      "additionalProperties": false
+                    "taskId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "snapshot"
+                    "taskId"
                   ],
                   "additionalProperties": false
                 }
@@ -4670,7 +4660,17 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4722,7 +4722,32 @@
         },
         "x-kind": "write",
         "x-scope": "snapshot:write",
-        "x-async": false,
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "snapshot": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "snapshot"
+          ],
+          "additionalProperties": false
+        },
         "x-cli": "snapshot create"
       }
     },
@@ -5103,7 +5128,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5113,7 +5138,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5261,7 +5286,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5599,7 +5624,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5677,23 +5702,19 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "OK.",
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "ref": {
-                      "type": "string"
-                    },
-                    "output": {
+                    "taskId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "ref",
-                    "output"
+                    "taskId"
                   ],
                   "additionalProperties": false
                 }
@@ -5722,6 +5743,16 @@
           },
           "403": {
             "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5773,7 +5804,19 @@
         },
         "x-kind": "write",
         "x-scope": "template:write",
-        "x-async": false,
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref"
+          ],
+          "additionalProperties": false
+        },
         "x-cli": "template build"
       }
     },
@@ -5859,7 +5902,7 @@
             }
           },
           "404": {
-            "description": "The box, snapshot or template named in the path does not exist.",
+            "description": "The box, snapshot, template or task named in the path does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5913,6 +5956,742 @@
         "x-scope": "template:delete",
         "x-async": false,
         "x-cli": "template rm"
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "operationId": "task.list",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List tasks",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "interrupted"
+              ],
+              "description": "Only tasks in this status. Omit it to list every status."
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Tasks per page, between 1 and 200. Defaults to 50. Newest first."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tasks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "op": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "running",
+                              "succeeded",
+                              "failed",
+                              "cancelled",
+                              "interrupted"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "hostId": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "finishedAt": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "object",
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "params": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": [
+                                    "string",
+                                    "number"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message",
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "result": {},
+                          "output": {
+                            "type": "string"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          },
+                          "logSeq": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "op",
+                          "status",
+                          "summary",
+                          "hostId",
+                          "createdAt",
+                          "updatedAt",
+                          "truncated",
+                          "logSeq"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "tasks"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "task:read",
+        "x-async": false
+      }
+    },
+    "/api/tasks/{id}": {
+      "get": {
+        "operationId": "task.get",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get a task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "Task id, a 26-character ULID."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "cancelled",
+                        "interrupted"
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "hostId": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "params": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": [
+                              "string",
+                              "number"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "result": {},
+                    "output": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "logSeq": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "op",
+                    "status",
+                    "summary",
+                    "hostId",
+                    "createdAt",
+                    "updatedAt",
+                    "truncated",
+                    "logSeq"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "task:read",
+        "x-async": false
+      }
+    },
+    "/api/tasks/{id}/cancel": {
+      "post": {
+        "operationId": "task.cancel",
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Cancel a task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "Task id, a 26-character ULID."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "cancelled",
+                        "interrupted"
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "hostId": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "params": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": [
+                              "string",
+                              "number"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "result": {},
+                    "output": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "logSeq": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "op",
+                    "status",
+                    "summary",
+                    "hostId",
+                    "createdAt",
+                    "updatedAt",
+                    "truncated",
+                    "logSeq"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template or task named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "task:write",
+        "x-async": false
       }
     },
     "/api/events": {

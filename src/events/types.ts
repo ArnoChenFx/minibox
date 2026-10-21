@@ -1,7 +1,7 @@
 /** Which interface an operation call came through. `ui` is reserved for the console's own session (#2). */
 export type Source = "ui" | "rest" | "mcp" | "cli" | "scheduler" | "system";
 
-/** `started` is reserved for long-running tasks (#16). Synchronous operations record one final status. */
+/** `started` is the first audit event of a long-running task. Synchronous operations record one final status. */
 export type EventStatus = "started" | "ok" | "error" | "denied";
 
 /** The object an event is about. `id` is absent while the object does not exist yet, as before a box is created. */
@@ -17,7 +17,7 @@ export interface PrincipalRef {
   readonly name: string;
 }
 
-/** Links an event to what it produced. Filled in once exec (#9) and tasks (#16) exist. */
+/** Links an event to what it produced. `taskId` is set for async operations. `execId` waits for exec (#9). */
 export interface EventRefs {
   readonly execId?: string;
   readonly outputRef?: string;

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { COOKIE_NAME } from "../auth";
 import { type JsonSchema, toJsonSchema } from "./jsonschema";
 import { RUN_HEADER, RUN_ID_PATTERN } from "./run";
-import { ErrorSchema } from "./schemas";
+import { ErrorSchema, TaskAcceptedSchema } from "./schemas";
 import type { Operation, RestBinding } from "./types";
 
 const PATH_PARAM = /:([A-Za-z]\w*)/g;
@@ -12,9 +12,9 @@ const ERROR_RESPONSES: Record<string, string> = {
   "400": "Invalid input, or a malformed X-Minibox-Run header.",
   "401": "Not signed in, or the access key is invalid.",
   "403": "Refused: a cross-site write, or an operation this credential may not run.",
-  "404": "The box, snapshot or template named in the path does not exist.",
+  "404": "The box, snapshot, template or task named in the path does not exist.",
   "409":
-    "The name is already taken, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+    "The name is already taken, this operation is already running, or a rebuild was requested without confirm set to true. A rebuild refusal includes a preview of the docker diff and the planned changes.",
   "415": "The request declares a body that is not JSON.",
   "412": "The If-Match revision is not the box's current revision.",
   "422": "The box would exceed the host's CPU or memory.",
@@ -118,6 +118,7 @@ function errorResponses(op: Operation, binding: RestBinding): Record<string, Jso
 
 function operationObject(op: Operation, binding: RestBinding): JsonSchema {
   const status = String(binding.status ?? 200);
+  const accepted = status === "202";
   const body = requestBody(op, binding);
   return {
     operationId: operationIdOf(op, binding),
@@ -127,14 +128,17 @@ function operationObject(op: Operation, binding: RestBinding): JsonSchema {
     ...(body ? { requestBody: body } : {}),
     responses: {
       [status]: {
-        description: status === "201" ? "Created." : "OK.",
-        content: { "application/json": { schema: toJsonSchema(op.output, "output") } },
+        description: accepted ? "Accepted. The result is stored on the task." : status === "201" ? "Created." : "OK.",
+        content: {
+          "application/json": { schema: toJsonSchema(accepted ? TaskAcceptedSchema : op.output, "output") },
+        },
       },
       ...errorResponses(op, binding),
     },
     "x-kind": op.kind,
     "x-scope": op.scope,
     "x-async": op.async,
+    ...(accepted ? { "x-task-result": toJsonSchema(op.output, "output") } : {}),
     ...(op.cli ? { "x-cli": op.cli } : {}),
     ...(op.mcp ? { "x-mcp": { name: op.mcp.name, toolset: op.mcp.toolset } } : {}),
   };
@@ -165,7 +169,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
       title: "MiniBox API",
       version,
       description:
-        "Generated from the operation registry: boxes, snapshots, templates and the event log. Sign-in, host and activity routes, and the event stream (GET /api/events/stream, text/event-stream), are not listed yet.",
+        "Generated from the operation registry: boxes, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the event and task streams (GET /api/events/stream and GET /api/tasks/{id}/events, text/event-stream), are not listed yet.",
       license: { name: "MIT" },
     },
     tags,

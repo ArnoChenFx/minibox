@@ -58,25 +58,23 @@ export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> 
   await removeLabeledImage(host, ref, host.keys.template, "template_not_found");
 }
 
-const builds = new Map<string, Promise<{ ref: string; output: string }>>();
-
-/** Build the bundled base template from templates/base/Dockerfile. Concurrent calls on one host share one build. */
-export function buildBaseTemplate(host: HostCtx): Promise<{ ref: string; output: string }> {
-  const running = builds.get(host.host.id);
-  if (running) return running;
-  const build = (async () => {
-    const k = host.keys;
-    const output = await host.runtime.buildImage({
-      contextDir: join(host.templatesDir, "base"),
-      dockerfile: "Dockerfile",
-      tag: host.baseTemplateTag,
-      labels: { [k.template]: "true", [k.templateName]: "base", [k.templateDesc]: BASE_DESCRIPTION },
-    });
-    log.info("template.built", { ref: host.baseTemplateTag });
-    return { ref: host.baseTemplateTag, output: output.slice(-4000) };
-  })().finally(() => {
-    builds.delete(host.host.id);
+/**
+ * Build the bundled base template from templates/base/Dockerfile. One build at a time is enforced by the task mutex,
+ * not here, so a direct caller can run more than one.
+ */
+export async function buildBaseTemplate(
+  host: HostCtx,
+  progress?: { readonly signal?: AbortSignal; log?(text: string): void },
+): Promise<{ ref: string; output: string }> {
+  const k = host.keys;
+  const output = await host.runtime.buildImage({
+    contextDir: join(host.templatesDir, "base"),
+    dockerfile: "Dockerfile",
+    tag: host.baseTemplateTag,
+    labels: { [k.template]: "true", [k.templateName]: "base", [k.templateDesc]: BASE_DESCRIPTION },
+    onLog: (chunk) => progress?.log?.(chunk),
+    signal: progress?.signal,
   });
-  builds.set(host.host.id, build);
-  return build;
+  log.info("template.built", { ref: host.baseTemplateTag });
+  return { ref: host.baseTemplateTag, output };
 }

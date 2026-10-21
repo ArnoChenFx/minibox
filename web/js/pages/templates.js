@@ -1,4 +1,5 @@
 import { openCreateBox } from "../components/create-box.js";
+import { openTasks, trackTask } from "../components/tasks.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, dateTime } from "../lib/format.js";
@@ -57,13 +58,16 @@ export function render(view) {
   delegate(view, {
     use: (b) => openCreateBox({ template: b.dataset.ref, onCreated: (b) => (location.hash = `#/boxes/${b.id}`) }),
     build: async (btn) => {
-      toast(t("tp.buildStarted"), { type: "info", message: t("tp.buildStartedText") });
       try {
         const r = await withBusy(btn, () => api("/api/templates/base/build", { method: "POST" }));
-        invalidateTemplates();
-        toast(t("tp.buildDone"), { message: r.ref });
-        load();
+        toast(t("tp.buildStarted"), { type: "info", message: t("tp.buildStartedText") });
+        trackTask(r.taskId);
       } catch (e) {
+        if (e.details?.taskId) {
+          toast(t("task.alreadyRunning"), { type: "info" });
+          openTasks(e.details.taskId);
+          return;
+        }
         toastError(t("tp.buildFailed"), e);
       }
     },
@@ -90,6 +94,10 @@ export function render(view) {
     },
   });
 
+  const onTask = (event) => {
+    if (event.detail?.op === "template.build") load();
+  };
+  window.addEventListener("minibox-task-done", onTask);
   load();
-  return null;
+  return () => window.removeEventListener("minibox-task-done", onTask);
 }

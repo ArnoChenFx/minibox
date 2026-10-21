@@ -43,15 +43,20 @@ export const templateBuild = defineOperation({
   summary: "Build the bundled base template",
   kind: "write",
   scope: "template:write",
-  async: false,
+  async: true,
+  conflicts: true,
   input: z.object({}),
   output: BuildResultSchema,
-  rest: [{ method: "POST", path: "/api/templates/base/build" }],
+  rest: [{ method: "POST", path: "/api/templates/base/build", status: 202 }],
   cli: "template build",
   resolve: async ({ host }) => ({ ref: host.baseTemplateTag }),
+  exclusive: ({ host }) => `template.build:${host.host.id}`,
   activity: { action: () => "template.build", target: (_input, base) => base.ref },
   audit: { target: (_input, base) => base && { kind: "template", name: base.ref } },
-  run: ({ host }) => buildBaseTemplate(host),
+  run: async ({ host, task }) => {
+    const built = await buildBaseTemplate(host, task);
+    return { ref: built.ref };
+  },
 });
 
 export const templateDelete = defineOperation({

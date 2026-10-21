@@ -93,9 +93,48 @@ export const PromotedTemplateSchema = z.object({
   name: z.string(),
 });
 
+/** The image the build produced. The build log is kept on the task, not in this result. */
 export const BuildResultSchema = z.object({
   ref: z.string(),
-  output: z.string(),
+});
+
+export const TaskStatusSchema = z.enum(["running", "succeeded", "failed", "cancelled", "interrupted"]);
+
+export const TaskErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  status: z.number().int(),
+  key: z.string().optional(),
+  params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+});
+
+export const TaskTargetSchema = z.object({
+  kind: z.string(),
+  id: z.string().optional(),
+  name: z.string(),
+});
+
+/** One long-running operation. `output` is omitted from lists. `result` is the operation's own output. */
+export const TaskSchema = z.object({
+  id: z.string(),
+  op: z.string(),
+  status: TaskStatusSchema,
+  summary: z.string(),
+  hostId: z.string(),
+  target: TaskTargetSchema.optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  finishedAt: z.string().optional(),
+  error: TaskErrorSchema.optional(),
+  result: z.unknown().optional(),
+  output: z.string().optional(),
+  truncated: z.boolean(),
+  logSeq: z.number().int(),
+});
+
+/** The body of a 202 response. The operation's own output is stored on the task as `result`. */
+export const TaskAcceptedSchema = z.object({
+  taskId: z.string(),
 });
 
 export const OkSchema = z.object({

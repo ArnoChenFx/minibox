@@ -53,7 +53,8 @@ function handlerFor(operation: Operation, binding: RestBinding): Handler {
       { host, principal: OWNER, source: "rest", run, events: app.events },
       inputOf(binding, url, params, body, req.headers.get("if-match")),
     );
-    return json(result, binding.status ?? 200, entityTag(result));
+    const status = operation.async ? 202 : (binding.status ?? 200);
+    return json(result, status, entityTag(result));
   };
 }
 

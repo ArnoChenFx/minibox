@@ -8,7 +8,7 @@ import pkg from "../package.json";
 import { renderOpenApi, toOpenApiPath } from "../src/operations/openapi";
 import { OPERATIONS } from "../src/operations/registry";
 import { RUN_HEADER } from "../src/operations/run";
-import { ErrorSchema } from "../src/operations/schemas";
+import { ErrorSchema, TaskAcceptedSchema } from "../src/operations/schemas";
 import { compilePath } from "../src/routes/router";
 import type { Exchange } from "./parity/scenario";
 
@@ -81,6 +81,9 @@ describe("OpenAPI document", () => {
       "snapshot.delete",
       "snapshot.fork",
       "snapshot.list",
+      "task.cancel",
+      "task.get",
+      "task.list",
       "template.build",
       "template.delete",
       "template.list",
@@ -140,7 +143,9 @@ describe("recorded HTTP transcript", () => {
         contentType: "application/json",
       });
       const body: unknown = JSON.parse(exchange.body);
-      const parsed = (exchange.status >= 400 ? ErrorSchema : operation.output).safeParse(body);
+      const schema =
+        exchange.status === 202 ? TaskAcceptedSchema : exchange.status >= 400 ? ErrorSchema : operation.output;
+      const parsed = schema.safeParse(body);
       expect({ step: exchange.step, valid: parsed.success }).toEqual({ step: exchange.step, valid: true });
       if (parsed.success) expect({ step: exchange.step, body: parsed.data }).toEqual({ step: exchange.step, body });
     }

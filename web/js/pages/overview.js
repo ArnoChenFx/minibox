@@ -21,6 +21,7 @@ const ACTION_ICON = {
   "template.promote": "upload",
   "template.build": "hammer",
   "template.delete": "trash",
+  "task.cancel": "x",
 };
 
 function metricSkeleton() {

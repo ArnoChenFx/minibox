@@ -2,6 +2,7 @@ import { boxOperations } from "./boxes";
 import { eventOperations } from "./events";
 import { operationIdOf } from "./openapi";
 import { snapshotOperations } from "./snapshots";
+import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
 import type { Operation } from "./types";
 
@@ -10,6 +11,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...boxOperations,
   ...snapshotOperations,
   ...templateOperations,
+  ...taskOperations,
   ...eventOperations,
 ];
 
@@ -56,6 +58,8 @@ export function registryProblems(operations: readonly Operation[]): string[] {
       if ((op.kind === "read") !== (binding.method === "GET")) {
         problems.push(`${op.name} is ${op.kind} but binds ${binding.method}`);
       }
+      if (op.async && binding.status !== 202) problems.push(`${op.name} is async but does not return 202`);
+      if (!op.async && binding.status === 202) problems.push(`${op.name} returns 202 but is not async`);
       for (const match of binding.path.matchAll(PATH_PARAM)) {
         const param = match[1] ?? "";
         if (!inputs.has(param)) problems.push(`${op.name} has path parameter :${param} that is not an input`);

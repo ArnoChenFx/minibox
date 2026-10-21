@@ -81,6 +81,9 @@ export function startServer(app: App): Server<TerminalData> {
   return Bun.serve<TerminalData>({
     hostname: app.cfg.host,
     port: app.cfg.port,
+    // Bun's idle timer is a hard cap measured from the start of the request, in 4-second steps, and writes do not
+    // extend it. A handler that stays silent for longer than this is reset (tests/idle-timeout.test.ts). Long work
+    // returns 202 and keeps running; progress streams call server.timeout(req, 0), which disables the cap.
     idleTimeout: 60,
     async fetch(req, server) {
       warnIgnoredProxyHeaders(req);
@@ -179,6 +182,7 @@ async function boot(): Promise<void> {
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);
+    await app.tasks.shutdown();
     app.events.close();
     log.info("server.stopped");
     process.exit(0);

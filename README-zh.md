@@ -343,8 +343,9 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 | `exec/` | `700` | `exec` 命令的输出（现在创建，后续功能使用） |
 | `secrets/` | `700` | 密钥值与仓库密钥（现在创建，后续功能使用） |
 | `events.db`（旁边还有 `events.db-wal` 与 `events.db-shm`） | 位于 `DATA_DIR` 内 | 事件库，SQLite WAL 模式。见[事件](#事件) |
+| `tasks.db`（旁边还有 `tasks.db-wal` 与 `tasks.db-shm`） | 位于 `DATA_DIR` 内 | 任务状态，以及每个任务最新的 64 KB 输出。见[任务](#任务) |
 
-MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写入 `.env`。如果 `DATA_DIR` 丢失，且 `.env` 和环境变量中也没有设置密钥，下次启动会生成新的访问密钥，所有人都需要用新密钥登录。如果你依赖当前密钥，请备份 `access_key`，或在 `.env` 中设置 `ACCESS_KEY`。复制 `events.db` 之前请先停止 MiniBox：WAL 模式下，最近的变更会留在 `events.db-wal` 中，直到 SQLite 将其写回主文件，因此只复制主文件可能是旧的。
+MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写入 `.env`。如果 `DATA_DIR` 丢失，且 `.env` 和环境变量中也没有设置密钥，下次启动会生成新的访问密钥，所有人都需要用新密钥登录。如果你依赖当前密钥，请备份 `access_key`，或在 `.env` 中设置 `ACCESS_KEY`。复制 `events.db` 或 `tasks.db` 之前请先停止 MiniBox：WAL 模式下，最近的变更会留在 `-wal` 文件中，直到 SQLite 将其写回主文件，因此只复制主文件可能是旧的。
 
 ## API 参考
 
@@ -389,7 +390,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"?, "pids"? }`。必须带 `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | 实时占用 |
 | `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行） |
-| `POST` | `/api/boxes/:id/snapshots` | 创建快照 `{ "name"? }` |
+| `POST` | `/api/boxes/:id/snapshots` | 开始创建快照 `{ "name"? }`。返回 `202` `{ "taskId" }` |
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket 终端；发送 `{"type":"resize","cols":N,"rows":N}` 调整窗口，其余消息作为输入 |
 
 `:id` 可以是容器 ID、容器名（`minibox-<名称>`）、稳定 ID（`bx_…`）或 Box 名称。会改动 Box 的请求必须带 `If-Match`，值为当前版本号（纯数字、带引号的实体标签，或弱标签）。缺少该头返回 `428 precondition_required`；版本过期返回 `412 precondition_failed`。限制：CPU 0.1–64 核，内存 128–262144 MB，进程数 1–1000000，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
@@ -407,14 +408,29 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `POST` | `/api/snapshots/:ref/boxes` | 从快照创建 Box `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
 | `POST` | `/api/snapshots/:ref/promote` | 提升为模板 `{ "name", "description"? }` |
 | `GET` | `/api/templates` | 模板列表 |
-| `POST` | `/api/templates/base/build` | 构建内置基础模板 |
+| `POST` | `/api/templates/base/build` | 开始构建内置基础模板。返回 `202` `{ "taskId" }` |
 | `DELETE` | `/api/templates/:ref` | 删除模板 |
 
 只有带 MiniBox 标签的镜像才能通过 API 删除。
 
+### 任务
+
+模板构建和快照提交作为任务运行。POST 立即返回 `202` 和 `{ "taskId" }`，工作在服务端继续。同一时间只能构建一个模板，每个 Box 同一时间只能提交一个快照；第二次请求返回 `409`，`details.taskId` 指向正在运行的任务。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/tasks?status=&limit=` | 最新的任务在前。`status` 为 `running`、`succeeded`、`failed`、`cancelled` 或 `interrupted`。列表不含 `output` |
+| `GET` | `/api/tasks/:id` | 单个任务，含 `result`（操作自己的输出）和保留的 `output` 日志 |
+| `POST` | `/api/tasks/:id/cancel` | 取消正在运行的任务。任务不在运行中时返回 `409` |
+| `GET` | `/api/tasks/:id/events` | SSE 进度。它不是操作，因此不在 OpenAPI 文档中。`after` 或 `Last-Event-ID` 从游标续传；`reset` 事件表示日志已被截断 |
+
+日志只保留最新的 64 KB，更早的文本会被丢掉，视图开头会注明。取消会中止构建的输出流。已经完成的快照提交不会回滚。重启后，仍在运行的任务变为 `interrupted`，不会继续执行。
+
+Bun 的 HTTP 空闲计时从请求开始计算，上限 60 秒，响应内容不会延长它。如果把构建一直挂在 POST 上，连接会被掐断。`202` 在此之前返回；进度流调用 `server.timeout(req, 0)` 关闭这个计时，并每 15 秒发送心跳，供反向代理使用。顶栏的「任务」按钮打开抽屉，显示实时日志。
+
 ### 事件
 
-每次操作调用都会在事件日志中记录一次，即[数据目录](#数据目录)中的 `events.db`，不论它经由哪个接口到达。目前只有 REST；MCP 服务与 CLI 随 [#9](https://github.com/ArnoChenFx/minibox/issues/9) 接入。事件记录调用者（`principal`）、操作的对象（`op`、`target`）、开始时间与耗时（`ts`、`durationMs`）、结果（`status`），以及所属的客户端会话（`run`，来自 `X-Minibox-Run`）。
+同步操作在事件日志中记录一次，即[数据目录](#数据目录)中的 `events.db`，不论它经由哪个接口到达。任务在被接受时记录 `started`，结束时再记录一条最终事件；`ref.taskId` 把它们连起来，最终事件的 `parentId` 是 `started` 事件。构建日志不会写入事件库。目前调用经 REST 到达；MCP 服务与 CLI 随 [#9](https://github.com/ArnoChenFx/minibox/issues/9) 接入。事件记录调用者（`principal`）、操作的对象（`op`、`target`）、开始时间与耗时（`ts`、`durationMs`）、结果（`status`），以及所属的客户端会话（`run`，来自 `X-Minibox-Run`）。
 
 事件日志只覆盖经由 MiniBox 的调用，不记录箱内发生的事情，包括 Agent 在箱内自己的 Shell 里执行的命令。在请求到达操作之前就被拒绝的请求（例如缺少密钥返回 `401`，或跨站请求返回 `403`）同样不会被记录。
 
@@ -439,7 +455,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 ### OpenAPI
 
-盒子、快照、模板以及事件列表的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。认证、系统、宿主机与活动记录接口，以及事件流，暂未纳入。
+盒子、快照、模板、任务以及事件列表的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。`202` 的响应体是 `{ "taskId" }`；操作自己的输出在 `x-task-result` 中，并保存在任务上。认证、系统、宿主机与活动记录接口，以及事件流和任务流，暂未纳入。
 
 ### 示例
 
@@ -472,6 +488,7 @@ minibox/
 │   ├── services/            # 基于 Runtime 的业务逻辑：boxes / rebuild / images / snapshots / templates / reconcile
 │   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostMonitor 采样
 │   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、范围钩子
+│   ├── tasks/               # 任务库（SQLite）、管理器、走事件总线的进度流
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
 │   ├── routes/              # router、各组路由（auth / system / images）与操作的 REST 适配层
 │   ├── ws/terminal.ts       # WebSocket 终端
@@ -583,7 +600,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 - [x] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box 加固：「标准」「严格」「宽松」三个安全档位，出站策略与磁盘配额暂缓
 - [x] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
-- [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
+- [x] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与 TTL
 - [x] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
 
