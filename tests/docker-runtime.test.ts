@@ -314,6 +314,53 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "kill stops a command running as another uid and its children, from inside the box",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-exec-uid`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      const probe = async (cmd: string): Promise<string> => {
+        const run = await runtime.startExec(id, { cmd: ["sh", "-c", cmd], env: [], workingDir: "/", tty: false });
+        let out = "";
+        run.stdout.on("data", (chunk: Buffer) => {
+          out += chunk.toString("utf8");
+        });
+        await waitUntil(async () => !(await run.inspect()).running, "the probe to finish");
+        return out.trim();
+      };
+      try {
+        const hanging = await runtime.startExec(id, {
+          cmd: ["sh", "-c", "sleep 317 & echo started $(id -u); wait"],
+          env: [],
+          workingDir: "/",
+          tty: false,
+          user: "65534",
+        });
+        let started = "";
+        hanging.stdout.on("data", (chunk: Buffer) => {
+          started += chunk.toString("utf8");
+        });
+        await waitUntil(async () => started.includes("started 65534"), "the command to run as uid 65534");
+
+        await hanging.kill();
+        await waitUntil(async () => !(await hanging.inspect()).running, "the command to stop");
+        expect(await hanging.inspect()).toMatchObject({ running: false, exitCode: 137 });
+        await waitUntil(async () => (await probe("ps | grep -c '[s]leep 317' || true")) === "0", "the child to stop");
+        expect(await probe("ls -a /tmp | grep -c minibox-exec || true")).toBe("1");
+        await expect(hanging.kill()).resolves.toBeUndefined();
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "events stop when the signal aborts",
     async () => {
       const controller = new AbortController();

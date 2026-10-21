@@ -9,7 +9,7 @@
 | 路径 | 职责 |
 | --- | --- |
 | `src/runtime/index.ts` | `Runtime` 接口、数据类型与 `RuntimeError`，不依赖任何 SDK |
-| `src/docker/` | Docker 适配器（`runtime.ts`、`errors.ts`、`logs.ts`、`stats.ts`、`proc.ts`），唯一使用 dockerode 的代码 |
+| `src/docker/` | Docker 适配器（`runtime.ts`、`errors.ts`、`logs.ts`、`stats.ts`），唯一使用 dockerode 的代码 |
 | `src/services/` | 业务逻辑：boxes、images、snapshots、templates，只通过 `Runtime` 与 `HostCtx` 访问引擎 |
 | `src/host/` | `registry.ts`（Host、HostCtx、HostRegistry）、`metrics.ts`（HostMonitor）、`procfs.ts` |
 | `src/routes/`、`src/ws/` | HTTP 与 WebSocket 入口 |
@@ -24,7 +24,7 @@
 
 - 连通性：`ping`、`info`
 - 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerDiff`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`
-- exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。`kill()` 结束该进程及其子进程。Docker 报告的 pid 是宿主机 pid：本进程能看见 `/proc/<pid>` 时从叶子开始发送 `SIGKILL`（`src/docker/proc.ts`），并且不会向 pid 小于等于 1 的进程发信号。当 MiniBox 自己跑在容器里、看不见这个宿主机 pid 时，非 TTY 命令会先在容器里写下自己的 pid，再由另一次不经 `startExec` 的原始 exec 在容器内结束那棵进程树。交互终端不包这一层，只走宿主机 `/proc`。
+- exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。非 TTY 命令经一层 `/bin/sh` 包装运行：包装脚本把自己的 pid 写进 `/tmp/.minibox-exec-<随机>.pid`，命令结束后删除该文件。`kill()` 在容器内、以该 exec 的同一用户执行一段脚本：先用 `SIGSTOP` 冻结整棵进程树，再逐个 `SIGKILL`。它从不向宿主机发信号，Docker 报告的宿主机 pid 只作参考，因此不会误伤宿主机上的其它进程，也不受运行 MiniBox 的 uid 限制。任一进程未能结束时 `kill()` 抛出 `engine` 错误，exec 仍在运行，pid 文件保留，可以再次调用。exec 已结束时 `kill()` 直接返回。交互终端没有 pid 文件，`kill()` 会被拒绝。这一层要求容器里有 `/bin/sh`、`cat` 与 `rm`。
 - 事件：`events`，按标签与类型过滤；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
 - 卷：`inspectVolume`、`createVolume`、`removeVolume`
@@ -101,6 +101,7 @@
 
 ## 已知限制
 
+- exec 的 `kill()` 只能结束仍挂在该 exec 进程树上的进程。父进程先退出、被 init 收养的孤儿进程找不到；命令结束后留在容器里的后台进程也不会被结束。切换到别的 uid 的进程无法由 exec 的用户结束，此时 `kill()` 报错，而不是静默成功。
 - 没有同时运行于 fake 与真实后端的契约测试套件。两者的一致性分别由 `tests/fake-runtime.test.ts` 的断言与真实引擎测试保证。
 - 镜像构建时，引擎在输出流中报告的错误仍是普通 `Error`，因此映射为 500。这与改动前一致，统一为 `engine` 错误留待后续处理。
 - `listContainers` 的 `inspect` 结果在适配器内缓存。引擎的列表接口不返回 CPU 与内存限制，也不返回启动时间，因此每个容器首次列出时仍需一次 `inspect`。之后只有以下情况才会再次 `inspect`：列表显示的状态与缓存时不同、缓存超过 30 秒，或经由该适配器做过任何容器变更（创建、启动、停止、重启、删除、重命名、更新资源、网络重连）。容器不再出现在列表中时，缓存项会被删除。代价是：引擎外部的变更（例如手动 `docker update` 或 `docker rename`）在状态变化或 30 秒后才会出现在列表中。`inspectContainer` 不使用缓存，详情页与各操作前的检查总是读取引擎的最新状态。`HostMonitor` 的指标快照通过 `listBoxes` 统计 Box，结果另外缓存 2.5 秒。

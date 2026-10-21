@@ -159,12 +159,14 @@ export interface ExecSpec {
 export interface ExecStatus {
   running: boolean;
   exitCode: number | null;
+  /** The engine's host pid. Informational only: `kill()` never signals it. */
   pid: number | null;
 }
 
 /**
  * An attached exec. A TTY session uses `stream` for both directions. A command exec (`tty: false`) also fills
- * `stdout` and `stderr` separately. `inspect()` is the exit code; `kill()` stops the process and its descendants.
+ * `stdout` and `stderr` separately. `inspect()` is the exit code. `kill()` stops the process and its descendants from
+ * inside the box, as the exec's user. It rejects if a process survives, and a TTY session cannot be stopped this way.
  */
 export interface ExecSession {
   readonly id: string;
