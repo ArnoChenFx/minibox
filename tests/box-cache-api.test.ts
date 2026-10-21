@@ -71,6 +71,7 @@ describe("reads served from the box cache", () => {
   test("listing boxes makes no Docker call, however many boxes or tabs ask", async () => {
     for (let i = 0; i < 20; i++) seedBox(`box${String(i).padStart(2, "0")}`, i % 2 === 0);
     const base = await startApp();
+    await app.hosts.get().sampler.sampleNow();
     const before = runtime.calls.length;
 
     for (let tab = 0; tab < 4; tab++) {
@@ -86,6 +87,7 @@ describe("reads served from the box cache", () => {
   test("reading one box, and its usage, makes no Docker call while the cache is current", async () => {
     const id = seedBox("alpha", true);
     const base = await startApp();
+    await app.hosts.get().sampler.sampleNow();
     const before = runtime.calls.length;
 
     const box = await getJson(`${base}/api/boxes/${id}`);

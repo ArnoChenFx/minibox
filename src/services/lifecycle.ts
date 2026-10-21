@@ -12,6 +12,11 @@ import { type Box, sleepBox } from "./boxes";
 import type { ExecManager } from "./exec";
 import type { RecordNote, TerminalService } from "./terminals";
 
+/** The SSH gateway's open connections. An open one keeps its box awake, as an attached terminal does. */
+export interface SshConnections {
+  hasOpenConnection(boxId: string): boolean;
+}
+
 export interface LifecycleOptions {
   readonly hosts: HostRegistry;
   readonly pulse: ActivityPulse;
@@ -20,6 +25,7 @@ export interface LifecycleOptions {
   readonly tasks: TaskManager;
   readonly cfg: Config;
   readonly record: RecordNote;
+  readonly ssh?: SshConnections;
   /** Override the tick interval in tests. */
   readonly everyMs?: number;
   /** Clock for tests. */
@@ -126,6 +132,7 @@ export class LifecycleWatcher {
     if (await this.terminalOpen(host, info.id, spec.id)) return;
     if (!this.quietFor(spec.id, spec.createdAt, idleSec)) return;
 
+    await host.sampler.sampleSoon();
     const cpu = host.sampler.statsOf(spec.id)?.cpuPercent;
     if (cpu == null) return;
     if (cpu >= this.options.cfg.boxIdleCpuPercent) return;
@@ -156,10 +163,11 @@ export class LifecycleWatcher {
     return this.quietFor(box.boxId, box.createdAt, idleSec);
   }
 
-  /** Something MiniBox started is using the box: a hold, a terminal it opened, an exec or a task. */
+  /** Something MiniBox started is using the box: a hold, a terminal it opened, an SSH connection, an exec or a task. */
   private busy(containerId: string, boxId: string): boolean {
     if (this.options.pulse.isHeld(boxId)) return true;
     if (this.options.terminals.hasOpenAttachment(containerId)) return true;
+    if (this.options.ssh?.hasOpenConnection(boxId)) return true;
     if (this.options.execs.hasRunning(containerId)) return true;
     return this.options.tasks.hasRunningForBox(boxId, containerId);
   }

@@ -15,7 +15,7 @@
 - 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
 
 ### 安全
-- Agent API 令牌与访问密钥分开（#13）。明文（`mbx_…`）只在创建时返回一次，`DATA_DIR/tokens.json` 只保存 SHA-256。scope 包括 `box:read`、`box:write`、`box:delete`、`exec`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`。资源范围默认是该令牌创建的 Box（`created-by-me`），也可以指定 id、标签或全部 Box；卷必须显式列出；宿主机默认只有 `local`。预设为 `readonly`、`operator`、`sandboxed-agent` 与 `admin`。`sandboxed-agent` 默认最多 5 个 Box、合计 8 个 CPU 与 16384 MB、TTL 最长 4 小时、每分钟 60 次请求。超出配额返回 `403`（`quota_*`），速率超限返回 `429`。吊销立即生效；`DELETE /api/tokens/:id?deleteCreated=true` 同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。创建 Box 时若工作区卷已经存在，或更新挂载指向已有卷，缺少对该卷的 `volume:attach` 会返回 `403`。签发与吊销令牌只有所有者可以做，`admin` 预设不能签发令牌。更换 `ACCESS_KEY` 不会吊销这些令牌。审计日志会打码本进程内创建的令牌，以及形如 `mbx_` 再加至少 20 个字符的值。同一枚令牌也可以作为 `/mcp` 的 Bearer 使用，`tools/list` 与每次调用都受其 scope 约束；吊销会结束它的 MCP 会话、终端、事件流与任务流，并在 `failedBoxes` 中列出无法删除的 Box。TTL 到期后 Box 会停止、不删除（#12）。
+- Agent API 令牌与访问密钥分开（#13）。明文（`mbx_…`）只在创建时返回一次，`DATA_DIR/tokens.json` 只保存 SHA-256。scope 包括 `box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`。资源范围默认是该令牌创建的 Box（`created-by-me`），也可以指定 id、标签或全部 Box；卷必须显式列出；宿主机默认只有 `local`。预设为 `readonly`、`operator`、`sandboxed-agent` 与 `admin`。`sandboxed-agent` 默认最多 5 个 Box、合计 8 个 CPU 与 16384 MB、TTL 最长 4 小时、每分钟 60 次请求。超出配额返回 `403`（`quota_*`），速率超限返回 `429`。吊销立即生效；`DELETE /api/tokens/:id?deleteCreated=true` 同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。创建 Box 时若工作区卷已经存在，或更新挂载指向已有卷，缺少对该卷的 `volume:attach` 会返回 `403`。签发与吊销令牌只有所有者可以做，`admin` 预设不能签发令牌。更换 `ACCESS_KEY` 不会吊销这些令牌。审计日志会打码本进程内创建的令牌，以及形如 `mbx_` 再加至少 20 个字符的值。同一枚令牌也可以作为 `/mcp` 的 Bearer 使用，`tools/list` 与每次调用都受其 scope 约束；吊销会结束它的 MCP 会话、终端、事件流与任务流，并在 `failedBoxes` 中列出无法删除的 Box。TTL 到期后 Box 会停止、不删除（#12）。
 - 错误的 `Authorization: Bearer` 密钥计入登录限流：`/api/`、`/mcp` 与终端 WebSocket 和登录共用同一计数，超限后返回 `429`。正确的密钥不计入，也不会被拒绝。此前 Bearer 密钥的错误不受限制。
 - `/mcp` 接受访问密钥与 Agent 令牌（#13）。持有访问密钥的 MCP 客户端拥有完全的所有者权限，包括以 `root` 执行 `exec`（非「严格」档位）、`delete_box` 与 `rebuild_box`，因此应优先发放令牌。README、README-zh 与 `docs/agents.md` 已用警示块写明。
 - exec 的进程树改为在箱内终止，宿主机不再对 Docker 报告的宿主机 pid 发送 `SIGKILL`。「标准」与「宽松」档位以 `root` 执行终止，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。进程由包装 shell 命令行中的随机令牌找到；`/tmp` 中的标记文件只作线索，因为箱内任何进程都能改写或删除它。终止时先冻结每个进程再结束，并一并结束包装 shell 所在的会话与进程组。Docker 报告 exec 已结束后才算成功，否则返回 `502`，exec 保持 `running`。
@@ -60,6 +60,7 @@
 - 数据卷与模板列表支持搜索：输入即时过滤，按 Esc 或 × 清除，没有匹配时显示单独的提示。卷列表可按 Box、角色、存储池或归属分组，分组方式保存在本浏览器中。
 - 新建 Box 时可以选择卷（#24）：创建对话框的「卷」区域默认不发送 `mounts`，四个角色卷照常新建；选择「自定义」时发送界面中显示的完整挂载列表，它替换默认卷。每一行从已有的卷中选择一个，并填写路径与读写模式；属于其他运行中 Box 的卷不可选，共享的读写挂载会显示提示。卷与挂载相关的服务端错误显示在该区域内。
 - 实时推送（#17）：每台主机由一个采样器（`HostSampler`）维护盒子缓存与资源采样。`GET /api/events/stream` 在不带过滤条件时同时推送 `sync`、`box`、`sample`、`host`、`link` 与 `task`（仅状态变化）帧。这些帧以事件名区分、不带 `id`，因此不改变 `Last-Event-ID`，也不写入 `events.db`；审计事件与实时状态共用同一条进程内事件总线。带过滤条件的事件流只收到已存储的事件，与原来一致。`GET /api/boxes/:id/stats?history=true` 返回该盒子最近的采样（按时间从早到晚），供详情页的图表使用。
+- 日志实时推送（#17）：`GET /api/boxes/:id/logs/stream?tail=N` 以 SSE 推送盒子的容器日志。先发 `sync`（最新的 `tail` 行，默认 300，最多 5000），之后每行一帧 `line`；容器被替换时重新发送 `sync`，盒子被删除时发送 `closed` 并结束。鉴权与 `GET /api/boxes/:id/logs` 相同：`box:read` 范围，盒子须对调用者可见，并计入 `STREAM_MAX_CONNECTIONS`。每台主机上每个盒子只有一条容器日志跟随，由其全部日志流共享，没有订阅者后保留 30 秒。停止的盒子只在它重新运行后再读取。控制台的日志面板改用该流，断线时按退避重连，并在断线期间回退为每 4 秒读取一次。该接口不在 OpenAPI 中，与事件流和任务流一致（#17）。
 - 终端会话（#14）：每个 Box 可以有多个具名的 tmux 会话，名称 1 到 32 位，以字母或数字开头，其后可含字母、数字、`-` 与 `_`。会话在 Box 内运行，关闭页面或断开连接后继续运行，刷新页面后控制台回到上次打开的会话。会话的发起方（`agent` 或 `human`）保存在 tmux 中；接管状态只保存在内存中，MiniBox 重启后每个会话的控制方回到其发起方的默认值。
 - 会话接口：`GET` 与 `POST /api/boxes/:id/sessions`，`GET`（支持 `lines` 与 `since`）与 `DELETE /api/boxes/:id/sessions/:name`，以及 `POST /api/boxes/:id/sessions/:name/input`（`keys` 或 `text`，二者只能提供一个）。MCP 的 `session` 工具集提供 `session_start`、`session_send` 与 `session_read`（`/mcp?toolsets=core,session`）；CLI 提供 `minibox session ls`、`start`、`read`、`send` 与 `close`。这些操作在操作注册表中各定义一次，REST、OpenAPI、MCP 与 CLI 由此生成。
 - 人工接管（#14）：Agent 发起的会话在控制台中默认只读，点击「接管」后由人输入。接管期间，Agent 的 `session_send` 与关闭会话（`DELETE`）返回 `409`，错误码为 `taken_over`，`retryable` 为 true，并附重试提示；`session_read` 仍可用。点击「还给 Agent」手动归还。人在 `SESSION_TAKEOVER_IDLE_SEC` 秒内没有输入（默认 300，`0` 表示关闭）时，接管自动归还。
@@ -94,12 +95,13 @@
 - `STOP_TIMEOUT_SEC`（默认 `3`，允许 0 到 300 的整数）：停止与重启 Box 时，发送 SIGTERM 后等待退出的秒数，超时则强制结束。空值或无效值回退为 3 秒（#19）。
 - `DELETE /api/boxes/:id` 的响应新增 `volumeError` 字段：删除数据卷失败时返回引擎给出的原因。Box 本身仍会被删除（#19）。
 - 新增「关于」页面（侧边栏「设置」之后，路由 `#/about`）：显示 logo、版本、服务启动时间、Bun 运行时版本与 Docker 引擎版本（不可用时显示「不可用」），并提供 README、文档、更新日志、问题反馈与许可证的链接。中英文界面均已翻译。
-- 新增配置 `STREAM_MAX_CONNECTIONS`（默认 `256`）：同时打开的事件流与任务流上限，两者共用。超出时新连接返回 `429`，错误码为 `too_many_requests`，`key` 为 `stream_limit`，响应体给出上限。控制台按退避间隔重试，连接结束时名额即释放。README、README-zh 与 `.env.example` 均有说明（#17）。
+- 新增配置 `STREAM_MAX_CONNECTIONS`（默认 `256`）：同时打开的事件流、任务流与日志流上限，三者共用。超出时新连接返回 `429`，错误码为 `too_many_requests`，`key` 为 `stream_limit`，响应体给出上限。控制台按退避间隔重试，连接结束时名额即释放。README、README-zh 与 `.env.example` 均有说明（#17）。
+- SSH 访问：`ssh`、`scp`、`sftp` 与 `ssh -L` 经由 MiniBox 进入 Box，不发布宿主机端口。`GET /api/ssh/:box` 以 WebSocket 承载一条 SSH 连接，用户为 `dev` 或 Box id，其他用户名（包括 `root`）一律拒绝。访问密钥或令牌在握手时鉴权；令牌需要新增的 `box:ssh` 范围，默认拒绝，`operator` 与 `admin` 预设包含它，`sandboxed-agent` 不包含。与 `exec` 一样，它能在 Box 内执行命令并读写全部挂载。`-L` 只转发到 Box 内的回环地址，并需要 `port:expose`；`-R`、Unix 套接字转发、X11 与 agent 转发被拒绝并审计。停止或休眠的 Box 在连接时启动，打开的 SSH 连接让 Box 保持运行；停止（手动、空闲或 TTL）、删除或重建 Box 会断开它的 SSH 连接，TTL 已过的 Box 拒绝连接（`409 box_ttl_expired`）。连接、通道与断开都写入审计日志。每个 Box 最多 8 个连接，全局 64 个，每个连接 16 个通道。新增 `GET /api/ssh/host-key`，主机密钥保存在 `DATA_DIR/ssh_host_ed25519_key`。CLI 新增 `minibox ssh-proxy <box>` 与 `minibox ssh-config [--append]`，后者写入 `~/.ssh/config`、固定主机密钥，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600），ProxyCommand 无需导出环境变量。Box 详情页新增「SSH」按钮与对话框（中英文）。
 - Agent CLI 工具（#8）：创建 Box 时可勾选，运行中的 Box 可在「工具」页安装、升级与卸载。目录按四组展示（AI 编程助手、语言与运行时、终端与开发工具、网络），创建对话框与「工具」页都带搜索框，可按名称、说明或分组过滤。目录内容见 `catalog/*.json`，每一项都从其官方来源安装；Tailscale 需要 root，只列出，MiniBox 拒绝安装与卸载。镜像或家目录里已有的工具显示为已安装并附版本，不会重复安装；升级与卸载只作用于 MiniBox 装在 tools 卷上的工具。
 
 ### 变更
 - Box 的列表、详情、统计与主机指标改为读取每台主机的缓存。缓存由 Docker 容器事件保持最新，列表不再对每个容器调用 `inspect` 或 `docker stats`：Docker 调用次数与 Box 数量无关，也不随打开的标签页数增加。`HostMonitor` 不再每个间隔列出 Box，Box 汇总取自采样器。采样器未就绪时（启动之后、列出完成之前，或与引擎断开期间），读取退回引擎（#17）。
-- 控制台改为订阅 `GET /api/events/stream`。盒子列表、概览、详情与主机指标由推送更新，原有的 3 秒、5 秒、10 秒定时刷新取消。事件流断开时，各页面回退为轮询（主机指标与详情 3 秒，盒子列表 5 秒，概览 10 秒），并按 1 秒起、最长 30 秒的间隔重连。详情页的资源图表读取后端的采样环形缓冲，长度由 `METRICS_HISTORY` 决定。日志面板开启自动刷新时仍每 4 秒读取一次，尚未进入实时流（#17）。
+- 控制台改为订阅 `GET /api/events/stream`。盒子列表、概览、详情与主机指标由推送更新，原有的 3 秒、5 秒、10 秒定时刷新取消。事件流断开时，各页面回退为轮询（主机指标与详情 3 秒，任务抽屉 2 秒，盒子列表与活动列表 5 秒，概览 10 秒），并按 1 秒起、最长 30 秒的间隔重连。详情页的资源图表读取后端的采样环形缓冲，长度由 `METRICS_HISTORY` 决定。日志面板开启自动刷新时改用日志流，只在日志流断开期间每 4 秒读取一次（#17）。终端会话列表仍每 10 秒轮询一次，会话没有实时帧。
 - 每台主机只有一个采样器和一条容器事件订阅。断线后按 1 秒起、最长 30 秒的退避重新订阅，并重新列出容器。`METRICS_INTERVAL_MS` 决定主机指标的间隔，并在有实时流打开时决定盒子采样的间隔（见下文）。同一盒子与 tail 的日志读取在 2 秒内共享一次引擎调用（#17）。
 - 终端 WebSocket 地址改为 `/api/boxes/:id/terminal?session=<名称>`，必须带 `session` 参数，否则返回 `400`。控制台已经如此连接（#14）。
 - 终端 WebSocket 对 Bearer 调用者改为只读：可以读取输出；输入，以及接管与归还的控制帧，返回 `forbidden` 错误帧（`terminal_read_only`）。此前 Bearer 调用者可以直接输入。浏览器会话的行为不变（#14）。
@@ -121,10 +123,13 @@
 - Box 详情页的终端标题栏不再固定显示 `root@`，改为 `<名称>: /workspace`，因为新建 Box 以 `dev` 运行，旧 Box 仍为 root。
 - `scripts/restart.sh` 启动 `dockerd` 与 OpenTunnel 时改为追加写入 `/tmp/dockerd.log` 与 `/tmp/opentunnel.log`，每次启动写入一行 `---` 分隔标记，不再清空上一次的诊断信息。
 - 在容器内运行 MiniBox 时，磁盘标签显示为「容器磁盘」（`container`）或「容器磁盘（含 Docker 数据）」，不再把容器自己的文件系统标为「系统盘」（#19）。
-- 盒子资源采样只在有实时流打开时按 `METRICS_INTERVAL_MS` 进行，没有实时流时每 30 秒一次（不短于 `METRICS_INTERVAL_MS`）。从没有实时流变为有实时流时，采样器立即采样一轮。因此没有实时流时，REST 的 `stats` 字段与统计历史最多滞后一个空闲间隔，即 30 秒，或更长的 `METRICS_INTERVAL_MS`（#17）。
+- 盒子资源采样只在有实时流打开时按 `METRICS_INTERVAL_MS` 进行，没有实时流时，只有最近 5 分钟内有人读取过用量（`stats` 或统计历史）才每 30 秒一次（不短于 `METRICS_INTERVAL_MS`），租约过期后停止采样，不调用 `containerStats`。从没有实时流变为有实时流时，采样器立即采样一轮。因此没有实时流时，REST 的 `stats` 字段最多滞后 60 秒，更旧的样本不再返回；统计历史返回环形缓冲中已有的样本（#17）。
 - 事件流与任务流的待发队列同时按帧数（1000 帧）与字节数（1 MiB）限制。超出任一上限时队列被清空：任务流发送 `reset`；事件流发送 `reset`，有实时状态时还发送新的 `sync`，客户端据此重新读取。同一主机的 `sample` 与 `host` 帧在队列中只保留最新一帧，慢速客户端收到的是最新状态，而不是逐个补发的过时状态（#17）。
 - 链路就绪时，采样器每 60 秒重新列出一次容器，替换缓存并发布其中的变化，以追平事件流静默停止（无错误、也不结束）时漏掉的变化。重新列出不改变链路状态，断线检测与重连照旧。列出在队列之外进行，30 秒内未返回即放弃，挂起的引擎调用不会阻塞写操作；列出期间若缓存有过变化，结果被丢弃，留待下一次（#17）。
+- `ContainerWatch` 不再开第二条引擎事件订阅：它经由采样器的 `subscribeEvents()` 接收同一份事件。事件按 `id`、`action` 与 `timeNano` 去重，引擎重连后重放的事件不再被记录两次（#17）。
+- 采样器在一批状态变化中最多八个容器并发 `inspect`（`INSPECT_CONCURRENCY`）。一批挂起的读取合计占用队列的时间由 N × 5 秒降为 ⌈N ÷ 8⌉ × 5 秒（#17）。
 - 控制台的下拉选择框（`select.select`）改为应用自绘的菜单：颜色随主题切换，支持方向键、Home / End、按字母快速定位，Esc 与点击外部关闭，并且不会被对话框或表格容器裁切。原生 `select` 仍保留在页面中，负责取值、`name` 与 `change` 事件。
+- 基础模板新增 `openssh-sftp-server` 与 `socat`，分别供 `sftp` 与 `ssh -L` 使用。已有的 Box 不会自动获得它们：重新构建基础模板后重新创建 Box，或在标准档位下执行 `sudo apt-get install -y openssh-sftp-server socat` 补装。
 
 ### 工程化
 - 新增真实引擎测试 `tests/docker-sessions.test.ts`（设置 `MINIBOX_TEST_DOCKER=1` 时运行，`bun run test:docker` 会执行）。它覆盖：会话在终端退出后保留、刷新后重新附着、Agent 会话只读与接管锁、Bearer 只读、空闲归还、关闭会话结束终端、静默连接的心跳关闭、断开而不发关闭帧时不残留附着进程、「严格」档位以 `dev` 运行、`session_read` 的 `since` 与 `reset`，以及 Box 启停事件。测试镜像 `tests/fixtures/tmux` 基于 `alpine:3.20` 并安装 tmux（#14）。
@@ -148,8 +153,9 @@
 - `tsconfig.json` 的类型检查范围包含 `scripts/`（#19）。
 - CI 的 `Docker build (smoke)` 任务新增基础模板的多架构构建（`linux/amd64`、`linux/arm64`），并对 amd64 镜像及模拟的 arm64 镜像运行 `scripts/check-box-image.sh`。新增的 `docker/setup-qemu-action` 同样固定到完整 commit SHA。
 - 以路由测试取代依赖 Bun 空闲计时与固定时长阈值的 `tests/idle-timeout.test.ts`，后者在 CI 中不稳定。新的 `tests/long-work-routes.test.ts` 检查 MiniBox 自身的约定：模板构建与快照提交立即返回 `202`，任务进度流与事件流对自身请求调用 `server.timeout(req, 0)`。
-- 新增 `tests/host-sampler.test.ts` 与 `tests/box-cache-api.test.ts`，以计数的 fake 运行时验证列表、详情、统计、日志与主机汇总的引擎调用次数，并验证它们不随 Box 数量增长。新增 `tests/event-stream.test.ts` 与 `tests/events-live.test.ts` 覆盖 SSE 的实时帧，`tests/web-live.test.ts` 覆盖前端的连接与轮询回退。`tests/docker-runtime.test.ts` 新增真实引擎下的缓存计数与外部变更测试（#17）。
+- 新增 `tests/host-sampler.test.ts` 与 `tests/box-cache-api.test.ts`，以计数的 fake 运行时验证列表、详情、统计、日志与主机汇总的引擎调用次数，并验证它们不随 Box 数量增长。新增 `tests/event-stream.test.ts` 与 `tests/events-live.test.ts` 覆盖 SSE 的实时帧，`tests/web-live.test.ts` 覆盖前端的连接与轮询回退。`tests/docker-runtime.test.ts` 新增真实引擎下的缓存计数与外部变更测试（#17）。新增 `tests/log-follow.test.ts`、`tests/log-stream.test.ts`、`tests/sampler-logs.test.ts` 与 `tests/box-logs-stream.test.ts`，覆盖日志跟随、日志流及其鉴权；`tests/host-sampler.test.ts` 增加采样租约的用例；`tests/container-watch.test.ts` 检查重放事件只记录一次。`tests/docker-adapter.test.ts` 与 `tests/docker-runtime.test.ts` 覆盖 `followLogs`（真实引擎需要 `MINIBOX_TEST_DOCKER=1`）（#17）。
 - `Runtime.events` 接受 `since` 参数；`FakeRuntime` 模拟 `create`、`start`、`die`、`stop`、`restart`、`rename`、`update` 与 `destroy` 等容器事件，并能断开事件流（#17）。
+- 新增 `tests/docker-ssh.test.ts`，用真实的 OpenSSH 客户端（`ssh`、`scp`、`sftp`、`ssh -L` 与被拒绝的 `ssh -R`）连接 Docker 中的 Box，并加入 `bun run test:docker`。测试夹具镜像 `debian:bookworm-slim` 由 `scripts/docker-integration.ts` 预先拉取。`tests/ssh-gateway.test.ts` 与 `tests/cli.test.ts` 用假引擎覆盖鉴权、范围、root 拒绝、通道、限额、审计、空闲休眠与 `ssh-config`。`tests/template.test.ts` 检查两个新增包，`scripts/check-box-image.sh` 检查 `sftp-server` 与 `socat` 可用。
 
 ### 修复
 - 网页终端的空闲超时由 0（关闭）改为 30 秒。静默的连接会被关闭，并结束其附着进程，不再长期占用 exec（#14）。
@@ -169,7 +175,7 @@
 - 控制台内容区不再限制为 1320px 宽。在宽屏显示器上，概览、Box、快照与关于页现在会填满侧边栏右侧的可用宽度，不再在右侧留出大片空白。模板卡片改为按可用宽度自动排列列数，只有一个模板时也会撑满一行。设置页保持 960px 的可读宽度并居中显示。
 - exec 超时后的终止失败时，改为按 1 秒、2 秒、4 秒……（最长 30 秒）的间隔重试，直到 exec 被终止，不再放弃。超时与 `POST /api/execs/:execId/kill` 同时发生时共用同一次终止。所有 `403` 拒绝（包括「严格」档位的用户检查，以及创建与重建时的挂载和网络检查）现在审计为 `denied`，不再记为 `error`。
 - 采样的统计调用不再阻塞写操作：统计调用在队列之外执行（并发 8），每个调用最长等待 `min(METRICS_INTERVAL_MS, 5 秒)`，超时即记为一次缺失的采样。引擎的 `docker stats` 挂起时，停止、启动、删除与重建盒子仍会及时返回，缓存随即反映盒子的状态（#17）。Docker 的一次性统计调用需要 1 到 2 秒，因此 `METRICS_INTERVAL_MS` 应保持在 2000 毫秒以上（默认 3000）。
-- 引擎挂起的容器 `inspect` 与订阅后的首次列出不再阻塞写操作（#17）。采样器读取一个容器超过 5 秒仍无答复时放弃该次读取：该容器保留缓存中的旧状态，并在下一轮采样时重读。首次列出超过 30 秒未返回时视为断线，按退避重试，期间读取退回引擎。写操作后等待缓存的 `observe()` 最多等待 5 秒。此前一个挂起的 `inspect` 会使另一个盒子的停止一直等到引擎答复为止。见 `docs/runtime.md` 的「超时」。
+- 引擎挂起的容器 `inspect` 与订阅后的首次列出不再阻塞写操作（#17）。采样器读取一个容器超过 5 秒仍无答复时放弃该次读取：该容器保留缓存中的旧状态，并在下一轮采样时重读。首次列出超过 30 秒未返回时视为断线，按退避重试，期间读取退回引擎。写操作后等待缓存的 `observe()` 最多等待 5 秒。盒子的引擎 `inspect`（详情与操作前的检查）每次最多等待 5 秒，超时后取消引擎请求并返回 `503` `docker_unavailable`；此前这类读取没有超时，引擎挂起时请求一直等待（#17）。此前一个挂起的 `inspect` 会使另一个盒子的停止一直等到引擎答复为止。见 `docs/runtime.md` 的「超时」。
 - 实时流中超过每客户端 1 MiB 字节上限的同步帧（`sync`）会让客户端陷入无限重置：之后的每一帧都超过上限，每帧都触发一次重置并重新发送同步帧。现在每个客户端的字节上限取 1 MiB 与其收到的最大同步帧的 2 倍中较大者，且只升不降（#17）。
 - 周期性重新列出的守卫在列出结束后才释放，列出请求带上取消信号：超过 30 秒未返回时请求真正结束。此前守卫在超时后即释放，引擎挂起时每 60 秒就堆积一个未完成的列出（#17）。
 - 事件流与任务流读取时抛出异常后，现在会结束并运行一次 `onEnd`，释放连接名额与总线订阅。此前这类流不运行 `onEnd`，名额不会释放：达到 `STREAM_MAX_CONNECTIONS` 后，新的事件流与任务流都返回 `429`，直到进程重启（#17）。
@@ -189,8 +195,9 @@
 - README 与 README-zh 新增「基础模板」章节，说明用户与 uid 约定、挂载点、缓存、标签、检查方法，以及从 root 版模板升级的步骤。
 - `docs/runtime.md` 补充真实引擎测试的运行方式（`bun run test:docker`、`MINIBOX_TEST_PREFIX`）与假引擎适配器测试，并更新已知限制。
 - README 与 README-zh 的配置表新增 `STOP_TIMEOUT_SEC`，开发命令与 CI 说明新增 `bun run test:docker` 与非必需的集成任务（#19）。
-- README 与 README-zh 的功能表、架构图、`METRICS_*` 配置说明、API 参考（`GET /api/boxes`、`GET /api/boxes/:id/stats?history=true`、日志读取窗口，以及事件流的实时帧）同步更新。`docs/runtime.md` 新增「盒子缓存与采样器」一节，修正了关于 `HostMonitor` 的说明，并补充测试与已知限制（#17）。
+- README 与 README-zh 的功能表、架构图、`METRICS_*` 配置说明、API 参考（`GET /api/boxes`、`GET /api/boxes/:id/stats?history=true`、日志读取窗口与日志流，以及事件流的实时帧）同步更新。`docs/runtime.md` 新增「盒子缓存与采样器」一节，修正了关于 `HostMonitor` 的说明，并补充测试与已知限制，记录采样租约与日志跟随（#17）。`docs/design.md` 新增 §8.11（#17）。
 - README、README-zh、`docs/agents.md` 与 `docs/design.md` §10.2 说明接管锁覆盖关闭、不约束箱内的 `exec`，以及会话与终端的上限（#14）。
+- README 与 README-zh 新增「SSH 访问」章节，并在功能表、空闲休眠、API 参考（`GET /api/ssh/host-key` 与 `GET /api/ssh/:box`）与数据目录表中补充 SSH 相关内容。`docs/design.md` §9.1 与 §9.5 加入 `box:ssh` 范围，并说明 `sandboxed-agent` 不包含它。
 
 ### 升级说明
 - 终端 WebSocket 地址必须带 `session` 参数。使用 `/api/boxes/:id/terminal` 而不带参数的脚本，需改为 `?session=<名称>`，或先调用 `POST /api/boxes/:id/sessions`（#14）。

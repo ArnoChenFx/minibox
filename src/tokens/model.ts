@@ -13,6 +13,7 @@ export const SCOPES = [
   "box:write",
   "box:delete",
   "exec",
+  "box:ssh",
   "files:read",
   "files:write",
   "port:expose",
@@ -125,7 +126,7 @@ export interface TokenDraft {
 const READ_SCOPES: readonly Scope[] = ["box:read", "files:read"];
 const OPERATOR_SCOPES: readonly Scope[] = [...SCOPES];
 const SANDBOX_SCOPES: readonly Scope[] = OPERATOR_SCOPES.filter(
-  (scope) => scope !== "volume:attach" && scope !== "tool:install",
+  (scope) => scope !== "volume:attach" && scope !== "tool:install" && scope !== "box:ssh",
 );
 
 /** Five boxes, 8 CPU cores and 16 GB between them, four hours, one request a second sustained. */
@@ -267,6 +268,8 @@ export function requiredScopes(operationScope: string): readonly Scope[] | "owne
     case "box:session":
     case "exec":
       return ["exec"];
+    case "box:ssh":
+      return ["box:ssh"];
     case "snapshot:read":
     case "checkpoint:read":
       return ["box:read", "checkpoint:create", "checkpoint:restore"];

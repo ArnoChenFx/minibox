@@ -83,7 +83,7 @@ MiniBox 面向个人用户，灵感来自 Upstash Box，但不做多租户平台
 | 状态只在内存 | 活动记录最多 50 条，重启即丢；审计靠部分路由手动套 `tracked()` |
 | 权限只有一把钥匙 | 单一 `ACCESS_KEY` 等同宿主机 root，Cookie 里直接存放原始密钥 |
 | 长请求无任务模型 | 已由任务模型解决，见 [§8.10](#810-实现说明16)。模板构建与快照提交返回 202，进度走事件总线 |
-| 轮询架构 | 前端多处定时轮询，每个标签页都对 Docker 产生同样的调用 |
+| 轮询架构 | 前端多处定时轮询，每个标签页都对 Docker 产生同样的调用。已由实时流解决（会话列表除外），见 [§8.11](#811-实现说明17) |
 
 安全问题（限流可被 `X-Forwarded-For` 绕过、缺少 Origin 校验与 CSP、Box 缺少加固等）见 [14](#14-安全设计) 与 issue #1 #3 #4 #5 #7。
 
@@ -646,6 +646,20 @@ Event
 - **重启**：启动时把上次仍为 `running` 的任务标为 `interrupted`，不续跑，并释放所有互斥锁（包括已取消但工作未返回的任务持有的锁，持锁的进程已经不在了）。关闭时同样中止、标记并释放。
 - **空闲超时**：Bun 的 `idleTimeout` 从请求开始计算，按 4 秒进位，写出的字节（包括 SSE 心跳）不会延长它。只有 `server.timeout(req, 0)` 能关掉它。因此心跳只对付反向代理的 `proxy_read_timeout`，对付不了 Bun 自己。构建改为 202 之后，那条会被掐断的长连接不复存在；进度流显式关掉计时。这一点在 Bun 1.4.3 上用 4 秒上限核实过：静默处理和每秒心跳的流都会在约 4 秒被断开，`timeout 0` 可以撑过更长的等待。仓库不保留测 Bun 内部的用例（那类用例靠时间阈值判断，在 CI 上不稳定）；`tests/long-work-routes.test.ts` 只断言 MiniBox 自己的保证：202 立即返回，进度流和事件流调用 `server.timeout(req, 0)`，普通请求保留 Bun 的上限。生产配置保持 60 秒。
 
+### 8.11 实现说明（#17）
+
+Box 状态、资源采样与容器日志由后端推送，控制台不再为每个标签页各自轮询。对应 issue #17 的余下工作：日志面板接入实时流，`ContainerWatch` 与采样器共用一条引擎事件订阅，采样器的队列与读取带并发上限和超时。
+
+- **归属**：每台主机一个 `HostSampler`（`src/host/sampler.ts`），在 `src/host/registry.ts` 中随主机创建。它是该主机唯一的容器事件订阅，也是盒子缓存的唯一维护者。`ContainerWatch`（#14）经 `subscribeEvents()` 接收同一份事件，不再开第二条订阅。事件按 `id`、`action` 与 `timeNano` 去重，引擎重连后重放的事件既不再进入缓存，也不再送达监听者。状态挂在每台主机上，没有进程级的单例；#21 增加主机时只需再注册一台。
+- **采样按需进行**：有实时订阅者（`watch()`）时，按 `METRICS_INTERVAL_MS` 采样每个运行中的盒子。没有订阅者时，只有最近 5 分钟内该主机有人读取过用量，才按 30 秒（不短于 `METRICS_INTERVAL_MS`）采样；每次读取用量都会续期（`need()` 租约）。两者都没有时，采样器不调用 `containerStats`，宿主机指标也不读取引擎，只保留本机 `/proc` 的读数。这是对 issue 原文「没有订阅者时暂停采样」的一处扩展：REST 客户端（包括 Agent）读取 `stats` 时需要相对新鲜的样本，只靠实时流满足不了。超过 60 秒的样本不再作为 `stats` 返回；读取时若样本已旧，先采样一轮（最多等待 5 秒），同时到达的读取共用这一轮。
+- **日志只跟随一次**：每台主机上每个盒子只有一条容器日志跟随（`LogFollows`，`src/host/log-follow.ts`），由该盒子的所有日志流共享。环形缓冲保留最近 5000 行或 2 MiB（以先到者为准）。新订阅者立即拿到其中最新的 `tail` 行，之后每行只送达一次。最后一个订阅者离开后，跟随再保留 30 秒。容器停止时引擎端的跟随结束，缓存显示它重新运行后再接续。引擎断开跟随时，从最新一行之前 1 秒处续读，以免两路输出的乱序行被漏掉，并按文本计数丢弃已送出的行。
+- **流的形态**：`GET /api/boxes/:id/logs/stream?tail=N`（`src/logs/stream.ts`，路由在 `src/routes/box-logs.ts`）。响应先给出 `retry: 3000`，再给出 `sync`（当前最新的行），之后每行一帧 `line`。容器被替换时发送新的 `sync`，之后是新容器的行；客户端队列溢出时同样先清空，再发送 `sync`。盒子被删除时发送 `closed` 并结束。主机停止时不发帧，流直接结束，浏览器在 `retry` 之后重连，此时盒子仍存在，它读取的是当前的行。心跳每 15 秒一条注释。
+- **鉴权**：与 `GET /api/boxes/:id/logs` 相同，要求 `box:read` 范围，盒子须对调用者可见（否则 `403` `box_out_of_scope`，未知盒子 `404`），没有凭据返回 `401`。跨站请求由 `src/guard.ts` 的 `CHECKED_BOX_LOG_STREAM` 拒绝（`403`），与事件读取相同。令牌被吊销或浏览器会话结束时流立即关闭。每次打开都记入审计，与 `box.logs` 的读取相同，被拒绝的记为 `denied`。流计入 `STREAM_MAX_CONNECTIONS`，超出返回 `429`。路由不经过操作注册表，因此不进入 OpenAPI，与事件流和任务流一致。
+- **前端**：`web/js/lib/logs-stream.js` 使用 `EventSource`。浏览器自行重连；浏览器放弃时（`CLOSED`），按 `retryDelay()` 重新打开，即 1 秒起、翻倍、最长 30 秒。连接断开期间，日志面板每 4 秒读取一次 `GET /api/boxes/:id/logs` 作为回退，连上后停止。关闭「自动刷新」时只读取一次，不开流。活动列表在收到本盒子的 `event` 帧时刷新，有 300 毫秒的防抖。
+- **轮询范围**：盒子列表（5 秒）、概览（10 秒）、详情（3 秒）、主机指标（3 秒）、任务抽屉（2 秒）与活动列表（5 秒）都只在事件流断开时轮询。日志面板的 4 秒读取只在日志流断开时运行。终端会话列表（#14）仍每 10 秒轮询一次 `GET /api/boxes/:id/sessions`：会话没有实时帧，未纳入本次。
+- **边界**：日志与采样样本只在内存中，不写入 `events.db`，实时帧只在总线上流动。日志内容与 `GET /api/boxes/:id/logs` 相同，原样送出，不经过审计的脱敏（§8.6）。
+- **与空闲休眠（#12）**：打开日志流、读取用量与采样租约都不算 Box 的活动，不推迟空闲休眠，也不唤醒已停止的 Box。只看日志的标签页不会让 Box 一直运行；Box 休眠后日志流保持打开，Box 再次运行时接着推送新行。
+
 ---
 
 ## 9. 令牌与权限
@@ -656,7 +670,7 @@ Event
 
 ```text
 Token
-├ scopes      box:read · box:write · box:delete · exec · files:read/write
+├ scopes      box:read · box:write · box:delete · exec · box:ssh · files:read/write
 │             port:expose · checkpoint:create/restore · tool:install
 │             volume:read · volume:write · volume:attach
 │             （pool:admin 只属于所有者，不是令牌可以持有的 scope）
@@ -703,7 +717,7 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 ### 9.5 实现说明（#13）
 
 - **存储**：`DATA_DIR/tokens.json`（权限 600）只保存 SHA-256。明文 `mbx_…` 只出现在创建响应里。与浏览器会话分文件。更换 `ACCESS_KEY` 会结束会话，**不会**吊销 API 令牌；吊销在设置页或 `DELETE /api/tokens/:id`。
-- **预设**：`readonly`（`box:read` 与 `files:read`）、`operator`（除了不能签发令牌之外的全部 scope）、`sandboxed-agent`（operator 去掉 `volume:attach` 和 `tool:install`）、`admin`（全部 scope，Box 与宿主机为 `*`）。`sandboxed-agent` 的默认配额是 5 个 Box、合计 8 个 CPU、16 GB、TTL 4 小时、每 60 秒 60 次请求。未改 scope、且 Box 与宿主机都是 `*` 的 admin 可以读全部审计；其余令牌只看自己的事件和范围内 Box 的事件。任何预设都不能创建或吊销令牌。
+- **预设**：`readonly`（`box:read` 与 `files:read`）、`operator`（除了不能签发令牌之外的全部 scope）、`sandboxed-agent`（operator 去掉 `volume:attach`、`tool:install` 和 `box:ssh`）、`admin`（全部 scope，Box 与宿主机为 `*`）。`sandboxed-agent` 的默认配额是 5 个 Box、合计 8 个 CPU、16 GB、TTL 4 小时、每 60 秒 60 次请求。未改 scope、且 Box 与宿主机都是 `*` 的 admin 可以读全部审计；其余令牌只看自己的事件和范围内 Box 的事件。任何预设都不能创建或吊销令牌。
 - **默认范围**：Box 为 `created-by-me`，宿主机为 `local`，卷为空。只读预设不能创建 Box，因此在改成 `*` 或列出 id / 标签之前，它看不到已经存在的 Box。
 - **授权**：仍是执行器上的 `authorize` 钩子，操作定义没有改。调用前检查 scope；输入合法且目标解析之后，再检查宿主机、卷、Box、TTL 和配额。直接读取范围外的已有 Box 返回 403，不存在的 Box 仍是 404。列表在处理函数里过滤，因为钩子只能拒绝整次调用。
 - **`exec`**：对令牌可见的 Box，`exec` 隐含其全部挂载的读写，所以 `files:*` 只对没有 `exec` 的令牌有意义。文件 API 已实现（#9）。终端要求 `exec` 且 Box 在范围内。
@@ -719,6 +733,7 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - **宿主机**：Box 没有记录宿主机时，只有 `all` 的宿主机授权才允许访问（失败关闭，N4）。
 - **活动**：`/api/activity` 只对所有者开放（路由默认 `OWNER_ONLY`）。令牌使用按范围过滤的 `/api/events`。
 - **会话与 exec**：`box:exec` 与 `box:session`（终端与会话 API）都映射到 `exec` scope，因为它们能在 Box 内执行命令。
+- **SSH**（`box:ssh`）：`GET /api/ssh/:box` 升级为 WebSocket，承载一条 SSH 连接。握手即完成鉴权（访问密钥或令牌的 Bearer，浏览器会话不可用），因此 SSH 层接受任何认证方式，用户只能是 `dev` 或 Box id。`box:ssh` 与 `exec` 一样能在 Box 内以 `dev` 执行任意命令、读写全部挂载，因此 `sandboxed-agent` 不包含它，授予时应同样谨慎。`-L` 另需 `port:expose`，且只转发到 Box 的回环地址；`-R`、Unix 套接字转发、X11 与 agent 转发一律拒绝并审计。打开的连接计入空闲休眠判断。主机密钥保存在 `DATA_DIR/ssh_host_ed25519_key`。
 
 ---
 

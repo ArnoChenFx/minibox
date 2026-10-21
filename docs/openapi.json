@@ -3,7 +3,7 @@
   "info": {
     "title": "MiniBox API",
     "version": "0.3.0",
-    "description": "Generated from the operation registry: boxes, volumes, storage pools, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the event and task streams (GET /api/events/stream and GET /api/tasks/{id}/events, text/event-stream), are not listed yet.",
+    "description": "Generated from the operation registry: boxes, volumes, storage pools, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the streams (GET /api/events/stream, GET /api/tasks/{id}/events and GET /api/boxes/{id}/logs/stream, text/event-stream), are not listed yet.",
     "license": {
       "name": "MIT"
     }
@@ -19224,6 +19224,7 @@
                                 "box:write",
                                 "box:delete",
                                 "exec",
+                                "box:ssh",
                                 "files:read",
                                 "files:write",
                                 "port:expose",
@@ -19617,6 +19618,7 @@
                         "box:write",
                         "box:delete",
                         "exec",
+                        "box:ssh",
                         "files:read",
                         "files:write",
                         "port:expose",
@@ -19628,8 +19630,8 @@
                         "tool:install"
                       ]
                     },
-                    "maxItems": 13,
-                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install."
+                    "maxItems": 14,
+                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install."
                   },
                   "boxes": {
                     "description": "Which boxes this token may use. \"created-by-me\" (the default), \"*\" for every box, {\"ids\":[\"bx_…\"]}, or {\"tags\":[\"env=prod\"]}. A tag is a label key, or key=value."
@@ -19752,6 +19754,7 @@
                               "box:write",
                               "box:delete",
                               "exec",
+                              "box:ssh",
                               "files:read",
                               "files:write",
                               "port:expose",
@@ -20197,6 +20200,7 @@
                               "box:write",
                               "box:delete",
                               "exec",
+                              "box:ssh",
                               "files:read",
                               "files:write",
                               "port:expose",

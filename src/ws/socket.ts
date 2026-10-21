@@ -4,34 +4,42 @@ import { isPreviewSocket, type PreviewSocketData, previewWsHandlers } from "../p
 import type { ActivityPulse } from "../services/activity-pulse";
 import type { TerminalService } from "../services/terminals";
 import type { SessionStore } from "../sessions";
+import type { SshGateway } from "../ssh/gateway";
 import type { TokenStore } from "../tokens/store";
+import { isSshSocket, type SshSocketData, sshHandlers } from "./ssh";
 import { type TerminalData, terminalHandlers } from "./terminal";
 
-export type SocketData = TerminalData | PreviewSocketData;
+export type SocketData = TerminalData | PreviewSocketData | SshSocketData;
 
 export function socketHandlers(deps: {
   sessions: SessionStore;
   tokens: TokenStore;
   terminals: TerminalService;
   pulse: ActivityPulse;
+  ssh: SshGateway;
 }) {
   const term = terminalHandlers(deps);
   const preview = previewWsHandlers(deps.pulse);
+  const ssh = sshHandlers(deps);
   return {
     open(ws: ServerWebSocket<SocketData>) {
       if (isPreviewSocket(ws.data)) return preview.open(ws as ServerWebSocket<PreviewSocketData>);
+      if (isSshSocket(ws.data)) return ssh.open(ws as ServerWebSocket<SshSocketData>);
       return term.open(ws as ServerWebSocket<TerminalData>);
     },
     message(ws: ServerWebSocket<SocketData>, message: string | Buffer) {
       if (isPreviewSocket(ws.data)) return preview.message(ws as ServerWebSocket<PreviewSocketData>, message);
+      if (isSshSocket(ws.data)) return ssh.message(ws as ServerWebSocket<SshSocketData>, message);
       return term.message(ws as ServerWebSocket<TerminalData>, message);
     },
     drain(ws: ServerWebSocket<SocketData>) {
       if (isPreviewSocket(ws.data)) return preview.drain(ws as ServerWebSocket<PreviewSocketData>);
+      if (isSshSocket(ws.data)) return ssh.drain(ws as ServerWebSocket<SshSocketData>);
       return term.drain(ws as ServerWebSocket<TerminalData>);
     },
     close(ws: ServerWebSocket<SocketData>) {
       if (isPreviewSocket(ws.data)) return preview.close(ws as ServerWebSocket<PreviewSocketData>);
+      if (isSshSocket(ws.data)) return ssh.close(ws as ServerWebSocket<SshSocketData>);
       return term.close(ws as ServerWebSocket<TerminalData>);
     },
   };

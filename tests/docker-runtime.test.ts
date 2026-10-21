@@ -84,6 +84,15 @@ async function boxIds(): Promise<string[]> {
   return (await runtime.listContainers({ labels: owned })).map((c) => c.id).toSorted();
 }
 
+/** A line of a timestamped log: the engine's RFC 3339 time, then a space. */
+const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\S+ /;
+
+async function drain(lines: AsyncIterable<string>): Promise<string[]> {
+  const out: string[] = [];
+  for await (const line of lines) out.push(line);
+  return out;
+}
+
 async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T | "timeout"> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<"timeout">((resolve) => {
@@ -744,6 +753,98 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
 
       expect(await settleWithin(consumer, 5000)).toBe("ended");
       await runtime.removeContainer(id, { force: true });
+    },
+    LONG,
+  );
+
+  test(
+    "a followed log gives the tail, then the lines a running container writes, then its final partial line",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-follow`,
+        labels: owned,
+        cmd: ["sh", "-c", "echo one; echo two; sleep 2; echo three; printf partial; sleep 1"],
+      });
+      try {
+        await runtime.startContainer(id);
+        await waitUntil(
+          async () => (await runtime.containerLogs(id, { tail: 10, timestamps: false })).includes("two\n"),
+          "the second line",
+        );
+
+        const followed = drain(runtime.followLogs(id, { tail: 1, timestamps: false }));
+        expect(await settleWithin(followed, 15_000)).toEqual(["two", "three", "partial"]);
+
+        const stopped = await drain(runtime.followLogs(id, { tail: 2, timestamps: true }));
+        expect(stopped.map((line) => line.replace(TIMESTAMP, ""))).toEqual(["three", "partial"]);
+        expect(stopped.every((line) => TIMESTAMP.test(line))).toBe(true);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a followed log with since leaves out the lines stamped before it, and keeps the line stamped in its millisecond",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-since`,
+        labels: owned,
+        cmd: ["sh", "-c", "echo one; sleep 1; echo two; sleep 1; echo three"],
+      });
+      try {
+        await runtime.startContainer(id);
+        await waitUntil(
+          async () => (await runtime.containerLogs(id, { tail: 10, timestamps: false })).includes("three\n"),
+          "the last line",
+        );
+        const two = (await runtime.containerLogs(id, { tail: 10, timestamps: true }))
+          .split("\n")
+          .find((line) => line.endsWith(" two"));
+        const since = new Date(Date.parse(two?.split(" ")[0] ?? ""));
+
+        expect(await drain(runtime.followLogs(id, { tail: 10, timestamps: false, since }))).toEqual(["two", "three"]);
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a followed log that is aborted ends at once, and a missing container is not_found",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-tick`,
+        labels: owned,
+        cmd: ["sh", "-c", "while true; do echo tick; sleep 0.2; done"],
+      });
+      try {
+        await runtime.startContainer(id);
+        const controller = new AbortController();
+        const seen: string[] = [];
+        const consumer = (async () => {
+          for await (const line of runtime.followLogs(id, { tail: 0, timestamps: false, signal: controller.signal })) {
+            seen.push(line);
+            controller.abort();
+          }
+          return "ended";
+        })();
+
+        expect(await settleWithin(consumer, 10_000)).toBe("ended");
+        expect(seen).toEqual(["tick"]);
+        expect(
+          await rejectionOf(drain(runtime.followLogs("no-such-container-xyz", { tail: 1, timestamps: false }))),
+        ).toMatchObject({
+          kind: "not_found",
+        });
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
     },
     LONG,
   );
@@ -1471,6 +1572,8 @@ describe.skipIf(!enabled)("the box cache against a real engine", () => {
         await quiesce(reader.sampler);
         // Boxes that earlier tests left running are in the cache too, so the totals count from what it already holds.
         const known = reader.sampler.boxes({ withStats: false }).length;
+        // A read of usage after an idle sampler samples once; the listings after it are served from that sample.
+        await reader.sampler.sampleNow();
         counter.reset();
         for (let tab = 0; tab < 10; tab++) await boxes.listBoxes(reader, { withStats: true });
         expect(engineReads()).toBe(0);

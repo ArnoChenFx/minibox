@@ -44,15 +44,21 @@ export class SseReader {
 
   constructor(private readonly reader: ChunkReader) {}
 
+  /** Reads one chunk and queues the frames it completes. False once the server has ended the stream. */
+  private async fill(timeoutMs: number): Promise<boolean> {
+    const { value, done } = await within(this.reader.read(), timeoutMs);
+    if (done) return false;
+    this.buffer += this.decoder.decode(value, { stream: true });
+    for (let end = this.buffer.indexOf("\n\n"); end !== -1; end = this.buffer.indexOf("\n\n")) {
+      this.pending.push(parseFrame(this.buffer.slice(0, end)));
+      this.buffer = this.buffer.slice(end + 2);
+    }
+    return true;
+  }
+
   async next(timeoutMs = 5000): Promise<SseFrame> {
     while (this.pending.length === 0) {
-      const { value, done } = await within(this.reader.read(), timeoutMs);
-      if (done) throw new Error("the stream closed before the next event");
-      this.buffer += this.decoder.decode(value, { stream: true });
-      for (let end = this.buffer.indexOf("\n\n"); end !== -1; end = this.buffer.indexOf("\n\n")) {
-        this.pending.push(parseFrame(this.buffer.slice(0, end)));
-        this.buffer = this.buffer.slice(end + 2);
-      }
+      if (!(await this.fill(timeoutMs))) throw new Error("the stream closed before the next event");
     }
     const frame = this.pending.shift();
     if (!frame) throw new Error("no frame");
@@ -73,6 +79,14 @@ export class SseReader {
       const { done } = await within(this.reader.read(), timeoutMs);
       if (done) return;
     }
+  }
+
+  /** Reads until the server ends the stream, and returns every frame that was not read yet, in order. */
+  async framesUntilEnd(timeoutMs = 5000): Promise<SseFrame[]> {
+    const frames: SseFrame[] = [];
+    while (await this.fill(timeoutMs)) frames.push(...this.pending.splice(0));
+    frames.push(...this.pending.splice(0));
+    return frames;
   }
 
   async close(): Promise<void> {

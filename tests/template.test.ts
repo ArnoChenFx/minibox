@@ -56,6 +56,14 @@ describe("base template", () => {
     expect(aptInstall).toContain("iputils-ping");
   });
 
+  test("the SSH gateway's sftp subsystem and local forwards need openssh-sftp-server and socat, and the image check looks for both", () => {
+    expect(aptInstall).toContain("openssh-sftp-server");
+    expect(aptInstall).toContain("socat");
+    const script = read("scripts/check-box-image.sh");
+    expect(script).toContain("/usr/lib/openssh/sftp-server");
+    expect(script).toContain("socat");
+  });
+
   test("the image check runs each box profile with the capability list from src/box-profile.ts", () => {
     const script = read("scripts/check-box-image.sh");
     const listed = /for cap in ([A-Z_ ]+); do/.exec(script)?.[1]?.split(" ");
