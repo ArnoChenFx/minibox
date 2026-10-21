@@ -1,5 +1,6 @@
 import { deleteBox, editResources, lifecycle, openRebuild, snapshotBox } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
+import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, dateTime, duration, gbOrMb, mem, pct, shortId } from "../lib/format.js";
@@ -178,78 +179,7 @@ const TAB_RENDER = {
   },
 
   terminal(root, { box }) {
-    const b = box();
-    if (!b.running) {
-      root.innerHTML = `<div class="card">${emptyState({ iconName: "terminal", title: t("bd.notRunning"), text: t("bd.termNotRunningText"), action: `<button class="btn btn-primary" data-action="start">${icon("play")}${t("bd.startBox")}</button>` })}</div>`;
-      return null;
-    }
-    root.innerHTML = `<div class="terminal-frame">
-      <div class="terminal-bar"><span class="lights"><i></i><i></i><i></i></span><span class="mono">${esc(b.name)}: /workspace</span>
-        <span class="status" id="tStatus"><span class="dot"></span><span id="tStatusText">${t("common.connecting")}</span></span>
-        <button class="btn btn-ghost btn-sm" id="tReconnect" style="color:#a1a1aa">${icon("refresh")}${t("bd.reconnect")}</button></div>
-      <div class="terminal" id="term"></div></div>
-      <p class="help" style="margin-top:8px">${t("bd.termHelp")}</p>`;
-    if (!window.Terminal) {
-      root.querySelector("#term").innerHTML = `<div class="callout danger">${t("bd.termLoadFailed")}</div>`;
-      return null;
-    }
-    let ws;
-    const xterm = new window.Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily: '"JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
-      theme: { background: "#0b0b0e", foreground: "#e4e4e7", cursor: "#a5a2ff", selectionBackground: "#3f3f7a" },
-      scrollback: 5000,
-    });
-    const fit = new window.FitAddon.FitAddon();
-    xterm.loadAddon(fit);
-    xterm.open(root.querySelector("#term"));
-    fit.fit();
-    const setStatus = (on, text) => {
-      root.querySelector("#tStatus").classList.toggle("on", on);
-      root.querySelector("#tStatusText").textContent = text;
-    };
-    const connect = () => {
-      ws?.close();
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${proto}//${location.host}/api/boxes/${enc(b.id)}/terminal`);
-      ws.binaryType = "arraybuffer";
-      const sock = ws;
-      sock.addEventListener("open", () => {
-        setStatus(true, t("bd.connected"));
-        sock.send(JSON.stringify({ type: "resize", cols: xterm.cols, rows: xterm.rows }));
-        xterm.focus();
-      });
-      sock.addEventListener("message", (ev) =>
-        xterm.write(typeof ev.data === "string" ? ev.data : new Uint8Array(ev.data)),
-      );
-      sock.addEventListener("close", (ev) => {
-        if (sock !== ws) return;
-        if (ev.code === 1008) {
-          location.href = "/login";
-          return;
-        }
-        setStatus(false, t("bd.disconnected"));
-      });
-    };
-    const dataSub = xterm.onData((d) => ws?.readyState === 1 && ws.send(d));
-    const resizeSub = xterm.onResize(
-      ({ cols, rows }) => ws?.readyState === 1 && ws.send(JSON.stringify({ type: "resize", cols, rows })),
-    );
-    const onWin = () => fit.fit();
-    window.addEventListener("resize", onWin);
-    root.querySelector("#tReconnect").addEventListener("click", () => {
-      xterm.reset();
-      connect();
-    });
-    connect();
-    return () => {
-      window.removeEventListener("resize", onWin);
-      dataSub.dispose();
-      resizeSub.dispose();
-      ws?.close();
-      xterm.dispose();
-    };
+    return mountTerminal(root, { box });
   },
 
   logs(root, { box }) {
