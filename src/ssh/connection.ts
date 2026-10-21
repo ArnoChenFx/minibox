@@ -13,13 +13,13 @@ import {
   type TcpipRequestInfo,
 } from "ssh2";
 
-import type { EventStatus, Source } from "../events/types";
+import type { AuditNote, EventStatus, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
 import { log } from "../lib/logger";
 import type { Principal } from "../operations/types";
 import { type ExecSession, RuntimeError } from "../runtime";
 import type { ActivityPulse } from "../services/activity-pulse";
-import { type Box, getBox, startBox } from "../services/boxes";
+import { type Box, ensureRunning } from "../services/boxes";
 import type { RecordNote } from "../services/terminals";
 import { type FrameSocket, WsDuplex } from "./duplex";
 import {
@@ -75,9 +75,9 @@ export interface SshConnectionOptions {
 }
 
 /** The box with its container running. A stopped or sleeping box is started, which is how a connection wakes it. */
-export async function awakeBox(host: HostCtx, boxId: string, record: RecordNote): Promise<Box> {
-  const box = await getBox(host, boxId);
-  return box.running ? box : startBox(host, box.boxId, record);
+export async function awakeBox(host: HostCtx, boxId: string, record: (note: AuditNote) => void): Promise<Box> {
+  const { box } = await ensureRunning(host, boxId, { record });
+  return box;
 }
 
 interface SessionState {
@@ -402,7 +402,7 @@ export class SshConnection {
   }
 
   private start(argv: string[], tty: boolean, env: string[]): Promise<ExecSession> {
-    return awakeBox(this.target.host, this.boxId, this.options.record).then((box) =>
+    return awakeBox(this.target.host, this.boxId, (note) => this.recordFor(note)).then((box) =>
       this.target.host.runtime.startExec(box.id, {
         cmd: argv,
         env,
@@ -442,7 +442,7 @@ export class SshConnection {
   }
 
   private audit(op: string, status: EventStatus, summary: string, detail: Record<string, unknown>): void {
-    this.options.record(this.target.host.host.id, this.target.source, this.target.principal, {
+    this.recordFor({
       op,
       kind: "write",
       status,
@@ -450,5 +450,9 @@ export class SshConnection {
       target: { kind: "box", id: this.target.box.id, name: this.target.box.name },
       detail,
     });
+  }
+
+  private recordFor(note: AuditNote): void {
+    this.options.record(this.target.host.host.id, this.target.source, this.target.principal, note);
   }
 }

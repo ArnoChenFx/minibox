@@ -2265,26 +2265,116 @@ textarea.token-lines {
   color: var(--text-3);
 }
 
-/* Agent CLI checkboxes on the create dialog (#8) */
-.tool-checks {
+/* The Agent CLI picker, shared by the create dialog and the running box's tools panel. */
+.tool-picker-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.tool-groups {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 14px;
+  margin-top: 10px;
 }
+.tool-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.tool-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+/* The native checkbox is visually hidden but still focusable; the row draws the box and the check mark. */
 .check-row {
+  position: relative;
   display: flex;
   gap: 10px;
   align-items: flex-start;
+  min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
   cursor: pointer;
 }
-.check-row input {
-  margin-top: 3px;
+.check-row:hover {
+  background: var(--bg-subtle);
 }
-.check-row .help {
-  display: block;
+.check-row:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.check-row:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.check-row.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.check-row.is-disabled:hover {
+  background: var(--bg-elev);
+}
+.check-mark {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
   margin-top: 2px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: transparent;
+}
+.check-mark .icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.5;
+}
+.check-row:has(input:checked) .check-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.check-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.check-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.check-body .subtle {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.tool-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.tool-action-cell {
+  white-space: nowrap;
+}
+.tool-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
 }

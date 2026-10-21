@@ -1,0 +1,15 @@
+{
+  "id": "herdr",
+  "name": "herdr",
+  "description": "The runtime coding agents live on: a terminal workspace for running agents side by side. Installed from the release manifest, which the installer checks against its sha256.",
+  "category": "terminal",
+  "source": "script",
+  "package": "herdr.dev",
+  "bin": "herdr",
+  "needsRoot": false,
+  "estimatedMb": 29,
+  "install": "mkdir -p {{prefix}}/bin; t=$(mktemp) && curl -fsSL https://herdr.dev/install.sh -o \"$t\" && HERDR_INSTALL_DIR={{prefix}}/bin sh \"$t\"; rc=$?; rm -f \"$t\"; exit $rc",
+  "upgrade": "mkdir -p {{prefix}}/bin; t=$(mktemp) && curl -fsSL https://herdr.dev/install.sh -o \"$t\" && HERDR_INSTALL_DIR={{prefix}}/bin sh \"$t\"; rc=$?; rm -f \"$t\"; exit $rc",
+  "uninstall": "rm -f {{prefix}}/bin/herdr",
+  "detect": "command -v herdr >/dev/null && herdr --version 2>/dev/null"
+}

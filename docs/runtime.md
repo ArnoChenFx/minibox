@@ -24,7 +24,7 @@
 `Runtime` 覆盖 MiniBox 需要的全部引擎能力：
 
 - 连通性：`ping`、`info`
-- 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerDiff`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`
+- 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerDiff`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`、`statPath`
 - exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。所有 exec（包括交互终端）都经一层 `/bin/sh` 包装运行，包装 shell 的参数中，`minibox-exec` 之后紧跟一个随机令牌。`kill()` 在容器内执行一段 POSIX `sh` 脚本：「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本通过 `/proc/*/cmdline` 找到包装 shell。`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选 pid，每个候选同样要核对命令行。之后沿 `/proc/<pid>/stat` 的父进程号收集进程；包装 shell 自己是会话或进程组首进程时，同一会话与进程组中的进程也一并收集。每个进程先用 `SIGSTOP` 冻结，并等待其停止后才继续扫描，直到一次扫描不再发现新进程（最多 5 轮）。然后逐个 `SIGKILL`，包装 shell 最后结束。脚本退出码：0 表示全部结束；1 表示有进程无法发信号（脚本恢复其余进程并退出），或有进程存活（其余进程保持冻结，以便重试）；2 表示找不到包装 shell。`kill()` 只有在 Docker 报告 exec 已结束后才算成功，否则抛出 `engine` 错误，exec 仍在运行，可以再次调用。exec 已结束时 `kill()` 直接返回。交互终端的 `kill()` 同样可用，以 exec 的用户（`dev`）执行：Web 终端断开时用它结束其中的 tmux attach 进程；tmux 服务器不在这棵进程树里，会话因此保留。这一层要求容器里有 `/bin/sh`、`cat`、`rm` 与 `sleep`（`sleep` 需支持小数秒）。
 - 事件：`events`，按标签与类型过滤；`since`（Unix 秒）让引擎补发该时间之后记录的事件，订阅者因此可以在订阅之后再列出容器而不漏掉变化；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
@@ -43,6 +43,7 @@
 - `runHelper` 把短生命周期容器跑到结束，返回时容器已被删除。容器不接入网络（`NetworkMode: none`），根文件系统只读，`/tmp` 是 16 MiB 的 tmpfs，丢掉全部能力，只加上调用方在 `capAdd` 里列出的能力，禁止提权，内存 256 MiB，进程数 64。容器带 `AutoRemove`，引擎在它退出后删除。超时会杀掉容器并返回退出码 124。日志去掉流帧头。镜像是基础模板。各用途只请求所需的权限：卷 chown（`0:0`，`CHOWN`）、NFS 与路径池的子目录（`0:0`，`CHOWN`、`DAC_OVERRIDE`）、删除空目录（`0:0`，`DAC_OVERRIDE`）、测量（`0:0`，`DAC_READ_SEARCH`）、池探测（`1000:1000`，无能力）。
 - 辅助容器的命名卷挂载带 `NoCopy`。没有它，Docker 会把镜像里挂载点的目录复制进空卷，并覆盖卷根的属主和权限：基础模板的 `/mnt` 是 `root:root 755`，已 chown 为 `1000:1000` 的空卷挂到 `/mnt` 上就会变回 root。箱子容器的挂载不带 `NoCopy`，首次使用时仍从镜像复制初始内容。
 - `diskUsage(path)` 返回该路径所在文件系统的总字节和空闲字节。Docker 适配器用 `statfs`。路径不存在时为 `not_found`。
+- `statPath(id, path)` 用 `HEAD /containers/{id}/archive` 读取 `path` 的元数据（类型、大小、mode、引擎解析后的链接目标），不传输归档内容，所以对任意大小的目录开销相同；最后一级符号链接不跟随，容器可以是已创建但未启动的。`path` 不存在时返回 `not_found`。
 - `volumeRootOwner(id, path)` 读取容器内 `path` 目录的属主，经由 archive 接口完成，容器可以是已创建但未启动的。`path` 不存在时返回 `not_found`。
 - `setVolumeRootOwner(volume, owner, image)` 用 `runHelper` 运行一个辅助容器，只把卷的根目录 `chown` 为 `uid:gid`，不递归。辅助容器以 `0:0` 运行，只加上 `CHOWN`，不联网，结束后删除。卷不存在时返回 `not_found`，且不运行辅助容器：挂载缺失的命名卷会让引擎创建它，所以先检查卷。镜像不存在、辅助容器无法启动或 `chown` 失败时返回 `engine`。
 - 卷的根目录属主由 Docker 决定：卷为空时，挂载会把镜像中挂载点的内容与属主复制进卷；卷已有内容后，之后的挂载不再改变根目录的属主。

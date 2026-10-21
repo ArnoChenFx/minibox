@@ -11,6 +11,8 @@ export interface PreviewSocketData {
   pendingHeaders?: Headers;
   upstream?: WebSocket;
   closed?: boolean;
+  /** Keeps the box awake for as long as the socket is open (#12). Called once, when the socket closes. */
+  release?: () => void;
 }
 
 export function isPreviewSocket(data: object): data is PreviewSocketData {
@@ -93,6 +95,8 @@ export function previewWsHandlers(pulse: ActivityPulse) {
       const upstream = ws.data.upstream;
       if (upstream && upstream.readyState === WebSocket.OPEN) upstream.close(1000, "client closed");
       ws.data.upstream = undefined;
+      ws.data.release?.();
+      ws.data.release = undefined;
     },
   };
 }

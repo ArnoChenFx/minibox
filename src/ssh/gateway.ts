@@ -50,7 +50,9 @@ export class SshGateway {
     const { box, forward } = await this.authorize(host, ref, caller);
     const release = this.admit(box.boxId);
     try {
-      const awake = await awakeBox(host, box.boxId, this.options.record);
+      const awake = await awakeBox(host, box.boxId, (note) =>
+        this.options.record(host.host.id, "rest", caller.principal, note),
+      );
       return { target: { host, box: awake, principal: caller.principal, source: "rest", forward }, release };
     } catch (error) {
       release();

@@ -35,6 +35,13 @@ export interface TerminalData {
   attachment?: Attachment;
   stopWatching?: () => void;
   closed?: boolean;
+  /** Keeps the box awake from the wake until the attach is registered (#12). Released once, and again on close. */
+  releaseHold?: () => void;
+}
+
+function endHold(data: TerminalData): void {
+  data.releaseHold?.();
+  data.releaseHold = undefined;
 }
 
 export type Control = { type: "resize"; cols: number; rows: number } | { type: "takeover" } | { type: "release" };
@@ -101,13 +108,14 @@ export function terminalHandlers(deps: { sessions: SessionStore; tokens: TokenSt
       data.stopWatching = () => {
         for (const stop of stops) stop();
       };
-      if (data.closed) return;
       try {
+        if (data.closed) return;
         const attachment = await terminals.attach(data.host, data.box, data.name, {
           source: data.source,
           principal: data.principal,
           onChange: (view) => send(ws, { type: "state", ...view }),
         });
+        endHold(data);
         if (data.closed) {
           await attachment.close();
           return;
@@ -122,6 +130,8 @@ export function terminalHandlers(deps: { sessions: SessionStore; tokens: TokenSt
         if (data.closed) return;
         send(ws, { type: "error", error: errorBody(e).error });
         ws.close(1011, "attach failed");
+      } finally {
+        endHold(data);
       }
     },
     message(ws: ServerWebSocket<TerminalData>, message: string | Buffer) {
@@ -142,6 +152,7 @@ export function terminalHandlers(deps: { sessions: SessionStore; tokens: TokenSt
       const data = ws.data;
       data.closed = true;
       data.stopWatching?.();
+      endHold(data);
       await data.attachment?.close();
     },
   };

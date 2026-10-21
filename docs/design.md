@@ -211,14 +211,14 @@ flowchart LR
 
 `delete_box` 单独成工具，便于单独授权。
 
-已实现的是 box 的 6 个工具加上 `exec`、`exec_get`、`exec_kill`，共 9 个，属于默认工具集。`rebuild_box` 不在上表的 27 个工具里，它需要显式确认，不属于 `core`（决策 45），因此单独放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`）。`storage` 工具集已实现 9 个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`（决策 50）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`（决策 49）；`measure_volume` 只刷新缓存的大小，不需要。实现的工具共 19 个：默认工具集 9 个，`rebuild` 1 个，`storage` 9 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 9 个，而不是表里的 15 个。`session`、`network`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具不在本阶段。
+已实现的是 box 的 6 个工具加上 `exec`、`exec_get`、`exec_kill`，共 9 个，属于默认工具集。`rebuild_box` 不在上表的 27 个工具里，它需要显式确认，不属于 `core`（决策 45），因此单独放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`）。`storage` 工具集已实现 9 个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`（决策 50）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`（决策 49）；`measure_volume` 只刷新缓存的大小，不需要。实现的工具共 19 个：默认工具集 9 个，`rebuild` 1 个，`storage` 9 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 9 个，而不是表里的 15 个。`session`、`network`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具 `read_file` / `write_file` / `list_files` / `copy_files` 已加入 `core`。
 
 ### 4.3 执行模型
 
 - **`exec` 是一次性命令**：`{cmd | argv, cwd?, env?, timeoutSec?, stdin?, user?, background?}`，返回 `{execId, background, woke, status, exitCode, stdout, stderr, truncated, durationMs, outputRef, timedOut}`，其中 `status` 为 `running`、`exited` 或 `killed`。通过 `exec.inspect()` 取真实退出码；超时或 `exec_kill` 后在箱内终止整个进程树（见下）。
 - **输出上限**：接口内联每个流的头尾各约 16 KiB（合计约 32 KB）。超出部分用 `outputRef` 表示，`GET /api/execs/{execId}/output` 返回保存的窗口（每个流头尾各 64 KiB）。
 - **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, waitMs)` 长轮询（最长 25000 毫秒，不依赖客户端是否支持流式输出）；`exec_kill` 终止进程树。
-- **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。空闲超时与 TTL 仍是 #12，这里只做这一次启动。
+- **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。已到期 TTL 的 Box 不会被启动，返回 `409 box_ttl_expired`。空闲休眠与 TTL 的规则见 [5.10](#510-实现说明12)。
 - **默认用户**：非 root 用户 `dev`。工作目录默认 `/workspace`。
 - **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
 - **并发上限**：后台 exec 每个 Box 最多 8 个，全部 MiniBox 最多 64 个。超限的调用返回 `429`，且不会唤醒已停止的 Box（决策 47）。前台调用不计入。
@@ -229,16 +229,18 @@ flowchart LR
 
 ### 4.4 文件接口
 
-文件接口尚未实现。本阶段交付 exec、`/mcp` 与 CLI（Refs #9）。`read_file`、`write_file`、`list_files`、`copy_files` 以及下面的归档与辅助容器留到 Volume（#24）之后。
+已实现（Refs #9，Volume #24 之后）。REST / MCP / CLI 均可用。
 
-- `read_file` / `write_file` / `list_files` / `copy_files`，以及上传下载（目录打包为 tar）。
+- `read_file` / `write_file` / `list_files` / `copy_files`，以及上传下载（目录打包为 base64 tar：`GET/PUT /api/volumes/:id/files/archive`）。
 - **以 Volume 为对象，而不是 Box**：Box 停止时也可用。
+- 调用计入挂载该卷的每个 Box 的空闲活动（决策 56），但不启动已停止的 Box。
 - **实现不依赖读取宿主机上的卷目录。** `/var/lib/docker/volumes/…/_data` 通常是 root 属主，MiniBox 以普通用户运行，或运行在容器里时读不到：
-  - Box 在运行：对该容器使用 archive API 与 exec；
-  - 卷当前没有运行中的容器：创建（不启动）一个挂载该卷的辅助容器，用 Docker archive API（`getArchive` / `putArchive`，对已创建但未启动的容器同样有效）读写；
-  - 列目录：用 archive 流式解析对大目录太重，改为启动一个极短生命周期的辅助容器执行 `find -maxdepth`，并限制条目数；
-  - 写入时 tar 头里的 uid/gid 设为 `dev` 用户。
-- 路径限制在卷的挂载根内，防符号链接逃逸；有路径越界测试。
+  - 卷已被某 Box 容器挂载（运行中或仅已创建）：对该容器使用 archive API；
+  - 卷当前没有容器：创建（不启动）一个挂载该卷的辅助容器，用 Docker archive API（`getArchive` / `putArchive`）读写，用完删除；
+  - 列目录：短生命周期辅助容器执行 `find -P -maxdepth`，并限制条目数（辅助镜像复用基础模板，决策 D12）；
+  - 写入时 tar 头里的 uid/gid 设为 `dev`（1000）。
+- 路径限制在卷的挂载根内，防符号链接逃逸；有路径越界测试。读 symlink 只返回元数据，不跟随。
+- **权限**：`exec` 隐含该 Box 所有挂载卷的读写；`files:*` 只对没有 `exec` 的令牌有意义。
 - 存储节点代理（已移出主路线，见 [12.4](#124-存储节点角色)）以后只作为加速路径。
 
 ### 4.5 对 Agent 友好的约定
@@ -329,7 +331,7 @@ Docker 不能给运行中的容器加挂载，所以「挂载共享卷」和「�
 stateDiagram-v2
   [*] --> provisioning
   provisioning --> running
-  running --> stopped: 手动 / 空闲休眠 / 宿主机重启
+  running --> stopped: 手动 / 空闲休眠 / TTL 到期 / 宿主机重启
   stopped --> running: 启动 / 自动唤醒
   running --> provisioning: 重建 / 装工具
   running --> error: 变更失败 / 配置漂移
@@ -353,6 +355,18 @@ stateDiagram-v2
 - **空闲休眠** = 期望状态改为 `stopped`，**不删容器**。`docker stop` 已释放 CPU 和内存，删容器只会多回收可写层磁盘，却丢掉装在可写层里的东西。删除容器仅用于重建与迁移。
 - **预热池**只对默认挂载有效：一旦需要额外挂载、换模板或改环境变量就要重建。
 - 环境变量里的密钥单独存储，**不写进容器标签**。
+
+### 5.10 实现说明（#12）
+
+- **心跳与持有。** `ActivityPulse` 在内存中按稳定的 `boxId` 记录每个 Box 的最近活动（决策 51）。`hold` 是引用计数的持有，有持有时 Box 不会因空闲休眠；释放时刷新心跳，因此空闲从释放时刻起算。
+- **休眠判定。** `LifecycleWatcher.isIdle` 要求：没有持有；没有打开的终端；没有运行中或正在进入的 exec；没有运行中的任务；心跳距今不少于空闲时长；最近的 CPU 采样严格低于 `BOX_IDLE_CPU_PERCENT`。没有 CPU 采样时不休眠。真正休眠前，判定在该 Box 的锁内再做一次（`stillIdle`），因此判定之后到达的请求会让 Box 保持唤醒，人为停止的 Box 不会被当作空闲休眠。
+- **每箱串行化。** 启动、唤醒、停止、休眠、重启与删除都经过 `BoxPower` 的每箱队列，并在锁内重新读取规格。
+- **唤醒。** `ensureRunning`（exec 与会话启动）唤醒任何已停止的 Box；`wakeIfSleeping`（终端 WebSocket 与预览）只唤醒休眠中的 Box，人为停止的 Box 仍返回 `409`（决策 52）。唤醒把期望状态改为 `running`，`revision` 加 1；若原因是 `idle` 或 `ttl`，记入 `box.wake`，`detail` 为 `{boxId, from}`。终端 WebSocket 唤醒后，tmux 会话已随容器停止而消失，附着会以 `session_not_found`（1011）关闭，Box 则保持运行。会话的读取、发送、关闭与列表不唤醒。卷上的文件调用也不唤醒（决策 56）。
+- **TTL。** `ttlEndsAt` 用 `createdAt` 加上 `ttlSec` 得到到期时刻；缺失、非正或无法解析的值视为不限。到期后监视器以原因 `ttl` 停止 Box，不论活动情况，并记入 `box.ttl_expire`。`refuseExpired` 在启动、重启、重建与唤醒中拒绝到期的 Box（决策 53）。协调器遇到期望运行而已到期的 Box，会让它休眠，而不是启动它。
+- **多宿主机。** 终端与预览用 `locateBox` 查找 Box：先看规格归属的宿主机，再依次尝试其余宿主机，只跳过返回 404 的那一台。监视器与 TTL 检查逐台宿主机进行。
+- **任务结束。** `TaskManager` 在任务结束后调用 `onSettled`，服务端据此刷新该 Box 的心跳（决策 54）。
+- **中间帧。** 休眠与唤醒各会先发出一帧中间状态的 `box` 帧（期望状态已变，容器状态尚未刷新），最终状态由随后的帧给出。终端页可能因此闪过一瞬，之后显示正确的状态。
+- **已知限制。** 重建一个因空闲休眠（未到期）的 Box，会先启动容器再停止它。预览的流式响应体在读完或取消之前保持唤醒；上游失败时立即释放。文件请求不启动已停止的 Box（决策 56）。#12 议题把「文件」列为唤醒入口，但文件接口以卷为对象，一个卷可能挂给多个 Box，没有唯一的 Box 可唤醒；若维护者要求唤醒，需先定下唤醒哪个 Box。分离的会话（没有附着的终端）不保持 Box 唤醒：超过空闲时长没有会话请求时，其中安静运行的任务会随 Box 休眠而结束。议题的豁免只列「打开的终端」与「后台任务」，因此这一点保持不变。
 
 ---
 
@@ -457,7 +471,7 @@ pools:
 - **丢失的卷**：记录存在而引擎中已没有该卷时，启动、重启、创建、重建、挂载和测量都返回 409 `volume_missing`，不交给 Docker 自动建一个空卷（创建容器、启动容器和运行辅助容器时，Docker 都会自动创建缺失的命名卷）。检查在每次引擎调用之前进行；创建时在规格锁内再查一次。遗留的 `<prefix>-ws-*` 若有记录而引擎卷已不存在，同样拒绝，不另建新工作区。删除记录仍可用：引擎卷已不存在时视为已删除。列出卷时尚不标记 `missing`，留待后续。
 - **删除 Box**：`deleteVolume=true` 只删除记录中所有者为本 Box（`ownerBoxId` 相等）、且没有其它规格挂载它的卷，并在删除卷之前先删容器。没有记录的引擎卷即使仍被本 Box 的规格挂着也不删除，按名字回退删除的分支已经移除。引擎拒绝删除时保留记录，并以 `volumeError` 返回原因。
 - **辅助容器**：`runHelper` 的容器不接入网络，根文件系统只读，`/tmp` 是 16 MiB 的 tmpfs，丢掉全部能力，只加回调用方列出的能力，禁止提权，内存 256 MiB、进程数 64，由引擎在退出后删除（`AutoRemove`）。命名卷以 `NoCopy` 挂载，否则 Docker 会把镜像里的 `/mnt` 复制进空卷，覆盖刚 chown 的属主。池探测以 `1000:1000` 运行、不带能力，因此 path 池的挂载根若对该用户不可搜索，会被判为不可达（`unreachable`）。
-- **暂缓**：文件 API（#9）、restic 检查点（#11）、存储节点代理（#28 / #29）、每卷配额。更长的 NAS 部署说明仍是 #30。
+- **暂缓**：restic 检查点（#11）、存储节点代理（#28 / #29）、每卷配额。更长的 NAS 部署说明仍是 #30。文件 API（#9）已实现。
 
 ---
 
@@ -690,7 +704,7 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - **预设**：`readonly`（`box:read` 与 `files:read`）、`operator`（除了不能签发令牌之外的全部 scope）、`sandboxed-agent`（operator 去掉 `volume:attach`、`tool:install` 和 `box:ssh`）、`admin`（全部 scope，Box 与宿主机为 `*`）。`sandboxed-agent` 的默认配额是 5 个 Box、合计 8 个 CPU、16 GB、TTL 4 小时、每 60 秒 60 次请求。未改 scope、且 Box 与宿主机都是 `*` 的 admin 可以读全部审计；其余令牌只看自己的事件和范围内 Box 的事件。任何预设都不能创建或吊销令牌。
 - **默认范围**：Box 为 `created-by-me`，宿主机为 `local`，卷为空。只读预设不能创建 Box，因此在改成 `*` 或列出 id / 标签之前，它看不到已经存在的 Box。
 - **授权**：仍是执行器上的 `authorize` 钩子，操作定义没有改。调用前检查 scope；输入合法且目标解析之后，再检查宿主机、卷、Box、TTL 和配额。直接读取范围外的已有 Box 返回 403，不存在的 Box 仍是 404。列表在处理函数里过滤，因为钩子只能拒绝整次调用。
-- **`exec`**：对令牌可见的 Box，`exec` 隐含其全部挂载的读写，所以 `files:*` 只对没有 `exec` 的令牌有意义。文件 API 还没有（#9）。终端要求 `exec` 且 Box 在范围内。
+- **`exec`**：对令牌可见的 Box，`exec` 隐含其全部挂载的读写，所以 `files:*` 只对没有 `exec` 的令牌有意义。文件 API 已实现（#9）。终端要求 `exec` 且 Box 在范围内。
 - **卷**：创建 Box 总会挂上工作区卷。卷还不存在时，这是新建，不需要 `volume:attach`。卷已经存在时，这是挂载，必须对该卷有 `volume:attach`。请求里已经能写出的 `mounts`、`volumes`、`volume` 同样检查。
 - **TTL**：令牌带 `maxTtlSec` 时，省略或显式给出 `null` 都会把这个上限写入 `lifecycle.ttlSec`；大于上限的值返回 403（`quota_ttl`）。创建与更新都按此检查。到点自动停止由生命周期清扫完成（#12），这里只负责写入上限。
 - **配额**：统计 `createdBy` 是该令牌的 Box，跨所有宿主机。`maxCpus` 和 `maxMemoryMb` 是这些 Box 的合计，因此也限制单个 Box。只改名称不会因为资源已经超限而被拒绝。配额检查在按令牌串行的临界区内完成（N1），两个竞争的创建不能同时占用最后一个名额。速率限制是进程内的固定窗口，超出返回 429，不写入磁盘。
@@ -769,13 +783,17 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 - Agent CLI 装到**共享的只读工具卷**（`/opt/minibox/tools`，`PATH` 已包含其 `bin`）；多个 Box 共用，省磁盘也省安装时间。
 - 安装/升级/卸载通过控制面的**专用写入 helper**完成：把 tools 卷以读写方式挂进短生命周期容器，以 uid 1000 运行并允许出站（npm / PyPI）；Box 内仍只读挂载。检测命令同样在 helper 中执行。
+- 写入前，本地池上的 tools 卷先由 root 辅助容器（仅 `CHOWN`）整卷交给 uid 1000。Box 首次挂载空卷时，Docker 会把镜像里挂载点的属主复制进卷，模板里的 `/opt/minibox/tools` 是 root 属主，不做这一步，写入 helper 会因无权限失败。NFS 与 path 池在创建时已准备目录，不再交接。
 - 用户配置与登录态放 **home 卷**；系统级的包（`apt`）归模板。
 
 ### 11.3 工具目录
 
 声明式清单：`id`、名称、说明、安装/检测/升级/卸载命令、依赖（如 Node ≥ 20）、是否需要 root、预估体积、安装来源（npm / pip / 官方脚本）。
 
-- 内置：Claude Code、OpenAI Codex CLI、Gemini CLI、OpenCode、Aider 等。
+- 分组（`category`）：`agents` AI 编程助手、`languages` 语言与运行时、`terminal` 终端与开发工具、`networking` 网络。`tools.d` 里没写 `category` 的旧自定义条目归入 `agents`。创建对话框与 Box 的「工具」页都按分组展示，并提供按名称、说明与分组过滤的搜索框。
+- 内置：AI 编程助手 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi；语言与运行时 Bun、uv、Rust（rustup）、Zig；终端与开发工具 herdr、luvus；网络 Tailscale（`needsRoot`）。
+- `needsRoot` 的条目只列出，安装、升级与卸载都被拒绝（`tool_needs_root`），MiniBox 从不以 root 安装。
+- 检测：镜像或家目录里已有的工具显示为已安装并带版本，但不计为受管；只有 tools 卷上的入口点才受管。升级与卸载只作用于受管工具，其它情况返回 `tool_unmanaged`。已检测到的工具不会被重复安装。
 - 清单放仓库 `catalog/*.json`，并允许在 `DATA_DIR/tools.d/` 放自定义条目。
 - 长耗时安装使用异步任务与进度流；兼容代理配置。
 - API Key：短期用环境变量输入，密钥单独存储；长期方向是宿主机侧密钥注入，避免把密钥写进 Box。
@@ -1147,6 +1165,12 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | 48 | MCP 认证与审计 | `/mcp` 最初只用主访问密钥，文档写明它拥有完全的所有者权限；令牌（#13）实现后，`/mcp` 同时接受 Agent 令牌（见 §9.5）。错误的 Bearer 密钥计入登录限流。审计来源只由服务端决定：REST 与 CLI 记为 `rest`，MCP 记为 `mcp`。「严格」档位的 exec 只允许 `dev` 或 `1000`；其他档位允许 `root`，审计标记 `privileged` |
 | 49 | 存储写入确认 | `create_volume`、`delete_volume`、`replace_pools` 没有 `confirm: true` 时不改动任何内容，返回 `409 confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 沿用重建的确认。`delete_volume` 对已挂载的卷直接返回 `volume_mounted`，不生成预览。`measure_volume` 只刷新缓存的大小，不加确认。确认是防误操作的闸，不是权限；权限仍由 `volume:*` 与 `pool:admin` 决定 |
 | 50 | 存储工具集 | 卷与存储池工具放在非默认的 `storage` 工具集（`/mcp?toolsets=storage`），共 9 个。MCP 错误结果带上 `details`，代理因此能读到 `details.preview`。挂载与卸载经 `rebuildBox`，适用与 `rebuild_box` 相同的记录规则。设计目录中 `storage` 行列出的检查点工具仍未实现 |
+| 51 | 空闲计时的活动来源 | 活动心跳只存在内存中，不写入事件表，因为每次请求都会刷新它。计入：终端的输入、输出与关闭，以及打开中的 WebSocket；exec 从开始到结束；会话的启动、读取与发送；预览的 HTTP 请求、流式响应体与预览 WebSocket；卷上的文件调用（对挂载该卷的每个 Box，调用期间持有）；箱内异步任务结束时。读取 Box 记录与统计不计入，否则只被监控页面查看的 Box 永远不会休眠 |
+| 52 | 唤醒的入口分工 | exec 与 `session_start` 唤醒任何已停止的 Box，与 §4.3 一致。终端 WebSocket 与端口预览只唤醒休眠中的 Box：人为停止的 Box 仍返回 `409`，因为人停下它是有意的。会话读取、发送、关闭与列表不唤醒，因为会话随容器结束，唤醒也救不回它们。唤醒审计为 `box.wake` |
+| 53 | TTL 对所有启动入口生效 | 到期的 Box 不能被启动、重启、重建、唤醒、exec、会话、终端或预览再次启动，统一返回 `409 box_ttl_expired`。重建与协调器也在其列：重建会启动新容器，协调器若启动到期的 Box 就绕过了 TTL。到期只停止 Box，不删除容器与卷；清除或延长 TTL 后即可再次启动 |
+| 54 | 任务结束计为活动 | 箱内异步任务运行期间保持 Box 唤醒。任务结束时也刷新心跳，因此空闲窗口从结束时刻起算，而不是从上一次请求起算，长任务刚结束不会立刻休眠 |
+| 55 | 重启后的空闲起点 | 心跳不持久化，重启后没有记录。空闲时长从监视开始时计起，而不是从创建时刻计起，否则一次重启会让所有 Box 同时休眠 |
+| 56 | 文件接口的活动与唤醒 | 文件接口以卷为对象（§4.4）。每次调用都在其间持有挂载该卷的每个 Box：计入空闲计时，持有期间不休眠，结束时刷新心跳。它不启动已停止的 Box，因为卷的文件调用在 Box 停止时也可用，而且一个卷可能挂给多个 Box，没有唯一的 Box 可唤醒 |
 
 ---
 

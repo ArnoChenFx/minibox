@@ -93,6 +93,29 @@ describe("toCreateOptions", () => {
     expect(toCreateOptions({ ...base, user: "0:0" })).toEqual({ Image: "img:1", User: "0:0" });
     expect(toCreateOptions(base)).toEqual({ Image: "img:1" });
   });
+
+  test("noCopy volume mounts use Mounts with NoCopy, plus readonly root and tmpfs", () => {
+    const options = toCreateOptions({
+      ...base,
+      mounts: [{ source: "vol", target: "/minibox-volume", noCopy: true }],
+      network: "none",
+      memoryBytes: 256 * 1024 * 1024,
+      swapBytes: 256 * 1024 * 1024,
+      readonlyRootfs: true,
+      tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=16m" },
+      hardening: { capDrop: ["ALL"], noNewPrivileges: true, pidsLimit: 64 },
+    });
+    expect(options.HostConfig).toMatchObject({
+      Mounts: [{ Type: "volume", Source: "vol", Target: "/minibox-volume", VolumeOptions: { NoCopy: true } }],
+      NetworkMode: "none",
+      ReadonlyRootfs: true,
+      Tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=16m" },
+      Memory: 256 * 1024 * 1024,
+      CapDrop: ["ALL"],
+      PidsLimit: 64,
+    });
+    expect(options.HostConfig?.Binds).toBeUndefined();
+  });
 });
 
 describe("toHelperOptions", () => {

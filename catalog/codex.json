@@ -2,14 +2,15 @@
   "id": "codex",
   "name": "OpenAI Codex CLI",
   "description": "OpenAI's local coding agent CLI.",
+  "category": "agents",
   "source": "npm",
   "package": "@openai/codex",
   "bin": "codex",
   "needsRoot": false,
-  "estimatedMb": 120,
+  "estimatedMb": 410,
   "requires": "Node \u2265 20",
   "install": "npm install -g --prefix {{prefix}} {{package_spec}}",
   "upgrade": "npm install -g --prefix {{prefix}} {{package_spec}}",
   "uninstall": "npm uninstall -g --prefix {{prefix}} {{package}}",
-  "detect": "command -v codex >/dev/null && codex --version 2>/dev/null | head -1"
+  "detect": "command -v codex >/dev/null && codex --version 2>/dev/null"
 }

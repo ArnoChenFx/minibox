@@ -30,7 +30,8 @@ RUN if getent passwd node >/dev/null; then userdel node && rm -rf /home/node; fi
  && visudo -cf /etc/sudoers.d/dev
 
 # Mount points. Until the storage work (#24) attaches volumes, these are plain directories in the image. The tools
-# volume is shared and read-only by design (docs/design.md §11.2), so it stays root-owned.
+# volume is read-only inside boxes (docs/design.md §11.2). The tools writer runs as uid 1000 and takes the volume back
+# for that uid before each write, because Docker copies this root-owned directory into an empty volume on first mount.
 RUN mkdir -p /workspace /opt/minibox/tools/bin /home/dev/.cache \
  && chown dev:dev /workspace /home/dev/.cache
 
