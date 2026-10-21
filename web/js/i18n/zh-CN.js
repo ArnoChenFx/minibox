@@ -161,6 +161,7 @@ export default {
   "err.mount_duplicate": "挂载路径 {path} 重复。",
   "err.mount_not_found": "路径 {path} 上没有挂载。",
   "err.pool_not_found": "找不到存储池 {pool}。",
+  "err.pool_admin_forbidden": "此凭据不能修改存储池。",
   "err.pool_backend_invalid": "存储池 {pool} 的后端未知。",
   "err.pool_local_backend": "local 池必须保持 local 后端。",
   "err.nfs_pool_invalid": "NFS 池 {pool} 需要服务器和绝对导出路径。",

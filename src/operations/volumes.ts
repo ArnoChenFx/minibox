@@ -15,7 +15,7 @@ import {
 } from "../services/volumes";
 import { requireRevision } from "../specs/revision";
 import type { PoolDraft, RoleDraft } from "../volumes/pools";
-import { assertCanAttach } from "./authz";
+import { assertCanAdministerPools, assertCanAttach } from "./authz";
 import { defineOperation } from "./define";
 import { BoxSchema } from "./schemas";
 import { boxId, confirmFlag, expectedRevision, refreshFlag, volumeName } from "./validation";
@@ -349,7 +349,7 @@ const poolReplace = defineOperation({
   tag: "volumes",
   summary: "Replace storage pool configuration",
   kind: "write",
-  scope: "volume:write",
+  scope: "pool:admin",
   async: false,
   conflicts: true,
   input: z.object({
@@ -372,7 +372,10 @@ const poolReplace = defineOperation({
   },
   activity: { action: () => "pool.replace", target: () => "pools" },
   audit: { target: () => ({ kind: "pool", name: "pools" }) },
-  run: ({ host }, input) => savePools(host, input.pools as PoolDraft[], input.roles as RoleDraft | undefined),
+  run: async (ctx, input) => {
+    await assertCanAdministerPools(ctx);
+    return savePools(ctx.host, input.pools as PoolDraft[], input.roles as RoleDraft | undefined);
+  },
 });
 
 export const volumeOperations = [

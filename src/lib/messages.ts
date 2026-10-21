@@ -117,6 +117,7 @@ export const MESSAGES = {
   mount_duplicate: "Mount path {path} is listed more than once.",
   mount_not_found: "No mount at {path}.",
   pool_not_found: "Storage pool {pool} was not found.",
+  pool_admin_forbidden: "This credential may not change storage pools.",
   pool_backend_invalid: "Pool {pool} has an unknown backend.",
   pool_local_backend: "The local pool must stay a local backend.",
   nfs_pool_invalid: "NFS pool {pool} needs a server and an absolute export path.",

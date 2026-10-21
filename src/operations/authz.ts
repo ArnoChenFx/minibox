@@ -19,3 +19,11 @@ export async function assertCanAttach(ctx: OperationContext, volume: Pick<Volume
     );
   }
 }
+
+/** Replacing storage pools changes where every new volume goes, so only an administrator may do it. */
+export async function assertCanAdministerPools(ctx: OperationContext): Promise<void> {
+  const allowed = ctx.authorize ? await ctx.authorize({ scope: "pool:admin" }) : ctx.principal.type === "owner";
+  if (!allowed) {
+    throw new AuthorizationDenied(new AppError(403, "forbidden", msg("pool_admin_forbidden")));
+  }
+}

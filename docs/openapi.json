@@ -8186,7 +8186,7 @@
           }
         },
         "x-kind": "write",
-        "x-scope": "volume:write",
+        "x-scope": "pool:admin",
         "x-async": false,
         "x-cli": "pool apply",
         "x-mcp": {

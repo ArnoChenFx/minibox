@@ -3,7 +3,7 @@ import { statSync } from "node:fs";
 
 import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
-import type { ExecutorHooks } from "../src/operations/executor";
+import type { AuditEvent, ExecutorHooks } from "../src/operations/executor";
 import type { OperationContext } from "../src/operations/types";
 import { type HelperSpec, RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
@@ -540,5 +540,66 @@ describe("helper containers ask only for what their command needs", () => {
       expect(spec.user).toBe(DEV_OWNER);
       expect(spec.capAdd).toBeUndefined();
     }
+  });
+});
+
+/**
+ * An app whose authorize hook refuses the scopes a test denies. Denials are switched on after setup, so the same boxes
+ * and volumes exist before and after. Requests go through the operations, as REST and MCP send them.
+ */
+function guardedApp() {
+  const denied = new Set<string>();
+  const audited: AuditEvent[] = [];
+  const created = createTestApp({ labelPrefix: "mbtest" }, new FakeRuntime(), {
+    authorize: (request) => request.scope === undefined || !denied.has(request.scope),
+    audit: (event) => audited.push(event),
+  });
+  const current = created.app.hosts.get();
+  created.runtime.seedImage(current.baseTemplateTag, {
+    [current.keys.template]: "true",
+    [current.keys.templateName]: "base",
+  });
+  const ctx: OperationContext = {
+    host: current,
+    principal: { type: "owner", id: "owner", name: "owner" },
+    source: "rest",
+    events: created.app.events,
+  };
+  return {
+    app: created.app,
+    runtime: created.runtime,
+    host: current,
+    audited,
+    deny(...scopes: string[]) {
+      for (const scope of scopes) denied.add(scope);
+    },
+    allow() {
+      denied.clear();
+    },
+    run: async <T = unknown>(name: string, input: unknown): Promise<T> =>
+      (await created.app.operations.run(name, ctx, input)) as T,
+  };
+}
+
+const DISK_POOLS = [
+  { name: "local", backend: "local" },
+  { name: "disk", backend: "path", root: "/mnt/disk", default: true },
+];
+
+describe("write, attach and pool scopes", () => {
+  test("pool.replace needs pool:admin, and refusing volume:write does not stand in for it", async () => {
+    const app = guardedApp();
+    app.deny("pool:admin");
+    expect(await rejectionOf(app.run("pool.replace", { pools: DISK_POOLS }))).toMatchObject({
+      status: 403,
+      key: "pool_admin_forbidden",
+    });
+    expect(app.audited.at(-1)).toMatchObject({ op: "pool.replace", status: "denied" });
+    expect((await getPools(app.host)).pools.map((pool) => pool.name)).toEqual(["local"]);
+
+    app.allow();
+    app.deny("volume:write");
+    await app.run("pool.replace", { pools: DISK_POOLS });
+    expect((await getPools(app.host)).pools.map((pool) => pool.name).toSorted()).toEqual(["disk", "local"]);
   });
 });
