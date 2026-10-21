@@ -79,9 +79,12 @@ export class LifecycleWatcher {
     this.ticking = true;
     const report: LifecycleReport = { slept: [], expired: [], failed: [] };
     try {
+      const known = new Set<string>();
       for (const host of this.options.hosts.list()) {
+        for (const spec of host.specs.list()) known.add(spec.id);
         await this.pass(host, report);
       }
+      for (const boxId of this.clientSeen) if (!known.has(boxId)) this.clientSeen.delete(boxId);
     } finally {
       this.ticking = false;
     }
@@ -154,12 +157,14 @@ export class LifecycleWatcher {
   /**
    * Checked under the box's lock. A box a person stopped in the meantime is not put to sleep as idle, because that would
    * turn a manual stop into a sleep that wakes on the next terminal or preview request. The tmux check runs again here,
-   * so a terminal opened after the decision keeps the box awake.
+   * so a terminal opened after the decision keeps the box awake. It runs before `busy`, since it awaits an exec in the
+   * box: a hold, SSH connection, exec or task that begins during it is still seen, and nothing awaits between the last
+   * check and the stop.
    */
   private async stillIdleBox(host: HostCtx, box: Box, idleSec: number): Promise<boolean> {
     if (!box.running || box.desired !== "running") return false;
-    if (this.busy(box.id, box.boxId)) return false;
     if (await this.terminalOpen(host, box.id, box.boxId)) return false;
+    if (this.busy(box.id, box.boxId)) return false;
     return this.quietFor(box.boxId, box.createdAt, idleSec);
   }
 

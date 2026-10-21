@@ -353,6 +353,37 @@ describe("idle sleep", () => {
     expect(await boxes.getBox(host, box.boxId)).toMatchObject({ running: true, desired: "running" });
   });
 
+  test("a hold taken while the check under the lock asks tmux keeps the box awake", async () => {
+    const box = await quietBox("late-hold");
+    const checkOnce = app.terminals.hasAttachedClient.bind(app.terminals);
+    let checks = 0;
+    let release: (() => void) | undefined;
+    app.terminals.hasAttachedClient = async (on, containerId) => {
+      checks += 1;
+      const attached = await checkOnce(on, containerId);
+      if (checks === 2) release = app.pulse.hold(box.boxId);
+      return attached;
+    };
+    offsetMs = 31_000;
+
+    expect((await watcher().tick()).slept).not.toContain(box.boxId);
+    expect(checks).toBe(2);
+    expect(await boxes.getBox(host, box.boxId)).toMatchObject({ running: true, desired: "running" });
+    release?.();
+  });
+
+  test("a tmux check that fails keeps the box awake for that pass and reports it", async () => {
+    const box = await quietBox("probe-fails");
+    app.terminals.hasAttachedClient = async () => {
+      throw new Error("tmux timed out");
+    };
+
+    const report = await watcher().tick();
+    expect(report.slept).not.toContain(box.boxId);
+    expect(report.failed).toContainEqual({ id: box.boxId, error: "tmux timed out" });
+    expect(await boxes.getBox(host, box.boxId)).toMatchObject({ running: true, desired: "running" });
+  });
+
   test("a background exec keeps the box awake until it ends, and its end starts the idle window", async () => {
     const box = await quietBox("job");
     runtime.execScript = null;
