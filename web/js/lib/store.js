@@ -1,10 +1,19 @@
 import { api } from "./api.js";
+import { pollWhileDown, subscribe } from "./live.js";
 
-/** Shared host-metrics poller. Pages subscribe; polling runs while anyone listens. */
+/** The longest host history kept in the page. The server keeps its own ring; this only bounds the client. */
+const HISTORY_CAP = 720;
+const POLL_MS = 3000;
+
+/** Shared host metrics. Pages subscribe; `host` frames keep them current, and a poll runs only while the stream is down. */
 const listeners = new Set();
 let latest = null;
-let timer = null;
 let failing = false;
+let stopLive = null;
+
+function notify() {
+  for (const fn of listeners) fn(latest, failing);
+}
 
 async function tick() {
   try {
@@ -13,18 +22,33 @@ async function tick() {
   } catch {
     failing = true;
   }
-  for (const fn of listeners) fn(latest, failing);
+  notify();
+}
+
+function start() {
+  const offFrames = subscribe("host", (frame) => {
+    if (!latest) return;
+    const history = frame.sample ? [...latest.history, frame.sample].slice(-HISTORY_CAP) : latest.history;
+    latest = { ...frame.metrics, history };
+    failing = false;
+    notify();
+  });
+  const offPoll = pollWhileDown(tick, POLL_MS);
+  void tick();
+  stopLive = () => {
+    offFrames();
+    offPoll();
+    stopLive = null;
+  };
 }
 
 export function onHost(fn) {
   listeners.add(fn);
   if (latest) fn(latest, failing);
-  if (!timer) {
-    tick();
-    timer = setInterval(tick, 3000);
-  }
+  if (!stopLive) start();
   return () => {
     listeners.delete(fn);
+    if (listeners.size === 0) stopLive?.();
   };
 }
 

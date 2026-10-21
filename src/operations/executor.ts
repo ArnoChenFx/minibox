@@ -108,7 +108,7 @@ function eventOf(
   const { input, resolved, result, error } = outcome;
   const audit = operation.audit;
   const target = input === undefined ? undefined : audit?.target?.(input, resolved, result);
-  const detail = input === undefined ? undefined : audit?.detail ? audit.detail(input, resolved) : input;
+  const detail = input === undefined ? undefined : audit?.detail ? audit.detail(input, resolved, result) : input;
   const fromAudit = input === undefined ? undefined : audit?.ref?.(input, resolved, result);
   const ref = fromAudit || outcome.ref ? { ...fromAudit, ...outcome.ref } : undefined;
   return {

@@ -47,6 +47,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     containerRuntime: null,
     sessionTtlMs: DEFAULT_SESSION_TTL_MS,
     sessionIdleMs: null,
+    streamMaxConnections: 256,
+    takeoverIdleSec: 300,
     ...overrides,
   };
 }

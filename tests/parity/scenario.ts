@@ -35,6 +35,7 @@ export function normalize(text: string): string {
     .replace(/"taskId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"taskId":"<ulid>"')
     .replace(/"parentId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"parentId":"<ulid>"')
     .replace(/\/api\/tasks\/[0-9A-HJKMNP-TV-Z]{26}/g, "/api/tasks/<ulid>")
+    .replace(/"cursor":"[0-9a-f]{12}\./g, '"cursor":"<epoch>.')
     .replace(/"ts":\d+/g, '"ts":0')
     .replace(/"durationMs":\d+/g, '"durationMs":0');
 }
@@ -393,6 +394,33 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("read a malformed task id", "GET", "/api/tasks/not-a-task");
     await send("cancel a missing task", "POST", "/api/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/cancel");
     await send("cancel a finished task", "POST", `/api/tasks/${String(finished.json?.id ?? "")}/cancel`);
+
+    const term = boxId(
+      (await post("create the session box", "/api/boxes", { name: "term", cpus: 1, memoryMb: 256 })).json,
+    );
+    await send("list sessions of a box with none", "GET", `/api/boxes/${term}/sessions`);
+    await post("start a session", `/api/boxes/${term}/sessions`, { name: "work" });
+    await post("start the same session again", `/api/boxes/${term}/sessions`, { name: "work" });
+    await post("start a session with a bad name", `/api/boxes/${term}/sessions`, { name: "bad name!" });
+    await post("start a session in a missing box", "/api/boxes/missing/sessions", { name: "work" });
+    await send("list sessions", "GET", `/api/boxes/${term}/sessions`);
+    await post("type text into a session", `/api/boxes/${term}/sessions/work/input`, { text: "echo hi\n" });
+    await post("press Enter in a session", `/api/boxes/${term}/sessions/work/input`, { keys: ["Enter"] });
+    await post("send keys and text together", `/api/boxes/${term}/sessions/work/input`, { keys: ["Enter"], text: "x" });
+    await post("send neither keys nor text", `/api/boxes/${term}/sessions/work/input`, {});
+    await send("read the session", "GET", `/api/boxes/${term}/sessions/work?lines=10`);
+    await send("read with an invalid since", "GET", `/api/boxes/${term}/sessions/work?since=bogus`);
+    await send(
+      "read with a cursor that cannot be continued",
+      "GET",
+      `/api/boxes/${term}/sessions/work?lines=5&since=000000000000.1`,
+    );
+    await send("read with zero lines", "GET", `/api/boxes/${term}/sessions/work?lines=0`);
+    await send("read a missing session", "GET", `/api/boxes/${term}/sessions/nope`);
+    await send("close the session", "DELETE", `/api/boxes/${term}/sessions/work`);
+    await send("close the session again", "DELETE", `/api/boxes/${term}/sessions/work`);
+    await send("read a closed session", "GET", `/api/boxes/${term}/sessions/work`);
+    await send("delete the session box", "DELETE", `/api/boxes/${term}`);
   } finally {
     server.stop(true);
     app.throttle.stop();

@@ -2,9 +2,10 @@ import { existsSync, readFileSync, statfsSync } from "node:fs";
 import os from "node:os";
 
 import { log } from "../lib/logger";
-import { listBoxes } from "../services/boxes";
+import { type LiveSink, NO_LIVE } from "./live";
 import { type CpuTimes, cpuPercent, parseMeminfo, parseProcStat } from "./procfs";
 import type { HostCtx } from "./registry";
+import { type BoxTotals, summarizeBoxes } from "./sampler";
 
 export interface DiskUsage {
   mount: string;
@@ -88,7 +89,8 @@ export function assembleDisks(root: Usage | null, docker: Usage | null, inContai
 
 /**
  * Samples host CPU/memory on a fixed interval into a ring buffer, and assembles a full
- * metrics snapshot (incl. Docker info, cached briefly) on demand.
+ * metrics snapshot (incl. Docker info, cached briefly) on demand. Each tick also publishes the
+ * metrics on the live sink, so an open page needs no request of its own to stay current.
  */
 export class HostMonitor {
   private prev: CpuTimes | null = null;
@@ -102,17 +104,31 @@ export class HostMonitor {
     private readonly currentHost: () => HostCtx,
     private readonly intervalMs: number,
     private readonly maxSamples: number,
+    private readonly live: LiveSink = NO_LIVE,
   ) {}
 
   start(): void {
-    this.sample();
-    this.timer = setInterval(() => this.sample(), this.intervalMs);
+    this.tick();
+    this.timer = setInterval(() => this.tick(), this.intervalMs);
     this.timer.unref?.();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  private tick(): void {
+    this.sample();
+    this.snapshot()
+      .then(({ history, ...metrics }) => {
+        this.live.publish("host", {
+          hostId: this.currentHost().host.id,
+          metrics,
+          sample: history.at(-1) ?? null,
+        });
+      })
+      .catch((e: unknown) => log.warn("host.metrics_failed", { error: String(e) }));
   }
 
   private sample(): void {
@@ -139,26 +155,27 @@ export class HostMonitor {
     return { total, used: total - free, available: free, swapTotal: 0, swapUsed: 0 };
   }
 
+  /** The totals the sampler keeps. One listing of the engine stands in while the sampler's cache is not current. */
+  private async boxTotals(host: HostCtx): Promise<BoxTotals> {
+    const cached = host.sampler.summary();
+    if (cached) return cached;
+    return summarizeBoxes(await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } }));
+  }
+
   private async dockerInfo(): Promise<HostMetrics["docker"] & { boxes: HostMetrics["boxes"] }> {
     const now = Date.now();
     if (this.dockerCache && now - this.dockerCache.at < 2500) return this.dockerCache.value;
     let value: HostMetrics["docker"] & { boxes: HostMetrics["boxes"] };
     try {
       const host = this.currentHost();
-      const [info, boxes] = await Promise.all([host.runtime.info(), listBoxes(host)]);
+      const [info, totals] = await Promise.all([host.runtime.info(), this.boxTotals(host)]);
       value = {
         available: true,
         version: info.version,
         rootDir: info.rootDir,
         containers: info.containers,
         images: info.images,
-        boxes: {
-          total: boxes.length,
-          running: boxes.filter((b) => b.running).length,
-          allocatedCpus: Math.round(boxes.filter((b) => b.running).reduce((s, b) => s + (b.cpus ?? 0), 0) * 100) / 100,
-          allocatedMemory: boxes.filter((b) => b.running).reduce((s, b) => s + (b.memory ?? 0), 0),
-          unlimited: boxes.filter((b) => b.cpus === null || b.memory === null).length,
-        },
+        boxes: totals,
       };
     } catch (e) {
       log.warn("host.docker_info_failed", { error: String(e) });

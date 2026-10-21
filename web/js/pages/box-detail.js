@@ -1,3 +1,4 @@
+import { mountActivity } from "../components/activity-panel.js";
 import {
   deleteBox,
   editResources,
@@ -7,14 +8,22 @@ import {
   snapshotBox,
 } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
+import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
+import { applySamples } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, dateTime, duration, gbOrMb, mem, pct, shortId } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
+import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
 import { confirmDialog, emptyState, openDialog, stateBadge, toast, toastError, usageBar } from "../lib/ui.js";
+
+/** The points a chart keeps. The server keeps its own ring; this bounds what the page holds. */
+const CHART_POINTS = 240;
+/** How often the box and its history are read again while the live stream is down. */
+const FALLBACK_MS = 3000;
 
 function joined(names, translate) {
   return esc((names ?? []).map((name) => (translate ? t(`reset.${name}`) : name)).join(t("reset.sep")));
@@ -56,20 +65,41 @@ function specBanners(box) {
 const TABS = [
   ["overview", "bd.tabOverview", "dashboard"],
   ["terminal", "bd.tabTerminal", "terminal"],
-  ["logs", "bd.tabLogs", "logs"],
+  ["activity", "bd.tabActivity", "activity"],
   ["resources", "bd.tabResources", "sliders"],
   ["snapshots", "bd.tabSnapshots", "camera"],
 ];
 
 export function render(view, id, tab = "overview") {
+  if (tab === "logs") tab = "activity";
   if (!TABS.some(([k]) => k === tab)) tab = "overview";
   let box = null;
   let disposed = false;
+  let painted = false;
+  let missing = false;
+  let mounts = 0;
   let tabCleanup = null;
+  let frames = 0;
+  let headShown = "";
+  let lastSampleAt = 0;
   const history = [];
+  const listeners = new Set();
   view.innerHTML = `<div class="detail-head"><div class="skeleton" style="width:44px;height:44px;border-radius:12px"></div><div style="flex:1"><div class="skeleton sk-line" style="width:200px"></div><div class="skeleton sk-line" style="width:320px"></div></div></div>`;
 
-  const header = () => `
+  const ref = () => box?.boxId ?? id;
+
+  const onChange = (fn) => {
+    listeners.add(fn);
+    return () => {
+      listeners.delete(fn);
+    };
+  };
+
+  const notify = () => {
+    for (const fn of listeners) fn();
+  };
+
+  const headHtml = () => `
     <div class="detail-head">
       <span class="avatar">${icon("box", "icon-lg")}</span>
       <div><h1>${esc(box.name)} ${stateBadge(box.state)}</h1>
@@ -81,30 +111,66 @@ export function render(view, id, tab = "overview") {
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
-    </div>
-    <div class="tabs" role="tablist">${TABS.map(
-      ([k, label, ic]) =>
-        `<a class="tab" role="tab" aria-selected="${k === tab}" href="#/boxes/${enc(box.id)}/${k}">${icon(ic)}${t(label)}</a>`,
-    ).join("")}</div>
-    <div id="tabBody"></div>`;
+    </div>`;
 
-  const refreshBox = async () => {
-    const r = await api(`/api/boxes/${enc(id)}`);
-    box = r.box;
-    if (box.stats) {
-      history.push({
-        cpu: box.cpus ? box.stats.cpuPercent / box.cpus : box.stats.cpuPercent,
-        mem: box.stats.memPercent,
-      });
-      if (history.length > 60) history.shift();
+  const paintHead = () => {
+    if (!painted) return;
+    const next = headHtml();
+    if (next === headShown) return;
+    headShown = next;
+    view.querySelector(".detail-head").outerHTML = next;
+  };
+
+  const setBox = (next) => {
+    if (disposed) return;
+    box = next;
+    paintHead();
+    notify();
+  };
+
+  const pushPoint = (point) => {
+    if (point.t <= lastSampleAt) return;
+    lastSampleAt = point.t;
+    history.push(point);
+    if (history.length > CHART_POINTS) history.splice(0, history.length - CHART_POINTS);
+  };
+
+  /** Replaces the chart with the engine's ring, keeping the points that arrived while the request was in flight. */
+  const loadHistory = async () => {
+    const { history: samples = [] } = await api(`/api/boxes/${enc(ref())}/stats?history=true`);
+    const served = samples.map((s) => ({ t: s.t, cpu: s.cpuPercent, mem: s.memPercent }));
+    const newest = served.at(-1)?.t ?? 0;
+    const later = history.filter((point) => point.t > newest);
+    history.splice(0, history.length, ...[...served, ...later].slice(-CHART_POINTS));
+    lastSampleAt = history.at(-1)?.t ?? 0;
+    notify();
+  };
+
+  /** The fetched box is applied unless a box frame changed the page while the request was in flight. */
+  const fetchBox = async () => {
+    const seen = frames;
+    const { box: fresh } = await api(`/api/boxes/${enc(ref())}`);
+    if (!box || seen === frames) setBox(fresh);
+  };
+
+  const refresh = async () => {
+    if (missing) return rerender();
+    try {
+      await fetchBox();
+      await loadHistory();
+    } catch (e) {
+      if (e.status === 404) await rerender();
     }
-    return box;
   };
 
   const mount = async () => {
+    const token = ++mounts;
     try {
-      await refreshBox();
+      await fetchBox();
     } catch (e) {
+      if (disposed || token !== mounts) return;
+      painted = false;
+      missing = e.status === 404;
       view.innerHTML = emptyState({
         iconName: "alert",
         title: e.status === 404 ? t("bd.notFound") : t("bd.loadFailed"),
@@ -113,15 +179,27 @@ export function render(view, id, tab = "overview") {
       });
       return;
     }
-    if (disposed) return;
+    if (disposed || token !== mounts) return;
+    missing = false;
+    await loadHistory().catch(() => {});
+    if (disposed || token !== mounts) return;
     setCrumbs([{ label: t("nav.boxes"), href: "#/boxes" }, box.name]);
     document.title = `${box.name} · MiniBox`;
-    view.innerHTML = header();
-    tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), { box: () => box, refreshBox, history, rerender });
+    headShown = headHtml();
+    view.innerHTML = `${headShown}
+    <div class="tabs" role="tablist">${TABS.map(
+      ([k, label, ic]) =>
+        `<a class="tab" role="tab" aria-selected="${k === tab}" href="#/boxes/${enc(box.id)}/${k}">${icon(ic)}${t(label)}</a>`,
+    ).join("")}</div>
+    <div id="tabBody"></div>`;
+    painted = true;
+    tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), { box: () => box, history, onChange, rerender });
   };
 
   const rerender = async () => {
+    if (disposed) return;
     tabCleanup?.();
+    tabCleanup = null;
     await mount();
   };
 
@@ -130,7 +208,14 @@ export function render(view, id, tab = "overview") {
     stop: (b) => lifecycle(box, "stop", b).then(rerender),
     restart: (b) => lifecycle(box, "restart", b).then(rerender),
     snapshot: () => snapshotBox(box).then((s) => s && tab === "snapshots" && rerender()),
-    rebuild: () => openRebuild(box),
+    rebuild: async () => {
+      try {
+        const { box: fresh } = await api(`/api/boxes/${enc(ref())}`);
+        openRebuild(fresh);
+      } catch (err) {
+        toastError(t("bd.loadFailed"), err);
+      }
+    },
     delete: async () => {
       if (await deleteBox(box)) location.hash = "#/boxes";
     },
@@ -151,9 +236,29 @@ export function render(view, id, tab = "overview") {
       }),
   });
 
+  const offs = [
+    subscribe("box", (frame) => {
+      if (!box || frame.boxId !== box.boxId) return;
+      frames += 1;
+      if (frame.op === "remove" || missing) {
+        void rerender();
+        return;
+      }
+      setBox({ ...frame.box, stats: frame.box.running ? box.stats : null });
+    }),
+    subscribe("sample", (frame) => {
+      if (!box || !applySamples([box], frame.boxes)) return;
+      pushPoint({ t: frame.t, cpu: box.stats.cpuPercent, mem: box.stats.memPercent });
+      notify();
+    }),
+    subscribe("sync", () => void refresh()),
+  ];
+  const stopFallback = pollWhileDown(() => void refresh(), FALLBACK_MS);
   mount();
   return () => {
     disposed = true;
+    for (const off of offs) off();
+    stopFallback();
     tabCleanup?.();
   };
 }
@@ -302,7 +407,7 @@ async function detachMount(box, el) {
 }
 
 const TAB_RENDER = {
-  overview(root, { box, refreshBox }) {
+  overview(root, { box, onChange }) {
     const draw = () => {
       const b = box();
       const s = b.stats;
@@ -338,120 +443,22 @@ const TAB_RENDER = {
         ${mountsCard(b)}`;
     };
     draw();
-    const timer = setInterval(
-      () =>
-        refreshBox()
-          .then(draw)
-          .catch(() => {}),
-      3000,
-    );
-    return () => clearInterval(timer);
+    return onChange(draw);
   },
 
   terminal(root, { box }) {
-    const b = box();
-    if (!b.running) {
-      root.innerHTML = `<div class="card">${emptyState({ iconName: "terminal", title: t("bd.notRunning"), text: t("bd.termNotRunningText"), action: `<button class="btn btn-primary" data-action="start">${icon("play")}${t("bd.startBox")}</button>` })}</div>`;
-      return null;
-    }
-    root.innerHTML = `<div class="terminal-frame">
-      <div class="terminal-bar"><span class="lights"><i></i><i></i><i></i></span><span class="mono">${esc(b.name)}: /workspace</span>
-        <span class="status" id="tStatus"><span class="dot"></span><span id="tStatusText">${t("common.connecting")}</span></span>
-        <button class="btn btn-ghost btn-sm" id="tReconnect" style="color:#a1a1aa">${icon("refresh")}${t("bd.reconnect")}</button></div>
-      <div class="terminal" id="term"></div></div>
-      <p class="help" style="margin-top:8px">${t("bd.termHelp")}</p>`;
-    if (!window.Terminal) {
-      root.querySelector("#term").innerHTML = `<div class="callout danger">${t("bd.termLoadFailed")}</div>`;
-      return null;
-    }
-    let ws;
-    const xterm = new window.Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily: '"JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
-      theme: { background: "#0b0b0e", foreground: "#e4e4e7", cursor: "#a5a2ff", selectionBackground: "#3f3f7a" },
-      scrollback: 5000,
-    });
-    const fit = new window.FitAddon.FitAddon();
-    xterm.loadAddon(fit);
-    xterm.open(root.querySelector("#term"));
-    fit.fit();
-    const setStatus = (on, text) => {
-      root.querySelector("#tStatus").classList.toggle("on", on);
-      root.querySelector("#tStatusText").textContent = text;
-    };
-    const connect = () => {
-      ws?.close();
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${proto}//${location.host}/api/boxes/${enc(b.id)}/terminal`);
-      ws.binaryType = "arraybuffer";
-      const sock = ws;
-      sock.addEventListener("open", () => {
-        setStatus(true, t("bd.connected"));
-        sock.send(JSON.stringify({ type: "resize", cols: xterm.cols, rows: xterm.rows }));
-        xterm.focus();
-      });
-      sock.addEventListener("message", (ev) =>
-        xterm.write(typeof ev.data === "string" ? ev.data : new Uint8Array(ev.data)),
-      );
-      sock.addEventListener("close", (ev) => {
-        if (sock !== ws) return;
-        if (ev.code === 1008) {
-          location.href = "/login";
-          return;
-        }
-        setStatus(false, t("bd.disconnected"));
-      });
-    };
-    const dataSub = xterm.onData((d) => ws?.readyState === 1 && ws.send(d));
-    const resizeSub = xterm.onResize(
-      ({ cols, rows }) => ws?.readyState === 1 && ws.send(JSON.stringify({ type: "resize", cols, rows })),
-    );
-    const onWin = () => fit.fit();
-    window.addEventListener("resize", onWin);
-    root.querySelector("#tReconnect").addEventListener("click", () => {
-      xterm.reset();
-      connect();
-    });
-    connect();
-    return () => {
-      window.removeEventListener("resize", onWin);
-      dataSub.dispose();
-      resizeSub.dispose();
-      ws?.close();
-      xterm.dispose();
-    };
+    return mountTerminal(root, { box });
   },
 
-  logs(root, { box }) {
-    root.innerHTML = `<div class="card"><div class="card-head"><h3>${t("bd.logs")}</h3>
-      <div class="row"><select class="select" id="lTail" style="width:auto;height:30px">${[200, 1000, 5000].map((n) => `<option value="${n}">${t("bd.lastLines", { n })}</option>`).join("")}</select>
-      <label class="checkbox" style="align-items:center"><input type="checkbox" id="lAuto" style="accent-color:var(--accent);margin:0" checked />${t("bd.autoRefresh")}</label>
-      <button class="btn btn-sm" id="lRefresh">${icon("refresh")}${t("common.refresh")}</button></div></div>
-      <pre class="logs" id="lView">${t("common.loading")}</pre></div>
-      <p class="help" style="margin-top:8px">${t("bd.logsHelp")}</p>`;
-    const view = root.querySelector("#lView");
-    const load = async () => {
-      try {
-        const { logs } = await api(`/api/boxes/${enc(box().id)}/logs?tail=${root.querySelector("#lTail").value}`);
-        const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 40;
-        view.textContent = logs || t("bd.noLogs");
-        if (atBottom) view.scrollTop = view.scrollHeight;
-      } catch (e) {
-        view.textContent = t("bd.logsFailed", { msg: e.message });
-      }
-    };
-    root.querySelector("#lRefresh").addEventListener("click", load);
-    root.querySelector("#lTail").addEventListener("change", load);
-    load().then(() => (view.scrollTop = view.scrollHeight));
-    const timer = setInterval(() => root.querySelector("#lAuto").checked && load(), 4000);
-    return () => clearInterval(timer);
+  activity(root, { box }) {
+    return mountActivity(root, { box });
   },
 
-  resources(root, { box, refreshBox, history }) {
+  resources(root, { box, history, onChange }) {
     const draw = () => {
       const b = box();
       const s = b.stats;
+      const relative = (h) => (b.cpus ? h.cpu / b.cpus : h.cpu);
       root.innerHTML = `<div class="grid grid-2">
         <div class="card"><div class="card-head"><h3>${t("bd.quotaTitle")}</h3><button class="btn btn-sm" data-action="resources">${icon("sliders")}${t("bd.adjust")}</button></div>
           <div class="card-body"><dl class="kv">
@@ -465,7 +472,7 @@ const TAB_RENDER = {
           <div class="card-body stack">${
             s
               ? `<div><div class="bar-label"><span>CPU ${pct(s.cpuPercent)}</span><span>${b.cpus ? t("bd.ofQuota", { p: pct(s.cpuPercent / b.cpus, 0) }) : ""}</span></div>${sparkline(
-                  history.map((h) => h.cpu),
+                  history.map(relative),
                   { color: "var(--chart-cpu)", id: "bcpu", height: 56 },
                 )}</div>
                  <div><div class="bar-label"><span>${t("ov.memory")} ${gbOrMb(s.memUsage)}</span><span>${pct(s.memPercent, 0)} / ${bytes(s.memLimit)}</span></div>${sparkline(
@@ -477,14 +484,7 @@ const TAB_RENDER = {
       root.querySelectorAll(".spark").forEach((sv) => (sv.style.height = "56px"));
     };
     draw();
-    const timer = setInterval(
-      () =>
-        refreshBox()
-          .then(draw)
-          .catch(() => {}),
-      3000,
-    );
-    return () => clearInterval(timer);
+    return onChange(draw);
   },
 
   snapshots(root, { box }) {

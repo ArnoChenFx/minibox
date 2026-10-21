@@ -1094,5 +1094,165 @@
     "status": 409,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"This task is not running.\",\"retryable\":false,\"key\":\"task_not_running\"}}"
+  },
+  {
+    "step": "create the session box",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"term\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-term\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"term-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"term-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"term-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "list sessions of a box with none",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"sessions\":[]}"
+  },
+  {
+    "step": "start a session",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":{\"name\":\"work\",\"origin\":\"agent\",\"controller\":\"agent\",\"takenOver\":false},\"created\":true,\"woke\":false}"
+  },
+  {
+    "step": "start the same session again",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":{\"name\":\"work\",\"origin\":\"agent\",\"controller\":\"agent\",\"takenOver\":false},\"created\":false,\"woke\":false}"
+  },
+  {
+    "step": "start a session with a bad name",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Session name must start with a letter or digit, use only letters, digits, dashes and underscores, and be at most 32 characters.\",\"retryable\":false,\"key\":\"session_name_invalid\",\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "start a session in a missing box",
+    "method": "POST",
+    "path": "/api/boxes/missing/sessions",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "list sessions",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"sessions\":[{\"name\":\"work\",\"origin\":\"agent\",\"controller\":\"agent\",\"takenOver\":false,\"createdAt\":\"<time>\",\"attached\":0}]}"
+  },
+  {
+    "step": "type text into a session",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions/work/input",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"keys\":0,\"bytes\":8}"
+  },
+  {
+    "step": "press Enter in a session",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions/work/input",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"keys\":1,\"bytes\":0}"
+  },
+  {
+    "step": "send keys and text together",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions/work/input",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide exactly one of keys or text.\",\"retryable\":false,\"key\":\"session_input_required\",\"details\":{\"field\":\"keys\"}}}"
+  },
+  {
+    "step": "send neither keys nor text",
+    "method": "POST",
+    "path": "/api/boxes/<id>/sessions/work/input",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Provide exactly one of keys or text.\",\"retryable\":false,\"key\":\"session_input_required\",\"details\":{\"field\":\"keys\"}}}"
+  },
+  {
+    "step": "read the session",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work?lines=10",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"cursor\":\"<epoch>.1\",\"reset\":false,\"truncated\":false,\"lines\":[\"echo hi\"],\"controller\":\"agent\"}"
+  },
+  {
+    "step": "read with an invalid since",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work?since=bogus",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"since must be the cursor that the previous session_read of this session returned.\",\"retryable\":false,\"key\":\"session_since_invalid\",\"details\":{\"field\":\"since\"}}}"
+  },
+  {
+    "step": "read with a cursor that cannot be continued",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work?lines=5&since=000000000000.1",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"cursor\":\"<epoch>.2\",\"reset\":true,\"truncated\":false,\"lines\":[\"echo hi\"],\"controller\":\"agent\"}"
+  },
+  {
+    "step": "read with zero lines",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work?lines=0",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"lines must be an integer between 1 and 2000.\",\"retryable\":false,\"key\":\"session_lines_range\",\"params\":{\"max\":2000},\"details\":{\"field\":\"lines\"}}}"
+  },
+  {
+    "step": "read a missing session",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/nope",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Session not found.\",\"retryable\":false,\"hint\":\"List the box's sessions, or start one with session_start.\",\"key\":\"session_not_found\",\"hintKey\":\"session_not_found_hint\"}}"
+  },
+  {
+    "step": "close the session",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/sessions/work",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"session\":\"work\",\"status\":\"closed\"}"
+  },
+  {
+    "step": "close the session again",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/sessions/work",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Session not found.\",\"retryable\":false,\"hint\":\"List the box's sessions, or start one with session_start.\",\"key\":\"session_not_found\",\"hintKey\":\"session_not_found_hint\"}}"
+  },
+  {
+    "step": "read a closed session",
+    "method": "GET",
+    "path": "/api/boxes/<id>/sessions/work",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Session not found.\",\"retryable\":false,\"hint\":\"List the box's sessions, or start one with session_start.\",\"key\":\"session_not_found\",\"hintKey\":\"session_not_found_hint\"}}"
+  },
+  {
+    "step": "delete the session box",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"term\",\"volumeDeleted\":false}"
   }
 ]

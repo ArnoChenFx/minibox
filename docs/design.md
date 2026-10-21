@@ -604,7 +604,7 @@ Event
 
 第一版实现与上文的差异如下。
 
-- **分档**：非拒绝的读取，以及 `exec.*`（含 `exec.run`、`exec.get`、`exec.output`、`exec.start`、`exec.finish`、`exec.killed`），进入「活动」档（30 天）。其它写操作（含删除）与被拒绝的调用进入「审计」档（1 年）。被拒绝的 exec 仍是审计档，因为拒绝先于操作名判断。文件写入、会话发送与终端开闭按 §8.3 属于「活动」档，这些操作尚未存在（#14，文件 API 在 Volume #24 之后）。
+- **分档**：非拒绝的读取，以及 `exec.*`（含 `exec.run`、`exec.get`、`exec.output`、`exec.start`、`exec.finish`、`exec.killed`），进入「活动」档（30 天）。其它写操作（含删除）与被拒绝的调用进入「审计」档（1 年）。被拒绝的 exec 仍是审计档，因为拒绝先于操作名判断。会话发送与终端开闭按 §8.3 属于「活动」档，已实现（#14，见 §10.5）。接管与归还是写操作，进入「审计」档。文件写入仍未实现，文件 API 在 Volume #24 之后。
 - **合并**：同一主体、同一操作、同一对象、相同结果、同一分钟内，非拒绝的读取合并为一条，带 `count`。`exec.*` 不合并。被合并的事件不再推送。
 - **SSE**：`id` 即事件序号（`seq`）。新连接先收到 `retry: 3000`，之后只收到连接后记录的事件。`Last-Event-ID` 之后最多重放 500 条，超出则发送 `event: reset`（`{"after": N}`），客户端改用 `GET /api/events` 补齐缺口，再继续接收流。未读取期间排队超过 1000 条消息时同样重置，并丢弃已排队未发送的帧。心跳为每 15 秒一条 `: keep-alive` 注释。以浏览器会话发起的流会在该会话结束（登出、撤销或到期）时关闭，与终端一致；Bearer 发起的流不绑定会话。
 - **列表是操作，流不是**：`events.list` 通过操作注册表定义（REST 为 `GET /api/events`），因此出现在 OpenAPI 中，读取日志本身也会被记录。SSE 流不是 JSON 请求与响应，不进入注册表，也不在 OpenAPI 中，但沿用同样的鉴权与同源检查。
@@ -614,7 +614,7 @@ Event
 - **写入失败**：审计写入失败只记录 `audit.failed`，不影响操作结果。
 - **存储**：`events.db` 使用 WAL、`synchronous=NORMAL`、`busy_timeout=5000`，并以 `PRAGMA user_version` 记录迁移版本。
 - **总线**：`src/lib/bus.ts` 是类型化的进程内总线，主题在 `AppTopics` 中声明。#16、#17 增加主题即可复用，不必另起通道。
-- **暂缓**：令牌范围过滤（#13）；JSONL 导出（§8.5）；「清除该 Box 全部历史」（§8.3）；按令牌或按 Box 关闭输出采集（§8.6）；终端与文件事件（#14，文件 API 在 Volume #24 之后）；登录事件与按 IP 合并的登录失败（#2）；活动信号（§8.4，#17）；MCP `get_activity`（#13 及 MCP 工作）；凭据存储中的其他已知值（#13）。
+- **暂缓**：令牌范围过滤（#13）；JSONL 导出（§8.5）；「清除该 Box 全部历史」（§8.3）；按令牌或按 Box 关闭输出采集（§8.6）；文件事件（文件 API 在 Volume #24 之后）；tmux 会话录制（`pipe-pane`，§8.7）；登录事件与按 IP 合并的登录失败（#2）；活动信号（§8.4，#17）；MCP `get_activity`（#13 及 MCP 工作）；凭据存储中的其他已知值（#13）。
 
 ### 8.10 实现说明（#16）
 
@@ -699,6 +699,8 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - 打开 Agent 正在驱动的会话时**默认只读观察**；点「接管」才可输入。
 - 接管期间会话进入「人控制」状态：Agent 的 `session_send` 被拒绝并返回结构化错误 `taken_over`（提示稍后重试），`session_read` 仍可用，Agent 能看到人在做什么。
 - 手动「还给 Agent」，或空闲超时自动归还（可配置）。
+- 接管期间，Agent 的关闭（`DELETE` 与 `minibox session close`）同样被拒绝并返回 `taken_over`：会话保持存在，只有控制台能关闭被人持有的会话。
+- 锁的边界：它约束会话 API 与终端，不约束箱内的 `exec`。`exec` 以 `dev` 运行时与 tmux 服务器同属一个用户，可直接调用 `tmux send-keys` 或 `tmux kill-session`。因此接管是对 Agent 的协调信号，不是沙箱。要让锁也约束箱内命令，需要把 tmux 服务器与 exec 分到不同用户，或为会话另设权限，这不在 #14 的范围内。
 - 理由：不加锁时，人和 Agent 同时往同一个 tmux 敲字，输入会互相穿插，结果不可预测。
 
 ### 10.3 活动标签页取代日志页
@@ -708,6 +710,23 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 ### 10.4 终端健壮性
 
 心跳与超时清理；处理 `ws.send` 的返回值实现背压；退出时确保终止对应 exec 进程；可选保存最近 N KB 输出用于重连回放。WebSocket 升级需要 Origin 校验。
+
+### 10.5 实现说明（#14）
+
+第一版实现与上文的差异如下。
+
+- **tmux 会话**：每个会话是 Box 内 `dev` 用户的一个 tmux 会话（`tmux -u`，名称 1 到 32 位，字母或数字开头，可含 `-` 与 `_`）。tmux 的每条命令都是一次短的 `dev` exec，服务端不持有会话进程。发起方（`agent` 或 `human`）记在 tmux 的用户选项 `@minibox-origin` 中，重启后仍可读到。
+- **控制方与接管只在内存中**：控制方（`controller`）与接管状态不落盘。重启后，每个会话的控制方回到其发起方的默认值：Agent 发起的会话归 Agent，控制台发起的会话归人。
+- **空闲归还**：接管后超过 `SESSION_TAKEOVER_IDLE_SEC`（默认 300 秒）没有人的输入，会话自动归还 Agent。`0` 关闭自动归还，接管持续到手动归还，即使页面已经关闭。计时只针对接管：控制台发起的会话不因空闲而归还。
+- **读取游标**：`session_read` 的游标保存在内存中，只接续最新的一次读取。过期的游标，以及重启之后的第一次读取，返回 `reset: true` 并给出当前窗口。
+- **只读的 Bearer 终端**：`/api/boxes/:id/terminal` 的 Bearer 调用者只能读取输出。输入与接管、归还等控制帧被拒绝，返回 `forbidden` 错误帧（`terminal_read_only`）。这是相对早期版本的行为变化：早期的终端对 Bearer 调用者可以输入。
+- **箱内终止**：终端的附着进程（`tmux attach-session`）与其它 exec 一样经由 §10.4 的包装脚本结束。WebSocket 关闭（包括异常断开）时在箱内终止附着进程，tmux 会话保持运行。
+- **心跳与背压**：Bun 的 WebSocket `idleTimeout` 设为 30 秒，静默的连接被关闭。`ws.send` 返回背压时暂停读取 tmux 输出，`drain` 时恢复；未读的数据超过 4 MiB 时关闭连接（`closeOnBackpressureLimit`），不再无限缓冲。
+- **事件**：`session.start`、`session.send`、`session.close`、`terminal.open` 与 `terminal.close` 属于活动档。`session.takeover` 与 `session.release` 是写操作，进入审计档。`session.send` 只记录按键数与字节数，`terminal.close` 记录两个方向的字节数与时长。键入的内容从不记录。
+- **会话身份**：一个会话的身份是 tmux 的会话 id（如 `$3`）与创建时间，不是 `@minibox-origin` 选项。Agent 改写该选项不会重置接管。同名的新会话（id 或创建时间不同）是另一个会话，从其发起方的默认控制方重新开始。
+- **资源上限**：每个 Box 最多 16 个 tmux 会话，启动第 17 个时返回 `429 too_many_requests`；每个会话最多 8 个同时打开的终端（含正在启动的），超过时返回同样的错误码；其中 Bearer 终端最多 6 个（`VIEWER_ATTACHES_MAX`），其余 2 个留给控制台，因此 Bearer 终端无法把人挡在门外。`session_read` 的 `capture-pane` 只回看 4000 行（`READ_LINES_MAX` 的两倍），而不是整个回滚缓冲。每条 tmux 命令的输出最多保留最新的 4 MiB，超出部分从完整的一行开始截取；若其中没有换行，则从完整的字符开始，不留下 `U+FFFD`。这防止异常大的输出（例如没有换行的超长行）耗尽内存。
+- **只读的 Bearer 附着**：Bearer 调用者以 `tmux attach-session -r -f ignore-size` 附着，即只读客户端，且忽略窗口尺寸；服务端同时丢弃它发来的 `resize` 消息。`-f ignore-size` 需要 tmux 3.2 或更高版本：附着前先执行 `tmux -V`，更旧的 tmux 返回 `409 conflict` 并说明版本，而不是让 tmux 的通用用法错误原样返回。控制台（浏览器会话）仍以可写方式附着，输入是否送达由接管锁决定。
+- **暂缓**：`pipe-pane` 录制（§8.7）与服务端回放缓冲（§10.4）不在 #14 的验收标准之内，尚未实现。重连时由 tmux 重绘屏幕。
 
 ---
 

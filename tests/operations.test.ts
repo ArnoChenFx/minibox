@@ -60,6 +60,11 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "volume.usage": () => ({ id: "spare" }),
   "pool.list": () => ({}),
   "pool.replace": () => ({ pools: [{ name: "local", backend: "local", default: true }], confirm: true }),
+  "session.list": (id) => ({ id }),
+  "session.start": (id) => ({ id, name: "work" }),
+  "session.read": (id) => ({ id, name: "work", lines: 10 }),
+  "session.send": (id) => ({ id, name: "work", text: "echo hi\n" }),
+  "session.close": (id) => ({ id, name: "work" }),
   "snapshot.list": () => ({}),
   "snapshot.create": (id) => ({ id, name: "nightly" }),
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
@@ -96,6 +101,9 @@ async function preparedInput(
     const started = (await app.operations.run("exec.run", ctx, { id: boxId, argv: ["true"] })) as { execId: string };
     return { input: { execId: started.execId } };
   }
+  if (["session.read", "session.send", "session.close"].includes(operation.name)) {
+    await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+  }
   if (operation.name === "exec.kill") {
     runtime.execScript = null;
     const started = (await app.operations.run("exec.run", ctx, {
@@ -129,6 +137,7 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
     source: "rest",
     events: app.events,
     execs: app.execs,
+    terminals: app.terminals,
   };
   return { app, runtime, ctx };
 }
@@ -566,6 +575,24 @@ describe("event log", () => {
         operation.name === "template.build" ? ["template.build", "template.build"] : [operation.name],
       );
     }
+  });
+
+  test("a send records the counts it delivered, and a send that fails records none", async () => {
+    const { app, ctx } = appWith();
+    const boxId = await withBox(app, ctx);
+    await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+    const before = app.events.head();
+
+    await app.operations.run("session.send", ctx, { id: boxId, name: "work", text: "echo hi\n" });
+    expect(
+      await rejectionOf(app.operations.run("session.send", ctx, { id: boxId, name: "missing", text: "echo hi\n" })),
+    ).toMatchObject({ status: 404 });
+
+    const sends = app.events.after(before, {}, 10).filter((event) => event.op === "session.send");
+    expect(sends.map((event) => [event.status, event.detail])).toEqual([
+      ["ok", { session: "work", keys: 0, bytes: 8 }],
+      ["error", { session: "missing", keys: 0, bytes: 0 }],
+    ]);
   });
 });
 

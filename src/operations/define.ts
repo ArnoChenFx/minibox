@@ -24,7 +24,10 @@ export function defineOperation<I extends z.ZodObject, O extends z.ZodType, R = 
         audit.target &&
         ((value, resolved, result) =>
           audit.target?.(value as z.output<I>, resolved as R | undefined, result as z.input<O> | undefined)),
-      detail: audit.detail && ((value, resolved) => audit.detail?.(value as z.output<I>, resolved as R | undefined)),
+      detail:
+        audit.detail &&
+        ((value, resolved, result) =>
+          audit.detail?.(value as z.output<I>, resolved as R | undefined, result as z.input<O> | undefined)),
       ref:
         audit.ref &&
         ((value, resolved, result) =>

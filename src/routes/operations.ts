@@ -1,3 +1,4 @@
+import type { Source } from "../events/types";
 import { AppError } from "../lib/errors";
 import { json, readJson } from "../lib/http";
 import { msg } from "../lib/messages";
@@ -45,14 +46,14 @@ function entityTag(result: unknown): Record<string, string> {
 }
 
 function handlerFor(operation: Operation, binding: RestBinding): Handler {
-  return async ({ app, host, req, url, params }) => {
+  return async ({ app, host, req, url, params, caller }) => {
     const run = runOf(req);
     const body = binding.body ? asObject(await readJson(req)) : {};
-    // A client header is only a claim: the access key does not identify the client, so it never sets the audit source.
-    const source = "rest";
+    // The source comes from how the request signed in, never from a header: a browser session is the console (`ui`).
+    const source: Source = caller?.sessionId ? "ui" : "rest";
     const result = await app.operations.run(
       operation.name,
-      { host, principal: OWNER, source, run, events: app.events, execs: app.execs },
+      { host, principal: OWNER, source, run, events: app.events, execs: app.execs, terminals: app.terminals },
       inputOf(binding, url, params, body, req.headers.get("if-match")),
     );
     const status = operation.async ? 202 : (binding.status ?? 200);

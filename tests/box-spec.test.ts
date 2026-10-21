@@ -77,6 +77,31 @@ describe("spec storage", () => {
       [keys.pids]: "1024",
     });
   });
+
+  test("subscribers hear each write and removal after the file has changed, and a failing one does not stop the rest", async () => {
+    const box = await newBox("gamma");
+    const seen: string[] = [];
+    const off = host.specs.subscribe((change) => {
+      seen.push(change.kind === "write" ? `write ${change.spec.name}` : `remove ${change.id}`);
+    });
+    host.specs.subscribe(() => {
+      throw new Error("listener failure");
+    });
+    const last = host.specs.subscribe((change) => {
+      if (change.kind === "write") seen.push(`file ${host.specs.read(change.spec.id)?.revision}`);
+    });
+
+    await boxes.stopBox(host, box.boxId);
+    expect(seen).toEqual(["write gamma", "file 2"]);
+
+    await boxes.deleteBox(host, box.boxId, false);
+    expect(seen).toEqual(["write gamma", "file 2", `remove ${box.boxId}`]);
+
+    off();
+    last();
+    await newBox("delta");
+    expect(seen).toHaveLength(3);
+  });
 });
 
 describe("claim and old routes", () => {

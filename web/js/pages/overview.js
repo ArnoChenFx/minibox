@@ -1,9 +1,11 @@
 import { openCreateBox } from "../components/create-box.js";
 import { api } from "../lib/api.js";
+import { applyBoxFrame, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, duration, gbOrMb, mem, pct, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
 import { onHost } from "../lib/store.js";
 import { emptyState, stateBadge } from "../lib/ui.js";
@@ -51,20 +53,54 @@ export function render(view) {
     renderMetrics(view, h, failing);
   });
 
-  const loadLists = async () => {
+  let boxes = [];
+  const loadBoxes = async () => {
     try {
-      const [{ boxes }, { activity }] = await Promise.all([api("/api/boxes?stats=false"), api("/api/activity")]);
+      boxes = (await api("/api/boxes?stats=false")).boxes;
       renderBoxes(view, boxes);
-      renderActivity(view, activity);
     } catch {
       /* the host pill already signals connectivity issues */
     }
   };
-  loadLists();
-  const timer = setInterval(loadLists, 10000);
+  const loadActivity = async () => {
+    try {
+      renderActivity(view, (await api("/api/activity")).activity);
+    } catch {
+      /* the host pill already signals connectivity issues */
+    }
+  };
+  const loadAll = () => {
+    void loadBoxes();
+    void loadActivity();
+  };
+
+  let activityTimer = null;
+  const refreshActivity = () => {
+    clearTimeout(activityTimer);
+    activityTimer = setTimeout(loadActivity, 300);
+  };
+
+  const offs = [
+    subscribe("sync", (frame) => {
+      const next = boxesOfSync(frame);
+      if (!next) return;
+      boxes = next;
+      renderBoxes(view, boxes);
+    }),
+    subscribe("box", (frame) => {
+      boxes = applyBoxFrame(boxes, frame);
+      renderBoxes(view, boxes);
+    }),
+    subscribe("event", refreshActivity),
+    subscribe("reset", refreshActivity),
+  ];
+  loadAll();
+  const stopPolling = pollWhileDown(loadAll, 10000);
   return () => {
     off();
-    clearInterval(timer);
+    for (const unsubscribe of offs) unsubscribe();
+    stopPolling();
+    clearTimeout(activityTimer);
   };
 }
 

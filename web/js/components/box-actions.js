@@ -252,7 +252,10 @@ function showPreview(root, preview) {
   root.querySelector("#rbApply").hidden = false;
 }
 
-/** Preview, then confirm, a rebuild. The container id changes, so success opens the new box. */
+/**
+ * Preview, then confirm, a rebuild. The container id changes, so success opens the new box. `box` must come from a REST
+ * read: a live frame names the environment variables without their values, and this dialog writes back what it shows.
+ */
 export function openRebuild(box) {
   const profiles = ["standard", "strict", "relaxed"];
   const profileOptions = [

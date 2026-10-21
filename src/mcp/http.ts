@@ -200,6 +200,7 @@ async function callTool(
         run,
         events: app.events,
         execs: app.execs,
+        terminals: app.terminals,
       },
       args,
     );

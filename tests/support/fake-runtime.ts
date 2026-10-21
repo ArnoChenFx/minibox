@@ -26,6 +26,7 @@ import {
   type VolumeCreateOptions,
   type VolumeInfo,
 } from "../../src/runtime";
+import { FakeTmux, type TmuxClient, type TmuxRun } from "./fake-tmux";
 
 export type Op = keyof Runtime;
 
@@ -240,22 +241,28 @@ export class FakeRuntime implements Runtime {
   private readonly faults = new Map<Op, RuntimeError[]>();
   private readonly execKillFaults: RuntimeError[] = [];
   private readonly execKillHold: { gate: Promise<void> | null } = { gate: null };
-  private readonly gates = new Map<Op, Promise<void>>();
+  private readonly gates = new Map<Op, { promise: Promise<void>; where?: (args: unknown[]) => boolean }>();
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
+  private readonly interrupts = new Set<(error: RuntimeError) => void>();
   private execCount = 0;
+  /** The tmux server of each container. A `tmux` exec runs against it, and a box that stops loses it. */
+  readonly tmux = new FakeTmux();
+  /** When true, `tmux` is not installed: its commands exit 127, as a shell reports a missing program. */
+  tmuxMissing = false;
 
   /**
-   * Holds the next calls to `op` until `release`. `buildImage` reports its log before waiting. A held call does not
-   * return when `signal` aborts, as an engine call already in flight does not: once released, it fails with
-   * `AbortError` if `signal` has aborted.
+   * Holds the next calls to `op` until `release`. With `where`, only the calls whose arguments it accepts are held,
+   * so a test can hang the inspect of one container and leave the others answering. `buildImage` reports its log
+   * before waiting. A held call does not return when `signal` aborts, as an engine call already in flight does not:
+   * once released, it fails with `AbortError` if `signal` has aborted.
    */
-  hold(op: Op): { release(): void } {
+  hold(op: Op, where?: (args: unknown[]) => boolean): { release(): void } {
     let resolveGate: GateResolve | undefined;
     const promise = new Promise<void>((resolve) => {
       resolveGate = resolve;
     });
-    this.gates.set(op, promise);
+    this.gates.set(op, { promise, where });
     return {
       release: () => {
         this.gates.delete(op);
@@ -333,15 +340,35 @@ export class FakeRuntime implements Runtime {
   ): string {
     const { running = false, cpus = null, memoryBytes = null, swapBytes = null, ...rest } = spec;
     const imageId = this.findImage(rest.image)?.id ?? this.seedImage(rest.image);
-    return this.insertContainer(rest, imageId, running, { cpus, memoryBytes, swapBytes }).id;
+    const c = this.insertContainer(rest, imageId, running, { cpus, memoryBytes, swapBytes });
+    this.announce("create", c);
+    if (running) this.announce("start", c);
+    return c.id;
   }
 
   emitEvent(event: RuntimeEvent): void {
     for (const subscriber of this.subscribers) subscriber(event);
   }
 
-  private async gate(op: Op): Promise<void> {
-    await this.gates.get(op);
+  /** Ends every open `events()` stream with `error`, as a dropped connection to the engine does. */
+  interruptEvents(error: RuntimeError): void {
+    for (const interrupt of new Set(this.interrupts)) interrupt(error);
+  }
+
+  /** The event the engine sends after a container change. Attributes carry the labels, as Docker's do. */
+  private announce(action: string, c: FakeContainer): void {
+    this.emitEvent({
+      type: "container",
+      action,
+      id: c.id,
+      attributes: { ...c.labels, name: c.name, image: c.spec.image },
+      time: now(),
+    });
+  }
+
+  private async gate(op: Op, args: unknown[]): Promise<void> {
+    const held = this.gates.get(op);
+    if (held && (held.where?.(args) ?? true)) await held.promise;
   }
 
   private enter(op: Op, args: unknown[]): void {
@@ -451,14 +478,27 @@ export class FakeRuntime implements Runtime {
     };
   }
 
-  async listContainers(filter: { labels: Record<string, string> }): Promise<ContainerInfo[]> {
-    this.enter("listContainers", [filter]);
-    return [...this.containers.values()].filter((c) => matchesLabels(c.labels, filter.labels)).map(toInfo);
+  /** The listing is read when the call is made. A held call returns it unless its signal has aborted by then. */
+  async listContainers(
+    filter: { labels: Record<string, string> },
+    opts?: { signal?: AbortSignal },
+  ): Promise<ContainerInfo[]> {
+    const args = [filter, opts];
+    this.enter("listContainers", args);
+    const infos = [...this.containers.values()].filter((c) => matchesLabels(c.labels, filter.labels)).map(toInfo);
+    await this.gate("listContainers", args);
+    if (opts?.signal?.aborted) throw abortError();
+    return infos;
   }
 
-  async inspectContainer(id: string): Promise<ContainerInfo> {
-    this.enter("inspectContainer", [id]);
-    return toInfo(this.getContainer(id));
+  /** The state is read when the call is made. A held call returns it unless its signal has aborted by then. */
+  async inspectContainer(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerInfo> {
+    const args = [id, opts];
+    this.enter("inspectContainer", args);
+    const info = toInfo(this.getContainer(id));
+    await this.gate("inspectContainer", args);
+    if (opts?.signal?.aborted) throw abortError();
+    return info;
   }
 
   async createContainer(spec: CreateContainerSpec): Promise<{ id: string }> {
@@ -473,7 +513,9 @@ export class FakeRuntime implements Runtime {
       memoryBytes: spec.memoryBytes ?? null,
       swapBytes: spec.swapBytes ?? null,
     };
-    return { id: this.insertContainer(spec, image.id, false, limits).id };
+    const c = this.insertContainer(spec, image.id, false, limits);
+    this.announce("create", c);
+    return { id: c.id };
   }
 
   async startContainer(id: string): Promise<void> {
@@ -484,12 +526,18 @@ export class FakeRuntime implements Runtime {
       this.attach(c);
       c.running = true;
       c.startedAt = now();
+      this.announce("start", c);
     }
   }
 
   async stopContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
     this.enter("stopContainer", [id, opts]);
-    this.getContainer(id).running = false;
+    const c = this.getContainer(id);
+    this.tmux.stop(c.id);
+    if (!c.running) return;
+    c.running = false;
+    this.announce("die", c);
+    this.announce("stop", c);
   }
 
   async restartContainer(id: string, opts: { timeoutSec: number }): Promise<void> {
@@ -497,8 +545,10 @@ export class FakeRuntime implements Runtime {
     const c = this.getContainer(id);
     this.ensureVolumes(c.spec.mounts);
     this.attach(c);
+    this.tmux.stop(c.id);
     c.running = true;
     c.startedAt = now();
+    this.announce("restart", c);
   }
 
   async removeContainer(id: string, opts: { force: boolean }): Promise<void> {
@@ -508,6 +558,8 @@ export class FakeRuntime implements Runtime {
       throw new RuntimeError("conflict", `You cannot remove a running container ${c.id}. Stop it or force removal.`);
     }
     this.containers.delete(c.id);
+    this.tmux.stop(c.id);
+    this.announce("destroy", c);
   }
 
   async renameContainer(id: string, name: string): Promise<void> {
@@ -517,6 +569,7 @@ export class FakeRuntime implements Runtime {
     if (other && other !== c)
       throw new RuntimeError("conflict", `Conflict. The container name "/${name}" is already in use`);
     c.name = name;
+    this.announce("rename", c);
   }
 
   async updateContainer(id: string, limits: ContainerUpdate): Promise<void> {
@@ -527,6 +580,7 @@ export class FakeRuntime implements Runtime {
     if (limits.swapBytes !== undefined) c.swapBytes = limits.swapBytes;
     if (limits.pidsLimit !== undefined) c.pidsLimit = limits.pidsLimit;
     if (limits.restart !== undefined) c.restart = limits.restart;
+    this.announce("update", c);
   }
 
   async containerDiff(id: string): Promise<ContainerChange[]> {
@@ -542,15 +596,17 @@ export class FakeRuntime implements Runtime {
       .join("");
   }
 
-  async containerStats(id: string): Promise<ContainerStats> {
-    this.enter("containerStats", [id]);
+  async containerStats(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerStats> {
+    this.enter("containerStats", [id, opts]);
+    await this.gate("containerStats", [id, opts]);
+    if (opts?.signal?.aborted) throw abortError();
     const memLimit = this.getContainer(id).memoryBytes ?? 1024 ** 3;
     return { cpuPercent: 1.5, memUsage: Math.round(memLimit / 4), memLimit, memPercent: 25 };
   }
 
   async commitContainer(id: string, spec: CommitSpec): Promise<void> {
     this.enter("commitContainer", [id, spec]);
-    await this.gate("commitContainer");
+    await this.gate("commitContainer", [id, spec]);
     if (spec.signal?.aborted) throw abortError();
     const c = this.getContainer(id);
     const image: FakeImage = {
@@ -584,6 +640,7 @@ export class FakeRuntime implements Runtime {
     const c = this.getContainer(containerId);
     if (!c.running) throw new RuntimeError("conflict", `Container ${c.id} is not running`);
     const tty = spec.tty !== false;
+    if (spec.cmd[0] === "tmux") return this.startTmux(c.id, spec, tty);
     const stdinChunks: Buffer[] = [];
     const stream = tty
       ? echoStream((chunk) => stdinChunks.push(chunk))
@@ -657,6 +714,102 @@ export class FakeRuntime implements Runtime {
     return session;
   }
 
+  /**
+   * A `tmux` exec. A command exec (`tty: false`) runs once against the emulated server and exits with its status. A TTY
+   * exec attaches a client to the session it names: the session's output goes to the stream, and what is written to the
+   * stream is typed into the session. Ending the exec detaches the client, as a killed attach does in the box.
+   */
+  private startTmux(containerId: string, spec: ExecSpec, tty: boolean): FakeExec {
+    const argv = spec.cmd.slice(1);
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const exitHooks: (() => void)[] = [];
+    const typed: Buffer[] = [];
+    const killFaults = this.execKillFaults;
+    const killHold = this.execKillHold;
+    let status: ExecStatus = { running: true, exitCode: null, pid: null };
+    const finish = (code: number) => {
+      if (!status.running) return;
+      status = { running: false, exitCode: code, pid: null };
+      for (const hook of exitHooks) hook();
+      if (!stdout.writableEnded) stdout.end();
+      if (!stderr.writableEnded) stderr.end();
+      if (tty) stream.push(null);
+    };
+    let stream: Duplex = new PassThrough();
+    if (tty) {
+      const name = (argv[argv.indexOf("-t") + 1] ?? "").replace(/^=/, "").replace(/:.*$/, "");
+      stream = new Duplex({
+        read() {},
+        write: (chunk: Buffer, _encoding, callback) => {
+          typed.push(Buffer.from(chunk));
+          this.tmux.type(containerId, name, Buffer.from(chunk).toString("utf8"));
+          callback();
+        },
+      });
+      const client: TmuxClient = {
+        output: (text) => stream.push(Buffer.from(text)),
+        end: () => finish(0),
+      };
+      if (this.tmux.attach(containerId, name, client)) {
+        exitHooks.push(() => this.tmux.detach(containerId, name, client));
+      } else {
+        stream.push(Buffer.from(`can't find session: ${name}\r\n`));
+        finish(1);
+      }
+    } else {
+      const run: TmuxRun = this.tmuxMissing
+        ? { code: 127, stdout: "", stderr: "sh: tmux: not found\n" }
+        : this.tmux.run(containerId, argv);
+      setTimeout(() => {
+        if (run.stdout) stdout.write(run.stdout);
+        if (run.stderr) stderr.write(run.stderr);
+        finish(run.code);
+      }, 0);
+    }
+    const session: FakeExec = {
+      id: `exec-${++this.execCount}`,
+      stream,
+      stdout,
+      stderr,
+      spec,
+      containerId,
+      sizes: [],
+      killed: false,
+      kills: 0,
+      async resize(size) {
+        session.sizes.push(size);
+      },
+      async inspect() {
+        return status;
+      },
+      async kill() {
+        session.kills += 1;
+        if (killHold.gate) await killHold.gate;
+        const fault = killFaults.shift();
+        if (fault) throw fault;
+        if (status.running) {
+          session.killed = true;
+          finish(137);
+        }
+      },
+      print(text) {
+        stream.push(Buffer.from(text));
+      },
+      printStderr(text) {
+        stderr.write(text);
+      },
+      stdin() {
+        return Buffer.concat(typed).toString("utf8");
+      },
+      exit(code = 0) {
+        finish(code);
+      },
+    };
+    this.execs.push(session);
+    return session;
+  }
+
   async *events(
     filter: { labels?: Record<string, string>; types?: string[] },
     signal?: AbortSignal,
@@ -664,16 +817,23 @@ export class FakeRuntime implements Runtime {
     this.enter("events", [filter]);
     const queue: RuntimeEvent[] = [];
     let wake: (() => void) | undefined;
+    let failure: RuntimeError | undefined;
     const notify = () => wake?.();
     const subscriber = (event: RuntimeEvent) => {
       if (!matchesEvent(event, filter)) return;
       queue.push(event);
       notify();
     };
+    const interrupt = (error: RuntimeError) => {
+      failure = error;
+      notify();
+    };
     this.subscribers.add(subscriber);
+    this.interrupts.add(interrupt);
     signal?.addEventListener("abort", notify);
     try {
       for (;;) {
+        if (failure) throw failure;
         if (signal?.aborted) return;
         const next = queue.shift();
         if (next) {
@@ -687,6 +847,7 @@ export class FakeRuntime implements Runtime {
       }
     } finally {
       this.subscribers.delete(subscriber);
+      this.interrupts.delete(interrupt);
       signal?.removeEventListener("abort", notify);
     }
   }
@@ -719,7 +880,7 @@ export class FakeRuntime implements Runtime {
   async buildImage(spec: BuildSpec): Promise<string> {
     this.enter("buildImage", [spec]);
     spec.onLog?.(this.buildLog);
-    await this.gate("buildImage");
+    await this.gate("buildImage", [spec]);
     if (spec.signal?.aborted) throw abortError();
     const image: FakeImage = { id: newImageId(), tags: [], labels: { ...spec.labels }, createdAt: now(), size: 1024 };
     this.images.set(image.id, image);

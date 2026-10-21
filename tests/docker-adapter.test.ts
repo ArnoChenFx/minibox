@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { Server } from "bun";
 
 import { createDockerRuntime } from "../src/docker/runtime";
+import { isAbortError } from "../src/lib/abort";
 import type { Runtime } from "../src/runtime";
 import { rejectionOf } from "./support/app";
 
@@ -60,6 +61,10 @@ const NEVER_STARTED = {
 
 /** When set, inspects of "ok" wait for it, so a test can change the container while an inspect is in flight. */
 let inspectGate: Promise<void> | null = null;
+/** When set, the container listing does not answer until the client gives up on it. */
+let listHung = false;
+/** Requests the engine held and then saw the client abandon. */
+let abandoned = 0;
 
 const inspectable: Record<string, { status: number; body: unknown }> = {
   ok: { status: 200, body: RUNNING },
@@ -69,6 +74,28 @@ const inspectable: Record<string, { status: number; body: unknown }> = {
 };
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
+
+/** A one-shot stats payload: 20% of two CPUs, and 10% of a 1000-byte limit. */
+const ONE_SHOT_STATS = {
+  cpu_stats: { cpu_usage: { total_usage: 200 }, system_cpu_usage: 2000, online_cpus: 2 },
+  precpu_stats: { cpu_usage: { total_usage: 100 }, system_cpu_usage: 1000 },
+  memory_stats: { usage: 100, limit: 1000 },
+};
+
+/** Holds a request the way an engine that never answers does, until the client gives up on it. */
+async function hang(req: Request): Promise<Response> {
+  await new Promise<void>((resolve) =>
+    req.signal.addEventListener(
+      "abort",
+      () => {
+        abandoned += 1;
+        resolve();
+      },
+      { once: true },
+    ),
+  );
+  return new Response(null, { status: 499 });
+}
 
 /** Builds that the engine saw the client close, counted once per build. */
 let buildCloses = 0;
@@ -95,6 +122,15 @@ async function slowBuild(req: Request): Promise<Response> {
   return new Response(body, { headers: { "content-type": "application/json" } });
 }
 
+/** Two events for "ok", one JSON object per line as the engine streams them, and then the stream ends. */
+function eventsStream(): Response {
+  const events = [
+    { Type: "container", Action: "start", Actor: { ID: "ok", Attributes: { name: "alpha" } }, time: 1_700_000_000 },
+    { Type: "container", Action: "die", Actor: { ID: "ok", Attributes: { name: "alpha" } }, time: 1_700_000_001 },
+  ];
+  return new Response(events.map((event) => `${JSON.stringify(event)}\n`).join(""));
+}
+
 async function engine(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/v[\d.]+(?=\/)/, "");
@@ -102,10 +138,13 @@ async function engine(req: Request): Promise<Response> {
 
   if (req.method === "GET" && path === "/_ping") return new Response("OK");
   if (req.method === "GET" && path === "/containers/json") {
+    if (listHung) return hang(req);
     return json(listed.map((id) => ({ Id: id, Names: [`/${id}`], Labels: {}, State: listStates[id] ?? "running" })));
   }
+  if (req.method === "GET" && path === "/events") return eventsStream();
   const inspect = /^\/containers\/([^/]+)\/json$/.exec(path);
   if (req.method === "GET" && inspect) {
+    if (inspect[1] === "hung") return hang(req);
     if (inspect[1] === "ok" && inspectGate) await inspectGate;
     const entry = inspectable[inspect[1] ?? ""] ?? { status: 404, body: { message: "No such container" } };
     return json(entry.body, entry.status);
@@ -126,6 +165,11 @@ async function engine(req: Request): Promise<Response> {
       ]);
     }
     return json({ message: `No such container: ${id}` }, 404);
+  }
+  const stats = /^\/containers\/([^/]+)\/stats$/.exec(path);
+  if (req.method === "GET" && stats) {
+    if (stats[1] === "ok") return json(ONE_SHOT_STATS);
+    if (stats[1] === "hung") return hang(req);
   }
   if (req.method === "POST" && path === "/build") return slowBuild(req);
   if (req.method === "POST" && path === "/containers/create") {
@@ -205,6 +249,44 @@ describe("Docker adapter against a fake engine socket", () => {
       mounts: [],
       network: "bridge",
     });
+  });
+
+  test("a stats sample is read once from the engine, and a call whose signal aborts is cancelled", async () => {
+    expect(await runtime().containerStats("ok")).toEqual({
+      cpuPercent: 20,
+      memUsage: 100,
+      memLimit: 1000,
+      memPercent: 10,
+    });
+    expect(recorded.at(-1)).toMatchObject({ path: "/containers/ok/stats", search: "?stream=false" });
+
+    const error = await rejectionOf(runtime().containerStats("hung", { signal: AbortSignal.timeout(50) }));
+    expect(isAbortError(error)).toBe(true);
+  });
+
+  test("an inspect or a listing gives up when its signal aborts, and the engine sees the request close", async () => {
+    const before = abandoned;
+    const inspect = await rejectionOf(runtime().inspectContainer("hung", { signal: AbortSignal.timeout(50) }));
+    expect(isAbortError(inspect)).toBe(true);
+
+    listed = ["ok", "hung"];
+    const listingInspect = await rejectionOf(
+      runtime().listContainers({ labels: {} }, { signal: AbortSignal.timeout(50) }),
+    );
+    expect(isAbortError(listingInspect)).toBe(true);
+
+    listed = ["ok"];
+    listHung = true;
+    try {
+      const listing = await rejectionOf(runtime().listContainers({ labels: {} }, { signal: AbortSignal.timeout(50) }));
+      expect(isAbortError(listing)).toBe(true);
+    } finally {
+      listHung = false;
+    }
+
+    const abandonedThree = () => abandoned - before >= 3;
+    for (let i = 0; i < 400 && !abandonedThree(); i++) await Bun.sleep(5);
+    expect(abandoned - before).toBeGreaterThanOrEqual(3);
   });
 
   test("listing skips a container that vanished before it was inspected", async () => {
@@ -301,6 +383,19 @@ describe("Docker adapter against a fake engine socket", () => {
     const closedSince = () => buildCloses > closes;
     for (let i = 0; i < 400 && !closedSince(); i++) await Bun.sleep(5);
     expect(closedSince()).toBe(true);
+  });
+
+  test("events send the filters and since to the engine, and yield each event it streams", async () => {
+    const before = recorded.length;
+    const seen: string[] = [];
+    const events = runtime().events({ labels: { minibox: "true" }, types: ["container"], since: 1_700_000_000 });
+    for await (const event of events) seen.push(`${event.action} ${event.id} ${event.time}`);
+
+    const request = recorded.slice(before).find((r) => r.path === "/events");
+    const query = new URLSearchParams(request?.search);
+    expect(query.get("since")).toBe("1700000000");
+    expect(JSON.parse(query.get("filters") ?? "null")).toEqual({ label: ["minibox=true"], type: ["container"] });
+    expect(seen).toEqual(["start ok 2023-11-14T22:13:20.000Z", "die ok 2023-11-14T22:13:21.000Z"]);
   });
 });
 

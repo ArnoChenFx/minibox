@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { runCli } from "../src/cli";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { startServer } from "../src/server";
+import { getBox } from "../src/services/boxes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
@@ -143,6 +144,90 @@ describe("CLI", () => {
       expect(sink.out).toContain("protocolVersion");
     } finally {
       env.stop();
+    }
+  });
+
+  test("session commands start, read, send, list and close a tmux session", async () => {
+    const env = serve();
+    try {
+      await env.app.operations.run("box.create", env.ctx, { name: "alpha", cpus: 1, memoryMb: 256 });
+      const started = io();
+      expect(await runCli(["session", "start", "alpha", "work"], env.env, started, lines([]))).toBe(0);
+      expect(started.out).toBe("work\n");
+
+      expect(await runCli(["session", "send", "alpha", "work", "--text", "echo hi\n"], env.env, io(), lines([]))).toBe(
+        0,
+      );
+      expect(
+        await runCli(
+          ["session", "send", "alpha", "work", "--key", "Escape", "--key", "Enter"],
+          env.env,
+          io(),
+          lines([]),
+        ),
+      ).toBe(0);
+
+      const read = io();
+      expect(await runCli(["session", "read", "alpha", "work", "--lines", "5"], env.env, read, lines([]))).toBe(0);
+      expect(read.out).toBe("echo hi\n");
+      expect(read.err).toMatch(/^cursor [0-9a-f]{12}\.\d+\n$/);
+
+      const listed = io();
+      expect(await runCli(["session", "ls", "alpha"], env.env, listed, lines([]))).toBe(0);
+      expect(listed.out).toContain("work  agent  agent  0");
+
+      const closed = io();
+      expect(await runCli(["session", "close", "alpha", "work"], env.env, closed, lines([]))).toBe(0);
+      expect(closed.out).toBe("work\n");
+      const gone = io();
+      expect(await runCli(["session", "read", "alpha", "work"], env.env, gone, lines([]))).toBe(1);
+      expect(gone.err).toContain("Session not found.");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("a send to a session a person has taken over fails with its hint, and a read still works", async () => {
+    const env = serve();
+    try {
+      const created = (await env.app.operations.run("box.create", env.ctx, {
+        name: "alpha",
+        cpus: 1,
+        memoryMb: 256,
+      })) as { box: { id: string } };
+      const host = env.app.hosts.get();
+      await env.app.terminals.start(host, await getBox(host, created.box.id), "desk", "ui");
+
+      const refused = io();
+      expect(await runCli(["session", "send", "alpha", "desk", "--key", "Enter"], env.env, refused, lines([]))).toBe(1);
+      expect(refused.err).toContain("under human control");
+      expect(refused.err).toContain("try again");
+
+      const read = io();
+      expect(await runCli(["session", "read", "alpha", "desk"], env.env, read, lines([]))).toBe(0);
+      expect(read.err).toMatch(/^cursor /);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("session usage errors exit 2 without calling the server", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    const cases: string[][] = [
+      ["session"],
+      ["session", "frobnicate", "alpha"],
+      ["session", "ls"],
+      ["session", "start", "alpha"],
+      ["session", "read", "alpha", "work", "--lines"],
+      ["session", "read", "alpha", "work", "--color", "red"],
+      ["session", "send", "alpha", "work"],
+      ["session", "send", "alpha", "work", "--text", "x", "--key", "Enter"],
+      ["session", "send", "alpha", "work", "--text", "x", "--text", "y"],
+    ];
+    for (const argv of cases) {
+      const sink = io();
+      expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
+      expect(sink.err.length).toBeGreaterThan(0);
     }
   });
 });

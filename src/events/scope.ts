@@ -15,3 +15,12 @@ export function visibilityOf(principal: PrincipalRef): EventFilter {
 export function scopedFilter(caller: EventFilter, principal: PrincipalRef): EventFilter {
   return { ...caller, ...visibilityOf(principal) };
 }
+
+/**
+ * Whether a stream may carry the live state: the boxes, samples, host metrics, link state and task status. That state
+ * has no filter of its own, so only a stream with no filter at all carries it. A principal whose limits narrow its
+ * scope therefore gets the stored events alone, until the live frames are limited too.
+ */
+export function carriesLiveState(scope: EventFilter): boolean {
+  return Object.values(scope).every((value) => value === undefined);
+}

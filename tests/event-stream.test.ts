@@ -1,14 +1,16 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 
+import { FrameBuffer } from "../src/events/frames";
 import { createRedactor } from "../src/events/redact";
 import { EventStore, type StoredEvent } from "../src/events/store";
-import { type EventStreamOptions, eventStream } from "../src/events/stream";
+import { type EventStreamOptions, eventStream, type StreamStore } from "../src/events/stream";
 import type { EventInput } from "../src/events/types";
 import { ulid } from "../src/events/ulid";
 import { Bus } from "../src/lib/bus";
 import { SseReader } from "./support/sse";
 
 const NOW = 1_750_000_000_000;
+const MIB = 1024 * 1024;
 
 interface Harness {
   readonly store: EventStore;
@@ -179,5 +181,185 @@ describe("eventStream", () => {
     await sse.close();
     await sse.close();
     expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test("a stream that fails while it starts releases its subscriptions and runs onEnd once", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const onEnd = mock(() => {});
+    const failing: StreamStore = {
+      head: () => 0,
+      after: () => {
+        throw new Error("store unavailable");
+      },
+    };
+    stores.push(h.store);
+    expect(() =>
+      eventStream({
+        store: failing,
+        subscribe: (listener) => h.bus.subscribe("event", listener),
+        filter: {},
+        lastId: 0,
+        live: live.source,
+        onEnd,
+      }),
+    ).toThrow("store unavailable");
+    expect(h.bus.listenerCount("event")).toBe(0);
+    expect(live.listeners()).toBe(0);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test("a stream whose read throws ends with that error, runs onEnd once, and releases its subscriptions", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const onEnd = mock(() => {});
+    const take = spyOn(FrameBuffer.prototype, "take").mockImplementationOnce(() => {
+      throw new Error("frames unavailable");
+    });
+    try {
+      const sse = open(h, { live: live.source, onEnd });
+      await expect(sse.next()).rejects.toThrow("frames unavailable");
+    } finally {
+      take.mockRestore();
+    }
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(h.bus.listenerCount("event")).toBe(0);
+    expect(live.listeners()).toBe(0);
+  });
+});
+
+/**
+ * A live source whose frames a test sends by hand. Each `sync` is numbered, so a test can tell the snapshots apart.
+ * With `syncBytes`, each `sync` carries that much padding, as a sync of many boxes does.
+ */
+function fakeLive(syncBytes = 0) {
+  const senders = new Set<(frame: string, key?: string) => void>();
+  let generation = 0;
+  const padding = syncBytes > 0 ? "x".repeat(syncBytes) : undefined;
+  return {
+    listeners: () => senders.size,
+    source: {
+      sync: () => {
+        generation += 1;
+        const body = padding === undefined ? { generation } : { generation, padding };
+        return `event: sync\ndata: ${JSON.stringify(body)}\n\n`;
+      },
+      subscribe: (send: (frame: string, key?: string) => void) => {
+        senders.add(send);
+        return () => {
+          senders.delete(send);
+        };
+      },
+    },
+    send(frame: string, key?: string) {
+      for (const send of senders) send(frame, key);
+    },
+  };
+}
+
+describe("eventStream with live state", () => {
+  test("the sync frame follows the retry hint and the replay, and the live frames follow it", async () => {
+    const h = harness();
+    const first = h.publish({ summary: "stored before the stream" });
+    const live = fakeLive();
+    const sse = open(h, { lastId: 0, live: live.source });
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toMatchObject({ id: first.seq });
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 1 } });
+  });
+
+  test("live frames arrive in the order they are sent, and carry no id", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source });
+    await sse.next();
+    await sse.next();
+    live.send('event: box\ndata: {"n":1}\n\n');
+    live.send('event: sample\ndata: {"n":2}\n\n');
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 1 } });
+    expect(await sse.next()).toEqual({ event: "sample", data: { n: 2 } });
+  });
+
+  test("when frames overflow, the queue is cleared, then a reset and a fresh sync are sent", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source, pendingLimit: 3 });
+    await sse.next();
+    await sse.next();
+    for (let n = 0; n < 4; n++) live.send(`event: box\ndata: {"n":${n}}\n\n`);
+    expect(await sse.next()).toMatchObject({ event: "reset", data: { after: 0 } });
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 2 } });
+    live.send('event: box\ndata: {"n":4}\n\n');
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 4 } });
+  });
+
+  test("cancelling the reader removes the live subscription", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source });
+    await sse.next();
+    await sse.next();
+    expect(live.listeners()).toBe(1);
+    await sse.close();
+    expect(live.listeners()).toBe(0);
+  });
+
+  test("a slow reader is sent the latest sample and host frame, not each one in turn", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source });
+    await Bun.sleep(0);
+    for (const n of [1, 2, 3]) live.send(`event: sample\ndata: {"n":${n}}\n\n`, "sample:local");
+    for (const n of [1, 2]) live.send(`event: host\ndata: {"n":${n}}\n\n`, "host:local");
+    live.send('event: box\ndata: {"n":9}\n\n');
+
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 1 } });
+    expect(await sse.next()).toEqual({ event: "sample", data: { n: 3 } });
+    expect(await sse.next()).toEqual({ event: "host", data: { n: 2 } });
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 9 } });
+  });
+
+  test("a slow reader past its byte budget is reset, then sent a fresh sync", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source, pendingBytes: 1000 });
+    await Bun.sleep(0);
+    const large = `event: box\ndata: "${"x".repeat(300)}"\n\n`;
+    for (let n = 0; n < 4; n++) live.send(large);
+
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 1 } });
+    expect(await sse.next()).toMatchObject({ event: "reset" });
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 2 } });
+    live.send('event: box\ndata: {"n":4}\n\n');
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 4 } });
+  });
+
+  test("a sync frame over the byte budget is sent whole, and the live frames behind it are not reset", async () => {
+    const h = harness();
+    const live = fakeLive(2 * MIB);
+    const sse = open(h, { live: live.source });
+    for (let n = 0; n < 5; n++) live.send(`event: box\ndata: {"n":${n}}\n\n`);
+
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toMatchObject({ event: "sync", data: { generation: 1 } });
+    for (let n = 0; n < 5; n++) expect(await sse.next()).toEqual({ event: "box", data: { n } });
+  });
+
+  test("a client more than twice a sync frame behind is reset once, then carries on from a fresh sync", async () => {
+    const h = harness();
+    const live = fakeLive(2 * MIB);
+    const sse = open(h, { live: live.source });
+    await Bun.sleep(0);
+    const large = `event: box\ndata: "${"x".repeat((3 * MIB) / 2)}"\n\n`;
+    for (let n = 0; n < 3; n++) live.send(large);
+
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toMatchObject({ event: "sync", data: { generation: 1 } });
+    expect(await sse.next()).toMatchObject({ event: "reset", data: { after: 0 } });
+    expect(await sse.next()).toMatchObject({ event: "sync", data: { generation: 2 } });
+    live.send('event: box\ndata: {"n":4}\n\n');
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 4 } });
   });
 });

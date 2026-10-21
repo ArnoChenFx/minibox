@@ -12,9 +12,12 @@ import {
   getBox,
   getLogs,
   getStats,
+  getStatsWithHistory,
   listBoxes,
+  readBox,
   restartBox,
   startBox,
+  statsOf,
   stopBox,
   updateBox,
 } from "../services/boxes";
@@ -24,7 +27,7 @@ import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
 import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
-import { BoxSchema, BoxWithStatsSchema, StatsSchema } from "./schemas";
+import { BoxSchema, BoxWithStatsSchema, StatSampleSchema, StatsSchema } from "./schemas";
 import {
   boxId,
   boxName,
@@ -45,6 +48,7 @@ import {
   requireRebuild,
   requireResources,
   requireUpdate,
+  historyFlag,
   statsFlag,
   tail,
   templateImage,
@@ -97,9 +101,9 @@ export const boxGet = defineOperation({
     name: "get_box",
     description: "Get one box by container id, container name, stable id or box name, with its current resource usage.",
   },
-  resolve: ({ host }, input) => getBox(host, input.id),
+  resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host }, _input, box) => ({ box: { ...box, stats: await getStats(host, box.id).catch(() => null) } }),
+  run: async ({ host }, _input, box) => ({ box: { ...box, stats: await statsOf(host, box).catch(() => null) } }),
 });
 
 export const boxCreate = defineOperation({
@@ -410,12 +414,15 @@ export const boxStats = defineOperation({
   kind: "read",
   scope: "box:read",
   async: false,
-  input: z.object({ id: boxId() }),
-  output: z.object({ stats: StatsSchema.nullable() }),
-  rest: [{ method: "GET", path: "/api/boxes/:id/stats" }],
+  input: z.object({ id: boxId(), history: historyFlag() }),
+  output: z.object({ stats: StatsSchema.nullable(), history: z.array(StatSampleSchema).optional() }),
+  rest: [{ method: "GET", path: "/api/boxes/:id/stats", query: ["history"] }],
   cli: "box stats",
   audit: { target: ({ id }) => ({ kind: "box", name: id }) },
-  run: async ({ host }, input) => ({ stats: await getStats(host, input.id) }),
+  run: async ({ host }, input) => {
+    if (!input.history) return { stats: await getStats(host, input.id) };
+    return getStatsWithHistory(host, input.id);
+  },
 });
 
 export const boxOperations = [

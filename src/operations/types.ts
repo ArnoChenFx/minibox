@@ -4,6 +4,7 @@ import type { EventReader } from "../events/store";
 import type { AuditNote, EventRefs, EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
 import type { ExecService } from "../services/exec";
+import type { TerminalService } from "../services/terminals";
 import type { TaskHandle, TaskReader } from "../tasks/types";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
@@ -46,6 +47,8 @@ export interface OperationContext {
   readonly tasks?: TaskReader;
   /** Command exec. Present on REST, MCP and the CLI. */
   readonly execs?: ExecService;
+  /** Terminal sessions (tmux in the box). Present on REST, MCP and the CLI. */
+  readonly terminals?: TerminalService;
   /** Records an audit event parented to this operation. Exec uses it for start, finish and kill. */
   record?(note: AuditNote): void;
   /**
@@ -101,8 +104,11 @@ export interface OperationMeta {
 export interface AuditSpec<I, O, R> {
   /** The object acted on. `resolved` is `undefined` when resolution failed or never ran; `result` only on success. */
   target?(input: I, resolved: R | undefined, result: O | undefined): EventTarget | undefined;
-  /** Structured detail to record. Never include file contents, and name environment variables without their values. */
-  detail?(input: I, resolved: R | undefined): unknown;
+  /**
+   * Structured detail to record. `result` is only set on success, so a refused call can say that nothing happened.
+   * Never include file contents, and name environment variables without their values.
+   */
+  detail?(input: I, resolved: R | undefined, result: O | undefined): unknown;
   /** Links the event to an exec or its saved output. Set only when the call produced one. */
   ref?(input: I, resolved: R | undefined, result: O | undefined): EventRefs | undefined;
 }
@@ -142,7 +148,7 @@ export interface Operation extends OperationMeta {
   };
   audit?: {
     target?(input: unknown, resolved: unknown, result: unknown): EventTarget | undefined;
-    detail?(input: unknown, resolved: unknown): unknown;
+    detail?(input: unknown, resolved: unknown, result: unknown): unknown;
     ref?(input: unknown, resolved: unknown, result: unknown): EventRefs | undefined;
   };
   exclusive?(ctx: OperationContext, input: unknown, resolved: unknown): string | undefined;

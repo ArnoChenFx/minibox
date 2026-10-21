@@ -273,6 +273,31 @@ describe("browser session lifetime", () => {
   });
 });
 
+describe("live stream cap", () => {
+  test("STREAM_MAX_CONNECTIONS is 256 by default and can be set", () => {
+    expect(load({ ACCESS_KEY: KEY }).streamMaxConnections).toBe(256);
+    expect(load({ ACCESS_KEY: KEY, STREAM_MAX_CONNECTIONS: "32" }).streamMaxConnections).toBe(32);
+  });
+  test("a blank, zero or non-numeric STREAM_MAX_CONNECTIONS falls back to the default", () => {
+    for (const value of ["", "0", "many"]) {
+      expect(load({ ACCESS_KEY: KEY, STREAM_MAX_CONNECTIONS: value }).streamMaxConnections).toBe(256);
+    }
+  });
+});
+
+describe("terminal takeover", () => {
+  test("a human's takeover returns to the agent after 300 seconds without input by default", () => {
+    expect(load({ ACCESS_KEY: KEY })).toMatchObject({ takeoverIdleSec: 300 });
+  });
+  test("SESSION_TAKEOVER_IDLE_SEC sets the idle time, and 0 turns auto-return off", () => {
+    expect(load({ ACCESS_KEY: KEY, SESSION_TAKEOVER_IDLE_SEC: "45" })).toMatchObject({ takeoverIdleSec: 45 });
+    expect(load({ ACCESS_KEY: KEY, SESSION_TAKEOVER_IDLE_SEC: "0" })).toMatchObject({ takeoverIdleSec: 0 });
+  });
+  test.each(["-1", "1.5", "86401", "soon"])("%s falls back to the default", (value) => {
+    expect(load({ ACCESS_KEY: KEY, SESSION_TAKEOVER_IDLE_SEC: value })).toMatchObject({ takeoverIdleSec: 300 });
+  });
+});
+
 describe("permissions", () => {
   test("DATA_DIR and its subdirectories are 700 and the key file is 600", () => {
     load();
