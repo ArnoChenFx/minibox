@@ -2,9 +2,10 @@ import type { HostCtx } from "../host/registry";
 import { log } from "../lib/logger";
 import type { ContainerInfo } from "../runtime";
 import { ClaimError, ensureSpec } from "../specs/claim";
+import { ttlExpired } from "../specs/lifetime";
 import type { BoxSpec } from "../specs/types";
 import { claimEngineVolumes } from "../volumes/engine";
-import { startBox, stopBox } from "./boxes";
+import { sleepBox, startBox, stopBox } from "./boxes";
 
 export interface ReconcileReport {
   /** Stable ids of containers that had no spec file and were claimed on this pass. */
@@ -74,8 +75,13 @@ async function converge(host: HostCtx, info: ContainerInfo, spec: BoxSpec, repor
     report.restartReset.push(spec.id);
   }
   if (spec.lifecycle.desired === "running" && !info.running) {
-    await startBox(host, spec.id);
-    report.started.push(spec.id);
+    if (ttlExpired(spec, Date.now())) {
+      await sleepBox(host, spec.id, "ttl");
+      report.stopped.push(spec.id);
+    } else {
+      await startBox(host, spec.id);
+      report.started.push(spec.id);
+    }
   } else if (spec.lifecycle.desired === "stopped" && info.running) {
     await stopBox(host, spec.id);
     report.stopped.push(spec.id);

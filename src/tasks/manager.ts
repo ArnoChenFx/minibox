@@ -5,9 +5,24 @@ import { AppError, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { type TaskOutcome, TaskStore } from "./store";
-import type { NewTask, TaskError, TaskHandle, TaskReader, TaskStatus, TaskStreamEvent, TaskView } from "./types";
+import type {
+  NewTask,
+  TaskError,
+  TaskHandle,
+  TaskReader,
+  TaskStatus,
+  TaskStreamEvent,
+  TaskTarget,
+  TaskView,
+} from "./types";
 
 const SHUTDOWN_DRAIN_MS = 200;
+
+/** Where a task ran and what it was about. Handed to `onSettled` once the task's work has ended. */
+export interface TaskSubject {
+  readonly hostId: string;
+  readonly target?: TaskTarget;
+}
 
 function taskError(code: string, status: number, key: "task_cancelled" | "task_interrupted"): TaskError {
   const message = msg(key);
@@ -24,11 +39,14 @@ const interruptedError = () => taskError("interrupted", 500, "task_interrupted")
 export class TaskManager implements TaskReader {
   private readonly running = new Map<string, AbortController>();
   private readonly jobs = new Map<string, Promise<void>>();
+  private readonly subjects = new Map<string, TaskSubject>();
 
   constructor(
     private readonly store: TaskStore,
     private readonly redactor: Redactor,
     private readonly publish: (event: TaskStreamEvent) => void,
+    /** Runs once a task's work has ended, so the owner can treat the end as activity (#12). A throw is logged only. */
+    private readonly onSettled?: (subject: TaskSubject) => void,
   ) {}
 
   /**
@@ -41,6 +59,7 @@ export class TaskManager implements TaskReader {
     if (!inserted.ok) throw new AppError(409, "conflict", msg("task_busy"), { taskId: inserted.existingId });
     const controller = new AbortController();
     this.running.set(id, controller);
+    this.subjects.set(id, { hostId: task.hostId, target: task.target });
     const handle: TaskHandle = {
       id,
       signal: controller.signal,
@@ -65,8 +84,20 @@ export class TaskManager implements TaskReader {
         this.releaseLock(id);
         this.running.delete(id);
         this.jobs.delete(id);
+        this.settle(id);
       });
     this.jobs.set(id, job);
+  }
+
+  private settle(id: string): void {
+    const subject = this.subjects.get(id);
+    this.subjects.delete(id);
+    if (!subject || !this.onSettled) return;
+    try {
+      this.onSettled(subject);
+    } catch (error) {
+      log.warn("task.settle_failed", { task: id, error: String(error) });
+    }
   }
 
   /**
@@ -167,6 +198,7 @@ export class TaskManager implements TaskReader {
   crash(): void {
     this.running.clear();
     this.jobs.clear();
+    this.subjects.clear();
     this.store.close();
   }
 

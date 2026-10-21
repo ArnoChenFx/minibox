@@ -464,8 +464,8 @@ const TAB_RENDER = {
     return onChange(draw);
   },
 
-  terminal(root, { box }) {
-    return mountTerminal(root, { box });
+  terminal(root, { box, onChange, rerender }) {
+    return mountTerminal(root, { box, onChange, rerender });
   },
 
   activity(root, { box }) {

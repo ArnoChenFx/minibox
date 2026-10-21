@@ -29,7 +29,7 @@ import {
   sessionTarget,
   type TmuxSession,
 } from "../tmux/format";
-import { type Box, startBox } from "./boxes";
+import { type Box, ensureRunning } from "./boxes";
 
 /** The most a single `session_read` returns. Each line is at most a pane row, so this bounds the response. */
 export const READ_LINES_MAX = 2000;
@@ -126,6 +126,8 @@ export interface TerminalServiceOptions {
   readonly takeoverIdleMs: number;
   /** Idle-sleep heartbeat (#12). Called with the stable box id. */
   readonly onActivity?: (boxId: string, kind: "terminal" | "session") => void;
+  /** Keeps the box awake while an attach is being set up (#12). Returns the release. */
+  readonly hold?: (boxId: string) => () => void;
 }
 
 interface Snapshot {
@@ -183,6 +185,8 @@ export class Attachment {
     private readonly record: RecordNote,
     private readonly onChange: ((view: SessionView) => void) | undefined,
     private readonly idleReturnSec: number,
+    /** Refreshes the box's activity heartbeat. Typing, output and close all count as use of the terminal. */
+    private readonly touch: () => void,
   ) {}
 
   get name(): string {
@@ -202,8 +206,7 @@ export class Attachment {
     if (this.closed || !this.canType) return false;
     this.bytesIn += typeof data === "string" ? Buffer.byteLength(data) : data.byteLength;
     this.tracked.lastInputAt = Date.now();
-    // Activity for idle sleep is recorded by the service via onActivity when the attach is opened; keystrokes
-    // keep the takeover timer fresh. The open attach itself already exempts the box from idle sleep.
+    this.touch();
     this.exec.stream.write(data);
     return true;
   }
@@ -226,6 +229,7 @@ export class Attachment {
   /** Counts output the caller has passed on, for the close record. */
   sent(bytes: number): void {
     this.bytesOut += bytes;
+    this.touch();
   }
 
   notify(): void {
@@ -237,6 +241,7 @@ export class Attachment {
     if (this.closed) return;
     this.closed = true;
     this.tracked.attachments.delete(this);
+    this.touch();
     const durationMs = Date.now() - this.startedAt;
     let failure: string | undefined;
     try {
@@ -301,14 +306,16 @@ export class TerminalService {
     });
   }
 
-  async start(host: HostCtx, box: Box, name: string, source: Source): Promise<StartResult> {
+  async start(
+    host: HostCtx,
+    box: Box,
+    name: string,
+    source: Source,
+    record?: (note: AuditNote) => void,
+  ): Promise<StartResult> {
     assertName(name);
-    let current = box;
-    let woke = false;
-    if (!box.running) {
-      current = await startBox(host, box.boxId, this.options.record);
-      woke = true;
-    }
+    const audit = record ?? ((note: AuditNote) => this.options.record(host.host.id, source, OWNER, note));
+    const { box: current, woke } = await ensureRunning(host, box.boxId, { record: audit });
     return this.serialized(boxKey(current.id), () =>
       this.serialized(keyOf(current.id, name), async () => {
         const listed = await this.listTmux(host, current.id);
@@ -403,6 +410,7 @@ export class TerminalService {
   async close(host: HostCtx, box: Box, name: string, source: Source): Promise<void> {
     assertName(name);
     if (!box.running) throw this.stopped(box.id);
+    this.options.onActivity?.(box.boxId, "session");
     await this.serialized(keyOf(box.id, name), async () => {
       const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
       if (tracked.controller === "human" && source !== "ui") throw takenOverError(name);
@@ -412,8 +420,21 @@ export class TerminalService {
     });
   }
 
-  /** Opens a terminal on the session. The box must be running; the WebSocket layer checks that before upgrading. */
+  /**
+   * Opens a terminal on the session. The box must be running; the WebSocket layer wakes a sleeping box before it calls
+   * this. The box is held awake from the first call until the attach is registered, so the idle sweep cannot stop it in
+   * between.
+   */
   async attach(host: HostCtx, box: Box, name: string, options: AttachOptions): Promise<Attachment> {
+    const release = this.options.hold?.(box.boxId) ?? (() => undefined);
+    try {
+      return await this.openAttach(host, box, name, options);
+    } finally {
+      release();
+    }
+  }
+
+  private async openAttach(host: HostCtx, box: Box, name: string, options: AttachOptions): Promise<Attachment> {
     assertName(name);
     if (!box.running) throw this.stopped(box.id);
     const tracked = this.track(host.host.id, box, await this.probe(host, box, name));
@@ -442,6 +463,7 @@ export class TerminalService {
       this.options.record,
       options.onChange,
       this.options.takeoverIdleMs / 1000,
+      () => this.options.onActivity?.(box.boxId, "terminal"),
     );
     tracked.attachments.add(attachment);
     this.options.onActivity?.(box.boxId, "terminal");

@@ -217,6 +217,34 @@ describe("box list state", () => {
     ).toEqual({ none: false, some: true, stats: { cpuPercent: 7, memUsage: 3, memLimit: 9, memPercent: 33 } });
   });
 
+  test("powerState tells a running box, one asleep for idle, one past its TTL, and one stopped by a person apart", () => {
+    expect(
+      inBrowser(`
+        const view = (fields) => ({ boxId: "b", name: "beta", running: false, sleeping: false, stopReason: "manual", ...fields });
+        return {
+          running: boxState.powerState(view({ running: true, stopReason: null })),
+          idle: boxState.powerState(view({ sleeping: true, stopReason: "idle" })),
+          ttl: boxState.powerState(view({ sleeping: true, stopReason: "ttl" })),
+          manual: boxState.powerState(view({})),
+          ttlPassed: boxState.powerState(view({ sleeping: true, stopReason: "ttl", createdAt: "2026-01-01T00:00:00Z", ttlSec: 60 })),
+          ttlCleared: boxState.powerState(view({ sleeping: true, stopReason: "ttl", createdAt: "2026-01-01T00:00:00Z", ttlSec: null })),
+          ttlExtended: boxState.powerState(
+            view({ sleeping: true, stopReason: "ttl", createdAt: "2026-01-01T00:00:00Z", ttlSec: 7200 }),
+            Date.parse("2026-01-01T01:00:00Z"),
+          ),
+        };
+      `),
+    ).toEqual({
+      running: "running",
+      idle: "sleeping",
+      ttl: "expired",
+      manual: "stopped",
+      ttlPassed: "expired",
+      ttlCleared: "sleeping",
+      ttlExtended: "sleeping",
+    });
+  });
+
   test("boxesOfSync keeps the list while any host's cache is not current, then merges the hosts by name", () => {
     expect(
       inBrowser(`

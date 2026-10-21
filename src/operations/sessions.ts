@@ -162,9 +162,9 @@ export const sessionStart = defineOperation({
     target: (_input, box) => box && boxTarget(box),
     detail: (input) => ({ session: input.name }),
   },
-  run: async ({ host, source, terminals }, input, box) => {
+  run: async ({ host, source, terminals, record }, input, box) => {
     requireTerminals(terminals);
-    return terminals.start(host, box, input.name, source);
+    return terminals.start(host, box, input.name, source, record);
   },
 });
 
