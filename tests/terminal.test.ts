@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Server } from "bun";
 
 import type { App } from "../src/app";
-import { COOKIE_NAME } from "../src/auth";
+import { COOKIE_NAME, LEGACY_KEY_COOKIE } from "../src/auth";
 import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import { parseControl, type TerminalData } from "../src/ws/terminal";
@@ -46,6 +46,17 @@ function signedInSession(endsInMs = app.cfg.sessionTtlMs): { token: string; id: 
     Date.now() + endsInMs - app.cfg.sessionTtlMs,
   );
   return { token, id: session.id };
+}
+
+async function signIn(): Promise<string> {
+  const res = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: base },
+    body: JSON.stringify({ key: TEST_KEY }),
+  });
+  expect(res.status).toBe(200);
+  const cookie = res.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE_NAME}=`)) ?? "";
+  return decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1).split(";")[0] ?? "");
 }
 
 async function createBox(name: string): Promise<string> {
@@ -148,9 +159,19 @@ describe("terminal authentication and origin", () => {
     expect(runtime.callsTo("startExec")).toHaveLength(0);
   });
 
-  test("the session cookie from the console opens a terminal without a Bearer key", async () => {
+  test("the access key in the legacy cookie is never honoured, so the upgrade is refused with 401", async () => {
     const id = await createBox("alpha");
-    const term = connect(`/api/boxes/${id}/terminal`, { cookie: `${COOKIE_NAME}=${TEST_KEY}` });
+    const res = await fetch(`${base}/api/boxes/${id}/terminal`, {
+      headers: { ...UPGRADE, cookie: `${LEGACY_KEY_COOKIE}=${TEST_KEY}` },
+    });
+    expect(res.status).toBe(401);
+    expect(runtime.callsTo("startExec")).toHaveLength(0);
+  });
+
+  test("the session from the console's sign-in opens a same-origin terminal without a Bearer key", async () => {
+    const id = await createBox("alpha");
+    const token = await signIn();
+    const term = connect(`/api/boxes/${id}/terminal`, { cookie: `${COOKIE_NAME}=${token}`, origin: base });
     await term.opened;
     await waitFor(() => term.output().includes("$ "), "the shell prompt");
     expect(runtime.callsTo("startExec")).toHaveLength(1);
@@ -172,8 +193,9 @@ describe("terminal authentication and origin", () => {
     ["a cross-site Fetch Metadata header", { "sec-fetch-site": "cross-site" }],
   ])("%s is refused with 403 even with valid credentials and the session cookie", async (_name, site) => {
     const id = await createBox("alpha");
+    const { token } = signedInSession();
     const res = await fetch(`${base}/api/boxes/${id}/terminal`, {
-      headers: { ...UPGRADE, ...AUTH, cookie: `${COOKIE_NAME}=${TEST_KEY}`, ...site },
+      headers: { ...UPGRADE, ...AUTH, cookie: `${COOKIE_NAME}=${token}`, ...site },
     });
     expect(res.status).toBe(403);
     expect(runtime.callsTo("startExec")).toHaveLength(0);
