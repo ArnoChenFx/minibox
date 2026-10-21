@@ -412,7 +412,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `POST` | `/api/boxes/:id/sessions/:name/input` | 发送输入。请求体为 `{ "keys": [...] }`（tmux 键名，如 `Enter`、`Tab`、`Escape`、`C-c` 或 `Up`，最多 32 个）或 `{ "text": "..." }`（字面 UTF-8，最多 16 KiB），二者只能提供一个。返回发送的 `keys` 数与 `bytes` 字节数。人正在接管该会话时返回 `409 taken_over`，并带 `retryable: true` |
 | `DELETE` | `/api/boxes/:id/sessions/:name` | 关闭会话，并结束其中正在运行的程序。人正在持有该会话时，Agent 或 Bearer 调用者会收到 `409 taken_over`，并带 `retryable: true`；只有控制台能关闭它 |
 
-接管与归还是终端的控制帧，不是 REST 调用：控制台通过它的 WebSocket 发送。Agent 发起的会话在控制台中默认只读，直到有人接管。接管会在人手动归还，或人在 `SESSION_TAKEOVER_IDLE_SEC` 秒（默认 300 秒）没有输入后还给 Agent。控制台发起的会话留在人手中，直到人归还。接管状态只保存在内存中，因此 MiniBox 重启后，每个会话的控制方都会回到其发起方对应的默认值。接管锁约束会话 API、关闭与终端，但不约束 `exec`：在箱内以 `dev` 运行 `exec` 的 Agent 仍可用 `tmux send-keys` 或 `tmux kill-session` 直接操作会话（见 [Agent](#agent)）。每个 Box 最多 16 个会话，每个会话最多 8 个终端；超过任一上限时，调用返回 `429` 与 `too_many_requests`。
+接管与归还是终端的控制帧，不是 REST 调用：控制台通过它的 WebSocket 发送。Agent 发起的会话在控制台中默认只读，直到有人接管。接管会在人手动归还，或人在 `SESSION_TAKEOVER_IDLE_SEC` 秒（默认 300 秒）没有输入后还给 Agent。控制台发起的会话留在人手中，直到人归还。接管状态只保存在内存中，因此 MiniBox 重启后，每个会话的控制方都会回到其发起方对应的默认值。接管锁约束会话 API、关闭与终端，但不约束 `exec`：在箱内以 `dev` 运行 `exec` 的 Agent 仍可用 `tmux send-keys` 或 `tmux kill-session` 直接操作会话（见 [Agent](#agent)）。每个 Box 最多 16 个会话，每个会话最多 8 个终端。其中 Bearer 终端最多 6 个，其余 2 个留给控制台。超过任一上限时，调用返回 `429` 与 `too_many_requests`。
 
 终端 WebSocket 以二进制帧输出，以文本帧发送 `state` 或 `error` 帧。会话结束时以关闭码 `1000` 关闭，浏览器会话结束时以 `1008` 关闭。连接 30 秒没有任何数据时会被关闭，浏览器会自动回应服务器的 ping，因此正常打开的页面不会被断开。浏览器来不及接收时输出会暂停；未读数据超过 4 MiB 的客户端会被关闭。无论终端如何结束，其附着进程都会在 Box 内结束，不会残留 exec。
 

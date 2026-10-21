@@ -43,8 +43,8 @@
 - 会话（tmux）的所有命令与附着进程都以 `dev` 身份运行，包括「严格」档位，不以 root 运行（#14）。
 - 会话的输入从不写入审计日志：`session_send` 只记录按键数与字节数，终端只记录开启、关闭以及两个方向的字节数（#14）。
 - 接管锁同样约束关闭：接管期间，Agent 的 `DELETE /api/boxes/:id/sessions/:name` 与 `minibox session close` 返回 `409 taken_over`（可重试），会话保持存在；只有控制台能关闭被人持有的会话（#14）。
-- Bearer 终端以只读的 tmux 客户端附着（`attach-session -r -f ignore-size`），忽略窗口尺寸；服务端丢弃它发来的 `resize` 消息，因此不会改变控制台的窗口大小（#14）。
-- 会话的资源上限：每个 Box 最多 16 个 tmux 会话，每个会话最多 8 个同时打开的终端，超限返回 `429 too_many_requests`。`session_read` 只回看 4000 行历史，单条 tmux 命令的输出最多保留最新的 4 MiB（#14）。
+- Bearer 终端以只读的 tmux 客户端附着（`attach-session -r -f ignore-size`），忽略窗口尺寸；服务端丢弃它发来的 `resize` 消息，因此不会改变控制台的窗口大小（#14）。该附着需要 tmux 3.2 或更高版本，更旧的 tmux 返回 `409 conflict` 并说明版本（#14）。
+- 会话的资源上限：每个 Box 最多 16 个 tmux 会话，每个会话最多 8 个同时打开的终端。其中 Bearer 终端最多 6 个，其余 2 个留给控制台，因此 Bearer 终端无法把人挡在门外；超限返回 `429 too_many_requests`。`session_read` 只回看 4000 行历史，单条 tmux 命令的输出最多保留最新的 4 MiB（#14）。
 - 会话按 tmux 的会话 id 与创建时间识别，改写 `@minibox-origin` 选项不会重置接管（#14）。
 - 接管锁不约束在箱内以 `dev` 运行的 `exec`：它与 tmux 服务器同属一个用户，可直接调用 `tmux send-keys` 或 `tmux kill-session`。README、README-zh 与 `docs/agents.md` 已说明这一边界（#14）。
 

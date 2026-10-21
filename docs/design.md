@@ -690,8 +690,8 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 - **心跳与背压**：Bun 的 WebSocket `idleTimeout` 设为 30 秒，静默的连接被关闭。`ws.send` 返回背压时暂停读取 tmux 输出，`drain` 时恢复；未读的数据超过 4 MiB 时关闭连接（`closeOnBackpressureLimit`），不再无限缓冲。
 - **事件**：`session.start`、`session.send`、`session.close`、`terminal.open` 与 `terminal.close` 属于活动档。`session.takeover` 与 `session.release` 是写操作，进入审计档。`session.send` 只记录按键数与字节数，`terminal.close` 记录两个方向的字节数与时长。键入的内容从不记录。
 - **会话身份**：一个会话的身份是 tmux 的会话 id（如 `$3`）与创建时间，不是 `@minibox-origin` 选项。Agent 改写该选项不会重置接管。同名的新会话（id 或创建时间不同）是另一个会话，从其发起方的默认控制方重新开始。
-- **资源上限**：每个 Box 最多 16 个 tmux 会话，启动第 17 个时返回 `429 too_many_requests`；每个会话最多 8 个同时打开的终端（含正在启动的），超过时返回同样的错误码。`session_read` 的 `capture-pane` 只回看 4000 行（`READ_LINES_MAX` 的两倍），而不是整个回滚缓冲。每条 tmux 命令的输出最多保留最新的 4 MiB，超出部分从完整的一行开始截取，防止异常大的输出（例如没有换行的超长行）耗尽内存。
-- **只读的 Bearer 附着**：Bearer 调用者以 `tmux attach-session -r -f ignore-size` 附着，即只读客户端，且忽略窗口尺寸；服务端同时丢弃它发来的 `resize` 消息。控制台（浏览器会话）仍以可写方式附着，输入是否送达由接管锁决定。
+- **资源上限**：每个 Box 最多 16 个 tmux 会话，启动第 17 个时返回 `429 too_many_requests`；每个会话最多 8 个同时打开的终端（含正在启动的），超过时返回同样的错误码；其中 Bearer 终端最多 6 个（`VIEWER_ATTACHES_MAX`），其余 2 个留给控制台，因此 Bearer 终端无法把人挡在门外。`session_read` 的 `capture-pane` 只回看 4000 行（`READ_LINES_MAX` 的两倍），而不是整个回滚缓冲。每条 tmux 命令的输出最多保留最新的 4 MiB，超出部分从完整的一行开始截取；若其中没有换行，则从完整的字符开始，不留下 `U+FFFD`。这防止异常大的输出（例如没有换行的超长行）耗尽内存。
+- **只读的 Bearer 附着**：Bearer 调用者以 `tmux attach-session -r -f ignore-size` 附着，即只读客户端，且忽略窗口尺寸；服务端同时丢弃它发来的 `resize` 消息。`-f ignore-size` 需要 tmux 3.2 或更高版本：附着前先执行 `tmux -V`，更旧的 tmux 返回 `409 conflict` 并说明版本，而不是让 tmux 的通用用法错误原样返回。控制台（浏览器会话）仍以可写方式附着，输入是否送达由接管锁决定。
 - **暂缓**：`pipe-pane` 录制（§8.7）与服务端回放缓冲（§10.4）不在 #14 的验收标准之内，尚未实现。重连时由 tmux 重绘屏幕。
 
 ---
