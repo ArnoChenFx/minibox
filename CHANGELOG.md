@@ -15,6 +15,7 @@
 - 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
 
 ### 安全
+- Agent API 令牌与访问密钥分开（#13）。明文（`mbx_…`）只在创建时返回一次，`DATA_DIR/tokens.json` 只保存 SHA-256。scope 包括 `box:read`、`box:write`、`box:delete`、`exec`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:attach`、`tool:install`。资源范围默认是该令牌创建的 Box（`created-by-me`），也可以指定 id、标签或全部 Box；卷必须显式列出；宿主机默认只有 `local`。预设为 `readonly`、`operator`、`sandboxed-agent` 与 `admin`。`sandboxed-agent` 默认最多 5 个 Box、合计 8 个 CPU 与 16384 MB、TTL 最长 4 小时、每分钟 60 次请求。超出配额返回 `403`（`quota_*`），速率超限返回 `429`。吊销立即生效；`DELETE /api/tokens/:id?deleteCreated=true` 同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。创建 Box 时若工作区卷已经存在，或更新挂载指向已有卷，缺少对该卷的 `volume:attach` 会返回 `403`。签发与吊销令牌只有所有者可以做，`admin` 预设不能签发令牌。更换 `ACCESS_KEY` 不会吊销这些令牌。审计日志会打码本进程内创建的令牌，以及形如 `mbx_` 再加至少 20 个字符的值。TTL 到期后自动停止或删除 Box 仍属于 #12，卷对象仍属于 #24，`/mcp` 端点仍属于 #9。
 - 登录 Cookie 不再保存原始 `ACCESS_KEY`。登录后签发随机的 32 字节会话令牌（来自 CSPRNG），Cookie 只保存该令牌。服务端只在 `DATA_DIR/sessions.json` 中保存其 SHA-256 哈希，令牌与访问密钥都不写入日志（#2）。
 - 会话可撤销：登出会立即在服务端作废会话。修改 `ACCESS_KEY` 后，下次启动时全部会话失效；文件中只保存用于检测变更的 scrypt 校验值。`Authorization: Bearer <ACCESS_KEY>` 不受影响（#2）。
 - 终端 WebSocket 与所有 Cookie 校验都接受会话令牌。会话结束（撤销、登出或到期）后，已打开的终端以 WebSocket 关闭码 1008 关闭，已打开的事件流（`/api/events/stream`）随之结束；到期由定期清理发现，最迟约 10 秒（#2）。
@@ -36,8 +37,9 @@
 - `scripts/restart.sh` 不再对 Docker Socket 执行 `chmod 666`，此前任何本地用户都能以 root 等同权限访问 Docker。现在每次运行都把 Socket 的属组设为执行者的主组、权限设为 `660`，服务进程无需重新登录即可使用 Docker；主组以外的账户（包括 `docker` 组成员）在脚本运行后无法访问该 Socket。该脚本定位为单用户沙箱的便利脚本，README 已说明。
 
 ### 新增
+- Agent API 令牌（#13）：设置页或 `POST /api/tokens` 创建，`GET /api/tokens` 列出（不含明文），`DELETE /api/tokens/:id` 吊销。创建响应只包含一次明文。操作注册表的默认鉴权钩子改为按 scope、资源范围与配额检查；所有者与浏览器会话仍可做全部操作。`box.create` 与 `snapshot.fork` 接受可选的 `ttlSec`，并记入规格的 `lifecycle.ttlSec`。令牌省略 TTL 时写入其上限；显式超过上限或传 `null` 返回 `403`。到期清扫不在本次实现。事件列表与事件流按令牌范围过滤：所有者与未收窄的 admin 令牌看全部，其他令牌只看自己造成的事件以及有权使用的 Box 的事件。中英文界面均可创建、复制一次明文，并吊销令牌。
 - Box 规格写入 `DATA_DIR/boxes/<id>.json`（权限 600）。稳定 ID 形如 `bx_…`，与容器 ID 分开，名称全局唯一。已有 Box 在列出或读取时自动认领：不改容器名，也不改容器标签（D6，认领后的属主修正留给 #24）。`DATA_DIR` 丢失时从标签和 `inspect` 降级恢复；空闲超时、TTL、标签、工具、环境变量回到默认值，并在 `recovery.needsReset` 中标明需要重新设置。原地更新（CPU、内存、进程数、标签、空闲超时、TTL、重命名）走 `docker update` / `docker rename` 与规格文件，容器标签保持创建时的内容。请求须带 `If-Match: <revision>`；缺少该头返回 428，版本不一致返回 412。新建 Box 的重启策略为 `no`，启动时的协调器按期望状态 `running` 或 `stopped` 启动或停止，并把引擎上的重启策略改回 `no`（D8）。漂移比较 `inspect` 与规格，不自动改回资源或挂载。重建、`confirm` 与 `docker diff` 预览仍未实现（Refs #23）。
-- 事件与审计（#25）：每次操作执行后（目前经 REST，MCP 与 CLI 随 #9 接入），在 `DATA_DIR/events.db`（SQLite，WAL 模式）中记录一条事件，写入前脱敏（访问密钥、常见凭据格式，环境变量只记名称）。新增 `GET /api/events`（过滤与游标分页）与 `GET /api/events/stream`（SSE，支持 `Last-Event-ID` 续传），两者都经过现有的鉴权与同源检查。保留策略可配置并每小时清理：`EVENT_RETENTION_AUDIT_DAYS`（默认 365）、`EVENT_RETENTION_ACTIVITY_DAYS`（默认 30）、`EVENT_OUTPUT_RETENTION_DAYS`（默认 7）与 `EVENT_OUTPUT_MAX_MB`（默认 512）。`events.db` 需要可写的 `DATA_DIR`，否则启动失败。新增进程内事件总线，供后续的任务与状态采样复用。目前只有所有者可以读取事件，范围令牌（#13）未完成前不做细分；命令输出的保留策略已就位，待 exec（#9）写入。
+- 事件与审计（#25）：每次操作执行后（目前经 REST，MCP 与 CLI 随 #9 接入），在 `DATA_DIR/events.db`（SQLite，WAL 模式）中记录一条事件，写入前脱敏（访问密钥、常见凭据格式，环境变量只记名称）。新增 `GET /api/events`（过滤与游标分页）与 `GET /api/events/stream`（SSE，支持 `Last-Event-ID` 续传），两者都经过现有的鉴权与同源检查。保留策略可配置并每小时清理：`EVENT_RETENTION_AUDIT_DAYS`（默认 365）、`EVENT_RETENTION_ACTIVITY_DAYS`（默认 30）、`EVENT_OUTPUT_RETENTION_DAYS`（默认 7）与 `EVENT_OUTPUT_MAX_MB`（默认 512）。`events.db` 需要可写的 `DATA_DIR`，否则启动失败。新增进程内事件总线，供后续的任务与状态采样复用。所有者与未收窄的 admin 令牌可以读取全部事件；其他 Agent 令牌只看自己范围内的事件（#13）。命令输出的保留策略已就位，待 exec（#9）写入。
 - Box 安全档位 `standard`（默认）、`strict` 与 `relaxed`。创建对话框的「高级」区域可以选择；`POST /api/boxes` 与 `POST /api/snapshots/:ref/boxes` 接受 `profile` 字段；环境变量 `BOX_PROFILE` 设置默认值（#5）。
 - 环境变量 `BOX_PIDS_LIMIT`（默认 `1024`）设置每个新建 Box 的进程数上限；`RUNTIME` 设置新建 Box 使用的 OCI 运行时，例如 gVisor 的 `runsc`（#5）。
 - 独立网络 `<前缀>-boxes`（默认 `minibox-boxes`），关闭容器间通信。网络被删除后（例如 `docker network prune`），已停止的 Box 在下次启动时会接入重建后的网络（#5）。
@@ -50,7 +52,7 @@
 - Docker 镜像设置 `DATA_DIR=/data` 并创建该挂载点，README 中的示例使用 `-v minibox-data:/data` 持久化。
 - REST 请求头 `X-Minibox-Run`（可选）：请求可以带上所属客户端会话的标识，同一会话的审计事件共享该值。取值为 1 到 64 位字母、数字、点、冒号、下划线或连字符，且以字母或数字开头；其他取值返回 `400`（`run_invalid`）（#22）。
 - OpenAPI 3.1 文档 `docs/openapi.json`，由操作注册表生成，覆盖盒子及盒子快照的全部接口，并描述 `X-Minibox-Run` 请求头。运行 `bun run openapi` 重新生成（#22）。
-- 操作执行器的鉴权钩子：未通过鉴权的操作返回 `403`，错误码为 `forbidden`，`key` 为 `operation_forbidden`。默认钩子只允许所有者，因此目前只有替换钩子的测试会触发该响应（#22）。
+- 操作执行器的鉴权钩子：未通过鉴权的操作返回 `403`，错误码为 `forbidden`，`key` 为 `operation_forbidden`。默认钩子按 Agent 令牌的 scope、资源范围与配额检查；所有者始终通过。`ownerOnly` 仍导出，供测试使用（#22 #13）。
 - 操作审计日志：每次执行写一行结构化日志，事件名为 `operation.ok`（读操作为 debug 级别）、`operation.denied` 或 `operation.failed`（5xx 为 error），字段包括操作名、种类、主体、`run`、结果与错误码（#22）。
 - 基础模板以非 root 用户 `dev` 运行（uid/gid 为 1000，可用构建参数 `DEV_UID` / `DEV_GID` 调整）。网页终端与 `docker exec` 默认以 `dev` 进入，并提供无密码 `sudo`（仅限 Box 内）。
 - 基础模板新增 `tmux`、`jq`、`ripgrep`、`openssh-client`、`unzip` 与 `sudo`，并保留 `git`、`curl`、`python3`、`build-essential`、`procps`、`vim-tiny` 与 `less`。
@@ -87,6 +89,7 @@
 - 新增 `bun run openapi`（`scripts/export-openapi.ts`），`scripts/` 纳入 TypeScript 类型检查（#22）。
 - 新增 HTTP 等价性测试 `tests/parity.test.ts`：以重构前录制的 `tests/fixtures/parity-transcript.json` 为基线，逐条比对 97 次请求的状态码、内容类型与响应体（时间、ID 与镜像摘要已规范化）（#22）。
 - 新增 OpenAPI 测试：校验生成的文档与 `docs/openapi.json`；检查路径、方法与 operationId 和注册表一致；要求录制的每个响应都符合对应操作的输出结构或错误结构（#22）。
+- 新增 `tests/tokens.test.ts`：哈希存储、预设、`created-by-me`、配额、TTL 上限、速率限制、卷挂载拒绝、事件可见性与立即吊销。HTTP 等价性转录在原有请求之后追加令牌的创建、列表与吊销（#13）。
 - 架构测试新增两条规则：`src/operations/` 不得依赖 HTTP 层或组合根；REST 适配层只能通过操作访问服务与引擎（#22）。
 - CI 的 `Docker build (smoke)` 任务新增基础模板的多架构构建（`linux/amd64`、`linux/arm64`），并对 amd64 镜像及模拟的 arm64 镜像运行 `scripts/check-box-image.sh`。新增的 `docker/setup-qemu-action` 同样固定到完整 commit SHA。
 

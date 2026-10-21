@@ -41,7 +41,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window |
 | Logs | Main-process output with selectable line count and auto-refresh |
-| Access control | Single access key, exchanged at sign-in for a revocable session token in an HttpOnly, `SameSite=Strict` cookie, or sent as `Authorization: Bearer`; login rate limiting per client address; cross-site requests refused |
+| Access control | Single access key, exchanged at sign-in for a revocable session token in an HttpOnly, `SameSite=Strict` cookie, or sent as `Authorization: Bearer`. Separate agent API tokens with scopes, created-by-me (or ids, tags, or every box), quotas and revoke. Login rate limiting per client address; cross-site requests refused |
 | Languages | English and Simplified Chinese; toggle with the language icon button in the top-right corner (console header and login page). Defaults to the browser language and is remembered per browser |
 | UI | Light / dark theme (follows the system, manual toggle), responsive layout, empty states, skeleton loaders, toasts, confirmation for destructive actions |
 
@@ -338,6 +338,7 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 |---|---|---|
 | `access_key` | `600` | Access key generated when none is set in the environment or `.env` |
 | `sessions.json` | `600` | Browser sessions: SHA-256 hashes of the tokens (never the tokens themselves), sign-in and expiry times, last use, user agent and address, and a scrypt check of the access key that ends every session when the key changes |
+| `tokens.json` | `600` | Agent API tokens: SHA-256 hashes only. Scopes, resource limits, quotas, expiry, last use and who created the token. Rotating `ACCESS_KEY` does not revoke these |
 | `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
 | `exec/` | `700` | Output of `exec` commands (created now, used by later features) |
 | `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
@@ -347,7 +348,7 @@ MiniBox creates these directories at startup and tightens looser modes. It never
 
 ## API reference
 
-All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer <ACCESS_KEY>` header. Writes must send `Content-Type: application/json`, except requests that have neither a body nor a `Content-Type` (any other declared type gets `415`), and browser requests from other websites get `403`.
+All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer` header. The bearer secret is the access key, or an agent API token (`mbx_…`) from Settings or `POST /api/tokens`. Writes must send `Content-Type: application/json`, except requests that have neither a body nor a `Content-Type` (any other declared type gets `415`), and browser requests from other websites get `403`.
 
 A request may send an `X-Minibox-Run` header that names the client session it belongs to; the audit events of one session share that value. It takes 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit. Any other value gets `400`.
 
@@ -431,11 +432,11 @@ Events are redacted before they are written. The access key is replaced wherever
 
 Pruning runs at startup and then every hour. Events older than their tier's window are deleted. Output is deleted by age, then oldest first until the total fits the cap. Retention settings must be positive whole numbers; any other value falls back to its default.
 
-Only the owner can read the event log for now. Scoped tokens ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) will narrow what each token sees. Recording never fails an operation: if an event cannot be written, the failure is logged as `audit.failed` and the response is unchanged. Startup fails if `events.db` cannot be opened, for example because `DATA_DIR` is not writable.
+The owner, and an admin token whose scopes and resource limits were not narrowed, can read the whole event log. Every other agent token sees events it caused and events about boxes it may use. A token without `box:read` cannot open the event stream. Recording never fails an operation: if an event cannot be written, the failure is logged as `audit.failed` and the response is unchanged. Startup fails if `events.db` cannot be opened, for example because `DATA_DIR` is not writable.
 
 ### OpenAPI
 
-The box, snapshot, template and event-list routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. Auth, system, host and activity routes, and the event stream, are not in it yet.
+The box, snapshot, template, event-list and agent-token routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. Auth, system, host and activity routes, and the event stream, are not in it yet.
 
 ### Example
 
@@ -446,6 +447,16 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 
 # Then work inside it, e.g. from an agent's shell tool:
 docker exec -it minibox-agent-dev bash
+
+# A restricted token for an agent. The secret is returned once; the server stores its hash.
+# Presets: readonly, operator, sandboxed-agent, admin. Minting tokens stays with the access key.
+curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"name":"claude","preset":"sandboxed-agent"}' http://127.0.0.1:3920/api/tokens
+
+# Use the mbx_… secret as Bearer. /mcp is not served yet; the same token already authorizes REST.
+# MCP clients can paste this once that endpoint exists:
+# { "mcpServers": { "minibox": { "url": "http://127.0.0.1:3920/mcp",
+#   "headers": { "Authorization": "Bearer mbx_…" } } } }
 ```
 
 ## Project structure
@@ -459,6 +470,7 @@ minibox/
 │   ├── data-dir.ts          # DATA_DIR layout and secret files (600)
 │   ├── auth.ts              # Caller checks (bearer or session), session cookie, login throttle
 │   ├── sessions.ts          # Browser sessions: token hashes, expiry, sessions.json
+│   ├── tokens/              # Agent API tokens: scopes, presets, quotas, authorize hook
 │   ├── labels.ts            # Docker label keys and parsers
 │   ├── activity.ts          # Recent-operations log
 │   ├── static.ts            # Static file serving (path-traversal safe)
@@ -531,6 +543,7 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **The container runs as root**, because it needs the Docker socket, which is root-equivalent. To narrow that, put a socket proxy that forwards only the Docker API calls MiniBox uses in front of the socket, and point `DOCKER_SOCKET` at the proxy's Unix socket. Or run MiniBox against a rootless Docker or Podman socket.
 - **The access key is the only guard.** There are no user accounts, and a leaked key means full access. The key is compared in constant time. Login limiting only refuses wrong keys: a correct key always signs in, even while wrong keys are refused. Wrong keys are refused after 10 failures per client address (IPv6 addresses per /64) or 50 from all addresses together, within 5 minutes. The limiter does not stop guessing, because every key is still checked, so the key's length and randomness are what matter: use at least 20 random characters, such as `openssl rand -hex 32` (the generated key is 64 hex characters). At startup, a key shorter than 20 characters, or obviously low-entropy (one character class under 24 characters, or one repeated character), logs an `auth.weak_key` warning. MiniBox still starts, so existing deployments keep working. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; every browser session ends when MiniBox starts with the new key.
 - **Sessions are revocable.** A sign-in does not put the key in the browser. The cookie holds a random 32-byte session token, and `DATA_DIR/sessions.json` keeps only its SHA-256 hash, so a copy of that file cannot be replayed as a cookie. The file also holds a scrypt check of the access key, so the key's strength still matters. Sessions end on logout, when revoked in Settings, at their expiry (`SESSION_TTL_DAYS`, 30 days by default), or when the access key changes. An open terminal and an open event stream close when their session ends.
+- **Agent API tokens are separate from the access key.** Create one in Settings or with `POST /api/tokens`. The plaintext (`mbx_…`) is shown once; `DATA_DIR/tokens.json` keeps only its SHA-256 hash. A token carries scopes (`box:read`, `box:write`, `box:delete`, `exec`, `files:read`, `files:write`, `port:expose`, `checkpoint:create`, `checkpoint:restore`, `volume:attach`, `tool:install`), a box selector (`created-by-me` by default, or ids, tags, or `*`), an explicit volume list, allowed hosts, and optional quotas. Presets are `readonly`, `operator`, `sandboxed-agent` and `admin`. `sandboxed-agent` starts at 5 boxes, 8 CPU cores and 16 GB in total, a 4 hour TTL and 60 requests per minute. Revoke takes effect immediately, and can also delete the boxes that token created. `exec` can read and write every mount of a box the token may use. Mounting a volume that already exists requires `volume:attach` on that volume. Rotating `ACCESS_KEY` ends browser sessions and does not revoke API tokens. No preset can mint tokens: that stays with the access key or a signed-in session. Stopping a box when its TTL elapses is [#12](https://github.com/ArnoChenFx/minibox/issues/12). Volume objects are [#24](https://github.com/ArnoChenFx/minibox/issues/24). The `/mcp` endpoint itself arrives with [#9](https://github.com/ArnoChenFx/minibox/issues/9); the token already works as a REST bearer. A read-only token limited to boxes it created sees nothing until you grant `*` or specific ids, because it cannot create a box.
 - **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin listed in `ALLOWED_ORIGINS`. Requests without an `Origin` header (scripts using `Authorization: Bearer`) are accepted. Writes must declare `Content-Type: application/json` unless they carry neither a body nor a `Content-Type`, which also blocks HTML form posts. The session cookie is `SameSite=Strict`, so a link from another website may ask you to sign in once more.
 - **Strict Content-Security-Policy.** Scripts load only from MiniBox itself (`script-src 'self'`), the pages have no inline scripts, and MiniBox can't be framed (`frame-ancestors 'none'`). Requests that arrive over HTTPS (directly, with an `https://` Origin, or through a proxy when `TRUST_PROXY=true`) also get `Strict-Transport-Security` for one year, without `includeSubDomains`.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
@@ -578,7 +591,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 - [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
-- [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and TTL
+- [x] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and revoke. Stopping a box when its TTL elapses stays with [#12](https://github.com/ArnoChenFx/minibox/issues/12); volume objects stay with [#24](https://github.com/ArnoChenFx/minibox/issues/24)
 - [x] [#2](https://github.com/ArnoChenFx/minibox/issues/2) Revocable session tokens instead of the raw access key in cookies
 
 ### M2 · Storage and agent interface

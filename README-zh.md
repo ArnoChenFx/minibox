@@ -41,7 +41,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应 |
 | 日志 | 查看容器主进程输出，支持行数选择与自动刷新 |
-| 访问控制 | 单一访问密钥；登录时换取可撤销的会话令牌，保存在 HttpOnly、`SameSite=Strict` Cookie 中，或以 `Authorization: Bearer` 发送；按客户端地址限制登录失败次数；拒绝跨站请求 |
+| 访问控制 | 单一访问密钥；登录时换取可撤销的会话令牌，保存在 HttpOnly、`SameSite=Strict` Cookie 中，或以 `Authorization: Bearer` 发送。另有带 scope、`created-by-me`（或 id、标签、全部 Box）、配额和吊销的 Agent API 令牌。按客户端地址限制登录失败次数；拒绝跨站请求 |
 | 多语言 | 英文与简体中文；点击右上角（控制台顶栏和登录页）的语言图标按钮即可切换，默认跟随浏览器语言，并在本浏览器记住选择 |
 | 界面 | 浅色 / 深色主题（跟随系统，可手动切换）、响应式布局、空状态、骨架屏、操作提示与危险操作确认 |
 
@@ -338,6 +338,7 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 |---|---|---|
 | `access_key` | `600` | 环境变量和 `.env` 中都没有设置时自动生成的访问密钥 |
 | `sessions.json` | `600` | 浏览器会话：令牌的 SHA-256 哈希（从不保存令牌本身）、登录与过期时间、最后活动时间、User-Agent 与地址，以及在访问密钥变更时用于结束全部会话的 scrypt 校验值 |
+| `tokens.json` | `600` | Agent API 令牌：只保存 SHA-256。包含 scope、资源范围、配额、到期时间、最后使用，以及创建者。更换 `ACCESS_KEY` 不会吊销这些令牌 |
 | `boxes/` | `700` | 每个 Box 一个规格文件 `<id>.json`（权限 `600`）。可变状态写在这里；标签只是创建时的副本 |
 | `exec/` | `700` | `exec` 命令的输出（现在创建，后续功能使用） |
 | `secrets/` | `700` | 密钥值与仓库密钥（现在创建，后续功能使用） |
@@ -347,7 +348,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 ## API 参考
 
-请求与响应均为 JSON。除标注**公开**的接口外，都需要登录 Cookie（由 `/api/auth/login` 写入）或 `Authorization: Bearer <ACCESS_KEY>` 请求头。写请求必须使用 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外；其他声明的类型返回 `415`），来自其他网站的浏览器请求返回 `403`。
+请求与响应均为 JSON。除标注**公开**的接口外，都需要登录 Cookie（由 `/api/auth/login` 写入）或 `Authorization: Bearer` 请求头。Bearer 密钥可以是访问密钥，也可以是在设置页或 `POST /api/tokens` 创建的 Agent API 令牌（`mbx_…`）。写请求必须使用 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外；其他声明的类型返回 `415`），来自其他网站的浏览器请求返回 `403`。
 
 请求可以带上 `X-Minibox-Run` 请求头，标明所属的客户端会话，同一会话的审计事件共享该值。取值为 1 到 64 位字母、数字、点、冒号、下划线或连字符，且以字母或数字开头；其他取值返回 `400`。
 
@@ -431,11 +432,11 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 清理在启动时执行，之后每小时执行一次。超过各档位保留期的事件会被删除；输出先按时间删除，再从最旧的开始删除，直到总量不超过上限。保留相关配置必须是正整数，其他取值回退为默认值。
 
-目前只有所有者可以读取事件日志。范围令牌（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）落地后，将限制每个令牌能看到的内容。记录事件永远不会导致操作失败：如果事件无法写入，失败会以 `audit.failed` 记入日志，响应保持不变。如果 `events.db` 无法打开（例如 `DATA_DIR` 不可写），启动会失败。
+所有者，以及未收窄 scope 和资源范围的 admin 令牌，可以读取全部事件。其他 Agent 令牌只能看到自己造成的事件，以及它有权使用的 Box 的事件。没有 `box:read` 的令牌不能打开事件流。记录事件永远不会导致操作失败：如果事件无法写入，失败会以 `audit.failed` 记入日志，响应保持不变。如果 `events.db` 无法打开（例如 `DATA_DIR` 不可写），启动会失败。
 
 ### OpenAPI
 
-盒子、快照、模板以及事件列表的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。认证、系统、宿主机与活动记录接口，以及事件流，暂未纳入。
+盒子、快照、模板、事件列表以及 Agent 令牌的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。认证、系统、宿主机与活动记录接口，以及事件流，暂未纳入。
 
 ### 示例
 
@@ -446,6 +447,16 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 
 # 之后就可以进去干活，比如在 Agent 的 shell 工具里：
 docker exec -it minibox-agent-dev bash
+
+# 给 Agent 签发一枚受限令牌。明文只返回一次，服务端只保存哈希。
+# 预设：readonly、operator、sandboxed-agent、admin。签发令牌仍需访问密钥。
+curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"name":"claude","preset":"sandboxed-agent"}' http://127.0.0.1:3920/api/tokens
+
+# 把返回的 mbx_… 当作 Bearer。/mcp 尚未提供；同一枚令牌已经可以调用 REST。
+# MCP 客户端可以在该端点落地后粘贴这段配置：
+# { "mcpServers": { "minibox": { "url": "http://127.0.0.1:3920/mcp",
+#   "headers": { "Authorization": "Bearer mbx_…" } } } }
 ```
 
 ## 项目结构
@@ -459,6 +470,7 @@ minibox/
 │   ├── data-dir.ts          # DATA_DIR 布局与密钥文件（600）
 │   ├── auth.ts              # 调用方校验（Bearer 或会话）、会话 Cookie、登录限流
 │   ├── sessions.ts          # 浏览器会话：令牌哈希、过期、sessions.json 持久化
+│   ├── tokens/              # Agent API 令牌：scope、预设、配额、鉴权钩子
 │   ├── labels.ts            # Docker 标签键与解析
 │   ├── activity.ts          # 最近操作记录
 │   ├── static.ts            # 静态文件服务（防目录穿越）
@@ -531,6 +543,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **容器以 root 运行。** 容器需要使用 Docker Socket，而 Docker Socket 等同于 root。要缩小这部分权限，可以在 Socket 前放一个只转发 MiniBox 所需 Docker API 的 Socket 代理，并把 `DOCKER_SOCKET` 指向代理的 Unix Socket；也可以让 MiniBox 连接 rootless Docker 或 Podman 的 Socket。
 - **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以密钥的长度和随机性才是关键：请使用至少 20 位的随机字符，例如 `openssl rand -hex 32` 生成的密钥（自动生成的密钥为 64 位十六进制）。启动时，若密钥短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符），会记录 `auth.weak_key` 警告。MiniBox 仍会正常启动，已有部署不受影响。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务；使用新密钥启动时，全部浏览器会话随之结束。
 - **会话可以撤销。** 登录后密钥不会保存在浏览器里：Cookie 中是随机生成的 32 字节会话令牌，`DATA_DIR/sessions.json` 只保存它的 SHA-256 哈希，因此拿到该文件也无法用来伪造登录 Cookie。文件中还有一个用于检测密钥变更的 scrypt 校验值，所以访问密钥的强度依然重要。会话在登出、在设置页撤销、到期（`SESSION_TTL_DAYS`，默认 30 天）或访问密钥变更时结束；会话结束时，它打开的终端和事件流也会关闭。
+- **Agent API 令牌与访问密钥分开。** 在设置页或用 `POST /api/tokens` 创建。明文（`mbx_…`）只显示一次；`DATA_DIR/tokens.json` 只保存 SHA-256。令牌带有 scope（`box:read`、`box:write`、`box:delete`、`exec`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:attach`、`tool:install`）、Box 选择器（默认 `created-by-me`，也可以是 id、标签或 `*`）、显式的卷列表、允许的宿主机，以及可选配额。预设为 `readonly`、`operator`、`sandboxed-agent` 和 `admin`。`sandboxed-agent` 的起点是最多 5 个 Box、合计 8 个 CPU 与 16 GB 内存、4 小时 TTL、每分钟 60 次请求。吊销立即生效，也可以同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。挂载一个已经存在的卷需要对该卷的 `volume:attach`。更换 `ACCESS_KEY` 会结束浏览器会话，不会吊销 API 令牌。没有任何预设可以签发令牌：那仍属于访问密钥或已登录的会话。TTL 到期后自动停止 Box 属于 [#12](https://github.com/ArnoChenFx/minibox/issues/12)。卷对象属于 [#24](https://github.com/ArnoChenFx/minibox/issues/24)。`/mcp` 端点本身随 [#9](https://github.com/ArnoChenFx/minibox/issues/9) 落地；令牌已经可以作为 REST 的 Bearer 使用。只读且限制在自己创建的 Box 上的令牌，在授予 `*` 或具体 id 之前看不到任何 Box，因为它不能创建 Box。
 - **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。写请求必须声明 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外），这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
 - **严格的内容安全策略（CSP）。** 脚本只会从 MiniBox 自身加载（`script-src 'self'`），页面没有内联脚本，且禁止被嵌入 iframe（`frame-ancestors 'none'`）。通过 HTTPS 访问（直接访问、请求带有 `https://` Origin，或在 `TRUST_PROXY=true` 时经由代理）的请求还会带上 `Strict-Transport-Security`，有效期一年，不包含子域名。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
@@ -578,7 +591,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 - [ ] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box 规格：声明式状态、稳定 ID、重建与回滚
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) 事件库与审计（SQLite、脱敏），基于事件总线
 - [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) 异步任务与进度流
-- [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与 TTL
+- [x] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Agent 受限令牌：`created-by-me`、配额与吊销。TTL 到期后自动停止仍属于 [#12](https://github.com/ArnoChenFx/minibox/issues/12)；卷对象仍属于 [#24](https://github.com/ArnoChenFx/minibox/issues/24)
 - [x] [#2](https://github.com/ArnoChenFx/minibox/issues/2) 可撤销的会话令牌，取代 Cookie 中的原始访问密钥
 
 ### M2 · 存储与 Agent 接口

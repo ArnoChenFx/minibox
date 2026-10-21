@@ -20,6 +20,8 @@ const ACTION_ICON = {
   "template.promote": "upload",
   "template.build": "hammer",
   "template.delete": "trash",
+  "token.create": "key",
+  "token.revoke": "trash",
 };
 
 function metricSkeleton() {
