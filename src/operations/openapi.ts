@@ -177,7 +177,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
     components: {
       schemas: { Error: toJsonSchema(ErrorSchema, "output") },
       securitySchemes: {
-        bearer: { type: "http", scheme: "bearer", description: "The access key, as a Bearer token." },
+        bearer: { type: "http", scheme: "bearer", description: "The access key or an agent token, as a Bearer token." },
         cookie: {
           type: "apiKey",
           in: "cookie",

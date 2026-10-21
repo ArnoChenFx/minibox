@@ -3,15 +3,15 @@ import type { Server } from "bun";
 import { type App, createApp } from "./app";
 import {
   type Caller,
-  authenticate,
-  bearerAllowed,
-  bearerKey,
+  callerGate,
   clearLegacyKeyCookie,
   clientAddress,
   isSecureRequest,
   isWeakAccessKey,
   MIN_ACCESS_KEY_LENGTH,
   proxyHeaderWarner,
+  resolveCaller,
+  sessionCaller,
 } from "./auth";
 import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
@@ -22,11 +22,12 @@ import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
 import { handleMcp } from "./mcp/http";
 import { routes } from "./routes";
-import { matchRoute } from "./routes/router";
+import { matchRoute, routeAllows } from "./routes/router";
 import { getBox } from "./services/boxes";
 import { reconcileHost } from "./services/reconcile";
 import { serveFile } from "./static";
 import { isSessionName } from "./tmux/format";
+import { boxVisible, scopeAllowed, viewOfBox } from "./tokens/model";
 import { resolveVersion } from "./version";
 import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData, terminalHandlers } from "./ws/terminal";
 
@@ -41,17 +42,11 @@ function addressOf(app: App, req: Request, server: Pick<Server<unknown>, "reques
 }
 
 /**
- * The caller of an API or terminal request. A Bearer key is judged alone, and a wrong one counts toward the login
- * limit. Without a Bearer key the session cookie decides.
+ * The caller of an API or terminal request. A Bearer header is the access key or an agent token, and a wrong one
+ * counts toward the login limit. Without one, the session cookie decides.
  */
-async function callerOf(app: App, req: Request, server: Pick<Server<unknown>, "requestIP">): Promise<Caller | null> {
-  if (bearerKey(req) === null) return authenticate(req, app.cfg.accessKey, app.sessions);
-  const allowed = await bearerAllowed(
-    req,
-    { accessKey: app.cfg.accessKey, throttle: app.throttle },
-    addressOf(app, req, server),
-  );
-  return allowed ? { sessionId: null } : null;
+function callerOf(app: App, req: Request, server: Pick<Server<unknown>, "requestIP">): Promise<Caller | null> {
+  return resolveCaller(req, callerGate(app), addressOf(app, req, server));
 }
 
 async function handleApi(app: App, req: Request, url: URL, server: Server<TerminalData>): Promise<Response> {
@@ -59,9 +54,12 @@ async function handleApi(app: App, req: Request, url: URL, server: Server<Termin
   if (m === null) throw new AppError(404, "not_found", msg("api_not_found"));
   if (m === "method_not_allowed") throw new AppError(405, "method_not_allowed", msg("method_not_allowed"));
   // Public routes judge the cookie only, so a stray Bearer header cannot count against a login.
-  const caller = m.route.public ? authenticate(req, app.cfg.accessKey, app.sessions) : await callerOf(app, req, server);
-  if (!m.route.public && caller === null) {
-    throw new AppError(401, "unauthorized", msg("unauthorized"));
+  const caller = m.route.public ? sessionCaller(req, app.sessions) : await callerOf(app, req, server);
+  if (!m.route.public) {
+    if (caller === null) throw new AppError(401, "unauthorized", msg("unauthorized"));
+    if (!routeAllows(m.route, caller.principal)) {
+      throw new AppError(403, "forbidden", msg("operation_forbidden", { op: `${req.method} ${url.pathname}` }));
+    }
   }
   return m.route.handler({
     app,
@@ -79,7 +77,7 @@ const redirect = (location: string) => new Response(null, { status: 302, headers
 
 async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
   const path = url.pathname;
-  const authed = authenticate(req, app.cfg.accessKey, app.sessions) !== null;
+  const authed = sessionCaller(req, app.sessions) !== null;
   if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) {
     const file = await serveFile(app.cfg.webDir, path === "/favicon.ico" ? "/assets/favicon-32.png" : path);
     if (file) return file;
@@ -100,7 +98,7 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
 }
 
 export function startServer(app: App): Server<TerminalData> {
-  const term = terminalHandlers({ sessions: app.sessions, terminals: app.terminals });
+  const term = terminalHandlers({ sessions: app.sessions, tokens: app.tokens, terminals: app.terminals });
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
   );
@@ -124,6 +122,13 @@ export function startServer(app: App): Server<TerminalData> {
           if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
           const host = app.hosts.get();
           const box = await getBox(host, decodeURIComponent(tm[1] ?? ""));
+          const principal = caller.principal;
+          if (
+            principal.type === "token" &&
+            (!scopeAllowed(principal.grants, "box:session") || !boxVisible(principal, viewOfBox(box, host.host.id)))
+          ) {
+            throw new AppError(403, "forbidden", msg("box_out_of_scope"));
+          }
           if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
           const name = url.searchParams.get("session") ?? "";
           if (!isSessionName(name)) throw badRequest(msg("session_name_invalid"), { field: "session" });
@@ -134,6 +139,7 @@ export function startServer(app: App): Server<TerminalData> {
             name,
             source: caller.sessionId ? "ui" : "rest",
             sessionId: caller.sessionId,
+            principal,
           };
           if (server.upgrade(req, { data })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));

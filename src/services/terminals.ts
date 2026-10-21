@@ -7,6 +7,7 @@ import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { type Msg, msg } from "../lib/messages";
+import { OWNER, type Principal } from "../operations/types";
 import { type ExecSession, type ExecSpec, RuntimeError } from "../runtime";
 import {
   acceptsIgnoreSize,
@@ -111,11 +112,13 @@ export interface StartResult {
 
 export interface AttachOptions {
   readonly source: Source;
+  /** Who opens the terminal. Its events and its close are recorded for this principal. */
+  readonly principal: Principal;
   readonly onChange?: (view: SessionView) => void;
 }
 
 /** Writes one audit event for the session. The service never builds events itself; the app supplies the recorder. */
-export type RecordNote = (hostId: string, source: Source, note: AuditNote) => void;
+export type RecordNote = (hostId: string, source: Source, principal: Principal, note: AuditNote) => void;
 
 export interface TerminalServiceOptions {
   readonly record: RecordNote;
@@ -143,6 +146,8 @@ interface Tracked {
   readonly origin: SessionOrigin;
   controller: Controller;
   takenOver: boolean;
+  /** Who holds the takeover. Only the console takes a session over, so this is the owner unless it says otherwise. */
+  takenBy: Principal;
   lastInputAt: number;
   hostId: string;
   target: EventTarget;
@@ -173,6 +178,7 @@ export class Attachment {
     readonly exec: ExecSession,
     readonly tracked: Tracked,
     readonly source: Source,
+    readonly principal: Principal,
     private readonly where: { readonly hostId: string; readonly box: EventTarget },
     private readonly record: RecordNote,
     private readonly onChange: ((view: SessionView) => void) | undefined,
@@ -240,7 +246,7 @@ export class Attachment {
       log.error("terminal.kill_failed", { session: this.tracked.name, error: failure });
     }
     this.exec.stream.destroy();
-    this.record(this.where.hostId, this.source, {
+    this.record(this.where.hostId, this.source, this.principal, {
       op: "terminal.close",
       kind: "write",
       status: failure ? "error" : "ok",
@@ -431,6 +437,7 @@ export class TerminalService {
       exec,
       tracked,
       options.source,
+      options.principal,
       { hostId: host.host.id, box: tracked.target },
       this.options.record,
       options.onChange,
@@ -438,7 +445,7 @@ export class TerminalService {
     );
     tracked.attachments.add(attachment);
     this.options.onActivity?.(box.boxId, "terminal");
-    this.options.record(host.host.id, options.source, {
+    this.options.record(host.host.id, options.source, options.principal, {
       op: "terminal.open",
       kind: "write",
       status: "ok",
@@ -455,9 +462,10 @@ export class TerminalService {
     if (attachment.source !== "ui" || tracked.controller === "human") return false;
     tracked.controller = "human";
     tracked.takenOver = true;
+    tracked.takenBy = attachment.principal;
     tracked.lastInputAt = Date.now();
     this.arm(tracked, this.options.takeoverIdleMs);
-    this.options.record(tracked.hostId, attachment.source, {
+    this.options.record(tracked.hostId, attachment.source, attachment.principal, {
       op: "session.takeover",
       kind: "write",
       status: "ok",
@@ -473,7 +481,7 @@ export class TerminalService {
   release(attachment: Attachment): boolean {
     const { tracked } = attachment;
     if (attachment.source !== "ui" || tracked.controller === "agent") return false;
-    this.handBack(tracked, attachment.source, "manual");
+    this.handBack(tracked, attachment.source, attachment.principal, "manual");
     return true;
   }
 
@@ -550,6 +558,7 @@ export class TerminalService {
       origin: found.origin,
       controller: found.origin === "human" ? "human" : "agent",
       takenOver: false,
+      takenBy: OWNER,
       lastInputAt: Date.now(),
       hostId,
       target,
@@ -626,14 +635,14 @@ export class TerminalService {
       this.arm(tracked, remaining);
       return;
     }
-    this.handBack(tracked, "system", "idle");
+    this.handBack(tracked, "system", tracked.takenBy, "idle");
   }
 
-  private handBack(tracked: Tracked, source: Source, by: "manual" | "idle"): void {
+  private handBack(tracked: Tracked, source: Source, principal: Principal, by: "manual" | "idle"): void {
     tracked.controller = "agent";
     tracked.takenOver = false;
     this.disarm(tracked);
-    this.options.record(tracked.hostId, source, {
+    this.options.record(tracked.hostId, source, principal, {
       op: "session.release",
       kind: "write",
       status: "ok",

@@ -59,7 +59,13 @@ async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
 
 async function startTask(): Promise<string> {
   held = runtime.hold("buildImage");
-  const ctx: OperationContext = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
+  const ctx: OperationContext = {
+    host: app.hosts.get(),
+    principal: OWNER,
+    source: "rest",
+    events: app.events,
+    tokens: app.tokens,
+  };
   const { taskId } = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
   return taskId;
 }

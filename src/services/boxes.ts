@@ -8,6 +8,7 @@ import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { NAME_RE } from "../lib/validation";
+import { OWNER } from "../operations/types";
 import {
   type ContainerInfo,
   type ContainerStats,
@@ -41,7 +42,7 @@ export interface CreateBoxInput {
   memoryMb: number;
   /** Absent means the host's default profile. */
   profile?: BoxProfile;
-  /** Principal that created the box. Defaults to `owner` until scoped tokens exist. */
+  /** Id of the principal that created the box: `owner`, or a token id. Defaults to `owner`. */
   createdBy?: string;
   /**
    * Engine mounts to use instead of the four role volumes. `volume` is a volume id or name.
@@ -519,7 +520,7 @@ export async function startBox(host: HostCtx, ref: string, audit?: AuditRecord):
   await host.sampler.observe(box.id);
   host.pulse.touch(box.boxId, "wake");
   if (audit && (previousReason === "idle" || previousReason === "ttl")) {
-    audit(host.host.id, "system", {
+    audit(host.host.id, "system", OWNER, {
       op: "box.wake",
       kind: "write",
       status: "ok",

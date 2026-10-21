@@ -1,3 +1,5 @@
+import { spyOn } from "bun:test";
+
 import type { HostMetrics } from "../../src/host/metrics";
 import { startServer } from "../../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "../support/app";
@@ -23,8 +25,11 @@ const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as Host
  */
 export function normalize(text: string): string {
   return text
+    .replace(/mbx_[A-Za-z0-9_-]{20,}/g, "<token>")
+    .replace(/"prefix":"mbx_[A-Za-z0-9_-]+"/g, '"prefix":"<prefix>"')
     .replace(/vol_[0-9a-z]+/g, "<volumeId>")
-    .replace(/bx_[0-9a-z]+/g, "<boxId>")
+    .replace(/\bbx_[0-9a-z]+/g, "<boxId>")
+    .replace(/tok_[0-9a-f]+/g, "<tokenId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
     .replace(/[0-9a-f]{64}/g, "<id>")
@@ -63,11 +68,34 @@ async function waitTask(base: string, json: Record<string, unknown> | null): Pro
   }
 }
 
+const MINUTE_MS = 60_000;
+
+/**
+ * Event timestamps group reads by the minute they fall in, so two identical reads on either side of a minute boundary
+ * are stored as two rows, and every later sequence number moves. The clock is moved to the middle of a minute for the
+ * run, which is far longer than the run takes. Every timestamp moves by the same amount, so their order is unchanged.
+ */
+function clockInMiddleOfMinute(): () => void {
+  const real = Date.now;
+  const offset = (MINUTE_MS / 2 - (real() % MINUTE_MS) + MINUTE_MS) % MINUTE_MS;
+  const clock = spyOn(Date, "now").mockImplementation(() => real() + offset);
+  return () => clock.mockRestore();
+}
+
 /**
  * Drives the box and snapshot API through success and failure paths and records every exchange. The same
  * scenario runs against the code before a refactor and after it, and the two transcripts must match.
  */
 export async function runParityScenario(): Promise<Exchange[]> {
+  const restoreClock = clockInMiddleOfMinute();
+  try {
+    return await recordScenario();
+  } finally {
+    restoreClock();
+  }
+}
+
+async function recordScenario(): Promise<Exchange[]> {
   const { app, runtime } = createTestApp({ labelPrefix: "mbtest" });
   app.monitor.snapshot = async () => HOST;
   const restoreLogs = silenceLogs();
@@ -388,7 +416,6 @@ export async function runParityScenario(): Promise<Exchange[]> {
     );
     await send("events with limit 0", "GET", "/api/events?limit=0");
     await send("events of alpha that failed", "GET", "/api/events?box=alpha&status=error");
-
     await send("list tasks", "GET", "/api/tasks");
     const finished = await send("read the base build task", "GET", `/api/tasks/${String(built.json?.taskId ?? "")}`);
     await send("read a missing task", "GET", "/api/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV");
@@ -473,6 +500,15 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await send("close the session again", "DELETE", `/api/boxes/${term}/sessions/work`);
     await send("read a closed session", "GET", `/api/boxes/${term}/sessions/work`);
     await send("delete the session box", "DELETE", `/api/boxes/${term}`);
+
+    const minted = await post("create a readonly token", "/api/tokens", { name: "ci", preset: "readonly" });
+    const tokenId = String((minted.json?.record as { id?: string } | undefined)?.id ?? "");
+    await send("list tokens", "GET", "/api/tokens");
+    await post("create a token with no scope", "/api/tokens", { name: "empty" });
+    await post("create a duplicate token name", "/api/tokens", { name: "ci", preset: "readonly" });
+    await send("revoke the readonly token", "DELETE", `/api/tokens/${tokenId}?deleteCreated=false`);
+    await send("revoke the readonly token again", "DELETE", `/api/tokens/${tokenId}`);
+    await send("revoke a missing token", "DELETE", "/api/tokens/missing");
   } finally {
     server.stop(true);
     app.throttle.stop();

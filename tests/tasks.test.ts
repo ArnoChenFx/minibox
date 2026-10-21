@@ -67,7 +67,7 @@ describe("tasks", () => {
     const created = createTestApp({ labelPrefix: "mbtest" });
     app = created.app;
     runtime = created.runtime;
-    ctx = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
+    ctx = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events, tokens: app.tokens };
   });
 
   afterEach(() => restoreLogs());
@@ -226,6 +226,7 @@ describe("tasks", () => {
       principal: OWNER,
       source: "rest",
       events: restarted.app.events,
+      tokens: restarted.app.tokens,
     };
     const task = (await restarted.app.operations.run("task.get", nextCtx, { id: taskId })) as { status: string };
     expect(task.status).toBe("cancelled");
@@ -270,6 +271,7 @@ describe("tasks", () => {
       principal: OWNER,
       source: "rest",
       events: restarted.app.events,
+      tokens: restarted.app.tokens,
     };
     const task = (await restarted.app.operations.run("task.get", nextCtx, { id: taskId })) as {
       status: string;

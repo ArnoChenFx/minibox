@@ -617,7 +617,13 @@ describe("rebuild over HTTP", () => {
     const before = app.events.head();
     await app.operations.run(
       "box.rebuild",
-      { host, principal: { type: "owner", id: "owner", name: "owner" }, source: "rest", events: app.events },
+      {
+        host,
+        principal: { type: "owner", id: "owner", name: "owner" },
+        source: "rest",
+        events: app.events,
+        tokens: app.tokens,
+      },
       {
         id: box.id,
         confirm: true,

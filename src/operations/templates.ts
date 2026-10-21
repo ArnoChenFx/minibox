@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { buildBaseTemplate, deleteTemplate, listTemplates, promoteSnapshot } from "../services/templates";
+import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
 import { BuildResultSchema, ImageSchema, OkSchema, PromotedTemplateSchema } from "./schemas";
 import { snapshotRef, templateDescription, templateName, templateRef } from "./validation";
@@ -16,7 +17,13 @@ export const templateList = defineOperation({
   output: z.object({ templates: z.array(ImageSchema), baseTemplate: z.string() }),
   rest: [{ method: "GET", path: "/api/templates" }],
   cli: "template list",
-  run: async ({ host }) => ({ templates: await listTemplates(host), baseTemplate: host.baseTemplateTag }),
+  run: async ({ host, principal }) => {
+    const templates = await listTemplates(host);
+    return {
+      templates: templates.filter((image) => templateVisible(principal, image)),
+      baseTemplate: host.baseTemplateTag,
+    };
+  },
 });
 
 export const templatePromote = defineOperation({
@@ -32,8 +39,8 @@ export const templatePromote = defineOperation({
   cli: "template promote",
   activity: { action: () => "template.promote", target: ({ name }) => name },
   audit: { target: ({ name }) => ({ kind: "template", name }) },
-  run: async ({ host }, input) => ({
-    template: await promoteSnapshot(host, input.ref, input.name, input.description),
+  run: async ({ host, principal }, input) => ({
+    template: await promoteSnapshot(host, input.ref, input.name, input.description, principal.id),
   }),
 });
 
@@ -42,7 +49,7 @@ export const templateBuild = defineOperation({
   tag: "templates",
   summary: "Build the bundled base template",
   kind: "write",
-  scope: "template:write",
+  scope: "template:build",
   async: true,
   conflicts: true,
   input: z.object({}),

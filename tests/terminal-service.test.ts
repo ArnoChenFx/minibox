@@ -32,10 +32,17 @@ function setup(takeoverIdleMs = 0) {
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   const host: HostCtx = app.hosts.get();
-  const ctx: OperationContext = { host, principal: OWNER, source: "rest", events: app.events, execs: app.execs };
+  const ctx: OperationContext = {
+    host,
+    principal: OWNER,
+    source: "rest",
+    events: app.events,
+    tokens: app.tokens,
+    execs: app.execs,
+  };
   const recorded: Recorded[] = [];
   const terminals = new TerminalService({
-    record: (hostId, source, note) => recorded.push({ hostId, source, note }),
+    record: (hostId, source, _principal, note) => recorded.push({ hostId, source, note }),
     takeoverIdleMs,
   });
   return { app, runtime, host, ctx, terminals, recorded };
@@ -191,7 +198,7 @@ describe("terminal service: sessions", () => {
       return startExec(containerId, spec);
     };
 
-    const error = await rejectionOf(env.terminals.attach(env.host, box, "work", { source: "ui" }));
+    const error = await rejectionOf(env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER }));
     expect(error).toMatchObject({ status: 409, code: "conflict", key: "session_image_unsupported" });
   });
 
@@ -217,7 +224,7 @@ describe("terminal service: sessions", () => {
     const env = setup();
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
 
     await env.terminals.close(env.host, box, "work", "ui");
     expect(await viewer.exec.inspect()).toMatchObject({ running: false });
@@ -253,7 +260,7 @@ describe("terminal service: sessions", () => {
     const env = setup();
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     env.terminals.takeOver(viewer);
 
     env.runtime.tmux.run(box.id, ["-u", "kill-session", "-t", "=work"]);
@@ -425,7 +432,7 @@ describe("terminal service: takeover", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
 
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     expect(viewer.view()).toMatchObject({ controller: "agent", canType: false, canTakeOver: true, canRelease: false });
     expect(viewer.write("ignored")).toBe(false);
     expect(env.runtime.tmux.paneText(box.id, "work")).toBe("");
@@ -462,10 +469,10 @@ describe("terminal service: takeover", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "mine", "ui");
 
-    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui" });
+    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui", principal: OWNER });
     expect(human.write("typed")).toBe(true);
 
-    const bearer = await env.terminals.attach(env.host, box, "mine", { source: "rest" });
+    const bearer = await env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER });
     expect(bearer.view()).toMatchObject({ canType: false, canTakeOver: false, canRelease: false });
     expect(env.terminals.takeOver(bearer)).toBe(false);
     expect(env.terminals.release(bearer)).toBe(false);
@@ -488,7 +495,7 @@ describe("terminal service: takeover", () => {
     const env = setup(60);
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     env.terminals.takeOver(viewer);
 
     await sleep(180);
@@ -505,7 +512,7 @@ describe("terminal service: takeover", () => {
     const env = setup(120);
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     env.terminals.takeOver(viewer);
 
     for (let i = 0; i < 5; i++) {
@@ -522,7 +529,7 @@ describe("terminal service: takeover", () => {
     const env = setup(0);
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     env.terminals.takeOver(viewer);
 
     await sleep(80);
@@ -535,7 +542,7 @@ describe("terminal service: takeover", () => {
     const env = setup();
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     env.terminals.takeOver(viewer);
 
     const refused = await rejectionOf(env.terminals.close(env.host, box, "work", "rest"));
@@ -559,7 +566,7 @@ describe("terminal service: takeover", () => {
     const env = setup();
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     env.terminals.takeOver(viewer);
     env.terminals.release(viewer);
 
@@ -586,13 +593,13 @@ describe("terminal service: takeover", () => {
     const env = setup(300_000);
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     expect(viewer.view()).toMatchObject({ idleReturnSec: 300, controller: "agent" });
 
     const none = setup(0);
     const idle = await runningBox(none);
     await none.terminals.start(none.host, idle, "work", "rest");
-    const bearer = await none.terminals.attach(none.host, idle, "work", { source: "rest" });
+    const bearer = await none.terminals.attach(none.host, idle, "work", { source: "rest", principal: OWNER });
     expect(bearer.view()).toMatchObject({ idleReturnSec: 0 });
     env.terminals.shutdown();
   });
@@ -610,7 +617,7 @@ describe("terminal service: attachments", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
 
-    const viewer: Attachment = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer: Attachment = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     expect(env.recorded.at(-1)).toMatchObject({
       source: "ui",
       note: { op: "terminal.open", status: "ok", target: { kind: "box", id: box.id }, detail: { session: "work" } },
@@ -639,7 +646,7 @@ describe("terminal service: attachments", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
 
-    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui" });
+    const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
     expect((viewer.exec as FakeExec).spec).toMatchObject({
       cmd: ["tmux", "-u", "attach-session", "-t", "=work"],
       user: "dev",
@@ -654,7 +661,7 @@ describe("terminal service: attachments", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "mine", "ui");
 
-    const bearer = await env.terminals.attach(env.host, box, "mine", { source: "rest" });
+    const bearer = await env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER });
     expect((bearer.exec as FakeExec).spec.cmd).toEqual([
       "tmux",
       "-u",
@@ -669,7 +676,7 @@ describe("terminal service: attachments", () => {
     expect((bearer.exec as FakeExec).sizes).toEqual([]);
     await bearer.close();
 
-    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui" });
+    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui", principal: OWNER });
     expect((human.exec as FakeExec).spec.cmd).toEqual(["tmux", "-u", "attach-session", "-t", "=mine"]);
     human.resize({ cols: 80, rows: 24 });
     expect((human.exec as FakeExec).sizes).toEqual([{ cols: 80, rows: 24 }]);
@@ -683,7 +690,7 @@ describe("terminal service: attachments", () => {
 
     const attempts = await Promise.allSettled(
       Array.from({ length: VIEWER_ATTACHES_MAX + 2 }, () =>
-        env.terminals.attach(env.host, box, "mine", { source: "rest" }),
+        env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER }),
       ),
     );
     const opened = attempts.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
@@ -698,7 +705,7 @@ describe("terminal service: attachments", () => {
     expect((refused[0] as AppError).hintKey).toBe("session_attach_limit_hint");
 
     await opened[0]?.close();
-    const next = await env.terminals.attach(env.host, box, "mine", { source: "rest" });
+    const next = await env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER });
     expect(await next.exec.inspect()).toMatchObject({ running: true });
     await next.close();
     for (const attachment of opened.slice(1)) await attachment.close();
@@ -710,26 +717,32 @@ describe("terminal service: attachments", () => {
     await env.terminals.start(env.host, box, "mine", "rest");
     const held: Attachment[] = [];
     for (let i = 0; i < VIEWER_ATTACHES_MAX; i++) {
-      held.push(await env.terminals.attach(env.host, box, "mine", { source: "rest" }));
+      held.push(await env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER }));
     }
-    expect(await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "rest" }))).toMatchObject({
+    expect(
+      await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER })),
+    ).toMatchObject({
       status: 429,
       key: "session_viewer_attach_limit",
     });
 
-    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui" });
+    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui", principal: OWNER });
     held.push(human);
     expect(human.view()).toMatchObject({ controller: "agent", canTakeOver: true, canType: false });
     expect(env.terminals.takeOver(human)).toBe(true);
     expect(human.write("echo console\n")).toBe(true);
     while (held.length < ATTACHES_PER_SESSION_MAX) {
-      held.push(await env.terminals.attach(env.host, box, "mine", { source: "ui" }));
+      held.push(await env.terminals.attach(env.host, box, "mine", { source: "ui", principal: OWNER }));
     }
-    expect(await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "ui" }))).toMatchObject({
+    expect(
+      await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "ui", principal: OWNER })),
+    ).toMatchObject({
       status: 429,
       key: "session_attach_limit",
     });
-    expect(await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "rest" }))).toMatchObject({
+    expect(
+      await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER })),
+    ).toMatchObject({
       status: 429,
       key: "session_attach_limit",
     });
@@ -743,11 +756,11 @@ describe("terminal service: attachments", () => {
     await env.terminals.start(env.host, box, "two", "ui");
     const held: Attachment[] = [];
     for (let i = 0; i < VIEWER_ATTACHES_MAX; i++) {
-      held.push(await env.terminals.attach(env.host, box, "one", { source: "rest" }));
+      held.push(await env.terminals.attach(env.host, box, "one", { source: "rest", principal: OWNER }));
     }
-    await rejectionOf(env.terminals.attach(env.host, box, "one", { source: "rest" }));
+    await rejectionOf(env.terminals.attach(env.host, box, "one", { source: "rest", principal: OWNER }));
 
-    const other = await env.terminals.attach(env.host, box, "two", { source: "rest" });
+    const other = await env.terminals.attach(env.host, box, "two", { source: "rest", principal: OWNER });
     await other.close();
     for (const attachment of held) await attachment.close();
   });
@@ -763,7 +776,9 @@ describe("terminal service: attachments", () => {
         .map((call) => (call.args[1] as { cmd: string[] }).cmd)
         .filter((cmd) => cmd.includes("attach-session"));
 
-    const refused = await rejectionOf(env.terminals.attach(env.host, box, "mine", { source: "rest" }));
+    const refused = await rejectionOf(
+      env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER }),
+    );
     expect(refused).toMatchObject({
       status: 409,
       code: "conflict",
@@ -773,7 +788,7 @@ describe("terminal service: attachments", () => {
     expect((refused as AppError).hintKey).toBe("session_viewer_tmux_old_hint");
     expect(attachCommands()).toEqual([]);
 
-    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui" });
+    const human = await env.terminals.attach(env.host, box, "mine", { source: "ui", principal: OWNER });
     expect(attachCommands()).toEqual([["tmux", "-u", "attach-session", "-t", "=mine"]]);
     expect(await human.exec.inspect()).toMatchObject({ running: true });
     await human.close();
@@ -785,7 +800,7 @@ describe("terminal service: attachments", () => {
     await env.terminals.start(env.host, box, "mine", "ui");
     env.runtime.tmux.version = "master";
 
-    const viewer = await env.terminals.attach(env.host, box, "mine", { source: "rest" });
+    const viewer = await env.terminals.attach(env.host, box, "mine", { source: "rest", principal: OWNER });
     expect(await viewer.exec.inspect()).toMatchObject({ running: true });
     await viewer.close();
   });

@@ -24,6 +24,16 @@ describe("known secrets", () => {
     expect(redactor.value({ a: [{ b: `x${ACCESS_KEY}y` }] })).toEqual({ a: [{ b: `x${REDACTED}y` }] });
   });
 
+  test("a secret added after the redactor is created is still removed, and an agent token is removed by shape", () => {
+    const known: string[] = [];
+    const live = createRedactor({ knownSecrets: known });
+    const secret = "mbx_abcdefghijklmnopqrstuvwxyz012345";
+    expect(live.text(`bearer ${secret}`)).toBe(`bearer ${REDACTED}`);
+    expect(live.text("prefix mbx_abcdefgh")).toBe("prefix mbx_abcdefgh");
+    known.push("created-later-secret-value");
+    expect(live.text("saw created-later-secret-value")).toBe(`saw ${REDACTED}`);
+  });
+
   test("a known secret shorter than eight characters is not matched, so ordinary words survive", () => {
     const short = createRedactor({ knownSecrets: ["box"] });
     expect(short.text("box alpha")).toBe("box alpha");

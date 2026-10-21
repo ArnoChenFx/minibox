@@ -110,6 +110,8 @@ export const ImageSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   source: z.string().nullable(),
+  sourceId: z.string().nullable(),
+  createdBy: z.string().nullable(),
   createdAt: z.string(),
   size: z.number(),
 });

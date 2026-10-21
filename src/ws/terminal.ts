@@ -5,9 +5,11 @@ import type { HostCtx } from "../host/registry";
 import { forbidden } from "../lib/errors";
 import { type ErrorBody, errorBody } from "../lib/http";
 import { msg } from "../lib/messages";
+import type { Principal } from "../operations/types";
 import type { Box } from "../services/boxes";
 import { type Attachment, type SessionView, type TerminalService } from "../services/terminals";
 import type { SessionStore } from "../sessions";
+import type { TokenStore } from "../tokens/store";
 
 /** Seconds of silence after which Bun closes a terminal socket. Bun pings each client, and browsers answer on their own. */
 export const HEARTBEAT_SEC = 30;
@@ -28,6 +30,8 @@ export interface TerminalData {
   readonly source: Source;
   /** The browser session that opened the socket, or `null` for a bearer request. */
   readonly sessionId: string | null;
+  /** Who opened the socket. A token's socket closes when the token is revoked or expires. */
+  readonly principal: Principal;
   attachment?: Attachment;
   stopWatching?: () => void;
   closed?: boolean;
@@ -67,26 +71,41 @@ function refuse(ws: ServerWebSocket<TerminalData>): void {
 }
 
 /**
- * The socket attaches a viewer to one tmux session. It closes with 1008 when its browser session ends, so a revoked or
- * expired session cannot keep a terminal open. Typing counts as use of the session, so an active terminal is not signed
- * out by sliding renewal. When the attach process ends, the socket closes with 1000. However the socket goes, the
- * attach is torn down inside the box, so no exec is left behind.
+ * The socket attaches a viewer to one tmux session. It closes with 1008 when its browser session ends, or when the
+ * agent token that opened it is revoked or expires, so an ended credential cannot keep a terminal open. Typing counts as
+ * use of the session, so an active terminal is not signed out by sliding renewal. When the attach process ends, the
+ * socket closes with 1000. However the socket goes, the attach is torn down inside the box, so no exec is left behind.
  */
-export function terminalHandlers(deps: { sessions: SessionStore; terminals: TerminalService }) {
-  const { sessions, terminals } = deps;
+export function terminalHandlers(deps: { sessions: SessionStore; tokens: TokenStore; terminals: TerminalService }) {
+  const { sessions, tokens, terminals } = deps;
   return {
     async open(ws: ServerWebSocket<TerminalData>) {
       const data = ws.data;
+      const stops: (() => void)[] = [];
       if (data.sessionId) {
-        data.stopWatching = sessions.watch(data.sessionId, () => {
-          data.closed = true;
-          ws.close(1008, "signed out");
-        });
+        stops.push(
+          sessions.watch(data.sessionId, () => {
+            data.closed = true;
+            ws.close(1008, "signed out");
+          }),
+        );
       }
+      if (data.principal.type === "token") {
+        stops.push(
+          tokens.watch(data.principal.id, () => {
+            data.closed = true;
+            ws.close(1008, "token revoked");
+          }),
+        );
+      }
+      data.stopWatching = () => {
+        for (const stop of stops) stop();
+      };
       if (data.closed) return;
       try {
         const attachment = await terminals.attach(data.host, data.box, data.name, {
           source: data.source,
+          principal: data.principal,
           onChange: (view) => send(ws, { type: "state", ...view }),
         });
         if (data.closed) {

@@ -11,6 +11,10 @@ export interface ImageItem {
   name: string;
   description: string | null;
   source: string | null;
+  /** Stable id of the box a snapshot was taken from. Null for images that have none. */
+  sourceId: string | null;
+  /** Principal id that created the image. Null for images built by the owner's own tooling. */
+  createdBy: string | null;
   createdAt: string;
   size: number;
 }
@@ -26,6 +30,8 @@ export function toImageItem(host: HostCtx, img: ImageSummary): ImageItem {
     name: labels.templateName ?? ref.split(":").pop() ?? ref,
     description: labels.description,
     source: labels.snapshotOf,
+    sourceId: labels.sourceId,
+    createdBy: labels.createdBy,
     createdAt: labels.created ?? img.createdAt,
     size: img.size,
   };

@@ -25,6 +25,8 @@ import { assertCapacity } from "../services/capacity";
 import { rebuildBox } from "../services/rebuild";
 import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
+import { boxVisible, ttlFor, viewOfBox } from "../tokens/model";
+import { underQuota } from "../tokens/quota";
 import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
 import { BoxSchema, BoxWithStatsSchema, StatSampleSchema, StatsSchema } from "./schemas";
@@ -81,7 +83,11 @@ export const boxList = defineOperation({
     name: "list_boxes",
     description: "List the boxes on this host, with the current resource usage of running boxes.",
   },
-  run: async ({ host }, input) => ({ boxes: await listBoxes(host, { withStats: input.stats }) }),
+  run: async ({ host, principal }, input) => {
+    const boxes = await listBoxes(host, { withStats: input.stats });
+    if (principal.type === "owner") return { boxes };
+    return { boxes: boxes.filter((box) => boxVisible(principal, viewOfBox(box, host.host.id))) };
+  },
 });
 
 export const boxGet = defineOperation({
@@ -133,7 +139,7 @@ export const boxCreate = defineOperation({
           "Mounts to use instead of the four role volumes. An empty list creates a box with no mounts. Omitted, MiniBox creates workspace, home, tools and cache.",
       }),
     idleTimeoutSec: idleTimeout(),
-    ttlSec: ttl(),
+    ttlSec: ttl("create"),
     tools: z
       .array(
         z
@@ -169,7 +175,7 @@ export const boxCreate = defineOperation({
     } else {
       await assertCanCreateDefaultMounts(ctx, input.name);
     }
-    return {
+    return underQuota(ctx, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
       box: await createBox(
         host,
         {
@@ -178,15 +184,15 @@ export const boxCreate = defineOperation({
           cpus: input.cpus,
           memoryMb: input.memoryMb,
           profile: input.profile,
-          createdBy: principal.type,
+          createdBy: principal.id,
           mounts: input.mounts,
           idleTimeoutSec: input.idleTimeoutSec,
-          ttlSec: input.ttlSec,
+          ttlSec: ttlFor(principal, input.ttlSec),
           tools: input.tools,
         },
         record,
       ),
-    };
+    }));
   },
 });
 
@@ -262,13 +268,14 @@ export const boxResources = defineOperation({
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.resources", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host }, input) => ({
-    box: await updateBox(host, input.id, requireRevision(input.expectedRevision), {
-      cpus: input.cpus,
-      memoryMb: input.memoryMb,
-      pids: input.pids,
-    }),
-  }),
+  run: async (ctx, input, box) =>
+    underQuota(ctx, { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
+      box: await updateBox(ctx.host, input.id, requireRevision(input.expectedRevision), {
+        cpus: input.cpus,
+        memoryMb: input.memoryMb,
+        pids: input.pids,
+      }),
+    })),
 });
 
 function inPlacePatch(input: {
@@ -331,7 +338,7 @@ export const boxUpdate = defineOperation({
   activity: { action: () => "box.update", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async (ctx, input, box) => {
-    const { host } = ctx;
+    const { host, principal } = ctx;
     if (input.mounts) await assertCanChangeMounts(ctx, input.mounts, box.mounts);
     const request = {
       template: input.template,
@@ -340,16 +347,25 @@ export const boxUpdate = defineOperation({
       network: input.network,
       profile: input.profile,
     };
-    const patch = inPlacePatch(input);
-    if (hasRebuildFields(request)) {
-      try {
-        await rebuildBox(host, input.id, requireRevision(input.expectedRevision), request, false);
-      } catch (e) {
-        if (!(e instanceof AppError && e.key === "rebuild_empty" && patch)) throw e;
-      }
-    }
-    if (!patch) throw badRequest(msg("rebuild_empty"));
-    return { box: await updateBox(host, input.id, requireRevision(input.expectedRevision), patch) };
+    const patch = inPlacePatch({
+      ...input,
+      ttlSec: input.ttlSec === undefined ? undefined : ttlFor(principal, input.ttlSec),
+    });
+    return underQuota(
+      ctx,
+      { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb },
+      async () => {
+        if (hasRebuildFields(request)) {
+          try {
+            await rebuildBox(host, input.id, requireRevision(input.expectedRevision), request, false);
+          } catch (e) {
+            if (!(e instanceof AppError && e.key === "rebuild_empty" && patch)) throw e;
+          }
+        }
+        if (!patch) throw badRequest(msg("rebuild_empty"));
+        return { box: await updateBox(host, input.id, requireRevision(input.expectedRevision), patch) };
+      },
+    );
   },
 });
 
@@ -425,6 +441,7 @@ export const boxLogs = defineOperation({
   output: z.object({ logs: z.string() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/logs", query: ["tail"] }],
   cli: "box logs",
+  resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: ({ id }) => ({ kind: "box", name: id }) },
   run: async ({ host }, input) => ({ logs: await getLogs(host, input.id, input.tail) }),
 });
@@ -440,6 +457,7 @@ export const boxStats = defineOperation({
   output: z.object({ stats: StatsSchema.nullable(), history: z.array(StatSampleSchema).optional() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/stats", query: ["history"] }],
   cli: "box stats",
+  resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: ({ id }) => ({ kind: "box", name: id }) },
   run: async ({ host }, input) => {
     if (!input.history) return { stats: await getStats(host, input.id) };

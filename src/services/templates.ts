@@ -18,6 +18,7 @@ export async function promoteSnapshot(
   ref: string,
   name: string,
   description?: string,
+  createdBy = "owner",
 ): Promise<{ ref: string; name: string }> {
   const { runtime, keys: k, prefix } = host;
   const info = await runtime.inspectImage(ref).catch((e: unknown) => {
@@ -28,6 +29,7 @@ export async function promoteSnapshot(
   const isSnapshot = labels?.[k.snapshot] === "true";
   if (!labels || !isSnapshot) throw notFound(msg("snapshot_not_found"));
   const source = labels[k.snapshotOf] ?? ref;
+  const sourceId = labels[k.snapshotOfId];
   const tmp = await runtime.createContainer({ image: ref, cmd: ["true"] });
   const repo = `${prefix}-template`;
   try {
@@ -37,6 +39,8 @@ export async function promoteSnapshot(
       changes: [
         labelChange(k.template, "true"),
         labelChange(k.snapshot, "false"),
+        labelChange(k.createdBy, createdBy),
+        ...(sourceId ? [labelChange(k.snapshotOfId, sourceId)] : []),
         labelChange(k.templateName, name),
         labelChange(k.templateDesc, description ?? `Promoted from a snapshot of box ${source}`),
         labelChange(k.created, new Date().toISOString()),

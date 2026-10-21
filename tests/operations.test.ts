@@ -14,6 +14,7 @@ import type { Operation, OperationContext, Principal } from "../src/operations/t
 import { runOf } from "../src/routes/operations";
 import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
+import { compileToken } from "../src/tokens/model";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 
@@ -23,7 +24,7 @@ const TEMPLATE_REF = "mbtest-template:gold";
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** One valid input for each operation, given the id of a box that exists; see `withBox`. */
-const SAMPLES: Record<string, (boxId: string) => unknown> = {
+const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.list": () => ({}),
   "box.get": (id) => ({ id }),
   "box.create": () => ({ name: "gamma", cpus: 1, memoryMb: 256 }),
@@ -83,6 +84,11 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "task.get": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "task.cancel": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "events.list": () => ({ op: "box.create" }),
+  "token.list": () => ({}),
+  "token.create": () => ({ name: "ci", preset: "readonly" }),
+  "token.revoke": (_boxId, app) => ({
+    id: app.tokens.create(compileToken({ name: "gone", preset: "readonly" }), "owner").record.id,
+  }),
 };
 
 /** A real id for operations that cannot succeed against the placeholder in `SAMPLES`. */
@@ -122,7 +128,7 @@ async function preparedInput(
   }
   const sample = SAMPLES[operation.name];
   if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
-  return { input: sample(boxId) };
+  return { input: sample(boxId, app) };
 }
 
 function opNamed(name: string): Operation {
@@ -142,6 +148,7 @@ function appWith(hooks: Partial<ExecutorHooks> = {}) {
     principal: OWNER,
     source: "rest",
     events: app.events,
+    tokens: app.tokens,
     execs: app.execs,
     terminals: app.terminals,
   };

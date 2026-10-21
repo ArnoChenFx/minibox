@@ -1,5 +1,6 @@
 import type { HostCtx, HostRegistry } from "../host/registry";
 import { log } from "../lib/logger";
+import { OWNER } from "../operations/types";
 import type { RuntimeEvent } from "../runtime";
 import type { RecordNote } from "./terminals";
 
@@ -69,7 +70,7 @@ export class ContainerWatch {
     const recorded = RECORDED[event.action];
     if (!recorded) return;
     const name = event.attributes[host.keys.name] || event.attributes.name || event.id;
-    this.record(host.host.id, "system", {
+    this.record(host.host.id, "system", OWNER, {
       op: recorded.op,
       kind: "write",
       status: "ok",

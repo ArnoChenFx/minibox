@@ -361,9 +361,13 @@ export const idleTimeout = () =>
     anyOf: [{ type: "integer", minimum: 0, maximum: MAX_LIFETIME_SEC }, { type: "null" }],
   }).optional();
 
-export const ttl = () =>
+const TTL_CREATE =
+  "Time to live in seconds. A positive integer, at most 365 days, or null for none. Omitted or null stores no TTL, except for an agent token with a max TTL, which stores that cap. A value above the cap is refused. When the time elapses the box stops, and its container is kept.";
+
+/** `create` is box create and snapshot fork. `update` changes a box that already has a value. */
+export const ttl = (mode: "create" | "update" = "update") =>
   field((value) => checkLifetime(value, "ttlSec"), {
-    description: `Time to live in seconds. ${LIFETIME_HELP}`,
+    description: mode === "create" ? TTL_CREATE : `Time to live in seconds. ${LIFETIME_HELP}`,
     anyOf: [{ type: "integer", minimum: 1, maximum: MAX_LIFETIME_SEC }, { type: "null" }],
   }).optional();
 

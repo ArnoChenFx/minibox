@@ -3,7 +3,8 @@ import { z } from "zod";
 import { notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { accept, type Checked, reject } from "../lib/validation";
-import { TASK_ID_RE, TASK_STATUSES, type TaskReader, type TaskStatus } from "../tasks/types";
+import { TASK_ID_RE, TASK_STATUSES, type TaskReader, type TaskStatus, publicTask } from "../tasks/types";
+import { specViews, taskVisible } from "../tokens/model";
 import { defineOperation } from "./define";
 import { TaskSchema } from "./schemas";
 import { field } from "./validation";
@@ -69,9 +70,17 @@ export const taskList = defineOperation({
   }),
   output: z.object({ tasks: z.array(TaskSchema) }),
   rest: [{ method: "GET", path: "/api/tasks", query: ["status", "limit"] }],
-  run: async ({ tasks }, input) => ({
-    tasks: tasksOf(tasks).list({ status: input.status, limit: input.limit }),
-  }),
+  run: async ({ tasks, host, principal, boxViews }, input) => {
+    const reader = tasksOf(tasks);
+    if (principal.type === "owner") {
+      return { tasks: reader.list({ status: input.status, limit: input.limit }).map(publicTask) };
+    }
+    const boxes = boxViews?.() ?? specViews(host.specs.list());
+    const visible = reader
+      .list({ status: input.status, limit: TASK_LIMIT.max })
+      .filter((task) => taskVisible(principal, task, boxes));
+    return { tasks: visible.slice(0, input.limit).map(publicTask) };
+  },
 });
 
 export const taskGet = defineOperation({
@@ -84,10 +93,13 @@ export const taskGet = defineOperation({
   input: z.object({ id: taskId() }),
   output: TaskSchema,
   rest: [{ method: "GET", path: "/api/tasks/:id" }],
-  run: async ({ tasks }, input) => {
+  run: async ({ tasks, host, principal, boxViews }, input) => {
     const task = tasksOf(tasks).get(input.id, { output: true });
     if (!task) throw notFound(msg("task_not_found"));
-    return task;
+    if (principal.type !== "owner" && !taskVisible(principal, task, boxViews?.() ?? specViews(host.specs.list()))) {
+      throw notFound(msg("task_not_found"));
+    }
+    return publicTask(task);
   },
 });
 
@@ -104,7 +116,7 @@ export const taskCancel = defineOperation({
   rest: [{ method: "POST", path: "/api/tasks/:id/cancel" }],
   activity: { action: () => "task.cancel", target: ({ id }) => id },
   audit: { target: ({ id }) => ({ kind: "task", name: id }) },
-  run: async ({ tasks }, input) => tasksOf(tasks).cancel(input.id),
+  run: async ({ tasks }, input) => publicTask(tasksOf(tasks).cancel(input.id)),
 });
 
 export const taskOperations = [taskList, taskGet, taskCancel];

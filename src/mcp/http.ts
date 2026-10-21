@@ -1,13 +1,13 @@
 import type { App } from "../app";
-import { bearerAllowed } from "../auth";
+import { bearerKey, type Caller, callerGate, resolveCaller } from "../auth";
 import { AppError, toAppError } from "../lib/errors";
 import { errorResponse, json } from "../lib/http";
 import { msg } from "../lib/messages";
 import { mcpTools } from "../operations/projections";
 import { OPERATIONS } from "../operations/registry";
 import { RUN_ID_PATTERN } from "../operations/run";
-import type { Toolset } from "../operations/types";
-import { OWNER } from "../routes/operations";
+import type { Operation, Principal, Toolset } from "../operations/types";
+import { scopeAllowed } from "../tokens/model";
 import { MCP_INSTRUCTIONS } from "./instructions";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"] as const;
@@ -29,11 +29,16 @@ function methodNotAllowed(): Response {
   return res;
 }
 
-async function assertBearer(app: App, req: Request, address: string): Promise<void> {
-  const allowed = await bearerAllowed(req, { accessKey: app.cfg.accessKey, throttle: app.throttle }, address);
-  if (!allowed) {
+/**
+ * The caller of an MCP request. A Bearer header is required: a session cookie never opens MCP, since MCP is driven by
+ * clients that hold a credential rather than a browser. A wrong key counts toward the login limit, as on the REST API.
+ */
+async function callerOf(app: App, req: Request, address: string): Promise<Caller> {
+  const caller = bearerKey(req) === null ? null : await resolveCaller(req, callerGate(app), address);
+  if (!caller) {
     throw new AppError(401, "unauthorized", msg("mcp_bearer_required"), undefined, { hint: msg("mcp_bearer_hint") });
   }
+  return caller;
 }
 
 function acceptsRpc(req: Request): boolean {
@@ -86,8 +91,16 @@ function toolResult(id: unknown, payload: unknown, isError: boolean, headers: Re
   );
 }
 
-function wireTools(toolsets: readonly Toolset[]) {
-  return mcpTools(OPERATIONS, toolsets).map((tool) => ({
+/** The tools a principal may see: the owner's all of them, and a token's those its scopes reach. */
+function callableBy(principal: Principal): readonly Operation[] {
+  if (principal.type === "owner") return OPERATIONS;
+  return OPERATIONS.filter(
+    (operation) => principal.type === "token" && scopeAllowed(principal.grants, operation.scope),
+  );
+}
+
+function wireTools(principal: Principal, toolsets: readonly Toolset[]) {
+  return mcpTools(callableBy(principal), toolsets).map((tool) => ({
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
@@ -97,16 +110,16 @@ function wireTools(toolsets: readonly Toolset[]) {
 }
 
 /**
- * Streamable HTTP MCP at POST /mcp. There is no GET event stream. A bearer access key is required; a session cookie
- * is not accepted. A wrong key counts toward the login limit for `address`. `?toolsets=core,session` selects tools.
- * The default is core and meta.
+ * Streamable HTTP MCP at POST /mcp. There is no GET event stream. A Bearer credential is required: the access key or an
+ * agent token. A session cookie is not accepted. Every tool call runs as the caller's principal, so a token's scopes and
+ * grants apply exactly as they do on REST. `?toolsets=core,session` selects tools. The default is core and meta.
  */
 export async function handleMcp(app: App, req: Request, url: URL, address: string): Promise<Response> {
   if (req.method === "GET" || (req.method !== "POST" && req.method !== "DELETE")) return methodNotAllowed();
-  await assertBearer(app, req, address);
+  const { principal } = await callerOf(app, req, address);
   if (req.method === "DELETE") {
     const id = req.headers.get("mcp-session-id");
-    if (id) app.mcpSessions.close(id);
+    if (id) app.mcpSessions.close(id, principal);
     return new Response(null, { status: 204 });
   }
   if (!acceptsRpc(req)) {
@@ -130,7 +143,7 @@ export async function handleMcp(app: App, req: Request, url: URL, address: strin
   }
 
   const sessionId = req.headers.get("mcp-session-id") ?? undefined;
-  const session = sessionId ? app.mcpSessions.get(sessionId) : undefined;
+  const session = sessionId ? app.mcpSessions.get(sessionId, principal) : undefined;
   const selected = toolsets ?? session?.toolsets ?? ["core", "meta"];
   const protocol = session?.protocol ?? DEFAULT_PROTOCOL;
   const headers: Record<string, string> = { "mcp-protocol-version": protocol };
@@ -145,7 +158,7 @@ export async function handleMcp(app: App, req: Request, url: URL, address: strin
 
   if (message.method === "initialize") {
     const version = protocolOf(params.protocolVersion);
-    const id = app.mcpSessions.open(selected, version);
+    const id = app.mcpSessions.open(principal, selected, version);
     return rpc(
       message.id,
       {
@@ -158,14 +171,18 @@ export async function handleMcp(app: App, req: Request, url: URL, address: strin
     );
   }
   if (message.method === "ping") return rpc(message.id, {}, headers);
-  if (message.method === "tools/list") return rpc(message.id, { tools: wireTools(selected as Toolset[]) }, headers);
-  if (message.method === "tools/call")
-    return callTool(app, message.id, params, selected as Toolset[], sessionId, headers);
+  if (message.method === "tools/list") {
+    return rpc(message.id, { tools: wireTools(principal, selected as Toolset[]) }, headers);
+  }
+  if (message.method === "tools/call") {
+    return callTool(app, principal, message.id, params, selected as Toolset[], sessionId, headers);
+  }
   return rpcError(message.id, -32601, `Method not found: ${message.method}`);
 }
 
 async function callTool(
   app: App,
+  principal: Principal,
   id: unknown,
   params: Record<string, unknown>,
   toolsets: readonly Toolset[],
@@ -195,10 +212,11 @@ async function callTool(
       operation.name,
       {
         host: app.hosts.get(),
-        principal: OWNER,
+        principal,
         source: "mcp",
         run,
         events: app.events,
+        tokens: app.tokens,
         execs: app.execs,
         terminals: app.terminals,
       },

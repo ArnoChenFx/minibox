@@ -1,0 +1,217 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+import { LoginLimiter } from "../src/auth";
+import { OPERATIONS } from "../src/operations/registry";
+import { OWNER, type TokenPrincipal } from "../src/operations/types";
+import { routes } from "../src/routes";
+import { matchRoute, type Route, routeAllows } from "../src/routes/router";
+import { authorizeOperation, hasAccessRule } from "../src/tokens/authorize";
+import { hostAllowed, requiredScopes, type Scope, type TokenCreateInput } from "../src/tokens/model";
+import { rejectionOf, silenceLogs } from "./support/app";
+import { call, type Harness, mint, principalOf, refused, startHarness } from "./support/tokens";
+
+/** The credentials the table runs every route against. `exec-only` is a hand-made grant, not a preset. */
+const SUBJECTS: readonly { name: string; input: TokenCreateInput }[] = [
+  { name: "readonly", input: { name: "readonly", preset: "readonly" } },
+  { name: "operator", input: { name: "operator", preset: "operator" } },
+  { name: "sandboxed-agent", input: { name: "sandboxed-agent", preset: "sandboxed-agent" } },
+  { name: "exec-only", input: { name: "exec-only", scopes: ["exec"] } },
+  { name: "admin", input: { name: "admin", preset: "admin" } },
+];
+
+/** The owner-only routes, written out. A new route that no token may reach must be added here on purpose. */
+const OWNER_ONLY_ROUTES = [
+  "DELETE /api/auth/sessions/:id",
+  "DELETE /api/tokens/:id",
+  "GET /api/activity",
+  "GET /api/auth/sessions",
+  "GET /api/host/metrics",
+  "GET /api/pools",
+  "GET /api/system",
+  "GET /api/tokens",
+  "POST /api/auth/sessions/revoke-others",
+  "POST /api/templates/base/build",
+  "POST /api/tasks/:id/cancel",
+  "POST /api/tokens",
+  "PUT /api/pools",
+];
+
+/** The path a route was compiled from, read back from its pattern: `/api/boxes/:id`. */
+function templateOf(route: Route): string {
+  return route.pattern.source
+    .slice(1, -1)
+    .replace(/\(\[\^\/\]\+\)/g, ":id")
+    .replace(/\\(.)/g, "$1");
+}
+
+/** A request path the route matches: each parameter becomes `x`. */
+function concretePathOf(route: Route): string {
+  return route.pattern.source
+    .slice(1, -1)
+    .replace(/\(\[\^\/\]\+\)/g, "x")
+    .replace(/\\(.)/g, "$1");
+}
+
+function isOwnerOnly(route: Route): boolean {
+  if (route.public) return false;
+  return route.access.kind === "owner" || requiredScopes(route.access.scope) === "owner";
+}
+
+/** What the scope mapping says a route should admit: a route that names a scope the principal holds. */
+function expectedAllowed(route: Route, scopes: readonly Scope[]): boolean {
+  if (route.public) return true;
+  if (route.access.kind !== "scope") return false;
+  const need = requiredScopes(route.access.scope);
+  return need !== "owner" && need.some((scope) => scopes.includes(scope));
+}
+
+let harness: Harness;
+let restoreLogs: () => void;
+let subjects: { name: string; secret: string; principal: TokenPrincipal }[];
+
+beforeEach(() => {
+  restoreLogs = silenceLogs();
+  harness = startHarness();
+  subjects = SUBJECTS.map((subject) => {
+    const minted = mint(harness.app, subject.input);
+    return { name: subject.name, secret: minted.secret, principal: principalOf(harness.app, minted.secret) };
+  });
+});
+
+afterEach(() => {
+  harness.stop();
+  restoreLogs();
+});
+
+function subjectNamed(name: string) {
+  const subject = subjects.find((item) => item.name === name);
+  if (!subject) throw new Error(`no subject named ${name}`);
+  return subject;
+}
+
+describe("default-deny route table", () => {
+  test("the owner passes every route", () => {
+    for (const route of routes) expect(routeAllows(route, OWNER), `${route.method} ${templateOf(route)}`).toBe(true);
+  });
+
+  test("the owner-only routes are exactly the listed ones, and no token reaches them", () => {
+    const owned = routes
+      .filter(isOwnerOnly)
+      .map((route) => `${route.method} ${templateOf(route)}`)
+      .toSorted();
+    expect(owned).toEqual(OWNER_ONLY_ROUTES.toSorted());
+    for (const subject of subjects) {
+      for (const route of routes.filter(isOwnerOnly)) {
+        expect(routeAllows(route, subject.principal), `${subject.name} ${route.method} ${templateOf(route)}`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  test("each credential is admitted exactly where its scopes reach, on every route", () => {
+    const mismatches: string[] = [];
+    for (const subject of subjects) {
+      for (const route of routes) {
+        const allowed = routeAllows(route, subject.principal);
+        if (allowed !== expectedAllowed(route, subject.principal.grants.scopes)) {
+          mismatches.push(`${subject.name}: ${route.method} ${templateOf(route)} admitted=${allowed}`);
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  test("every refused route answers 403 operation_forbidden over HTTP, for the credential that was refused", async () => {
+    const misses: string[] = [];
+    let refusedCalls = 0;
+    for (const subject of subjects) {
+      for (const route of routes) {
+        if (route.public || routeAllows(route, subject.principal)) continue;
+        const path = concretePathOf(route);
+        const match = matchRoute(routes, route.method, path);
+        if (match === null || match === "method_not_allowed" || match.route !== route) {
+          misses.push(`${subject.name}: ${route.method} ${templateOf(route)} is not the route the server picks`);
+          continue;
+        }
+        refusedCalls++;
+        const reply = await call(harness.base, path, { method: route.method, token: subject.secret });
+        const got = refused(reply);
+        if (got.status !== 403 || got.key !== "operation_forbidden") {
+          misses.push(`${subject.name}: ${route.method} ${templateOf(route)} -> ${got.status} ${got.key ?? "-"}`);
+        }
+      }
+    }
+    expect(misses).toEqual([]);
+    const expectedRefusals = subjects.reduce(
+      (total, subject) =>
+        total +
+        routes.filter((route) => !route.public && !expectedAllowed(route, subject.principal.grants.scopes)).length,
+      0,
+    );
+    expect(refusedCalls).toBe(expectedRefusals);
+  });
+
+  test("a Bearer token does not open a console page: pages answer to the session cookie only", async () => {
+    const res = await fetch(`${harness.base}/`, {
+      headers: { authorization: `Bearer ${subjectNamed("admin").secret}` },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
+  });
+});
+
+describe("fail-closed authorization", () => {
+  test("every operation is owner-only or has an access rule, and the owner-only operations are the listed ones", () => {
+    const ownerOperations = OPERATIONS.filter((op) => requiredScopes(op.scope) === "owner")
+      .map((op) => op.name)
+      .toSorted();
+    expect(ownerOperations).toEqual([
+      "pool.list",
+      "pool.replace",
+      "task.cancel",
+      "template.build",
+      "token.create",
+      "token.list",
+      "token.revoke",
+    ]);
+    const unruled = OPERATIONS.filter((op) => requiredScopes(op.scope) !== "owner" && !hasAccessRule(op.name));
+    expect(unruled.map((op) => op.name)).toEqual([]);
+  });
+
+  test("an operation with no access rule passes the scope check and is refused at access, even for a token that holds every scope", async () => {
+    const admin = subjectNamed("admin");
+    const box = OPERATIONS.find((op) => op.name === "box.get");
+    if (!box) throw new Error("box.get is registered");
+    const unlisted = { ...box, name: "box.unlisted" };
+    const request = {
+      principal: admin.principal,
+      operation: unlisted,
+      host: harness.app.hosts.get(),
+      input: {},
+      resolved: undefined,
+    };
+    expect(await authorizeOperation({ ...request, phase: "scope" })).toBe(true);
+    const error = await rejectionOf(authorizeOperation({ ...request, phase: "access" }));
+    expect(error).toMatchObject({ key: "operation_forbidden" });
+  });
+
+  test("a host grant fails closed for a box with no recorded host, unless every host is granted", () => {
+    expect(hostAllowed({ type: "list", ids: ["local"] }, undefined)).toBe(false);
+    expect(hostAllowed({ type: "list", ids: ["local"] }, "local")).toBe(true);
+    expect(hostAllowed({ type: "all" }, undefined)).toBe(true);
+  });
+
+  test("wrong Bearer keys count toward the login limit and answer 429 once it is reached", async () => {
+    harness.app.throttle.stop();
+    harness.app.throttle = new LoginLimiter({ perAddress: 3, total: 100, penaltyMs: 0 });
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      statuses.push((await call(harness.base, "/api/tokens", { token: "mbx_not-a-real-token" })).status);
+    }
+    expect(statuses[0]).toBe(401);
+    expect(statuses).toContain(429);
+    expect(statuses.at(-1)).toBe(429);
+  });
+});

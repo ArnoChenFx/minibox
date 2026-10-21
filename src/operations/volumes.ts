@@ -18,6 +18,7 @@ import {
   type VolumeView,
 } from "../services/volumes";
 import { requireRevision } from "../specs/revision";
+import { refusal, specViews, volumeVisible } from "../tokens/model";
 import type { PoolDraft, RoleDraft } from "../volumes/pools";
 import { assertCanAdministerPools, assertCanAttach, assertCanWrite } from "./authz";
 import { defineOperation } from "./define";
@@ -134,7 +135,17 @@ const volumeList = defineOperation({
     description:
       "List volumes on this host, including mounts. Existing minibox-ws-* volumes are recognized as volumes.",
   },
-  run: async ({ host }) => ({ volumes: await listVolumes(host) }),
+  run: async ({ host, principal }) => {
+    const volumes = await listVolumes(host);
+    if (principal.type === "owner") return { volumes };
+    const boxes = specViews(host.specs.list());
+    return {
+      volumes: volumes.filter((volume) => {
+        const record = host.volumes.read(volume.id);
+        return record !== null && volumeVisible(principal, record, boxes);
+      }),
+    };
+  },
 });
 
 const volumeGet = defineOperation({
@@ -189,7 +200,8 @@ const volumeCreate = defineOperation({
   activity: { action: () => "volume.create", target: (input) => input.name },
   audit: { target: ({ name }, _resolved, result) => ({ kind: "volume", id: result?.volume.id, name }) },
   run: async ({ host, principal }, input) => {
-    const request = { name: input.name, pool: input.pool, role: input.role ?? null, createdBy: principal.type };
+    const request = { name: input.name, pool: input.pool, role: input.role ?? null, createdBy: principal.id };
+    if (principal.type === "token" && request.role === "tools") throw refusal("volume_create_forbidden");
     if (!input.confirm) throw confirmationRequired(previewCreateVolume(host, request));
     return { volume: await createVolume(host, request) };
   },
@@ -348,7 +360,7 @@ const poolList = defineOperation({
   tag: "volumes",
   summary: "List storage pools",
   kind: "read",
-  scope: "volume:read",
+  scope: "pool:read",
   async: false,
   input: z.object({ refresh: refreshFlag() }),
   output: PoolsSchema,

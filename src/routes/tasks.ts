@@ -3,7 +3,8 @@ import { msg } from "../lib/messages";
 import { parseSequence } from "../operations/events";
 import { taskStream } from "../tasks/stream";
 import { TASK_ID_RE } from "../tasks/types";
-import { type Route, route } from "./router";
+import { allBoxViews, taskVisible } from "../tokens/model";
+import { abortWhenEnded, principalOf, type Route, route, scopedAccess } from "./router";
 
 const STREAM_HEADERS = {
   "content-type": "text/event-stream; charset=utf-8",
@@ -33,32 +34,42 @@ function cursorOf(req: Request, url: URL): number | undefined {
 /**
  * Stays outside the operation registry: a stream is not a JSON request and response. It uses the same authentication
  * and origin checks as every other `/api/` route, and the same bus topic the executor publishes task progress on.
- * `server.timeout(req, 0)` disables Bun's idle timer, which is not extended by heartbeats.
+ * `server.timeout(req, 0)` disables Bun's idle timer, which is not extended by heartbeats. A task a principal may not
+ * see is reported as not found, the same as a task that does not exist.
  */
 export const taskRoutes: Route[] = [
-  route("GET", "/api/tasks/:id/events", ({ app, req, url, params, server, caller }) => {
-    if (!TASK_ID_RE.test(params.id ?? "")) {
-      throw new AppError(400, "validation_failed", msg("task_id_invalid"), { field: "id" });
-    }
-    const task = app.tasks.get(params.id ?? "", { output: false });
-    if (!task) throw new AppError(404, "not_found", msg("task_not_found"));
-    const after = cursorOf(req, url);
-    const release = app.streams.acquire();
-    server.timeout(req, 0);
-    // A browser that signs out or is revoked must stop receiving progress now, not at its next reconnect.
-    const sessionEnded = new AbortController();
-    const unwatch = caller?.sessionId ? app.sessions.watch(caller.sessionId, () => sessionEnded.abort()) : undefined;
-    const stream = taskStream({
-      taskId: task.id,
-      store: app.tasks,
-      subscribe: (listener) => app.bus.subscribe("task", listener),
-      after,
-      signal: AbortSignal.any([req.signal, sessionEnded.signal]),
-      onEnd: () => {
-        unwatch?.();
-        release();
-      },
-    });
-    return new Response(stream, { headers: STREAM_HEADERS });
-  }),
+  route(
+    "GET",
+    "/api/tasks/:id/events",
+    (ctx) => {
+      const { app, req, url, params, server, caller } = ctx;
+      const principal = principalOf(ctx);
+      if (!TASK_ID_RE.test(params.id ?? "")) {
+        throw new AppError(400, "validation_failed", msg("task_id_invalid"), { field: "id" });
+      }
+      const task = app.tasks.get(params.id ?? "", { output: false });
+      if (!task || !taskVisible(principal, task, allBoxViews(app.hosts.list()))) {
+        throw new AppError(404, "not_found", msg("task_not_found"));
+      }
+      const after = cursorOf(req, url);
+      const release = app.streams.acquire();
+      server.timeout(req, 0);
+      // A browser that signs out or is revoked must stop receiving progress now, not at its next reconnect.
+      const ended = new AbortController();
+      const stopWatching = abortWhenEnded(app, caller, ended);
+      const stream = taskStream({
+        taskId: task.id,
+        store: app.tasks,
+        subscribe: (listener) => app.bus.subscribe("task", listener),
+        after,
+        signal: AbortSignal.any([req.signal, ended.signal]),
+        onEnd: () => {
+          stopWatching();
+          release();
+        },
+      });
+      return new Response(stream, { headers: STREAM_HEADERS });
+    },
+    { access: scopedAccess("task:read") },
+  ),
 ];

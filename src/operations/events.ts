@@ -5,6 +5,7 @@ import type { EventFilter } from "../events/store";
 import type { EventStatus } from "../events/types";
 import { msg } from "../lib/messages";
 import { accept, type Checked, reject } from "../lib/validation";
+import { specViews } from "../tokens/model";
 import { defineOperation } from "./define";
 import { EventPageSchema } from "./schemas";
 import { field } from "./validation";
@@ -140,8 +141,11 @@ export const eventList = defineOperation({
       query: ["box", "principal", "op", "status", "run", "since", "cursor", "limit"],
     },
   ],
-  run: async ({ events, principal }, input) =>
-    events.list(scopedFilter(filterOf(input), principal), { before: input.cursor, limit: input.limit }),
+  run: async ({ events, principal, host, boxViews }, input) =>
+    events.list(scopedFilter(filterOf(input), principal, boxViews?.() ?? specViews(host.specs.list())), {
+      before: input.cursor,
+      limit: input.limit,
+    }),
 });
 
 export const eventOperations = [eventList];

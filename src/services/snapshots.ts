@@ -17,6 +17,7 @@ export async function createSnapshot(
   boxId: string,
   name?: string,
   progress?: { readonly signal?: AbortSignal; log?(text: string): void },
+  createdBy = "owner",
 ): Promise<{ ref: string; source: string }> {
   const box = await getBox(host, boxId);
   if (progress?.signal?.aborted) throw abortError();
@@ -34,6 +35,8 @@ export async function createSnapshot(
       labelChange(k.snapshot, "true"),
       labelChange(k.template, "false"),
       labelChange(k.snapshotOf, box.name),
+      labelChange(k.snapshotOfId, box.boxId),
+      labelChange(k.createdBy, createdBy),
       labelChange(k.templateName, name ?? box.name),
       labelChange(k.templateDesc, `Snapshot of box ${box.name}`),
       labelChange(k.created, new Date().toISOString()),
