@@ -12,6 +12,7 @@ import { cliCommands, DEFAULT_TOOLSETS, mcpTools } from "../src/operations/proje
 import { OPERATIONS, registryProblems } from "../src/operations/registry";
 import type { Operation, OperationContext, Principal } from "../src/operations/types";
 import { runOf } from "../src/routes/operations";
+import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 
@@ -343,6 +344,19 @@ describe("executor", () => {
     const id = await withBox(app, ctx);
     await app.operations.run("box.action", ctx, { id, action: "stop" });
     expect(app.activity.list()[0]).toMatchObject({ action: "box.stop", target: "alpha", ok: true });
+  });
+
+  test("box.delete returns the reason a volume could not be removed, and the box is gone", async () => {
+    const { app, runtime, ctx } = appWith();
+    const id = await withBox(app, ctx);
+    runtime.fail("removeVolume", new RuntimeError("engine", "device busy", "device busy"));
+
+    expect(await app.operations.run("box.delete", ctx, { id, deleteVolume: true })).toEqual({
+      name: "alpha",
+      volumeDeleted: false,
+      volumeError: "device busy",
+    });
+    expect(runtime.containers.size).toBe(0);
   });
 });
 

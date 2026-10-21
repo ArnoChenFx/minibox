@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Server } from "bun";
 
 import type { App } from "../src/app";
-import { COOKIE_NAME } from "../src/auth";
+import { COOKIE_NAME, LEGACY_KEY_COOKIE } from "../src/auth";
 import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
-import type { TerminalData } from "../src/ws/terminal";
+import { parseControl, type TerminalData } from "../src/ws/terminal";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 
@@ -46,6 +46,17 @@ function signedInSession(endsInMs = app.cfg.sessionTtlMs): { token: string; id: 
     Date.now() + endsInMs - app.cfg.sessionTtlMs,
   );
   return { token, id: session.id };
+}
+
+async function signIn(): Promise<string> {
+  const res = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: base },
+    body: JSON.stringify({ key: TEST_KEY }),
+  });
+  expect(res.status).toBe(200);
+  const cookie = res.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE_NAME}=`)) ?? "";
+  return decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1).split(";")[0] ?? "");
 }
 
 async function createBox(name: string): Promise<string> {
@@ -113,6 +124,104 @@ describe("terminal upgrade is refused before any exec starts", () => {
     expect(res.status).toBe(404);
     expect(runtime.callsTo("startExec")).toHaveLength(0);
   });
+
+  test("for a box whose container was created but never started", async () => {
+    const keys = app.hosts.get().keys;
+    const id = runtime.seedContainer({
+      image: app.cfg.baseTemplateTag,
+      name: "mbtest-fresh",
+      labels: { [keys.box]: "true", [keys.name]: "fresh" },
+      running: false,
+    });
+    const res = await fetch(`${base}/api/boxes/${id}/terminal`, { headers: { ...UPGRADE, ...AUTH } });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: { code: "conflict", key: "terminal_not_running" } });
+    expect(runtime.callsTo("startExec")).toHaveLength(0);
+  });
+});
+
+describe("terminal authentication and origin", () => {
+  test("a wrong Bearer key is refused with 401 before any exec starts", async () => {
+    const id = await createBox("alpha");
+    const res = await fetch(`${base}/api/boxes/${id}/terminal`, {
+      headers: { ...UPGRADE, authorization: `Bearer ${"x".repeat(TEST_KEY.length)}` },
+    });
+    expect(res.status).toBe(401);
+    expect(runtime.callsTo("startExec")).toHaveLength(0);
+  });
+
+  test("a wrong session cookie is refused with 401 before any exec starts", async () => {
+    const id = await createBox("alpha");
+    const res = await fetch(`${base}/api/boxes/${id}/terminal`, {
+      headers: { ...UPGRADE, cookie: `${COOKIE_NAME}=${"x".repeat(TEST_KEY.length)}` },
+    });
+    expect(res.status).toBe(401);
+    expect(runtime.callsTo("startExec")).toHaveLength(0);
+  });
+
+  test("the access key in the legacy cookie is never honoured, so the upgrade is refused with 401", async () => {
+    const id = await createBox("alpha");
+    const res = await fetch(`${base}/api/boxes/${id}/terminal`, {
+      headers: { ...UPGRADE, cookie: `${LEGACY_KEY_COOKIE}=${TEST_KEY}` },
+    });
+    expect(res.status).toBe(401);
+    expect(runtime.callsTo("startExec")).toHaveLength(0);
+  });
+
+  test("the session from the console's sign-in opens a same-origin terminal without a Bearer key", async () => {
+    const id = await createBox("alpha");
+    const token = await signIn();
+    const term = connect(`/api/boxes/${id}/terminal`, { cookie: `${COOKIE_NAME}=${token}`, origin: base });
+    await term.opened;
+    await waitFor(() => term.output().includes("$ "), "the shell prompt");
+    expect(runtime.callsTo("startExec")).toHaveLength(1);
+    term.ws.close(1000, "done");
+    await term.closed;
+  });
+
+  test("a same-origin browser upgrade with valid credentials is accepted", async () => {
+    const id = await createBox("alpha");
+    const term = connect(`/api/boxes/${id}/terminal`, { ...AUTH, origin: base });
+    await term.opened;
+    await waitFor(() => term.output().includes("$ "), "the shell prompt");
+    term.ws.close(1000, "done");
+    await term.closed;
+  });
+
+  test.each([
+    ["a foreign Origin", { origin: "https://evil.example" }],
+    ["a cross-site Fetch Metadata header", { "sec-fetch-site": "cross-site" }],
+  ])("%s is refused with 403 even with valid credentials and the session cookie", async (_name, site) => {
+    const id = await createBox("alpha");
+    const { token } = signedInSession();
+    const res = await fetch(`${base}/api/boxes/${id}/terminal`, {
+      headers: { ...UPGRADE, ...AUTH, cookie: `${COOKIE_NAME}=${token}`, ...site },
+    });
+    expect(res.status).toBe(403);
+    expect(runtime.callsTo("startExec")).toHaveLength(0);
+  });
+});
+
+describe("parseControl", () => {
+  test("reads resize frames and clamps them to the terminal limits", () => {
+    expect(parseControl('{"type":"resize","cols":80,"rows":24}')).toEqual({ type: "resize", cols: 80, rows: 24 });
+    expect(parseControl('{"type":"resize","cols":9999,"rows":1}')).toEqual({ type: "resize", cols: 500, rows: 5 });
+    expect(parseControl('{"type":"resize","cols":-4,"rows":999}')).toEqual({ type: "resize", cols: 10, rows: 200 });
+  });
+
+  test.each([
+    ["plain keystrokes", "ls -la\r"],
+    ["a lone brace", "{"],
+    ["a brace-led line that is not JSON", "{a,b}"],
+    ["JSON that is not an object", "null"],
+    ["a JSON array holding a frame", '[{"type":"resize","cols":80,"rows":24}]'],
+    ["an unknown control type", '{"type":"ping","cols":80,"rows":24}'],
+    ["a frame missing a dimension", '{"type":"resize","cols":80}'],
+    ["dimensions sent as strings", '{"type":"resize","cols":"80","rows":"24"}'],
+    ["fractional dimensions", '{"type":"resize","cols":80.5,"rows":24}'],
+  ])("treats %s as stdin", (_name, data) => {
+    expect(parseControl(data)).toBeNull();
+  });
 });
 
 describe("terminal session", () => {
@@ -155,6 +264,23 @@ describe("terminal session", () => {
     term.ws.send(JSON.stringify({ type: "resize", cols: 9999, rows: 1 }));
     await waitFor(() => exec.sizes.length === 1, "the resize");
     expect(exec.sizes).toEqual([{ cols: 500, rows: 5 }]);
+    term.ws.close(1000, "done");
+    await term.closed;
+  });
+
+  test("control frames are consumed by the server and never reach the shell", async () => {
+    const id = await createBox("alpha");
+    const term = connect(`/api/boxes/${id}/terminal`);
+    await term.opened;
+    await waitFor(() => term.output().includes("$ "), "the shell prompt");
+    const exec = runtime.execs[0];
+    if (!exec) throw new Error("no exec was started");
+
+    term.ws.send(JSON.stringify({ type: "resize", cols: 100, rows: 30 }));
+    term.ws.send("pwd\n");
+    await waitFor(() => term.output().includes("pwd\n"), "echoed input");
+    expect(exec.sizes).toEqual([{ cols: 100, rows: 30 }]);
+    expect(term.output()).not.toContain('"type"');
     term.ws.close(1000, "done");
     await term.closed;
   });

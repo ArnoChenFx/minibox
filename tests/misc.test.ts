@@ -3,12 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { parseDotenv } from "../src/config";
 import { demuxLogs } from "../src/docker/logs";
 import { cpuPercent, parseCpuMax, parseMeminfo, parseProcStat } from "../src/host/procfs";
-import { AppError, toAppError } from "../src/lib/errors";
 import { compilePath, matchRoute, route } from "../src/routes/router";
-import { RuntimeError } from "../src/runtime";
 import { snapshotTag } from "../src/services/snapshots";
 import { safeJoin } from "../src/static";
-import { parseControl } from "../src/ws/terminal";
 
 describe("procfs", () => {
   test("cpu percent from /proc/stat deltas", () => {
@@ -63,21 +60,10 @@ describe("misc", () => {
       tag: "demo-20261020-150405",
     });
   });
-  test("toAppError maps runtime errors", () => {
-    expect(toAppError(new RuntimeError("not_found", "no such")).status).toBe(404);
-    expect(toAppError(new RuntimeError("unavailable", "down")).code).toBe("docker_unavailable");
-    expect(toAppError(new AppError(422, "insufficient_capacity", "x")).status).toBe(422);
-    expect(toAppError(new Error("boom")).status).toBe(500);
-  });
   test("safeJoin prevents traversal", () => {
     expect(safeJoin("/srv/web", "/css/app.css")).toBe("/srv/web/css/app.css");
     expect(safeJoin("/srv/web", "/../etc/passwd")).toBe("/srv/web/etc/passwd");
     expect(safeJoin("/srv/web", "/%2e%2e/%2e%2e/etc")).toBe("/srv/web/etc");
     expect(safeJoin("/srv/web", "/%00")).toBeNull();
-  });
-  test("terminal control frames", () => {
-    expect(parseControl('{"type":"resize","cols":80,"rows":24}')).toEqual({ type: "resize", cols: 80, rows: 24 });
-    expect(parseControl('{"type":"resize","cols":"x"}')).toBeNull();
-    expect(parseControl("ls -la\r")).toBeNull();
   });
 });

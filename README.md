@@ -284,6 +284,7 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `BOX_PROFILE` | `standard` | Default [security profile](#security-profiles) for new boxes: `standard`, `strict` or `relaxed` |
 | `BOX_PIDS_LIMIT` | `1024` | Maximum number of processes in each new box (a positive integer) |
 | `RUNTIME` | engine default | OCI runtime for new boxes, such as `runsc` (gVisor). The runtime must already be installed in the Docker engine |
+| `STOP_TIMEOUT_SEC` | `3` | Seconds a box gets to exit after SIGTERM before it is killed, used by stop and restart. Whole number from 0 to 300 |
 | `METRICS_INTERVAL_MS` | `3000` | Host metrics sampling interval (ms) |
 | `METRICS_HISTORY` | `120` | Number of samples kept (≈ 6 minutes at the default interval) |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
@@ -485,6 +486,7 @@ minibox/
 ├── scripts/restart.sh       # Restart helper for hosts without systemd
 ├── scripts/export-openapi.ts # Writes docs/openapi.json (bun run openapi)
 ├── scripts/check-box-image.sh  # Base template checks against Docker (CI runs amd64 and arm64)
+├── scripts/docker-integration.ts  # Real-engine integration tests, with cleanup (bun run test:docker)
 ├── Dockerfile               # Release image (oven/bun, multi-arch)
 ├── .github/workflows/release.yml  # Tag → image + GitHub Release
 └── docs/
@@ -504,11 +506,12 @@ bun run lint       # oxlint (warnings fail the run)
 bun run typecheck  # TypeScript (strict, tsc --noEmit)
 bun test           # Unit tests (no Docker needed)
 bun run check      # All of the above, same as CI
-bun run openapi    # Regenerate docs/openapi.json from the operation registry
+bun run test:docker  # Real-engine integration tests (needs Docker; not part of check)
+bun run openapi      # Regenerate docs/openapi.json from the operation registry
 bun run build:template && bun run check:template  # Base template checks (needs Docker)
 ```
 
-Formatting uses [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) (`.oxfmtrc.json`) and linting uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) (`.oxlintrc.json`). [CI](.github/workflows/ci.yml) runs `fmt:check`, `lint`, `typecheck` and `bun test` on every push to `main` and every pull request, plus a Docker build smoke test that starts the image and probes `/login`.
+Formatting uses [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) (`.oxfmtrc.json`) and linting uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) (`.oxlintrc.json`). [CI](.github/workflows/ci.yml) runs `fmt:check`, `lint`, `typecheck` and `bun test` on every push to `main` and every pull request, plus a Docker build smoke test that starts the image and probes `/login`. A separate job, `Integration tests (real Docker engine)`, runs `bun run test:docker` against the runner's Docker engine. It is not a required check. The script uses its own `mbit` label prefix and removes what it created, so it can run next to a real install.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). See [CHANGELOG.md](CHANGELOG.md).
 

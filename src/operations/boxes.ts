@@ -148,7 +148,7 @@ export const boxDelete = defineOperation({
   scope: "box:delete",
   async: false,
   input: z.object({ id: boxId(), deleteVolume: deleteVolumeFlag() }),
-  output: z.object({ name: z.string(), volumeDeleted: z.boolean() }),
+  output: z.object({ name: z.string(), volumeDeleted: z.boolean(), volumeError: z.string().optional() }),
   rest: [{ method: "DELETE", path: "/api/boxes/:id", query: ["deleteVolume"] }],
   cli: "box rm",
   mcp: {

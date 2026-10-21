@@ -10,6 +10,7 @@ import {
   type ContainerStats,
   type ContainerUpdate,
   type ImageDetails,
+  isRuntimeError,
   RuntimeError,
 } from "../runtime";
 import { ClaimError, ensureSpec } from "../specs/claim";
@@ -80,7 +81,6 @@ export interface Box {
   stats?: ContainerStats | null;
 }
 
-const STOP_TIMEOUT_SEC = 3;
 const MB = 1024 * 1024;
 
 function workspaceVolume(host: HostCtx, spec: BoxSpec): string {
@@ -209,8 +209,21 @@ export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {
 async function ensureImage(host: HostCtx, image: string): Promise<ImageDetails> {
   try {
     return await host.runtime.inspectImage(image);
-  } catch {
-    throw badRequest(msg("template_image_missing", { image }), { field: "template" });
+  } catch (e) {
+    if (isRuntimeError(e, "not_found")) {
+      throw badRequest(msg("template_image_missing", { image }), { field: "template" });
+    }
+    throw e;
+  }
+}
+
+/** Reuses a workspace volume left behind by an earlier box with the same name. */
+async function ensureVolume(host: HostCtx, name: string, labels: Record<string, string>): Promise<void> {
+  try {
+    await host.runtime.inspectVolume(name);
+  } catch (e) {
+    if (!isRuntimeError(e, "not_found")) throw e;
+    await host.runtime.createVolume(name, labels);
   }
 }
 
@@ -254,10 +267,7 @@ async function setDesired(host: HostCtx, boxId: string, desired: DesiredState): 
 
 export async function createBox(host: HostCtx, input: CreateBoxInput & { templateLabel?: string }): Promise<Box> {
   const { runtime, keys, prefix, security } = host;
-  const listed = await listBoxes(host);
-  if (listed.some((box) => box.name === input.name) || host.specs.findByName(input.name)) {
-    throw conflict(msg("box_exists", { name: input.name }));
-  }
+  if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
 
   const image = input.image ?? host.baseTemplateTag;
   const profile = input.profile ?? security.defaultProfile;
@@ -265,11 +275,7 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
   await ensureBoxNetwork(host);
 
   const volume = volumeName(prefix, input.name);
-  try {
-    await runtime.inspectVolume(volume);
-  } catch {
-    await runtime.createVolume(volume, { [keys.box]: "true", [keys.name]: input.name });
-  }
+  await ensureVolume(host, volume, { [keys.box]: "true", [keys.name]: input.name });
 
   const containerId = await host.specs.exclusive(async () => {
     if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
@@ -298,22 +304,28 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
       [keys.pids]: String(pids),
       [keys.createdBy]: createdBy,
     };
-    const created = await runtime.createContainer({
-      name,
-      image,
-      cmd: ["sleep", "infinity"],
-      workingDir: "/workspace",
-      hostname: input.name.slice(0, 63),
-      labels,
-      mounts: [{ source: volume, target: "/workspace" }],
-      restart: "no",
-      cpus: input.cpus,
-      memoryBytes,
-      swapBytes: memoryBytes,
-      init: true,
-      network: security.network,
-      hardening: hardeningFor(profile, security),
-    });
+    const created = await runtime
+      .createContainer({
+        name,
+        image,
+        cmd: ["sleep", "infinity"],
+        workingDir: "/workspace",
+        hostname: input.name.slice(0, 63),
+        labels,
+        mounts: [{ source: volume, target: "/workspace" }],
+        restart: "no",
+        cpus: input.cpus,
+        memoryBytes,
+        swapBytes: memoryBytes,
+        init: true,
+        network: security.network,
+        hardening: hardeningFor(profile, security),
+      })
+      .catch((e: unknown) => {
+        // The engine enforces unique container names, so a name it already holds is refused here, not by a racy list.
+        if (isRuntimeError(e, "conflict")) throw conflict(msg("box_exists", { name: input.name }));
+        throw e;
+      });
     const spec: BoxSpec = {
       version: 1,
       id,
@@ -359,7 +371,7 @@ export async function startBox(host: HostCtx, ref: string): Promise<Box> {
 
 export async function stopBox(host: HostCtx, ref: string): Promise<Box> {
   const box = await getBox(host, ref);
-  await host.runtime.stopContainer(box.id, { timeoutSec: STOP_TIMEOUT_SEC });
+  await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await setDesired(host, box.boxId, "stopped");
   return getBox(host, box.boxId);
 }
@@ -367,32 +379,41 @@ export async function stopBox(host: HostCtx, ref: string): Promise<Box> {
 export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   const box = await getBox(host, ref);
   await attachToBoxNetwork(host, box);
-  await host.runtime.restartContainer(box.id, { timeoutSec: STOP_TIMEOUT_SEC });
+  await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await setDesired(host, box.boxId, "running");
   return getBox(host, box.boxId);
 }
 
-export async function deleteBox(
-  host: HostCtx,
-  ref: string,
-  deleteVolume: boolean,
-): Promise<{ name: string; volumeDeleted: boolean }> {
+export interface DeleteBoxResult {
+  name: string;
+  volumeDeleted: boolean;
+  /** Why the requested volume removal failed. The box itself is always removed first. */
+  volumeError?: string;
+}
+
+export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolean): Promise<DeleteBoxResult> {
   const box = await getBox(host, ref);
   await host.specs.exclusive(async () => {
     await host.runtime.removeContainer(box.id, { force: true });
     host.specs.remove(box.boxId);
   });
-  let volumeDeleted = false;
+  const result: DeleteBoxResult = { name: box.name, volumeDeleted: false };
   if (deleteVolume) {
     try {
       await host.runtime.removeVolume(box.volume);
-      volumeDeleted = true;
+      result.volumeDeleted = true;
     } catch (e) {
-      log.warn("box.volume_remove_failed", { volume: box.volume, error: String(e) });
+      // A volume that is already gone is the state the caller asked for.
+      if (isRuntimeError(e, "not_found")) {
+        result.volumeDeleted = true;
+      } else {
+        result.volumeError = e instanceof RuntimeError ? e.detail : e instanceof Error ? e.message : String(e);
+        log.warn("box.volume_remove_failed", { volume: box.volume, error: String(e) });
+      }
     }
   }
-  log.info("box.deleted", { name: box.name, volumeDeleted });
-  return { name: box.name, volumeDeleted };
+  log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
+  return result;
 }
 
 function hasUpdate(patch: BoxUpdate): boolean {

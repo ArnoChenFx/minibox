@@ -31,6 +31,7 @@ export interface HostCtx {
   prefix: string;
   keys: LabelKeys;
   baseTemplateTag: string;
+  stopTimeoutSec: number;
   templatesDir: string;
   security: HostSecurity;
   monitor: HostMonitor;
@@ -56,6 +57,7 @@ export function createLocalHost(cfg: Config, runtime: Runtime, specs: SpecStore 
     prefix: cfg.labelPrefix,
     keys: labelKeys(cfg.labelPrefix),
     baseTemplateTag: cfg.baseTemplateTag,
+    stopTimeoutSec: cfg.stopTimeoutSec,
     templatesDir: cfg.templatesDir,
     security: {
       defaultProfile: cfg.boxProfile,

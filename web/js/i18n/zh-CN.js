@@ -141,6 +141,8 @@ export default {
   "disk.root": "系统盘",
   "disk.docker": "Docker 数据",
   "disk.root+docker": "系统盘（含 Docker 数据）",
+  "disk.container": "容器磁盘",
+  "disk.container+docker": "容器磁盘（含 Docker 数据）",
   "act.box.create": "创建 Box",
   "act.box.delete": "删除 Box",
   "act.box.start": "启动 Box",
@@ -225,6 +227,9 @@ export default {
   "ba.deleted": "Box 已删除",
   "ba.deletedWithVolume": "{name} 及其工作区数据卷已删除。",
   "ba.deletedKeepVolume": "{name} 已删除，工作区数据卷已保留。",
+  "ba.deletedVolumeFailed": "{name} 已删除，但工作区数据卷未能删除",
+  "ba.deleteVolumeFailedHint":
+    "数据卷 {volume} 仍然保留：{detail}。确认没有容器在使用后，可执行 docker volume rm {volume} 删除，或新建同名 Box 复用它。",
   "ba.deleteFailed": "删除失败",
   "ba.snapTitle": "创建快照",
   "ba.snapDesc": "将「{name}」当前的系统环境保存为镜像，可用于创建新 Box 或提升为模板。",

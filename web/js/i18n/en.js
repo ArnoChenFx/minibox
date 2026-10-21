@@ -153,6 +153,8 @@ export default {
   "disk.root": "System disk",
   "disk.docker": "Docker data",
   "disk.root+docker": "System disk (incl. Docker data)",
+  "disk.container": "Container disk",
+  "disk.container+docker": "Container disk (incl. Docker data)",
   "act.box.create": "Created box",
   "act.box.delete": "Deleted box",
   "act.box.start": "Started box",
@@ -241,6 +243,9 @@ export default {
   "ba.deleted": "Box deleted",
   "ba.deletedWithVolume": "{name} and its workspace volume were deleted.",
   "ba.deletedKeepVolume": "{name} was deleted; its workspace volume was kept.",
+  "ba.deletedVolumeFailed": "{name} was deleted, but its workspace volume was not removed",
+  "ba.deleteVolumeFailedHint":
+    "Volume {volume} is still there: {detail}. Once nothing uses it, remove it with docker volume rm {volume}, or create a box with the same name to reuse it.",
   "ba.deleteFailed": "Delete failed",
   "ba.snapTitle": "Create snapshot",
   "ba.snapDesc":
