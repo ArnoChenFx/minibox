@@ -379,6 +379,19 @@ export async function adoptLegacyWorkspace(
   return record;
 }
 
+/**
+ * The leftover `prefix-ws-<name>` volume a new box of this name adopts as its workspace, with its record when it has
+ * one. Null when the engine has no such volume. Nothing is written.
+ */
+export async function leftoverWorkspace(
+  host: HostCtx,
+  boxName: string,
+): Promise<{ engineName: string; record: VolumeRecord | null } | null> {
+  const engineName = volumeName(host.prefix, boxName);
+  if ((await inspectVolumeOrNull(host, engineName)) === null) return null;
+  return { engineName, record: host.volumes.findByEngine(host.host.id, engineName) };
+}
+
 /** The independent tools volume for one pool on this host, if one already exists. */
 export function findSharedTools(host: HostCtx, poolName: string): VolumeRecord | null {
   return (

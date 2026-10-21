@@ -165,6 +165,8 @@ export default {
   "err.volume_mounted": "Volume {name} is mounted by {box}.",
   "err.volume_delete_failed": "Volume {name} could not be deleted: {detail}",
   "err.volume_attach_forbidden": "This credential may not attach volume {volume}.",
+  "err.volume_write_forbidden": "This credential may not write volume {volume}.",
+  "err.volume_create_forbidden": "This credential may not create volumes.",
   "err.volume_chown_failed": "Could not change ownership of a new volume: {detail}",
   "err.volume_prepare_failed": "Could not prepare the volume directory: {detail}",
   "err.helper_image_missing": "Base template image {image} is missing, so volume helpers cannot run.",

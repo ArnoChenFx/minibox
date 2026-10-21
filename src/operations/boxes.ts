@@ -22,9 +22,7 @@ import { assertCapacity } from "../services/capacity";
 import { rebuildBox } from "../services/rebuild";
 import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
-import { findSharedTools } from "../volumes/engine";
-import { poolForRole } from "../volumes/pools";
-import { assertCanAttach } from "./authz";
+import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
 import { BoxSchema, BoxWithStatsSchema, StatsSchema } from "./schemas";
 import {
@@ -139,7 +137,7 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Mounting an existing volume requires volume:attach.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
@@ -147,13 +145,9 @@ export const boxCreate = defineOperation({
   run: async (ctx, input) => {
     const { host, principal } = ctx;
     if (input.mounts) {
-      for (const mount of input.mounts) {
-        const volume = host.volumes.resolve(mount.volume, host.host.id);
-        if (volume) await assertCanAttach(ctx, volume);
-      }
+      await assertCanChangeMounts(ctx, input.mounts, []);
     } else {
-      const tools = findSharedTools(host, poolForRole(host.volumes.readPools(), "tools").name);
-      if (tools) await assertCanAttach(ctx, tools);
+      await assertCanCreateDefaultMounts(ctx, input.name);
     }
     return {
       box: await createBox(host, {
@@ -309,7 +303,9 @@ export const boxUpdate = defineOperation({
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.update", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host }, input) => {
+  run: async (ctx, input, box) => {
+    const { host } = ctx;
+    if (input.mounts) await assertCanChangeMounts(ctx, input.mounts, box.mounts);
     const request = {
       template: input.template,
       mounts: input.mounts,
@@ -372,21 +368,24 @@ export const boxRebuild = defineOperation({
       env: input.env?.map((entry) => entry.name),
     }),
   },
-  run: async ({ host }, input) => ({
-    box: await rebuildBox(
-      host,
-      input.id,
-      requireRevision(input.expectedRevision),
-      {
-        template: input.template,
-        mounts: input.mounts,
-        env: input.env,
-        network: input.network,
-        profile: input.profile,
-      },
-      input.confirm,
-    ),
-  }),
+  run: async (ctx, input, box) => {
+    if (input.mounts) await assertCanChangeMounts(ctx, input.mounts, box.mounts);
+    return {
+      box: await rebuildBox(
+        ctx.host,
+        input.id,
+        requireRevision(input.expectedRevision),
+        {
+          template: input.template,
+          mounts: input.mounts,
+          env: input.env,
+          network: input.network,
+          profile: input.profile,
+        },
+        input.confirm,
+      ),
+    };
+  },
 });
 
 export const boxLogs = defineOperation({

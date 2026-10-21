@@ -586,6 +586,17 @@ const DISK_POOLS = [
   { name: "disk", backend: "path", root: "/mnt/disk", default: true },
 ];
 
+const attachNotes = (volume: string, box: string, mode: "rw" | "ro") => ({
+  id: volume,
+  box,
+  path: "/srv/notes",
+  mode,
+  confirm: true,
+  expectedRevision: "1",
+});
+
+const mountsOf = (box: boxes.Box) => box.mounts.map(({ volume, path, mode }) => ({ volume, path, mode }));
+
 describe("write, attach and pool scopes", () => {
   test("pool.replace needs pool:admin, and refusing volume:write does not stand in for it", async () => {
     const app = guardedApp();
@@ -601,5 +612,139 @@ describe("write, attach and pool scopes", () => {
     app.deny("volume:write");
     await app.run("pool.replace", { pools: DISK_POOLS });
     expect((await getPools(app.host)).pools.map((pool) => pool.name).toSorted()).toEqual(["disk", "local"]);
+  });
+
+  test("a read-only mount of a recorded volume needs only volume:attach, a read-write one also needs volume:write", async () => {
+    const app = guardedApp();
+    const box = await boxes.createBox(app.host, { name: "alpha", cpus: 1, memoryMb: 256 });
+    const notes = await createVolume(app.host, { name: "notes", role: null, createdBy: "owner" });
+    app.deny("volume:write");
+
+    expect(await rejectionOf(app.run("volume.attach", attachNotes(notes.id, box.boxId, "rw")))).toMatchObject({
+      status: 403,
+      key: "volume_write_forbidden",
+      params: { volume: "notes" },
+    });
+    expect(app.runtime.containers.size).toBe(1);
+    const read = await app.run<{ box: boxes.Box }>("volume.attach", attachNotes(notes.id, box.boxId, "ro"));
+    expect(read.box.mounts).toContainEqual(expect.objectContaining({ path: "/srv/notes", mode: "ro" }));
+  });
+
+  test("box.create checks each explicit mount: read-only needs volume:attach, read-write also volume:write", async () => {
+    const app = guardedApp();
+    const notes = await createVolume(app.host, { name: "notes", role: null, createdBy: "owner" });
+    app.deny("volume:write");
+    const withMode = (mode: "rw" | "ro") => ({
+      name: "alpha",
+      cpus: 1,
+      memoryMb: 256,
+      mounts: [{ volume: notes.id, path: "/srv/notes", mode }],
+    });
+
+    expect(await rejectionOf(app.run("box.create", withMode("rw")))).toMatchObject({
+      status: 403,
+      key: "volume_write_forbidden",
+      params: { volume: "notes" },
+    });
+    expect(app.runtime.containers.size).toBe(0);
+    expect(app.host.specs.list()).toEqual([]);
+
+    const made = await app.run<{ box: boxes.Box }>("box.create", withMode("ro"));
+    expect(made.box.mounts).toEqual([expect.objectContaining({ path: "/srv/notes", mode: "ro" })]);
+  });
+
+  test("a new box creates read-write volumes of its own, so without volume:write it creates nothing", async () => {
+    const app = guardedApp();
+    app.deny("volume:write");
+    expect(await rejectionOf(app.run("box.create", { name: "alpha", cpus: 1, memoryMb: 256 }))).toMatchObject({
+      status: 403,
+      key: "volume_create_forbidden",
+    });
+    expect(app.runtime.volumes.size).toBe(0);
+    expect(app.runtime.containers.size).toBe(0);
+    expect(app.host.specs.list()).toEqual([]);
+
+    app.allow();
+    await app.run("box.create", { name: "alpha", cpus: 1, memoryMb: 256 });
+    expect(app.runtime.containers.size).toBe(1);
+  });
+
+  test("a leftover workspace that a new box would adopt gets the checks of a read-write mount", async () => {
+    const app = guardedApp();
+    app.runtime.volumes.set("mbtest-ws-alpha", {
+      name: "mbtest-ws-alpha",
+      labels: { [app.host.keys.box]: "true", [app.host.keys.name]: "old" },
+    });
+    app.deny("volume:write");
+    expect(await rejectionOf(app.run("box.create", { name: "alpha", cpus: 1, memoryMb: 256 }))).toMatchObject({
+      status: 403,
+      key: "volume_write_forbidden",
+      params: { volume: "mbtest-ws-alpha" },
+    });
+
+    app.allow();
+    app.deny("volume:attach");
+    expect(await rejectionOf(app.run("box.create", { name: "alpha", cpus: 1, memoryMb: 256 }))).toMatchObject({
+      status: 403,
+      key: "volume_attach_forbidden",
+      params: { volume: "mbtest-ws-alpha" },
+    });
+    expect(app.runtime.containers.size).toBe(0);
+  });
+
+  test("a rebuild checks only the mounts that change: kept mounts pass, a name with no record needs volume:write", async () => {
+    const app = guardedApp();
+    const box = await boxes.createBox(app.host, { name: "alpha", cpus: 1, memoryMb: 256 });
+    const notes = await createVolume(app.host, { name: "notes", role: null, createdBy: "owner" });
+    const kept = mountsOf(box);
+    app.deny("volume:write");
+
+    expect(
+      await rejectionOf(
+        app.run("box.rebuild", {
+          id: box.boxId,
+          mounts: [...kept, { volume: "fresh", path: "/srv/fresh", mode: "ro" }],
+          confirm: true,
+          expectedRevision: "1",
+        }),
+      ),
+    ).toMatchObject({ status: 403, key: "volume_write_forbidden", params: { volume: "fresh" } });
+    expect(app.host.volumes.resolve("fresh", app.host.host.id)).toBeNull();
+    expect(app.runtime.volumes.has("fresh")).toBe(false);
+
+    const rebuilt = await app.run<{ box: boxes.Box }>("box.rebuild", {
+      id: box.boxId,
+      mounts: [...kept, { volume: notes.id, path: "/srv/notes", mode: "ro" }],
+      confirm: true,
+      expectedRevision: "1",
+    });
+    expect(rebuilt.box.mounts).toContainEqual(expect.objectContaining({ path: "/srv/notes", mode: "ro" }));
+  });
+
+  test("a box update that adds a mount needs volume:attach, but the mounts a box already has are not checked again", async () => {
+    const app = guardedApp();
+    const box = await boxes.createBox(app.host, { name: "alpha", cpus: 1, memoryMb: 256 });
+    const notes = await createVolume(app.host, { name: "notes", role: null, createdBy: "owner" });
+    const kept = mountsOf(box);
+    app.deny("volume:attach");
+
+    const tuned = await app.run<{ box: boxes.Box }>("box.update", {
+      id: box.boxId,
+      idleTimeoutSec: 120,
+      mounts: kept,
+      expectedRevision: "1",
+    });
+    expect(tuned.box.idleTimeoutSec).toBe(120);
+
+    expect(
+      await rejectionOf(
+        app.run("box.update", {
+          id: box.boxId,
+          mounts: [...kept, { volume: notes.id, path: "/srv/notes", mode: "ro" }],
+          expectedRevision: String(tuned.box.revision),
+        }),
+      ),
+    ).toMatchObject({ status: 403, key: "volume_attach_forbidden", params: { volume: "notes" } });
+    expect(app.host.specs.read(box.boxId)?.mounts).toEqual(kept);
   });
 });

@@ -15,7 +15,7 @@ import {
 } from "../services/volumes";
 import { requireRevision } from "../specs/revision";
 import type { PoolDraft, RoleDraft } from "../volumes/pools";
-import { assertCanAdministerPools, assertCanAttach } from "./authz";
+import { assertCanAdministerPools, assertCanAttach, assertCanWrite } from "./authz";
 import { defineOperation } from "./define";
 import { BoxSchema } from "./schemas";
 import { boxId, confirmFlag, expectedRevision, refreshFlag, volumeName } from "./validation";
@@ -246,13 +246,14 @@ const volumeAttach = defineOperation({
     toolset: "storage",
     name: "attach_volume",
     description:
-      "Mount a volume into a box. Docker cannot add a mount in place, so the container is rebuilt and renamed to prefix-<box id>. Send expectedRevision. warning is shared_rw when another box already mounts this volume read-write.",
+      "Mount a volume into a box. Docker cannot add a mount in place, so the container is rebuilt and renamed to prefix-<box id>. Send expectedRevision. A read-write mount also needs volume:write. warning is shared_rw when another box already mounts this volume read-write.",
   },
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.attach", target: (_input, volume) => volume.name },
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
   run: async (ctx, input, volume) => {
     await assertCanAttach(ctx, volume);
+    if (input.mode === "rw") await assertCanWrite(ctx, volume);
     return attachVolume(ctx.host, volume.id, {
       box: input.box,
       path: input.path,

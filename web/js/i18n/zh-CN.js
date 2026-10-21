@@ -154,6 +154,8 @@ export default {
   "err.volume_mounted": "卷 {name} 正被 {box} 挂载。",
   "err.volume_delete_failed": "卷 {name} 无法删除：{detail}",
   "err.volume_attach_forbidden": "此凭据不能挂载卷 {volume}。",
+  "err.volume_write_forbidden": "此凭据不能写入卷 {volume}。",
+  "err.volume_create_forbidden": "此凭据不能创建卷。",
   "err.volume_chown_failed": "无法修改新卷的所有者：{detail}",
   "err.volume_prepare_failed": "无法准备卷目录：{detail}",
   "err.helper_image_missing": "基础模板镜像 {image} 不存在，因此无法运行卷辅助容器。",

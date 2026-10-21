@@ -19,10 +19,13 @@ export interface Principal {
   readonly name: string;
 }
 
-/** A volume named in a `volume:attach` check. Agent tokens will narrow this when #13 lands. */
+/**
+ * A volume named in a volume scope check. Agent tokens will narrow this when #13 lands. `id` is absent for a name that
+ * has no record yet, which a create or a mount of a new name passes.
+ */
 export interface VolumeResource {
   readonly kind: "volume";
-  readonly id: string;
+  readonly id?: string;
   readonly name: string;
 }
 

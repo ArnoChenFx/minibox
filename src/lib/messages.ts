@@ -110,6 +110,8 @@ export const MESSAGES = {
   volume_mounted: "Volume {name} is mounted by {box}.",
   volume_delete_failed: "Volume {name} could not be deleted: {detail}",
   volume_attach_forbidden: "This credential may not attach volume {volume}.",
+  volume_write_forbidden: "This credential may not write volume {volume}.",
+  volume_create_forbidden: "This credential may not create volumes.",
   volume_chown_failed: "Could not change ownership of a new volume: {detail}",
   volume_prepare_failed: "Could not prepare the volume directory: {detail}",
   helper_image_missing: "Base template image {image} is missing, so volume helpers cannot run.",
