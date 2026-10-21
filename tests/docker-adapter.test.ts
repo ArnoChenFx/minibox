@@ -89,6 +89,10 @@ async function engine(req: Request): Promise<Response> {
   if (req.method === "GET" && diff) {
     const id = diff[1] ?? "";
     if (id === "pristine") return json(null);
+    if (id === "empty") return new Response("");
+    if (id === "object") return json({ Path: "/tmp", Kind: 0 });
+    if (id === "text") return new Response("<html>bad gateway</html>", { headers: { "content-type": "text/html" } });
+    if (id === "zero") return json(0);
     if (id === "edited") {
       return json([
         { Path: "/tmp", Kind: 0 },
@@ -219,6 +223,16 @@ describe("Docker adapter against a fake engine socket", () => {
       { path: "/var/cache/old", kind: "deleted" },
     ]);
     expect(await rejectionOf(runtime().containerDiff("gone"))).toMatchObject({ kind: "not_found" });
+  });
+
+  test("an empty or JSON null diff means no changes, and any other body is an engine error", async () => {
+    expect(await runtime().containerDiff("empty")).toEqual([]);
+    for (const id of ["object", "text", "zero"]) {
+      expect(await rejectionOf(runtime().containerDiff(id))).toMatchObject({
+        kind: "engine",
+        detail: expect.stringContaining("unexpected response from docker diff"),
+      });
+    }
   });
 
   test("a volume that is in use is a conflict, and a missing volume is not_found", async () => {

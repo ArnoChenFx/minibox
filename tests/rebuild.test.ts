@@ -82,6 +82,20 @@ describe("rebuild preview", () => {
     expect(runtime.containers.size).toBe(1);
   });
 
+  test("a diff that cannot be read fails the preview instead of showing an empty one", async () => {
+    const box = await newBox("alpha");
+    runtime.fail("containerDiff", new RuntimeError("engine", "docker diff failed", "docker diff failed"));
+    const creates = runtime.callsTo("createContainer").length;
+
+    const error = await rejectionOf(rebuildBox(host, box.id, box.revision, { profile: "strict" }, false));
+
+    expect(error).toBeInstanceOf(RuntimeError);
+    expect(error).toMatchObject({ kind: "engine" });
+    expect(runtime.callsTo("createContainer")).toHaveLength(creates);
+    expect(runtime.containers.get(box.id)?.name).toBe("mbtest-alpha");
+    expect(host.specs.read(box.boxId)?.revision).toBe(1);
+  });
+
   test("an identical request and a missing image are refused before a container is created", async () => {
     const box = await newBox("alpha");
     const same = await rejectionOf(rebuildBox(host, box.id, box.revision, { profile: "standard" }, true));

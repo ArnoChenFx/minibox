@@ -151,6 +151,26 @@ function toChange(change: { Path?: string; Kind?: number }): ContainerChange[] {
   return [{ path: change.Path, kind }];
 }
 
+/**
+ * The engine answers JSON null when nothing changed, and docker-modem hands that body back as a Buffer. An empty
+ * body counts the same way. Any other body is an error: an empty diff for a container that could not be read would
+ * let a rebuild be confirmed without showing the writable-layer changes it throws away.
+ */
+export function parseChanges(body: unknown): ContainerChange[] {
+  if (Array.isArray(body)) return body.flatMap(toChange);
+  if (body === null) return [];
+  if (Buffer.isBuffer(body)) {
+    const text = body.toString("utf8").trim();
+    if (text === "" || text === "null") return [];
+  }
+  throw new RuntimeError("engine", `unexpected response from docker diff: ${describeBody(body)}`);
+}
+
+function describeBody(body: unknown): string {
+  const text = Buffer.isBuffer(body) ? body.toString("utf8") : (JSON.stringify(body) ?? String(body));
+  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+}
+
 export function toUpdateOptions(limits: ContainerUpdate): Record<string, unknown> {
   const opts: Record<string, unknown> = {};
   if (limits.cpus !== undefined) opts.NanoCpus = Math.round(limits.cpus * NANO_CPUS_PER_CPU);
@@ -296,9 +316,7 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
 
     async containerDiff(id) {
-      const changes: unknown = await call(() => docker.getContainer(id).changes());
-      // The engine answers JSON null when nothing changed, and docker-modem hands that body back as a Buffer, not null.
-      return Array.isArray(changes) ? changes.flatMap(toChange) : [];
+      return parseChanges(await call(() => docker.getContainer(id).changes()));
     },
 
     async containerStats(id) {
