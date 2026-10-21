@@ -1,8 +1,10 @@
 # Agents
 
-`POST /mcp` is a Streamable HTTP MCP server. Send `Authorization: Bearer` and the access key. A browser session cookie is refused. `GET /mcp` is not an event stream (`405`, `Allow: POST, DELETE`). `DELETE /mcp` closes the session named by `Mcp-Session-Id`.
+`POST /mcp` is a Streamable HTTP MCP server. Send `Authorization: Bearer` and the access key. A browser session cookie is refused. `GET /mcp` is not an event stream (`405`, `Allow: POST, DELETE`). `DELETE /mcp` closes the session named by `Mcp-Session-Id`. A wrong Bearer key counts toward the same login limit as a wrong login key, so after 10 failures from one address within 5 minutes the next one gets `429`.
 
-`?toolsets=` selects toolsets (`core`, `session`, `network`, `storage`, `tools`, `meta`). The query wins over the session. The default is `core,meta`. The design catalog is 27 tools, 15 of them in those two default toolsets. This server exposes the tools that exist: the seven box tools plus `exec`, `exec_get` and `exec_kill`. `get_activity` and `task_wait` are not implemented yet, so the live default list is 10 tools. The other toolsets are accepted and currently add none. File tools are not implemented.
+> **Warning: `/mcp` authenticates with the main access key, which grants full owner access.** Any client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. There are no scoped tokens yet (#13). Give an agent the key only if you accept that, keep it out of prompts, logs and repositories, and change `ACCESS_KEY` if it leaks.
+
+`?toolsets=` selects toolsets: `core`, `session`, `network`, `storage`, `tools`, `meta` and `rebuild`. The query wins over the session. The default is `core,meta`. `rebuild_box` is in the `rebuild` toolset, so it is not in the default list: use `/mcp?toolsets=rebuild`, or `/mcp?toolsets=core,meta,rebuild`, to enable it. The design catalog is 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get` and `exec_kill` in the default toolsets (9 tools), and `rebuild_box` in `rebuild`. `get_activity` and `task_wait` are not implemented yet. The other toolsets are accepted and currently add none. File tools are not implemented.
 
 `minibox mcp` proxies newline-delimited JSON-RPC from stdio to `/mcp`. Build the binary with `bun run build:cli`.
 
@@ -12,18 +14,26 @@ The `initialize` result includes the block below. [`README.md`](../README.md) in
 
 Use the MiniBox MCP server (`/mcp`, Bearer access key) to work inside a box.
 
-- list_boxes or create_box before doing work. exec starts a stopped box.
-- exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace.
-- The result includes exitCode, stdout, stderr, truncated and durationMs. A non-zero exit code is the program's status.
+- list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision. Read the revision again before an update that sends expectedRevision.
+- exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat and rm.
+- Pass secrets in env, not in argv or cmd. The audit log keeps commands and argv, but never env values.
+- The result includes status, exitCode, stdout, stderr, truncated and durationMs. A non-zero exit code is the program's status.
 - Inline output keeps about 16 KiB from the start and 16 KiB from the end of each stream. When truncated is true, outputRef names the rest: GET /api/execs/{execId}/output.
-- Commands that may run longer than 30 seconds: exec with background true, then exec_get with waitMs (max 25000). exec_kill stops the process tree.
+- A foreground exec may set timeoutSec up to 55. For a longer command, use exec with background true and a larger timeoutSec (up to 3600), then exec_get with waitMs (max 25000). exec_kill stops the process tree.
 - exec can read and write every volume mounted on that box.
+- rebuild_box is in the rebuild toolset (`/mcp?toolsets=rebuild`) and needs confirm true.
 - File tools are not available yet. Ask for toolsets with /mcp?toolsets=core,session. The default is core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
 
 ## Exec
 
 `exec` means the caller can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Attaching a volume requires `volume:attach` (#13, not enforced yet).
 
-A foreground call should finish within about 60 seconds, which is the server's idle timeout. Longer commands use `background: true` and `exec_get`. A timeout kills the process tree and returns `timedOut: true` with the exit code from `exec.inspect` (137 when the engine does not report one). Stopping a box is not required before `exec`: a stopped box is started. Idle timeout and TTL remain #12.
+A foreground call may set `timeoutSec` up to 55 seconds, which stays under the server's 60-second idle timeout. Longer commands use `background: true` with a larger `timeoutSec` (up to 3600) and `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and returns `timedOut: true`, with the exit code from `exec.inspect`, or 137 when the engine does not report one. If the stop fails, the exec stays `running`, a foreground call returns with `timedOut: true`, and `exec_kill` retries.
+
+Stopping a box is not required before `exec`: a stopped box is started, and that changes its revision, so read the revision again before an update that sends `expectedRevision`. Idle timeout and TTL remain #12.
+
+Commands and argv are written to the audit log, so pass secrets in `env`, not in `argv` or `cmd`. Under the `strict` profile exec runs only as `dev` or `1000`. Other profiles may run as `root`, and the audit marks those runs `privileged: true`. The `X-Minibox-Client` header does not change the audit source: REST calls are recorded as `rest` and MCP calls as `mcp`.
+
+The box needs `/bin/sh`, `cat` and `rm`: the exec wrapper and the process-tree stop run them inside the box.
 
 File read and write, including archive access and a helper container for a stopped box, are not in this server. They follow Volume (#24).

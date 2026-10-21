@@ -15,6 +15,10 @@
 - 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
 
 ### 安全
+- 错误的 `Authorization: Bearer` 密钥计入登录限流：`/api/`、`/mcp` 与终端 WebSocket 和登录共用同一计数，超限后返回 `429`。正确的密钥不计入，也不会被拒绝。此前 Bearer 密钥的错误不受限制。
+- `/mcp` 仍使用主访问密钥认证（范围令牌 #13 未完成）。持有该密钥的 MCP 客户端拥有完全的所有者权限，包括以 `root` 执行 `exec`（非「严格」档位）、`delete_box` 与 `rebuild_box`。README、README-zh 与 `docs/agents.md` 已用警示块写明。
+- exec 的进程树改为在箱内以 exec 的用户终止：读取包装 shell 记录的 pid，冻结并结束整棵进程树。宿主机不再对 Docker 报告的宿主机 pid 发送 `SIGKILL`。原先的做法在 uid 不同时会失败并被吞掉，pid 复用时还可能误杀无关进程。
+- 审计来源由服务端决定：`X-Minibox-Client` 请求头不再把 CLI 调用记为 `cli`，REST 与 CLI 的调用都记为 `rest`，MCP 调用记为 `mcp`。
 - 登录 Cookie 不再保存原始 `ACCESS_KEY`。登录后签发随机的 32 字节会话令牌（来自 CSPRNG），Cookie 只保存该令牌。服务端只在 `DATA_DIR/sessions.json` 中保存其 SHA-256 哈希，令牌与访问密钥都不写入日志（#2）。
 - 会话可撤销：登出会立即在服务端作废会话。修改 `ACCESS_KEY` 后，下次启动时全部会话失效；文件中只保存用于检测变更的 scrypt 校验值。`Authorization: Bearer <ACCESS_KEY>` 不受影响（#2）。
 - 终端 WebSocket 与所有 Cookie 校验都接受会话令牌。会话结束（撤销、登出或到期）后，已打开的终端以 WebSocket 关闭码 1008 关闭，已打开的事件流（`/api/events/stream`）随之结束；到期由定期清理发现，最迟约 10 秒（#2）。
@@ -37,7 +41,7 @@
 
 ### 新增
 - 异步任务（#16）：模板构建与快照创建返回 `202` 和 `taskId`，进度经现有事件总线的 `task` 主题以 SSE（`GET /api/tasks/:id/events`）推送，不再把长请求挂在 `idleTimeout` 为 60 秒的连接上。任务状态和最近 64 KB 输出保存在 `DATA_DIR/tasks.db`；进程重启后，未完成的任务记为 `interrupted`。同一时间只能构建一个模板，每个 Box 同时只能提交一个快照。控制台顶栏有任务抽屉（中英文），可看实时日志并取消。Bun 的空闲计时从请求开始计算且不会被心跳延长，`server.timeout(req, 0)` 才会关掉它（见 `tests/idle-timeout.test.ts`）。
-- 命令执行、MCP 与 CLI（Refs #9）。`POST /api/boxes/:id/exec` 在 Box 里运行命令：`argv` 直接执行，`cmd` 经 `/bin/sh -c`，默认用户 `dev`、目录 `/workspace`，可选 `cwd`、`env`（审计只记变量名）、`stdin`、`timeoutSec` 与 `user`。退出码来自 `exec.inspect`。超时会杀掉进程树，响应仍是成功，并带 `timedOut: true`（没有退出码时用 137）。已停止的 Box 会先被启动；空闲超时与 TTL 仍是 #12。`background: true` 立即返回 `execId`，`GET /api/execs/:execId?waitMs=` 长轮询（最长 25000 毫秒），`POST /api/execs/:execId/kill` 结束进程树。内联输出保留每个流头尾各约 16 KiB；更长的内容给出 `outputRef`，`GET /api/execs/:execId/output` 读取保存的头尾窗口（各 64 KiB，`DATA_DIR/exec`）。`exec.start`、`exec.finish`、`exec.killed` 记在事件总线上，属于活动档且不合并，并用 `parentId` 挂到对应的 `exec.run`。`POST /mcp` 是带 Bearer 的 Streamable HTTP MCP（不接受浏览器 Cookie；`GET` 不提供 SSE）。`?toolsets=` 选择工具集，默认 `core,meta`。设计目录是 27 个工具、默认 15 个；当前实现是 7 个 Box 工具加上 `exec`、`exec_get`、`exec_kill`（共 10 个）。`bun run build:cli` 用 `bun build --compile` 生成 `dist/minibox`，至少提供 `minibox box ls` 与 `minibox exec`。错误体包含 `retryable`，需要时还有 `hint`。`exec` 可以读写该 Box 上挂载的每一个卷。文件 API（归档、对已停止 Box 的辅助容器读写）不在这次交付中，留到 Volume（#24）之后。
+- 命令执行、MCP 与 CLI（Refs #9）。`POST /api/boxes/:id/exec` 在 Box 里运行命令：`argv` 直接执行，`cmd` 经 `/bin/sh -c`，默认用户 `dev`、目录 `/workspace`，可选 `cwd`、`env`（审计只记变量名）、`stdin`、`timeoutSec` 与 `user`。退出码来自 `exec.inspect`。超时会在箱内杀掉进程树，响应仍是成功，并带 `timedOut: true`（没有退出码时用 137）。终止失败时返回 `502`，exec 保持 `running`，可以用 `POST /api/execs/:execId/kill` 重试。前台 `timeoutSec` 最多 55 秒，更长的命令用 `background: true`（最多 3600 秒）；后台 exec 每个 Box 最多 8 个、全局 64 个，超限返回 `429`，且不唤醒 Box。「严格」档位只允许 `dev` 或 `1000` 作为用户，其他档位的 `root` 运行在审计中标记为 `privileged`。已停止的 Box 会先被启动，这会把期望状态改为运行，因此版本号加 1；空闲超时与 TTL 仍是 #12。结束后的 `durationMs` 不再增长。`background: true` 立即返回 `execId`，`GET /api/execs/:execId?waitMs=` 长轮询（最长 25000 毫秒），`POST /api/execs/:execId/kill` 结束进程树。内联输出保留每个流头尾各约 16 KiB；更长的内容给出 `outputRef`，`GET /api/execs/:execId/output` 读取保存的头尾窗口（各 64 KiB，`DATA_DIR/exec`）。`exec.start`、`exec.finish`、`exec.killed` 记在事件总线上，属于活动档且不合并，并用 `parentId` 挂到对应的 `exec.run`。`POST /mcp` 是带 Bearer 的 Streamable HTTP MCP（不接受浏览器 Cookie；`GET` 不提供 SSE）。`?toolsets=` 选择工具集，默认 `core,meta`。设计目录是 27 个工具、默认 15 个；当前实现是 6 个 Box 工具加上 `exec`、`exec_get`、`exec_kill`，默认工具集共 9 个。`rebuild_box` 不在默认工具集中，放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`），共 10 个。`bun run build:cli` 用 `bun build --compile` 生成 `dist/minibox`，至少提供 `minibox box ls` 与 `minibox exec`。错误体包含 `retryable`，需要时还有 `hint`。`exec` 可以读写该 Box 上挂载的每一个卷。文件 API（归档、对已停止 Box 的辅助容器读写）不在这次交付中，留到 Volume（#24）之后。
 - Box 规格写入 `DATA_DIR/boxes/<id>.json`（权限 600）。稳定 ID 形如 `bx_…`，与容器 ID 分开，名称全局唯一。已有 Box 在列出或读取时自动认领：不改容器名，也不改容器标签（D6，认领后的属主修正留给 #24）。`DATA_DIR` 丢失时从标签和 `inspect` 降级恢复；空闲超时、TTL、标签、工具、环境变量回到默认值，并在 `recovery.needsReset` 中标明需要重新设置。原地更新（CPU、内存、进程数、标签、空闲超时、TTL、重命名）走 `docker update` / `docker rename` 与规格文件，容器标签保持创建时的内容。请求须带 `If-Match: <revision>`；缺少该头返回 428，版本不一致返回 412。新建 Box 的重启策略为 `no`，启动时的协调器按期望状态 `running` 或 `stopped` 启动或停止，并把引擎上的重启策略改回 `no`（D8）。漂移比较 `inspect` 与规格，不自动改回资源或挂载。规格保留最近 20 个版本（Refs #23）。
 - `POST /api/boxes/:id/rebuild`：未带 `confirm: true` 时返回 `409 confirmation_required`，`preview` 包含可写层的 `docker diff` 和计划变更。确认后创建新容器（不启动）并校验镜像与配置，停旧容器并改名为 `-old`，把新容器改成正式名称后启动；成功则删除旧容器，失败则恢复旧容器并把规格回滚到上一版。认领仍不改名；重建会把容器名改为 `<前缀>-<id>`（D6）。保留挂载卷、稳定 ID、名称和最近 20 个规格版本；丢失未写入卷的可写层、运行中的进程（含 tmux）和容器 IP。`PATCH /api/boxes/:id` 若带上与当前不同的模板、挂载、环境变量、网络或安全档位，返回同一预览，且不应用同一请求里的原地字段。`secretRef` 只存储、不注入。第一阶段仍只在创建时准备一个工作区卷；显式增删挂载才会重建，不引入卷池（#24）。重建前检查点不在这一步（#11）（Refs #23）。
 - 事件与审计（#25）：每次操作执行后（目前经 REST，MCP 与 CLI 随 #9 接入），在 `DATA_DIR/events.db`（SQLite，WAL 模式）中记录一条事件，写入前脱敏（访问密钥、常见凭据格式，环境变量只记名称）。新增 `GET /api/events`（过滤与游标分页）与 `GET /api/events/stream`（SSE，支持 `Last-Event-ID` 续传），两者都经过现有的鉴权与同源检查。保留策略可配置并每小时清理：`EVENT_RETENTION_AUDIT_DAYS`（默认 365）、`EVENT_RETENTION_ACTIVITY_DAYS`（默认 30）、`EVENT_OUTPUT_RETENTION_DAYS`（默认 7）与 `EVENT_OUTPUT_MAX_MB`（默认 512）。`events.db` 需要可写的 `DATA_DIR`，否则启动失败。新增进程内事件总线，供后续的任务与状态采样复用。目前只有所有者可以读取事件，范围令牌（#13）未完成前不做细分；命令输出的保留策略已就位，待 exec（#9）写入。
@@ -89,7 +93,7 @@
 - 所有 GitHub Actions 引用固定到完整 commit SHA，并以注释保留版本号，升级由 Dependabot 提出。
 - 发布工作流的镜像构建与 GitHub Release 步骤显式依赖 CI 检查（`checks`），检查不通过时不会推送镜像，也不会创建 Release。
 - 新增 `FakeRuntime` 与基于它的单元测试，覆盖 Box 创建 / 删除、快照与模板提升、路由校验与错误映射、终端升级和主机指标。新增架构测试：只有 `src/docker/` 可以引入 Docker SDK，只有 `src/docker/` 与组合根可以引用 Docker 适配器。
-- 新增可选的真实引擎集成测试 `tests/docker-runtime.test.ts`，设置 `MINIBOX_TEST_DOCKER=1` 时运行。
+- 新增可选的真实引擎集成测试 `tests/docker-runtime.test.ts`，设置 `MINIBOX_TEST_DOCKER=1` 时运行。它覆盖以另一个 uid 运行的 exec 的终止，以及标记文件的清理。删除了宿主机侧的进程探测 `src/docker/proc.ts` 与 `tests/proc.test.ts`。
 - 新增 `bun run openapi`（`scripts/export-openapi.ts`），`scripts/` 纳入 TypeScript 类型检查（#22）。
 - 新增 HTTP 等价性测试 `tests/parity.test.ts`：以重构前录制的 `tests/fixtures/parity-transcript.json` 为基线，逐条比对 97 次请求的状态码、内容类型与响应体（时间、ID 与镜像摘要已规范化）（#22）。
 - 新增 OpenAPI 测试：校验生成的文档与 `docs/openapi.json`；检查路径、方法与 operationId 和注册表一致；要求录制的每个响应都符合对应操作的输出结构或错误结构（#22）。
@@ -108,6 +112,7 @@
 - `listBoxes` 不再每次对每个容器请求引擎：容器的 `inspect` 结果在适配器内缓存，只在状态变化、超过 30 秒或经由 MiniBox 修改该容器后重新读取。列出时只跳过已消失的容器，其它引擎错误原样返回，不再被静默忽略（#19）。见 `docs/runtime.md` 的已知限制。
 
 ### 文档
+- README、README-zh 与 `docs/agents.md` 说明 exec 的 55 秒前台上限、后台上限与 `status` 字段、`rebuild` 工具集、「严格」档位的用户规则、`/mcp` 使用主访问密钥的警示，以及 `AGENTS.md` 片段（建议通过 `env` 传递密钥）。`docs/design.md` 更新 §4.2 至 §4.3 与 §9.2、§14，并新增决策 44 至 48。
 - README、README-zh 与 `.env.example` 说明会话行为、`SESSION_TTL_DAYS` 与 `SESSION_IDLE_DAYS`、数据目录中的 `sessions.json` 以及新接口。`docs/design.md` §9.3 改为已实现（#2）。
 - README 与 README-zh 说明数据目录、访问密钥的位置与优先级、Docker 数据卷的用法，以及 `.env.example` 中的 `DATA_DIR` 配置项。
 - `docs/design.md` 记录两项决策：「标准」档位不开启 `no-new-privileges`、保留 `sudo`；「严格」档位开启它，`sudo` 无法提权。出站策略与磁盘配额暂缓（#5）。
@@ -127,6 +132,7 @@
 - 首次启动会创建 `./data/`（已在 git 中忽略），其中只有空的子目录。
 - 现有客户端无需修改：接口路径、请求参数、响应体与错误码均未变化。`X-Minibox-Run` 为可选请求头（#22）。
 - 若现有访问密钥短于 20 位或强度不足，升级后启动日志会出现 `auth.weak_key` 警告。服务不受影响；建议换成至少 20 位的随机字符（例如 `openssl rand -hex 32`）并重启。
+- 使用 `Authorization: Bearer` 的脚本：错误的密钥现在计入登录限流，超限后返回 `429`。正确的密钥不受影响（见「安全」）。
 - 已构建的 `minibox-template:base` 仍是旧的 root 版本。在控制台「模板 → 构建基础模板」或运行 `bun run build:template` 重新构建后，新建 Box 才以 `dev` 运行。已有 Box 保持原样，不会改名或重建。
 - 新 Box 复用旧 Box 保留下来的工作区卷时，卷内 `/workspace` 仍属于 root，`dev` 无法写入。在该 Box 运行时执行一次 `docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace` 即可修复。MiniBox 暂不自动执行，详见 README「基础模板」。
 

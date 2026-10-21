@@ -211,17 +211,20 @@ flowchart LR
 
 `delete_box` 单独成工具，便于单独授权。
 
-已实现的是 box 的 7 个工具加上 `exec`、`exec_get`、`exec_kill`，共 10 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 10 个，而不是表里的 15 个。`session`、`network`、`storage`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具不在本阶段。
+已实现的是 box 的 6 个工具加上 `exec`、`exec_get`、`exec_kill`，共 9 个，属于默认工具集。`rebuild_box` 不在上表的 27 个工具里，它需要显式确认，不属于 `core`（决策 45），因此单独放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`），实现的工具共 10 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 9 个，而不是表里的 15 个。`session`、`network`、`storage`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具不在本阶段。
 
 ### 4.3 执行模型
 
-- **`exec` 是一次性命令**：`{cmd | argv, cwd?, env?, timeoutSec?, stdin?, user?}`，返回 `{exitCode, stdout, stderr, truncated, durationMs}`。通过 `exec.inspect()` 取真实退出码；超时后终止整个进程树。
+- **`exec` 是一次性命令**：`{cmd | argv, cwd?, env?, timeoutSec?, stdin?, user?, background?}`，返回 `{execId, background, woke, status, exitCode, stdout, stderr, truncated, durationMs, outputRef, timedOut}`，其中 `status` 为 `running`、`exited` 或 `killed`。通过 `exec.inspect()` 取真实退出码；超时或 `exec_kill` 后在箱内终止整个进程树（见下）。
 - **输出上限**：接口内联每个流的头尾各约 16 KiB（合计约 32 KB）。超出部分用 `outputRef` 表示，`GET /api/execs/{execId}/output` 返回保存的窗口（每个流头尾各 64 KiB）。
 - **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, waitMs)` 长轮询（最长 25000 毫秒，不依赖客户端是否支持流式输出）；`exec_kill` 终止进程树。
-- **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。空闲超时与 TTL 仍是 #12，这里只做这一次启动。
+- **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。空闲超时与 TTL 仍是 #12，这里只做这一次启动。
 - **默认用户**：非 root 用户 `dev`。工作目录默认 `/workspace`。
-- **前台时限**：前台调用应在约 60 秒内结束，这是服务器的 idle 超时。更长的命令用 `background`。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
+- **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
+- **并发上限**：后台 exec 每个 Box 最多 8 个，全部 MiniBox 最多 64 个。超限的调用返回 `429`，且不会唤醒已停止的 Box（决策 47）。前台调用不计入。
+- **终止在箱内完成**（决策 44）：exec 的包装 shell 把自己的 pid 写进 `/tmp/.minibox-exec-<随机>.pid`，命令结束时删除该文件。终止时，以 exec 的同一用户在箱内读取该 pid，先冻结整棵进程树，再自下而上发送 SIGKILL；有进程存活时恢复其余进程、保留文件，并返回 `502`，exec 保持 `running`，可以重试。宿主机从不向 Docker 报告的宿主机 pid 发送信号：它可能属于另一个用户，或在命令结束后被其他进程复用。以 exec 用户无权发信号的进程（例如已改为其他 uid 的进程），以及已脱离进程树、被挂到 init 下的后代，不在保证范围内。Box 需要 `/bin/sh`、`cat` 与 `rm`。
 - **权限**：`exec` 意味着可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。把卷挂到 Box 上需要 `volume:attach`（#13，当前尚未强制执行）。
+- **执行用户**：「严格」档位的 exec 只允许 `dev` 或 `1000`，其他用户在唤醒 Box 之前返回 `403`。其他档位可以用 `root`，审计记录标记 `privileged: true`（决策 48）。
 - **会话** `session_*` 用于长任务和需要观察的交互式程序，见 [10](#10-会话与接管)。
 
 ### 4.4 文件接口
@@ -526,6 +529,8 @@ Event
 
 `run` 是将来「任务」层的挂载点，无需改事件模型。
 
+`source` 由服务端决定：REST 与 CLI 的调用都记为 `rest`，MCP 记为 `mcp`。客户端请求头 `X-Minibox-Client` 只是声明，不改变来源（决策 48）。`cli` 仍在枚举中，但只有在能验证 CLI 身份时才会使用。
+
 ### 8.3 分档与保留
 
 | 档位 | 内容 | 默认保留 |
@@ -631,6 +636,7 @@ Token
 
 - **`exec` 隐含该 Box 所有挂载卷的读写能力**，所以细分的 `files:*` 权限只对没有 `exec` 的令牌有意义。
 - **挂载某卷等于获得该卷的读权限**：创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权，否则 Agent 可以新建 Box 把别人的卷挂进去读走。
+- **`/mcp` 目前认证使用主访问密钥**：在令牌（#13）实现之前，持有密钥的 MCP 客户端拥有全部所有者权限，包括以 root 执行 `exec`（非「严格」档）、`delete_box` 与 `rebuild_box`。README 与 `docs/agents.md` 必须写明这一点。错误的 Bearer 密钥与错误的登录密钥共享同一限流（`/api/`、`/mcp` 与终端）（决策 48）。
 
 ### 9.3 浏览器会话
 
@@ -885,6 +891,10 @@ MiniBox 的前提是**一个可信用户在自己的机器上使用**。Docker S
 | `restart.sh` 的 `chmod 666 docker.sock` | 改为把用户加入 `docker` 组 |
 | 镜像以 root 运行 | 挂载 Socket 的代价；文档给出 socket proxy 或 rootless 方案 |
 | 自动生成密钥会覆盖整个 `.env` | 自动生成的密钥写入 `DATA_DIR/access_key`（权限 600），**MiniBox 不再写 `.env`**；读取优先级为进程环境变量 > `.env` > `DATA_DIR/access_key`；已有部署里写在 `.env` 的密钥照常生效 |
+| `/mcp` 只认主访问密钥，错误的 Bearer 密钥不计入限流，`rebuild_box` 在默认工具集中 | 错误的 Bearer 密钥计入登录限流（决策 48）；`/mcp` 仍用主密钥，直到令牌（#13）实现，文档写明其权限范围；`rebuild_box` 移入非默认的 `rebuild` 工具集（决策 45） |
+| exec 终止时用宿主机 `SIGKILL` 发给 Docker 报告的宿主机 pid，可能误杀无关进程（pid 复用），或因 uid 不同而失败却被吞掉 | 终止在箱内以 exec 用户完成，失败返回 `502` 并保持 `running`（决策 44） |
+| 后台 exec 没有上限；结束后的 `durationMs` 仍随时间增长；`x-minibox-client` 头可以伪造审计来源 | 后台 exec 每箱 8 个、全局 64 个，超限返回 `429` 且不唤醒 Box（决策 47）；结束时冻结 `durationMs`；审计来源由服务端决定（决策 48） |
+| 「严格」档位下 exec 可以用 `root` 运行 | 「严格」档位只允许 `dev` 或 `1000`，其他用户返回 `403`；其他档位的 `root` 运行在审计中标记为 `privileged`（决策 48） |
 
 ### 升级注意事项：隧道无需改动，改写 Host 的反向代理需要 ALLOWED_ORIGINS
 
@@ -1049,6 +1059,11 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | 41 | Box 加固（#5） | 新增「宽松」档（引擎默认能力集，不做 `CapDrop`，有 `sudo`）；「严格」档的 `sudo` 行为见第 37 条。出站策略与磁盘配额暂缓，不随 #5 交付。已有 Box 保留创建时的网络与配置，早于此功能创建的 Box 仍在默认 `bridge` 网络上，不强制重建 |
 | 42 | 认领不改名（D6） | 认领已有容器时不 `docker rename`，容器名保持创建时的 `minibox-<名称>`。改成 `minibox-<id>` 在重建时做。工作区属主修正（`chown`）留给 #24，认领不自动执行 |
 | 43 | 重启策略 `no`（D8） | 规格中的重启策略恒为 `no`，由协调器按期望状态 `running` 或 `stopped` 启动或停止，不让引擎自行重启。漂移比较 `inspect` 与规格，不比较标签哈希；资源、挂载、网络和镜像的漂移只报告，不在这一步自动改回。规格保留最近 20 个版本，原地更新和重建都会写入；失败的重建回滚到上一版 |
+| 44 | exec 进程树的终止位置 | 终止在箱内、以 exec 的用户完成，宿主机不对 Docker 报告的宿主机 pid 发信号。该 pid 属于宿主机命名空间，可能属于另一个 uid，或在复用后属于无关进程。失败时 exec 保持 `running`，调用返回 `502`，可以重试。（原先的宿主机 `SIGKILL` 在 uid 不同时失败，且失败被吞掉。） |
+| 45 | `rebuild_box` 工具集 | `rebuild_box` 不在 27 个工具的 `core` 中，也不进入默认工具集。它放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`），仍需 `confirm: true`。默认工具集因此是 9 个工具，而不是 10 个 |
+| 46 | exec 唤醒与 revision | 保留 `revision` 加 1。唤醒把期望状态改为 `running`，期望状态属于规格（§5.1、§5.2、§5.7、§5.9），每次修改都加 1。若唤醒不改 `revision`，期望状态的变化就不在 `If-Match` 的保护之内。客户端唤醒后要重新读取 `revision`，文档与 MCP 说明都写明这一点 |
+| 47 | exec 资源上限 | 前台 `timeoutSec` 最多 55 秒（服务器空闲超时是 60 秒）；后台最多 3600 秒；后台 exec 每箱 8 个、全局 64 个。超限返回 `429`，并在唤醒 Box 之前拒绝 |
+| 48 | MCP 认证与审计 | `/mcp` 暂用主访问密钥，文档写明它拥有完全的所有者权限，直到令牌（#13）实现。错误的 Bearer 密钥计入登录限流。审计来源只由服务端决定：REST 与 CLI 记为 `rest`，MCP 记为 `mcp`。「严格」档位的 exec 只允许 `dev` 或 `1000`；其他档位允许 `root`，审计标记 `privileged` |
 
 ---
 
