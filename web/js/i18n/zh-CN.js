@@ -151,7 +151,7 @@ export default {
   "err.checkpoint_path_not_mounted": "本 Box 当前没有卷挂载在 {path}，无法回滚到该路径。",
   "err.checkpoint_pinned": "检查点 {id} 已置顶。请先取消置顶再删除。",
   "err.checkpoint_rollback_confirm":
-    "回滚会把检查点路径上的卷替换为检查点数据的副本。当前的卷会保留，直到你确认或撤销。请发送 confirm: true 以继续。",
+    "回滚会把检查点路径上的卷替换为检查点数据的副本。当前的卷会保留，不再需要时请自行删除。请发送 confirm: true 以继续。",
   "err.checkpoint_out_of_scope": "当前凭据不能使用该检查点。",
   "err.box_network_conflict":
     "网络「{network}」已存在，但不是关闭了容器间通信的 bridge 网络。请在没有 Box 使用它时删除该网络，然后重试。",

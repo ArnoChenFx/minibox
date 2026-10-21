@@ -169,7 +169,7 @@ export default {
     "No volume of this box is mounted at {path} now, so the checkpoint cannot be restored there.",
   "err.checkpoint_pinned": "Checkpoint {id} is pinned. Unpin it before deleting it.",
   "err.checkpoint_rollback_confirm":
-    "Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept until you confirm or undo. Send confirm: true to continue.",
+    "Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept; delete them yourself once you no longer need them. Send confirm: true to continue.",
   "err.checkpoint_out_of_scope": "This credential cannot use that checkpoint.",
   "err.box_network_conflict":
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",

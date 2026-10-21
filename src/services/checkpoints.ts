@@ -97,7 +97,7 @@ export interface RollbackPreview {
 
 export interface RollbackResult {
   box: Box;
-  /** The volumes the rollback replaced. They stay until the user confirms their removal or undoes the rollback. */
+  /** The volumes the rollback replaced. They are kept, unmounted and still owned by the box, until someone deletes them. */
   replaced: { id: string; name: string }[];
 }
 

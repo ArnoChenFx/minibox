@@ -1613,7 +1613,7 @@
     "path": "/api/boxes/<id>/rollback",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept until you confirm or undo. Send confirm: true to continue.\",\"retryable\":false,\"key\":\"checkpoint_rollback_confirm\",\"details\":{\"preview\":{\"checkpoint\":{\"id\":\"ck_<checkpoint>\",\"label\":\"before refactor\",\"createdAt\":\"<time>\"},\"restores\":[{\"path\":\"/workspace\",\"role\":\"workspace\",\"volume\":\"ckbox-workspace\"},{\"path\":\"/home/dev\",\"role\":\"home\",\"volume\":\"ckbox-home\"}],\"keeps\":[\"id\",\"name\",\"history\",\"shared volumes\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"diff\":[],\"revision\":{\"current\":1,\"next\":2}}}}}"
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept; delete them yourself once you no longer need them. Send confirm: true to continue.\",\"retryable\":false,\"key\":\"checkpoint_rollback_confirm\",\"details\":{\"preview\":{\"checkpoint\":{\"id\":\"ck_<checkpoint>\",\"label\":\"before refactor\",\"createdAt\":\"<time>\"},\"restores\":[{\"path\":\"/workspace\",\"role\":\"workspace\",\"volume\":\"ckbox-workspace\"},{\"path\":\"/home/dev\",\"role\":\"home\",\"volume\":\"ckbox-home\"}],\"keeps\":[\"id\",\"name\",\"history\",\"shared volumes\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"diff\":[],\"revision\":{\"current\":1,\"next\":2}}}}}"
   },
   {
     "step": "roll back with confirm",
