@@ -27,9 +27,26 @@ const RUNNING = {
   Id: "ok",
   Name: "/alpha",
   Created: "2026-10-20T10:00:00Z",
+  Image: "sha256:9f1c0a",
   Config: { Image: "minibox-template:base", Labels: { minibox: "true", "minibox.name": "alpha" } },
   State: { Status: "running", Running: true, StartedAt: "2026-10-20T10:01:00Z" },
-  HostConfig: { NanoCpus: 1_500_000_000, Memory: 512 * 1024 * 1024, NetworkMode: "minibox-boxes" },
+  HostConfig: {
+    NanoCpus: 1_500_000_000,
+    Memory: 512 * 1024 * 1024,
+    NetworkMode: "minibox-boxes",
+    PidsLimit: 256,
+    RestartPolicy: { Name: "unless-stopped" },
+  },
+  Mounts: [
+    {
+      Type: "volume",
+      Name: "mbx-alpha-workspace",
+      Source: "/var/lib/docker/volumes/mbx-alpha-workspace/_data",
+      Destination: "/workspace",
+      RW: true,
+      Mode: "z",
+    },
+  ],
 };
 
 const NEVER_STARTED = {
@@ -116,11 +133,12 @@ describe("Docker adapter against a fake engine socket", () => {
     });
   });
 
-  test("inspect maps limits and reports a container that never started without a start time", async () => {
+  test("inspect maps limits, mounts and restart policy, and a container that never started has no start time", async () => {
     expect(await runtime().inspectContainer("ok")).toEqual({
       id: "ok",
       name: "alpha",
       image: "minibox-template:base",
+      imageId: "sha256:9f1c0a",
       labels: { minibox: "true", "minibox.name": "alpha" },
       created: "2026-10-20T10:00:00Z",
       state: "running",
@@ -128,6 +146,9 @@ describe("Docker adapter against a fake engine socket", () => {
       startedAt: "2026-10-20T10:01:00Z",
       cpus: 1.5,
       memoryBytes: 512 * 1024 * 1024,
+      pidsLimit: 256,
+      restart: "unless-stopped",
+      mounts: [{ source: "mbx-alpha-workspace", target: "/workspace", mode: "rw" }],
       network: "minibox-boxes",
     });
     expect(await runtime().inspectContainer("fresh")).toMatchObject({
@@ -136,6 +157,9 @@ describe("Docker adapter against a fake engine socket", () => {
       startedAt: null,
       cpus: null,
       memoryBytes: null,
+      pidsLimit: null,
+      restart: "no",
+      mounts: [],
       network: "bridge",
     });
   });
