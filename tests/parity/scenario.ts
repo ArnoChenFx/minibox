@@ -472,6 +472,13 @@ async function recordScenario(): Promise<Exchange[]> {
     });
     await waitTask(base, unknown.json);
     runtime.helperHandler = priorHelper;
+
+    await send("list ports of the tools box", "GET", `/api/boxes/${toolsBox}/ports`);
+    await post("expose a preview port", `/api/boxes/${toolsBox}/ports`, { port: 5173 });
+    await post("expose an invalid preview port", `/api/boxes/${toolsBox}/ports`, { port: 0 });
+    await send("list ports after expose", "GET", `/api/boxes/${toolsBox}/ports`);
+    await send("unexpose the preview port", "DELETE", `/api/boxes/${toolsBox}/ports/5173`);
+    await send("unexpose a missing preview port", "DELETE", `/api/boxes/${toolsBox}/ports/5173`);
     await send("delete the tools box", "DELETE", `/api/boxes/${toolsBox}`);
 
     const term = boxId(

@@ -28,6 +28,11 @@ export interface ContainerInfo {
   mounts: ContainerMount[];
   /** Name of the network the container is attached to. The engine's default bridge is `bridge`. */
   network: string;
+  /**
+   * IPv4 address on `network`, or null when the container is not running or has no endpoint.
+   * Used by the path-mode preview proxy; never published as a host port.
+   */
+  ipAddress: string | null;
 }
 
 export interface ContainerStats {

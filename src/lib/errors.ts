@@ -18,6 +18,7 @@ export type ErrorCode =
   | "insufficient_capacity"
   | "docker_unavailable"
   | "docker_error"
+  | "bad_gateway"
   | "internal";
 
 export interface ErrorExtra {

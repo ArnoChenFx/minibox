@@ -284,10 +284,22 @@ Box 可以在空闲时自行停止，并在下一次终端 / exec / 会话请求
 
 - **休眠**把期望状态改为 `stopped`（原因 `idle`）并执行 `docker stop`，**不删除容器**（工作区卷保留）。
 - **空闲**条件：没有打开的 WebSocket 终端、没有后台 exec、没有针对该 Box 的运行中异步任务、活动心跳超过 N 秒无更新，且 CPU 低于 `BOX_IDLE_CPU_PERCENT`。
-- 活动心跳只存在内存中（不用事件表）。终端、exec、会话请求会刷新心跳。
+- 活动心跳只存在内存中（不用事件表）。终端、exec、会话与端口预览请求会刷新心跳。
 - **TTL**（创建/更新时的 `ttlSec`）从创建时刻起算；到期后 MiniBox **停止**该 Box（不删除），原因记为 `ttl`。
 - 控制台在因空闲或 TTL 停止时显示「休眠中」，并展示最近活动时间。
 
+## 端口预览
+
+已登录用户可以通过 MiniBox 打开 Box 内监听的服务，**不会在宿主机发布端口**：
+
+- 路径模式（本版本）：`https://<minibox>/box/<名称或 id>/<端口>/…`
+- 代理把 HTTP 与 WebSocket（如 Vite HMR）转到 Box 网络里的容器 IP。
+- 响应带 CSP `sandbox`（不含 `allow-same-origin`），预览页无法读取控制台会话 Cookie。建议在新标签打开预览。
+- Box 详情 → **端口** 标签会列出监听中的端口（读取箱内 `/proc/net/tcp`），也可手动添加。API：`GET/POST /api/boxes/:id/ports`，`DELETE /api/boxes/:id/ports/:port`。MCP 工具集 `network`（`list_ports`、`expose_port`）。
+- 分享链接（签名 URL）与子域名模式（`<端口>-<名称>.<BASE_DOMAIN>`）本版本不做。
+- MiniBox 必须能访问容器 IP（宿主机进程经 Docker 网桥即可）。若 MiniBox 自己跑在关闭了 ICC 的 `minibox-boxes` 网络里，预览会不通，需后续网络方案。
+
+框架提示：不少打包工具默认公共路径是 `/`。路径模式下请把应用 base 设为 `/box/<名称>/<端口>/`（如 Vite `base`、Next `assetPrefix`），或等待子域名模式。
 
 ## 配置
 
@@ -796,7 +808,8 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 ### M3 · 核心价值
 
 - [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) 基于 restic 的检查点：派生、回滚与保留策略
-- [ ] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Box 内 dev server 的端口预览
+
+- [x] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Box 内 dev server 的端口预览
 - [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) 创建时或运行中可选装 Agent CLI
 
 ### M4 · 多宿主机与优化
