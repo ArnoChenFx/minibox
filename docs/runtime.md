@@ -83,9 +83,10 @@
 
 - **缓存**：订阅容器事件（`events`，标签 `<前缀>=true`，类型 `container`），并带上 `since`，使订阅与随后的列表之间发生的变化不会丢失。每次连接都先订阅，再调用 `listContainers` 建立初始状态。`start`、`die`、`stop`、`update`、`rename` 等状态变化事件让对应容器重新 `inspectContainer`，`destroy` 将其移出缓存。没有规格的容器在此时认领，与列表的行为一致。
 - **串行**：所有引擎读取与缓存更新都在同一个队列中，按到达的顺序执行。`inspect` 因此不会覆盖排在它之后的事件所报告的变化。服务层修改盒子后调用 `observe()` 并等待其完成，响应返回时缓存已经反映该修改。
-- **采样**：每隔 `METRICS_INTERVAL_MS` 对每个运行中的盒子调用一次 `containerStats`（并发 8），结果写入该盒子长度为 `METRICS_HISTORY` 的环形缓冲。一轮结束后才安排下一轮，两轮不会重叠。引擎的统计调用量随运行中的盒子数量增长，与打开的标签页数无关。
-- **发布**：盒子视图变化时发布 `box`，每轮采样发布 `sample`，连接状态变化发布 `link`。`HostMonitor` 每个间隔发布 `host`。它们经由 `LiveSink` 进入应用的事件总线（`AppTopics`），与审计事件共用这一条总线。实时帧只在总线上流动，从不写入 `events.db`。
+- **采样**：有实时流打开时，每隔 `METRICS_INTERVAL_MS` 对每个运行中的盒子调用一次 `containerStats`；没有实时流时，间隔为 30 秒（且不短于 `METRICS_INTERVAL_MS`）。从没有实时流变为有实时流时，采样器立即采样一轮；最后一个实时流关闭后，间隔恢复为空闲间隔。统计调用并发 8，每个调用的超时为 `min(METRICS_INTERVAL_MS, 5 秒)`，经由 `containerStats(id, { signal })` 把信号交给引擎请求；超时的调用记为一次缺失的采样，不影响其它盒子。统计调用在队列之外执行，队列中只排队写入环形缓冲（长度为 `METRICS_HISTORY`）的一步。一轮结束后才安排下一轮，两轮不会重叠。调用频率只取决于是否有实时流打开，与打开的流数量无关。
+- **发布**：盒子视图变化时发布 `box`，每轮采样发布 `sample`，连接状态变化发布 `link`。`HostMonitor` 每个间隔发布 `host`。它们经由 `LiveSink` 进入应用的事件总线（`AppTopics`），与审计事件共用这一条总线。实时帧只在总线上流动，从不写入 `events.db`。`box` 帧中的环境变量只含名称（`liveBox`），REST 接口仍返回值。`sample` 与 `host` 帧带有主机 id 作为键：实时流的待发队列里，同一键只保留最新一帧（`src/events/frames.ts`）。
 - **断线**：事件流结束或出错时状态变为 `down`，之后按 1 秒、2 秒、4 秒……的间隔重连，最长 30 秒。重新订阅并完成列表后，计数清零。
+- **重新列出**：链路处于就绪状态时，每 60 秒（`relistMs`）重新列出一次容器，替换缓存并发布其中的变化。事件流静默停止（没有错误，也不结束）时，缓存因此最多滞后约 60 秒。重新列出不改变链路状态，链路断开时也不运行。
 
 `ready()` 为真，表示缓存是最新的（已订阅且已列出）。此时 `src/services/boxes.ts` 中的读取不调用引擎：`listBoxes` 与 `readBox` 读取缓存，`statsOf` 返回最近一次采样，`getStatsWithHistory` 返回环形缓冲。缓存未就绪时，读取退回引擎；统计只读取运行中的盒子。日志读取不经过缓存，但同一盒子与 tail 的引擎读取在 2 秒窗口内共享。
 
@@ -110,8 +111,8 @@
 - exec 终止脚本的宿主机测试：`tests/kill-tree.test.ts` 在宿主机的 `/proc` 上直接运行终止脚本（仅 Linux），覆盖包装 shell 与子进程、只由标记文件指出的无关进程、删除自身标记的命令、同一会话中的孤儿进程，以及退出码。
 - 真实引擎测试：运行 `bun run test:docker`（`scripts/docker-integration.ts`）。脚本检查引擎，缺少镜像时拉取 `MINIBOX_TEST_IMAGE`（默认 `alpine:3.20`），用新的 `mbit` 前缀运行 `tests/docker-runtime.test.ts`，结束后按前缀删除容器、模板与快照镜像和卷。测试失败时会再清理一次，以覆盖仍在进行中的快照提交。可选环境变量为 `DOCKER_SOCKET`（默认 `/var/run/docker.sock`）。`MINIBOX_TEST_IMAGE` 须包含 `/bin/busybox`，sudo 测试借它模拟 setuid 的 `su`；默认的 `alpine:3.20` 满足此条件，Debian 镜像不满足。
 - 直接运行测试文件：`MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbit<id> bun test tests/docker-runtime.test.ts`。`MINIBOX_TEST_PREFIX` 必须以 `mbit` 开头，清理只作用于该前缀，因此不会误删真实安装的资源。直接运行时没有脚本的兜底清理，中断后可用 `docker ps -a --filter label=<前缀>` 检查残留。未设置 `MINIBOX_TEST_DOCKER=1` 时跳过。
-- 盒子缓存与采样器：`tests/host-sampler.test.ts` 检查缓存的更新与发布、同一队列中的串行执行、断线后的退避重连与重新列出，以及环形缓冲的长度；`tests/box-cache-api.test.ts` 以计数的 fake 运行时检查列表、详情、统计与日志的引擎调用，以及主机汇总不再列出引擎。
-- 实时流与前端：`tests/event-stream.test.ts` 与 `tests/events-live.test.ts` 检查帧格式、`sync` 与 `reset`、实时帧不带 `id`、过滤条件对实时状态的限制，以及实时帧不写入事件库；`tests/web-live.test.ts` 检查前端的单一连接、断线时的轮询回退与重连退避。
+- 盒子缓存与采样器：`tests/host-sampler.test.ts` 检查缓存的更新与发布、同一队列中的串行执行、断线后的退避重连与重新列出、采样的节奏（有无实时流）、挂起的统计调用不阻塞停止、定期重新列出，以及环形缓冲的长度；`tests/box-cache-api.test.ts` 以计数的 fake 运行时检查列表、详情、统计与日志的引擎调用，以及主机汇总不再列出引擎。
+- 实时流与前端：`tests/frame-buffer.test.ts` 检查队列的字节上限与按键替换，`tests/stream-slots.test.ts` 与 `tests/stream-limit.test.ts` 检查并发上限、`429` 响应与名额释放；`tests/event-stream.test.ts` 与 `tests/events-live.test.ts` 检查帧格式、`sync` 与 `reset`、实时帧不带 `id`、过滤条件对实时状态的限制，以及实时帧不写入事件库；`tests/web-live.test.ts` 检查前端的单一连接、断线时的轮询回退与重连退避。
 - 真实引擎：`tests/docker-runtime.test.ts` 中的 `the box cache against a real engine` 检查列表不调用引擎，以及在 MiniBox 外部停止的盒子经由事件进入缓存（设置 `MINIBOX_TEST_DOCKER=1` 时运行）。
 - CI 中的 `Integration tests (real Docker engine)` 任务运行 `bun run test:docker`，不是必需检查。
 
@@ -126,3 +127,4 @@
 - 日志面板在自动刷新开启时每 4 秒请求一次 `GET /api/boxes/:id/logs`，每个打开的面板各自请求。同一盒子与 tail 的引擎读取在 2 秒内共享，因此引擎调用量有上限，但仍随打开的日志面板数量增加。日志还没有进入实时流。
 - 采样器每个间隔对每个运行中的盒子各读取一次统计。盒子很多时一轮可能超过一个间隔，采样随之变稀疏，而不是并发地堆积请求。
 - 采样器按主机各有一份，但目前只注册了 `local`。`sync`、`box`、`sample`、`link` 与 `host` 帧都带有 `hostId`，多主机的界面与接口留给 #21。
+- 事件流静默停止（没有错误，也不结束）时，采样器不会重新订阅，只靠每 60 秒的重新列出追平缓存，因此变化最多滞后约 60 秒。没有实时流时，REST 的统计读取最多滞后一个空闲间隔，即 30 秒，或更长的 `METRICS_INTERVAL_MS`。

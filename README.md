@@ -106,7 +106,7 @@ flowchart LR
 - **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`). The restart policy is `no`: a startup reconciler starts or stops the container to match the spec's desired state (`running` or `stopped`). The spec file under `DATA_DIR/boxes/` is the authority for mutable state. Container labels are written once, at create, and are not changed later. `/workspace` is mounted from a dedicated volume `minibox-ws-<name>`. The container runs as the non-root user `dev` (see [Base template](#base-template)).
 - **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
 - **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
-- **Live state** = one `HostSampler` per host. It keeps the box cache current from the engine's container events, samples each running box into a ring of `METRICS_HISTORY` points once per `METRICS_INTERVAL_MS`, and publishes box, sample, link and host frames on the event bus. `GET /api/events/stream` forwards them to the console, which polls only while the stream is down. Samples stay in memory and never reach the event log.
+- **Live state** = one `HostSampler` per host. It keeps the box cache current from the engine's container events, and lists the containers again every minute to catch a change a stalled event stream missed. It samples each running box into a ring of `METRICS_HISTORY` points once per `METRICS_INTERVAL_MS` while a stream is open, and every 30 seconds otherwise, or at `METRICS_INTERVAL_MS` if that is longer. It publishes box, sample, link and host frames on the event bus. `GET /api/events/stream` forwards them to the console, which polls only while the stream is down. Live frames carry environment variable names, never their values. At most `STREAM_MAX_CONNECTIONS` event and task streams are open at once, and the next one gets `429`. Samples stay in memory and never reach the event log.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
 
 (`minibox` is the default `LABEL_PREFIX`; all names and labels follow the prefix.)
@@ -296,8 +296,9 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `BOX_PIDS_LIMIT` | `1024` | Maximum number of processes in each new box (a positive integer) |
 | `RUNTIME` | engine default | OCI runtime for new boxes, such as `runsc` (gVisor). The runtime must already be installed in the Docker engine |
 | `STOP_TIMEOUT_SEC` | `3` | Seconds a box gets to exit after SIGTERM before it is killed, used by stop and restart. Whole number from 0 to 300 |
-| `METRICS_INTERVAL_MS` | `3000` | Interval (ms) between host metrics samples and per-box resource samples |
+| `METRICS_INTERVAL_MS` | `3000` | Interval (ms) between host metrics samples, and between per-box resource samples while a live stream is open. Without one, boxes are sampled every 30 seconds, or at this interval if it is longer |
 | `METRICS_HISTORY` | `120` | Number of samples kept per host and per box (≈ 6 minutes at the default interval) |
+| `STREAM_MAX_CONNECTIONS` | `256` | Event and task streams open at once, across all browsers and clients. The next one gets `429`, and the console retries it with a growing delay. A positive whole number |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
 | `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | Days to keep read events. Repeated reads are merged per minute |
 | `EVENT_OUTPUT_RETENTION_DAYS` | `7` | Days to keep command output in `DATA_DIR/exec`. `exec` writes a head-and-tail window there when a command finishes |

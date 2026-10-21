@@ -106,7 +106,7 @@ flowchart LR
 - **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`）。重启策略为 `no`：启动时的协调器按规格里的期望状态（`running` 或 `stopped`）启动或停止容器。`DATA_DIR/boxes/` 下的规格文件是可变状态的权威来源。容器标签只在创建时写入，之后不再修改。`/workspace` 挂载在独立数据卷 `minibox-ws-<名称>`。容器以非 root 用户 `dev` 运行（见[基础模板](#基础模板)）。
 - **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`。
 - **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。
-- **实时状态** = 每台主机一个 `HostSampler`。它根据引擎的容器事件保持盒子缓存最新，每隔 `METRICS_INTERVAL_MS` 为每个运行中的 Box 采样，并保留 `METRICS_HISTORY` 个采样点；同时把 Box、采样、链路与主机指标帧发布到事件总线。`GET /api/events/stream` 把它们转发给控制台，控制台只在事件流断开时轮询。采样只保存在内存中，从不写入事件日志。
+- **实时状态** = 每台主机一个 `HostSampler`。它根据引擎的容器事件保持盒子缓存最新，并每分钟重新列出一次容器，以补上事件流静默停止时漏掉的变化。有实时流打开时，每隔 `METRICS_INTERVAL_MS` 为每个运行中的 Box 采样，没有时每 30 秒一次（`METRICS_INTERVAL_MS` 更长时按它），并保留 `METRICS_HISTORY` 个采样点；同时把 Box、采样、链路与主机指标帧发布到事件总线。`GET /api/events/stream` 把它们转发给控制台，控制台只在事件流断开时轮询。实时帧只带环境变量的名称，不带值。同时打开的事件流与任务流不超过 `STREAM_MAX_CONNECTIONS`，超出的请求返回 `429`。采样只保存在内存中，从不写入事件日志。
 - 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 随仓库放在 [`web/vendor/`](web/vendor/README.md)，控制台不会从 CDN 加载任何代码。
 
 （`minibox` 是默认的 `LABEL_PREFIX`，所有名称和标签都随前缀变化。）
@@ -296,8 +296,9 @@ docker run -d --name minibox --restart unless-stopped \
 | `BOX_PIDS_LIMIT` | `1024` | 每个新建 Box 允许的最大进程数（正整数） |
 | `RUNTIME` | 引擎默认 | 新建 Box 使用的 OCI 运行时，例如 gVisor 的 `runsc`。该运行时必须已经安装在 Docker 引擎中 |
 | `STOP_TIMEOUT_SEC` | `3` | 停止或重启 Box 时，发送 SIGTERM 后等待退出的秒数，超时则强制结束。0 到 300 之间的整数 |
-| `METRICS_INTERVAL_MS` | `3000` | 宿主机指标与每个 Box 资源采样的间隔（毫秒） |
+| `METRICS_INTERVAL_MS` | `3000` | 宿主机指标的间隔（毫秒）；有实时流打开时，也是每个 Box 资源采样的间隔。没有实时流时，Box 每 30 秒采样一次（`METRICS_INTERVAL_MS` 更长时按它） |
 | `METRICS_HISTORY` | `120` | 每台主机与每个 Box 保留的采样点数量（默认间隔下约 6 分钟） |
+| `STREAM_MAX_CONNECTIONS` | `256` | 同时打开的事件流与任务流上限，所有浏览器与客户端共用。超出的连接返回 `429`，控制台按逐渐增长的间隔重试。须为正整数 |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | 审计事件的保留天数：写操作、删除与被拒绝的调用。见[事件](#事件) |
 | `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | 读取事件的保留天数。同一分钟内的重复读取会合并 |
 | `EVENT_OUTPUT_RETENTION_DAYS` | `7` | 命令输出（`DATA_DIR/exec`）的保留天数。命令结束时 `exec` 会在这里写入头尾窗口 |
