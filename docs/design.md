@@ -768,13 +768,17 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 - Agent CLI 装到**共享的只读工具卷**（`/opt/minibox/tools`，`PATH` 已包含其 `bin`）；多个 Box 共用，省磁盘也省安装时间。
 - 安装/升级/卸载通过控制面的**专用写入 helper**完成：把 tools 卷以读写方式挂进短生命周期容器，以 uid 1000 运行并允许出站（npm / PyPI）；Box 内仍只读挂载。检测命令同样在 helper 中执行。
+- 写入前，本地池上的 tools 卷先由 root 辅助容器（仅 `CHOWN`）整卷交给 uid 1000。Box 首次挂载空卷时，Docker 会把镜像里挂载点的属主复制进卷，模板里的 `/opt/minibox/tools` 是 root 属主，不做这一步，写入 helper 会因无权限失败。NFS 与 path 池在创建时已准备目录，不再交接。
 - 用户配置与登录态放 **home 卷**；系统级的包（`apt`）归模板。
 
 ### 11.3 工具目录
 
 声明式清单：`id`、名称、说明、安装/检测/升级/卸载命令、依赖（如 Node ≥ 20）、是否需要 root、预估体积、安装来源（npm / pip / 官方脚本）。
 
-- 内置：Claude Code、OpenAI Codex CLI、Gemini CLI、OpenCode、Aider 等。
+- 分组（`category`）：`agents` AI 编程助手、`languages` 语言与运行时、`terminal` 终端与开发工具、`networking` 网络。创建对话框与 Box 的「工具」页都按分组展示，并提供按名称、说明与分组过滤的搜索框。
+- 内置：AI 编程助手 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi；语言与运行时 Bun、uv、Rust（rustup）、Zig；终端与开发工具 herdr、luvus；网络 Tailscale（`needsRoot`）。
+- `needsRoot` 的条目只列出，安装、升级与卸载都被拒绝（`tool_needs_root`），MiniBox 从不以 root 安装。
+- 检测：镜像或家目录里已有的工具显示为已安装并带版本，但不计为受管；只有 tools 卷上的入口点才受管。升级与卸载只作用于受管工具，其它情况返回 `tool_unmanaged`。已检测到的工具不会被重复安装。
 - 清单放仓库 `catalog/*.json`，并允许在 `DATA_DIR/tools.d/` 放自定义条目。
 - 长耗时安装使用异步任务与进度流；兼容代理配置。
 - API Key：短期用环境变量输入，密钥单独存储；长期方向是宿主机侧密钥注入，避免把密钥写进 Box。
