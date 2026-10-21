@@ -1113,7 +1113,6 @@ export class FakeRuntime implements Runtime {
   }
 }
 
-
 /**
  * Resolve a volume-relative path the way Docker archive/cp does: follow intermediate directory symlinks (and the final
  * component when `followFinal` is set, as putArchive does). Escaping absolute targets switch onto `outsideFiles`.
@@ -1131,10 +1130,17 @@ function walkVolumePath(
   let current = "";
 
   for (let i = 0; i < parts.length; i++) {
-    const part = parts[i]!;
+    const part = parts[i];
+    if (part === undefined) break;
     const isFinal = i === parts.length - 1;
-    const candidate = outside ? (current === "/" ? `/${part}` : `${current}/${part}`) : current === "" ? part : `${current}/${part}`;
-    let entry = store.get(candidate);
+    const candidate = outside
+      ? current === "/"
+        ? `/${part}`
+        : `${current}/${part}`
+      : current === ""
+        ? part
+        : `${current}/${part}`;
+    const entry = store.get(candidate);
 
     if (entry?.type === "symlink" && (!isFinal || opts.followFinal)) {
       const target = entry.target ?? "";

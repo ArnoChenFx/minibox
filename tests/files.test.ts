@@ -98,7 +98,6 @@ describe("volume file API", () => {
     expect(read.content).toBe("");
   });
 
-
   test("FakeRuntime getArchive follows intermediate dir symlinks out of the volume", async () => {
     const vol = await volume();
     runtime.seedVolumeFile(vol.engineName, "escape", { type: "symlink", target: "/tmp" });
@@ -107,7 +106,9 @@ describe("volume file API", () => {
       image: host.baseTemplateTag,
       mounts: [{ source: vol.engineName, target: "/minibox-volume", mode: "ro" }],
     });
-    const tar = await new Response(await runtime.getArchive(created.id, "/minibox-volume/escape/pr79_secret")).arrayBuffer();
+    const tar = await new Response(
+      await runtime.getArchive(created.id, "/minibox-volume/escape/pr79_secret"),
+    ).arrayBuffer();
     const { firstFileData } = await import("../src/services/files-tar");
     const first = firstFileData(Buffer.from(tar));
     expect(first?.data.toString("utf8")).toBe("secret-outside");

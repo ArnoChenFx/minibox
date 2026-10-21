@@ -164,7 +164,9 @@ async function assertPathComponentsSafe(
   const last = parts.length - 1;
   let built = "";
   for (let i = 0; i < parts.length; i++) {
-    built = built === "" ? parts[i]! : `${built}/${parts[i]}`;
+    const part = parts[i];
+    if (part === undefined) break;
+    built = built === "" ? part : `${built}/${part}`;
     if (opts.leaveFinalUnchecked && i === last) break;
     const abs = containerPath(access.mountPath, built);
     let tar: Buffer;

@@ -68,4 +68,3 @@ export function symlinkTargetEscapes(mountPath: string, symlinkRelative: string,
   }
   return false;
 }
-
