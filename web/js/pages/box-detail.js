@@ -1,3 +1,4 @@
+import { mountActivity } from "../components/activity-panel.js";
 import { deleteBox, editResources, lifecycle, openRebuild, snapshotBox } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
 import { mountTerminal } from "../components/terminal-panel.js";
@@ -41,12 +42,13 @@ function specBanners(box) {
 const TABS = [
   ["overview", "bd.tabOverview", "dashboard"],
   ["terminal", "bd.tabTerminal", "terminal"],
-  ["logs", "bd.tabLogs", "logs"],
+  ["activity", "bd.tabActivity", "activity"],
   ["resources", "bd.tabResources", "sliders"],
   ["snapshots", "bd.tabSnapshots", "camera"],
 ];
 
 export function render(view, id, tab = "overview") {
+  if (tab === "logs") tab = "activity";
   if (!TABS.some(([k]) => k === tab)) tab = "overview";
   let box = null;
   let disposed = false;
@@ -182,29 +184,8 @@ const TAB_RENDER = {
     return mountTerminal(root, { box });
   },
 
-  logs(root, { box }) {
-    root.innerHTML = `<div class="card"><div class="card-head"><h3>${t("bd.logs")}</h3>
-      <div class="row"><select class="select" id="lTail" style="width:auto;height:30px">${[200, 1000, 5000].map((n) => `<option value="${n}">${t("bd.lastLines", { n })}</option>`).join("")}</select>
-      <label class="checkbox" style="align-items:center"><input type="checkbox" id="lAuto" style="accent-color:var(--accent);margin:0" checked />${t("bd.autoRefresh")}</label>
-      <button class="btn btn-sm" id="lRefresh">${icon("refresh")}${t("common.refresh")}</button></div></div>
-      <pre class="logs" id="lView">${t("common.loading")}</pre></div>
-      <p class="help" style="margin-top:8px">${t("bd.logsHelp")}</p>`;
-    const view = root.querySelector("#lView");
-    const load = async () => {
-      try {
-        const { logs } = await api(`/api/boxes/${enc(box().id)}/logs?tail=${root.querySelector("#lTail").value}`);
-        const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 40;
-        view.textContent = logs || t("bd.noLogs");
-        if (atBottom) view.scrollTop = view.scrollHeight;
-      } catch (e) {
-        view.textContent = t("bd.logsFailed", { msg: e.message });
-      }
-    };
-    root.querySelector("#lRefresh").addEventListener("click", load);
-    root.querySelector("#lTail").addEventListener("change", load);
-    load().then(() => (view.scrollTop = view.scrollHeight));
-    const timer = setInterval(() => root.querySelector("#lAuto").checked && load(), 4000);
-    return () => clearInterval(timer);
+  activity(root, { box }) {
+    return mountActivity(root, { box });
   },
 
   resources(root, { box, refreshBox, history }) {
