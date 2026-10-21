@@ -9,43 +9,61 @@ import { confirmDialog, emptyState, toast, toastError } from "../lib/ui.js";
 export function render(view) {
   view.innerHTML = `
     <div class="page-head"><div><h1>${t("nav.settings")}</h1><p>${t("st.subtitle")}</p></div></div>
-    <div class="grid grid-2" id="stGrid"><div class="card"><div class="card-body"><div class="skeleton sk-line"></div></div></div></div>
-    <div class="card" id="stSessions"></div>`;
-  api("/api/system").then((s) => {
-    view.querySelector("#stGrid").innerHTML = `
-      <div class="stack">
-        <div class="card"><div class="card-head"><h3>${t("st.runtime")}</h3>${icon("settings")}</div><div class="card-body"><dl class="kv">
-          <dt>${t("st.listen")}</dt><dd class="mono">${esc(s.config.host)}:${s.config.port}</dd>
-          <dt>Docker Socket</dt><dd class="mono">${esc(s.config.dockerSocket)}</dd>
-          <dt>${t("st.labelPrefix")}</dt><dd class="mono">${esc(s.config.labelPrefix)}</dd>
-          <dt>${t("st.baseTemplate")}</dt><dd class="mono">${esc(s.config.baseTemplate)}</dd>
-          <dt>${t("st.boxProfile")}</dt><dd>${t(`profile.${s.config.boxProfile}`)}</dd>
-          <dt>${t("st.containerRuntime")}</dt><dd>${s.config.containerRuntime ? `<span class="mono">${esc(s.config.containerRuntime)}</span>` : t("st.runtimeDefault")}</dd>
-          <dt>${t("st.pidsLimit")}</dt><dd>${t("st.pidsValue", { n: s.config.boxPidsLimit })}</dd>
-          <dt>${t("st.boxNetwork")}</dt><dd class="mono">${esc(s.config.boxNetwork)}</dd>
-          <dt>${t("st.interval")}</dt><dd>${t("st.intervalValue", { n: s.config.metricsIntervalMs / 1000 })}</dd>
-          <dt>${t("st.boxLimits")}</dt><dd>${t("st.boxLimitsValue", { minC: s.limits.minCpus, maxC: s.limits.maxCpus, minM: s.limits.minMemoryMb, maxM: s.limits.maxMemoryMb })}</dd>
-        </dl></div></div>
-        <div class="card"><div class="card-head"><h3>${t("st.appearance")}</h3></div><div class="card-body stack"><div class="row between">
-          <div><strong>${t("st.theme")}</strong><div class="help">${t("st.themeHelp")}</div></div>
-          <button class="btn" id="stTheme">${icon(currentTheme() === "dark" ? "sun" : "moon")}${currentTheme() === "dark" ? t("st.toLight") : t("st.toDark")}</button></div>
-        </div></div>
+    <div class="stack">
+      <div class="card" id="stRuntime">
+        <div class="card-head"><h3>${t("st.runtime")}</h3>${icon("settings")}</div>
+        <div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div>
       </div>
-      <div class="stack">
-        <div class="card"><div class="card-body" style="text-align:center;padding:32px 24px">
-          <img data-logo src="/assets/${currentTheme() === "dark" ? "logo-dark" : "logo"}.svg" alt="MiniBox" style="height:40px" />
-          <p class="muted" style="margin-top:12px">${t("common.tagline")}</p>
-          <p class="subtle" style="margin-top:6px;font-size:12.5px">${t("st.version", { v: esc(s.version), t: dateTime(s.startedAt) })}</p>
-          <div class="row" style="justify-content:center;margin-top:16px"><a class="btn btn-sm" href="https://github.com/ArnoChenFx/minibox" target="_blank" rel="noopener">${icon("github")}GitHub</a></div>
-        </div></div>
-      </div>`;
-    view.querySelector("#stTheme").addEventListener("click", () => {
-      toggleTheme();
-      render(view);
-    });
-  });
+      <div class="card">
+        <div class="card-head"><h3>${t("st.appearance")}</h3></div>
+        <div class="card-body row between">
+          <div><strong>${t("st.theme")}</strong><div class="help">${t("st.themeHelp")}</div></div>
+          <button class="btn" id="stTheme"></button>
+        </div>
+      </div>
+      <div class="card" id="stSessions"></div>
+    </div>`;
+
+  const themeBtn = view.querySelector("#stTheme");
+  const paintTheme = () => {
+    const dark = currentTheme() === "dark";
+    themeBtn.innerHTML = `${icon(dark ? "sun" : "moon")}${dark ? t("st.toLight") : t("st.toDark")}`;
+  };
+  paintTheme();
+  themeBtn.addEventListener("click", toggleTheme);
+  document.addEventListener("themechange", paintTheme);
+
+  loadRuntime(view);
   loadSessions(view);
-  return null;
+  return () => document.removeEventListener("themechange", paintTheme);
+}
+
+async function loadRuntime(view) {
+  const body = view.querySelector("#stRuntime .card-body");
+  let s;
+  try {
+    s = await api("/api/system");
+  } catch (e) {
+    body.innerHTML = `<div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div>`;
+    return;
+  }
+  const c = s.config;
+  body.innerHTML = `<div class="kv-cols">
+    <dl class="kv">
+      <dt>${t("st.listen")}</dt><dd class="mono">${esc(c.host)}:${esc(c.port)}</dd>
+      <dt>Docker Socket</dt><dd class="mono">${esc(c.dockerSocket)}</dd>
+      <dt>${t("st.labelPrefix")}</dt><dd class="mono">${esc(c.labelPrefix)}</dd>
+      <dt>${t("st.baseTemplate")}</dt><dd class="mono">${esc(c.baseTemplate)}</dd>
+      <dt>${t("st.boxProfile")}</dt><dd>${t(`profile.${c.boxProfile}`)}</dd>
+    </dl>
+    <dl class="kv">
+      <dt>${t("st.containerRuntime")}</dt><dd>${c.containerRuntime ? `<span class="mono">${esc(c.containerRuntime)}</span>` : t("st.runtimeDefault")}</dd>
+      <dt>${t("st.pidsLimit")}</dt><dd>${t("st.pidsValue", { n: c.boxPidsLimit })}</dd>
+      <dt>${t("st.boxNetwork")}</dt><dd class="mono">${esc(c.boxNetwork)}</dd>
+      <dt>${t("st.interval")}</dt><dd>${t("st.intervalValue", { n: c.metricsIntervalMs / 1000 })}</dd>
+      <dt>${t("st.boxLimits")}</dt><dd>${t("st.boxLimitsValue", { minC: s.limits.minCpus, maxC: s.limits.maxCpus, minM: s.limits.minMemoryMb, maxM: s.limits.maxMemoryMb })}</dd>
+    </dl>
+  </div>`;
 }
 
 async function loadSessions(view) {

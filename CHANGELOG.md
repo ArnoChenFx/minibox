@@ -66,8 +66,10 @@
 - `scripts/check-box-image.sh` 与 `bun run check:template`：用 Docker 检查基础模板镜像的用户、sudo、工具、挂载点、环境变量、登录 Shell 的 PATH，以及共享卷读写。
 - `STOP_TIMEOUT_SEC`（默认 `3`，允许 0 到 300 的整数）：停止与重启 Box 时，发送 SIGTERM 后等待退出的秒数，超时则强制结束。空值或无效值回退为 3 秒（#19）。
 - `DELETE /api/boxes/:id` 的响应新增 `volumeError` 字段：删除数据卷失败时返回引擎给出的原因。Box 本身仍会被删除（#19）。
+- 新增「关于」页面（侧边栏「设置」之后，路由 `#/about`）：显示 logo、版本、服务启动时间、Bun 运行时版本与 Docker 引擎版本（不可用时显示「不可用」），并提供 README、文档、更新日志、问题反馈与许可证的链接。中英文界面均已翻译。
 
 ### 变更
+- 设置页移除了品牌卡片（已移到「关于」页），改为单栏：运行配置（分两列展示）、外观、登录会话。「关于」页重新显示 Bun 版本（`/api/system` 的 `runtime` 字段），即 0.3.0 中去掉的那一项。
 - Box 的加固只在创建时生效。已有 Box 保留创建时的设置，不会被强制重建；早于本版本创建的 Box 没有记录档位，仍在默认的 `bridge` 网络上（#5）。
 - 登录 Cookie 改名为 `minibox_session`，存放会话令牌。不再读取旧的 `minibox_key` Cookie，登录、登出与登录页都会将其清除。`HttpOnly`、`SameSite=Strict` 与 HTTPS 下的 `Secure` 规则不变（#2）。
 - `POST /api/auth/logout` 会立即作废服务端会话，而不只是清除浏览器中的 Cookie。登录时会结束该浏览器原有的会话（#2）。

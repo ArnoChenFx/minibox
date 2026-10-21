@@ -249,6 +249,12 @@ describe("system", () => {
       boxNetwork: "mbtest-boxes",
     });
   });
+
+  test("reports the version, the Bun runtime and when this server started, for the About page", async () => {
+    const body = (await (await get("/api/system")).json()) as { version: string; runtime: string; startedAt: string };
+    expect(body).toMatchObject({ version: "0.0.0-test", runtime: `Bun ${Bun.version}` });
+    expect(Date.now() - Date.parse(body.startedAt)).toBeLessThan(60_000);
+  });
 });
 
 describe("box routes", () => {
