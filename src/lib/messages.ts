@@ -176,6 +176,7 @@ export const MESSAGES = {
   quota_cpus: "This token's boxes would use {used} CPU cores, above its limit of {max}.",
   quota_memory: "This token's boxes would use {used} MB of memory, above its limit of {max}.",
   quota_ttl: "TTL must be a positive number of seconds no greater than this token's limit of {max}.",
+  quota_checkpoints: "This token may have at most {max} checkpoints.",
   snapshot_out_of_scope: "This credential cannot use that snapshot.",
   template_out_of_scope: "This credential cannot use that template.",
   storage_unreachable: "Storage pool {pool} is unreachable: {detail}",

@@ -36,7 +36,7 @@ import {
 } from "../services/rollback";
 import { requireRevision } from "../specs/revision";
 import { snapshotVisible, specViews, ttlFor } from "../tokens/model";
-import { assertWithinQuota, underQuota } from "../tokens/quota";
+import { assertCheckpointQuota, assertWithinQuota, underCheckpointQuota, underQuota } from "../tokens/quota";
 import { assertCanCreateDefaultMounts, assertCanWrite } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
@@ -170,12 +170,17 @@ export const checkpointCreate = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/checkpoints", body: true, status: 202 }],
   cli: "checkpoint create",
   resolve: ({ host }, input) => getBox(host, input.id),
-  beforeTask: async ({ host }, input, box) => assertTakeable(host, box, takeInput(input)),
+  beforeTask: async (ctx, input, box) => {
+    assertTakeable(ctx.host, box, takeInput(input));
+    assertCheckpointQuota(ctx);
+  },
   exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
   activity: { action: () => "checkpoint.create", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host, task, principal }, input) => ({
-    checkpoint: await takeCheckpoint(host, input.id, takeInput(input), principal.id, task),
+  run: async (ctx, input) => ({
+    checkpoint: await underCheckpointQuota(ctx, () =>
+      takeCheckpoint(ctx.host, input.id, takeInput(input), ctx.principal.id, ctx.task),
+    ),
   }),
 });
 

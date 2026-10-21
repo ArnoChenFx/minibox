@@ -228,6 +228,7 @@ export default {
   "err.quota_cpus": "This token's boxes would use {used} CPU cores, above its limit of {max}.",
   "err.quota_memory": "This token's boxes would use {used} MB of memory, above its limit of {max}.",
   "err.quota_ttl": "TTL must be a positive number of seconds no greater than this token's limit of {max}.",
+  "err.quota_checkpoints": "This token may have at most {max} checkpoints.",
   "err.snapshot_out_of_scope": "This credential cannot use that snapshot.",
   "err.template_out_of_scope": "This credential cannot use that template.",
   "err.task_not_found": "Task not found.",
@@ -941,6 +942,7 @@ export default {
   "st.tokenQuotaMemory": "Max memory (MB, total)",
   "st.tokenQuotaTtl": "Max TTL (hours)",
   "st.tokenQuotaRate": "Requests per minute",
+  "st.tokenQuotaCheckpoints": "Checkpoints taken",
   "st.tokenQuotaHelp":
     "Empty keeps the preset. CPU and memory are totals across this token's boxes. TTL is stored on the box, and the box stops when it elapses.",
   "st.tokenOnce": "Copy this secret now. MiniBox will not show it again.",

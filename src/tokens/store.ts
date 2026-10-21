@@ -477,13 +477,24 @@ function parseHosts(value: unknown): HostScope | null {
   return null;
 }
 
+/** Quotas that tokens stored before they existed lack. A record without one has no limit for it, and stays valid. */
+const ADDED_LATER: readonly (keyof Quotas)[] = ["maxCheckpoints"];
+
 function parseQuotas(value: unknown): Quotas | null {
   if (!isObject(value)) return null;
-  const keys = ["maxBoxes", "maxCpus", "maxMemoryMb", "maxTtlSec", "rateLimit", "rateWindowSec"] as const;
+  const keys = [
+    "maxBoxes",
+    "maxCpus",
+    "maxMemoryMb",
+    "maxTtlSec",
+    "rateLimit",
+    "rateWindowSec",
+    "maxCheckpoints",
+  ] as const;
   const quotas: { -readonly [K in keyof Quotas]: number | null } = { ...NO_QUOTA };
   for (const key of keys) {
     const item = value[key];
-    if (item === null) continue;
+    if (item === null || (item === undefined && ADDED_LATER.includes(key))) continue;
     if (typeof item !== "number" || !Number.isFinite(item)) return null;
     quotas[key] = item;
   }

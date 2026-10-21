@@ -20587,6 +20587,12 @@
                                   "number",
                                   "null"
                                 ]
+                              },
+                              "maxCheckpoints": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -20595,7 +20601,8 @@
                               "maxMemoryMb",
                               "maxTtlSec",
                               "rateLimit",
-                              "rateWindowSec"
+                              "rateWindowSec",
+                              "maxCheckpoints"
                             ],
                             "additionalProperties": false
                           },
@@ -20812,7 +20819,7 @@
                   },
                   "quotas": {
                     "type": "object",
-                    "description": "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
+                    "description": "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. maxCheckpoints caps the checkpoints the token takes, as a total across its boxes; automatic checkpoints are kept by the retention policy and not counted. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
                     "properties": {
                       "maxBoxes": {
                         "type": [
@@ -20845,6 +20852,12 @@
                         ]
                       },
                       "rateWindowSec": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "maxCheckpoints": {
                         "type": [
                           "integer",
                           "null"
@@ -21117,6 +21130,12 @@
                                 "number",
                                 "null"
                               ]
+                            },
+                            "maxCheckpoints": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
@@ -21125,7 +21144,8 @@
                             "maxMemoryMb",
                             "maxTtlSec",
                             "rateLimit",
-                            "rateWindowSec"
+                            "rateWindowSec",
+                            "maxCheckpoints"
                           ],
                           "additionalProperties": false
                         },
@@ -21563,6 +21583,12 @@
                                 "number",
                                 "null"
                               ]
+                            },
+                            "maxCheckpoints": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
@@ -21571,7 +21597,8 @@
                             "maxMemoryMb",
                             "maxTtlSec",
                             "rateLimit",
-                            "rateWindowSec"
+                            "rateWindowSec",
+                            "maxCheckpoints"
                           ],
                           "additionalProperties": false
                         },
