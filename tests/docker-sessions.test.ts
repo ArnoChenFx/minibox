@@ -660,6 +660,8 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       const watch = new ContainerWatch(app.hosts, (_hostId, _source, _principal, note) => {
         seen.push(`${note.op} ${note.target?.name ?? ""}`);
       });
+      host.sampler.start();
+      await waitFor(() => host.sampler.ready(), "the sampler's first listing");
       watch.start();
       try {
         await Bun.sleep(300);
@@ -674,6 +676,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
         }
       } finally {
         watch.stop();
+        host.sampler.stop();
       }
       expect(seen).toEqual(expect.arrayContaining(["container.stop events", "container.start events"]));
     },
