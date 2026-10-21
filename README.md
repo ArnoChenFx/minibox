@@ -114,7 +114,7 @@ flowchart LR
 ### Target architecture (planned)
 
 > [!NOTE]
-> Storage pools and volumes, exec, `/mcp` and the CLI client are implemented. Sessions, the preview proxy, tasks, checkpoints, multi-host and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
+> Storage pools and volumes, exec, `/mcp` and the CLI client, sessions, and the path-mode port preview proxy are implemented. Tasks, checkpoints, multi-host and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
 
 ```mermaid
 flowchart LR
