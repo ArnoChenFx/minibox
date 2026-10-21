@@ -21,7 +21,7 @@ import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { createRestoredVolume, provisionDefaultMounts } from "../volumes/provision";
 import { ROLE_MOUNT, type VolumeRecord, type VolumeRole } from "../volumes/types";
-import { type Box, createBox, getBox, locked, refuseExpired, startLocked, stopLocked } from "./boxes";
+import { type Box, createBox, getBox, locked, refuseExpired, startLocked } from "./boxes";
 import { holdVolumeBoxes } from "./files";
 import type { ImageItem } from "./images";
 import { rebuildBox } from "./rebuild";
@@ -258,6 +258,9 @@ function tagsFor(checkpointId: string, boxId: string, volume: VolumeRecord): str
  * Makes the box consistent for the backup, and returns what undoes it. `pause` freezes a running box. `stop` stops it
  * and starts it again afterwards, when it was running. `live` leaves it alone. A stopped or sleeping box is read as it
  * is and nothing is started for it, so a checkpoint never wakes a box.
+ *
+ * Neither mode changes the box's desired state. A crash in the middle leaves the container paused, or stopped while
+ * its desired state is still `running`, and startup reconciliation puts both right (see `reconcileHost`).
  */
 async function quiesce(
   host: HostCtx,
@@ -272,7 +275,8 @@ async function quiesce(
     return () => resumeStep(box, progress, "Unpausing the box…\n", () => host.runtime.unpauseContainer(box.id));
   }
   progress?.log?.("Stopping the box…\n");
-  await stopLocked(host, box, "manual");
+  await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
+  await host.sampler.observe(box.id);
   return () =>
     resumeStep(box, progress, "Starting the box again…\n", async () => {
       await startLocked(host, await getBox(host, box.boxId), {});

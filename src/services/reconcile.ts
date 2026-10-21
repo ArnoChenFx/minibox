@@ -16,6 +16,8 @@ export interface ReconcileReport {
   stopped: string[];
   /** Stable ids whose engine restart policy was set back to `no`. */
   restartReset: string[];
+  /** Stable ids whose container was left paused, by a checkpoint a crash cut short, and was unpaused. */
+  unpaused: string[];
   /** Stable ids whose container is gone. The spec is kept. */
   missing: string[];
   /**
@@ -32,7 +34,15 @@ export interface ReconcileReport {
  * the pass goes on: one broken box must not keep the rest of the host down after a restart.
  */
 export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
-  const report: ReconcileReport = { claimed: [], started: [], stopped: [], restartReset: [], missing: [], failed: [] };
+  const report: ReconcileReport = {
+    claimed: [],
+    started: [],
+    stopped: [],
+    restartReset: [],
+    unpaused: [],
+    missing: [],
+    failed: [],
+  };
   await claimEngineVolumes(host);
   const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
   const seen = new Set<string>();
@@ -73,6 +83,12 @@ async function converge(host: HostCtx, info: ContainerInfo, spec: BoxSpec, repor
   if (info.restart !== "no") {
     await host.runtime.updateContainer(info.id, { restart: "no" });
     report.restartReset.push(spec.id);
+  }
+  // Nothing pauses a box except a checkpoint in progress, and none is in progress at startup. A paused container is a
+  // checkpoint the last process did not finish, and it still reports itself running.
+  if (info.state === "paused") {
+    await host.runtime.unpauseContainer(info.id);
+    report.unpaused.push(spec.id);
   }
   if (spec.lifecycle.desired === "running" && !info.running) {
     if (ttlExpired(spec, Date.now())) {
