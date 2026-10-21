@@ -213,7 +213,8 @@ function readMounts(root) {
 function rebuildBody(root, box) {
   const body = {};
   const template = root.querySelector("#rbTemplate").value.trim();
-  if (template !== (box.template ?? "")) body.template = template;
+  // Always send a non-empty template so a moved tag with the same name still previews.
+  if (template) body.template = template;
   const network = root.querySelector("#rbNetwork").value.trim();
   if (network !== box.network) body.network = network;
   const profile = root.querySelector("#rbProfile").value;

@@ -361,6 +361,85 @@ describe("rebuild onto a moved tag", () => {
     expect(host.specs.read(box.boxId)?.template.digest).toBe(running);
   });
 
+  test("an empty body still previews a moved tag as a template change", async () => {
+    const box = await newBox("alpha");
+    const running = runtime.containers.get(box.id)?.imageId ?? "";
+    const moved = runtime.moveTag(host.baseTemplateTag);
+
+    const changes = await previewChanges(rebuildBox(host, box.id, box.revision, {}, false));
+    expect(changes).toContainEqual({
+      field: "template",
+      from: `${host.baseTemplateTag} (${short(running)})`,
+      to: `${host.baseTemplateTag} (${short(moved)})`,
+    });
+  });
+
+  test("an empty body with no moved tag is rebuild_empty", async () => {
+    const box = await newBox("alpha");
+    const error = await rejectionOf(rebuildBox(host, box.id, box.revision, {}, true));
+    expect(error).toMatchObject({ status: 400, key: "rebuild_empty" });
+  });
+
+  test("HTTP rebuild with the same tag after a move returns confirmation_required", async () => {
+    const box = await newBox("alpha");
+    const running = runtime.containers.get(box.id)?.imageId ?? "";
+    const moved = runtime.moveTag(host.baseTemplateTag);
+    const server: Server<TerminalData> = startServer(app);
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.port}/api/boxes/${box.id}/rebuild`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TEST_KEY}`,
+          "content-type": "application/json",
+          "if-match": String(box.revision),
+        },
+        body: JSON.stringify({ template: host.baseTemplateTag }),
+      });
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as {
+        error: { code: string; details: { preview: { changes: { field: string; from: string; to: string }[] } } };
+      };
+      expect(body.error.code).toBe("confirmation_required");
+      expect(body.error.details.preview.changes).toContainEqual({
+        field: "template",
+        from: `${host.baseTemplateTag} (${short(running)})`,
+        to: `${host.baseTemplateTag} (${short(moved)})`,
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("HTTP rebuild with an empty body after a move returns confirmation_required", async () => {
+    const box = await newBox("alpha");
+    const running = runtime.containers.get(box.id)?.imageId ?? "";
+    const moved = runtime.moveTag(host.baseTemplateTag);
+    const server: Server<TerminalData> = startServer(app);
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.port}/api/boxes/${box.id}/rebuild`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TEST_KEY}`,
+          "content-type": "application/json",
+          "if-match": String(box.revision),
+        },
+        body: JSON.stringify({}),
+      });
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as {
+        error: { code: string; details: { preview: { changes: { field: string; from: string; to: string }[] } } };
+      };
+      expect(body.error.code).toBe("confirmation_required");
+      expect(body.error.details.preview.changes).toContainEqual({
+        field: "template",
+        from: `${host.baseTemplateTag} (${short(running)})`,
+        to: `${host.baseTemplateTag} (${short(moved)})`,
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("confirm runs the new container from the moved image and keeps the tag as the template", async () => {
     const box = await newBox("alpha");
     const moved = runtime.moveTag(host.baseTemplateTag);

@@ -56,6 +56,7 @@ export async function rebuildBox(
 
     const previous = structuredClone(spec);
     const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;
+    // An empty request is allowed: a moved tag alone is still a rebuild. rebuild_empty only when nothing changed.
     const planned = planRebuild(host.prefix, spec, named, await movedTag(host, spec));
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
     await assertRebuildAttachments(host, spec, planned.mounts, planned.network);

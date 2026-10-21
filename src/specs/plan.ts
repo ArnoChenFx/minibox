@@ -89,8 +89,9 @@ const shortImageId = (id: string): string => id.replace(/^sha256:/, "").slice(0,
 
 /**
  * The rebuild a request would perform. Mounts, env, network and profile stay as they are when omitted.
- * The container is renamed to `<prefix>-<id>` only when something else changes (decision D6). A moved tag is a
- * template change, unless the request names another template: that template is the one rebuilt onto.
+ * An empty request still follows a moved tag. The container is renamed to `<prefix>-<id>` only when something
+ * else changes (decision D6). A moved tag is a template change, unless the request names another template:
+ * that template is the one rebuilt onto.
  */
 export function planRebuild(
   prefix: string,

@@ -52,3 +52,12 @@ describe("overlay layout", () => {
     expect(overlay).toContain("place-items: center;");
   });
 });
+
+describe("rebuildBody", () => {
+  test("a non-empty template field is always included, even when it matches the box", () => {
+    const src = readFileSync(BOX_ACTIONS, "utf8");
+    const fn = src.slice(src.indexOf("function rebuildBody"), src.indexOf("/** The HTML for a rebuild preview"));
+    expect(fn).toContain("if (template) body.template = template");
+    expect(fn).not.toContain("template !== (box.template");
+  });
+});
