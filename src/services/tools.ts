@@ -119,12 +119,14 @@ async function imageExists(host: HostCtx, ref: string): Promise<boolean> {
 
 /**
  * Runs the detect command of each entry in one helper. An entry the helper does not answer for is reported as not
- * installed; a helper failure is logged and leaves every entry not installed rather than failing the request.
+ * installed. A helper failure is logged and leaves every entry not installed, which suits listings. A caller that
+ * decides what to change passes `strict`, so the failure is raised instead of acting on that empty answer.
  */
 export async function detectTools(
   host: HostCtx,
   entries: CatalogEntry[],
   box: Box | null,
+  opts: { strict?: boolean } = {},
 ): Promise<Map<string, DetectResult>> {
   if (entries.length === 0) return new Map();
   try {
@@ -138,8 +140,12 @@ export async function detectTools(
       timeoutSec: DETECT_TIMEOUT_SEC,
       labels: { [host.keys.internal]: "true" },
     });
+    if (opts.strict && result.exitCode !== 0) throw new Error(`the helper exited with status ${result.exitCode}`);
     return parseDetectOutput(result.logs);
   } catch (e) {
+    if (opts.strict) {
+      throw badRequest(msg("tool_detect_failed", { detail: e instanceof Error ? e.message : String(e) }));
+    }
     log.warn("tool.detect_failed", { boxId: box?.boxId ?? null, error: String(e) });
     return new Map();
   }
@@ -199,7 +205,7 @@ async function runAction(
   const entry = requireCatalogEntry(catalog, toolId);
   const resolvedVersion = resolveToolVersion(entry, version);
   if (action !== "install") {
-    const current = (await detectTools(host, [entry], box)).get(entry.id);
+    const current = (await detectTools(host, [entry], box, { strict: true })).get(entry.id);
     if (current?.installed && !current.managed) throw badRequest(msg("tool_unmanaged", { id: toolId }));
   }
   const shell = commandFor(entry, action, resolvedVersion);
@@ -273,7 +279,7 @@ export async function reconcileTools(
     const entry = findCatalogEntry(catalog, desired.id);
     return entry ? [entry] : [];
   });
-  const found = await detectTools(host, entries, box);
+  const found = await detectTools(host, entries, box, { strict: true });
   for (const desired of spec.tools) {
     if (task?.signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
     const entry = findCatalogEntry(catalog, desired.id);

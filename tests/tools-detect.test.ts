@@ -257,6 +257,29 @@ describe("reconcile and changes to installed tools", () => {
     expect(writerCalls()).toHaveLength(0);
   });
 
+  test("uninstall, upgrade and reconcile stop when detection cannot run, rather than act on an empty answer", async () => {
+    const boxId = await createBox("alpha", { tools: ["claude-code"] });
+    const prior = runtime.helperHandler;
+    runtime.helperHandler = (spec: HelperSpec) => {
+      if (spec.cmd.join(" ").includes("MBTOOL")) throw new Error("engine unavailable");
+      return prior(spec);
+    };
+
+    const requests: [string, Record<string, unknown> | undefined][] = [
+      ["uninstall", { tool: "claude-code", version: "latest" }],
+      ["upgrade", { tool: "claude-code", version: "latest" }],
+      ["reconcile", undefined],
+    ];
+    for (const [action, body] of requests) {
+      const started = await call("POST", `/api/boxes/${boxId}/tools/${action}`, body);
+      expect(started.status).toBe(202);
+      const task = await waitTask(String(started.json.taskId));
+      expect(task.status).toBe("failed");
+      expect((task.error as { message: string }).message).toContain("engine unavailable");
+    }
+    expect(writerCalls()).toHaveLength(0);
+  });
+
   test("uninstall removes a tool MiniBox installed on the tools volume", async () => {
     const boxId = await createBox("alpha", { tools: ["claude-code"] });
     answerDetection({ "claude-code": { managed: true, version: "2.1.306 (Claude Code)" } });

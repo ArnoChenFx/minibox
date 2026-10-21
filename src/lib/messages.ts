@@ -238,6 +238,7 @@ export const MESSAGES = {
   tool_volume_missing: "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
   tool_install_failed: "Installing “{id}” failed: {detail}",
   tool_install_timeout: "Installing “{id}” timed out.",
+  tool_detect_failed: "Could not check which tools are installed in this box: {detail}",
   tool_reconcile_failed: "Could not install the requested tools: {detail}.",
   tool_unmanaged:
     "Tool “{id}” is installed outside MiniBox, in the box image or home volume, so MiniBox cannot change it.",
