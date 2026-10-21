@@ -211,7 +211,7 @@ flowchart LR
 
 `delete_box` 单独成工具，便于单独授权。
 
-已实现的是 box 的 6 个工具加上 `exec`、`exec_get`、`exec_kill`，共 9 个，属于默认工具集。`rebuild_box` 不在上表的 27 个工具里，它需要显式确认，不属于 `core`（决策 45），因此单独放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`）。`storage` 工具集已实现 9 个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`（决策 50）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`（决策 49）；`measure_volume` 只刷新缓存的大小，不需要。实现的工具共 19 个：默认工具集 9 个，`rebuild` 1 个，`storage` 9 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 9 个，而不是表里的 15 个。`session`、`network`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具不在本阶段。
+已实现的是 box 的 6 个工具加上 `exec`、`exec_get`、`exec_kill`，共 9 个，属于默认工具集。`rebuild_box` 不在上表的 27 个工具里，它需要显式确认，不属于 `core`（决策 45），因此单独放在非默认的 `rebuild` 工具集（`/mcp?toolsets=rebuild`）。`storage` 工具集已实现 9 个卷与存储池工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`（决策 50）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`（决策 49）；`measure_volume` 只刷新缓存的大小，不需要。实现的工具共 19 个：默认工具集 9 个，`rebuild` 1 个，`storage` 9 个。`meta` 的 `get_activity` 与 `task_wait` 还未实现，因此默认工具集目前是这 9 个，而不是表里的 15 个。`session`、`network`、`tools` 可以被 `?toolsets=` 接受，目前没有工具。文件工具 `read_file` / `write_file` / `list_files` / `copy_files` 已加入 `core`。
 
 ### 4.3 执行模型
 
@@ -229,16 +229,17 @@ flowchart LR
 
 ### 4.4 文件接口
 
-文件接口尚未实现。本阶段交付 exec、`/mcp` 与 CLI（Refs #9）。`read_file`、`write_file`、`list_files`、`copy_files` 以及下面的归档与辅助容器留到 Volume（#24）之后。
+已实现（Refs #9，Volume #24 之后）。REST / MCP / CLI 均可用。
 
-- `read_file` / `write_file` / `list_files` / `copy_files`，以及上传下载（目录打包为 tar）。
+- `read_file` / `write_file` / `list_files` / `copy_files`，以及上传下载（目录打包为 base64 tar：`GET/PUT /api/volumes/:id/files/archive`）。
 - **以 Volume 为对象，而不是 Box**：Box 停止时也可用。
 - **实现不依赖读取宿主机上的卷目录。** `/var/lib/docker/volumes/…/_data` 通常是 root 属主，MiniBox 以普通用户运行，或运行在容器里时读不到：
-  - Box 在运行：对该容器使用 archive API 与 exec；
-  - 卷当前没有运行中的容器：创建（不启动）一个挂载该卷的辅助容器，用 Docker archive API（`getArchive` / `putArchive`，对已创建但未启动的容器同样有效）读写；
-  - 列目录：用 archive 流式解析对大目录太重，改为启动一个极短生命周期的辅助容器执行 `find -maxdepth`，并限制条目数；
-  - 写入时 tar 头里的 uid/gid 设为 `dev` 用户。
-- 路径限制在卷的挂载根内，防符号链接逃逸；有路径越界测试。
+  - 卷已被某 Box 容器挂载（运行中或仅已创建）：对该容器使用 archive API；
+  - 卷当前没有容器：创建（不启动）一个挂载该卷的辅助容器，用 Docker archive API（`getArchive` / `putArchive`）读写，用完删除；
+  - 列目录：短生命周期辅助容器执行 `find -P -maxdepth`，并限制条目数（辅助镜像复用基础模板，决策 D12）；
+  - 写入时 tar 头里的 uid/gid 设为 `dev`（1000）。
+- 路径限制在卷的挂载根内，防符号链接逃逸；有路径越界测试。读 symlink 只返回元数据，不跟随。
+- **权限**：`exec` 隐含该 Box 所有挂载卷的读写；`files:*` 只对没有 `exec` 的令牌有意义。
 - 存储节点代理（已移出主路线，见 [12.4](#124-存储节点角色)）以后只作为加速路径。
 
 ### 4.5 对 Agent 友好的约定
@@ -457,7 +458,7 @@ pools:
 - **丢失的卷**：记录存在而引擎中已没有该卷时，启动、重启、创建、重建、挂载和测量都返回 409 `volume_missing`，不交给 Docker 自动建一个空卷（创建容器、启动容器和运行辅助容器时，Docker 都会自动创建缺失的命名卷）。检查在每次引擎调用之前进行；创建时在规格锁内再查一次。遗留的 `<prefix>-ws-*` 若有记录而引擎卷已不存在，同样拒绝，不另建新工作区。删除记录仍可用：引擎卷已不存在时视为已删除。列出卷时尚不标记 `missing`，留待后续。
 - **删除 Box**：`deleteVolume=true` 只删除记录中所有者为本 Box（`ownerBoxId` 相等）、且没有其它规格挂载它的卷，并在删除卷之前先删容器。没有记录的引擎卷即使仍被本 Box 的规格挂着也不删除，按名字回退删除的分支已经移除。引擎拒绝删除时保留记录，并以 `volumeError` 返回原因。
 - **辅助容器**：`runHelper` 的容器不接入网络，根文件系统只读，`/tmp` 是 16 MiB 的 tmpfs，丢掉全部能力，只加回调用方列出的能力，禁止提权，内存 256 MiB、进程数 64，由引擎在退出后删除（`AutoRemove`）。命名卷以 `NoCopy` 挂载，否则 Docker 会把镜像里的 `/mnt` 复制进空卷，覆盖刚 chown 的属主。池探测以 `1000:1000` 运行、不带能力，因此 path 池的挂载根若对该用户不可搜索，会被判为不可达（`unreachable`）。
-- **暂缓**：文件 API（#9）、restic 检查点（#11）、存储节点代理（#28 / #29）、每卷配额。更长的 NAS 部署说明仍是 #30。
+- **暂缓**：restic 检查点（#11）、存储节点代理（#28 / #29）、每卷配额。更长的 NAS 部署说明仍是 #30。文件 API（#9）已实现。
 
 ---
 
@@ -690,7 +691,7 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - **预设**：`readonly`（`box:read` 与 `files:read`）、`operator`（除了不能签发令牌之外的全部 scope）、`sandboxed-agent`（operator 去掉 `volume:attach` 和 `tool:install`）、`admin`（全部 scope，Box 与宿主机为 `*`）。`sandboxed-agent` 的默认配额是 5 个 Box、合计 8 个 CPU、16 GB、TTL 4 小时、每 60 秒 60 次请求。未改 scope、且 Box 与宿主机都是 `*` 的 admin 可以读全部审计；其余令牌只看自己的事件和范围内 Box 的事件。任何预设都不能创建或吊销令牌。
 - **默认范围**：Box 为 `created-by-me`，宿主机为 `local`，卷为空。只读预设不能创建 Box，因此在改成 `*` 或列出 id / 标签之前，它看不到已经存在的 Box。
 - **授权**：仍是执行器上的 `authorize` 钩子，操作定义没有改。调用前检查 scope；输入合法且目标解析之后，再检查宿主机、卷、Box、TTL 和配额。直接读取范围外的已有 Box 返回 403，不存在的 Box 仍是 404。列表在处理函数里过滤，因为钩子只能拒绝整次调用。
-- **`exec`**：对令牌可见的 Box，`exec` 隐含其全部挂载的读写，所以 `files:*` 只对没有 `exec` 的令牌有意义。文件 API 还没有（#9）。终端要求 `exec` 且 Box 在范围内。
+- **`exec`**：对令牌可见的 Box，`exec` 隐含其全部挂载的读写，所以 `files:*` 只对没有 `exec` 的令牌有意义。文件 API 已实现（#9）。终端要求 `exec` 且 Box 在范围内。
 - **卷**：创建 Box 总会挂上工作区卷。卷还不存在时，这是新建，不需要 `volume:attach`。卷已经存在时，这是挂载，必须对该卷有 `volume:attach`。请求里已经能写出的 `mounts`、`volumes`、`volume` 同样检查。
 - **TTL**：令牌带 `maxTtlSec` 时，省略或显式给出 `null` 都会把这个上限写入 `lifecycle.ttlSec`；大于上限的值返回 403（`quota_ttl`）。创建与更新都按此检查。到点自动停止由生命周期清扫完成（#12），这里只负责写入上限。
 - **配额**：统计 `createdBy` 是该令牌的 Box，跨所有宿主机。`maxCpus` 和 `maxMemoryMb` 是这些 Box 的合计，因此也限制单个 Box。只改名称不会因为资源已经超限而被拒绝。配额检查在按令牌串行的临界区内完成（N1），两个竞争的创建不能同时占用最后一个名额。速率限制是进程内的固定窗口，超出返回 429，不写入磁盘。
