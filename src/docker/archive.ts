@@ -9,9 +9,10 @@ const MAX_RECORD = 1024 * 1024;
 /**
  * The owner of the first entry of a tar archive, given the bytes received so far. For `docker cp` of a path, that entry
  * is the path itself. A PAX `x` record applies to the header that follows it, and Docker uses one for ids that do not
- * fit the ustar fields. A PAX `g` record applies to every header after it. A GNU `L` or `K` record carries a name, and
- * the owner in its own header is not the entry's, so it is skipped. Returns null while the entry's header is incomplete,
- * and throws when the bytes are not a tar archive.
+ * fit the ustar fields. A PAX `g` record applies to every header after it. A GNU `L` or `K` record carries a name for the
+ * entry after it, and the owner in its own header is not the entry's, so it is skipped and leaves the PAX records in
+ * front of it in place. Returns null while the entry's header is incomplete, and throws when the bytes are not a tar
+ * archive.
  */
 export function firstEntryOwner(bytes: Buffer): VolumeOwner | null {
   let entry = new Map<string, string>();
@@ -30,7 +31,6 @@ export function firstEntryOwner(bytes: Buffer): VolumeOwner | null {
       const data = bytes.subarray(body, body + size);
       if (type === "x") entry = parsePax(data);
       else if (type === "g") global = new Map([...global, ...parsePax(data)]);
-      else entry = new Map();
       offset = body + Math.ceil(size / BLOCK) * BLOCK;
       continue;
     }

@@ -30,6 +30,11 @@ describe("firstEntryOwner", () => {
     expect(firstEntryOwner(bytes)).toEqual({ uid: 1000, gid: 1000 });
   });
 
+  test("a PAX record in front of a GNU long name still applies to the entry after it", () => {
+    const bytes = archive(paxEntry({ uid: "1001" }), gnuLongName("workspace/a/very/long/name"), root(7, 1000));
+    expect(firstEntryOwner(bytes)).toEqual({ uid: 1001, gid: 1000 });
+  });
+
   test("a PAX global record applies to the entry unless a per-entry record names the same id", () => {
     expect(firstEntryOwner(archive(paxGlobal({ uid: "42", gid: "43" }), root(0, 0)))).toEqual({ uid: 42, gid: 43 });
     const overridden = archive(paxGlobal({ uid: "42", gid: "43" }), paxEntry({ uid: "44" }), root(0, 0));
