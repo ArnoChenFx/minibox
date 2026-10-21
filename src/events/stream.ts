@@ -17,6 +17,17 @@ export interface StreamStore {
   head(): number;
 }
 
+/**
+ * The live state a stream carries next to the stored events. Its frames have no `id:`, so a reconnect replays only the
+ * stored events and gets the state again from a new `sync` frame.
+ */
+export interface LiveSource {
+  /** The frame that starts a client from the current state. Sent first, and again after the stream has overflowed. */
+  sync(): string;
+  /** Subscribes `send` to the live frames and returns the function that removes the subscription. */
+  subscribe(send: (frame: string) => void): () => void;
+}
+
 export interface EventStreamOptions {
   readonly store: StreamStore;
   /** Registers a listener for live events and returns the function that removes it. */
@@ -27,6 +38,7 @@ export interface EventStreamOptions {
   readonly signal?: AbortSignal;
   /** Runs once when the stream ends, whether the signal aborted or the reader cancelled. */
   readonly onEnd?: () => void;
+  readonly live?: LiveSource;
   readonly replayLimit?: number;
   readonly pendingLimit?: number;
   readonly heartbeatMs?: number;
@@ -39,10 +51,11 @@ const resetFrame = (after: number) => `event: reset\ndata: ${JSON.stringify({ af
  * Server-sent events for the stored events that match the filter. The listener is attached before the replay is read,
  * and every live event is checked against the last sequence number already sent, so nothing is lost or sent twice. A
  * `reset` event means the client missed events the stream could not send: it reads the list endpoint for them, then
- * carries on from the stream.
+ * carries on from the stream. When the stream has live state, its frames come after the first `sync` and are never
+ * dropped one by one: an overflow clears the queue, then sends a `reset` and a fresh `sync`.
  */
 export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Array> {
-  const { store, filter, signal } = options;
+  const { store, filter, signal, live } = options;
   const replayLimit = options.replayLimit ?? REPLAY_LIMIT;
   const pendingLimit = options.pendingLimit ?? PENDING_LIMIT;
   const frames: string[] = [];
@@ -51,6 +64,7 @@ export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Ar
   let cancelled = false;
   let wake: (() => void) | undefined;
   let unsubscribe: (() => void) | undefined;
+  let unsubscribeLive: (() => void) | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
 
   const notify = () => {
@@ -63,16 +77,27 @@ export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Ar
     notify();
   };
 
+  const overflow = () => {
+    frames.length = 0;
+    queue(resetFrame(last));
+    if (live) queue(live.sync());
+  };
+
   const onLive = (event: StoredEvent) => {
     if (done || event.seq <= last) return;
     last = event.seq;
     if (!matchesFilter(event, filter)) return;
     if (frames.length >= pendingLimit) {
-      frames.length = 0;
-      queue(resetFrame(last));
+      overflow();
       return;
     }
     queue(eventFrame(event));
+  };
+
+  const onState = (frame: string) => {
+    if (done) return;
+    if (frames.length >= pendingLimit) overflow();
+    else queue(frame);
   };
 
   const stop = () => {
@@ -80,6 +105,8 @@ export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Ar
     done = true;
     unsubscribe?.();
     unsubscribe = undefined;
+    unsubscribeLive?.();
+    unsubscribeLive = undefined;
     clearInterval(heartbeat);
     signal?.removeEventListener("abort", stop);
     options.onEnd?.();
@@ -90,11 +117,13 @@ export function eventStream(options: EventStreamOptions): ReadableStream<Uint8Ar
     start() {
       unsubscribe = options.subscribe(onLive);
       frames.push(`retry: ${RETRY_MS}\n\n`);
+      unsubscribeLive = live?.subscribe(onState);
       if (options.lastId !== undefined) {
         const missed = store.after(options.lastId, filter, replayLimit + 1);
         if (missed.length > replayLimit) frames.push(resetFrame(store.head()));
         else for (const event of missed) frames.push(eventFrame(event));
       }
+      if (live) frames.push(live.sync());
       last = store.head();
       heartbeat = setInterval(() => {
         if (frames.length < pendingLimit) queue(HEARTBEAT);

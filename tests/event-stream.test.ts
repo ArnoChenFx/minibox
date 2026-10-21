@@ -181,3 +181,75 @@ describe("eventStream", () => {
     expect(onEnd).toHaveBeenCalledTimes(1);
   });
 });
+
+/** A live source whose frames a test sends by hand. Each `sync` is numbered, so a test can tell the snapshots apart. */
+function fakeLive() {
+  const senders = new Set<(frame: string) => void>();
+  let generation = 0;
+  return {
+    listeners: () => senders.size,
+    source: {
+      sync: () => {
+        generation += 1;
+        return `event: sync\ndata: ${JSON.stringify({ generation })}\n\n`;
+      },
+      subscribe: (send: (frame: string) => void) => {
+        senders.add(send);
+        return () => {
+          senders.delete(send);
+        };
+      },
+    },
+    send(frame: string) {
+      for (const send of senders) send(frame);
+    },
+  };
+}
+
+describe("eventStream with live state", () => {
+  test("the sync frame follows the retry hint and the replay, and the live frames follow it", async () => {
+    const h = harness();
+    const first = h.publish({ summary: "stored before the stream" });
+    const live = fakeLive();
+    const sse = open(h, { lastId: 0, live: live.source });
+    expect((await sse.next()).retry).toBe(3000);
+    expect(await sse.next()).toMatchObject({ id: first.seq });
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 1 } });
+  });
+
+  test("live frames arrive in the order they are sent, and carry no id", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source });
+    await sse.next();
+    await sse.next();
+    live.send('event: box\ndata: {"n":1}\n\n');
+    live.send('event: sample\ndata: {"n":2}\n\n');
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 1 } });
+    expect(await sse.next()).toEqual({ event: "sample", data: { n: 2 } });
+  });
+
+  test("when frames overflow, the queue is cleared, then a reset and a fresh sync are sent", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source, pendingLimit: 3 });
+    await sse.next();
+    await sse.next();
+    for (let n = 0; n < 4; n++) live.send(`event: box\ndata: {"n":${n}}\n\n`);
+    expect(await sse.next()).toMatchObject({ event: "reset", data: { after: 0 } });
+    expect(await sse.next()).toEqual({ event: "sync", data: { generation: 2 } });
+    live.send('event: box\ndata: {"n":4}\n\n');
+    expect(await sse.next()).toEqual({ event: "box", data: { n: 4 } });
+  });
+
+  test("cancelling the reader removes the live subscription", async () => {
+    const h = harness();
+    const live = fakeLive();
+    const sse = open(h, { live: live.source });
+    await sse.next();
+    await sse.next();
+    expect(live.listeners()).toBe(1);
+    await sse.close();
+    expect(live.listeners()).toBe(0);
+  });
+});

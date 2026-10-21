@@ -1,4 +1,5 @@
-import { scopedFilter } from "../events/scope";
+import { liveSource } from "../events/live";
+import { carriesLiveState, scopedFilter } from "../events/scope";
 import { eventStream } from "../events/stream";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
@@ -41,6 +42,7 @@ export const eventRoutes: Route[] = [
       subscribe: (listener) => app.bus.subscribe("event", listener),
       filter,
       lastId,
+      live: carriesLiveState(filter) ? liveSource(app.bus, app.hosts) : undefined,
       signal: AbortSignal.any([req.signal, sessionEnded.signal]),
       onEnd: unwatch,
     });
