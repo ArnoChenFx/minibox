@@ -26,7 +26,7 @@ import {
 } from "../runtime";
 import { readFirstEntryOwner } from "./archive";
 import { toRuntimeError } from "./errors";
-import { demuxLogs } from "./logs";
+import { demuxLogs, followedLines, followFailure } from "./logs";
 import { computeStats } from "./stats";
 
 /**
@@ -211,6 +211,12 @@ const labelFilter = (labels: Record<string, string>) => Object.entries(labels).m
  */
 function withSignal<T extends object>(options: T, signal: AbortSignal | undefined): T {
   return signal ? ({ ...options, abortSignal: signal } as T) : options;
+}
+
+/** The engine's `since` for logs: Unix seconds with a fraction. The engine rejects an RFC 3339 time here. */
+function engineSince(since: Date): string {
+  const ms = since.getTime();
+  return `${Math.floor(ms / 1000)}.${String(ms % 1000).padStart(3, "0")}`;
 }
 
 /** The engine reports the default bridge as `default` in some API versions. */
@@ -642,6 +648,31 @@ export function createDockerRuntime(socketPath: string): Runtime {
     async containerLogs(id, { tail, timestamps }) {
       const out = await call(() => docker.getContainer(id).logs({ stdout: true, stderr: true, tail, timestamps }));
       return demuxLogs(Buffer.isBuffer(out) ? out : Buffer.from(String(out)));
+    },
+
+    async *followLogs(id, { tail, timestamps, since, signal }) {
+      let stream: Readable;
+      try {
+        stream = (await call(() =>
+          docker.getContainer(id).logs(
+            withSignal<Docker.ContainerLogsOptions & { follow: true }>(
+              {
+                follow: true,
+                stdout: true,
+                stderr: true,
+                tail,
+                timestamps,
+                ...(since ? { since: engineSince(since) } : {}),
+              },
+              signal,
+            ),
+          ),
+        )) as Readable;
+      } catch (e) {
+        if (signal?.aborted) return;
+        throw followFailure(e);
+      }
+      yield* followedLines(stream, signal);
     },
 
     async containerDiff(id) {
