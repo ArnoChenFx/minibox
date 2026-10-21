@@ -53,14 +53,15 @@ describe("tool catalog parse", () => {
     expect(() => parseCatalogEntry({ ...sample, id: "Bad_ID" }, "x.json")).toThrow(AppError);
   });
 
-  test("requires a known category on every entry", () => {
+  test("checks the category, and files without one join the agents group", () => {
     for (const category of TOOL_CATEGORIES) {
       expect(parseCatalogEntry({ ...sample, category }, "x.json").category).toBe(category);
     }
     expect(() => parseCatalogEntry({ ...sample, category: "misc" }, "x.json")).toThrow(/unknown category misc/);
     const raw: Record<string, unknown> = { ...sample };
     delete raw.category;
-    expect(() => parseCatalogEntry(raw, "x.json")).toThrow(AppError);
+    expect(parseCatalogEntry(raw, "x.json").category).toBe("agents");
+    expect(() => parseCatalogEntry({ ...sample, category: 3 }, "x.json")).toThrow(AppError);
   });
 
   test("reads needsRoot and defaults it to false", () => {

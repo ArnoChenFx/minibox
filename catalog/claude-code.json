@@ -8,7 +8,7 @@
   "bin": "claude",
   "needsRoot": false,
   "estimatedMb": 277,
-  "requires": "Node \u2265 20",
+  "requires": "Node \u2265 22",
   "install": "npm install -g --prefix {{prefix}} {{package_spec}}",
   "upgrade": "npm install -g --prefix {{prefix}} {{package_spec}}",
   "uninstall": "npm uninstall -g --prefix {{prefix}} {{package}}",

@@ -789,7 +789,7 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 声明式清单：`id`、名称、说明、安装/检测/升级/卸载命令、依赖（如 Node ≥ 20）、是否需要 root、预估体积、安装来源（npm / pip / 官方脚本）。
 
-- 分组（`category`）：`agents` AI 编程助手、`languages` 语言与运行时、`terminal` 终端与开发工具、`networking` 网络。创建对话框与 Box 的「工具」页都按分组展示，并提供按名称、说明与分组过滤的搜索框。
+- 分组（`category`）：`agents` AI 编程助手、`languages` 语言与运行时、`terminal` 终端与开发工具、`networking` 网络。`tools.d` 里没写 `category` 的旧自定义条目归入 `agents`。创建对话框与 Box 的「工具」页都按分组展示，并提供按名称、说明与分组过滤的搜索框。
 - 内置：AI 编程助手 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi；语言与运行时 Bun、uv、Rust（rustup）、Zig；终端与开发工具 herdr、luvus；网络 Tailscale（`needsRoot`）。
 - `needsRoot` 的条目只列出，安装、升级与卸载都被拒绝（`tool_needs_root`），MiniBox 从不以 root 安装。
 - 检测：镜像或家目录里已有的工具显示为已安装并带版本，但不计为受管；只有 tools 卷上的入口点才受管。升级与卸载只作用于受管工具，其它情况返回 `tool_unmanaged`。已检测到的工具不会被重复安装。
