@@ -267,18 +267,25 @@ async function resolveInVolume(
 }
 
 /**
- * Holds each box on this host that mounts `volume` while `run` works, so a file call counts as box activity (#12). It
- * never starts a box: the file API works while boxes are stopped (§4.4).
+ * Holds each box on this host that mounts `volume` until the returned release is called, so work on the volume counts
+ * as box activity (#12). It never starts a box: the file API works while boxes are stopped (§4.4).
  */
-async function whileVolumeInUse<T>(host: HostCtx, volume: VolumeRecord, run: () => Promise<T>): Promise<T> {
+export function holdVolumeBoxes(host: HostCtx, volume: VolumeRecord): () => void {
   const releases = host.specs
     .list()
     .filter((spec) => spec.hostId === host.host.id && spec.mounts.some((mount) => mount.volume === volume.engineName))
     .map((spec) => host.pulse.hold(spec.id));
+  return () => {
+    for (const release of releases) release();
+  };
+}
+
+async function whileVolumeInUse<T>(host: HostCtx, volume: VolumeRecord, run: () => Promise<T>): Promise<T> {
+  const release = holdVolumeBoxes(host, volume);
   try {
     return await run();
   } finally {
-    for (const release of releases) release();
+    release();
   }
 }
 

@@ -34,6 +34,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Box user | Boxes run as the non-root `dev` user (uid/gid 1000); the web terminal and `docker exec` start as `dev`. Three [security profiles](#security-profiles) set what a box can do: `standard` (default) keeps passwordless `sudo`, and `strict` blocks escalation. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
 | Snapshots | Save a box's system environment via `docker commit`, create new boxes from a snapshot, or promote it to a template |
+| Checkpoints | Copy a box's workspace and home into a restic repository, then fork a new box from the copy or roll the box back to it. REST API only for now. See [Checkpoints](#checkpoints) |
 | Templates | Bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
@@ -115,7 +116,7 @@ flowchart LR
 ### Target architecture (planned)
 
 > [!NOTE]
-> Storage pools and volumes, exec, `/mcp` and the CLI client, sessions, and the path-mode port preview proxy are implemented. Tasks, checkpoints, multi-host and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
+> Storage pools and volumes, exec, `/mcp` and the CLI client, sessions, the path-mode port preview proxy, and checkpoints (take, fork and rollback over REST) are implemented. Checkpoint retention, schedules and the console, multi-host and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
 
 ```mermaid
 flowchart LR
@@ -425,8 +426,9 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | `tokens.json` | `600` | Agent API tokens: SHA-256 hashes only. Scopes, resource limits, quotas, expiry, last use and who created the token. Rotating `ACCESS_KEY` does not revoke these |
 | `ssh_host_ed25519_key` | `600` | The SSH gateway's host key, an OpenSSH ed25519 private key, created on first start. `minibox ssh-config` pins its public half. See [SSH access](#ssh-access) |
 | `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
+| `checkpoints/` | `700` | One checkpoint record per file, `ck_….json` (mode `600`): the box spec it was taken from, its volume layers and their restic snapshot ids. The data itself is in the repository volume, not here |
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per exec. The in-memory record is dropped on restart; the file stays until retention removes it |
-| `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
+| `secrets/` | `700` | Secret values and repository keys. `checkpoint-repo.key` (mode `600`) is the checkpoint repository's password, made on first use. Keep it with the repository volume: without it the checkpoints cannot be read |
 | `volumes/` | `700` | One volume record per file, `vol_….json` (mode `600`). The engine volume is not renamed when this file is written |
 | `pools.json` | `600` | Storage pools and the role-to-pool defaults. Missing means the implicit local pool; a corrupt file is left in place and treated as missing |
 | `events.db` (with `events.db-wal` and `events.db-shm` beside it) | inside `DATA_DIR` | Event log, SQLite in WAL mode. See [Events](#events) |
@@ -483,6 +485,57 @@ Create the marker before using a path pool, on the mounted filesystem:
 ```bash
 sudo touch /mnt/minibox/.minibox-mounted
 ```
+
+## Checkpoints
+
+A checkpoint is a copy of a box's data, kept in a restic repository. A new box can be forked from it, or the box can be rolled back to it. Unlike a snapshot, which keeps only the container's writable layer, a checkpoint includes `/workspace`. This is the first part of [#11](https://github.com/ArnoChenFx/minibox/issues/11). Take, fork and rollback work over the REST API. The console and MCP tools do not expose them yet.
+
+**What a checkpoint holds.** The box's owned volumes: workspace and home. The cache and the shared tools volume are never included. A shared volume the box mounts is included only when the request names it in `include.volumes`. With `include.system: true` the writable layer is committed as an image, so a fork starts from the box's system state; otherwise a fork starts from the box's template. Each checkpoint also records the box's template, CPUs, memory, profile and spec revision.
+
+### Taking a checkpoint
+
+`POST /api/boxes/:id/checkpoints` returns `202` with a `taskId`, and the checkpoint is the task's `result`. Its `consistency` says how the box is held while its volumes are read:
+
+- `live` (default) reads the volumes while the box keeps running. The copy is crash-consistent, the state a power cut would leave, so a database inside the box may need its own recovery.
+- `pause` freezes a running box's processes for the copy and resumes them afterwards. Files do not change during the copy.
+- `stop` stops a running box for the copy and starts it again afterwards. The box's revision changes twice, so read it again before the next `If-Match` request.
+
+A box that is not running is read as it is, whichever mode is chosen.
+
+A checkpoint, fork or rollback keeps the box awake while it runs, so idle sleep never stops it part way through, and the idle clock starts again when it ends. A sleeping box stays asleep. A checkpoint reads its volumes without waking it, and a fork never touches its source. A rollback also leaves the box asleep, although the rebuild starts the container briefly first, as described under [Idle sleep](#idle-sleep).
+
+### Forking
+
+`POST /api/checkpoints/:id/fork` creates a new box with new volumes. The source box and its volumes are not touched. `copyHome` is `false` by default, so the new box starts with an empty home directory. Set it to `true` to copy the checkpoint's home too. A fork uses the quota and capacity checks of a box create.
+
+### Rolling back
+
+`POST /api/boxes/:id/rollback` with `{ "checkpoint": "ck_…" }` rolls the box back to one of its own checkpoints. Send `If-Match` with the box's current revision: a missing header gets `428`, and a stale one gets `412`. Without `"confirm": true` the call changes nothing and returns `409 confirmation_required` with `details.preview`. The preview lists the volumes that would be replaced and the container changes.
+
+With `confirm: true`, the checkpoint's data is restored into new volumes, and the box is rebuilt onto them. As with any rebuild, processes and the writable layer outside volumes are lost. The box keeps its id, name, spec history and shared volumes. The volumes it replaces are kept but no longer mounted, and the response lists them in `replaced`. Deleting the box does not remove them. Delete one with `DELETE /api/volumes/:id?confirm=true` when it is no longer needed. A checkpoint of another box, or one with no volume data, is refused with `409`.
+
+### Pinning and deleting
+
+`PATCH /api/checkpoints/:id` changes `label` and `pinned`. A pinned checkpoint cannot be deleted until it is unpinned. `DELETE /api/checkpoints/:id` forgets its snapshots in the repository and removes its system image. Only the token or owner that took a checkpoint can change or delete it. There is no retention yet, so a checkpoint stays until it is deleted.
+
+A snapshot taken before checkpoints existed is listed too, with `"legacy": true` and a system layer only. It can be forked and deleted. It cannot be changed or rolled back to.
+
+### Where the data lives
+
+The repository is written by a short-lived helper from the image `restic/restic:0.18.1`. Each host has one repository, in the Docker volume `<LABEL_PREFIX>-checkpoints-<host>`, which is `minibox-checkpoints-local` by default. Its password is generated on first use into `DATA_DIR/secrets/checkpoint-repo.key` (mode `600`) and passed to each helper through its environment. A repository that the password cannot open is an error, never a reason to make a new one.
+
+Checkpoints are not disaster recovery. The repository is on the same Docker daemon and disk as the boxes, so losing that disk loses both. To keep a copy elsewhere, copy the volume and the key together. Keep an off-host copy of anything you cannot lose; code belongs in git. The helper gets 1 GiB of memory, 256 processes, a 64 MiB `/tmp` and one hour per call. Those limits are not yet measured against large data.
+
+### Token scopes
+
+- `checkpoint:create` takes a checkpoint, and changes or deletes the ones the token created.
+- `checkpoint:restore` rolls a box back.
+- `box:write` is needed to fork.
+- Listing and reading need one of `box:read`, `checkpoint:create` or `checkpoint:restore`. A token sees a checkpoint if it created it, or if it may see the box it was taken from.
+
+### Not in this release
+
+Retention, scheduled and automatic checkpoints (including one taken before a rollback), export and import, single-file browsing, the console, MCP tools and standalone volume snapshots are planned under [#11](https://github.com/ArnoChenFx/minibox/issues/11).
 
 ## API reference
 
@@ -592,6 +645,20 @@ The terminal socket sends output as binary frames and `state` or `error` frames 
 
 Only images carrying MiniBox labels can be deleted through the API.
 
+### Checkpoints
+
+`:id` is a checkpoint id (`ck_…`). A snapshot from before checkpoints is listed under a `ck_…` id derived from its image. Every write returns `202` with `{ "taskId" }`, and the result is on the task. See [Checkpoints](#checkpoints).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/checkpoints` | List checkpoints, newest first, including legacy snapshots. A token sees only the checkpoints it may see |
+| `GET` | `/api/checkpoints/:id` | One checkpoint. A legacy snapshot has `"legacy": true` |
+| `POST` | `/api/boxes/:id/checkpoints` | Take a checkpoint `{ "label"?, "reason"?, "pinned"?, "include"?: { "system"?, "volumes"? }, "consistency"? }`. `consistency` is `live` (default), `pause` or `stop` |
+| `POST` | `/api/checkpoints/:id/fork` | Create a box `{ "name", "cpus"?, "memoryMb"?, "profile"?, "copyHome"?, "ttlSec"? }`. `copyHome` defaults to `false` |
+| `POST` | `/api/boxes/:id/rollback` | Roll the box back `{ "checkpoint", "confirm"? }`. Requires `If-Match` (`428` if missing, `412` if stale). Without `"confirm": true` it returns `409 confirmation_required` with `details.preview` and changes nothing |
+| `PATCH` | `/api/checkpoints/:id` | Pin or relabel `{ "pinned"?, "label"? }`. A legacy snapshot returns `409` |
+| `DELETE` | `/api/checkpoints/:id` | Delete a checkpoint and its snapshots. A pinned checkpoint returns `409` (`checkpoint_pinned`) |
+
 ### Tasks
 
 Template builds and snapshot commits run as tasks. The POST returns `202` and `{ "taskId" }` immediately, then the work continues on the server. One template build runs at a time, and one snapshot commit runs at a time per box; a second request gets `409` with `details.taskId` of the one already running.
@@ -636,7 +703,7 @@ The owner, and an admin token whose scopes and resource limits were not narrowed
 
 ### OpenAPI
 
-The box, snapshot, template, task, event-list and agent-token routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. A `202` body is `{ "taskId" }`; the operation's own output is `x-task-result` and is stored on the task. Auth, system, host and activity routes, and the event and task streams, are not in it yet.
+The box, snapshot, checkpoint, template, task, event-list and agent-token routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. A `202` body is `{ "taskId" }`; the operation's own output is `x-task-result` and is stored on the task. Auth, system, host and activity routes, and the event and task streams, are not in it yet.
 
 ### Example
 
@@ -811,7 +878,7 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **Container isolation, not a security sandbox.** Boxes share the host kernel. They are fine for your own agents, but **not for untrusted third-party code** — use gVisor or a microVM-based sandbox for that. Don't mount the Docker socket or sensitive host paths into a box.
 - **Boxes have passwordless `sudo` by default.** Under the default `standard` profile the `dev` user can become root inside its box, and root there can change anything in the box and in its workspace volume. `standard` also drops most Linux capabilities, so a box is not a privileged container. The `strict` profile stops escalation; see [Security profiles](#security-profiles).
 - **`/mcp` accepts the main access key, which grants full owner access.** An agent that connects with the key can run `exec` as root in a box that is not `strict`, delete boxes and rebuild them. Give agents an agent token instead ([#13](https://github.com/ArnoChenFx/minibox/issues/13)): its `tools/list` and every call are held to its scopes. See [Agents](#agents).
-- **Snapshots don't include `/workspace`.** `docker commit` skips mounted volumes; keep code in git or back up the volume separately.
+- **Snapshots don't include `/workspace`.** `docker commit` skips mounted volumes; keep code in git or back up the volume separately. Checkpoints do include it, see [Checkpoints](#checkpoints).
 - `scripts/restart.sh` is a single-user sandbox convenience. It may start `dockerd` with `sudo`, then gives the Docker socket to your primary group with mode `660`, so only members of that group (normally just you) and root can use it. Docker access is still root-equivalent, so review the script before using it elsewhere.
 
 ### Security profiles
@@ -864,7 +931,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 
 ### M3 · Core value
 
-- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) Checkpoints with restic: fork, rollback and retention
+- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) Checkpoints with restic: fork, rollback and retention (take, fork and rollback over REST are in; retention, schedules and the console are not)
 
 - [x] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Port preview for dev servers running inside boxes
 - [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) Optional agent CLI install at creation or at runtime

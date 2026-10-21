@@ -174,6 +174,8 @@ export interface HelperSpec {
   memoryBytes?: number;
   /** Process limit. Absent keeps 64. */
   pidsLimit?: number;
+  /** Size in bytes of the `/tmp` tmpfs on a read-only root. Absent keeps 16 MiB. */
+  tmpfsBytes?: number;
 }
 
 export interface DiskUsage {
@@ -331,6 +333,13 @@ export interface Runtime {
   /** Stopping a stopped container succeeds. */
   stopContainer(id: string, opts: { timeoutSec: number }): Promise<void>;
   restartContainer(id: string, opts: { timeoutSec: number }): Promise<void>;
+  /**
+   * Freezes every process in a running container, so its files stop changing. Pausing a paused or stopped container
+   * fails with `conflict`.
+   */
+  pauseContainer(id: string): Promise<void>;
+  /** Resumes a paused container. One that is not paused is left as it is, so a cleanup step can always call it. */
+  unpauseContainer(id: string): Promise<void>;
   removeContainer(id: string, opts: { force: boolean }): Promise<void>;
   renameContainer(id: string, name: string): Promise<void>;
   /** Only the fields that are present change. Restart policy changes do not recreate the container. */
@@ -377,6 +386,11 @@ export interface Runtime {
 
   listImages(filter: { labels: Record<string, string> }): Promise<ImageSummary[]>;
   inspectImage(ref: string): Promise<ImageDetails>;
+  /**
+   * Makes `ref` present locally. An image that is already present is left alone and no registry is contacted. A
+   * reference the registry does not have fails with `not_found`.
+   */
+  pullImage(ref: string): Promise<void>;
   removeImage(ref: string, opts: { force: boolean }): Promise<void>;
   /**
    * Resolves with the build log. `onLog` receives the same text as it arrives. An aborted `signal` rejects with

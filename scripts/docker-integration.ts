@@ -1,17 +1,20 @@
 /**
- * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-sessions.test.ts and
- * tests/docker-ssh.test.ts) against the local Docker engine, one file per process.
+ * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-checkpoint.test.ts,
+ * tests/docker-sessions.test.ts and tests/docker-ssh.test.ts) against the local Docker engine, one file per process.
  *
  *   bun run test:docker
  *
  * Every run gets its own label prefix, so nothing it creates can be mistaken for a real install. Containers, images
- * and volumes labelled with the prefix, and networks named with it, are removed afterwards, even when the tests fail.
+ * and volumes labelled with the prefix, volumes named with it (the checkpoint repository is one), and networks named
+ * with it are removed afterwards, even when the tests fail.
  *
  * Environment: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20). The SSH test
  * builds its box image on debian:bookworm-slim, which is pulled here too when the engine does not have it.
  */
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
+
+import { RESTIC_IMAGE } from "../src/checkpoints/restic";
 
 const ROOT = join(import.meta.dir, "..");
 const socket = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
@@ -39,6 +42,21 @@ async function docker(args: string[]): Promise<string> {
   return out;
 }
 
+/** Pulls an image unless the engine already has it. */
+async function ensureImage(ref: string): Promise<void> {
+  const present = await docker(["image", "inspect", ref]).then(
+    () => true,
+    () => false,
+  );
+  if (present) return;
+  console.log(`[docker-integration] pulling ${ref}`);
+  const pull = Bun.spawn(["docker", "-H", `unix://${socket}`, "pull", ref], {
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if ((await pull.exited) !== 0) throw new Error(`could not pull ${ref}`);
+}
+
 async function preflight(): Promise<void> {
   try {
     await docker(["version", "--format", "{{.Server.Version}}"]);
@@ -49,22 +67,15 @@ async function preflight(): Promise<void> {
       { cause: e },
     );
   }
-  for (const ref of new Set([image, SSH_FIXTURE_BASE])) {
-    const present = await docker(["image", "inspect", ref]).then(
-      () => true,
-      () => false,
-    );
-    if (present) continue;
-    console.log(`[docker-integration] pulling ${ref}`);
-    const pull = Bun.spawn(["docker", "-H", `unix://${socket}`, "pull", ref], {
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    if ((await pull.exited) !== 0) throw new Error(`could not pull ${ref}`);
-  }
+  for (const ref of new Set([image, RESTIC_IMAGE, SSH_FIXTURE_BASE])) await ensureImage(ref);
 }
 
-const TEST_FILES = ["tests/docker-runtime.test.ts", "tests/docker-sessions.test.ts", "tests/docker-ssh.test.ts"];
+const TEST_FILES = [
+  "tests/docker-runtime.test.ts",
+  "tests/docker-checkpoint.test.ts",
+  "tests/docker-sessions.test.ts",
+  "tests/docker-ssh.test.ts",
+];
 
 /** Runs each file in its own process, so each one's cleanup sees only what it made. The first failure is the status. */
 async function runTests(): Promise<number> {
@@ -88,7 +99,7 @@ async function runTests(): Promise<number> {
   return status;
 }
 
-/** Removes everything this run labelled, containers first so that images and volumes are no longer in use. */
+/** Removes everything this run made, containers first so that images and volumes are no longer in use. */
 async function sweep(): Promise<void> {
   const containers = lines(await docker(["ps", "-aq", "--filter", `label=${prefix}`]));
   if (containers.length > 0) await docker(["rm", "-f", ...containers]);
@@ -101,7 +112,12 @@ async function sweep(): Promise<void> {
   const uniqueImages = [...new Set(images)];
   if (uniqueImages.length > 0) await docker(["rmi", "-f", ...uniqueImages]);
 
-  const volumes = lines(await docker(["volume", "ls", "-q", "--filter", `label=${prefix}`]));
+  const volumes = [
+    ...new Set([
+      ...lines(await docker(["volume", "ls", "-q", "--filter", `label=${prefix}`])),
+      ...lines(await docker(["volume", "ls", "-q"])).filter((name) => name.startsWith(`${prefix}-`)),
+    ]),
+  ];
   if (volumes.length > 0) await docker(["volume", "rm", ...volumes]);
 
   const networks = lines(await docker(["network", "ls", "--format", "{{.Name}}"])).filter((name) =>

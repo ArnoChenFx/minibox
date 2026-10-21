@@ -161,6 +161,24 @@ export default {
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   "err.box_exists": "A box named “{name}” already exists.",
+  "err.box_id_taken": "Box id {id} is already in use.",
+  "err.checkpoint_not_found": "Checkpoint {id} was not found.",
+  "err.checkpoint_volume_excluded":
+    "Volume {volume} is never part of a checkpoint. Cache and tools volumes are left out of every checkpoint.",
+  "err.checkpoint_volume_not_mounted": "Volume {volume} is not mounted by this box, so it cannot be included.",
+  "err.checkpoint_other_box":
+    "Checkpoint {id} was taken from another box. Roll back a box only to its own checkpoints.",
+  "err.checkpoint_no_data": "Checkpoint {id} holds no volume data, so there is nothing to roll back.",
+  "err.checkpoint_legacy_read_only":
+    "Snapshot {id} was made before checkpoints. It can be forked or deleted, not changed.",
+  "err.checkpoint_path_taken":
+    "Path {path} is already mounted by a volume the new box gets by default. Mount the copy elsewhere, or do not copy it.",
+  "err.checkpoint_path_not_mounted":
+    "No volume of this box is mounted at {path} now, so the checkpoint cannot be restored there.",
+  "err.checkpoint_pinned": "Checkpoint {id} is pinned. Unpin it before deleting it.",
+  "err.checkpoint_rollback_confirm":
+    "Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept; delete them yourself once you no longer need them. Send confirm: true to continue.",
+  "err.checkpoint_out_of_scope": "This credential cannot use that checkpoint.",
   "err.box_network_conflict":
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
   "err.volume_reserved": "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",
@@ -344,8 +362,12 @@ export default {
   "act.box.restart": "Restarted box",
   "act.box.resources": "Resized",
   "act.box.rebuild": "Rebuilt box",
+  "act.box.rollback": "Rolled box back",
   "act.snapshot.create": "Created snapshot",
   "act.snapshot.delete": "Deleted snapshot",
+  "act.checkpoint.create": "Took checkpoint",
+  "act.checkpoint.update": "Updated checkpoint",
+  "act.checkpoint.delete": "Deleted checkpoint",
   "act.template.promote": "Promoted to template",
   "act.template.build": "Built base template",
   "act.template.delete": "Deleted template",

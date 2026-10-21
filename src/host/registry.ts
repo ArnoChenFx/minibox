@@ -1,4 +1,7 @@
 import type { BoxProfile } from "../box-profile";
+import type { SnapshotEngine } from "../checkpoints/engine";
+import { ResticEngine } from "../checkpoints/restic";
+import { CheckpointStore } from "../checkpoints/store";
 import type { Config } from "../config";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import type { Runtime } from "../runtime";
@@ -48,6 +51,10 @@ export interface HostCtx {
   volumes: VolumeStore;
   /** In-memory activity heartbeats for idle sleep (#12). Shared across hosts of one control plane. */
   pulse: ActivityPulse;
+  /** Checkpoint records. One store is shared by every host, files live under `DATA_DIR/checkpoints`. */
+  checkpoints: CheckpointStore;
+  /** Stores volume contents for checkpoints. Each host keeps its own repository behind this engine. */
+  checkpointEngine: SnapshotEngine;
   /** Serializes start, stop, sleep and wake of this host's boxes (#12). */
   power: BoxPower;
 }
@@ -56,6 +63,10 @@ export interface LocalHostOptions {
   /** Host id. Defaults to `local`; a second host needs its own id. */
   readonly id?: string;
   readonly name?: string;
+  /** Defaults to a store under `DATA_DIR/checkpoints`. */
+  readonly checkpoints?: CheckpointStore;
+  /** Defaults to the restic engine. */
+  readonly checkpointEngine?: SnapshotEngine;
 }
 
 /**
@@ -98,6 +109,8 @@ export function createLocalHost(
     specs,
     volumes,
     pulse,
+    checkpoints: options.checkpoints ?? new CheckpointStore(cfg.dataDir),
+    checkpointEngine: options.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir }),
     power: new BoxPower(),
   };
   return ctx;
