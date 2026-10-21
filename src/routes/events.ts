@@ -5,8 +5,8 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { eventFilterInput, filterOf, parseSequence } from "../operations/events";
 import { parseInput } from "../operations/validation";
-import { OWNER } from "./operations";
-import { type Route, route } from "./router";
+import { allBoxViews } from "../tokens/model";
+import { abortWhenEnded, principalOf, type Route, route, scopedAccess } from "./router";
 
 const STREAM_HEADERS = {
   "content-type": "text/event-stream; charset=utf-8",
@@ -30,26 +30,36 @@ function lastEventIdOf(req: Request): number | undefined {
  * schema for it. It still goes through the same authentication and origin checks as every other `/api/` route.
  */
 export const eventRoutes: Route[] = [
-  route("GET", "/api/events/stream", ({ app, req, url, server, caller }) => {
-    const filter = scopedFilter(filterOf(parseInput(eventFilterInput, Object.fromEntries(url.searchParams))), OWNER);
-    const lastId = lastEventIdOf(req);
-    const release = app.streams.acquire();
-    server.timeout(req, 0);
-    // A browser that signs out or is revoked must stop receiving events now, not at its next reconnect.
-    const sessionEnded = new AbortController();
-    const unwatch = caller?.sessionId ? app.sessions.watch(caller.sessionId, () => sessionEnded.abort()) : undefined;
-    const stream = eventStream({
-      store: app.events,
-      subscribe: (listener) => app.bus.subscribe("event", listener),
-      filter,
-      lastId,
-      live: carriesLiveState(filter) ? liveSource(app.bus, app.hosts) : undefined,
-      signal: AbortSignal.any([req.signal, sessionEnded.signal]),
-      onEnd: () => {
-        unwatch?.();
-        release();
-      },
-    });
-    return new Response(stream, { headers: STREAM_HEADERS });
-  }),
+  route(
+    "GET",
+    "/api/events/stream",
+    (ctx) => {
+      const { app, req, url, server, caller } = ctx;
+      const principal = principalOf(ctx);
+      const requested = filterOf(parseInput(eventFilterInput, Object.fromEntries(url.searchParams)));
+      const filter = scopedFilter(requested, principal, allBoxViews(app.hosts.list()));
+      const lastId = lastEventIdOf(req);
+      const release = app.streams.acquire();
+      server.timeout(req, 0);
+      // A browser that signs out or is revoked must stop receiving events now, not at its next reconnect.
+      const ended = new AbortController();
+      const stopWatching = abortWhenEnded(app, caller, ended);
+      const stream = eventStream({
+        store: app.events,
+        subscribe: (listener) => app.bus.subscribe("event", listener),
+        filter,
+        lastId,
+        live: carriesLiveState(requested)
+          ? liveSource(app.bus, app.hosts, { principal, task: (id) => app.tasks.get(id, { output: false }) })
+          : undefined,
+        signal: AbortSignal.any([req.signal, ended.signal]),
+        onEnd: () => {
+          stopWatching();
+          release();
+        },
+      });
+      return new Response(stream, { headers: STREAM_HEADERS });
+    },
+    { access: scopedAccess("events:read") },
+  ),
 ];

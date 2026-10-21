@@ -42,6 +42,7 @@ function serve() {
     principal: OWNER,
     source: "rest",
     events: app.events,
+    tokens: app.tokens,
     execs: app.execs,
   };
   const server = startServer(app);

@@ -55,6 +55,7 @@ async function withServer(
     app.throttle.stop();
     app.monitor.stop();
     app.sessions.stop();
+    app.tokens.stop();
     server.stop(true);
   }
 }

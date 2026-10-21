@@ -382,6 +382,7 @@ export class TaskStore {
       status: row.status,
       summary: row.summary,
       hostId: row.host_id,
+      principalId: row.principal_id,
       target,
       createdAt: iso(row.created_at),
       updatedAt: iso(row.updated_at),

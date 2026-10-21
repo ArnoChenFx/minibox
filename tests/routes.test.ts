@@ -32,6 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
   app.sessions.stop();
+  app.tokens.stop();
   server.stop(true);
   restoreLogs();
 });

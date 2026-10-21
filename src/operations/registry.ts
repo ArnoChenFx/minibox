@@ -6,6 +6,7 @@ import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
 import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
+import { tokenOperations } from "./tokens";
 import type { Operation } from "./types";
 import { volumeOperations } from "./volumes";
 
@@ -19,6 +20,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...templateOperations,
   ...taskOperations,
   ...eventOperations,
+  ...tokenOperations,
 ];
 
 const OPERATION_NAME = /^[a-z]+(\.[a-z]+)+$/;

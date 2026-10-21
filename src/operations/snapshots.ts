@@ -3,6 +3,9 @@ import { z } from "zod";
 import { createBox, getBox } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
 import { createSnapshot, deleteSnapshot, listSnapshots } from "../services/snapshots";
+import { snapshotVisible, specViews, ttlFor } from "../tokens/model";
+import { underQuota } from "../tokens/quota";
+import { assertCanCreateDefaultMounts } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
 import { BoxSchema, ImageSchema, OkSchema, SnapshotSchema } from "./schemas";
@@ -14,6 +17,7 @@ import {
   memoryWithDefault,
   snapshotName,
   snapshotRef,
+  ttl,
 } from "./validation";
 
 export const snapshotCreate = defineOperation({
@@ -32,7 +36,9 @@ export const snapshotCreate = defineOperation({
   exclusive: ({ host }, _input, box) => `snapshot.create:${host.host.id}:${box.id}`,
   activity: { action: () => "snapshot.create", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host, task }, input) => ({ snapshot: await createSnapshot(host, input.id, input.name, task) }),
+  run: async ({ host, task, principal }, input) => ({
+    snapshot: await createSnapshot(host, input.id, input.name, task, principal.id),
+  }),
 });
 
 export const snapshotFork = defineOperation({
@@ -49,6 +55,7 @@ export const snapshotFork = defineOperation({
     cpus: cpusWithDefault(DEFAULT_RESOURCES.cpus),
     memoryMb: memoryWithDefault(DEFAULT_RESOURCES.memoryMb),
     profile: boxProfile(),
+    ttlSec: ttl("create"),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/snapshots/:ref/boxes", body: true, status: 201 }],
@@ -56,21 +63,26 @@ export const snapshotFork = defineOperation({
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: (input, _box, result) => ({ kind: "box", id: result?.box.id, name: input.name }) },
-  run: async ({ host, principal, record }, input) => ({
-    box: await createBox(
-      host,
-      {
-        name: input.name,
-        image: input.ref.trim(),
-        cpus: input.cpus,
-        memoryMb: input.memoryMb,
-        profile: input.profile,
-        templateLabel: `snapshot:${input.ref}`,
-        createdBy: principal.type,
-      },
-      record,
-    ),
-  }),
+  run: async (ctx, input) => {
+    const { host, principal, record } = ctx;
+    await assertCanCreateDefaultMounts(ctx, input.name);
+    return underQuota(ctx, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
+      box: await createBox(
+        host,
+        {
+          name: input.name,
+          image: input.ref.trim(),
+          cpus: input.cpus,
+          memoryMb: input.memoryMb,
+          profile: input.profile,
+          templateLabel: `snapshot:${input.ref}`,
+          createdBy: principal.id,
+          ttlSec: ttlFor(principal, input.ttlSec),
+        },
+        record,
+      ),
+    }));
+  },
 });
 
 export const snapshotList = defineOperation({
@@ -84,7 +96,16 @@ export const snapshotList = defineOperation({
   output: z.object({ snapshots: z.array(ImageSchema) }),
   rest: [{ method: "GET", path: "/api/snapshots" }],
   cli: "snapshot list",
-  run: async ({ host }) => ({ snapshots: await listSnapshots(host) }),
+  run: async ({ host, principal }) => {
+    const snapshots = await listSnapshots(host);
+    if (principal.type === "owner") return { snapshots };
+    const boxes = specViews(host.specs.list());
+    return {
+      snapshots: snapshots.filter((image) =>
+        snapshotVisible(principal, { createdBy: image.createdBy, sourceId: image.sourceId }, boxes),
+      ),
+    };
+  },
 });
 
 export const snapshotDelete = defineOperation({

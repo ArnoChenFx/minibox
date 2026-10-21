@@ -164,6 +164,7 @@ describe("volumes and storage pools", () => {
       principal: { type: "owner", id: "owner", name: "owner" },
       source: "rest",
       events: denied.app.events,
+      tokens: denied.app.tokens,
     };
     await denied.app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 });
     const error = await rejectionOf(
@@ -608,6 +609,7 @@ function guardedApp() {
     principal: { type: "owner", id: "owner", name: "owner" },
     source: "rest",
     events: created.app.events,
+    tokens: created.app.tokens,
   };
   return {
     app: created.app,

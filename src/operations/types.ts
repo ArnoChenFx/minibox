@@ -6,6 +6,8 @@ import type { HostCtx } from "../host/registry";
 import type { ExecService } from "../services/exec";
 import type { TerminalService } from "../services/terminals";
 import type { TaskHandle, TaskReader } from "../tasks/types";
+import type { BoxView, TokenGrants } from "../tokens/model";
+import type { TokenStore } from "../tokens/store";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
@@ -14,16 +16,29 @@ export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "me
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-/** Who is calling. Only the owner exists until scoped tokens (#13) add other principals. */
-export interface Principal {
+/** The access key, or a browser session. Every owner credential has the id `owner`. */
+export interface OwnerPrincipal {
   readonly type: "owner";
   readonly id: string;
   readonly name: string;
 }
 
+/** An agent API token. `grants` is the policy the authorizer and the event filter check. */
+export interface TokenPrincipal {
+  readonly type: "token";
+  readonly id: string;
+  readonly name: string;
+  readonly grants: TokenGrants;
+}
+
+/** Who is calling. A principal's id is what boxes, volumes, snapshots and tasks record as their creator. */
+export type Principal = OwnerPrincipal | TokenPrincipal;
+
+export const OWNER: OwnerPrincipal = { type: "owner", id: "owner", name: "owner" };
+
 /**
- * A volume named in a volume scope check. Agent tokens will narrow this when #13 lands. `id` is absent for a name that
- * has no record yet, which a create or a mount of a new name passes.
+ * A volume named in a volume scope check. `id` is the record's stable id and is absent for a name that has no record
+ * yet, which a create or a mount of a new name passes.
  */
 export interface VolumeResource {
   readonly kind: "volume";
@@ -41,6 +56,12 @@ export interface OperationContext {
   readonly parentId?: string;
   /** The event log, for operations that read it. Adapters pass the app's store. */
   readonly events: EventReader;
+  /** Agent API tokens. Token operations read and change this store. */
+  readonly tokens: TokenStore;
+  /** Every box view across the hosts, for visibility checks that must not miss a box on another host. */
+  readonly boxViews?: () => readonly BoxView[];
+  /** Every host, for an operation that acts on objects wherever they are. Without it, only `host` is known. */
+  readonly allHosts?: () => readonly HostCtx[];
   /** Set on the background run of an async operation, so the handler can log and watch for cancellation. */
   readonly task?: TaskHandle;
   /** The task manager. The executor fills it in; task operations read it. */
@@ -90,7 +111,7 @@ export interface OperationMeta {
   readonly kind: Kind;
   readonly scope: string;
   readonly async: boolean;
-  /** Creating a box by name can fail with a 409 when the name is taken. */
+  /** Creating a named object can fail with a 409 when the name is taken. */
   readonly conflicts?: boolean;
   readonly rest: readonly RestBinding[];
   readonly cli?: string;

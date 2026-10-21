@@ -1,7 +1,8 @@
-import { createHash, randomBytes, scryptSync } from "node:crypto";
+import { randomBytes, scryptSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { writeFileAtomic } from "./data-dir";
+import { sha256 } from "./lib/hash";
 import { log } from "./lib/logger";
 
 /** Most sessions kept at once. A sign-in beyond this ends the least recently used session. */
@@ -87,7 +88,7 @@ export class SessionStore {
     const token = randomBytes(TOKEN_BYTES).toString("base64url");
     const record: SessionRecord = {
       id: randomBytes(16).toString("hex"),
-      tokenHash: hashToken(token),
+      tokenHash: sha256(token),
       createdAt: now,
       expiresAt: now + this.opts.ttlMs,
       lastSeenAt: now,
@@ -101,7 +102,7 @@ export class SessionStore {
 
   /** The live session behind a token. The request counts as use, which renews the session when sliding renewal is on. */
   touch(token: string, now = this.now()): SessionInfo | null {
-    return this.markUsed(this.records.get(hashToken(token)) ?? null, now);
+    return this.markUsed(this.records.get(sha256(token)) ?? null, now);
   }
 
   /** Records activity on a live session by id, such as input on an open terminal. */
@@ -286,10 +287,6 @@ export class SessionStore {
 
 function fingerprintKey(accessKey: string): string {
   return scryptSync(accessKey, FINGERPRINT_SALT, 32, { N: 16384, r: 8, p: 1 }).toString("hex");
-}
-
-function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
 }
 
 /** Strips control characters and caps the length. User-Agent and address come from the client and are shown back to it. */

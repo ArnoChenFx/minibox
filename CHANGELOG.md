@@ -15,8 +15,9 @@
 - 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
 
 ### 安全
+- Agent API 令牌与访问密钥分开（#13）。明文（`mbx_…`）只在创建时返回一次，`DATA_DIR/tokens.json` 只保存 SHA-256。scope 包括 `box:read`、`box:write`、`box:delete`、`exec`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`。资源范围默认是该令牌创建的 Box（`created-by-me`），也可以指定 id、标签或全部 Box；卷必须显式列出；宿主机默认只有 `local`。预设为 `readonly`、`operator`、`sandboxed-agent` 与 `admin`。`sandboxed-agent` 默认最多 5 个 Box、合计 8 个 CPU 与 16384 MB、TTL 最长 4 小时、每分钟 60 次请求。超出配额返回 `403`（`quota_*`），速率超限返回 `429`。吊销立即生效；`DELETE /api/tokens/:id?deleteCreated=true` 同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。创建 Box 时若工作区卷已经存在，或更新挂载指向已有卷，缺少对该卷的 `volume:attach` 会返回 `403`。签发与吊销令牌只有所有者可以做，`admin` 预设不能签发令牌。更换 `ACCESS_KEY` 不会吊销这些令牌。审计日志会打码本进程内创建的令牌，以及形如 `mbx_` 再加至少 20 个字符的值。同一枚令牌也可以作为 `/mcp` 的 Bearer 使用，`tools/list` 与每次调用都受其 scope 约束；吊销会结束它的 MCP 会话、终端、事件流与任务流，并在 `failedBoxes` 中列出无法删除的 Box。TTL 到期后 Box 会停止、不删除（#12）。
 - 错误的 `Authorization: Bearer` 密钥计入登录限流：`/api/`、`/mcp` 与终端 WebSocket 和登录共用同一计数，超限后返回 `429`。正确的密钥不计入，也不会被拒绝。此前 Bearer 密钥的错误不受限制。
-- `/mcp` 仍使用主访问密钥认证（范围令牌 #13 未完成）。持有该密钥的 MCP 客户端拥有完全的所有者权限，包括以 `root` 执行 `exec`（非「严格」档位）、`delete_box` 与 `rebuild_box`。README、README-zh 与 `docs/agents.md` 已用警示块写明。
+- `/mcp` 接受访问密钥与 Agent 令牌（#13）。持有访问密钥的 MCP 客户端拥有完全的所有者权限，包括以 `root` 执行 `exec`（非「严格」档位）、`delete_box` 与 `rebuild_box`，因此应优先发放令牌。README、README-zh 与 `docs/agents.md` 已用警示块写明。
 - exec 的进程树改为在箱内终止，宿主机不再对 Docker 报告的宿主机 pid 发送 `SIGKILL`。「标准」与「宽松」档位以 `root` 执行终止，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。进程由包装 shell 命令行中的随机令牌找到；`/tmp` 中的标记文件只作线索，因为箱内任何进程都能改写或删除它。终止时先冻结每个进程再结束，并一并结束包装 shell 所在的会话与进程组。Docker 报告 exec 已结束后才算成功，否则返回 `502`，exec 保持 `running`。
 - 审计来源由服务端决定：`X-Minibox-Client` 请求头不再把 CLI 调用记为 `cli`，REST 与 CLI 的调用都记为 `rest`，MCP 调用记为 `mcp`。
 - 登录 Cookie 不再保存原始 `ACCESS_KEY`。登录后签发随机的 32 字节会话令牌（来自 CSPRNG），Cookie 只保存该令牌。服务端只在 `DATA_DIR/sessions.json` 中保存其 SHA-256 哈希，令牌与访问密钥都不写入日志（#2）。
@@ -38,7 +39,7 @@
 - 新建 Box 默认加固：丢弃大部分 Linux capability（「标准」档位保留 Docker 默认能力集中的 11 项，去掉 `MKNOD`、`SETPCAP`、`SYS_CHROOT`），设置进程数上限与 ulimit（禁用 core dump，`nofile` 为 65536），并放在独立网络上，同一网络内的 Box 之间不能互相访问（#5）。
 - 出站（egress）策略与磁盘配额暂缓实现，不随 #5 交付。Box 的出站流量不做过滤，磁盘用量也没有上限（#5）。
 - `scripts/restart.sh` 不再对 Docker Socket 执行 `chmod 666`，此前任何本地用户都能以 root 等同权限访问 Docker。现在每次运行都把 Socket 的属组设为执行者的主组、权限设为 `660`，服务进程无需重新登录即可使用 Docker；主组以外的账户（包括 `docker` 组成员）在脚本运行后无法访问该 Socket。该脚本定位为单用户沙箱的便利脚本，README 已说明。
-- 创建 Box 与重建时，挂载和网络都要经过检查，这是设计文档 §9.2 在 `volume:attach` 授权（#13）落地前的过渡规则。`minibox-data`（保存访问密钥与会话）、池根卷 `<前缀>-pool-<池名>`、内部辅助卷，以及没有 MiniBox 标签的卷一律拒绝挂载。检查以卷记录为准：记录的所有者是另一个仍存在的 Box 时拒绝，因此别的 Box 的工作区不能被挂走；独立记录（例如共享工具卷）可以被多个 Box 挂载。尚不存在的名字只能新建为独立卷，且不能以 `<前缀>-ws-` 或 `<前缀>-pool-` 开头；记录或引擎卷已丢失时返回 `409 volume_missing`，不会静默重建。挂载卷需要 `volume:attach`，读写挂载、新建卷以及不带 `mounts` 的新建 Box 还需要 `volume:write`；`pool.replace` 需要 `pool:admin`。重建时网络只能是宿主机的 Box 网络，或 Box 当前已在使用的网络，`host`、`none` 与 `container:*` 始终拒绝。不符合时返回 `403`（错误码 `forbidden`），容器与规格都不变。`PATCH /api/boxes/:id` 更新挂载时只检查新增或改变的挂载，与现有挂载相同的（同一卷、路径与模式）不再检查。
+- 创建 Box 与重建时，挂载和网络都要经过结构检查（设计文档 §9.2）。这些检查独立于 `volume:attach` 授权（#13），所有者同样受其约束。`minibox-data`（保存访问密钥与会话）、池根卷 `<前缀>-pool-<池名>`、内部辅助卷，以及没有 MiniBox 标签的卷一律拒绝挂载。检查以卷记录为准：记录的所有者是另一个仍存在的 Box 时拒绝，因此别的 Box 的工作区不能被挂走；独立记录（例如共享工具卷）可以被多个 Box 挂载。尚不存在的名字只能新建为独立卷，且不能以 `<前缀>-ws-` 或 `<前缀>-pool-` 开头；记录或引擎卷已丢失时返回 `409 volume_missing`，不会静默重建。挂载卷需要 `volume:attach`，读写挂载、新建卷以及不带 `mounts` 的新建 Box 还需要 `volume:write`；`pool.replace` 需要 `pool:admin`。重建时网络只能是宿主机的 Box 网络，或 Box 当前已在使用的网络，`host`、`none` 与 `container:*` 始终拒绝。不符合时返回 `403`（错误码 `forbidden`），容器与规格都不变。`PATCH /api/boxes/:id` 更新挂载时只检查新增或改变的挂载，与现有挂载相同的（同一卷、路径与模式）不再检查。
 - 卷的辅助容器（chown、池目录的创建与用量测量）不接入网络，根文件系统只读，丢弃全部能力后只加回所需的能力，禁止提权，限制内存与进程数，退出后由引擎删除（#24）。
 
 - 实时帧（`sync` 与 `box`）只含容器环境变量的名称，不含值：同一帧会送到每个打开的事件流。REST 接口的响应不变。重建对话框会把它显示的环境变量原样写回，因此盒子详情页先经 REST 读取完整的盒子，再打开该对话框（#17）。
@@ -52,7 +53,7 @@
 - 接管锁不约束在箱内以 `dev` 运行的 `exec`：它与 tmux 服务器同属一个用户，可直接调用 `tmux send-keys` 或 `tmux kill-session`。README、README-zh 与 `docs/agents.md` 已说明这一边界（#14）。
 
 ### 新增
-
+- Agent API 令牌（#13）：设置页或 `POST /api/tokens` 创建，`GET /api/tokens` 列出（不含明文），`DELETE /api/tokens/:id` 吊销。创建响应只包含一次明文。操作注册表的默认鉴权钩子改为按 scope、资源范围与配额检查；所有者与浏览器会话仍可做全部操作。`box.create` 与 `snapshot.fork` 接受可选的 `ttlSec`，并记入规格的 `lifecycle.ttlSec`。令牌省略 TTL 或传 `null` 时写入其上限；超过上限的值返回 `403`。到期后停止 Box 见 #12。事件列表与事件流按令牌范围过滤：所有者与未收窄的 admin 令牌看全部，其他令牌只看自己造成的事件以及有权使用的 Box 的事件。中英文界面均可创建、复制一次明文，并吊销令牌。
 - 数据卷与存储池（#24）：卷是独立对象，记录放在 `DATA_DIR/volumes`，并写明创建它的主机。Box 通过 `mounts` 挂载零到多个卷，每次挂载指定路径与读写模式。新建 Box 默认挂载工作区 `/workspace`、主目录 `/home/dev`、共享只读工具卷 `/opt/minibox/tools`（每个主机一只，名为 `<前缀>-tools-<主机 id>`）与本地缓存 `/home/dev/.cache`。存储池支持 `local`、`nfs` 与 `path` 三种后端：`PUT /api/pools` 替换配置，`GET /api/pools` 探测可达性；非本地池不可达时，启动、重启与创建返回 `503 docker_unavailable`。删除 Box 时 `deleteVolume=true` 只删除记录中所有者为本 Box、且没有其它 Box 挂载的卷。已有的 `<前缀>-ws-*` 卷会被识别为卷，不改名、不补标签。新增 `/api/volumes`、`/api/pools` 系列接口与控制台「卷」页面（中英文）。存储写入需要 `confirm: true`：`POST /api/volumes`、`DELETE /api/volumes/:id?confirm=true` 与 `PUT /api/pools` 没有该标志时返回 `409 confirmation_required` 与 `details.preview`，不改动任何内容；保存存储池与删除卷的界面会先显示预览（#24）。
 - 数据卷与模板列表支持搜索：输入即时过滤，按 Esc 或 × 清除，没有匹配时显示单独的提示。卷列表可按 Box、角色、存储池或归属分组，分组方式保存在本浏览器中。
 - 新建 Box 时可以选择卷（#24）：创建对话框的「卷」区域默认不发送 `mounts`，四个角色卷照常新建；选择「自定义」时发送界面中显示的完整挂载列表，它替换默认卷。每一行从已有的卷中选择一个，并填写路径与读写模式；属于其他运行中 Box 的卷不可选，共享的读写挂载会显示提示。卷与挂载相关的服务端错误显示在该区域内。
@@ -68,7 +69,7 @@
 - MCP 的非默认 `storage` 工具集（`/mcp?toolsets=storage`）暴露卷与存储池的 9 个工具：`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`。`create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`，否则返回 `confirmation_required` 与 `details.preview`，不改动任何内容。`attach_volume` 与 `detach_volume` 经 `rebuildBox` 执行，适用与 `rebuild_box` 相同的挂载规则。`measure_volume` 只刷新缓存的大小，不需确认。MCP 工具的错误结果新增 `details` 字段（#24）。
 - Box 规格写入 `DATA_DIR/boxes/<id>.json`（权限 600）。稳定 ID 形如 `bx_…`，与容器 ID 分开，名称全局唯一。已有 Box 在列出或读取时自动认领：不改容器名，也不改容器标签（D6，认领后的属主修正留给 #24）。`DATA_DIR` 丢失时从标签和 `inspect` 降级恢复；空闲超时、TTL、标签、工具、环境变量回到默认值，并在 `recovery.needsReset` 中标明需要重新设置。原地更新（CPU、内存、进程数、标签、空闲超时、TTL、重命名）走 `docker update` / `docker rename` 与规格文件，容器标签保持创建时的内容。请求须带 `If-Match: <revision>`；缺少该头返回 428，版本不一致返回 412。新建 Box 的重启策略为 `no`，启动时的协调器按期望状态 `running` 或 `stopped` 启动或停止，并把引擎上的重启策略改回 `no`（D8）。漂移比较 `inspect` 与规格，不自动改回资源或挂载。规格保留最近 20 个版本（Refs #23）。
 - `POST /api/boxes/:id/rebuild`：未带 `confirm: true` 时返回 `409 confirmation_required`，`preview` 包含可写层的 `docker diff` 和计划变更。确认后创建新容器（不启动）并校验镜像与配置，停旧容器并改名为 `-old`，把新容器改成正式名称后启动；成功则删除旧容器，失败则恢复旧容器并把规格回滚到上一版。认领仍不改名；重建会把容器名改为 `<前缀>-<id>`（D6）。保留挂载卷、稳定 ID、名称和最近 20 个规格版本；丢失未写入卷的可写层、运行中的进程（含 tmux）和容器 IP。`PATCH /api/boxes/:id` 若带上与当前不同的模板、挂载、环境变量、网络或安全档位，返回同一预览，且不应用同一请求里的原地字段。`secretRef` 只存储、不注入。第一阶段仍只在创建时准备一个工作区卷；显式增删挂载才会重建，不引入卷池（#24）。重建前检查点不在这一步（#11）（Refs #23）。
-- 事件与审计（#25）：每次操作执行后（目前经 REST，MCP 与 CLI 随 #9 接入），在 `DATA_DIR/events.db`（SQLite，WAL 模式）中记录一条事件，写入前脱敏（访问密钥、常见凭据格式，环境变量只记名称）。新增 `GET /api/events`（过滤与游标分页）与 `GET /api/events/stream`（SSE，支持 `Last-Event-ID` 续传），两者都经过现有的鉴权与同源检查。保留策略可配置并每小时清理：`EVENT_RETENTION_AUDIT_DAYS`（默认 365）、`EVENT_RETENTION_ACTIVITY_DAYS`（默认 30）、`EVENT_OUTPUT_RETENTION_DAYS`（默认 7）与 `EVENT_OUTPUT_MAX_MB`（默认 512）。`events.db` 需要可写的 `DATA_DIR`，否则启动失败。新增进程内事件总线，供后续的任务与状态采样复用。目前只有所有者可以读取事件，范围令牌（#13）未完成前不做细分；命令输出的保留策略已就位，待 exec（#9）写入。
+- 事件与审计（#25）：每次操作执行后（REST、MCP 与 CLI 的调用都会记录），在 `DATA_DIR/events.db`（SQLite，WAL 模式）中记录一条事件，写入前脱敏（访问密钥、常见凭据格式，环境变量只记名称）。新增 `GET /api/events`（过滤与游标分页）与 `GET /api/events/stream`（SSE，支持 `Last-Event-ID` 续传），两者都经过现有的鉴权与同源检查。保留策略可配置并每小时清理：`EVENT_RETENTION_AUDIT_DAYS`（默认 365）、`EVENT_RETENTION_ACTIVITY_DAYS`（默认 30）、`EVENT_OUTPUT_RETENTION_DAYS`（默认 7）与 `EVENT_OUTPUT_MAX_MB`（默认 512）。`events.db` 需要可写的 `DATA_DIR`，否则启动失败。新增进程内事件总线，供后续的任务与状态采样复用。所有者与未收窄的 admin 令牌可以读取全部事件；其他 Agent 令牌只看自己范围内的事件（#13）。命令输出的保留策略已就位，exec 的输出按此策略保存。
 - Box 安全档位 `standard`（默认）、`strict` 与 `relaxed`。创建对话框的「高级」区域可以选择；`POST /api/boxes` 与 `POST /api/snapshots/:ref/boxes` 接受 `profile` 字段；环境变量 `BOX_PROFILE` 设置默认值（#5）。
 - 环境变量 `BOX_PIDS_LIMIT`（默认 `1024`）设置每个新建 Box 的进程数上限；`RUNTIME` 设置新建 Box 使用的 OCI 运行时，例如 gVisor 的 `runsc`（#5）。
 - 独立网络 `<前缀>-boxes`（默认 `minibox-boxes`），关闭容器间通信。网络被删除后（例如 `docker network prune`），已停止的 Box 在下次启动时会接入重建后的网络（#5）。
@@ -81,7 +82,7 @@
 - Docker 镜像设置 `DATA_DIR=/data` 并创建该挂载点，README 中的示例使用 `-v minibox-data:/data` 持久化。
 - REST 请求头 `X-Minibox-Run`（可选）：请求可以带上所属客户端会话的标识，同一会话的审计事件共享该值。取值为 1 到 64 位字母、数字、点、冒号、下划线或连字符，且以字母或数字开头；其他取值返回 `400`（`run_invalid`）（#22）。
 - OpenAPI 3.1 文档 `docs/openapi.json`，由操作注册表生成，覆盖盒子及盒子快照的全部接口，并描述 `X-Minibox-Run` 请求头。运行 `bun run openapi` 重新生成（#22）。
-- 操作执行器的鉴权钩子：未通过鉴权的操作返回 `403`，错误码为 `forbidden`，`key` 为 `operation_forbidden`。默认钩子只允许所有者，因此目前只有替换钩子的测试会触发该响应（#22）。
+- 操作执行器的鉴权钩子：未通过鉴权的操作返回 `403`，错误码为 `forbidden`，`key` 为 `operation_forbidden`。默认钩子按 Agent 令牌的 scope、资源范围与配额检查；所有者始终通过。`ownerOnly` 仍导出，供测试使用（#22 #13）。
 - 操作审计日志：每次执行写一行结构化日志，事件名为 `operation.ok`（读操作为 debug 级别）、`operation.denied` 或 `operation.failed`（5xx 为 error），字段包括操作名、种类、主体、`run`、结果与错误码（#22）。
 - 基础模板以非 root 用户 `dev` 运行（uid/gid 为 1000，可用构建参数 `DEV_UID` / `DEV_GID` 调整）。网页终端与 `docker exec` 默认以 `dev` 进入，并提供无密码 `sudo`（仅限 Box 内）。
 - 基础模板新增 `tmux`、`jq`、`ripgrep`、`openssh-client`、`unzip` 与 `sudo`，并保留 `git`、`curl`、`python3`、`build-essential`、`procps`、`vim-tiny` 与 `less`。
@@ -137,6 +138,7 @@
 - 新增 `bun run openapi`（`scripts/export-openapi.ts`），`scripts/` 纳入 TypeScript 类型检查（#22）。
 - 新增 HTTP 等价性测试 `tests/parity.test.ts`：以重构前录制的 `tests/fixtures/parity-transcript.json` 为基线，逐条比对 97 次请求的状态码、内容类型与响应体（时间、ID 与镜像摘要已规范化）（#22）。
 - 新增 OpenAPI 测试：校验生成的文档与 `docs/openapi.json`；检查路径、方法与 operationId 和注册表一致；要求录制的每个响应都符合对应操作的输出结构或错误结构（#22）。
+- 新增 `tests/tokens.test.ts`：哈希存储、预设、`created-by-me`、配额、TTL 上限、速率限制、卷挂载拒绝、事件可见性与立即吊销。HTTP 等价性转录在原有请求之后追加令牌的创建、列表与吊销（#13）。
 - 架构测试新增两条规则：`src/operations/` 不得依赖 HTTP 层或组合根；REST 适配层只能通过操作访问服务与引擎（#22）。
 - 新增 `bun run test:docker`（`scripts/docker-integration.ts`），在独立的 `mbit` 标签前缀下运行真实引擎测试，结束后清理本次运行创建的容器、镜像与卷。CI 新增非必需的 `Integration tests (real Docker engine)` 任务（#19）。
 - 新增假引擎 socket 上的 Docker 适配器测试（`tests/docker-adapter.test.ts`），以及终端 WebSocket 的鉴权、Origin 检查、非运行状态拒绝和 `parseControl` 测试，并为 `format.js` 与 i18n 加载补充前端纯逻辑测试（#19）。
@@ -203,7 +205,7 @@
 - 使用 `Authorization: Bearer` 的脚本：错误的密钥现在计入登录限流，超限后返回 `429`。正确的密钥不受影响（见「安全」）。
 - 已构建的 `minibox-template:base` 仍是旧的 root 版本。在控制台「模板 → 构建基础模板」或运行 `bun run build:template` 重新构建后，新建 Box 才以 `dev` 运行。已有 Box 保持原样，不会改名或重建。
 - 新 Box 复用旧 Box 保留下来的工作区卷时，卷内 `/workspace` 仍属于 root，`dev` 无法写入。在该 Box 运行时执行一次 `docker exec -u root minibox-<名称> chown -R 1000:1000 /workspace` 即可修复。创建或重建到带属主标签的模板（如基础模板）时，MiniBox 会在启动前把工作区根目录改为模板属主，卷内已有文件的属主不变。认领已有容器，或模板不带属主标签时，仍需在该 Box 运行时执行一次上述命令，详见 README「基础模板」。
-- 创建与重建时的挂载和网络检查（见「安全」）可能让之前成功的请求返回 `403`（错误码 `forbidden`）：挂载没有 MiniBox 标签的卷、挂载属于其它 Box 的卷、挂载 `minibox-data`，或把网络改为既不是 Box 网络、也不是 Box 当前网络的网络。已有 Box 保持现有挂载与网络，只有改动这些字段时才受影响。独立卷可以挂到多个 Box 上，工具卷因此照常共享。目前只有所有者，现有客户端不受 `volume:write` 影响；令牌（#13）落地后，读写挂载需要 `volume:write`。
+- 创建与重建时的挂载和网络检查（见「安全」）可能让之前成功的请求返回 `403`（错误码 `forbidden`）：挂载没有 MiniBox 标签的卷、挂载属于其它 Box 的卷、挂载 `minibox-data`，或把网络改为既不是 Box 网络、也不是 Box 当前网络的网络。已有 Box 保持现有挂载与网络，只有改动这些字段时才受影响。独立卷可以挂到多个 Box 上，工具卷因此照常共享。读写挂载需要 `volume:write`。所有者持有全部 scope，现有客户端不受影响；令牌只有被授予 `volume:write` 时才能读写挂载（#13）。
 
 ## [0.3.0] - 2026-10-21
 

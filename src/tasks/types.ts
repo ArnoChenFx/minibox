@@ -37,6 +37,8 @@ export interface TaskView {
   readonly status: TaskStatus;
   readonly summary: string;
   readonly hostId: string;
+  /** The principal that started the task. Visibility checks use it, and the public task shape leaves it out. */
+  readonly principalId: string;
   readonly target?: TaskTarget;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -46,6 +48,11 @@ export interface TaskView {
   readonly output?: string;
   readonly truncated: boolean;
   readonly logSeq: number;
+}
+
+/** A task as the API reports it: every field except the principal, which only the visibility checks read. */
+export function publicTask({ principalId: _principalId, ...task }: TaskView): Omit<TaskView, "principalId"> {
+  return task;
 }
 
 /** What the task stream and the `task` bus topic carry. `seq` is the cursor, shared by logs and status changes. */

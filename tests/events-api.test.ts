@@ -45,6 +45,7 @@ afterEach(async () => {
     started.server.stop(true);
     started.app.throttle.stop();
     started.app.sessions.stop();
+    started.app.tokens.stop();
     started.app.events.close();
   }
   running = [];

@@ -1,6 +1,7 @@
 import type { Config } from "../config";
 import type { HostCtx, HostRegistry } from "../host/registry";
 import { log } from "../lib/logger";
+import { OWNER } from "../operations/types";
 import type { BoxSpec } from "../specs/types";
 import type { TaskManager } from "../tasks/manager";
 
@@ -124,7 +125,7 @@ export class LifecycleWatcher {
 
   private async sleep(host: HostCtx, spec: BoxSpec, reason: "idle" | "ttl"): Promise<void> {
     await stopBox(host, spec.id, reason);
-    this.options.record(host.host.id, "system", {
+    this.options.record(host.host.id, "system", OWNER, {
       op: reason === "ttl" ? "box.ttl_expire" : "box.sleep",
       kind: "write",
       status: "ok",

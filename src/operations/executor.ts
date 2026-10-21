@@ -1,12 +1,14 @@
 import { type ActivityLog, tracked } from "../activity";
 import type { AuditNote, EventInput, EventRefs, EventStatus, EventTarget } from "../events/types";
 import { ulid } from "../events/ulid";
+import type { HostCtx } from "../host/registry";
 import { isAbortError } from "../lib/abort";
 import { AppError, toAppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { TaskManager } from "../tasks/manager";
 import type { TaskError, TaskHandle } from "../tasks/types";
+import { allBoxViews, specViews } from "../tokens/model";
 import type { Operation, OperationContext, Principal, VolumeResource } from "./types";
 
 export interface AuthorizeRequest {
@@ -16,6 +18,15 @@ export interface AuthorizeRequest {
   readonly scope?: string;
   /** The volume the scope applies to, when the check is per volume. */
   readonly resource?: VolumeResource;
+  /**
+   * `scope` runs before validation and checks only who may call the operation. `access` runs after the target is
+   * resolved, with the valid input, and checks the box, volumes, host, profile and quotas. `resource` is asked by a
+   * service about one scope and volume while it runs, and answers with a boolean. A hook must handle every phase.
+   */
+  readonly phase?: "scope" | "access" | "resource";
+  readonly host?: HostCtx;
+  readonly input?: Record<string, unknown>;
+  readonly resolved?: unknown;
 }
 
 /** Thrown by a handler when a later authorize() answer is false. The executor audits it as denied. */
@@ -37,6 +48,7 @@ export interface ExecutorHooks {
   audit(event: AuditEvent): void;
 }
 
+/** The phase-0 hook: any owner principal, and nobody else. Production uses `authorizeOperation` instead. */
 export const ownerOnly = ({ principal }: AuthorizeRequest): boolean => principal.type === "owner";
 
 export function logAudit(event: AuditEvent): void {
@@ -70,6 +82,8 @@ export interface ExecutorDeps {
   readonly hooks: ExecutorHooks;
   /** Required for operations marked async. Synchronous operations never touch it. */
   readonly tasks?: TaskManager;
+  /** Every host, so `boxViews` and `allHosts` cover boxes on all of them. Without it, only the request's host counts. */
+  readonly hosts?: { list(): readonly HostCtx[] };
 }
 
 /** What the executor knows when one execution ends. Fields the run never reached stay undefined. */
@@ -131,7 +145,10 @@ function eventOf(
   };
 }
 
-/** The single entry point for every operation: authorize, validate, precondition, resolve, run, then audit. */
+/**
+ * The single entry point for every operation: authorize the scope, validate, precondition, resolve, authorize the
+ * access, run, then audit. A refusal from either authorize call is recorded as denied.
+ */
 export class Executor {
   private readonly byName: ReadonlyMap<string, Operation>;
 
@@ -148,13 +165,18 @@ export class Executor {
     if (!operation) throw new Error(`unknown operation: ${name}`);
     const started = { ts: Date.now(), at: performance.now() };
     const id = ulid(started.ts);
+    const hosts = this.deps.hosts;
     const bound: OperationContext = {
       ...ctx,
       tasks: ctx.tasks ?? this.deps.tasks,
+      boxViews: ctx.boxViews ?? (() => (hosts ? allBoxViews(hosts.list()) : specViews(ctx.host.specs.list()))),
+      allHosts: ctx.allHosts ?? (() => (hosts ? hosts.list() : [ctx.host])),
       authorize: (request) =>
         this.deps.hooks.authorize({
           principal: ctx.principal,
           operation,
+          phase: "resource",
+          host: ctx.host,
           scope: request.scope,
           resource: request.resource,
         }),
@@ -164,7 +186,7 @@ export class Executor {
     let resolved: unknown;
     let result: unknown;
     try {
-      if (!(await this.deps.hooks.authorize({ principal: bound.principal, operation }))) {
+      if (!(await this.deps.hooks.authorize({ principal: bound.principal, operation, phase: "scope" }))) {
         denied = true;
         throw new AppError(403, "forbidden", msg("operation_forbidden", { op: name }));
       }
@@ -172,6 +194,11 @@ export class Executor {
       input = parsed;
       if (operation.precondition) await operation.precondition(bound, parsed);
       resolved = operation.resolve ? await operation.resolve(bound, parsed) : undefined;
+      const access = { principal: bound.principal, operation, phase: "access" as const, host: ctx.host };
+      if (!(await this.deps.hooks.authorize({ ...access, input: parsed, resolved }))) {
+        denied = true;
+        throw new AppError(403, "forbidden", msg("operation_forbidden", { op: name }));
+      }
       if (operation.async) return await this.startAsync(operation, bound, parsed, resolved, started, id);
       const recording: OperationContext = { ...bound, record: (note) => this.recordNote(bound, id, note) };
       result = await this.record(operation, parsed, resolved, () => operation.run(recording, parsed, resolved));

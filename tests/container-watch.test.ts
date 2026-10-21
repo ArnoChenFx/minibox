@@ -17,10 +17,14 @@ const BOX_LABELS = { [PREFIX]: "true", [`${PREFIX}.name`]: "alpha" };
 function setup() {
   const { app, runtime } = createTestApp({ labelPrefix: PREFIX });
   const recorded: Recorded[] = [];
-  const watch = new ContainerWatch(app.hosts, (hostId, source, note) => recorded.push({ hostId, source, note }), {
-    retryMinMs: 5,
-    retryMaxMs: 20,
-  });
+  const watch = new ContainerWatch(
+    app.hosts,
+    (hostId, source, _principal, note) => recorded.push({ hostId, source, note }),
+    {
+      retryMinMs: 5,
+      retryMaxMs: 20,
+    },
+  );
   return { runtime, recorded, watch };
 }
 

@@ -58,7 +58,7 @@ describe("long work", () => {
   beforeEach(() => {
     restoreLogs = silenceLogs();
     ({ app, runtime } = createTestApp({ labelPrefix: "mbtest" }));
-    ctx = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events };
+    ctx = { host: app.hosts.get(), principal: OWNER, source: "rest", events: app.events, tokens: app.tokens };
   });
 
   afterEach(() => restoreLogs());
@@ -87,7 +87,7 @@ describe("long work", () => {
       url,
       params: matched.params,
       server,
-      caller: { sessionId: null },
+      caller: { principal: OWNER, sessionId: null },
     });
     return { req, res };
   }

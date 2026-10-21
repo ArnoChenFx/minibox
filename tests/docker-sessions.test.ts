@@ -23,6 +23,7 @@ import type { BoxProfile } from "../src/box-profile";
 import { createDockerRuntime } from "../src/docker/runtime";
 import type { AuditNote, Source } from "../src/events/types";
 import type { HostCtx } from "../src/host/registry";
+import { OWNER } from "../src/operations/types";
 import type { Runtime } from "../src/runtime";
 import { startServer } from "../src/server";
 import { type Box, createBox, startBox, stopBox } from "../src/services/boxes";
@@ -269,7 +270,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       const box = await newBox("refresh");
       expect(await app.terminals.start(host, box, "work", "ui")).toMatchObject({ created: true, woke: false });
 
-      const first = await app.terminals.attach(host, box, "work", { source: "ui" });
+      const first = await app.terminals.attach(host, box, "work", { source: "ui", principal: OWNER });
       expect(first.view()).toMatchObject({ controller: "human", canType: true });
       expect(first.write("echo kept-$((20+1))-running\n")).toBe(true);
       await waitFor(() => paneHas(box, "work", "kept-21-running"), "the typed command to run");
@@ -282,7 +283,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
         "the session to show no terminal attached",
       );
 
-      const second = await app.terminals.attach(host, box, "work", { source: "ui" });
+      const second = await app.terminals.attach(host, box, "work", { source: "ui", principal: OWNER });
       let shown = "";
       second.exec.stream.on("data", (chunk: Buffer) => {
         shown += chunk.toString("utf8");
@@ -461,7 +462,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       const box = await newBox("readonly");
       await app.terminals.start(host, box, "shared", "ui");
 
-      const bearer = await app.terminals.attach(host, box, "shared", { source: "rest" });
+      const bearer = await app.terminals.attach(host, box, "shared", { source: "rest", principal: OWNER });
       await waitFor(
         async () => (await clientFlags(box, "shared")).some((flags) => flags.includes("read-only")),
         "the read-only client",
@@ -471,7 +472,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       );
 
       bearer.exec.stream.write("bypass-attempt\n");
-      const human = await app.terminals.attach(host, box, "shared", { source: "ui" });
+      const human = await app.terminals.attach(host, box, "shared", { source: "ui", principal: OWNER });
       expect(human.write("positive-control\n")).toBe(true);
       await waitFor(() => paneHas(box, "shared", "positive-control"), "the control line to run");
       expect(await paneHas(box, "shared", "bypass-attempt")).toBe(false);
@@ -530,14 +531,14 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
     async () => {
       const notes: { source: Source; note: AuditNote }[] = [];
       const terminals = new TerminalService({
-        record: (_hostId, source, note) => {
+        record: (_hostId, source, _principal, note) => {
           notes.push({ source, note });
         },
         takeoverIdleMs: 1_000,
       });
       const box = await newBox("idle");
       await terminals.start(host, box, "idle-run", "rest");
-      const viewer = await terminals.attach(host, box, "idle-run", { source: "ui" });
+      const viewer = await terminals.attach(host, box, "idle-run", { source: "ui", principal: OWNER });
       expect(terminals.takeOver(viewer)).toBe(true);
       expect(viewer.write("x")).toBe(true);
 
@@ -561,7 +562,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
     async () => {
       const box = await newBox("kill");
       await app.terminals.start(host, box, "doomed", "ui");
-      const terminal = await app.terminals.attach(host, box, "doomed", { source: "ui" });
+      const terminal = await app.terminals.attach(host, box, "doomed", { source: "ui", principal: OWNER });
       expect(await runningExecs(box)).toBe(1);
 
       await app.terminals.close(host, box, "doomed", "ui");
@@ -624,7 +625,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       await waitFor(() => paneHas(box, "locked", "dev"), "the session to report its user");
 
       expect(await shell(box.id, "ps -o user,args | grep '[{]tmux: server' | awk '{print $1}' | sort -u")).toBe("dev");
-      const terminal = await app.terminals.attach(host, box, "locked", { source: "ui" });
+      const terminal = await app.terminals.attach(host, box, "locked", { source: "ui", principal: OWNER });
       await waitFor(async () => (await attachedClients(box)) === 1, "the attach process");
       expect(await shell(box.id, "ps -o user,args | grep '[t]mux: client' | awk '{print $1}' | sort -u")).toBe("dev");
       await terminal.close();
@@ -656,7 +657,7 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
     async () => {
       const box = await newBox("events");
       const seen: string[] = [];
-      const watch = new ContainerWatch(app.hosts, (_hostId, _source, note) => {
+      const watch = new ContainerWatch(app.hosts, (_hostId, _source, _principal, note) => {
         seen.push(`${note.op} ${note.target?.name ?? ""}`);
       });
       watch.start();

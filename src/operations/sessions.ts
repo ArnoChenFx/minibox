@@ -3,7 +3,7 @@ import { z } from "zod";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { accept, type Checked, reject } from "../lib/validation";
-import { getBox } from "../services/boxes";
+import { getBox, readBox } from "../services/boxes";
 import { READ_LINES_MAX, SESSIONS_PER_BOX_MAX, type TerminalService } from "../services/terminals";
 import { isKeyName, isSessionName, SESSION_NAME_RE } from "../tmux/format";
 import { boxTarget } from "./boxes";
@@ -126,7 +126,7 @@ export const sessionList = defineOperation({
   output: z.object({ sessions: z.array(ListedSchema) }),
   rest: [{ method: "GET", path: "/api/boxes/:id/sessions" }],
   cli: "session ls",
-  resolve: ({ host }, input) => getBox(host, input.id),
+  resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, terminals }, _input, box) => {
     requireTerminals(terminals);
