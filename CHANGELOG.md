@@ -161,6 +161,8 @@
 - 周期性重新列出的守卫在列出结束后才释放，列出请求带上取消信号：超过 30 秒未返回时请求真正结束。此前守卫在超时后即释放，引擎挂起时每 60 秒就堆积一个未完成的列出（#17）。
 - 事件流与任务流读取时抛出异常后，现在会结束并运行一次 `onEnd`，释放连接名额与总线订阅。此前这类流不运行 `onEnd`，名额不会释放：达到 `STREAM_MAX_CONNECTIONS` 后，新的事件流与任务流都返回 `429`，直到进程重启（#17）。
 - 基础模板等标签被重新指向新镜像后，以该标签创建的 Box 重建时，此前即使传入同一个模板名也返回 `rebuild_empty`，容器仍运行旧镜像；确认重建后规格仍记录旧摘要，Box 报告 `digest` 漂移。现在这类 Box 跟随标签：预览列出 `标签 (旧镜像短 ID) → 标签 (新镜像短 ID)` 的模板变更，确认后运行标签当前指向的镜像，`template.digest` 随之更新。快照 Box 与标签已删除的 Box 不跟随。
+- 镜像早于基础模板的 Box（缺少 `tmux`，或没有 `dev` 用户）启动会话时，此前显示引擎的原始错误（`docker_error`，或 `tmux failed: exit status 126`）。现在返回 `409` 与 `session_image_unsupported`，提示重新构建基础模板，并把该 Box 重建到新模板上。会话列表、启动与附着、终端错误帧都走同一映射。
+- 创建 Box，或重建到另一个镜像时，若模板的 `minibox.template.uid` 与 `minibox.template.gid` 标签给出的属主，与可写 `/workspace` 卷根目录的属主不同，启动前把根目录改为模板的属主（只改根目录，不递归）。此前已有内容的卷保留原来的 root 属主，`dev` 无法写入 `/workspace`。重建回滚时恢复原属主。只读挂载与不带属主标签的模板不做改动。
 
 ### 文档
 - README、README-zh 与 `docs/agents.md` 说明会话工具、接管与归还的规则、`SESSION_TAKEOVER_IDLE_SEC`、终端 WebSocket 的参数与控制帧、MCP 工具数（13 个），以及事件表中的活动与审计分档。`docs/design.md` 新增 §10.5 实现说明并更新 §8.9；`docs/runtime.md` 说明 FakeRuntime 对 tmux 的模拟（#14）。

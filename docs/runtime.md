@@ -27,7 +27,7 @@
 - exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。所有 exec（包括交互终端）都经一层 `/bin/sh` 包装运行，包装 shell 的参数中，`minibox-exec` 之后紧跟一个随机令牌。`kill()` 在容器内执行一段 POSIX `sh` 脚本：「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本通过 `/proc/*/cmdline` 找到包装 shell。`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选 pid，每个候选同样要核对命令行。之后沿 `/proc/<pid>/stat` 的父进程号收集进程；包装 shell 自己是会话或进程组首进程时，同一会话与进程组中的进程也一并收集。每个进程先用 `SIGSTOP` 冻结，并等待其停止后才继续扫描，直到一次扫描不再发现新进程（最多 5 轮）。然后逐个 `SIGKILL`，包装 shell 最后结束。脚本退出码：0 表示全部结束；1 表示有进程无法发信号（脚本恢复其余进程并退出），或有进程存活（其余进程保持冻结，以便重试）；2 表示找不到包装 shell。`kill()` 只有在 Docker 报告 exec 已结束后才算成功，否则抛出 `engine` 错误，exec 仍在运行，可以再次调用。exec 已结束时 `kill()` 直接返回。交互终端的 `kill()` 同样可用，以 exec 的用户（`dev`）执行：Web 终端断开时用它结束其中的 tmux attach 进程；tmux 服务器不在这棵进程树里，会话因此保留。这一层要求容器里有 `/bin/sh`、`cat`、`rm` 与 `sleep`（`sleep` 需支持小数秒）。
 - 事件：`events`，按标签与类型过滤；`since`（Unix 秒）让引擎补发该时间之后记录的事件，订阅者因此可以在订阅之后再列出容器而不漏掉变化；消费者停止迭代或 `signal` 中止时结束
 - 镜像：`listImages`、`inspectImage`、`removeImage`、`buildImage`
-- 卷：`inspectVolume`、`createVolume`、`removeVolume`
+- 卷：`inspectVolume`、`createVolume`、`removeVolume`、`volumeRootOwner`、`setVolumeRootOwner`
 - 网络：`ensureBridgeNetwork`、`reattachNetwork`
 
 实现需要满足以下语义，业务代码依赖这些约定：
@@ -36,11 +36,15 @@
 - 运行中的容器只有 `removeContainer(id, { force: true })` 才能删除。
 - 仍被容器挂载的卷不能删除，`removeVolume` 返回 `conflict`。
 - `createVolume` 对已存在的卷成功，并保留原有标签。
+- `volumeRootOwner(id, path)` 读取容器内 `path` 目录的属主，经由 archive 接口完成，容器可以是已创建但未启动的。`path` 不存在时返回 `not_found`。
+- `setVolumeRootOwner(volume, owner, image)` 用 `image` 创建并启动一个辅助容器，只把卷的根目录 `chown` 为 `uid:gid`，不递归。辅助容器以 `root` 运行，丢弃全部能力只保留 `CHOWN`，设置 `no-new-privileges`，不联网，结束后删除。卷不存在时返回 `not_found`，且不创建辅助容器：bind 挂载会自动创建缺失的卷，所以先检查卷。镜像不存在、辅助容器无法启动或 `chown` 失败时返回 `engine`。
+- 卷的根目录属主由 Docker 决定：卷为空时，挂载会把镜像中挂载点的内容与属主复制进卷；卷已有内容后，之后的挂载不再改变根目录的属主。
 - 创建容器时，镜像标签与请求中的标签合并，请求中的标签优先。
 - 创建同名容器返回 `conflict`。调用方不先查询再创建，重名由引擎判定。
 - 提交容器时，容器标签与 `LABEL` 指令合并，指令优先。
 - `containerLogs` 返回去掉流帧头后的文本。
 - `containerDiff` 返回可写层变更。引擎的 `null`（没有变更）变成空列表。`added` 对应 kind 1，`deleted` 对应 kind 2，其余记为 `modified`。
+- `createContainer` 的 `user` 写作 `name`、`uid` 或 `uid:gid`，缺省时沿用镜像的用户。
 - `createContainer` 的 `env` 是 `NAME=value`，由引擎合并到镜像环境变量之上。挂载 `mode: "ro"` 会在绑定后追加 `:ro`；可写挂载不追加模式。
 - `buildImage` 可以带 `onLog`（每段输出回调一次）和 `signal`。取消时在引擎连接关闭后抛出 `AbortError`，而不是 `RuntimeError`，因此不会被映射成 502。引擎可能在连接关闭前一直构建，所以调用返回时，调用方才能认为这次构建已经结束。`commitContainer` 的 `signal` 只在提交前和提交返回后检查；已经生成的镜像不回滚。
 - `listContainers` 跳过在列出与检查之间消失的容器。
@@ -106,6 +110,7 @@
   - `fail(op, error)` 让下一次该操作失败，`down = true` 模拟引擎不可达。
   - 网络有 ID，容器第一次启动时固定在当前网络的 ID 上。网络被删除并重建后，启动该容器返回 `not_found`，直到调用 `reattachNetwork`，与真实引擎一致。
   - `seedImage()` 与 `seedContainer()` 预置状态，不记录调用。
+  - 卷根目录的属主记在 `volumeOwners` 中。卷第一次挂载时，若挂载点是 `/workspace` 且镜像标签给出 `minibox.template.uid` 与 `minibox.template.gid`，卷取该属主，否则为 root；之后的挂载不再改变它，与真实引擎的复制行为一致。`seedVolumeOwner()` 预置属主，不记录调用。`setVolumeRootOwner` 要求卷与辅助镜像存在，并直接设置属主，不模拟辅助容器。
   - 非 TTY exec（`spec.tty === false`）使用 `execScript`（默认空输出、退出码 0）。设为 `null` 时一直运行，直到 `kill()`，退出码 137。TTY 路径仍在返回前打印 `$ `。
 - tmux 会话的模拟：`tests/support/fake-tmux.ts` 实现会话服务用到的 tmux 命令（`new-session`、`has-session`、`list-sessions`、`set-option`、`display-message`、`capture-pane`、`send-keys`、`kill-session`，以及读取版本的 `-V`，版本号由 `version` 设置）。命令为 `tmux` 的 exec 由 `startTmux`（`tests/support/fake-runtime.ts`）处理，`tmux attach-session` 的 exec 接到其中的会话上，附着的客户端收到会话的输出。模拟只保存屏幕文本：不解释终端转义序列，也不重现 tmux 的重绘。真实行为由 `tests/docker-sessions.test.ts` 在真实引擎上验证。`failExecKill(error)` 让下一次 exec 的 `kill()` 失败，`holdExecKill()` 阻塞 `kill()` 直到 `release()`，用于测试终止失败后的重试，以及并发的终止。
 - `tests/support/app.ts` 的 `createTestApp(overrides, runtime)` 创建使用 fake 的应用：端口 0，不访问真实 socket，标签前缀为 `mbtest`。`silenceLogs()` 静默日志输出，`rejectionOf()` 取得 rejected 的错误。
