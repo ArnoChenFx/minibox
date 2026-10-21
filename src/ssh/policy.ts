@@ -7,6 +7,16 @@ export const SSH_CHANNELS_PER_CONNECTION = 16;
 export const SSH_BOX_CONNECTIONS_MAX = 8;
 /** SSH connections the whole server may have open. */
 export const SSH_CONNECTIONS_MAX = 64;
+/**
+ * Global requests that set up or cancel a remote (-R) forward. They are refused and audited. `no-more-sessions` is only
+ * a hint from `ssh -N`, so it is not in the set.
+ */
+export const REMOTE_FORWARD_REQUESTS: ReadonlySet<string> = new Set([
+  "tcpip-forward",
+  "cancel-tcpip-forward",
+  "streamlocal-forward@openssh.com",
+  "cancel-streamlocal-forward@openssh.com",
+]);
 /** Longest command line a client may send, in bytes. */
 export const SSH_COMMAND_MAX = 16 * 1024;
 

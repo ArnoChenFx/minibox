@@ -350,7 +350,7 @@ describe("SSH channels", () => {
     expect(refusals("forward").length).toBe(3);
   });
 
-  test("remote forwards (-R) are refused", async () => {
+  test("remote forwards (-R) are refused and audited", async () => {
     const box = await makeBox("oscar");
     const { client } = await connectSsh(box.name);
     await expect(
@@ -358,6 +358,20 @@ describe("SSH channels", () => {
         client.forwardIn("127.0.0.1", 9000, (error) => (error ? reject(error) : resolve(null))),
       ),
     ).rejects.toThrow();
+    expect(refusals("tcpip-forward")).toHaveLength(1);
+  });
+
+  test("Unix socket forwards are refused and audited", async () => {
+    const box = await makeBox("victor");
+    const { client } = await connectSsh(box.name);
+    await expect(
+      new Promise((resolve, reject) =>
+        client.openssh_forwardOutStreamLocal("/tmp/app.sock", (error, stream) =>
+          error ? reject(error) : resolve(stream),
+        ),
+      ),
+    ).rejects.toThrow();
+    expect(refusals("direct-streamlocal@openssh.com")).toHaveLength(1);
   });
 
   test("a connection holds at most 16 channels", async () => {

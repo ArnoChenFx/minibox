@@ -28,6 +28,7 @@ import {
   envAllowed,
   execArgv,
   forwardAllowed,
+  REMOTE_FORWARD_REQUESTS,
   relayArgv,
   SSH_CHANNELS_PER_CONNECTION,
   SSH_USER,
@@ -184,7 +185,14 @@ export class SshConnection {
   private bind(client: Connection): void {
     client.on("error", (error: Error) => log.debug("ssh.client_error", { box: this.boxId, error: String(error) }));
     client.on("authentication", (ctx) => this.authenticate(ctx));
-    client.on("request", (_accept, reject) => reject?.());
+    client.on("request", (_accept, reject, name) => {
+      if (REMOTE_FORWARD_REQUESTS.has(name)) this.refuse(name);
+      reject?.();
+    });
+    client.on("openssh.streamlocal", (_accept, reject, info) => {
+      this.refuse("direct-streamlocal@openssh.com", { path: info.socketPath.slice(0, 256) });
+      reject();
+    });
     client.on("session", (accept, reject) => this.openSession(accept, reject));
     client.on("tcpip", (accept, reject, info) => this.openForward(accept, reject, info));
   }
