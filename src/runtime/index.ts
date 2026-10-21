@@ -171,8 +171,8 @@ export interface ExecStatus {
 /**
  * An attached exec. A TTY session uses `stream` for both directions. A command exec (`tty: false`) also fills
  * `stdout` and `stderr` separately. `inspect()` is the exit code. `kill()` stops the process and its descendants from
- * inside the box, as `stopAs` or else the exec's user. It resolves once the exec has ended, and rejects with an
- * `engine` error if a process survives or the exec does not end. A TTY session cannot be stopped this way.
+ * inside the box, as `stopAs` or else the exec's user, for TTY and non-TTY execs alike. It resolves once the exec has
+ * ended, and rejects with an `engine` error if a process survives or the exec does not end.
  */
 export interface ExecSession {
   readonly id: string;

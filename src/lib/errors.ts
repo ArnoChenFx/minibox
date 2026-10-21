@@ -11,6 +11,7 @@ export type ErrorCode =
   | "unsupported_media_type"
   | "too_many_requests"
   | "conflict"
+  | "taken_over"
   | "confirmation_required"
   | "precondition_failed"
   | "precondition_required"

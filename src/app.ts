@@ -10,6 +10,7 @@ import { createRedactor, type Redactor } from "./events/redact";
 import { RetentionJob } from "./events/retention";
 import { StreamSlots } from "./events/slots";
 import { EventStore, type StoredEvent } from "./events/store";
+import { ulid } from "./events/ulid";
 import type { LiveTopics } from "./host/live";
 import type { HostMonitor } from "./host/metrics";
 import { createLocalHost, HostRegistry } from "./host/registry";
@@ -18,8 +19,11 @@ import { log } from "./lib/logger";
 import { McpSessions } from "./mcp/sessions";
 import { Executor, type ExecutorHooks, logAudit, ownerOnly, type AuditEvent } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
+import { OWNER } from "./routes/operations";
 import type { Runtime } from "./runtime";
+import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
+import { type RecordNote, TerminalService } from "./services/terminals";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
 import { TaskManager } from "./tasks/manager";
@@ -50,6 +54,8 @@ export interface App {
   events: EventStore;
   outputs: OutputStore;
   execs: ExecManager;
+  terminals: TerminalService;
+  containers: ContainerWatch;
   mcpSessions: McpSessions;
   bus: Bus<AppTopics>;
   retention: RetentionJob;
@@ -80,6 +86,29 @@ function recordAudit(events: EventStore, bus: Bus<AppTopics>): (event: AuditEven
     logAudit(event);
     const { event: stored, merged } = events.append(event);
     if (!merged) bus.publish("event", stored);
+  };
+}
+
+/** Turns a note a service wrote, such as a terminal opening, into an event for the owner and hands it to the audit hook. */
+function recordNoteWith(audit: (event: AuditEvent) => void): RecordNote {
+  return (hostId, source, note) => {
+    const ts = Date.now();
+    audit({
+      id: ulid(ts),
+      ts,
+      durationMs: note.durationMs ?? 0,
+      status: note.status,
+      op: note.op,
+      kind: note.kind,
+      principal: OWNER,
+      source,
+      hostId,
+      summary: note.summary,
+      target: note.target,
+      detail: note.detail,
+      ref: note.ref,
+      error: note.error,
+    });
   };
 }
 
@@ -123,6 +152,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     outputDays: cfg.eventOutputRetentionDays,
     outputMaxBytes: cfg.eventOutputMaxMb * MB,
   });
+  const audit = deps.hooks?.audit ?? recordAudit(events, bus);
+  const recordNote = recordNoteWith(audit);
   return {
     cfg,
     hosts,
@@ -131,6 +162,11 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     events,
     outputs,
     execs,
+    terminals: new TerminalService({
+      record: recordNote,
+      takeoverIdleMs: cfg.takeoverIdleSec * 1000,
+    }),
+    containers: new ContainerWatch(hosts, recordNote),
     mcpSessions: new McpSessions(),
     bus,
     retention,
@@ -140,7 +176,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       tasks,
       hooks: {
         authorize: deps.hooks?.authorize ?? ownerOnly,
-        audit: deps.hooks?.audit ?? recordAudit(events, bus),
+        audit,
       },
     }),
     throttle: deps.throttle ?? new LoginLimiter(),

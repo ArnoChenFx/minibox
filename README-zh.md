@@ -37,8 +37,8 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 实时更新 | Box 状态、资源采样、宿主机指标与任务进度通过 `GET /api/events/stream`（SSE）推送。控制台只在事件流断开时轮询 |
-| 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应 |
-| 日志 | 查看容器主进程输出，支持行数选择与自动刷新 |
+| 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应。具名的 tmux 会话在刷新页面或连接断开后仍然保留。Agent 发起的会话默认只读，接管后才能输入 |
+| 活动 | Box 的历史记录：经由 MiniBox 执行的命令、容器启动 / 停止 / 内存溢出（OOM）事件，以及终端会话的开启与关闭。从不记录键入的内容。`docker logs` 保留在下方 |
 | 访问控制 | 单一访问密钥；登录时换取可撤销的会话令牌，保存在 HttpOnly、`SameSite=Strict` Cookie 中，或以 `Authorization: Bearer` 发送；按客户端地址限制登录失败次数；拒绝跨站请求 |
 | 多语言 | 英文与简体中文；点击右上角（控制台顶栏和登录页）的语言图标按钮即可切换，默认跟随浏览器语言，并在本浏览器记住选择 |
 | 界面 | 浅色 / 深色主题（跟随系统，可手动切换）、响应式布局、空状态、骨架屏、操作提示与危险操作确认 |
@@ -86,7 +86,7 @@ flowchart LR
   HTTP -- 盒子路由 --> OPS
   HTTP -- 其他路由 --> D
   OPS -- Runtime --> D
-  WS -- exec / TTY --> D
+  WS -- tmux attach / TTY --> D
   MON --> PROC
   MON --> BUS
   OPS -- 读取 --> SAMP
@@ -101,6 +101,7 @@ flowchart LR
 ```
 
 - **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`）。重启策略为 `no`：启动时的协调器按规格里的期望状态（`running` 或 `stopped`）启动或停止容器。`DATA_DIR/boxes/` 下的规格文件是可变状态的权威来源。容器标签只在创建时写入，之后不再修改。`/workspace` 挂载在独立数据卷 `minibox-ws-<名称>`。容器以非 root 用户 `dev` 运行（见[基础模板](#基础模板)）。
+- **会话** = Box 内以 `dev` 运行的一个具名 tmux 会话。网页终端附着到它；Agent 通过会话工具发送按键、读取屏幕。关闭页面只是断开附着，会话会一直运行，直到被关闭或 Box 停止（见[会话](#会话)）。
 - **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`。
 - **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。
 - **实时状态** = 每台主机一个 `HostSampler`。它根据引擎的容器事件保持盒子缓存最新，并每分钟重新列出一次容器，以补上事件流静默停止时漏掉的变化。有实时流打开时，每隔 `METRICS_INTERVAL_MS` 为每个运行中的 Box 采样，没有时每 30 秒一次（`METRICS_INTERVAL_MS` 更长时按它），并保留 `METRICS_HISTORY` 个采样点；同时把 Box、采样、链路与主机指标帧发布到事件总线。`GET /api/events/stream` 把它们转发给控制台，控制台只在事件流断开时轮询。实时帧只带环境变量的名称，不带值。同时打开的事件流与任务流不超过 `STREAM_MAX_CONNECTIONS`，超出的请求返回 `429`。采样只保存在内存中，从不写入事件日志。
@@ -285,6 +286,7 @@ docker run -d --name minibox --restart unless-stopped \
 | `COOKIE_SECURE` | `false` | 始终为会话 Cookie 加上 `Secure` 标记。浏览器登录时会带上 `https://` Origin，已足以加上该标记，通常无需设置。只在 HTTPS 下使用：浏览器会丢弃明文 HTTP 收到的 `Secure` Cookie |
 | `SESSION_TTL_DAYS` | `30` | 一次登录的有效期，从登录时起算，单位为天，大于 0 且至多 3650，可用小数。已登录的会话保持其创建时的有效期 |
 | `SESSION_IDLE_DAYS` | 留空（关闭） | 可选的滑动续期：会话在这么多天未被使用后也会结束。每个请求都算作使用，打开的终端里有输入也算。会话永远不会超过 `SESSION_TTL_DAYS` |
+| `SESSION_TAKEOVER_IDLE_SEC` | `300` | 接管 Agent 的终端会话后，人在这么多秒内没有输入，会话便还给 Agent。取值为 0 到 86400 的整数；`0` 表示接管一直持续到手动归还，即使页面已经关闭。其他取值回退为 300（见[会话](#会话)） |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
 | `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
@@ -297,7 +299,7 @@ docker run -d --name minibox --restart unless-stopped \
 | `METRICS_HISTORY` | `120` | 每台主机与每个 Box 保留的采样点数量（默认间隔下约 6 分钟） |
 | `STREAM_MAX_CONNECTIONS` | `256` | 同时打开的事件流与任务流上限，所有浏览器与客户端共用。超出的连接返回 `429`，控制台按逐渐增长的间隔重试。须为正整数 |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | 审计事件的保留天数：写操作、删除与被拒绝的调用。见[事件](#事件) |
-| `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | 读取事件的保留天数。同一分钟内的重复读取会合并 |
+| `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | 活动事件的保留天数：命令执行、容器事件、终端会话与读取。同一分钟内的重复读取会合并 |
 | `EVENT_OUTPUT_RETENTION_DAYS` | `7` | 命令输出（`DATA_DIR/exec`）的保留天数。命令结束时 `exec` 会在这里写入头尾窗口 |
 | `EVENT_OUTPUT_MAX_MB` | `512` | 命令输出的总大小上限（MB），最旧的先删除 |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
@@ -400,7 +402,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `GET` | `/api/boxes/:id/stats` | 最近一次占用（最新采样）。`?history=true` 另外返回最近的采样，按时间从早到晚排列 |
 | `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行）。同一 Box 与 tail 的引擎读取在两秒内共享 |
 | `POST` | `/api/boxes/:id/snapshots` | 开始创建快照 `{ "name"? }`。返回 `202` `{ "taskId" }` |
-| `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket 终端；发送 `{"type":"resize","cols":N,"rows":N}` 调整窗口，其余消息作为输入 |
+| `GET` (WS) | `/api/boxes/:id/terminal?session=NAME` | 附着到具名会话的 WebSocket 终端（见[会话](#会话)）。二进制帧与其他文本帧是键入的输入。文本帧 `{"type":"takeover"}` 与 `{"type":"release"}` 用于接管与归还，`{"type":"resize","cols":N,"rows":N}` 调整窗口。只有浏览器会话能输入、接管或调整窗口；Bearer 调用者只能读取输出，输入会收到带 `terminal_read_only` 的 `forbidden` 错误帧，其调整窗口的消息会被忽略 |
 | `POST` | `/api/boxes/:id/exec` | 在 Box 里运行命令。请求体 `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`。`argv`（不经 shell）与 `cmd`（`/bin/sh -c`）只能提供一个。默认用户 `dev`，目录 `/workspace`，超时 30 秒；前台调用最长 55 秒，`background: true` 最长 3600 秒。已停止的 Box 会先启动，这会改变它的版本号。结果包含 `status`（`running`、`exited` 或 `killed`）、`exitCode`、`stdout`、`stderr`、`truncated`、`durationMs`、`timedOut` 与 `woke`。非零退出码是程序自己的状态。内联输出保留每个流头尾各约 16 KiB；`outputRef` 指向保存的窗口。「严格」档位下用户只能是 `dev` 或 `1000`；其他档位可以用 `root`，这类执行在审计中标记为 `privileged`。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep` |
 | `GET` | `/api/execs/:execId?waitMs=` | 读取一次 exec。`waitMs` 在命令仍在运行时最长等待 25000 毫秒。`status` 为 `running`、`exited` 或 `killed` |
 | `GET` | `/api/execs/:execId/output` | 已保存的 stdout 与 stderr（每个流头尾各约 64 KiB）。内存记录消失后，在保留期内仍可读取 |
@@ -409,6 +411,22 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 `:id` 可以是容器 ID、容器名（`minibox-<名称>`）、稳定 ID（`bx_…`）或 Box 名称。会改动 Box 的请求必须带 `If-Match`，值为当前版本号（纯数字、带引号的实体标签，或弱标签）。缺少该头返回 `428 precondition_required`；版本过期返回 `412 precondition_failed`。限制：CPU 0.1–64 核，内存 128–262144 MB，进程数 1–1000000，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
 
 重建会保留已挂载的卷、稳定 ID、Box 名称和最近 20 个规格版本。未写入卷的可写层、运行中的进程（包括 tmux）和容器 IP 会丢失。认领不改名；改成 `<LABEL_PREFIX>-<id>` 发生在重建时（决策 D6）。`secretRef` 只存储、不注入。第一阶段创建时仍只有一个工作区卷；增删挂载属于重建，不是卷池。重建前的检查点不在这一步。对外的容器 ID 会变，稳定 ID 和 Box 名称不变。重启策略保持 `no`。
+
+### 会话
+
+会话是 Box 内的一个具名 tmux 会话。网页终端每次附着一个会话，Agent 通过 `session_start`、`session_send` 与 `session_read` 使用它们（见 [Agent](#agent)）。会话在每种安全档位下都以 `dev` 运行，调用方断开后仍会继续运行，直到被关闭或 Box 停止。启动一个已存在的名称会返回该会话。在已停止的 Box 中启动会话时，会先启动 Box（`woke: true`）。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/boxes/:id/sessions` | 列出会话：`name`、`origin`（`agent` 表示 API 与 MCP 创建，`human` 表示控制台创建）、`controller`（`agent` 或 `human`，表示现在谁能输入）、`takenOver`、`createdAt`，以及 `attached`（当前附着在该会话上的终端数） |
+| `POST` | `/api/boxes/:id/sessions` | 启动会话，或返回同名的已有会话。请求体 `{ "name" }`：1 到 32 位，以字母或数字开头，其后可含字母、数字、`-` 或 `_`。返回 `session`、`created`（会话已存在时为 false）与 `woke` |
+| `GET` | `/api/boxes/:id/sessions/:name?lines=100&since=CURSOR` | 读取屏幕及其历史，最多回看 4000 行。`lines` 取 1 到 2000，默认 100。把最新的 `cursor` 作为 `since` 传回，只取新增的行。`reset: true` 表示屏幕被重绘或游标已过期，此时 `lines` 为当前窗口。`truncated` 表示还有未返回的行 |
+| `POST` | `/api/boxes/:id/sessions/:name/input` | 发送输入。请求体为 `{ "keys": [...] }`（tmux 键名，如 `Enter`、`Tab`、`Escape`、`C-c` 或 `Up`，最多 32 个）或 `{ "text": "..." }`（字面 UTF-8，最多 16 KiB），二者只能提供一个。返回发送的 `keys` 数与 `bytes` 字节数。人正在接管该会话时返回 `409 taken_over`，并带 `retryable: true` |
+| `DELETE` | `/api/boxes/:id/sessions/:name` | 关闭会话，并结束其中正在运行的程序。人正在持有该会话时，Agent 或 Bearer 调用者会收到 `409 taken_over`，并带 `retryable: true`；只有控制台能关闭它 |
+
+接管与归还是终端的控制帧，不是 REST 调用：控制台通过它的 WebSocket 发送。Agent 发起的会话在控制台中默认只读，直到有人接管。接管会在人手动归还，或人在 `SESSION_TAKEOVER_IDLE_SEC` 秒（默认 300 秒）没有输入后还给 Agent。控制台发起的会话留在人手中，直到人归还。接管状态只保存在内存中，因此 MiniBox 重启后，每个会话的控制方都会回到其发起方对应的默认值。接管锁约束会话 API、关闭与终端，但不约束 `exec`：在箱内以 `dev` 运行 `exec` 的 Agent 仍可用 `tmux send-keys` 或 `tmux kill-session` 直接操作会话（见 [Agent](#agent)）。每个 Box 最多 16 个会话，每个会话最多 8 个终端。其中 Bearer 终端最多 6 个，其余 2 个留给控制台。超过任一上限时，调用返回 `429` 与 `too_many_requests`。
+
+终端 WebSocket 以二进制帧输出，以文本帧发送 `state` 或 `error` 帧。会话结束时以关闭码 `1000` 关闭，浏览器会话结束时以 `1008` 关闭。连接 30 秒没有任何数据时会被关闭，浏览器会自动回应服务器的 ping，因此正常打开的页面不会被断开。浏览器来不及接收时输出会暂停；未读数据超过 4 MiB 的客户端会被关闭。无论终端如何结束，其附着进程都会在 Box 内结束，不会残留 exec。
 
 ### 快照与模板
 
@@ -445,7 +463,7 @@ Bun 的 HTTP 空闲计时从请求开始计算，上限 60 秒，响应内容不
 
 同步操作在事件日志中记录一次，即[数据目录](#数据目录)中的 `events.db`，不论它经由 REST、[MCP](#agent) 还是 CLI 到达。CLI 的调用是 REST 调用，记为 `rest`；`X-Minibox-Client` 请求头只是客户端的声明，从不决定事件来源。任务在被接受时记录 `started`，结束时再记录一条最终事件；`ref.taskId` 把它们连起来，最终事件的 `parentId` 是 `started` 事件。构建日志不会写入事件库。`exec` 还会在同一条总线上记录 `exec.start`（`status` 为 `started`）、`exec.finish` 与 `exec.killed`，并用 `parentId` 挂到对应的 `exec.run`。事件记录调用者（`principal`）、操作的对象（`op`、`target`）、开始时间与耗时（`ts`、`durationMs`）、结果（`status`），以及所属的客户端会话（`run`，来自 `X-Minibox-Run`，MCP 则用会话 id）。
 
-事件日志只覆盖经由 MiniBox 的调用，不记录箱内发生的事情，包括 Agent 在箱内自己的 Shell 里执行的命令。在请求到达操作之前就被拒绝的请求（例如缺少密钥返回 `401`，或跨站请求返回 `403`）同样不会被记录。
+事件日志只覆盖经由 MiniBox 的调用，不记录箱内发生的事情，包括 Agent 在箱内自己的 Shell 里执行的命令。键入的内容从不记录：终端只记录开启与关闭，以及两个方向各自的字节数；会话发送只记录按键数与字节数，从不记录文本。在请求到达操作之前就被拒绝的请求（例如缺少密钥返回 `401`，或跨站请求返回 `403`）同样不会被记录。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -460,8 +478,8 @@ Bun 的 HTTP 空闲计时从请求开始计算，上限 60 秒，响应内容不
 
 | 档位 | 内容 | 默认保留 |
 |---|---|---|
-| 审计 | 任何结果的写操作与删除，以及被拒绝的调用。被拒绝的 `exec` 同样记在审计档 | 365 天（`EVENT_RETENTION_AUDIT_DAYS`） |
-| 活动 | 未被拒绝的读取，以及全部 `exec.*` 事件（`exec.run`、`exec.get`、`exec.output`、`exec.start`、`exec.finish`、`exec.killed`）。同一主体对同一对象、相同操作与结果的读取，在一分钟内合并为一条，带 `count`。exec 事件逐条保留 | 30 天（`EVENT_RETENTION_ACTIVITY_DAYS`） |
+| 审计 | 任何结果的写操作与删除，以及被拒绝的调用。被拒绝的 `exec` 同样记在审计档。会话的接管与归还（`session.takeover`、`session.release`）是写操作，也记在审计档 | 365 天（`EVENT_RETENTION_AUDIT_DAYS`） |
+| 活动 | 未被拒绝的读取；全部 `exec.*` 事件（`exec.run`、`exec.get`、`exec.output`、`exec.start`、`exec.finish`、`exec.killed`）；终端会话的开启与关闭（`terminal.open`、`terminal.close`）；会话的启动、发送与关闭（`session.start`、`session.send`、`session.close`）；以及容器的启动、停止与内存溢出事件（`container.start`、`container.stop`、`container.oom`，由 MiniBox 从引擎获取）。同一主体对同一对象、相同操作与结果的读取，在一分钟内合并为一条，带 `count`。exec、终端与容器事件逐条保留 | 30 天（`EVENT_RETENTION_ACTIVITY_DAYS`） |
 | 输出 | `DATA_DIR/exec` 中的命令输出，在 exec 结束时写入。每个流保留头尾 | 7 天，总计最多 512 MB（`EVENT_OUTPUT_RETENTION_DAYS`、`EVENT_OUTPUT_MAX_MB`） |
 
 清理在启动时执行，之后每小时执行一次。超过各档位保留期的事件会被删除；输出先按时间删除，再从最旧的开始删除，直到总量不超过上限。保留相关配置必须是正整数，其他取值回退为默认值。
@@ -496,7 +514,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 > **警告：`/mcp` 使用主访问密钥，该密钥拥有完全的所有者权限。** 持有密钥的客户端可以调用其所请求工具集中的每一个工具，包括在非「严格」档位的 Box 中以 root 执行 `exec`、`delete_box` 与 `rebuild_box`。作用域令牌尚未实现（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）。只有在可以接受这一点时才把密钥交给 Agent，并确保密钥不出现在提示词、日志和仓库中。
 
-设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`，它们属于默认工具集（共 9 个）；`rebuild_box` 属于 `rebuild`（总计 10 个）。`session`、`network`、`storage`、`tools` 与 `meta` 可以被接受，目前没有工具。文件工具尚未实现，留到 Volume（[#24](https://github.com/ArnoChenFx/minibox/issues/24)）之后。说明见 [`docs/agents.md`](docs/agents.md)。
+设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`，它们属于默认工具集（共 9 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`（总计 13 个）。`network`、`storage`、`tools` 与 `meta` 可以被接受，目前没有工具。文件工具尚未实现，留到 Volume（[#24](https://github.com/ArnoChenFx/minibox/issues/24)）之后。说明见 [`docs/agents.md`](docs/agents.md)。
 
 用 `bun run build:cli` 编译 CLI（`bun build --compile`，输出 `dist/minibox`，不提交）。它访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。
 
@@ -517,7 +535,11 @@ minibox mcp
 - 前台 exec 的 `timeoutSec` 最大为 55。更长的命令使用 `background: true` 并把 `timeoutSec` 设到最大 3600，再用 `exec_get` 的 `waitMs`（最大 25000）轮询。`exec_kill` 结束进程树。
 - `exec` 可以读写该 Box 上挂载的每一个卷。
 - `rebuild_box` 位于 `rebuild` 工具集（`/mcp?toolsets=rebuild`），需要 `confirm: true`。
-- 文件工具还没有。用 `/mcp?toolsets=core,session` 选择工具集。默认是 core 与 meta。设计目录 27 个工具，默认工具集 15 个；当前服务只暴露已经实现的工具。
+- `session_start`、`session_send` 与 `session_read` 驱动 Box 里的 tmux 会话，它们属于 `session` 工具集（`/mcp?toolsets=core,session`）。会话在你断开后继续运行。一次性命令用 exec，长时间运行或需要交互的程序用会话。列出和关闭会话只在 REST API 与 CLI 中提供。
+- 经由 MCP 启动的会话，发起方为 agent。人可以在控制台接管它。人持有会话期间，`session_send` 会失败并返回 `taken_over`（`retryable: true`）：稍等一下，用 `session_read` 读取会话，然后再发送。接管期间 `session_read` 仍可用。
+- `session_read` 返回 `lines` 与游标。把最新的游标作为 `since` 传入，只读取新增内容。`reset: true` 表示屏幕被重绘，此时 `lines` 是当前窗口。
+- `session_send` 接受 `keys`（tmux 键名，如 Enter、Tab、Escape 或 C-c）或 `text`，二者只能提供一个。审计日志只记录数量，从不记录输入内容。
+- 文件工具还没有。默认工具集是 core 与 meta。设计目录 27 个工具，默认工具集 15 个；当前服务只暴露已经实现的工具。
 
 ## 项目结构
 
@@ -536,7 +558,8 @@ minibox/
 │   ├── runtime/             # Runtime 接口与 RuntimeError（引擎边界）
 │   ├── docker/              # Docker 适配器（唯一使用 dockerode）：runtime / errors / logs / stats / proc
 │   ├── specs/               # Box 规格存储、认领、漂移、历史与重建计划
-│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / exec / rebuild / images / snapshots / templates / reconcile
+│   ├── services/            # 基于 Runtime 的业务逻辑：boxes / exec / rebuild / images / snapshots / templates / reconcile / terminals
+│   ├── tmux/                # tmux 命令行、会话名称，以及 tmux 输出的解析
 │   ├── mcp/                 # /mcp 上的 Streamable HTTP MCP
 │   ├── cli.ts               # 瘦客户端：box ls、exec、mcp 的 stdio 代理
 │   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostSampler（盒子缓存与采样）、HostMonitor
@@ -544,7 +567,7 @@ minibox/
 │   ├── tasks/               # 任务库（SQLite）、管理器、走事件总线的进度流
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
 │   ├── routes/              # router、各组路由（auth / system / images）与操作的 REST 适配层
-│   ├── ws/terminal.ts       # WebSocket 终端
+│   ├── ws/terminal.ts       # WebSocket 终端：附着、控制帧、心跳与背压
 │   └── lib/                 # errors / http / logger / bus（进程内事件总线）/ validation
 ├── web/
 │   ├── index.html · login.html
@@ -663,7 +686,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 - [ ] [#24](https://github.com/ArnoChenFx/minibox/issues/24) Volume 与存储池（`local` / `nfs` / `path`）
 - [ ] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI。exec、MCP 与 CLI 已落地；文件 API 仍留到 Volume（#24）之后
-- [ ] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
+- [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
 - [ ] [#17](https://github.com/ArnoChenFx/minibox/issues/17) 通过 SSE 推送 Box 状态与资源占用，取代轮询
 - [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS 部署指南
 

@@ -510,13 +510,13 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
 
     async startExec(containerId, spec) {
-      // Absent tty is the web terminal: one stream, no wrapper. Command exec sets tty false so stdout and stderr stay
-      // separate, and the wrapper carries a random token in its argv so kill() can find the command's process tree.
+      // Every exec runs through the wrapper, terminal included, so kill() can stop its process tree from inside the box.
+      // Absent tty is the web terminal: one stream. Command exec sets tty false so stdout and stderr stay separate.
       const tty = spec.tty !== false;
-      const token = tty ? null : randomBytes(8).toString("hex");
+      const token = randomBytes(8).toString("hex");
       const exec = await call(() =>
         docker.getContainer(containerId).exec({
-          Cmd: token ? ["/bin/sh", "-c", RUN_WRAPPER, "minibox-exec", token, ...spec.cmd] : spec.cmd,
+          Cmd: ["/bin/sh", "-c", RUN_WRAPPER, "minibox-exec", token, ...spec.cmd],
           AttachStdin: true,
           AttachStdout: true,
           AttachStderr: true,
@@ -549,7 +549,6 @@ export function createDockerRuntime(socketPath: string): Runtime {
           return { running: info.Running, exitCode: info.ExitCode, pid: info.Pid || null };
         },
         async kill() {
-          if (!token) throw new RuntimeError("invalid", "a terminal exec has no recorded process to stop");
           try {
             await stopExec(docker, containerId, exec.id, token, spec.stopAs ?? spec.user);
           } catch (e) {

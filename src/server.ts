@@ -16,7 +16,7 @@ import {
 import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
 import { guardRequest } from "./guard";
-import { AppError } from "./lib/errors";
+import { AppError, badRequest } from "./lib/errors";
 import { errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
@@ -26,8 +26,9 @@ import { matchRoute } from "./routes/router";
 import { getBox } from "./services/boxes";
 import { reconcileHost } from "./services/reconcile";
 import { serveFile } from "./static";
+import { isSessionName } from "./tmux/format";
 import { resolveVersion } from "./version";
-import { type TerminalData, terminalHandlers } from "./ws/terminal";
+import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData, terminalHandlers } from "./ws/terminal";
 
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
@@ -99,7 +100,7 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
 }
 
 export function startServer(app: App): Server<TerminalData> {
-  const term = terminalHandlers(app.sessions);
+  const term = terminalHandlers({ sessions: app.sessions, terminals: app.terminals });
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
   );
@@ -124,7 +125,16 @@ export function startServer(app: App): Server<TerminalData> {
           const host = app.hosts.get();
           const box = await getBox(host, decodeURIComponent(tm[1] ?? ""));
           if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
-          const data: TerminalData = { boxId: box.id, host, sessionId: caller.sessionId };
+          const name = url.searchParams.get("session") ?? "";
+          if (!isSessionName(name)) throw badRequest(msg("session_name_invalid"), { field: "session" });
+          const data: TerminalData = {
+            boxId: box.id,
+            box,
+            host,
+            name,
+            source: caller.sessionId ? "ui" : "rest",
+            sessionId: caller.sessionId,
+          };
           if (server.upgrade(req, { data })) return undefined;
           throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
         }
@@ -151,8 +161,11 @@ export function startServer(app: App): Server<TerminalData> {
     websocket: {
       open: term.open,
       message: term.message,
+      drain: term.drain,
       close: term.close,
-      idleTimeout: 0,
+      idleTimeout: HEARTBEAT_SEC,
+      backpressureLimit: BACKPRESSURE_LIMIT_BYTES,
+      closeOnBackpressureLimit: true,
     },
   });
 }
@@ -195,6 +208,7 @@ async function boot(): Promise<void> {
   for (const host of app.hosts.list()) host.sampler.start();
   app.monitor.start();
   app.retention.start();
+  app.containers.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
 
@@ -206,8 +220,10 @@ async function boot(): Promise<void> {
     app.monitor.stop();
     for (const host of app.hosts.list()) host.sampler.stop();
     app.retention.stop();
+    app.containers.stop();
     app.throttle.stop();
     app.sessions.stop();
+    app.terminals.shutdown();
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);

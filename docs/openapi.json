@@ -16,6 +16,9 @@
       "name": "exec"
     },
     {
+      "name": "sessions"
+    },
+    {
       "name": "snapshots"
     },
     {
@@ -808,7 +811,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1902,7 +1905,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4033,7 +4036,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4997,7 +5000,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5207,6 +5210,935 @@
         "x-scope": "box:exec",
         "x-async": false,
         "x-cli": "exec output"
+      }
+    },
+    "/api/boxes/{id}/sessions": {
+      "get": {
+        "operationId": "session.list",
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List the terminal sessions of a box",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string",
+                            "enum": [
+                              "agent",
+                              "human"
+                            ],
+                            "description": "Who created the session: agent through the API, or human from the console."
+                          },
+                          "controller": {
+                            "type": "string",
+                            "enum": [
+                              "agent",
+                              "human"
+                            ],
+                            "description": "Who may type into it now. A takeover makes it human until it is released."
+                          },
+                          "takenOver": {
+                            "type": "boolean",
+                            "description": "True while a person has taken the session over from the agent."
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "description": "When the session was created, as an ISO 8601 time."
+                          },
+                          "attached": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Terminals attached to the session right now."
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "origin",
+                          "controller",
+                          "takenOver",
+                          "createdAt",
+                          "attached"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "sessions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:session",
+        "x-async": false,
+        "x-cli": "session ls"
+      },
+      "post": {
+        "operationId": "session.start",
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Start a terminal session in a box",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                    "description": "Session name: a letter or digit first, then letters, digits, dashes and underscores, at most 32 characters."
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "origin": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "human"
+                          ],
+                          "description": "Who created the session: agent through the API, or human from the console."
+                        },
+                        "controller": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "human"
+                          ],
+                          "description": "Who may type into it now. A takeover makes it human until it is released."
+                        },
+                        "takenOver": {
+                          "type": "boolean",
+                          "description": "True while a person has taken the session over from the agent."
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "origin",
+                        "controller",
+                        "takenOver"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "woke": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "session",
+                    "created",
+                    "woke"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:session",
+        "x-async": false,
+        "x-cli": "session start",
+        "x-mcp": {
+          "name": "session_start",
+          "toolset": "session"
+        }
+      }
+    },
+    "/api/boxes/{id}/sessions/{name}": {
+      "get": {
+        "operationId": "session.read",
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Read a terminal session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "description": "Session name: a letter or digit first, then letters, digits, dashes and underscores, at most 32 characters."
+            }
+          },
+          {
+            "name": "lines",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000,
+              "description": "Lines to return from the end of the window, between 1 and 2000. Defaults to 100."
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{12}\\.[1-9]\\d{0,14}$",
+              "description": "The cursor the previous read of this session returned. Omit it to read the current window."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": {
+                      "type": "string"
+                    },
+                    "cursor": {
+                      "type": "string",
+                      "description": "Pass this as since to the next read of the session."
+                    },
+                    "reset": {
+                      "type": "boolean"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "controller": {
+                      "type": "string",
+                      "enum": [
+                        "agent",
+                        "human"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "session",
+                    "cursor",
+                    "reset",
+                    "truncated",
+                    "lines",
+                    "controller"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:session",
+        "x-async": false,
+        "x-cli": "session read",
+        "x-mcp": {
+          "name": "session_read",
+          "toolset": "session"
+        }
+      },
+      "delete": {
+        "operationId": "session.close",
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Close a terminal session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "description": "Session name: a letter or digit first, then letters, digits, dashes and underscores, at most 32 characters."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "closed"
+                    }
+                  },
+                  "required": [
+                    "session",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:session",
+        "x-async": false,
+        "x-cli": "session close"
+      }
+    },
+    "/api/boxes/{id}/sessions/{name}/input": {
+      "post": {
+        "operationId": "session.send",
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Send keys or text to a terminal session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "description": "Session name: a letter or digit first, then letters, digits, dashes and underscores, at most 32 characters."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keys": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "tmux key names, in order: Enter, Tab, BTab, Escape, Space, BSpace, DC, Up, Down, Left, Right, Home, End, PPage, NPage, F1 to F12, a single character, or a modifier prefix such as C-, M- or S-. Use text for literal input. Send exactly one of keys or text."
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 16384,
+                    "description": "Literal text, typed as UTF-8 bytes, up to 16 KiB. A newline ends the line in the shell. Send exactly one of keys or text."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": {
+                      "type": "string"
+                    },
+                    "keys": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "session",
+                    "keys",
+                    "bytes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, snapshot, template, task or exec named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:session",
+        "x-async": false,
+        "x-cli": "session send",
+        "x-mcp": {
+          "name": "session_send",
+          "toolset": "session"
+        }
       }
     },
     "/api/snapshots": {
@@ -5476,7 +6408,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5944,7 +6876,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6558,7 +7490,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7445,7 +8377,7 @@
             }
           },
           "409": {
-            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, or an exec is not running. A rebuild refusal includes a preview of the docker diff and the planned changes.",
+            "description": "The name is already taken, this operation is already running, a rebuild was requested without confirm set to true, an exec is not running, or a terminal session is under a person's control (code taken_over). A rebuild refusal includes a preview of the docker diff and the planned changes.",
             "content": {
               "application/json": {
                 "schema": {

@@ -1,13 +1,19 @@
 import { has, t } from "./i18n.js";
 
 /** Translate a server error `{ code, message, key?, params? }` into the UI language. */
-function serverMessage(err, status) {
-  if (err.key && has(`err.${err.key}`)) {
+export function errorText(err, status = 0) {
+  if (err?.key && has(`err.${err.key}`)) {
     const params = { ...err.params };
     if (typeof params.label === "string" && has(`label.${params.label}`)) params.label = t(`label.${params.label}`);
     return t(`err.${err.key}`, params);
   }
-  return err.message ?? t("api.httpError", { status });
+  return err?.message ?? t("api.httpError", { status });
+}
+
+/** The retry or next-step hint of a server error, translated, or `""` when there is none. */
+export function errorHint(err) {
+  if (err?.hintKey && has(`err.${err.hintKey}`)) return t(`err.${err.hintKey}`, { ...err.hintParams });
+  return err?.hint ?? "";
 }
 
 export class ApiError extends Error {
@@ -48,7 +54,7 @@ export async function api(path, { method = "GET", body, signal, headers } = {}) 
   }
   if (!res.ok) {
     const err = data?.error ?? {};
-    throw new ApiError(res.status, err.code ?? "http_error", serverMessage(err, res.status), err.details);
+    throw new ApiError(res.status, err.code ?? "http_error", errorText(err, res.status), err.details);
   }
   return data;
 }
