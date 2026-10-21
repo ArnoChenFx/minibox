@@ -1,4 +1,5 @@
 import { api, enc, errorHint, errorText } from "../lib/api.js";
+import { powerState } from "../lib/box-state.js";
 import { esc } from "../lib/dom.js";
 import { duration } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
@@ -40,14 +41,75 @@ function remember(boxId, name) {
 /**
  * The terminal tab. Each box has named tmux sessions that outlive the page. The session on screen is remembered per
  * box, so a refresh reattaches to it. An agent's session opens read-only; "Take over" gives this page the keyboard
- * until it is returned, by the button or by the idle timeout the server reports.
+ * until it is returned, by the button or by the idle timeout the server reports. A box that is not running shows why,
+ * and no socket is opened for it until it runs.
  */
-export function mountTerminal(root, { box }) {
-  const b = box();
-  if (!b.running) {
-    root.innerHTML = `<div class="card">${emptyState({ iconName: "terminal", title: t("bd.notRunning"), text: t("bd.termNotRunningText"), action: `<button class="btn btn-primary" data-action="start">${icon("play")}${t("bd.startBox")}</button>` })}</div>`;
-    return null;
+export function mountTerminal(root, { box, onChange, rerender }) {
+  let shown = null;
+  let waking = false;
+  let teardownLive = null;
+  let disposed = false;
+
+  const sync = () => {
+    if (disposed) return;
+    const state = waking ? "waking" : powerState(box());
+    if (state === shown) return;
+    shown = state;
+    teardownLive?.();
+    teardownLive = null;
+    if (state === "running") teardownLive = mountLive(root, box());
+    else root.innerHTML = offlineView(state);
+  };
+
+  /** Starting a session wakes the box, and the server answers once it runs. The tab then mounts again with the box. */
+  const wake = async () => {
+    if (waking || disposed) return;
+    waking = true;
+    sync();
+    try {
+      await api(`/api/boxes/${enc(box().id)}/sessions`, { method: "POST", body: { name: DEFAULT_NAME } });
+    } catch (e) {
+      if (disposed) return;
+      waking = false;
+      sync();
+      toast(t("bd.wakeFailed"), { type: "error", message: withHint(e) });
+      return;
+    }
+    if (!disposed) void rerender();
+  };
+
+  const onClick = (event) => {
+    if (event.target.closest('[data-action="wake"]')) void wake();
+  };
+  root.addEventListener("click", onClick);
+  const unsubscribe = onChange(sync);
+  sync();
+
+  return () => {
+    disposed = true;
+    unsubscribe();
+    root.removeEventListener("click", onClick);
+    teardownLive?.();
+    teardownLive = null;
+  };
+}
+
+/** What the tab shows in place of the terminal while the box is not running. */
+function offlineView(state) {
+  if (state === "expired") {
+    return `<div class="card">${emptyState({ iconName: "clock", title: t("bd.expiredTitle"), text: esc(t("bd.expiredText")) })}</div>`;
   }
+  if (state === "sleeping") {
+    return `<div class="card">${emptyState({ iconName: "moon", title: t("bd.sleepTitle"), text: esc(t("bd.sleepText")), action: `<button class="btn btn-primary" data-action="wake">${icon("terminal")}${t("bd.wakeSession")}</button>` })}</div>`;
+  }
+  if (state === "waking") {
+    return `<div class="card">${emptyState({ iconName: "moon", title: t("bd.wakingTitle"), text: esc(t("bd.wakingText")), action: `<button class="btn btn-primary" disabled aria-busy="true"><span class="spinner"></span>${t("bd.wakeSession")}</button>` })}</div>`;
+  }
+  return `<div class="card">${emptyState({ iconName: "terminal", title: t("bd.notRunning"), text: t("bd.termNotRunningText"), action: `<button class="btn btn-primary" data-action="start">${icon("play")}${t("bd.startBox")}</button>` })}</div>`;
+}
+
+/** Mounts the live terminal for a running box. Returns the function that tears it down. */
+function mountLive(root, b) {
   if (!window.Terminal || !window.FitAddon) {
     root.innerHTML = `<div class="callout danger">${t("bd.termLoadFailed")}</div>`;
     return null;

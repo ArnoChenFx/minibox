@@ -188,10 +188,11 @@ const STATE = {
   removing: "badge-warning",
   dead: "badge-danger",
   sleeping: "badge-warning",
+  expired: "badge-warning",
 };
-/** `boxState(box)` picks sleeping when the box was stopped for idle/TTL. */
+/** `boxState(box)` picks sleeping when the box was stopped for idle, and expired when its TTL has passed. */
 export function boxState(box) {
-  if (box?.sleeping) return "sleeping";
+  if (box?.sleeping) return box.stopReason === "ttl" ? "expired" : "sleeping";
   return box?.state ?? "unknown";
 }
 export function stateBadge(state) {

@@ -657,3 +657,24 @@ describe("api error keys", () => {
     });
   });
 });
+
+describe("box state badges", () => {
+  test("a box asleep for idle reads sleeping, one past its TTL reads TTL expired, and a running box keeps its state", () => {
+    const badges = inBrowser<{ idle: string; ttl: string; running: string; expired: string }>(
+      { languages: ["en-US"] },
+      `({
+        idle: ui.boxState({ state: "exited", sleeping: true, stopReason: "idle" }),
+        ttl: ui.boxState({ state: "exited", sleeping: true, stopReason: "ttl" }),
+        running: ui.boxState({ state: "running", sleeping: false, stopReason: null }),
+        expired: ui.stateBadge("expired"),
+      })`,
+      [`const ui = await import(${JSON.stringify(join(LIB, "ui.js"))});`],
+    );
+    expect({ idle: badges.idle, ttl: badges.ttl, running: badges.running }).toEqual({
+      idle: "sleeping",
+      ttl: "expired",
+      running: "running",
+    });
+    expect(badges.expired).toContain("TTL expired");
+  });
+});
