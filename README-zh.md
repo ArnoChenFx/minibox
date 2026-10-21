@@ -273,6 +273,10 @@ docker run -d --name minibox --restart unless-stopped \
 - 镜像标签：`X.Y.Z`、`X.Y` 和 `latest`（`1.0.0-rc.1` 这类预发布版本只打完整版本号标签）。
 - 本地构建：`docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
 
+## Agent CLI 工具
+
+创建 Box 时可勾选 Agent CLI（Claude Code、Codex、Gemini CLI、OpenCode、Aider）。运行中可在 Box 详情「工具」页安装 / 升级 / 卸载。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成。目录在仓库 `catalog/*.json`，可用 `DATA_DIR/tools.d/*.json` 覆盖。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
+
 ## 空闲休眠
 
 Box 可以在空闲时自行停止，并在下一次终端 / exec / 会话请求时唤醒（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。

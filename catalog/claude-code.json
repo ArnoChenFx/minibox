@@ -1,0 +1,15 @@
+{
+  "id": "claude-code",
+  "name": "Claude Code",
+  "description": "Anthropic's coding agent CLI (npm package; native installer also exists upstream).",
+  "source": "npm",
+  "package": "@anthropic-ai/claude-code",
+  "bin": "claude",
+  "needsRoot": false,
+  "estimatedMb": 180,
+  "requires": "Node \u2265 20",
+  "install": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "upgrade": "npm install -g --prefix {{prefix}} {{package_spec}}",
+  "uninstall": "npm uninstall -g --prefix {{prefix}} {{package}}",
+  "detect": "command -v claude >/dev/null && claude --version 2>/dev/null | head -1"
+}

@@ -436,24 +436,27 @@ function helperMountOf(mount: Mount): Docker.MountSettings {
  * names, cannot gain privileges, and is capped on memory and processes. AutoRemove lets the engine delete it on exit.
  */
 export function toHelperOptions(spec: HelperSpec, name: string): Docker.ContainerCreateOptions {
+  const memory = spec.memoryBytes ?? HELPER_MEMORY_BYTES;
+  const readonlyRoot = spec.readonlyRoot !== false;
   const hostConfig: Docker.HostConfig = {
     Mounts: (spec.mounts ?? []).map(helperMountOf),
-    NetworkMode: "none",
-    ReadonlyRootfs: true,
-    Tmpfs: { "/tmp": HELPER_TMPFS },
-    Memory: HELPER_MEMORY_BYTES,
-    MemorySwap: HELPER_MEMORY_BYTES,
+    NetworkMode: spec.network ? "bridge" : "none",
+    ReadonlyRootfs: readonlyRoot,
+    Memory: memory,
+    MemorySwap: memory,
     AutoRemove: true,
   };
+  if (readonlyRoot) hostConfig.Tmpfs = { "/tmp": HELPER_TMPFS };
   applyHardening(hostConfig, {
     capDrop: ["ALL"],
     capAdd: spec.capAdd,
     noNewPrivileges: true,
-    pidsLimit: HELPER_PIDS_LIMIT,
+    pidsLimit: spec.pidsLimit ?? HELPER_PIDS_LIMIT,
   });
   const opts: Docker.ContainerCreateOptions = { Image: spec.image, name, Cmd: spec.cmd, HostConfig: hostConfig };
   if (spec.user !== undefined) opts.User = spec.user;
   if (spec.labels !== undefined) opts.Labels = spec.labels;
+  if (spec.env !== undefined) opts.Env = spec.env;
   return opts;
 }
 

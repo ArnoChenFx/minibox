@@ -8,6 +8,7 @@ import {
   snapshotBox,
 } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
+import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
 import { applySamples } from "../lib/box-state.js";
@@ -67,6 +68,7 @@ const TABS = [
   ["terminal", "bd.tabTerminal", "terminal"],
   ["activity", "bd.tabActivity", "activity"],
   ["resources", "bd.tabResources", "sliders"],
+  ["tools", "bd.tabTools", "layers"],
   ["snapshots", "bd.tabSnapshots", "camera"],
 ];
 
@@ -440,6 +442,7 @@ const TAB_RENDER = {
           <dt>${t("bd.profile")}</dt><dd>${b.profile ? t(`profile.${b.profile}`) : t("bd.profileLegacy")}</dd>
           <dt>${t("bd.network")}</dt><dd class="mono">${esc(b.network)}</dd>
           <dt>${t("bd.env")}</dt><dd>${(b.env ?? []).length ? esc((b.env ?? []).map((item) => item.name).join(", ")) : t("bd.envNone")}</dd>
+          <dt>${t("bd.tools")}</dt><dd>${(b.tools ?? []).length ? esc((b.tools ?? []).map((item) => item.id).join(", ")) : t("bd.toolsNone")}</dd>
           <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume || "—")}</span></dd>
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
           <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(b.containerName || `minibox-${b.name}`)} bash</code></dd>
@@ -489,6 +492,72 @@ const TAB_RENDER = {
     };
     draw();
     return onChange(draw);
+  },
+
+  tools(root, { box, rerender }) {
+    const draw = async () => {
+      const b = box();
+      root.innerHTML = `<div class="card"><div class="card-body"><span class="spinner"></span> ${esc(t("bd.toolsLoading"))}</div></div>`;
+      let tools = [];
+      try {
+        tools = (await api(`/api/tools?id=${enc(b.id)}`)).tools;
+      } catch (e) {
+        root.innerHTML = emptyState({ iconName: "alert", title: t("bd.toolsLoadFailed"), text: esc(e.message) });
+        return;
+      }
+      const rows = tools
+        .map((tool) => {
+          const desired = tool.desiredVersion ? esc(tool.desiredVersion) : "—";
+          const installed = tool.installed
+            ? esc(tool.installedVersion || t("bd.toolsInstalled"))
+            : t("bd.toolsNotInstalled");
+          return `<tr>
+            <td><strong>${esc(tool.name)}</strong><div class="help">${esc(tool.description)}</div></td>
+            <td class="mono">${esc(tool.id)}</td>
+            <td>${desired}</td>
+            <td>${installed}</td>
+            <td class="actions">
+              ${
+                tool.installed
+                  ? `<button class="btn btn-sm" data-action="tool-upgrade" data-tool="${esc(tool.id)}">${t("bd.toolsUpgrade")}</button>
+                     <button class="btn btn-sm" data-action="tool-uninstall" data-tool="${esc(tool.id)}">${t("bd.toolsUninstall")}</button>`
+                  : `<button class="btn btn-sm btn-primary" data-action="tool-install" data-tool="${esc(tool.id)}">${t("bd.toolsInstall")}</button>`
+              }
+            </td>
+          </tr>`;
+        })
+        .join("");
+      root.innerHTML = `<div class="card"><div class="card-head"><h3>${t("bd.toolsTitle")}</h3>
+        <button class="btn btn-sm" data-action="tool-reconcile">${icon("refresh")}${t("bd.toolsReconcile")}</button></div>
+        <div class="card-body"><p class="help">${t("bd.toolsHelp")}</p></div>
+        <div class="table-wrap"><table class="table"><thead><tr>
+          <th>${t("bd.toolsColName")}</th><th>${t("bd.toolsColId")}</th><th>${t("bd.toolsColDesired")}</th><th>${t("bd.toolsColInstalled")}</th><th></th>
+        </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    };
+    const start = async (path, tool) => {
+      try {
+        const body = tool ? { tool, version: "latest" } : undefined;
+        const res = await api(path, { method: "POST", ...(body ? { body } : {}) });
+        if (res?.taskId) openTasks(res.taskId);
+        toast(t("bd.toolsTaskStarted"));
+        await draw();
+        rerender?.();
+      } catch (e) {
+        toastError(t("bd.toolsTaskFailed"), e);
+      }
+    };
+    root.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-action]");
+      if (!btn) return;
+      const b = box();
+      const tool = btn.dataset.tool;
+      if (btn.dataset.action === "tool-install") void start(`/api/boxes/${enc(b.id)}/tools/install`, tool);
+      if (btn.dataset.action === "tool-upgrade") void start(`/api/boxes/${enc(b.id)}/tools/upgrade`, tool);
+      if (btn.dataset.action === "tool-uninstall") void start(`/api/boxes/${enc(b.id)}/tools/uninstall`, tool);
+      if (btn.dataset.action === "tool-reconcile") void start(`/api/boxes/${enc(b.id)}/tools/reconcile`);
+    });
+    void draw();
+    return () => {};
   },
 
   snapshots(root, { box }) {

@@ -1,0 +1,15 @@
+{
+  "id": "aider",
+  "name": "Aider",
+  "description": "AI pair programming in the terminal. Installed with pip into the tools volume (pipx/uv deferred).",
+  "source": "pip",
+  "package": "aider-chat",
+  "bin": "aider",
+  "needsRoot": false,
+  "estimatedMb": 250,
+  "requires": "Python ≥ 3.10",
+  "install": "python3 -m pip install --upgrade --target {{prefix}}/py {{package_spec}}; mkdir -p {{prefix}}/bin; printf '%s\\n' '#!/bin/sh' 'export PYTHONPATH=\"{{prefix}}/py:${PYTHONPATH:-}\"' 'exec python3 -m aider \"$@\"' > {{prefix}}/bin/aider; chmod +x {{prefix}}/bin/aider",
+  "upgrade": "python3 -m pip install --upgrade --target {{prefix}}/py {{package_spec}}; mkdir -p {{prefix}}/bin; printf '%s\\n' '#!/bin/sh' 'export PYTHONPATH=\"{{prefix}}/py:${PYTHONPATH:-}\"' 'exec python3 -m aider \"$@\"' > {{prefix}}/bin/aider; chmod +x {{prefix}}/bin/aider",
+  "uninstall": "rm -f {{prefix}}/bin/aider; rm -rf {{prefix}}/py/aider {{prefix}}/py/aider_chat* {{prefix}}/py/aider-* 2>/dev/null || true",
+  "detect": "command -v aider >/dev/null && (aider --version 2>/dev/null || PYTHONPATH={{prefix}}/py python3 -c 'import importlib.metadata as m; print(m.version(\"aider-chat\"))' 2>/dev/null) | head -1"
+}

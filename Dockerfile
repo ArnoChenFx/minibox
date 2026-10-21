@@ -32,6 +32,7 @@ COPY package.json bun.lock tsconfig.json ./
 COPY src ./src
 COPY web ./web
 COPY templates ./templates
+COPY catalog ./catalog
 
 # Mount a named volume here (-v minibox-data:/data). A new volume copies this mode, keeping access_key private.
 RUN mkdir -m 700 /data
