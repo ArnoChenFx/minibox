@@ -157,10 +157,13 @@ export class HostSampler {
     this.setState("down", "stopped");
   }
 
-  /** Re-reads one container once the changes queued before this call are applied. Does nothing when not started. */
-  observe(containerId: string): Promise<void> {
+  /**
+   * Re-reads the given containers once the changes queued before this call are applied, so a caller that just changed a
+   * box sees the change in the cache. Does nothing when not started.
+   */
+  observe(...containerIds: string[]): Promise<void> {
     if (!this.started) return Promise.resolve();
-    this.markDirty(containerId, "refresh");
+    for (const containerId of containerIds) this.markDirty(containerId, "refresh");
     return this.enqueue(() => this.drain());
   }
 
@@ -213,12 +216,18 @@ export class HostSampler {
 
   /** Totals over the cached boxes, or `null` while the cache is not current. */
   summary(): BoxTotals | null {
-    return this.ready() ? summarizeBoxes(this.containers.values()) : null;
+    if (!this.ready()) return null;
+    const infos: ContainerInfo[] = [];
+    for (const spec of this.specs.values()) {
+      const info = this.containerOf(spec);
+      if (info) infos.push(info);
+    }
+    return summarizeBoxes(infos);
   }
 
   /** Samples every running box now, as the timer does once per interval. */
-  async sampleNow(): Promise<void> {
-    await this.round();
+  sampleNow(): Promise<void> {
+    return this.enqueue(() => this.round());
   }
 
   private async run(signal: AbortSignal): Promise<void> {
@@ -330,6 +339,9 @@ export class HostSampler {
     this.failures = 0;
     this.setState("live", null);
     this.reconcile();
+    void this.enqueue(() => this.round()).catch((e: unknown) =>
+      log.error("sampler.round_failed", { host: host.host.id, error: errorText(e) }),
+    );
   }
 
   /**
@@ -387,7 +399,7 @@ export class HostSampler {
   private scheduleRound(delay: number): void {
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.round()
+      this.enqueue(() => this.round())
         .catch((e: unknown) =>
           log.error("sampler.round_failed", { host: this.currentHost().host.id, error: errorText(e) }),
         )

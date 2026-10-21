@@ -67,6 +67,11 @@ export const BoxSchema = z.object({
   env: z.array(BoxEnvSchema),
 });
 
+/** One sample of a box's usage. `t` is epoch milliseconds. */
+export const StatSampleSchema = StatsSchema.extend({
+  t: z.number().int(),
+});
+
 export const BoxWithStatsSchema = BoxSchema.extend({
   stats: StatsSchema.nullable().optional(),
 });

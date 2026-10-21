@@ -56,10 +56,12 @@ function seedBox(name: string, running: boolean): string {
   });
 }
 
+/** Starts the sampler and returns once its first listing and its first sample are applied. */
 async function started(): Promise<HostSampler> {
   const sampler = app.hosts.get().sampler;
   sampler.start();
   await waitFor(() => sampler.ready(), "the first listing");
+  await sampler.settle();
   return sampler;
 }
 
@@ -181,9 +183,11 @@ describe("resource samples", () => {
     seedBox("beta", false);
     seedBox("gamma", true);
     const sampler = await started();
+    expect(runtime.callsTo("containerStats")).toHaveLength(2);
+    sampleFrames = [];
 
     for (let i = 0; i < 12; i++) await sampler.sampleNow();
-    expect(runtime.callsTo("containerStats")).toHaveLength(2 * 12);
+    expect(runtime.callsTo("containerStats")).toHaveLength(2 * 13);
 
     const alpha = sampler.boxes({ withStats: true }).find((box) => box.name === "alpha");
     expect(alpha?.stats).toEqual({ cpuPercent: 1.5, memUsage: 64 * MB, memLimit: 256 * MB, memPercent: 25 });

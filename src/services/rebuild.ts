@@ -63,6 +63,7 @@ export async function rebuildBox(
     }
     await swap(host, previous, planned, template, request);
   });
+  await host.sampler.observe(box.id, host.specs.read(box.boxId)?.containerId ?? box.id);
   return getBox(host, box.boxId);
 }
 

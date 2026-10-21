@@ -75,7 +75,7 @@ export function createLocalHost(
       runtime: cfg.containerRuntime,
       network: boxNetworkName(cfg.labelPrefix),
     },
-    monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory),
+    monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory, live),
     sampler: new HostSampler(() => ctx, { intervalMs: cfg.metricsIntervalMs, history: cfg.metricsHistory }, live),
     specs,
   };

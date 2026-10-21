@@ -1,4 +1,5 @@
 import { type BoxProfile, hardeningFor } from "../box-profile";
+import type { StatSample } from "../host/live";
 import type { HostCtx } from "../host/registry";
 import { containerName, parseBoxLabels, volumeName } from "../labels";
 import { badRequest, conflict, notFound } from "../lib/errors";
@@ -146,7 +147,22 @@ export async function getBox(host: HostCtx, ref: string): Promise<Box> {
   }
 }
 
+/**
+ * The box a reference names. While the host's cache is current, a box it holds is read from the cache without a Docker
+ * call. Anything else is read from the engine, which also claims a container that has no spec yet.
+ */
+export async function readBox(host: HostCtx, ref: string): Promise<Box> {
+  const cached = host.sampler.ready() ? host.sampler.find(ref) : null;
+  return cached ?? getBox(host, ref);
+}
+
+/**
+ * The boxes of a host. While the cache is current this makes no Docker call, whatever the number of boxes. Otherwise it
+ * lists the engine. Usage then comes from the sampler's latest sample when the sampler runs, and from the engine only
+ * when it does not.
+ */
 export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {}): Promise<Box[]> {
+  if (host.sampler.ready()) return host.sampler.boxes({ withStats: opts.withStats === true });
   const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
   const boxes: Box[] = [];
   for (const info of infos) {
@@ -162,11 +178,16 @@ export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {
     }
     const box = projectBox(host, spec, info);
     if (opts.withStats) {
-      box.stats = box.running ? await host.runtime.containerStats(info.id).catch(() => null) : null;
+      box.stats = box.running ? await listedStats(host, spec.id, info.id) : null;
     }
     boxes.push(box);
   }
   return boxes.toSorted((a, b) => a.name.localeCompare(b.name));
+}
+
+async function listedStats(host: HostCtx, boxId: string, containerId: string): Promise<ContainerStats | null> {
+  if (host.sampler.isStarted()) return host.sampler.statsOf(boxId);
+  return host.runtime.containerStats(containerId).catch(() => null);
 }
 
 async function ensureImage(host: HostCtx, image: string): Promise<ImageDetails> {
@@ -317,6 +338,7 @@ export async function createBox(host: HostCtx, input: CreateBoxInput & { templat
   });
 
   await runtime.startContainer(containerId);
+  await host.sampler.observe(containerId);
   log.info("box.created", { name: input.name, image, profile, cpus: input.cpus, memoryMb: input.memoryMb });
   return getBox(host, containerId);
 }
@@ -326,6 +348,7 @@ export async function startBox(host: HostCtx, ref: string): Promise<Box> {
   await attachToBoxNetwork(host, box);
   await host.runtime.startContainer(box.id);
   await setDesired(host, box.boxId, "running");
+  await host.sampler.observe(box.id);
   return getBox(host, box.boxId);
 }
 
@@ -333,6 +356,7 @@ export async function stopBox(host: HostCtx, ref: string): Promise<Box> {
   const box = await getBox(host, ref);
   await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await setDesired(host, box.boxId, "stopped");
+  await host.sampler.observe(box.id);
   return getBox(host, box.boxId);
 }
 
@@ -341,6 +365,7 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   await attachToBoxNetwork(host, box);
   await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await setDesired(host, box.boxId, "running");
+  await host.sampler.observe(box.id);
   return getBox(host, box.boxId);
 }
 
@@ -357,6 +382,7 @@ export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolea
     await host.runtime.removeContainer(box.id, { force: true });
     host.specs.remove(box.boxId);
   });
+  await host.sampler.observe(box.id);
   const result: DeleteBoxResult = { name: box.name, volumeDeleted: false };
   if (deleteVolume) {
     try {
@@ -470,6 +496,7 @@ export async function updateBox(host: HostCtx, ref: string, revision: number, pa
       throw e;
     }
   });
+  await host.sampler.observe(current.id);
   log.info("box.updated", { id: current.boxId, name: current.name });
   return getBox(host, current.boxId);
 }
@@ -488,7 +515,26 @@ export async function getLogs(host: HostCtx, ref: string, tail: number): Promise
   return host.runtime.containerLogs(box.id, { tail, timestamps: true });
 }
 
+/**
+ * Current usage of a box. While the cache is current this is the latest sample, so any number of tabs asking costs the
+ * engine nothing. Otherwise it is one read of the engine, and only for a running box.
+ */
+export async function statsOf(host: HostCtx, box: Box): Promise<ContainerStats | null> {
+  if (!box.running) return null;
+  if (host.sampler.ready()) return host.sampler.statsOf(box.boxId);
+  return host.runtime.containerStats(box.id);
+}
+
 export async function getStats(host: HostCtx, ref: string): Promise<ContainerStats | null> {
-  const box = await getBox(host, ref);
-  return box.running ? host.runtime.containerStats(box.id) : null;
+  return statsOf(host, await readBox(host, ref));
+}
+
+/** The latest usage and the samples behind it, oldest first. The history is empty while the cache is not current. */
+export async function getStatsWithHistory(
+  host: HostCtx,
+  ref: string,
+): Promise<{ stats: ContainerStats | null; history: StatSample[] }> {
+  const box = await readBox(host, ref);
+  const history = host.sampler.ready() ? host.sampler.historyOf(box.boxId) : [];
+  return { stats: await statsOf(host, box), history };
 }
