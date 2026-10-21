@@ -70,6 +70,22 @@ async function createBox(name: string): Promise<{ id: string; name: string; revi
   return ((await res.json()) as { box: { id: string; name: string; revision: number } }).box;
 }
 
+/** Snapshot create returns 202; the image exists once the task has finished. */
+async function snapshotBox(id: string, name: string): Promise<{ ref: string; source: string }> {
+  const res = await post(`/api/boxes/${id}/snapshots`, { name });
+  expect(res.status).toBe(202);
+  const { taskId } = (await res.json()) as { taskId: string };
+  const deadline = Date.now() + 2000;
+  let task: { status?: string; result?: { snapshot?: { ref: string; source: string } } } = {};
+  for (;;) {
+    task = (await (await get(`/api/tasks/${taskId}`)).json()) as typeof task;
+    if (task.status !== "running" || Date.now() > deadline) break;
+    await Bun.sleep(5);
+  }
+  expect(task.status).toBe("succeeded");
+  return task.result!.snapshot!;
+}
+
 describe("access and routing", () => {
   test("API routes need the access key, health does not", async () => {
     const res = await api("/api/boxes", {}, { authed: false });
@@ -287,9 +303,7 @@ describe("box routes", () => {
   test("a box can be snapshotted, restored and promoted, and the results are listed", async () => {
     const box = await createBox("alpha");
 
-    const snapRes = await post(`/api/boxes/${box.id}/snapshots`, { name: "nightly" });
-    expect(snapRes.status).toBe(201);
-    const { snapshot } = (await snapRes.json()) as { snapshot: { ref: string; source: string } };
+    const snapshot = await snapshotBox(box.id, "nightly");
     expect(snapshot).toMatchObject({ source: "alpha" });
     expect(await (await get("/api/snapshots")).json()).toMatchObject({
       snapshots: [{ ref: snapshot.ref, source: "alpha" }],
@@ -322,9 +336,7 @@ describe("box routes", () => {
 
   test("an unused snapshot can be deleted and disappears from the list", async () => {
     const box = await createBox("alpha");
-    const { snapshot } = (await (await post(`/api/boxes/${box.id}/snapshots`, { name: "spare" })).json()) as {
-      snapshot: { ref: string };
-    };
+    const snapshot = await snapshotBox(box.id, "spare");
     expect((await del(`/api/snapshots/${enc(snapshot.ref)}`)).status).toBe(200);
     expect(await (await get("/api/snapshots")).json()).toEqual({ snapshots: [] });
   });

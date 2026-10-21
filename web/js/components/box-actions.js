@@ -5,6 +5,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { hostNow, refreshHost } from "../lib/store.js";
 import { confirmDialog, nameError, openDialog, promptDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
 const LIFECYCLE = {
   start: ["ba.startFailed", "ba.started"],
@@ -72,9 +73,19 @@ export async function snapshotBox(box) {
   toast(t("ba.snapCreating"), { type: "info", message: t("ba.snapCreatingText") });
   try {
     const r = await api(`/api/boxes/${enc(box.id)}/snapshots`, { method: "POST", body: name ? { name } : {} });
-    toast(t("ba.snapCreated"), { message: r.snapshot.ref });
-    return r.snapshot;
+    const done = await waitTask(r.taskId);
+    if (done.status !== "succeeded") {
+      toastError(t("ba.snapFailed"), { message: taskErrorText(done.error) || t(`task.status.${done.status}`) });
+      return null;
+    }
+    toast(t("ba.snapCreated"), { message: done.result.snapshot.ref });
+    return done.result.snapshot;
   } catch (e) {
+    if (e.details?.taskId) {
+      toast(t("task.alreadyRunning"), { type: "info" });
+      openTasks(e.details.taskId);
+      return null;
+    }
     toastError(t("ba.snapFailed"), e);
     return null;
   }

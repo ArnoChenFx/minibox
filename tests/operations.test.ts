@@ -41,8 +41,34 @@ const SAMPLES: Record<string, (boxId: string) => unknown> = {
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.build": () => ({}),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
+  "task.list": () => ({}),
+  "task.get": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
+  "task.cancel": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "events.list": () => ({ op: "box.create" }),
 };
+
+/** A real task id for the task operations, which cannot succeed against the placeholder id. */
+async function preparedInput(
+  app: App,
+  ctx: OperationContext,
+  runtime: { hold(op: "buildImage"): { release(): void } },
+  operation: Operation,
+  boxId: string,
+): Promise<{ input: unknown; release?: () => void }> {
+  if (operation.name === "task.get") {
+    const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
+    await app.tasks.drain();
+    return { input: { id: started.taskId } };
+  }
+  if (operation.name === "task.cancel") {
+    const held = runtime.hold("buildImage");
+    const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
+    return { input: { id: started.taskId }, release: held.release };
+  }
+  const sample = SAMPLES[operation.name];
+  if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
+  return { input: sample(boxId) };
+}
 
 function opNamed(name: string): Operation {
   const operation = OPERATIONS.find((op) => op.name === name);
@@ -120,7 +146,7 @@ describe("registry definitions", () => {
     expect(registryProblems(OPERATIONS)).toEqual([]);
   });
 
-  test("the registry holds the box, snapshot, template and event operations in scope", () => {
+  test("the registry holds the box, snapshot, template, task and event operations in scope", () => {
     expect(OPERATIONS.map((op) => op.name)).toEqual(Object.keys(SAMPLES));
   });
 
@@ -155,6 +181,23 @@ describe("registry definitions", () => {
     const problems = registryProblems([quiet, mislabelled]).join("\n");
     expect(problems).toContain("thing.wipe changes state but declares no activity");
     expect(problems).toContain("thing.peek is read but binds POST");
+  });
+
+  test("async operations answer 202, and a 202 binding is async", () => {
+    const late = definition({
+      name: "thing.build",
+      kind: "write",
+      async: true,
+      activity: { action: () => "thing.build", target: () => "thing" },
+      rest: [{ method: "POST", path: "/api/things/:id", body: true }],
+    });
+    const early = definition({
+      name: "thing.peek",
+      rest: [{ method: "GET", path: "/api/things/:id", status: 202 }],
+    });
+    const problems = registryProblems([late, early]).join("\n");
+    expect(problems).toContain("thing.build is async but does not return 202");
+    expect(problems).toContain("thing.peek returns 202 but is not async");
   });
 });
 
@@ -245,28 +288,42 @@ describe("executor", () => {
     expect(app.activity.list()).toEqual([]);
   });
 
-  test("every registered operation calls the audit sink once when it succeeds", async () => {
+  test("every registered operation records its outcome when it succeeds", async () => {
     for (const operation of OPERATIONS) {
-      const sample = SAMPLES[operation.name];
-      if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
       const events: AuditEvent[] = [];
-      const { app, ctx } = appWith({ audit: (event) => events.push(event) });
+      const { app, ctx, runtime } = appWith({ audit: (event) => events.push(event) });
       const boxId = await withBox(app, ctx);
+      const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
       events.length = 0;
-
-      await app.operations.run(operation.name, ctx, sample(boxId));
-      expect(events.map((event) => [event.op, event.kind, event.status])).toEqual([
-        [operation.name, operation.kind, "ok"],
-      ]);
+      try {
+        await app.operations.run(operation.name, ctx, prepared.input);
+        await app.tasks.drain();
+        const mine = events.filter((event) => event.op === operation.name);
+        expect(mine.map((event) => [event.op, event.kind, event.status])).toEqual(
+          operation.async
+            ? [
+                [operation.name, operation.kind, "started"],
+                [operation.name, operation.kind, "ok"],
+              ]
+            : [[operation.name, operation.kind, "ok"]],
+        );
+      } finally {
+        prepared.release?.();
+        await app.tasks.drain();
+      }
     }
   });
 
-  test("every registered operation calls the audit sink once when it fails", async () => {
+  test("every registered operation calls the audit sink when it fails", async () => {
     for (const operation of OPERATIONS) {
       const events: AuditEvent[] = [];
       const { app, ctx } = appWith({ audit: (event) => events.push(event) });
       await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
-      expect(events.map((event) => event.op)).toEqual([operation.name]);
+      await app.tasks.drain();
+      expect(events.map((event) => event.op)).toEqual(
+        operation.name === "template.build" ? ["template.build", "template.build"] : [operation.name],
+      );
+      if (operation.name === "template.build") expect(events.map((event) => event.status)).toEqual(["started", "ok"]);
     }
   });
 
@@ -410,17 +467,29 @@ describe("event log", () => {
   });
   afterEach(() => restoreLogs());
 
-  test("every registered operation leaves one stored event when it succeeds", async () => {
+  test("every registered operation leaves its outcome in the event log when it succeeds", async () => {
     for (const operation of OPERATIONS) {
-      const sample = SAMPLES[operation.name];
-      if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
-      const { app, ctx } = appWith();
+      const { app, ctx, runtime } = appWith();
       const boxId = await withBox(app, ctx);
+      const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
       const before = app.events.head();
-      await app.operations.run(operation.name, ctx, sample(boxId));
-      expect(app.events.after(before, {}, 10).map((event) => [event.op, event.status])).toEqual([
-        [operation.name, "ok"],
-      ]);
+      try {
+        await app.operations.run(operation.name, ctx, prepared.input);
+        await app.tasks.drain();
+        const rows = app.events.after(before, {}, 10).filter((event) => event.op === operation.name);
+        expect(rows.map((event) => [event.op, event.status])).toEqual(
+          operation.async
+            ? [
+                [operation.name, "started"],
+                [operation.name, "ok"],
+              ]
+            : [[operation.name, "ok"]],
+        );
+        if (operation.async) expect(rows[0]?.ref?.taskId).toBe(rows[1]?.ref?.taskId);
+      } finally {
+        prepared.release?.();
+        await app.tasks.drain();
+      }
     }
   });
 
@@ -438,7 +507,10 @@ describe("event log", () => {
     for (const operation of OPERATIONS) {
       const { app, ctx } = appWith();
       await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
-      expect(app.events.after(0, {}, 10).map((event) => event.op)).toEqual([operation.name]);
+      await app.tasks.drain();
+      expect(app.events.after(0, {}, 10).map((event) => event.op)).toEqual(
+        operation.name === "template.build" ? ["template.build", "template.build"] : [operation.name],
+      );
     }
   });
 });

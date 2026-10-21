@@ -1,9 +1,12 @@
 import { type ActivityLog, tracked } from "../activity";
-import type { EventInput, EventStatus, EventTarget } from "../events/types";
+import type { EventInput, EventRefs, EventStatus, EventTarget } from "../events/types";
 import { ulid } from "../events/ulid";
+import { isAbortError } from "../lib/abort";
 import { AppError, toAppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
+import type { TaskManager } from "../tasks/manager";
+import type { TaskError, TaskHandle } from "../tasks/types";
 import type { Operation, OperationContext, Principal } from "./types";
 
 export interface AuthorizeRequest {
@@ -41,6 +44,8 @@ export function logAudit(event: AuditEvent): void {
   } else if (event.status === "error") {
     if ((event.error?.status ?? 0) >= 500) log.error("operation.failed", fields);
     else log.info("operation.failed", fields);
+  } else if (event.status === "started") {
+    log.info("operation.started", fields);
   } else if (event.kind === "read") {
     log.debug("operation.ok", fields);
   } else {
@@ -51,6 +56,8 @@ export function logAudit(event: AuditEvent): void {
 export interface ExecutorDeps {
   readonly activity: ActivityLog;
   readonly hooks: ExecutorHooks;
+  /** Required for operations marked async. Synchronous operations never touch it. */
+  readonly tasks?: TaskManager;
 }
 
 /** What the executor knows when one execution ends. Fields the run never reached stay undefined. */
@@ -60,6 +67,19 @@ interface Outcome {
   readonly resolved?: unknown;
   readonly result?: unknown;
   readonly error?: AppError;
+  readonly ref?: EventRefs;
+}
+
+const cancelledTask = () => new AppError(409, "conflict", msg("task_cancelled"));
+
+function taskErrorOf(error: AppError): TaskError {
+  return {
+    code: "cancelled",
+    message: error.message,
+    status: error.status,
+    key: error.key,
+    params: error.params,
+  };
 }
 
 function summaryOf(operation: Operation, target: EventTarget | undefined): string {
@@ -92,6 +112,7 @@ function eventOf(
     detail,
     run: ctx.run,
     parentId: ctx.parentId,
+    ref: outcome.ref,
     error: error && { code: error.code, status: error.status },
   };
 }
@@ -113,28 +134,138 @@ export class Executor {
     if (!operation) throw new Error(`unknown operation: ${name}`);
     const started = { ts: Date.now(), at: performance.now() };
     const id = ulid(started.ts);
+    const bound: OperationContext = { ...ctx, tasks: ctx.tasks ?? this.deps.tasks };
     let denied = false;
     let input: Record<string, unknown> | undefined;
     let resolved: unknown;
     let result: unknown;
     try {
-      if (!(await this.deps.hooks.authorize({ principal: ctx.principal, operation }))) {
+      if (!(await this.deps.hooks.authorize({ principal: bound.principal, operation }))) {
         denied = true;
         throw new AppError(403, "forbidden", msg("operation_forbidden", { op: name }));
       }
       const parsed = operation.parse(raw);
       input = parsed;
-      if (operation.precondition) await operation.precondition(ctx, parsed);
-      resolved = operation.resolve ? await operation.resolve(ctx, parsed) : undefined;
-      result = await this.record(operation, parsed, resolved, () => operation.run(ctx, parsed, resolved));
+      if (operation.precondition) await operation.precondition(bound, parsed);
+      resolved = operation.resolve ? await operation.resolve(bound, parsed) : undefined;
+      if (operation.async) return await this.startAsync(operation, bound, parsed, resolved, started, id);
+      result = await this.record(operation, parsed, resolved, () => operation.run(bound, parsed, resolved));
     } catch (e) {
       const error = toAppError(e);
       const status: EventStatus = denied ? "denied" : "error";
-      this.emit(eventOf(id, operation, ctx, started, { status, input, resolved, error }));
+      this.emit(eventOf(id, operation, bound, started, { status, input, resolved, error }));
       throw e;
     }
-    this.emit(eventOf(id, operation, ctx, started, { status: "ok", input, resolved, result }));
+    this.emit(eventOf(id, operation, bound, started, { status: "ok", input, resolved, result }));
     return result;
+  }
+
+  /**
+   * Records a short `started` event and returns `{ taskId }` before the work runs. The background run emits exactly
+   * one terminal event. Validation and a busy mutex still fail in the request, with no task left behind.
+   */
+  private async startAsync(
+    operation: Operation,
+    ctx: OperationContext,
+    input: Record<string, unknown>,
+    resolved: unknown,
+    started: { ts: number; at: number },
+    id: string,
+  ): Promise<{ taskId: string }> {
+    const tasks = this.deps.tasks;
+    if (!tasks) throw new Error(`async operation ${operation.name} requires a task manager`);
+    const target = operation.audit?.target?.(input, resolved, undefined);
+    const begun = tasks.begin({
+      op: operation.name,
+      summary: summaryOf(operation, target),
+      hostId: ctx.host.host.id,
+      target,
+      principal: ctx.principal,
+      source: ctx.source,
+      run: ctx.run,
+      parentId: ctx.parentId,
+      exclusiveKey: operation.exclusive?.(ctx, input, resolved),
+    });
+    this.emit(eventOf(id, operation, ctx, started, { status: "started", input, resolved, ref: { taskId: begun.id } }));
+    tasks.track(begun.id, this.finishAsync(operation, ctx, input, resolved, started, id, begun.handle));
+    return { taskId: begun.id };
+  }
+
+  /** Runs the handler and records the terminal audit event and the activity entry. */
+  private async finishAsync(
+    operation: Operation,
+    ctx: OperationContext,
+    input: Record<string, unknown>,
+    resolved: unknown,
+    started: { ts: number; at: number },
+    startedId: string,
+    handle: TaskHandle,
+  ): Promise<void> {
+    const tasks = this.deps.tasks;
+    if (!tasks) return;
+    const child: OperationContext = { ...ctx, parentId: startedId, task: handle };
+    const ref = { taskId: handle.id };
+    const emitFinal = (outcome: Outcome) => {
+      this.emit(eventOf(ulid(), operation, child, started, { ...outcome, ref }));
+    };
+    try {
+      const result = operation.output.parse(await operation.run(child, input, resolved));
+      if (tasks.finish(handle.id, { status: "succeeded", result })) {
+        this.note(operation, input, resolved, true);
+        emitFinal({ status: "ok", input, resolved, result });
+        return;
+      }
+      if (tasks.get(handle.id, { output: false })?.status === "cancelled") {
+        const error = cancelledTask();
+        this.note(operation, input, resolved, false, error.message);
+        emitFinal({ status: "error", input, resolved, error });
+      }
+    } catch (e) {
+      if (isAbortError(e) || handle.signal.aborted) {
+        const error = cancelledTask();
+        const stored = taskErrorOf(error);
+        const won = tasks.finish(handle.id, { status: "cancelled", error: stored });
+        const status = tasks.get(handle.id, { output: false })?.status;
+        if (won || status === "cancelled") {
+          this.note(operation, input, resolved, false, error.message);
+          emitFinal({ status: "error", input, resolved, error });
+        }
+        return;
+      }
+      const error = toAppError(e);
+      if (
+        tasks.finish(handle.id, {
+          status: "failed",
+          error: {
+            code: error.code,
+            message: error.message,
+            status: error.status,
+            key: error.key,
+            params: error.params,
+          },
+        })
+      ) {
+        this.note(operation, input, resolved, false, error.message);
+        emitFinal({ status: "error", input, resolved, error });
+        return;
+      }
+      if (tasks.get(handle.id, { output: false })?.status === "cancelled") {
+        const abort = cancelledTask();
+        this.note(operation, input, resolved, false, abort.message);
+        emitFinal({ status: "error", input, resolved, error: abort });
+      }
+    }
+  }
+
+  /** The activity feed hears an async operation when it finishes, not when the 202 is returned. */
+  private note(operation: Operation, input: unknown, resolved: unknown, ok: boolean, message?: string): void {
+    if (!operation.activity) return;
+    this.deps.activity.add({
+      action: operation.activity.action(input),
+      target: operation.activity.target(input, resolved),
+      ok,
+      ...(message === undefined ? {} : { message }),
+    });
   }
 
   private emit(event: AuditEvent): void {

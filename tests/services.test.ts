@@ -496,14 +496,23 @@ describe("templates", () => {
     expect(runtime.callsTo("removeImage")).toHaveLength(0);
   });
 
-  test("concurrent base builds share one engine build, and a later build runs again", async () => {
-    const [first, second] = await Promise.all([buildBaseTemplate(host), buildBaseTemplate(host)]);
+  test("each base build calls the engine, and the log is reported as it is produced", async () => {
+    runtime.buildLog = "line\n";
+    const lines: string[] = [];
+    const first = await buildBaseTemplate(host, { log: (text) => lines.push(text) });
+    expect(first).toEqual({ ref: host.baseTemplateTag, output: "line\n" });
+    expect(lines).toEqual(["line\n"]);
     expect(runtime.callsTo("buildImage")).toHaveLength(1);
-    expect(first).toEqual(second);
-    expect(first.ref).toBe(host.baseTemplateTag);
+  });
 
-    await buildBaseTemplate(host);
-    expect(runtime.callsTo("buildImage")).toHaveLength(2);
+  test("aborting a build rejects before the image is kept", async () => {
+    const held = runtime.hold("buildImage");
+    const controller = new AbortController();
+    const pending = buildBaseTemplate(host, { signal: controller.signal, log: () => {} });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    held.release();
+    expect(runtime.callsTo("buildImage")).toHaveLength(1);
   });
 
   test("the build spec points at the bundled base template with its labels", async () => {
@@ -516,12 +525,5 @@ describe("templates", () => {
       labels: { [keys.template]: "true", [keys.templateName]: "base" },
     });
     expect(spec.contextDir).toMatch(/templates\/base$/);
-  });
-
-  test("build output returned to the caller is capped at its last 4000 characters", async () => {
-    runtime.buildLog = `${"a".repeat(3000)}${"b".repeat(3000)}`;
-    const { output } = await buildBaseTemplate(host);
-    expect(output).toHaveLength(4000);
-    expect(output.endsWith("b".repeat(3000))).toBe(true);
   });
 });

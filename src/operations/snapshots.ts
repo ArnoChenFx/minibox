@@ -22,15 +22,17 @@ export const snapshotCreate = defineOperation({
   summary: "Snapshot a box",
   kind: "write",
   scope: "snapshot:write",
-  async: false,
+  async: true,
+  conflicts: true,
   input: z.object({ id: boxId(), name: snapshotName() }),
   output: z.object({ snapshot: SnapshotSchema }),
-  rest: [{ method: "POST", path: "/api/boxes/:id/snapshots", body: true, status: 201 }],
+  rest: [{ method: "POST", path: "/api/boxes/:id/snapshots", body: true, status: 202 }],
   cli: "snapshot create",
   resolve: ({ host }, input) => getBox(host, input.id),
+  exclusive: ({ host }, _input, box) => `snapshot.create:${host.host.id}:${box.id}`,
   activity: { action: () => "snapshot.create", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host }, input) => ({ snapshot: await createSnapshot(host, input.id, input.name) }),
+  run: async ({ host, task }, input) => ({ snapshot: await createSnapshot(host, input.id, input.name, task) }),
 });
 
 export const snapshotFork = defineOperation({

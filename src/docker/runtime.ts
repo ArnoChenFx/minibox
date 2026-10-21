@@ -4,6 +4,7 @@ import type { Duplex, Readable } from "node:stream";
 import Docker from "dockerode";
 
 import { stripSlash } from "../labels";
+import { abortError, isAbortError } from "../lib/abort";
 import {
   type CommitSpec,
   type ContainerChange,
@@ -26,11 +27,12 @@ const ICC_OPTION = "com.docker.network.bridge.enable_icc";
 /** Longest a cached container inspect is reused when nothing MiniBox changed the container (see listContainers). */
 const INSPECT_TTL_MS = 30_000;
 
-/** Engine errors become RuntimeError; anything else passes through untouched. */
+/** Engine errors become RuntimeError. Cancellation stays an AbortError so a task is not reported as a Docker failure. */
 async function call<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {
+    if (isAbortError(e)) throw e;
     throw toRuntimeError(e);
   }
 }
@@ -305,7 +307,9 @@ export function createDockerRuntime(socketPath: string): Runtime {
     },
 
     async commitContainer(id, spec) {
+      if (spec.signal?.aborted) throw abortError();
       await call(() => docker.getContainer(id).commit(toCommitOptions(spec)));
+      if (spec.signal?.aborted) throw abortError();
     },
 
     async putArchive(id, path, tar) {
@@ -371,17 +375,39 @@ export function createDockerRuntime(socketPath: string): Runtime {
       await call(() => docker.getImage(ref).remove({ force }));
     },
 
-    async buildImage({ contextDir, dockerfile, tag, labels }) {
+    async buildImage(spec) {
+      if (spec.signal?.aborted) throw abortError();
       return call(async () => {
-        const stream = await docker.buildImage({ context: contextDir, src: [dockerfile] }, { t: tag, labels });
-        return new Promise<string>((resolve, reject) => {
+        const stream = await docker.buildImage(
+          { context: spec.contextDir, src: [spec.dockerfile] },
+          { t: spec.tag, labels: spec.labels },
+        );
+        return await new Promise<string>((resolve, reject) => {
           let out = "";
+          let settled = false;
+          const finish = (error: unknown) => {
+            if (settled) return;
+            settled = true;
+            spec.signal?.removeEventListener("abort", onAbort);
+            if (error) reject(error);
+            else resolve(out);
+          };
+          const onAbort = () => {
+            const closable = stream as { destroy?: () => void; cancel?: () => void };
+            closable.destroy?.();
+            closable.cancel?.();
+            finish(abortError());
+          };
+          if (spec.signal) spec.signal.addEventListener("abort", onAbort, { once: true });
           docker.modem.followProgress(
             stream,
-            (err: Error | null) => (err ? reject(err) : resolve(out)),
+            (err: Error | null) => finish(spec.signal?.aborted ? abortError() : err),
             (ev: { stream?: string; error?: string }) => {
-              if (ev.stream) out += ev.stream;
-              if (ev.error) reject(new Error(ev.error));
+              if (ev.stream) {
+                out += ev.stream;
+                spec.onLog?.(ev.stream);
+              }
+              if (ev.error) finish(spec.signal?.aborted ? abortError() : new Error(ev.error));
             },
           );
         });

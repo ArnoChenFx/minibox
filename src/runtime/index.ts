@@ -125,6 +125,11 @@ export interface CommitSpec {
   pause?: boolean;
   /** Dockerfile instructions applied to the new image, e.g. `LABEL k=v` or `CMD [...]`. */
   changes: string[];
+  /**
+   * Checked before the commit starts and after it returns. A commit that has already finished is not rolled back
+   * when this aborts.
+   */
+  signal?: AbortSignal;
 }
 
 export interface BuildSpec {
@@ -132,6 +137,10 @@ export interface BuildSpec {
   dockerfile: string;
   tag: string;
   labels: Record<string, string>;
+  /** Called with each chunk of build output as the engine produces it. */
+  onLog?: (chunk: string) => void;
+  /** Aborts the build stream. The engine may keep building until that connection closes. */
+  signal?: AbortSignal;
 }
 
 export interface ExecSpec {
@@ -234,7 +243,10 @@ export interface Runtime {
   listImages(filter: { labels: Record<string, string> }): Promise<ImageSummary[]>;
   inspectImage(ref: string): Promise<ImageDetails>;
   removeImage(ref: string, opts: { force: boolean }): Promise<void>;
-  /** Resolves with the build log. */
+  /**
+   * Resolves with the build log. `onLog` receives the same text as it arrives. An aborted `signal` rejects with
+   * `AbortError` rather than a RuntimeError.
+   */
   buildImage(spec: BuildSpec): Promise<string>;
 
   inspectVolume(name: string): Promise<VolumeInfo>;

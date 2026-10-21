@@ -7,7 +7,7 @@ import { parseInput } from "./validation";
 export function defineOperation<I extends z.ZodObject, O extends z.ZodType, R = undefined>(
   spec: OperationSpec<I, O, R>,
 ): Operation {
-  const { input, output, precondition, resolve, activity, audit, run, ...meta } = spec;
+  const { input, output, precondition, resolve, activity, audit, exclusive, run, ...meta } = spec;
   return {
     ...meta,
     input,
@@ -26,6 +26,7 @@ export function defineOperation<I extends z.ZodObject, O extends z.ZodType, R = 
           audit.target?.(value as z.output<I>, resolved as R | undefined, result as z.input<O> | undefined)),
       detail: audit.detail && ((value, resolved) => audit.detail?.(value as z.output<I>, resolved as R | undefined)),
     },
+    exclusive: exclusive && ((ctx, value, resolved) => exclusive(ctx, value as z.output<I>, resolved as R)),
     run: (ctx, value, resolved) => run(ctx, value as z.output<I>, resolved as R),
   };
 }

@@ -1,3 +1,4 @@
+import { mountTasks } from "./components/tasks.js";
 import { api } from "./lib/api.js";
 import { $, $$, esc } from "./lib/dom.js";
 import { pct } from "./lib/format.js";
@@ -90,6 +91,7 @@ function init() {
   });
 
   bindLangButton($("#langBtn"), icon);
+  mountTasks();
   api("/api/system")
     .then((s) => {
       $("#sidebarVersion").textContent = `MiniBox v${s.version}`;

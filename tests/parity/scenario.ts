@@ -29,6 +29,9 @@ export function normalize(text: string): string {
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<time>")
     .replace(/-\d{8}-\d{6}/g, "-<stamp>")
     .replace(/"id":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"id":"<ulid>"')
+    .replace(/"taskId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"taskId":"<ulid>"')
+    .replace(/"parentId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"parentId":"<ulid>"')
+    .replace(/\/api\/tasks\/[0-9A-HJKMNP-TV-Z]{26}/g, "/api/tasks/<ulid>")
     .replace(/"ts":\d+/g, '"ts":0')
     .replace(/"durationMs":\d+/g, '"durationMs":0');
 }
@@ -38,7 +41,21 @@ function boxId(json: Record<string, unknown> | null): string {
 }
 
 function snapshotRef(json: Record<string, unknown> | null): string {
-  return String((json?.snapshot as { ref?: string } | undefined)?.ref ?? "");
+  const direct = (json?.snapshot as { ref?: string } | undefined)?.ref;
+  const nested = (json?.result as { snapshot?: { ref?: string } } | undefined)?.snapshot?.ref;
+  return String(direct ?? nested ?? "");
+}
+
+/** Polls off the transcript until the task is finished, so the recorded GET is a stable terminal view. */
+async function waitTask(base: string, json: Record<string, unknown> | null): Promise<Record<string, unknown>> {
+  const id = String(json?.taskId ?? "");
+  const deadline = Date.now() + 2000;
+  for (;;) {
+    const res = await fetch(`${base}/api/tasks/${id}`, { headers: { authorization: `Bearer ${TEST_KEY}` } });
+    const view = (await res.json()) as Record<string, unknown>;
+    if (view.status !== "running" || Date.now() > deadline) return view;
+    await Bun.sleep(5);
+  }
 }
 
 /**
@@ -204,12 +221,15 @@ export async function runParityScenario(): Promise<Exchange[]> {
     await raw("resize with an array body", "PATCH", `/api/boxes/${alpha}/resources`, "[1]");
 
     const first = await post("snapshot alpha as nightly", `/api/boxes/${alpha}/snapshots`, { name: "nightly" });
-    const nightly = snapshotRef(first.json);
+    const nightly = snapshotRef(await waitTask(base, first.json));
     await send("list snapshots", "GET", "/api/snapshots");
 
     // Default-named snapshots share a second-resolution tag, so each is removed before the next is taken.
-    const discard = (step: string, created: { json: Record<string, unknown> | null }) =>
-      send(step, "DELETE", `/api/snapshots/${encodeURIComponent(snapshotRef(created.json))}`);
+    // The create calls return 202; the image exists only after the task finishes.
+    const discard = async (step: string, created: { json: Record<string, unknown> | null }) => {
+      const ref = snapshotRef(await waitTask(base, created.json));
+      return send(step, "DELETE", `/api/snapshots/${encodeURIComponent(ref)}`);
+    };
     await discard(
       "discard snapshot taken with no body",
       await send("snapshot alpha with no body", "POST", `/api/boxes/${alpha}/snapshots`),
@@ -264,7 +284,8 @@ export async function runParityScenario(): Promise<Exchange[]> {
     });
     // Templates are sorted by creation time at millisecond resolution; the pause keeps the rebuilt base after gold.
     await Bun.sleep(5);
-    await send("build the base template", "POST", "/api/templates/base/build");
+    const built = await send("build the base template", "POST", "/api/templates/base/build");
+    await waitTask(base, built.json);
     await send("list templates", "GET", "/api/templates");
     await send("delete gold", "DELETE", `/api/templates/${encodeURIComponent("mbtest-template:gold")}`);
     await send("delete a missing snapshot", "DELETE", "/api/snapshots/missing");
@@ -304,6 +325,13 @@ export async function runParityScenario(): Promise<Exchange[]> {
     );
     await send("events with limit 0", "GET", "/api/events?limit=0");
     await send("events of alpha that failed", "GET", "/api/events?box=alpha&status=error");
+
+    await send("list tasks", "GET", "/api/tasks");
+    const finished = await send("read the base build task", "GET", `/api/tasks/${String(built.json?.taskId ?? "")}`);
+    await send("read a missing task", "GET", "/api/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    await send("read a malformed task id", "GET", "/api/tasks/not-a-task");
+    await send("cancel a missing task", "POST", "/api/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/cancel");
+    await send("cancel a finished task", "POST", `/api/tasks/${String(finished.json?.id ?? "")}/cancel`);
   } finally {
     server.stop(true);
     app.throttle.stop();

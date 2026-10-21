@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Duplex, Readable } from "node:stream";
 
+import { abortError } from "../../src/lib/abort";
 import {
   type BuildSpec,
   type CommitSpec,
@@ -74,6 +75,8 @@ export interface FakeExec extends ExecSession {
   /** Ends the session as if the process had exited. */
   exit(code?: number): void;
 }
+
+type GateResolve = () => void;
 
 const now = () => new Date().toISOString();
 const newContainerId = () => randomBytes(32).toString("hex");
@@ -178,9 +181,28 @@ export class FakeRuntime implements Runtime {
   buildLog = "Successfully built fake\n";
 
   private readonly faults = new Map<Op, RuntimeError[]>();
+  private readonly gates = new Map<Op, Promise<void>>();
   private readonly archives = new Map<string, Buffer>();
   private readonly subscribers = new Set<(event: RuntimeEvent) => void>();
   private execCount = 0;
+
+  /**
+   * Holds the next calls to `op` until `release`. `buildImage` reports its log before waiting, and both `buildImage`
+   * and `commitContainer` leave the call unfinished when `signal` aborts.
+   */
+  hold(op: Op): { release(): void } {
+    let resolveGate: GateResolve | undefined;
+    const promise = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    this.gates.set(op, promise);
+    return {
+      release: () => {
+        this.gates.delete(op);
+        resolveGate?.();
+      },
+    };
+  }
 
   /** The next call to `op` fails with `error`. Queue several errors to fail several calls. */
   fail(op: Op, error: RuntimeError): void {
@@ -237,6 +259,29 @@ export class FakeRuntime implements Runtime {
 
   emitEvent(event: RuntimeEvent): void {
     for (const subscriber of this.subscribers) subscriber(event);
+  }
+
+  private async gate(op: Op, signal?: AbortSignal): Promise<void> {
+    const gate = this.gates.get(op);
+    if (!gate) return;
+    if (signal?.aborted) throw abortError();
+    if (!signal) {
+      await gate;
+      return;
+    }
+    let onAbort: (() => void) | undefined;
+    try {
+      await Promise.race([
+        gate,
+        new Promise<void>((_resolve, reject) => {
+          onAbort = () => reject(abortError());
+          signal.addEventListener("abort", onAbort, { once: true });
+        }),
+      ]);
+    } finally {
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    }
+    if (signal.aborted) throw abortError();
   }
 
   private enter(op: Op, args: unknown[]): void {
@@ -431,6 +476,8 @@ export class FakeRuntime implements Runtime {
 
   async commitContainer(id: string, spec: CommitSpec): Promise<void> {
     this.enter("commitContainer", [id, spec]);
+    await this.gate("commitContainer", spec.signal);
+    if (spec.signal?.aborted) throw abortError();
     const c = this.getContainer(id);
     const image: FakeImage = {
       id: newImageId(),
@@ -441,6 +488,7 @@ export class FakeRuntime implements Runtime {
     };
     this.images.set(image.id, image);
     this.tag(image, `${spec.repo}:${spec.tag}`);
+    if (spec.signal?.aborted) throw abortError();
   }
 
   /** Keeps the last archive per container; paths are not interpreted. */
@@ -550,6 +598,9 @@ export class FakeRuntime implements Runtime {
 
   async buildImage(spec: BuildSpec): Promise<string> {
     this.enter("buildImage", [spec]);
+    spec.onLog?.(this.buildLog);
+    await this.gate("buildImage", spec.signal);
+    if (spec.signal?.aborted) throw abortError();
     const image: FakeImage = { id: newImageId(), tags: [], labels: { ...spec.labels }, createdAt: now(), size: 1024 };
     this.images.set(image.id, image);
     this.tag(image, normalizeRef(spec.tag));

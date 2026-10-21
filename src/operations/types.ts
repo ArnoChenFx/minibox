@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { EventReader } from "../events/store";
 import type { EventTarget, Source } from "../events/types";
 import type { HostCtx } from "../host/registry";
+import type { TaskHandle, TaskReader } from "../tasks/types";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
@@ -28,13 +29,17 @@ export interface OperationContext {
   readonly parentId?: string;
   /** The event log, for operations that read it. Adapters pass the app's store. */
   readonly events: EventReader;
+  /** Set on the background run of an async operation, so the handler can log and watch for cancellation. */
+  readonly task?: TaskHandle;
+  /** The task manager. The executor fills it in; task operations read it. */
+  readonly tasks?: TaskReader;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */
 export interface RestBinding {
   readonly method: HttpMethod;
   readonly path: string;
-  readonly status?: 200 | 201;
+  readonly status?: 200 | 201 | 202;
   /** Input keys read from the query string, one per parameter of the same name. */
   readonly query?: readonly string[];
   /** Whether a JSON object body is read into the input. */
@@ -94,6 +99,11 @@ export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> ex
     target(input: z.output<I>, resolved: R): string;
   };
   readonly audit?: AuditSpec<z.output<I>, z.input<O>, R>;
+  /**
+   * While a task with this key is running, another call is refused. Async operations use it as their single-instance
+   * mutex. The key should use the resolved id, so a name and an id share one lock.
+   */
+  readonly exclusive?: (ctx: OperationContext, input: z.output<I>, resolved: R) => string | undefined;
   run(ctx: OperationContext, input: z.output<I>, resolved: R): Promise<z.input<O>>;
 }
 
@@ -112,5 +122,6 @@ export interface Operation extends OperationMeta {
     target?(input: unknown, resolved: unknown, result: unknown): EventTarget | undefined;
     detail?(input: unknown, resolved: unknown): unknown;
   };
+  exclusive?(ctx: OperationContext, input: unknown, resolved: unknown): string | undefined;
   run(ctx: OperationContext, input: unknown, resolved: unknown): Promise<unknown>;
 }

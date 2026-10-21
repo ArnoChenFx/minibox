@@ -12,16 +12,22 @@ import { EventStore, type StoredEvent } from "./events/store";
 import type { HostMonitor } from "./host/metrics";
 import { createLocalHost, HostRegistry } from "./host/registry";
 import { Bus } from "./lib/bus";
+import { log } from "./lib/logger";
 import { Executor, type ExecutorHooks, logAudit, ownerOnly, type AuditEvent } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
 import type { Runtime } from "./runtime";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
+import { TaskManager } from "./tasks/manager";
+import { TaskStore } from "./tasks/store";
+import type { TaskStreamEvent } from "./tasks/types";
 
-/** What the in-process bus carries. Later producers (task progress, box status) add their topics here. */
+/** What the in-process bus carries. Box status (#17) can add its topic here. */
 export type AppTopics = {
   /** A stored event. Reads merged into an earlier row of the same minute are not published again. */
   event: StoredEvent;
+  /** A line of task output, or a task status change. The task stream and the UI subscribe to this. */
+  task: TaskStreamEvent;
 };
 
 /** Shared application state passed to every route handler. */
@@ -34,6 +40,7 @@ export interface App {
   outputs: OutputStore;
   bus: Bus<AppTopics>;
   retention: RetentionJob;
+  tasks: TaskManager;
   operations: Executor;
   throttle: LoginLimiter;
   sessions: SessionStore;
@@ -71,6 +78,15 @@ function openEventStore(path: string, redactor: Redactor): EventStore {
   }
 }
 
+function openTaskStore(path: string): TaskStore {
+  try {
+    return new TaskStore(path);
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    throw new Error(`The task store at ${path} cannot be opened (${reason}). Make DATA_DIR writable.`, { cause: e });
+  }
+}
+
 export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App {
   const hosts = new HostRegistry();
   const specs = new SpecStore(cfg.dataDir);
@@ -81,6 +97,11 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const events = openEventStore(deps.eventsPath ?? join(cfg.dataDir, "events.db"), redactor);
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const bus = new Bus<AppTopics>();
+  const tasks = new TaskManager(openTaskStore(join(cfg.dataDir, "tasks.db")), redactor, (event) =>
+    bus.publish("task", event),
+  );
+  const interrupted = tasks.recover();
+  if (interrupted > 0) log.info("task.interrupted", { count: interrupted });
   const retention = new RetentionJob(events, outputs, {
     auditDays: cfg.eventRetentionAuditDays,
     activityDays: cfg.eventRetentionActivityDays,
@@ -96,8 +117,10 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     outputs,
     bus,
     retention,
+    tasks,
     operations: new Executor(OPERATIONS, {
       activity,
+      tasks,
       hooks: {
         authorize: deps.hooks?.authorize ?? ownerOnly,
         audit: deps.hooks?.audit ?? recordAudit(events, bus),

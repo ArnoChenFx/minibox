@@ -343,8 +343,9 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | `exec/` | `700` | Output of `exec` commands (created now, used by later features) |
 | `secrets/` | `700` | Secret values and repository keys (created now, used by later features) |
 | `events.db` (with `events.db-wal` and `events.db-shm` beside it) | inside `DATA_DIR` | Event log, SQLite in WAL mode. See [Events](#events) |
+| `tasks.db` (with `tasks.db-wal` and `tasks.db-shm` beside it) | inside `DATA_DIR` | Task status and the newest 64 KB of each task's output. See [Tasks](#tasks) |
 
-MiniBox creates these directories at startup and tightens looser modes. It never writes `.env`. If `DATA_DIR` is lost and no key is set in `.env` or the environment, the next start generates a new access key, so everyone has to sign in with it. Keep a copy of `access_key`, or set `ACCESS_KEY` in `.env`, if you rely on the current one. Stop MiniBox before copying `events.db`: in WAL mode, recent changes stay in `events.db-wal` until SQLite checkpoints them, so the main file alone can be stale.
+MiniBox creates these directories at startup and tightens looser modes. It never writes `.env`. If `DATA_DIR` is lost and no key is set in `.env` or the environment, the next start generates a new access key, so everyone has to sign in with it. Keep a copy of `access_key`, or set `ACCESS_KEY` in `.env`, if you rely on the current one. Stop MiniBox before copying `events.db` or `tasks.db`: in WAL mode, recent changes stay in the `-wal` file until SQLite checkpoints them, so the main file alone can be stale.
 
 ## API reference
 
@@ -389,7 +390,7 @@ Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403)
 | `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"?, "pids"? }`. Requires `If-Match` |
 | `GET` | `/api/boxes/:id/stats` | Live usage |
 | `GET` | `/api/boxes/:id/logs?tail=300` | Container logs (1–5000 lines) |
-| `POST` | `/api/boxes/:id/snapshots` | Create a snapshot `{ "name"? }` |
+| `POST` | `/api/boxes/:id/snapshots` | Start a snapshot `{ "name"? }`. Returns `202` `{ "taskId" }` |
 | `GET` (WS) | `/api/boxes/:id/terminal` | WebSocket terminal. Send `{"type":"resize","cols":N,"rows":N}` to resize; any other message is stdin |
 
 `:id` is a container id, a container name (`minibox-<name>`), a stable box id (`bx_…`), or the box name. Updates that change a box require `If-Match` set to its current revision (a bare number, a quoted tag, or a weak tag). A missing header is `428 precondition_required`; a stale revision is `412 precondition_failed`. Limits: CPU 0.1–64, memory 128–262144 MB, process limit 1–1000000, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
@@ -407,14 +408,29 @@ A rebuild keeps mounted volumes, the stable id, the box name and the last 20 spe
 | `POST` | `/api/snapshots/:ref/boxes` | Create a box from a snapshot `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
 | `POST` | `/api/snapshots/:ref/promote` | Promote to a template `{ "name", "description"? }` |
 | `GET` | `/api/templates` | List templates |
-| `POST` | `/api/templates/base/build` | Build the bundled base template |
+| `POST` | `/api/templates/base/build` | Start a build of the bundled base template. Returns `202` `{ "taskId" }` |
 | `DELETE` | `/api/templates/:ref` | Delete a template |
 
 Only images carrying MiniBox labels can be deleted through the API.
 
+### Tasks
+
+Template builds and snapshot commits run as tasks. The POST returns `202` and `{ "taskId" }` immediately, then the work continues on the server. One template build runs at a time, and one snapshot commit runs at a time per box; a second request gets `409` with `details.taskId` of the one already running.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/tasks?status=&limit=` | Newest tasks first. `status` is `running`, `succeeded`, `failed`, `cancelled` or `interrupted`. `output` is left off |
+| `GET` | `/api/tasks/:id` | One task, including `result` (the operation's own output) and the retained `output` log |
+| `POST` | `/api/tasks/:id/cancel` | Cancel a running task. A task that is not running gets `409` |
+| `GET` | `/api/tasks/:id/events` | SSE progress. Not an operation, so it is not in the OpenAPI document. `after` or `Last-Event-ID` resumes the cursor; a `reset` event means the log was trimmed |
+
+The log keeps the newest 64 KB. Older text is dropped and the view starts with a note that it did. Cancellation aborts a build's output stream. A snapshot commit that has already finished is not rolled back. After a restart, tasks that were still running are `interrupted` and are not resumed.
+
+Bun's HTTP idle timer is 60 seconds, measured from the start of the request, and response bytes do not extend it. Holding the build open on the POST would be cut off. The 202 returns before that, and the progress stream disables the timer (`server.timeout(req, 0)`) and sends a heartbeat every 15 seconds for proxies. The Tasks button in the top bar opens a drawer with the live log.
+
 ### Events
 
-Every operation call is recorded once in the event log, `events.db` in the [data directory](#data-directory), whichever interface it came through. Today that is REST; the MCP server and the CLI arrive with [#9](https://github.com/ArnoChenFx/minibox/issues/9). An event says who made the call (`principal`), what it touched (`op`, `target`), when and for how long (`ts`, `durationMs`), the outcome (`status`) and the client session (`run`, from `X-Minibox-Run`).
+A synchronous operation is recorded once in the event log, `events.db` in the [data directory](#data-directory), whichever interface it came through. A task records `started` when it is accepted and one terminal event when it finishes; `ref.taskId` links them, and the terminal event's `parentId` is the started event. The build log is not copied into the event log. Today the calls arrive over REST; the MCP server and the CLI arrive with [#9](https://github.com/ArnoChenFx/minibox/issues/9). An event says who made the call (`principal`), what it touched (`op`, `target`), when and for how long (`ts`, `durationMs`), the outcome (`status`) and the client session (`run`, from `X-Minibox-Run`).
 
 The log covers calls made through MiniBox. It does not record what runs inside a box, including commands an agent runs in its own shell there. Requests refused before they reach an operation, such as a missing key (`401`) or a cross-site request (`403`), are not recorded either.
 
@@ -439,7 +455,7 @@ Only the owner can read the event log for now. Scoped tokens ([#13](https://gith
 
 ### OpenAPI
 
-The box, snapshot, template and event-list routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. Auth, system, host and activity routes, and the event stream, are not in it yet.
+The box, snapshot, template, task and event-list routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. A `202` body is `{ "taskId" }`; the operation's own output is `x-task-result` and is stored on the task. Auth, system, host and activity routes, and the event and task streams, are not in it yet.
 
 ### Example
 
@@ -472,6 +488,7 @@ minibox/
 │   ├── services/            # Business logic on Runtime: boxes / rebuild / images / snapshots / templates / reconcile
 │   ├── host/                # Host registry (implicit local), procfs parsers, HostMonitor sampler
 │   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, scope hook
+│   ├── tasks/               # Task store (SQLite), manager, progress stream on the event bus
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
 │   ├── routes/              # Router, route groups (auth / system / images) and the REST adapter for operations
 │   ├── ws/terminal.ts       # WebSocket terminal
@@ -583,7 +600,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 - [x] [#5](https://github.com/ArnoChenFx/minibox/issues/5) Box hardening with `standard`, `strict` and `relaxed` security profiles; outbound filtering and disk quotas are deferred
 - [x] [#23](https://github.com/ArnoChenFx/minibox/issues/23) Box specs: declarative state, stable IDs, rebuilds and rollback
 - [x] [#25](https://github.com/ArnoChenFx/minibox/issues/25) Event store and audit trail (SQLite, redaction) on an event bus
-- [ ] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
+- [x] [#16](https://github.com/ArnoChenFx/minibox/issues/16) Async tasks with progress streams
 - [ ] [#13](https://github.com/ArnoChenFx/minibox/issues/13) Scoped agent tokens: `created-by-me`, quotas and TTL
 - [x] [#2](https://github.com/ArnoChenFx/minibox/issues/2) Revocable session tokens instead of the raw access key in cookies
 
