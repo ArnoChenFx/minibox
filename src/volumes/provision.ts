@@ -4,6 +4,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { RuntimeError } from "../runtime";
 import type { BoxMount } from "../specs/types";
+import { VolumeChanges } from "./changes";
 import {
   adoptLegacyWorkspace,
   blankRecord,
@@ -20,6 +21,7 @@ async function materialize(
   host: HostCtx,
   input: NewVolume,
   known: Set<string>,
+  changes: VolumeChanges,
 ): Promise<{ record: VolumeRecord; chown: boolean }> {
   const file = host.volumes.readPools();
   const pool = file.pools.find((item) => item.name === input.pool);
@@ -29,28 +31,45 @@ async function materialize(
   }
   const now = new Date().toISOString();
   const record = blankRecord(host, input, host.volumes.allocateId(), now);
-  await createEngineVolume(host, pool, record, known);
+  await createEngineVolume(host, pool, record, known, changes);
   host.volumes.write(record);
+  changes.add(`volume ${record.engineName}`, () => undoCreated(host, record));
   log.info("volume.created", { id: record.id, name: record.name, pool: record.pool, role: record.role });
   return { record, chown: pool.backend === "local" };
+}
+
+/** Removes what `materialize` created. The record stays when the engine refuses, so MiniBox still knows the volume. */
+async function undoCreated(host: HostCtx, record: VolumeRecord): Promise<void> {
+  const outcome = await removeEngine(host, record.engineName);
+  if (outcome.status === "failed") throw new Error(outcome.detail);
+  host.volumes.remove(record.id);
 }
 
 /**
  * The four role mounts for a new box. Workspace reuses a leftover `prefix-ws-<name>` volume when one exists.
  * Tools is one independent volume per pool, mounted read-only. Cache stays on the local pool unless a role override says otherwise.
+ * Without `changes`, a failure removes what this call created before it is thrown.
  */
 export async function provisionDefaultMounts(
   host: HostCtx,
   box: { id: string; name: string; createdBy: string | null },
   known: Set<string>,
+  changes?: VolumeChanges,
 ): Promise<BoxMount[]> {
-  return host.volumes.exclusive(() => provisionDefaultMountsLocked(host, box, known));
+  const own = changes ?? new VolumeChanges();
+  try {
+    return await host.volumes.exclusive(() => provisionDefaultMountsLocked(host, box, known, own));
+  } catch (e) {
+    if (!changes) await own.rollback();
+    throw e;
+  }
 }
 
 async function provisionDefaultMountsLocked(
   host: HostCtx,
   box: { id: string; name: string; createdBy: string | null },
   known: Set<string>,
+  changes: VolumeChanges,
 ): Promise<BoxMount[]> {
   const plans = defaultRolePlans(host, box);
   const mounts: BoxMount[] = [];
@@ -69,7 +88,7 @@ async function provisionDefaultMountsLocked(
     }
     let name = plan.input.name;
     if (host.volumes.list().some((volume) => volume.name === name)) name = `${name}-${plan.input.pool}`;
-    const created = await materialize(host, { ...plan.input, name }, known);
+    const created = await materialize(host, { ...plan.input, name }, known, changes);
     if (created.chown) chown.push(created.record.engineName);
     mounts.push(mountFor(plan.role, created.record.engineName));
   }
@@ -77,18 +96,30 @@ async function provisionDefaultMountsLocked(
   return mounts;
 }
 
+/**
+ * A standalone volume, as `volume.create` and a rebuild that names a new volume make it. Without `changes`, a failure
+ * removes what this call created before it is thrown.
+ */
 export async function createIndependentVolume(
   host: HostCtx,
   input: { name: string; pool?: string; role: VolumeRole | null; createdBy: string | null },
   known: Set<string>,
+  changes?: VolumeChanges,
 ): Promise<VolumeRecord> {
-  return host.volumes.exclusive(() => createIndependentLocked(host, input, known));
+  const own = changes ?? new VolumeChanges();
+  try {
+    return await host.volumes.exclusive(() => createIndependentLocked(host, input, known, own));
+  } catch (e) {
+    if (!changes) await own.rollback();
+    throw e;
+  }
 }
 
 async function createIndependentLocked(
   host: HostCtx,
   input: { name: string; pool?: string; role: VolumeRole | null; createdBy: string | null },
   known: Set<string>,
+  changes: VolumeChanges,
 ): Promise<VolumeRecord> {
   const file = host.volumes.readPools();
   const pool = input.pool
@@ -108,6 +139,7 @@ async function createIndependentLocked(
       createdBy: input.createdBy,
     },
     known,
+    changes,
   );
   if (created.chown) await chownEngines(host, [created.record.engineName], known);
   return created.record;

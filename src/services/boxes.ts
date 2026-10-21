@@ -23,7 +23,7 @@ import { assertPoolsReachable } from "../volumes/health";
 import { validMountPath } from "../volumes/mounts";
 import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
 import type { VolumeRole } from "../volumes/types";
-import { assertMountAllowed, inspectVolumeOrNull } from "./attachments";
+import { assertMountAllowed, mountTarget } from "./attachments";
 
 export interface CreateBoxInput {
   name: string;
@@ -292,7 +292,7 @@ function resolveMounts(host: HostCtx, mounts: BoxMount[]): BoxMount[] {
 async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[]): Promise<BoxMount[]> {
   const resolved = resolveMounts(host, mounts);
   for (const mount of resolved) {
-    assertMountAllowed(host, null, mount.volume, await inspectVolumeOrNull(host, mount.volume));
+    assertMountAllowed(host, null, mount.volume, await mountTarget(host, mount.volume));
   }
   return resolved;
 }

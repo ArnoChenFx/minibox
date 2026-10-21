@@ -143,6 +143,8 @@ export default {
   "err.volume_reserved": "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",
   "err.volume_unmanaged": "Volume {volume} was not created by MiniBox, so a box cannot mount it.",
   "err.volume_in_use": "Volume {volume} is already mounted by another box.",
+  "err.volume_missing":
+    "Volume {volume} is recorded by MiniBox but no longer exists in the engine. MiniBox does not recreate it. Delete the volume record or restore the engine volume.",
   "err.network_reserved": "Boxes cannot join network {network}. Host, none and container networks are refused.",
   "err.network_not_managed": "Boxes cannot join network {network}. Boxes join {managed}.",
   "err.cpu_over_host": "CPU cores exceed the host limit ({cores} cores).",

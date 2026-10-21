@@ -157,6 +157,8 @@ describe("rebuild swap", () => {
 
   test("a failed start restores the old container, the spec and a volume this attempt created", async () => {
     const box = await newBox("alpha");
+    const volumesBefore = [...runtime.volumes.keys()].toSorted();
+    const recordsBefore = host.volumes.list().map((volume) => volume.id);
     runtime.fail("startContainer", new RuntimeError("engine", "boom", "boom"));
     const error = await rejectionOf(
       rebuildBox(
@@ -183,7 +185,9 @@ describe("rebuild swap", () => {
     expect(host.specs.read(box.boxId)?.revision).toBe(1);
     expect(host.specs.read(box.boxId)?.profile).toBe("standard");
     expect(host.specs.read(box.boxId)?.containerId).toBe(box.id);
-    expect(runtime.volumes.has("extra")).toBe(false);
+    expect(host.volumes.resolve("extra", host.host.id)).toBeNull();
+    expect([...runtime.volumes.keys()].toSorted()).toEqual(volumesBefore);
+    expect(host.volumes.list().map((volume) => volume.id)).toEqual(recordsBefore);
     expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
@@ -217,11 +221,14 @@ describe("rebuild swap", () => {
       true,
     );
 
+    const extra = host.volumes.resolve("extra", host.host.id);
+    if (!extra) throw new Error("expected a record for extra");
+    expect(extra).toMatchObject({ name: "extra", ownership: "independent", role: null, engineName: extra.id });
     expect(rebuilt.template).toBe("other:1");
     expect(rebuilt.image).toBe("other:1");
     expect(rebuilt.network).toBe("mbtest-boxes");
     expect(rebuilt.mounts.map(({ volume, path, mode }) => ({ volume, path, mode }))).toEqual([
-      { volume: "extra", path: "/data", mode: "ro" },
+      { volume: extra.engineName, path: "/data", mode: "ro" },
     ]);
     expect(rebuilt.env).toEqual([
       { name: "FOO", value: "bar" },
@@ -229,10 +236,10 @@ describe("rebuild swap", () => {
     ]);
     expect(rebuilt.drift).toEqual([]);
     expect(runtime.volumes.has(box.volume)).toBe(true);
-    expect(runtime.volumes.has("extra")).toBe(true);
+    expect(runtime.volumes.has(extra.engineName)).toBe(true);
     const container = runtime.containers.get(rebuilt.id);
     expect(container?.spec.env).toEqual(["FOO=bar"]);
-    expect(container?.spec.mounts).toEqual([{ source: "extra", target: "/data", mode: "ro" }]);
+    expect(container?.spec.mounts).toEqual([{ source: extra.engineName, target: "/data", mode: "ro" }]);
     expect(JSON.stringify(container?.labels)).not.toContain("bar");
     expect(JSON.stringify(container?.labels)).not.toContain("vault");
   });

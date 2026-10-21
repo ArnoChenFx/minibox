@@ -640,7 +640,13 @@ Token
 
 - **`exec` 隐含该 Box 所有挂载卷的读写能力**，所以细分的 `files:*` 权限只对没有 `exec` 的令牌有意义。
 - **挂载某卷等于获得该卷的读权限**：创建 Box 或更新挂载需要对该卷的 `volume:attach` 授权，否则 Agent 可以新建 Box 把别人的卷挂进去读走。
-- **`volume:attach` 授权落地（#13）之前的过渡规则**：创建 Box 与重建共用同一套检查，违反时返回 `403 forbidden`，并在改动容器之前拒绝。`minibox-data` 一律拒绝，它保存访问密钥与会话。新挂载的卷必须带 MiniBox 标签（由 MiniBox 创建），或尚不存在；新挂载的卷不能已被其它 Box 挂载，因此 §6.2 的共享在授权落地前不可用。网络只允许宿主机的 Box 网络（默认 `minibox-boxes`）和 Box 当前已在使用的网络，早于 Box 网络创建的 `bridge` Box 因此可以保持原样。`host`、`none` 与 `container:*` 始终拒绝。Box 已经挂载的卷不重新检查（`minibox-data` 除外），所以只改其它字段的重建照常进行。
+- **`volume:attach` 授权落地（#13）之前的过渡规则**：创建 Box、重建与挂载变更共用同一套检查（`src/services/attachments.ts` 的 `assertMountAllowed`），违反时在改动容器之前返回 `403 forbidden`，或 `409 volume_missing`。检查以 Volume 记录为准：引擎中带 MiniBox 标签、还没有记录的卷先被认领，再判断。
+  - 一律拒绝，不论卷是否存在、是否已挂载：`minibox-data`（保存访问密钥与会话）、池根卷 `<prefix>-pool-<pool>`、带 `<prefix>.internal` 标签的辅助卷，以及没有 MiniBox 标签的卷。
+  - 记录的所有者是另一个仍然存在的 Box（`owned`）时拒绝挂载，因此别的 Box 的工作区不能被挂走。独立记录（`independent`）可以被多个 Box 挂载，§6.2 的共享工具卷因此可用。所有者已删除的记录视为无主。
+  - 记录存在、或 Box 已经挂载的卷，若引擎中已不存在，返回 `409 volume_missing`，不会静默重建：Docker 在容器创建或启动时会自动建一个同名空卷，那就等于悄悄替换了数据。
+  - 不存在的名字可以新建为独立记录（引擎名为 `vol_…`，与 `volume.create` 一致），但以 `<prefix>-ws-` 或 `<prefix>-pool-` 开头的名字拒绝挂载，`vol_…` 形式的 id 没有记录时返回 `404 volume_not_found`。创建 Box 时的显式挂载只接受已有记录，因此优先使用已记录的卷。
+  - Box 已经挂载的卷不做标签与所有权检查，所以只改其它字段的重建照常进行（上面一律拒绝的卷除外）。
+  - 网络只允许宿主机的 Box 网络（默认 `minibox-boxes`）和 Box 当前已在使用的网络，早于 Box 网络创建的 `bridge` Box 因此可以保持原样。`host`、`none` 与 `container:*` 始终拒绝。
 
 ### 9.3 浏览器会话
 

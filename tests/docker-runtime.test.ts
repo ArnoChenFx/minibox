@@ -25,6 +25,7 @@ import { rebuildBox } from "../src/services/rebuild";
 import { createSnapshot, deleteSnapshot } from "../src/services/snapshots";
 import { deleteTemplate, promoteSnapshot } from "../src/services/templates";
 import type { RebuildRequest } from "../src/specs/plan";
+import type { BoxMount } from "../src/specs/types";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
@@ -59,6 +60,16 @@ async function waitUntil(check: () => Promise<boolean>, what: string, timeoutMs 
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     await Bun.sleep(100);
   }
+}
+
+async function volumeExists(name: string): Promise<boolean> {
+  return docker
+    .getVolume(name)
+    .inspect()
+    .then(
+      () => true,
+      () => false,
+    );
 }
 
 async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T | "timeout"> {
@@ -478,7 +489,7 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       const managed = `${prefix}-extra`;
       try {
         const box = await boxes.createBox(host, { name: "guard", image: IMAGE, cpus: 0.5, memoryMb: 64 });
-        const workspace = { volume: `${prefix}-ws-guard`, path: "/workspace", mode: "rw" as const };
+        const workspace = { volume: box.volume, path: "/workspace", mode: "rw" as const };
         await docker.createVolume({ Name: plain });
 
         const refused = (request: RebuildRequest) => rejectionOf(rebuildBox(host, box.id, box.revision, request, true));
@@ -510,6 +521,62 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       } finally {
         await docker
           .getVolume(plain)
+          .remove()
+          .catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "another box's workspace, the data volume, pool roots and reserved names are refused on the real engine",
+    async () => {
+      const restore = silenceLogs();
+      const pool = `${prefix}-pool-nfs`;
+      const absent = `${prefix}-pool-absent`;
+      const fresh = `${prefix}-ws-fresh`;
+      try {
+        const alpha = await boxes.createBox(host, { name: "owner-a", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const beta = await boxes.createBox(host, { name: "owner-b", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        await docker.createVolume({ Name: pool, Labels: { ...owned, [host.keys.internal]: "true" } });
+        const attempt = (mounts: BoxMount[]) => rejectionOf(rebuildBox(host, beta.id, beta.revision, { mounts }, true));
+
+        expect(await attempt([{ volume: alpha.volume, path: "/workspace", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_in_use",
+          params: { volume: "owner-a-workspace" },
+        });
+        expect(await attempt([{ volume: "minibox-data", path: "/data", mode: "ro" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: "minibox-data" },
+        });
+        expect(await attempt([{ volume: pool, path: "/pool", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: pool },
+        });
+        expect(await attempt([{ volume: absent, path: "/pool", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: absent },
+        });
+        expect(await attempt([{ volume: fresh, path: "/fresh", mode: "rw" }])).toMatchObject({
+          status: 403,
+          key: "volume_reserved",
+          params: { volume: fresh },
+        });
+
+        expect(await volumeExists(absent)).toBe(false);
+        expect(await volumeExists(fresh)).toBe(false);
+        expect((await runtime.inspectContainer(beta.id)).running).toBe(true);
+        expect(host.specs.read(beta.boxId)?.revision).toBe(beta.revision);
+        await boxes.deleteBox(host, alpha.id, true);
+        await boxes.deleteBox(host, beta.id, true);
+      } finally {
+        await docker
+          .getVolume(pool)
           .remove()
           .catch(() => {});
         restore();

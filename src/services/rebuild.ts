@@ -13,8 +13,10 @@ import {
 import { pushHistory } from "../specs/history";
 import { planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
-import type { BoxRecovery, BoxSpec } from "../specs/types";
-import { assertRebuildAttachments, engineRefs } from "./attachments";
+import type { BoxMount, BoxRecovery, BoxSpec } from "../specs/types";
+import { VolumeChanges } from "../volumes/changes";
+import { createIndependentVolume } from "../volumes/provision";
+import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox } from "./boxes";
 
 interface SwapState {
@@ -24,7 +26,7 @@ interface SwapState {
   oldRenamed: boolean;
   started: boolean;
   wasRunning: boolean;
-  createdVolumes: string[];
+  changes: VolumeChanges;
 }
 
 /**
@@ -115,16 +117,34 @@ async function clearLeftover(host: HostCtx, name: string, spec: BoxSpec): Promis
   await host.runtime.removeContainer(info.id, { force: true });
 }
 
-/** Creates a missing mount volume and reports that this attempt created it, so a rollback can remove it. */
-async function ensureMountVolume(host: HostCtx, spec: BoxSpec, volume: string): Promise<boolean> {
-  try {
-    await host.runtime.inspectVolume(volume);
-    return false;
-  } catch (e) {
-    if (!(e instanceof RuntimeError && e.kind === "not_found")) throw e;
-    await host.runtime.createVolume(volume, { [host.keys.box]: "true", [host.keys.name]: spec.name });
-    return true;
+/**
+ * Names the engine volume each planned mount uses. Checks run again under the lock, so a volume that changed since the
+ * preview is refused here. A name that does not exist yet becomes a standalone record. `changes` removes it again if
+ * the swap fails.
+ */
+async function resolveVolumes(
+  host: HostCtx,
+  previous: BoxSpec,
+  mounts: BoxMount[],
+  changes: VolumeChanges,
+): Promise<BoxMount[]> {
+  const resolved: BoxMount[] = [];
+  for (const mount of mounts) {
+    const target = await mountTarget(host, mount.volume);
+    assertMountAllowed(host, previous, mount.volume, target);
+    if (target.info) {
+      resolved.push(mount);
+      continue;
+    }
+    const created = await createIndependentVolume(
+      host,
+      { name: mount.volume, role: null, createdBy: previous.createdBy },
+      new Set(),
+      changes,
+    );
+    resolved.push({ ...mount, volume: created.engineName });
   }
+  return resolved;
 }
 
 function hardeningOf(host: HostCtx, spec: BoxSpec, profile: BoxProfile | null): ContainerHardening | undefined {
@@ -270,15 +290,7 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState): Promise
   if (state.oldStopped && state.wasRunning) {
     await fail(() => host.runtime.startContainer(previous.containerId));
   }
-  for (const volume of state.createdVolumes) {
-    await fail(async () => {
-      try {
-        await host.runtime.removeVolume(volume);
-      } catch (e) {
-        log.warn("box.volume_remove_failed", { volume, error: String(e) });
-      }
-    });
-  }
+  await state.changes.rollback();
   if (!state.specWritten) return;
   try {
     host.specs.write(previous);
@@ -301,7 +313,7 @@ async function swap(
     oldRenamed: false,
     started: false,
     wasRunning: false,
-    createdVolumes: [],
+    changes: new VolumeChanges(),
   };
   const formal = planned.containerName;
   const scratch = `${formal}-new`;
@@ -312,13 +324,14 @@ async function swap(
     if (planned.network === host.security.network) await ensureBoxNetwork(host);
     await clearLeftover(host, scratch, previous);
     await clearLeftover(host, oldAlias, previous);
-    for (const mount of planned.mounts) {
-      if (await ensureMountVolume(host, previous, mount.volume)) state.createdVolumes.push(mount.volume);
-    }
-    const created = await host.runtime.createContainer(containerSpec(host, previous, planned, template, scratch));
+    const resolved: PlannedRebuild = {
+      ...planned,
+      mounts: await resolveVolumes(host, previous, planned.mounts, state.changes),
+    };
+    const created = await host.runtime.createContainer(containerSpec(host, previous, resolved, template, scratch));
     state.createdId = created.id;
-    await assertFresh(host, created.id, template.image, planned);
-    writeNext(host, previous, planned, template, created.id, request);
+    await assertFresh(host, created.id, template.image, resolved);
+    writeNext(host, previous, resolved, template, created.id, request);
     state.specWritten = true;
     if (state.wasRunning) {
       await host.runtime.stopContainer(previous.containerId, { timeoutSec: host.stopTimeoutSec });

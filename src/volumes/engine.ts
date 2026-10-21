@@ -5,6 +5,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { RuntimeError, type VolumeInfo } from "../runtime";
 import type { BoxSpec } from "../specs/types";
+import { VolumeChanges } from "./changes";
 import { assertPoolsReachable, poolRootVolume } from "./health";
 import { nfsDriverOpts, pathDriverOpts, poolForRole } from "./pools";
 import type { StoragePool, VolumeOwnership, VolumeRecord, VolumeRole } from "./types";
@@ -102,12 +103,26 @@ async function prepareSubdir(host: HostCtx, pool: StoragePool, subpath: string, 
   }
 }
 
-/** Creates the engine volume. Local volumes still need `chownEngines`; nfs and path are prepared here. */
+/** The engine's volume of this name, or null. Other errors are the caller's to handle. */
+export async function inspectVolumeOrNull(host: HostCtx, name: string): Promise<VolumeInfo | null> {
+  try {
+    return await host.runtime.inspectVolume(name);
+  } catch (e) {
+    if (e instanceof RuntimeError && e.kind === "not_found") return null;
+    throw e;
+  }
+}
+
+/**
+ * Creates the engine volume for a record. Local volumes still need `chownEngines`; nfs and path are prepared here.
+ * Every step that creates something registers its undo in `changes`, so a later failure removes it again.
+ */
 export async function createEngineVolume(
   host: HostCtx,
   pool: StoragePool,
   volume: VolumeRecord,
   known: Set<string>,
+  changes: VolumeChanges,
 ): Promise<void> {
   await assertPoolsReachable(host, [pool.name]);
   const labels = labelsFor(host, volume);
@@ -115,19 +130,47 @@ export async function createEngineVolume(
     await host.runtime.createVolume(volume.engineName, labels);
     return;
   }
-  if (!volume.subpath) throw badRequest(msg("volume_prepare_failed", { detail: "missing subpath" }));
+  const subpath = volume.subpath;
+  if (!subpath) throw badRequest(msg("volume_prepare_failed", { detail: "missing subpath" }));
   if (pool.backend === "nfs") {
     const keys = host.keys;
+    const root = poolRootVolume(host.prefix, pool.name);
+    const rootExisted = (await inspectVolumeOrNull(host, root)) !== null;
     await host.runtime.createVolume(
-      poolRootVolume(host.prefix, pool.name),
+      root,
       { [keys.volume]: "true", [keys.internal]: "true", [keys.pool]: pool.name },
       { driver: "local", driverOpts: nfsDriverOpts(pool, null, true) },
     );
+    if (!rootExisted) changes.add(`pool root ${root}`, () => removeEngineVolume(host, root));
   }
-  await prepareSubdir(host, pool, volume.subpath, known);
-  const driverOpts =
-    pool.backend === "nfs" ? nfsDriverOpts(pool, volume.subpath, false) : pathDriverOpts(pool, volume.subpath);
+  await prepareSubdir(host, pool, subpath, known);
+  changes.add(`directory ${subpath}`, () => removeEmptyDirectory(host, pool, subpath));
+  const driverOpts = pool.backend === "nfs" ? nfsDriverOpts(pool, subpath, false) : pathDriverOpts(pool, subpath);
   await host.runtime.createVolume(volume.engineName, labels, { driver: "local", driverOpts });
+}
+
+/** Removes an engine volume that MiniBox just created. A volume that is already gone counts as removed. */
+async function removeEngineVolume(host: HostCtx, name: string): Promise<void> {
+  try {
+    await host.runtime.removeVolume(name);
+  } catch (e) {
+    if (!(e instanceof RuntimeError && e.kind === "not_found")) throw e;
+  }
+}
+
+/** `rmdir` only: a directory that still holds anything is kept, so this never deletes data. */
+async function removeEmptyDirectory(host: HostCtx, pool: StoragePool, subpath: string): Promise<void> {
+  const source = pool.backend === "nfs" ? poolRootVolume(host.prefix, pool.name) : (pool.root ?? "/");
+  const kind = pool.backend === "path" ? "bind" : "volume";
+  const result = await host.runtime.runHelper({
+    image: host.baseTemplateTag,
+    user: "0:0",
+    cmd: ["sh", "-c", 'rmdir -- "$1"', "minibox", `/mnt/${subpath}`],
+    mounts: [{ source, target: "/mnt", kind, mode: "rw" }],
+    timeoutSec: 120,
+    labels: { [host.keys.internal]: "true" },
+  });
+  if (result.exitCode !== 0) throw new Error(`rmdir ${subpath}: ${result.logs.trim() || result.exitCode}`);
 }
 
 export function blankRecord(host: HostCtx, input: NewVolume, id: string, now: string): VolumeRecord {
@@ -177,7 +220,7 @@ export function claimInfo(host: HostCtx, info: VolumeInfo, specs: BoxSpec[], now
       : legacy
         ? "workspace"
         : null;
-  const owned = users.length === 1 && role !== "tools";
+  const owned = users.length === 1 && (role === "workspace" || role === "home" || role === "cache");
   const poolName = info.labels[host.keys.pool];
   const pools = host.volumes.readPools();
   const pool = poolName && pools.pools.some((item) => item.name === poolName) ? poolName : LOCAL_POOL;
@@ -201,6 +244,17 @@ export function claimInfo(host: HostCtx, info: VolumeInfo, specs: BoxSpec[], now
     bytes: null,
     bytesAt: null,
   };
+}
+
+/** Records one engine volume that has no record yet. Null when `claimInfo` does not recognise it. */
+export async function claimOne(host: HostCtx, info: VolumeInfo): Promise<VolumeRecord | null> {
+  return host.volumes.exclusive(async () => {
+    const known = host.volumes.findByEngine(host.host.id, info.name);
+    if (known) return known;
+    const record = claimInfo(host, info, host.specs.list(), new Date().toISOString());
+    if (record) host.volumes.write(record);
+    return record;
+  });
 }
 
 export async function claimEngineVolumes(host: HostCtx): Promise<number> {

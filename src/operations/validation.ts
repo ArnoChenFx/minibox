@@ -451,7 +451,7 @@ export const rebuildMounts = () =>
     type: "array",
     maxItems: MOUNT_MAX,
     description:
-      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A volume the box does not mount yet must have been created by MiniBox or must not exist (MiniBox creates it), and no other box may mount it. The data volume minibox-data is refused.",
+      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A recorded volume can be mounted by several boxes unless another box owns it. A name that does not exist yet creates a standalone volume. Refused: minibox-data, volumes without the MiniBox label, internal helper volumes, pool roots, volumes another box owns, and names that start with the label prefix followed by -ws- or -pool-.",
   }).optional();
 
 export const rebuildEnv = () =>
