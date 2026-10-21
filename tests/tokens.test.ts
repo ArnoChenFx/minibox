@@ -280,6 +280,21 @@ describe("presets and file access", () => {
     expect(scopeAllowed(installer, "tool:install")).toBe(true);
   });
 
+  test("box:ssh is its own scope: operator and admin hold it, readonly, sandboxed-agent and exec do not", () => {
+    expect(requiredScopes("box:ssh")).toEqual(["box:ssh"]);
+    expect(compileToken({ name: "o", preset: "operator" }).scopes).toContain("box:ssh");
+    expect(compileToken({ name: "a", preset: "admin" }).scopes).toContain("box:ssh");
+    expect(compileToken({ name: "s", preset: "sandboxed-agent" }).scopes).not.toContain("box:ssh");
+    expect(compileToken({ name: "r", preset: "readonly" }).scopes).not.toContain("box:ssh");
+    const sandbox = grantsOf(compileToken({ name: "s", preset: "sandboxed-agent" }));
+    const execOnly = grantsOf(compileToken({ name: "e", scopes: ["exec"] }));
+    const sshOnly = grantsOf(compileToken({ name: "h", scopes: ["box:ssh"] }));
+    expect(scopeAllowed(sandbox, "box:ssh")).toBe(false);
+    expect(scopeAllowed(execOnly, "box:ssh")).toBe(false);
+    expect(scopeAllowed(sshOnly, "box:ssh")).toBe(true);
+    expect(scopeAllowed(sshOnly, "exec")).toBe(false);
+  });
+
   test("an operation scope that no token scope covers is owner-only, including one the registry does not know", () => {
     for (const scope of ["pool:admin", "pool:read", "token:manage", "template:build", "task:write", "made:up"]) {
       expect(requiredScopes(scope)).toBe("owner");

@@ -15047,6 +15047,7 @@
                                 "box:write",
                                 "box:delete",
                                 "exec",
+                                "box:ssh",
                                 "files:read",
                                 "files:write",
                                 "port:expose",
@@ -15440,6 +15441,7 @@
                         "box:write",
                         "box:delete",
                         "exec",
+                        "box:ssh",
                         "files:read",
                         "files:write",
                         "port:expose",
@@ -15451,8 +15453,8 @@
                         "tool:install"
                       ]
                     },
-                    "maxItems": 13,
-                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install."
+                    "maxItems": 14,
+                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install."
                   },
                   "boxes": {
                     "description": "Which boxes this token may use. \"created-by-me\" (the default), \"*\" for every box, {\"ids\":[\"bx_…\"]}, or {\"tags\":[\"env=prod\"]}. A tag is a label key, or key=value."
@@ -15575,6 +15577,7 @@
                               "box:write",
                               "box:delete",
                               "exec",
+                              "box:ssh",
                               "files:read",
                               "files:write",
                               "port:expose",
@@ -16020,6 +16023,7 @@
                               "box:write",
                               "box:delete",
                               "exec",
+                              "box:ssh",
                               "files:read",
                               "files:write",
                               "port:expose",
