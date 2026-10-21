@@ -4,7 +4,7 @@
  */
 export const AGENTS_MD_SNIPPET = `## MiniBox
 
-Use the MiniBox MCP server (\`/mcp\`, Bearer access key) to work inside a box.
+Use the MiniBox MCP server (\`/mcp\`, Bearer access key or agent token) to work inside a box.
 
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.

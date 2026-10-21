@@ -252,8 +252,8 @@ export default {
   "err.session_attach_limit": "该会话已打开 {max} 个终端。",
   "err.session_viewer_attach_limit": "只读查看者已在该会话上占用 {max} 个终端，其余 {reserved} 个留给控制台。",
   "err.session_attach_limit_hint": "关闭其中一个，然后重试。",
-  "err.mcp_bearer_required": "MCP 需要 Authorization Bearer 访问密钥。",
-  "err.mcp_bearer_hint": "请发送 Authorization: Bearer 和访问密钥。/mcp 不接受浏览器会话 Cookie。",
+  "err.mcp_bearer_required": "MCP 需要 Authorization Bearer 访问密钥或 Agent 令牌。",
+  "err.mcp_bearer_hint": "请发送 Authorization: Bearer 和访问密钥或 Agent 令牌。/mcp 不接受浏览器会话 Cookie。",
   "err.mcp_toolset_invalid": "未知的 MCP 工具集。",
   "err.mcp_toolset_hint":
     "可用 core、session、network、storage、tools、meta 或 rebuild，例如 /mcp?toolsets=core,session。",
@@ -769,7 +769,8 @@ export default {
   "st.tokenOnce": "请立即复制此密钥。MiniBox 不会再次显示。",
   "st.tokenCurl": "REST",
   "st.tokenMcp": "MCP 客户端配置",
-  "st.tokenMcpNote": "/mcp 端点尚未提供。此令牌已经可以用 Authorization: Bearer 调用 REST API。",
+  "st.tokenMcpNote":
+    "同一枚令牌可用于 REST API 和 /mcp，请发送 Authorization: Bearer。MCP 只列出该令牌权限范围内的工具。",
   "st.tokenCopy": "复制密钥",
   "st.tokenCopied": "已复制密钥",
   "st.tokenPrefix": "前缀",

@@ -217,9 +217,9 @@ export const MESSAGES = {
   session_viewer_attach_limit:
     "Read-only viewers already have {max} terminals on this session, and {reserved} stay free for the console.",
   session_attach_limit_hint: "Close one of them, then try again.",
-  mcp_bearer_required: "MCP requires an Authorization Bearer access key.",
+  mcp_bearer_required: "MCP requires an Authorization Bearer access key or agent token.",
   mcp_bearer_hint:
-    "Send the header Authorization: Bearer and the access key. A browser session cookie is not accepted on /mcp.",
+    "Send the header Authorization: Bearer and the access key or an agent token. A browser session cookie is not accepted on /mcp.",
   mcp_toolset_invalid: "Unknown MCP toolset.",
   mcp_toolset_hint:
     "Use core, session, network, storage, tools, meta or rebuild, for example /mcp?toolsets=core,session.",

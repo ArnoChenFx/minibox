@@ -14275,7 +14275,7 @@
       "bearer": {
         "type": "http",
         "scheme": "bearer",
-        "description": "The access key, as a Bearer token."
+        "description": "The access key or an agent token, as a Bearer token."
       },
       "cookie": {
         "type": "apiKey",

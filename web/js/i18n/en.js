@@ -277,9 +277,9 @@ export default {
   "err.session_viewer_attach_limit":
     "Read-only viewers already have {max} terminals on this session, and {reserved} stay free for the console.",
   "err.session_attach_limit_hint": "Close one of them, then try again.",
-  "err.mcp_bearer_required": "MCP requires an Authorization Bearer access key.",
+  "err.mcp_bearer_required": "MCP requires an Authorization Bearer access key or agent token.",
   "err.mcp_bearer_hint":
-    "Send the header Authorization: Bearer and the access key. A browser session cookie is not accepted on /mcp.",
+    "Send the header Authorization: Bearer and the access key or an agent token. A browser session cookie is not accepted on /mcp.",
   "err.mcp_toolset_invalid": "Unknown MCP toolset.",
   "err.mcp_toolset_hint":
     "Use core, session, network, storage, tools, meta or rebuild, for example /mcp?toolsets=core,session.",
@@ -817,7 +817,7 @@ export default {
   "st.tokenCurl": "REST",
   "st.tokenMcp": "MCP client config",
   "st.tokenMcpNote":
-    "The /mcp endpoint is not served yet. This token already authorizes REST calls with Authorization: Bearer.",
+    "The same token authorizes REST calls and /mcp with Authorization: Bearer. MCP lists only the tools its scopes reach.",
   "st.tokenCopy": "Copy secret",
   "st.tokenCopied": "Secret copied",
   "st.tokenPrefix": "Prefix",
