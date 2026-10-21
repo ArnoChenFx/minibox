@@ -55,6 +55,7 @@
 
 - 数据卷与存储池（#24）：卷是独立对象，记录放在 `DATA_DIR/volumes`，并写明创建它的主机。Box 通过 `mounts` 挂载零到多个卷，每次挂载指定路径与读写模式。新建 Box 默认挂载工作区 `/workspace`、主目录 `/home/dev`、共享只读工具卷 `/opt/minibox/tools`（每个主机一只，名为 `<前缀>-tools-<主机 id>`）与本地缓存 `/home/dev/.cache`。存储池支持 `local`、`nfs` 与 `path` 三种后端：`PUT /api/pools` 替换配置，`GET /api/pools` 探测可达性；非本地池不可达时，启动、重启与创建返回 `503 docker_unavailable`。删除 Box 时 `deleteVolume=true` 只删除记录中所有者为本 Box、且没有其它 Box 挂载的卷。已有的 `<前缀>-ws-*` 卷会被识别为卷，不改名、不补标签。新增 `/api/volumes`、`/api/pools` 系列接口与控制台「卷」页面（中英文）。存储写入需要 `confirm: true`：`POST /api/volumes`、`DELETE /api/volumes/:id?confirm=true` 与 `PUT /api/pools` 没有该标志时返回 `409 confirmation_required` 与 `details.preview`，不改动任何内容；保存存储池与删除卷的界面会先显示预览（#24）。
 - 数据卷与模板列表支持搜索：输入即时过滤，按 Esc 或 × 清除，没有匹配时显示单独的提示。卷列表可按 Box、角色、存储池或归属分组，分组方式保存在本浏览器中。
+- 新建 Box 时可以选择卷（#24）：创建对话框的「卷」区域默认不发送 `mounts`，四个角色卷照常新建；选择「自定义」时发送界面中显示的完整挂载列表，它替换默认卷。每一行从已有的卷中选择一个，并填写路径与读写模式；属于其他运行中 Box 的卷不可选，共享的读写挂载会显示提示。卷与挂载相关的服务端错误显示在该区域内。
 - 实时推送（#17）：每台主机由一个采样器（`HostSampler`）维护盒子缓存与资源采样。`GET /api/events/stream` 在不带过滤条件时同时推送 `sync`、`box`、`sample`、`host`、`link` 与 `task`（仅状态变化）帧。这些帧以事件名区分、不带 `id`，因此不改变 `Last-Event-ID`，也不写入 `events.db`；审计事件与实时状态共用同一条进程内事件总线。带过滤条件的事件流只收到已存储的事件，与原来一致。`GET /api/boxes/:id/stats?history=true` 返回该盒子最近的采样（按时间从早到晚），供详情页的图表使用。
 - 终端会话（#14）：每个 Box 可以有多个具名的 tmux 会话，名称 1 到 32 位，以字母或数字开头，其后可含字母、数字、`-` 与 `_`。会话在 Box 内运行，关闭页面或断开连接后继续运行，刷新页面后控制台回到上次打开的会话。会话的发起方（`agent` 或 `human`）保存在 tmux 中；接管状态只保存在内存中，MiniBox 重启后每个会话的控制方回到其发起方的默认值。
 - 会话接口：`GET` 与 `POST /api/boxes/:id/sessions`，`GET`（支持 `lines` 与 `since`）与 `DELETE /api/boxes/:id/sessions/:name`，以及 `POST /api/boxes/:id/sessions/:name/input`（`keys` 或 `text`，二者只能提供一个）。MCP 的 `session` 工具集提供 `session_start`、`session_send` 与 `session_read`（`/mcp?toolsets=core,session`）；CLI 提供 `minibox session ls`、`start`、`read`、`send` 与 `close`。这些操作在操作注册表中各定义一次，REST、OpenAPI、MCP 与 CLI 由此生成。
@@ -119,6 +120,7 @@
 - 盒子资源采样只在有实时流打开时按 `METRICS_INTERVAL_MS` 进行，没有实时流时每 30 秒一次（不短于 `METRICS_INTERVAL_MS`）。从没有实时流变为有实时流时，采样器立即采样一轮。因此没有实时流时，REST 的 `stats` 字段与统计历史最多滞后一个空闲间隔，即 30 秒，或更长的 `METRICS_INTERVAL_MS`（#17）。
 - 事件流与任务流的待发队列同时按帧数（1000 帧）与字节数（1 MiB）限制。超出任一上限时队列被清空：任务流发送 `reset`；事件流发送 `reset`，有实时状态时还发送新的 `sync`，客户端据此重新读取。同一主机的 `sample` 与 `host` 帧在队列中只保留最新一帧，慢速客户端收到的是最新状态，而不是逐个补发的过时状态（#17）。
 - 链路就绪时，采样器每 60 秒重新列出一次容器，替换缓存并发布其中的变化，以追平事件流静默停止（无错误、也不结束）时漏掉的变化。重新列出不改变链路状态，断线检测与重连照旧。列出在队列之外进行，30 秒内未返回即放弃，挂起的引擎调用不会阻塞写操作；列出期间若缓存有过变化，结果被丢弃，留待下一次（#17）。
+- 控制台的下拉选择框（`select.select`）改为应用自绘的菜单：颜色随主题切换，支持方向键、Home / End、按字母快速定位，Esc 与点击外部关闭，并且不会被对话框或表格容器裁切。原生 `select` 仍保留在页面中，负责取值、`name` 与 `change` 事件。
 
 ### 工程化
 - 新增真实引擎测试 `tests/docker-sessions.test.ts`（设置 `MINIBOX_TEST_DOCKER=1` 时运行，`bun run test:docker` 会执行）。它覆盖：会话在终端退出后保留、刷新后重新附着、Agent 会话只读与接管锁、Bearer 只读、空闲归还、关闭会话结束终端、静默连接的心跳关闭、断开而不发关闭帧时不残留附着进程、「严格」档位以 `dev` 运行、`session_read` 的 `since` 与 `reset`，以及 Box 启停事件。测试镜像 `tests/fixtures/tmux` 基于 `alpine:3.20` 并安装 tmux（#14）。

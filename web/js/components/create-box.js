@@ -3,8 +3,10 @@ import { $$, esc } from "../lib/dom.js";
 import { bytes, gbOrMb } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoices } from "../lib/mounts.js";
 import { getTemplates, hostNow, refreshHost } from "../lib/store.js";
 import { nameError, openDialog, toast } from "../lib/ui.js";
+import { mountRow, readMountRows } from "./mount-editor.js";
 
 const PRESETS = [
   { id: "small", label: "cb.small", cpus: 2, memoryMb: 4096 },
@@ -14,6 +16,17 @@ const PRESETS = [
 ];
 
 const PROFILES = ["standard", "strict", "relaxed"];
+
+/** The text for a custom row the dialog refuses before sending. Paths use the server's own messages. */
+function problemText(problem) {
+  return problem.code === "volume" ? t("cb.mountVolumeRequired") : t(`err.${problem.code}`, { path: problem.path });
+}
+
+/** The volumes a custom row can pick, with the ones another live box owns marked unavailable. */
+async function loadChoices() {
+  const [volumeBody, boxBody] = await Promise.all([api("/api/volumes"), api("/api/boxes?stats=false")]);
+  return volumeChoices(volumeBody.volumes, new Set(boxBody.boxes.map((box) => box.boxId)));
+}
 
 /**
  * Create-box dialog. When `snapshot` is given the image is fixed and the box is created from it.
@@ -42,7 +55,10 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     preset: initial.id,
     template: templates.find((tp) => tp.ref === template)?.ref ?? templates[0]?.ref ?? "",
     profile: defaultProfile,
+    volumesMode: "default",
   };
+  let choices = null;
+  let seeded = false;
 
   const templatePicker = snapshot
     ? `<div class="option" aria-checked="true"><span class="avatar">${icon("camera")}</span><span class="meta"><strong>${esc(snapshot)}</strong><span>${t("cb.fromSnapshotHint")}</span></span></div>`
@@ -58,6 +74,27 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           )
           .join("")}</div>`
       : `<div class="callout warn">${icon("alert")}<span>${t("cb.noTemplates")}</span></div>`;
+
+  const volumesSection = snapshot
+    ? ""
+    : `<details class="advanced" id="cbVolumes">
+        <summary id="cbVolSummary">${t("cb.volumesSummary", { mode: t("cb.volumesModeDefault") })}</summary>
+        <div class="field"><span class="label">${t("vol.mounts")}</span>
+          <div class="segmented segmented-2" id="cbVolMode">
+            <button type="button" class="seg" data-vol-mode="default" aria-pressed="true"><strong>${t("cb.volumesDefault")}</strong><span>${t("cb.volumesDefaultHint")}</span></button>
+            <button type="button" class="seg" data-vol-mode="custom" aria-pressed="false"><strong>${t("cb.volumesCustom")}</strong><span>${t("cb.volumesCustomHint")}</span></button>
+          </div>
+          <div class="help" id="cbVolHelp">${t("cb.volumesDefaultHelp")}</div></div>
+        <div id="cbVolCustom" hidden>
+          <div class="callout warn">${icon("alert")}<span>${t("cb.volumesReplace")}</span></div>
+          <div class="rebuild-mounts" id="cbMountRows"></div>
+          <button type="button" class="btn" id="cbAddMount">${t("mount.add")}</button>
+          <div class="help" id="cbMountsNote" hidden></div>
+          <div class="help" id="cbMountsOwned" hidden>${t("cb.mountsOwned")}</div>
+          <div id="cbSharedNote" hidden></div>
+        </div>
+        <div class="error-text" id="cbVolErr"></div>
+      </details>`;
 
   const { root, close } = openDialog({
     title: snapshot ? t("cb.titleSnapshot") : t("cb.title"),
@@ -91,7 +128,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
               `<button type="button" class="seg" data-profile="${p}" aria-pressed="${p === state.profile}"><strong>${t(`profile.${p}`)}</strong><span>${t(`profile.${p}Hint`)}</span></button>`,
           ).join("")}</div>
           <div class="help">${t("cb.profileHelp")}</div></div>
-      </details>`,
+      </details>${volumesSection}`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
 
@@ -166,6 +203,82 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbName").classList.remove("invalid");
     q("#cbNameErr").textContent = "";
   });
+
+  const showVolumeError = (message) => {
+    if (snapshot) {
+      q("#cbResErr").textContent = message;
+      return;
+    }
+    q("#cbVolumes").open = true;
+    q("#cbVolErr").textContent = message;
+  };
+
+  const refreshMounts = () => {
+    if (!choices) return;
+    const rows = readMountRows(q("#cbMountRows"));
+    const note = q("#cbMountsNote");
+    let text = "";
+    if (choices.length === 0) text = t("cb.mountsNoVolumes");
+    else if (rows.length === 0) text = t("cb.mountsNone");
+    else if (rows.length >= MOUNT_MAX) text = t("cb.mountsLimit", { max: MOUNT_MAX });
+    note.textContent = text;
+    note.hidden = text === "";
+    q("#cbAddMount").disabled = rows.length >= MOUNT_MAX;
+    const shared = rows
+      .filter((row) => row.mode === "rw")
+      .map((row) => choices.find((choice) => choice.id === row.volume))
+      .filter((choice) => choice && choice.rwMounts > 0)
+      .map((choice) => `<div>${esc(t("vol.sharedRwMessage", { name: choice.name }))}</div>`);
+    q("#cbSharedNote").hidden = shared.length === 0;
+    q("#cbSharedNote").innerHTML = shared.length
+      ? `<div class="callout warn">${icon("alert")}<div>${shared.join("")}</div></div>`
+      : "";
+  };
+
+  const chooseVolumesMode = async (mode) => {
+    const custom = mode === "custom";
+    q("#cbVolErr").textContent = "";
+    if (custom && choices === null) {
+      const seg = q('#cbVolMode [data-vol-mode="custom"]');
+      seg.disabled = true;
+      try {
+        choices = await loadChoices();
+      } catch (e) {
+        q("#cbVolErr").textContent = e.message;
+        return;
+      } finally {
+        seg.disabled = false;
+      }
+    }
+    if (custom && !seeded) {
+      seeded = true;
+      for (const m of DEFAULT_MOUNTS) {
+        q("#cbMountRows").append(mountRow({ volume: "", path: m.path, mode: m.mode }, { volumes: choices }));
+      }
+    }
+    state.volumesMode = mode;
+    $$("#cbVolMode .seg", root).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.volMode === mode)));
+    q("#cbVolCustom").hidden = !custom;
+    q("#cbVolHelp").textContent = t(custom ? "cb.volumesCustomHelp" : "cb.volumesDefaultHelp");
+    q("#cbVolSummary").textContent = t("cb.volumesSummary", {
+      mode: t(custom ? "cb.volumesModeCustom" : "cb.volumesModeDefault"),
+    });
+    q("#cbMountsOwned").hidden = !custom || !choices?.some((choice) => choice.disabled);
+    refreshMounts();
+  };
+
+  if (!snapshot) {
+    q("#cbVolMode").addEventListener("click", (e) => {
+      const b = e.target.closest(".seg");
+      if (b && b.dataset.volMode !== state.volumesMode) chooseVolumesMode(b.dataset.volMode);
+    });
+    q("#cbAddMount").addEventListener("click", () => {
+      q("#cbMountRows").append(mountRow({ volume: "", path: "/data", mode: "rw" }, { volumes: choices }));
+      refreshMounts();
+    });
+    q("#cbMountRows").addEventListener("change", refreshMounts);
+    q("#cbMountRows").addEventListener("click", refreshMounts);
+  }
   sync();
 
   const submit = async () => {
@@ -179,11 +292,22 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     }
     if (!validateRes()) return;
     if (!snapshot && !state.template) return;
+    if (!snapshot) q("#cbVolErr").textContent = "";
+    let mounts;
+    if (!snapshot && state.volumesMode === "custom") {
+      const checked = checkMountRows(readMountRows(q("#cbMountRows")));
+      if ("problem" in checked) {
+        showVolumeError(problemText(checked.problem));
+        return;
+      }
+      mounts = checked.mounts;
+    }
     const btn = q("#cbSubmit");
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
     try {
       const body = { name, cpus: state.cpus, memoryMb: state.memoryMb, profile: state.profile };
+      if (mounts) body.mounts = mounts;
       const res = snapshot
         ? await api(`/api/snapshots/${enc(snapshot)}/boxes`, { method: "POST", body })
         : await api("/api/boxes", { method: "POST", body: { ...body, template: state.template } });
@@ -194,7 +318,9 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     } catch (e) {
       btn.disabled = false;
       btn.innerHTML = `${icon("play")}${t("cb.submit")}`;
-      if (e.details?.field === "name") {
+      if (isVolumeErrorKey(e.key)) {
+        showVolumeError(e.message);
+      } else if (e.details?.field === "name") {
         q("#cbName").classList.add("invalid");
         q("#cbNameErr").textContent = e.message;
       } else if (e.code === "conflict") {

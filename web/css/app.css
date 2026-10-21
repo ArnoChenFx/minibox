@@ -876,6 +876,127 @@ table.table {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+
+/* Custom select menu (web/js/components/dropdown.js). The native select stays for value, name and change events, so it
+   is hidden here; the trigger draws the same box as .select and the popover lives in body, above dialogs. */
+.select.dropdown-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  max-width: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  opacity: 0;
+  pointer-events: none;
+  outline: none;
+  white-space: nowrap;
+}
+.dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: left;
+  user-select: none;
+  cursor: pointer;
+}
+.dropdown-trigger[aria-disabled="true"],
+.dropdown-trigger[aria-disabled="true"]:hover {
+  cursor: not-allowed;
+  opacity: 0.55;
+  border-color: var(--border-strong);
+}
+.dropdown-value {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+}
+.dropdown-value > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* One hidden copy of each label gives the trigger the width of its widest option, as a native select has. */
+.dropdown-value > .dropdown-size {
+  visibility: hidden;
+}
+.dropdown-menu {
+  position: fixed;
+  z-index: 70;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  animation: fade 0.12s ease;
+}
+.dropdown-menu[hidden] {
+  display: none;
+}
+.dropdown-group + .dropdown-group {
+  margin-top: 4px;
+}
+.dropdown-group-label {
+  padding: 8px 10px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.dropdown-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.dropdown-option.is-active {
+  background: var(--bg-hover);
+}
+.dropdown-option[aria-selected="true"] {
+  color: var(--accent-text);
+}
+.dropdown-option[aria-disabled="true"] {
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+.dropdown-option[aria-disabled="true"].is-active {
+  background: none;
+}
+.dropdown-option-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dropdown-check {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  visibility: hidden;
+  color: var(--accent-text);
+}
+.dropdown-option[aria-selected="true"] .dropdown-check {
+  visibility: visible;
+}
 .input.invalid {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-soft);
@@ -991,6 +1112,9 @@ input[type="range"] {
 }
 .segmented.segmented-3 {
   grid-template-columns: repeat(3, 1fr);
+}
+.segmented.segmented-2 {
+  grid-template-columns: repeat(2, 1fr);
 }
 .advanced {
   margin-top: 16px;
