@@ -1,3 +1,4 @@
+import { initDropdowns } from "./components/dropdown.js";
 import { mountTasks } from "./components/tasks.js";
 import { api } from "./lib/api.js";
 import { $, $$, esc } from "./lib/dom.js";
@@ -95,6 +96,7 @@ function init() {
   });
 
   bindLangButton($("#langBtn"), icon);
+  initDropdowns();
   mountTasks();
   api("/api/system")
     .then((s) => {
