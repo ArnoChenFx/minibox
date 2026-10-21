@@ -9,8 +9,9 @@ import { findCatalogEntry, loadCatalog, requireCatalogEntry } from "../tools/cat
 import { commandFor, resolveToolVersion } from "../tools/commands";
 import { detectScript, parseDetectOutput, type DetectResult } from "../tools/detect";
 import { TOOLS_PREFIX, type CatalogEntry, type ToolAction, type ToolStatus } from "../tools/types";
-import { findSharedTools } from "../volumes/engine";
+import { chownEngines, findSharedTools } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
+import type { VolumeRecord } from "../volumes/types";
 import { getBox, type Box } from "./boxes";
 
 const WRITER_MEMORY = 1024 * 1024 * 1024;
@@ -44,29 +45,34 @@ export function installEnv(): string[] {
   return env;
 }
 
-function sharedToolsEngine(host: HostCtx): string | null {
+function sharedToolsVolume(host: HostCtx): VolumeRecord | null {
   const pool = poolForRole(host.volumes.readPools(), "tools");
-  return findSharedTools(host, pool.name)?.engineName ?? null;
+  return findSharedTools(host, pool.name);
 }
 
 async function runToolsWriter(
   host: HostCtx,
   opts: { cmd: string[]; task?: TaskHandle },
 ): Promise<{ exitCode: number; logs: string }> {
-  const engine = sharedToolsEngine(host);
-  if (!engine) throw badRequest(msg("tool_volume_missing"));
+  const volume = sharedToolsVolume(host);
+  if (!volume) throw badRequest(msg("tool_volume_missing"));
   const image = host.baseTemplateTag;
   try {
     await host.runtime.inspectImage(image);
   } catch {
     throw badRequest(msg("helper_image_missing", { image }));
   }
-  opts.task?.log(`Using tools volume ${engine} (read-write)\n`);
+  if (host.volumes.readPools().pools.find((pool) => pool.name === volume.pool)?.backend === "local") {
+    // Docker copies the image's root-owned /opt/minibox/tools into an empty volume on the first box mount, so the
+    // writer takes the volume back for uid 1000 before every write.
+    await chownEngines(host, [volume.engineName], new Set([image]));
+  }
+  opts.task?.log(`Using tools volume ${volume.engineName} (read-write)\n`);
   const result = await host.runtime.runHelper({
     image,
     user: "1000:1000",
     cmd: opts.cmd,
-    mounts: [{ source: engine, target: TOOLS_PREFIX, mode: "rw" }],
+    mounts: [{ source: volume.engineName, target: TOOLS_PREFIX, mode: "rw" }],
     env: installEnv(),
     network: true,
     readonlyRoot: false,
@@ -91,7 +97,7 @@ interface DetectTarget {
  */
 async function detectTarget(host: HostCtx, box: Box | null): Promise<DetectTarget> {
   const mounts: DetectTarget["mounts"] = [];
-  const engine = sharedToolsEngine(host);
+  const engine = sharedToolsVolume(host)?.engineName;
   if (engine) mounts.push({ source: engine, target: TOOLS_PREFIX, mode: "ro" });
   let image = host.baseTemplateTag;
   if (box) {

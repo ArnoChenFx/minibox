@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { App } from "../src/app";
 import type { HelperSpec } from "../src/runtime";
 import { startServer } from "../src/server";
+import { savePools } from "../src/services/volumes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 
@@ -169,6 +170,57 @@ describe("installed detection", () => {
     const listed = await call("GET", "/api/tools");
     expect(listed.status).toBe(200);
     expect((listed.json.tools as { installed: boolean }[]).every((tool) => tool.installed === false)).toBe(true);
+  });
+});
+
+function helperCallsFrom(index: number): HelperSpec[] {
+  return runtime
+    .callsTo("runHelper")
+    .slice(index)
+    .map((call) => call.args[0] as HelperSpec);
+}
+
+async function installCodex(boxId: string): Promise<string> {
+  const started = await call("POST", `/api/boxes/${boxId}/tools/install`, { tool: "codex", version: "latest" });
+  expect(started.status).toBe(202);
+  return String((await waitTask(String(started.json.taskId))).status);
+}
+
+describe("the tools writer", () => {
+  test("a local tools volume is handed to uid 1000 by a root helper just before the writer runs", async () => {
+    const boxId = await createBox("alpha");
+    answerDetection({});
+    const before = runtime.callsTo("runHelper").length;
+
+    expect(await installCodex(boxId)).toBe("succeeded");
+    const calls = helperCallsFrom(before);
+    const writer = calls.findIndex((spec) => spec.network === true);
+    const handover = calls.findIndex((spec) => spec.user === "0:0" && spec.cmd.join(" ").includes("chown -R"));
+    expect(handover).toBeGreaterThanOrEqual(0);
+    expect(handover).toBeLessThan(writer);
+    expect(calls[handover]).toMatchObject({
+      capAdd: ["CHOWN"],
+      mounts: [{ source: calls[writer]?.mounts?.[0]?.source }],
+    });
+  });
+
+  test("a tools volume on a path pool is not handed over, because its directory is prepared when it is created", async () => {
+    await savePools(
+      app.hosts.get(),
+      [
+        { name: "local", backend: "local" },
+        { name: "disk", backend: "path", root: "/mnt/disk", default: true },
+      ],
+      undefined,
+    );
+    const boxId = await createBox("alpha");
+    answerDetection({});
+    const before = runtime.callsTo("runHelper").length;
+
+    expect(await installCodex(boxId)).toBe("succeeded");
+    const calls = helperCallsFrom(before);
+    expect(calls.some((spec) => spec.network === true)).toBe(true);
+    expect(calls.some((spec) => spec.user === "0:0" && spec.cmd.join(" ").includes("chown -R"))).toBe(false);
   });
 });
 
