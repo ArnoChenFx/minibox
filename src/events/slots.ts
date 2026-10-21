@@ -2,8 +2,8 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 
 /**
- * The event and task streams open at once, counted across the app. A stream past `max` is refused with 429 rather than
- * queued, so a crowd of tabs or a runaway client cannot hold every socket and every bus subscription.
+ * The event, task and box log streams open at once, counted across the app. A stream past `max` is refused with 429
+ * rather than queued, so a crowd of tabs or a runaway client cannot hold every socket and every bus subscription.
  */
 export class StreamSlots {
   private open = 0;
