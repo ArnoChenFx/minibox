@@ -5,6 +5,7 @@ export default {
   "common.ok": "确定",
   "common.close": "关闭",
   "common.refresh": "刷新",
+  "common.clearSearch": "清除搜索",
   "common.save": "保存",
   "common.unknown": "未知",
   "common.unlimited": "不限",

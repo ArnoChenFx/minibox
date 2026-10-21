@@ -5,6 +5,7 @@ export default {
   "common.ok": "OK",
   "common.close": "Close",
   "common.refresh": "Refresh",
+  "common.clearSearch": "Clear search",
   "common.save": "Save",
   "common.unknown": "Unknown",
   "common.unlimited": "Unlimited",

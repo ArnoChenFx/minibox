@@ -30,6 +30,7 @@ function inBrowser<T>(browser: Browser, expression: string): T {
     `Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: {} } });`,
     `const i18n = await import(${JSON.stringify(join(LIB, "i18n.js"))});`,
     `const format = await import(${JSON.stringify(join(LIB, "format.js"))});`,
+    `const search = await import(${JSON.stringify(join(LIB, "search.js"))});`,
     `console.log(JSON.stringify(${expression}));`,
   ].join("\n");
   const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
@@ -199,5 +200,77 @@ describe("format helpers", () => {
     expect(
       inBrowser({ languages: ["en-US"] }, `({ crit: format.level(95), warn: format.level(80), ok: format.level(10) })`),
     ).toEqual({ crit: "crit", warn: "warn", ok: "" });
+  });
+});
+
+describe("search matching", () => {
+  test("a blank query matches every item, and a term matches any field whatever its case", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `({
+          blank: search.matchesSearch("   ", ["alpha"]),
+          noFields: search.matchesSearch("", []),
+          caseless: search.matchesSearch("VOL_AB", ["vol_abc"]),
+          anyField: search.matchesSearch("pool", ["alpha", "local pool"]),
+          miss: search.matchesSearch("zzz", ["alpha"]),
+        })`,
+      ),
+    ).toEqual({ blank: true, noFields: true, caseless: true, anyField: true, miss: false });
+  });
+
+  test("every term must match, each in some field, and extra spaces are ignored", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `({
+          both: search.matchesSearch("dev workspace", ["dev", "/workspace"]),
+          spaced: search.matchesSearch("  Dev   WORK ", ["dev", "/workspace"]),
+          oneMissing: search.matchesSearch("dev missing", ["dev", "/workspace"]),
+        })`,
+      ),
+    ).toEqual({ both: true, spaced: true, oneMissing: false });
+  });
+
+  test("null, undefined and empty fields are skipped rather than matched", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `({
+          nothing: search.matchesSearch("x", [null, undefined, ""]),
+          something: search.matchesSearch("abc", [null, "abc"]),
+        })`,
+      ),
+    ).toEqual({ nothing: false, something: true });
+  });
+
+  test("non-Latin text matches as it is written", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `({ hit: search.matchesSearch("内置", ["内置模板"]), miss: search.matchesSearch("自定义", ["内置模板"]) })`,
+      ),
+    ).toEqual({ hit: true, miss: false });
+  });
+
+  test("filterBySearch keeps the matching items in order, and a blank query returns the list itself", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          const items = [
+            { name: "alpha", tags: ["x"] },
+            { name: "beta", tags: ["Node"] },
+            { name: "gamma", tags: ["node"] },
+          ];
+          const fieldsOf = (item) => [item.name, ...item.tags];
+          return {
+            hits: search.filterBySearch(items, "NODE", fieldsOf).map((item) => item.name),
+            none: search.filterBySearch(items, "nope", fieldsOf),
+            same: search.filterBySearch(items, "  ", fieldsOf) === items,
+          };
+        })()`,
+      ),
+    ).toEqual({ hits: ["beta", "gamma"], none: [], same: true });
   });
 });
