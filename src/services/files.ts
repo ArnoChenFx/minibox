@@ -6,7 +6,7 @@ import { AppError, badRequest, notFound, toAppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { isRuntimeError, RuntimeError } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
-import { baseOf, containerPath, jailPath, parentOf, resolveSymlinkInVolume } from "./files-path";
+import { baseOf, containerPath, jailPath, parentOf, SYMLINK_HOP_MAX, splitLinkTarget } from "./files-path";
 import { DEV_GID, DEV_UID, dirArchive, fileArchive, firstFileData, parseTar } from "./files-tar";
 
 /** Where helpers and archive containers mount the target volume. Matches the chown helper's mount style. */
@@ -148,50 +148,88 @@ async function collectStream(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+interface ResolvedPath {
+  /** Physical mount-relative path: every symlink in it has been followed, so it contains none (bar the final
+   * component when it was left unfollowed) and no `.`/`..`. */
+  path: string;
+  /** How many leading components of `path` were seen to exist. The rest did not exist yet and were appended as-is. */
+  existing: number;
+}
+
 /**
- * Docker getArchive/putArchive (and kernel path lookup for `cp`) follow intermediate directory symlinks. Lexical
- * jailPath is not enough: walk each path component with getArchive (which returns symlink metadata when the path
- * ends on the link) and refuse any component whose target leaves the volume mount.
+ * In-volume realpath. Docker getArchive/putArchive and `cp` follow every intermediate symlink (and the kernel walks
+ * `..` against the physical path), so a lexical jail is not enough. Walk the path one component at a time with
+ * getArchive, which reports a symlink as metadata when the path ends on it. When a component is a symlink, push its
+ * target's components back onto the queue, so every hop of a chain is itself checked, and walk `..` against the
+ * physical path resolved so far. Refuse anything that climbs above the volume root or names an absolute path outside
+ * the mount, and stop after SYMLINK_HOP_MAX links (ELOOP). Callers must then operate on the returned physical path,
+ * never on the lexical one, so the Engine has no symlinks left to resolve differently.
+ *
+ * Once a component is missing, nothing after it can be a symlink, so the remaining components are appended unchecked
+ * (a `..` there is refused, since the kernel would fail with ENOENT anyway).
+ *
+ * With `followFinal: false` the last component of the input is not followed (lstat semantics), which is what reads
+ * of a symlink and copy sources need.
  */
-async function assertPathComponentsSafe(
+async function resolveInVolume(
   host: HostCtx,
   access: MountAccess,
   relative: string,
-  opts: { leaveFinalUnchecked?: boolean } = {},
-): Promise<void> {
-  if (relative === "") return;
-  const parts = relative.split("/");
-  const last = parts.length - 1;
-  // Physical mount-relative directory after following accepted in-volume symlinks (not the lexical path).
-  let resolved = "";
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (part === undefined) break;
-    if (opts.leaveFinalUnchecked && i === last) break;
-    const physical = resolved === "" ? part : `${resolved}/${part}`;
-    const abs = containerPath(access.mountPath, physical);
+  opts: { followFinal: boolean },
+): Promise<ResolvedPath> {
+  const queue = relative === "" ? [] : relative.split("/");
+  const resolved: string[] = [];
+  let existing = 0;
+  let missing = false;
+  let hops = 0;
+  while (queue.length > 0) {
+    const part = queue.shift() as string;
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (missing) throw notFound(msg("file_not_found", { path: relative || "/" }));
+      if (resolved.length === 0) throw badRequest(msg("file_path_escape"), { field: "path" });
+      resolved.pop();
+      existing = resolved.length;
+      continue;
+    }
+    if (missing || (queue.length === 0 && !opts.followFinal)) {
+      resolved.push(part);
+      continue;
+    }
+    const candidate = resolved.length === 0 ? part : `${resolved.join("/")}/${part}`;
     let tar: Buffer;
     try {
-      tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
+      tar = await collectStream(
+        await host.runtime.getArchive(access.containerId, containerPath(access.mountPath, candidate)),
+      );
     } catch (e) {
-      if (isRuntimeError(e, "not_found")) return;
-      throw e;
+      // The Engine evaluates a final link's target for its stat header and fails a loop with a 500 (ELOOP).
+      if (e instanceof Error && /too many links/i.test(e.message)) {
+        throw badRequest(msg("file_symlink_loop", { max: SYMLINK_HOP_MAX }), { field: "path" });
+      }
+      if (!isRuntimeError(e, "not_found")) throw e;
+      missing = true;
+      resolved.push(part);
+      continue;
     }
     const first = firstFileData(tar);
-    if (!first) {
-      resolved = physical;
-      continue;
-    }
-    if (first.type === "symlink") {
-      const next = resolveSymlinkInVolume(access.mountPath, physical, first.linkname || "");
-      if (next === null) {
-        throw badRequest(msg("file_path_escape"), { field: "path" });
+    if (first?.type === "symlink") {
+      hops += 1;
+      if (hops > SYMLINK_HOP_MAX)
+        throw badRequest(msg("file_symlink_loop", { max: SYMLINK_HOP_MAX }), { field: "path" });
+      const target = splitLinkTarget(access.mountPath, first.linkname || "");
+      if (!target) throw badRequest(msg("file_path_escape"), { field: "path" });
+      if (!target.relative) {
+        resolved.length = 0;
+        existing = 0;
       }
-      resolved = next;
+      queue.unshift(...target.parts);
       continue;
     }
-    resolved = physical;
+    resolved.push(part);
+    existing = resolved.length;
   }
+  return { path: resolved.join("/"), existing };
 }
 
 async function withArchive<T>(
@@ -223,32 +261,23 @@ function encodeContent(data: Buffer, encoding: FileEncoding): string {
   return encoding === "base64" ? data.toString("base64") : data.toString("utf8");
 }
 
-/** Ensures each directory along `relative` (a file or dir path) exists by putting empty dir archives. */
-async function ensureDir(host: HostCtx, access: MountAccess, relative: string): Promise<void> {
-  if (relative === "") return;
-  const parts = relative.split("/");
-  let built = "";
-  for (const part of parts) {
-    built = built === "" ? part : `${built}/${part}`;
-    await assertPathComponentsSafe(host, access, built);
-    const abs = containerPath(access.mountPath, built);
-    try {
-      const tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
-      const first = firstFileData(tar);
-      if (first?.type === "symlink") {
-        // Existing component is a symlink; assertPathComponentsSafe already refused escapes. In-volume links still
-        // must not be treated as directories we can mkdir through.
-        throw badRequest(msg("file_path_escape"), { field: "path" });
-      }
-      continue;
-    } catch (e) {
-      if (e instanceof AppError) throw e;
-      if (!isRuntimeError(e, "not_found")) throw e;
-    }
-    const parentAbs = containerPath(access.mountPath, parentOf(built));
-    await assertPathComponentsSafe(host, access, parentOf(built));
-    await host.runtime.putArchive(access.containerId, parentAbs, dirArchive(baseOf(built)));
+/**
+ * Resolves `relative` (a directory path) to its physical location and creates the missing tail one directory at a
+ * time with empty dir archives, each put into an already-resolved physical parent. Returns the physical path.
+ */
+async function ensureDir(host: HostCtx, access: MountAccess, relative: string): Promise<string> {
+  const resolved = await resolveInVolume(host, access, relative, { followFinal: true });
+  if (resolved.path === "") return "";
+  const parts = resolved.path.split("/");
+  for (let i = resolved.existing; i < parts.length; i++) {
+    const parent = parts.slice(0, i).join("/");
+    await host.runtime.putArchive(
+      access.containerId,
+      containerPath(access.mountPath, parent),
+      dirArchive(parts[i] as string),
+    );
   }
+  return resolved.path;
 }
 
 export async function readFile(
@@ -261,8 +290,8 @@ export async function readFile(
   const encoding = input.encoding ?? "utf-8";
   const maxBytes = input.maxBytes ?? FILE_CONTENT_MAX;
   return withArchive(host, volume, "ro", async (access) => {
-    await assertPathComponentsSafe(host, access, relative, { leaveFinalUnchecked: true });
-    const abs = containerPath(access.mountPath, relative);
+    const physical = await resolveInVolume(host, access, relative, { followFinal: false });
+    const abs = containerPath(access.mountPath, physical.path);
     let tar: Buffer;
     try {
       tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
@@ -328,9 +357,9 @@ export async function writeFile(
     throw badRequest(msg("file_content_too_large", { max: FILE_CONTENT_MAX }), { field: "content" });
   }
   return withArchive(host, volume, "rw", async (access) => {
-    await ensureDir(host, access, parentOf(relative));
-    await assertPathComponentsSafe(host, access, parentOf(relative));
-    const parentAbs = containerPath(access.mountPath, parentOf(relative));
+    // The final name is not followed: the Engine replaces an existing non-directory entry when extracting.
+    const parent = await ensureDir(host, access, parentOf(relative));
+    const parentAbs = containerPath(access.mountPath, parent);
     await host.runtime.putArchive(
       access.containerId,
       parentAbs,
@@ -426,15 +455,21 @@ export async function copyFiles(
   if (to === "" || from === to) throw badRequest(msg("file_copy_invalid"), { field: "to" });
   if (to.startsWith(`${from}/`)) throw badRequest(msg("file_copy_into_self"), { field: "to" });
 
-  // cp resolves intermediate symlinks like the archive API; jail them before the helper runs.
-  await withArchive(host, volume, "ro", async (access) => {
-    await assertPathComponentsSafe(host, access, from, { leaveFinalUnchecked: true });
-    await assertPathComponentsSafe(host, access, to, { leaveFinalUnchecked: true });
-  });
+  // cp follows symlinks like the archive API. Resolve both ends to physical in-volume paths and hand cp those, so it
+  // has no symlinks of ours left to follow. The source is copied as-is (cp -a does not dereference it); an existing
+  // destination link is followed by cp, so it is resolved and jailed too.
+  const physical = await withArchive(host, volume, "ro", async (access) => ({
+    from: (await resolveInVolume(host, access, from, { followFinal: false })).path,
+    to: (await resolveInVolume(host, access, to, { followFinal: true })).path,
+  }));
+  if (physical.to === "" || physical.from === physical.to) throw badRequest(msg("file_copy_invalid"), { field: "to" });
+  if (physical.from === "" || physical.to.startsWith(`${physical.from}/`)) {
+    throw badRequest(msg("file_copy_into_self"), { field: "to" });
+  }
 
   const image = await requireHelperImage(host);
-  const fromAbs = containerPath(FILE_MOUNT, from);
-  const toAbs = containerPath(FILE_MOUNT, to);
+  const fromAbs = containerPath(FILE_MOUNT, physical.from);
+  const toAbs = containerPath(FILE_MOUNT, physical.to);
   const result = await host.runtime.runHelper({
     image,
     user: "1000:1000",
@@ -456,8 +491,8 @@ export async function downloadArchive(host: HostCtx, ref: string, input: { path:
   const volume = requireVolume(host, ref);
   const relative = input.path === "" || input.path === "/" ? "" : jailPath(input.path);
   return withArchive(host, volume, "ro", async (access) => {
-    await assertPathComponentsSafe(host, access, relative, { leaveFinalUnchecked: true });
-    const abs = containerPath(access.mountPath, relative);
+    const physical = await resolveInVolume(host, access, relative, { followFinal: false });
+    const abs = containerPath(access.mountPath, physical.path);
     let tar: Buffer;
     try {
       tar = await collectStream(await host.runtime.getArchive(access.containerId, abs));
@@ -496,9 +531,7 @@ export async function uploadArchive(
     }
   }
   await withArchive(host, volume, "rw", async (access) => {
-    await ensureDir(host, access, relative);
-    await assertPathComponentsSafe(host, access, relative);
-    const dest = containerPath(access.mountPath, relative);
+    const dest = containerPath(access.mountPath, await ensureDir(host, access, relative));
     await host.runtime.putArchive(access.containerId, dest, rewriteOwners(tar));
   });
   return {

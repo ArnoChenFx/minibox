@@ -209,6 +209,7 @@ export default {
   "err.helper_image_missing": "Base template image {image} is missing, so volume helpers cannot run.",
   "err.file_path_invalid": "File path must be at most 512 bytes, without NUL or line breaks.",
   "err.file_path_escape": "File path must stay inside the volume (no .. or absolute escape).",
+  "err.file_symlink_loop": "Too many levels of symbolic links in the file path (more than {max}).",
   "err.file_not_found": "File or directory {path} was not found on the volume.",
   "err.file_is_directory": "{path} is a directory. Use list_files or download a tar archive.",
   "err.file_is_directory_hint": "Call list_files for listings, or GET /api/volumes/:id/files/archive for a tar.",

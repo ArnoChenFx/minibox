@@ -4,7 +4,7 @@ import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { copyFiles, downloadArchive, listFiles, readFile, uploadArchive, writeFile } from "../src/services/files";
-import { jailPath, resolveSymlinkInVolume, symlinkTargetEscapes } from "../src/services/files-path";
+import { jailPath, splitLinkTarget } from "../src/services/files-path";
 import { fileArchive } from "../src/services/files-tar";
 import { createVolume } from "../src/services/volumes";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
@@ -52,23 +52,130 @@ describe("path jail", () => {
     expect(() => jailPath("a/../../x")).toThrow();
   });
 
-  test("symlinkTargetEscapes detects absolute and .. escapes", () => {
-    expect(symlinkTargetEscapes("/minibox-volume", "escape", "/tmp")).toBe(true);
-    expect(symlinkTargetEscapes("/minibox-volume", "escape", "/minibox-volume/ok")).toBe(false);
-    expect(symlinkTargetEscapes("/minibox-volume", "a/link", "../..")).toBe(true);
-    expect(symlinkTargetEscapes("/minibox-volume", "a/link", "../b")).toBe(false);
-    // Physical base after following an earlier in-volume link: foo at volume root with target "..".
-    expect(symlinkTargetEscapes("/minibox-volume", "foo", "..")).toBe(true);
-    expect(symlinkTargetEscapes("/minibox-volume", "deep/link/foo", "..")).toBe(false); // lexical-only would miss it
+  test("splitLinkTarget keeps .. for the physical walk and jails absolute targets to the mount", () => {
+    expect(splitLinkTarget("/minibox-volume", "..")).toEqual({ relative: true, parts: [".."] });
+    expect(splitLinkTarget("/minibox-volume", "./a//b/")).toEqual({ relative: true, parts: ["a", "b"] });
+    expect(splitLinkTarget("/minibox-volume", "/minibox-volume/ok")).toEqual({ relative: false, parts: ["ok"] });
+    expect(splitLinkTarget("/minibox-volume", "//minibox-volume/./ok")).toEqual({ relative: false, parts: ["ok"] });
+    expect(splitLinkTarget("/minibox-volume", "/minibox-volume")).toEqual({ relative: false, parts: [] });
+    // B1d: `..` after the mount is not normalized away here; the resolver refuses it at the volume root.
+    expect(splitLinkTarget("/minibox-volume", "/minibox-volume/..")).toEqual({ relative: false, parts: [".."] });
+    expect(splitLinkTarget("/minibox-volume", "/minibox-volume-other/x")).toBeNull();
+    expect(splitLinkTarget("/minibox-volume", "/tmp")).toBeNull();
+    expect(splitLinkTarget("/minibox-volume", "")).toBeNull();
+  });
+});
+
+async function statusOf(p: Promise<unknown>): Promise<number> {
+  const err = await rejectionOf(p);
+  expect(err).toBeInstanceOf(AppError);
+  return (err as AppError).status;
+}
+
+/** Every volume file operation that takes a path through `prefix` must answer 400 and leak nothing. */
+async function expectAllRefused(vol: { id: string; engineName: string }, prefix: string, file: string): Promise<void> {
+  const volId = vol.id;
+  expect(await statusOf(readFile(host, volId, { path: `${prefix}/${file}` }))).toBe(400);
+  expect(await statusOf(downloadArchive(host, volId, { path: `${prefix}/${file}` }))).toBe(400);
+  expect(await statusOf(copyFiles(host, volId, { from: `${prefix}/${file}`, to: "leaked.txt" }))).toBe(400);
+  expect(await statusOf(copyFiles(host, volId, { from: "inside.txt", to: `${prefix}/pwned.txt` }))).toBe(400);
+  expect(await statusOf(writeFile(host, volId, { path: `${prefix}/pwned.txt`, content: "x" }))).toBe(400);
+  expect(
+    await statusOf(
+      uploadArchive(host, volId, {
+        path: prefix,
+        content: Buffer.from(fileArchive("pwned.txt", Buffer.from("nope"))).toString("base64"),
+      }),
+    ),
+  ).toBe(400);
+  expect(runtime.outsideFiles.get("/pwned.txt")).toBeUndefined();
+  expect(runtime.filesOf(vol.engineName).get("leaked.txt")).toBeUndefined();
+}
+
+describe("symlink resolution (B1c/B1d/B1e)", () => {
+  beforeEach(() => {
+    runtime.seedOutsideFile("/etc/alpine-release", { type: "file", content: Buffer.from("OUTSIDE") });
   });
 
-  test("resolveSymlinkInVolume returns mount-relative target or null on escape", () => {
-    expect(resolveSymlinkInVolume("/minibox-volume", "deep/link", "..")).toBe("");
-    expect(resolveSymlinkInVolume("/minibox-volume", "foo", "..")).toBeNull();
-    expect(resolveSymlinkInVolume("/minibox-volume", "a/link", "../b")).toBe("b");
-    expect(resolveSymlinkInVolume("/minibox-volume", "escape", "/minibox-volume/ok")).toBe("ok");
-    expect(resolveSymlinkInVolume("/minibox-volume", "escape", "/minibox-volume")).toBe("");
-    expect(resolveSymlinkInVolume("/minibox-volume", "escape", "/tmp")).toBeNull();
+  test("FakeRuntime follows chains like the kernel (a→b→.. leaks without the jail)", async () => {
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "a", { type: "symlink", target: "b" });
+    runtime.seedVolumeFile(vol.engineName, "b", { type: "symlink", target: ".." });
+    const created = await runtime.createContainer({
+      image: host.baseTemplateTag,
+      mounts: [{ source: vol.engineName, target: "/minibox-volume", mode: "ro" }],
+    });
+    const tar = await new Response(
+      await runtime.getArchive(created.id, "/minibox-volume/a/etc/alpine-release"),
+    ).arrayBuffer();
+    const { firstFileData } = await import("../src/services/files-tar");
+    expect(firstFileData(Buffer.from(tar))?.data.toString("utf8")).toBe("OUTSIDE");
+  });
+
+  test("refuses a symlink chain a→b, b→.. (B1c)", async () => {
+    const vol = await volume();
+    await writeFile(host, vol.id, { path: "inside.txt", content: "in" });
+    runtime.seedVolumeFile(vol.engineName, "a", { type: "symlink", target: "b" });
+    runtime.seedVolumeFile(vol.engineName, "b", { type: "symlink", target: ".." });
+    await expectAllRefused(vol, "a", "etc/alpine-release");
+  });
+
+  test("refuses .. through a link inside a target: up→.., c→up/.. (B1c/B1e)", async () => {
+    const vol = await volume();
+    await writeFile(host, vol.id, { path: "inside.txt", content: "in" });
+    runtime.seedVolumeFile(vol.engineName, "up", { type: "symlink", target: ".." });
+    runtime.seedVolumeFile(vol.engineName, "c", { type: "symlink", target: "up/.." });
+    await expectAllRefused(vol, "c", "etc/alpine-release");
+  });
+
+  test("refuses an absolute target that climbs out of the mount: a→/minibox-volume/.. (B1d)", async () => {
+    const vol = await volume();
+    await writeFile(host, vol.id, { path: "inside.txt", content: "in" });
+    runtime.seedVolumeFile(vol.engineName, "a", { type: "symlink", target: "/minibox-volume/.." });
+    await expectAllRefused(vol, "a", "etc/alpine-release");
+    runtime.seedVolumeFile(vol.engineName, "b", { type: "symlink", target: "/minibox-volume/./../etc" });
+    await expectAllRefused(vol, "b", "alpine-release");
+  });
+
+  test("still refuses the B1 and B1b layouts", async () => {
+    const vol = await volume();
+    await writeFile(host, vol.id, { path: "inside.txt", content: "in" });
+    runtime.seedVolumeFile(vol.engineName, "escape", { type: "symlink", target: "/etc" });
+    await expectAllRefused(vol, "escape", "alpine-release");
+    runtime.seedVolumeFile(vol.engineName, "deep/link", { type: "symlink", target: ".." });
+    runtime.seedVolumeFile(vol.engineName, "foo", { type: "symlink", target: ".." });
+    await expectAllRefused(vol, "deep/link/foo", "etc/alpine-release");
+  });
+
+  test("refuses symlink loops with a 400", async () => {
+    const vol = await volume();
+    runtime.seedVolumeFile(vol.engineName, "l1", { type: "symlink", target: "l2" });
+    runtime.seedVolumeFile(vol.engineName, "l2", { type: "symlink", target: "l1" });
+    const err = await rejectionOf(readFile(host, vol.id, { path: "l1/x" }));
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).status).toBe(400);
+  });
+
+  test("in-volume chains resolve to the physical path and missing tails are created there", async () => {
+    const vol = await volume();
+    await writeFile(host, vol.id, { path: "real/sub/data.txt", content: "data" });
+    runtime.seedVolumeFile(vol.engineName, "hop1", { type: "symlink", target: "hop2" });
+    runtime.seedVolumeFile(vol.engineName, "hop2", { type: "symlink", target: "/minibox-volume/real" });
+    runtime.seedVolumeFile(vol.engineName, "real/back", { type: "symlink", target: "../real/sub" });
+
+    expect((await readFile(host, vol.id, { path: "hop1/back/data.txt" })).content).toBe("data");
+    expect((await readFile(host, vol.id, { path: "hop1/back" })).type).toBe("symlink");
+
+    await writeFile(host, vol.id, { path: "hop1/new/dir/f.txt", content: "made" });
+    const files = runtime.filesOf(vol.engineName);
+    expect(files.get("real/new/dir/f.txt")?.content?.toString("utf8")).toBe("made");
+    expect(files.get("hop1")?.type).toBe("symlink");
+
+    await copyFiles(host, vol.id, { from: "hop1/back/data.txt", to: "hop1/copied.txt" });
+    expect(files.get("real/copied.txt")?.content?.toString("utf8")).toBe("data");
+    // The archive op runs on the physical path, not the lexical one (B1e).
+    const gets = runtime.callsTo("getArchive").map((c) => c.args[1]);
+    expect(gets).toContain("/minibox-volume/real/sub/data.txt");
   });
 });
 

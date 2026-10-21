@@ -724,7 +724,11 @@ export class FakeRuntime implements Runtime {
     const resolved = resolveMountPath(c, path);
     if (!resolved) return;
     // Engine follows intermediate *and* final directory symlinks for putArchive destinations.
-    const walked = walkVolumePath(this, resolved.volume, resolved.relative, { followFinal: true, allowMissing: true });
+    const walked = walkVolumePath(this, resolved.volume, resolved.relative, {
+      followFinal: true,
+      allowMissing: true,
+      mountRoot: resolved.root,
+    });
     if (!walked) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
     applyTarToVolume(walked.store, walked.relative, bytes);
   }
@@ -735,7 +739,10 @@ export class FakeRuntime implements Runtime {
     const resolved = resolveMountPath(c, path);
     if (resolved) {
       // Follow intermediate directory symlinks; leave a final symlink as metadata (Engine behaviour).
-      const walked = walkVolumePath(this, resolved.volume, resolved.relative, { followFinal: false });
+      const walked = walkVolumePath(this, resolved.volume, resolved.relative, {
+        followFinal: false,
+        mountRoot: resolved.root,
+      });
       if (!walked) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
       const bytes = tarFromVolume(walked.store, walked.relative);
       if (!bytes) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
@@ -1114,111 +1121,79 @@ export class FakeRuntime implements Runtime {
 }
 
 /**
- * Resolve a volume-relative path the way Docker archive/cp does: follow intermediate directory symlinks (and the final
- * component when `followFinal` is set, as putArchive does). Escaping absolute targets switch onto `outsideFiles`.
+ * Resolve a volume-relative path the way the kernel does under Docker archive/cp: the volume is mounted at
+ * `mountRoot` in a single absolute namespace, every intermediate symlink is followed (and the final one when
+ * `followFinal` is set, as putArchive does), chains are re-looked-up hop by hop, `..` is walked against the physical
+ * path, and absolute targets restart at `/`. Anything that lands outside the mount resolves onto `outsideFiles`,
+ * keyed by absolute path. Returns null for a missing intermediate (unless `allowMissing`) or a symlink loop.
  */
 function walkVolumePath(
   rt: FakeRuntime,
   volume: string,
   relative: string,
-  opts: { followFinal: boolean; allowMissing?: boolean },
+  opts: { followFinal: boolean; allowMissing?: boolean; mountRoot?: string },
 ): { store: Map<string, FakeFsEntry>; relative: string } | null {
-  if (relative === "") return { store: rt.filesOf(volume), relative: "" };
-  const parts = relative.split("/");
-  let store: Map<string, FakeFsEntry> = rt.filesOf(volume);
-  let outside = false;
-  let current = "";
+  const rootParts = (opts.mountRoot ?? "/minibox-volume").split("/").filter(Boolean);
+  const locate = (abs: string[]): { store: Map<string, FakeFsEntry>; key: string } => {
+    const inVolume = abs.length >= rootParts.length && rootParts.every((part, i) => abs[i] === part);
+    if (inVolume) return { store: rt.filesOf(volume), key: abs.slice(rootParts.length).join("/") };
+    return { store: rt.outsideFiles, key: `/${abs.join("/")}` };
+  };
+  const entryAt = (abs: string[]): FakeFsEntry | undefined => {
+    const { store, key } = locate(abs);
+    if (store === rt.outsideFiles && key === "/") return { type: "dir", mode: 0o755, uid: 0, gid: 0 };
+    return store.get(key);
+  };
 
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (part === undefined) break;
-    const isFinal = i === parts.length - 1;
-    const candidate = outside
-      ? current === "/"
-        ? `/${part}`
-        : `${current}/${part}`
-      : current === ""
-        ? part
-        : `${current}/${part}`;
-    const entry = store.get(candidate);
-
-    if (entry?.type === "symlink" && (!isFinal || opts.followFinal)) {
-      const target = entry.target ?? "";
-      // `current` is still the parent of `candidate` (the symlink path).
-      const parent = current;
-      if (target.startsWith("/")) {
-        store = rt.outsideFiles;
-        outside = true;
-        current = target.replace(/\/+$/, "") || "/";
-        if (!store.has(current)) store.set(current, { type: "dir", mode: 0o755, uid: 0, gid: 0 });
-        continue;
-      }
-      const baseParts = outside
-        ? parent === "/" || parent === ""
-          ? []
-          : parent.split("/").filter(Boolean)
-        : parent === ""
-          ? []
-          : parent.split("/");
-      let leftVolume = false;
-      for (const seg of target.split("/")) {
-        if (seg === "" || seg === ".") continue;
-        if (seg === "..") {
-          if (baseParts.length === 0) {
-            leftVolume = true;
-            break;
-          }
-          baseParts.pop();
-          continue;
-        }
-        baseParts.push(seg);
-      }
-      if (leftVolume) {
-        store = rt.outsideFiles;
-        outside = true;
-        current = "/";
-        if (!store.has(current)) store.set(current, { type: "dir", mode: 0o755, uid: 0, gid: 0 });
-        continue;
-      }
-      if (outside) {
-        current = baseParts.length === 0 ? "/" : `/${baseParts.join("/")}`;
-        if (!store.has(current)) store.set(current, { type: "dir", mode: 0o755, uid: 0, gid: 0 });
-      } else {
-        current = baseParts.join("/");
-      }
+  const queue = relative.split("/").filter((part) => part !== "" && part !== ".");
+  let current = [...rootParts];
+  let missing = false;
+  let hops = 0;
+  while (queue.length > 0) {
+    const part = queue.shift() as string;
+    if (part === ".") continue;
+    if (part === "..") {
+      if (missing) return null;
+      current.pop();
       continue;
     }
-
-    if (!entry && !isFinal) {
-      if (opts.allowMissing) {
-        const rest = parts.slice(i).join("/");
-        const relative = outside
-          ? current === "/"
-            ? `/${rest}`
-            : `${current}/${rest}`
-          : current === ""
-            ? rest
-            : `${current}/${rest}`;
-        return { store, relative };
-      }
-      return null;
+    if (missing) {
+      current.push(part);
+      continue;
     }
-    current = candidate;
-    if (!entry && isFinal) {
-      // Destination may not exist yet (putArchive / cp into a missing path).
-      return { store, relative: current };
+    const isFinal = queue.length === 0;
+    const next = [...current, part];
+    const entry = entryAt(next);
+    if (!entry) {
+      if (!isFinal && !opts.allowMissing) return null;
+      missing = true;
+      current = next;
+      continue;
     }
+    if (entry.type === "symlink" && (!isFinal || opts.followFinal)) {
+      hops += 1;
+      if (hops > 40) return null;
+      const target = entry.target ?? "";
+      if (target.startsWith("/")) current = [];
+      queue.unshift(...target.split("/").filter((seg) => seg !== "" && seg !== "."));
+      continue;
+    }
+    current = next;
   }
-  return { store, relative: current };
+  const { store, key } = locate(current);
+  return { store, relative: key };
 }
 
-function resolveMountPath(c: FakeContainer, absPath: string): { volume: string; relative: string } | null {
+function resolveMountPath(
+  c: FakeContainer,
+  absPath: string,
+): { volume: string; relative: string; root: string } | null {
   const mounts = [...(c.spec.mounts ?? [])].toSorted((a, b) => b.target.length - a.target.length);
   for (const mount of mounts) {
     const root = mount.target.replace(/\/+$/, "") || "/";
     if (absPath === root || absPath.startsWith(`${root}/`)) {
       const relative = absPath === root ? "" : absPath.slice(root.length + 1);
-      return { volume: mount.source, relative };
+      return { volume: mount.source, relative, root };
     }
   }
   return null;
@@ -1390,11 +1365,11 @@ function volumeAwareHelper(rt: FakeRuntime, spec: HelperSpec): HelperResult {
     const fromRel = fromAbs === root ? "" : fromAbs.slice(root.length + 1);
     const toRel = toAbs === root ? "" : toAbs.slice(root.length + 1);
     if (!volume) return { exitCode: 1, logs: "cp: no volume\n" };
-    const walkedFrom = walkVolumePath(rt, volume, fromRel, { followFinal: false });
+    const walkedFrom = walkVolumePath(rt, volume, fromRel, { followFinal: false, mountRoot: root });
     if (!walkedFrom) return { exitCode: 1, logs: "No such file or directory\n" };
     const src = walkedFrom.store.get(walkedFrom.relative);
     if (!src) return { exitCode: 1, logs: "No such file or directory\n" };
-    const walkedTo = walkVolumePath(rt, volume, toRel, { followFinal: false, allowMissing: true });
+    const walkedTo = walkVolumePath(rt, volume, toRel, { followFinal: true, allowMissing: true, mountRoot: root });
     if (!walkedTo) return { exitCode: 1, logs: "cp: destination escapes\n" };
     const destStore = walkedTo.store;
     const to = walkedTo.relative;

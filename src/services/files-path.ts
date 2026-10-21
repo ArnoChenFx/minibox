@@ -46,36 +46,25 @@ export function baseOf(relative: string): string {
   return i < 0 ? relative : relative.slice(i + 1);
 }
 
-/**
- * Resolve a symlink at `symlinkRelative` (mount-relative physical path of the link) to a mount-relative path.
- * Returns `null` when the target would leave the volume mount root.
- */
-export function resolveSymlinkInVolume(mountPath: string, symlinkRelative: string, target: string): string | null {
-  if (target === "" || target.includes("\0")) return null;
-  const root = mountPath.replace(/\/+$/, "") || "/";
-  if (target.startsWith("/")) {
-    if (target === root) return "";
-    if (!target.startsWith(`${root}/`)) return null;
-    return target.slice(root.length + 1);
-  }
-  const base = symlinkRelative === "" ? [] : parentOf(symlinkRelative).split("/").filter(Boolean);
-  for (const part of target.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") {
-      if (base.length === 0) return null;
-      base.pop();
-      continue;
-    }
-    base.push(part);
-  }
-  return base.join("/");
-}
+/** Most symlinks followed while resolving one path (Linux uses 40 before ELOOP). */
+export const SYMLINK_HOP_MAX = 40;
 
 /**
- * Whether a symlink at `symlinkRelative` (volume-relative) whose target is `target` would leave the volume.
- * Absolute targets escape unless they stay under `mountPath`. Relative targets escape when `..` walks above the root.
- * `symlinkRelative` must be the **physical** location of the link (after following earlier in-volume symlinks).
+ * Split a symlink target into components to push back onto a resolver's queue, without interpreting `..`.
+ * Relative targets resolve against the link's physical parent (`relative: true`). Absolute targets must name the
+ * mount root, or something under it, by literal components (`.` and duplicate slashes are dropped, since the kernel
+ * ignores them); the components after the mount root are returned with `relative: false`, which restarts resolution
+ * at the volume root. Any `..` stays in `parts` so the caller walks it against the physical path, which is what the
+ * kernel does. Returns `null` for an empty target, NUL, or an absolute target outside the mount.
  */
-export function symlinkTargetEscapes(mountPath: string, symlinkRelative: string, target: string): boolean {
-  return resolveSymlinkInVolume(mountPath, symlinkRelative, target) === null;
+export function splitLinkTarget(mountPath: string, target: string): { relative: boolean; parts: string[] } | null {
+  if (target === "" || target.includes("\0")) return null;
+  const parts = target.split("/").filter((part) => part !== "" && part !== ".");
+  if (!target.startsWith("/")) return { relative: true, parts };
+  const rootParts = mountPath.split("/").filter((part) => part !== "" && part !== ".");
+  if (parts.length < rootParts.length) return null;
+  for (let i = 0; i < rootParts.length; i++) {
+    if (parts[i] !== rootParts[i]) return null;
+  }
+  return { relative: false, parts: parts.slice(rootParts.length) };
 }

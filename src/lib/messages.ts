@@ -244,6 +244,7 @@ export const MESSAGES = {
     "Tool version must be latest or a pin of letters, digits, dots, underscores, plus and hyphen (optional leading v), at most 64 characters.",
   file_path_invalid: "File path must be at most 512 bytes, without NUL or line breaks.",
   file_path_escape: "File path must stay inside the volume (no .. or absolute escape).",
+  file_symlink_loop: "Too many levels of symbolic links in the file path (more than {max}).",
   file_not_found: "File or directory {path} was not found on the volume.",
   file_is_directory: "{path} is a directory. Use list_files or download a tar archive.",
   file_is_directory_hint: "Call list_files for listings, or GET /api/volumes/:id/files/archive for a tar.",

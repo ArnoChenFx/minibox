@@ -194,6 +194,7 @@ export default {
   "err.helper_image_missing": "基础模板镜像 {image} 不存在，因此无法运行卷辅助容器。",
   "err.file_path_invalid": "文件路径最多 512 字节，且不能包含 NUL 或换行。",
   "err.file_path_escape": "文件路径必须留在卷内（不能使用 .. 或绝对路径逃逸）。",
+  "err.file_symlink_loop": "文件路径中的符号链接层级过多（超过 {max} 层）。",
   "err.file_not_found": "卷上找不到文件或目录 {path}。",
   "err.file_is_directory": "{path} 是目录。请使用 list_files，或下载 tar 归档。",
   "err.file_is_directory_hint": "用 list_files 列出目录，或 GET /api/volumes/:id/files/archive 下载 tar。",
