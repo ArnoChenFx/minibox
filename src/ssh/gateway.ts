@@ -1,4 +1,5 @@
 import type { Caller } from "../auth";
+import type { BoxFrame } from "../host/live";
 import type { HostCtx } from "../host/registry";
 import { AppError, forbidden } from "../lib/errors";
 import { msg } from "../lib/messages";
@@ -29,6 +30,7 @@ export interface SshLease {
  */
 export class SshGateway {
   private readonly perBox = new Map<string, number>();
+  private readonly open = new Map<string, Set<SshConnection>>();
   private total = 0;
 
   constructor(private readonly options: SshGatewayOptions) {}
@@ -70,16 +72,50 @@ export class SshGateway {
   }
 
   connect(lease: SshLease, socket: FrameSocket): SshConnection {
-    return new SshConnection(
+    const boxId = lease.target.box.boxId;
+    const connection = new SshConnection(
       lease.target,
       {
         hostKey: this.options.hostKey.privateKey,
         pulse: this.options.pulse,
         record: this.options.record,
-        onEnd: lease.release,
+        onEnd: () => {
+          const set = this.open.get(boxId);
+          set?.delete(connection);
+          if (set?.size === 0) this.open.delete(boxId);
+          lease.release();
+        },
       },
       socket,
     );
+    let set = this.open.get(boxId);
+    if (!set) {
+      set = new Set();
+      this.open.set(boxId, set);
+    }
+    set.add(connection);
+    return connection;
+  }
+
+  /**
+   * A box frame from the host's sampler. A box that was stopped (by hand, idle sleep or TTL), deleted, or given a new
+   * container ends its SSH connections, so an open client cannot start it again with its next channel.
+   */
+  onBoxFrame(frame: BoxFrame): void {
+    const set = this.open.get(frame.boxId);
+    if (!set || set.size === 0) return;
+    let reason: string | null = null;
+    if (frame.op === "remove") reason = "box removed";
+    else if (!frame.box.running && frame.box.desired === "stopped")
+      reason = `box stopped (${frame.box.stopReason ?? "manual"})`;
+    if (reason === null) {
+      if (frame.op !== "upsert") return;
+      for (const connection of Array.from(set)) {
+        if (connection.containerId !== frame.containerId) connection.disconnect("box rebuilt");
+      }
+      return;
+    }
+    for (const connection of Array.from(set)) connection.disconnect(reason);
   }
 
   private async authorize(host: HostCtx, ref: string, caller: Caller): Promise<{ box: Box; forward: boolean }> {

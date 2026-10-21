@@ -211,6 +211,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     hold: (boxId) => pulse.hold(boxId),
   });
   const ssh = new SshGateway({ hostKey: loadHostKey(cfg.dataDir), pulse, record: recordNote });
+  bus.subscribe("box", (frame) => ssh.onBoxFrame(frame));
   const lifecycle = new LifecycleWatcher({
     hosts,
     pulse,

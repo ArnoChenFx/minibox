@@ -125,6 +125,8 @@ async function exitStatus(exec: ExecSession): Promise<number> {
 export class SshConnection {
   private readonly duplex: WsDuplex;
   private readonly server: Server;
+  private readonly socket: FrameSocket;
+  private client: Connection | null = null;
   private readonly live = new Set<ExecSession>();
   private readonly startedAt = Date.now();
   private readonly readyTimer: ReturnType<typeof setTimeout>;
@@ -138,6 +140,7 @@ export class SshConnection {
     private readonly options: SshConnectionOptions,
     socket: FrameSocket,
   ) {
+    this.socket = socket;
     this.duplex = new WsDuplex(socket);
     this.server = new Server(
       {
@@ -178,11 +181,35 @@ export class SshConnection {
     this.options.onEnd();
   }
 
+  /** The container the connection was opened to. A rebuild replaces it, which ends the connection. */
+  get containerId(): string {
+    return this.target.box.id;
+  }
+
+  /**
+   * Ends the connection from the server side: the client gets an SSH disconnect, then the WebSocket closes with the
+   * reason, which `minibox ssh-proxy` prints. The socket's close handler then runs `close()`.
+   */
+  disconnect(reason: string): void {
+    if (this.ended) return;
+    try {
+      this.client?.end();
+    } catch {
+      // The protocol already ended.
+    }
+    try {
+      this.socket.close(1001, reason);
+    } catch {
+      // The socket already closed.
+    }
+  }
+
   private get boxId(): string {
     return this.target.box.boxId;
   }
 
   private bind(client: Connection): void {
+    this.client = client;
     client.on("error", (error: Error) => log.debug("ssh.client_error", { box: this.boxId, error: String(error) }));
     client.on("authentication", (ctx) => this.authenticate(ctx));
     client.on("request", (_accept, reject, name) => {
@@ -401,17 +428,28 @@ export class SshConnection {
     if (!closed) channel.end();
   }
 
-  private start(argv: string[], tty: boolean, env: string[]): Promise<ExecSession> {
-    return awakeBox(this.target.host, this.boxId, (note) => this.recordFor(note)).then((box) =>
-      this.target.host.runtime.startExec(box.id, {
-        cmd: argv,
-        env,
-        workingDir: SSH_WORKDIR,
-        user: SSH_USER,
-        stopAs: box.profile === "strict" ? SSH_USER : "root",
-        tty,
-      }),
-    );
+  /**
+   * Starts one process in the box as dev. A process that started after the connection ended is stopped at once, so a
+   * channel opened just before a disconnect cannot leave a shell or a relay running in the box.
+   */
+  private async start(argv: string[], tty: boolean, env: string[]): Promise<ExecSession> {
+    if (this.ended) throw new Error("the SSH connection has ended");
+    const box = await awakeBox(this.target.host, this.boxId, (note) => this.recordFor(note));
+    const exec = await this.target.host.runtime.startExec(box.id, {
+      cmd: argv,
+      env,
+      workingDir: SSH_WORKDIR,
+      user: SSH_USER,
+      stopAs: box.profile === "strict" ? SSH_USER : "root",
+      tty,
+    });
+    if (this.ended) {
+      exec
+        .kill()
+        .catch((error: unknown) => log.warn("ssh.kill_failed", { box: this.boxId, error: failureText(error) }));
+      throw new Error("the SSH connection has ended");
+    }
+    return exec;
   }
 
   private takeChannel(): (() => void) | null {

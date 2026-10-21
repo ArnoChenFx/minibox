@@ -363,6 +363,10 @@ describe("SSH channels", () => {
 
   test("Unix socket forwards are refused and audited", async () => {
     const box = await makeBox("victor");
+    // The sampler publishes box frames, as it does in a running server; the gateway listens for them.
+    const sampler = app.hosts.get().sampler;
+    sampler.start();
+    opened.push({ close: () => sampler.stop() });
     const { client } = await connectSsh(box.name);
     await expect(
       new Promise((resolve, reject) =>
@@ -431,8 +435,59 @@ describe("SSH lifecycle", () => {
     await waitFor(() => audits.some((event) => event.op === "ssh.disconnect"), "the disconnect audit");
   });
 
+  test("stopping the box ends its SSH connections, so the client cannot start it again", async () => {
+    const box = await makeBox("uniform");
+    // The sampler publishes box frames, as it does in a running server; the gateway listens for them.
+    const sampler = app.hosts.get().sampler;
+    sampler.start();
+    opened.push({ close: () => sampler.stop() });
+    const { client } = await connectSsh(box.name);
+    await waitFor(() => app.ssh.hasOpenConnection(box.boxId), "the connection to be counted");
+    const ended = new Promise<void>((resolve) => client.once("close", () => resolve()));
+    await stopBox(app.hosts.get(), box.boxId);
+    await ended;
+    await waitFor(() => !app.ssh.hasOpenConnection(box.boxId), "the connection to leave the count");
+    expect((await getBox(app.hosts.get(), box.boxId)).running).toBe(false);
+  });
+
+  test("deleting the box ends its SSH connections", async () => {
+    const box = await makeBox("victor");
+    // The sampler publishes box frames, as it does in a running server; the gateway listens for them.
+    const sampler = app.hosts.get().sampler;
+    sampler.start();
+    opened.push({ close: () => sampler.stop() });
+    const { client } = await connectSsh(box.name);
+    await waitFor(() => app.ssh.hasOpenConnection(box.boxId), "the connection to be counted");
+    const ended = new Promise<void>((resolve) => client.once("close", () => resolve()));
+    const res = await call(base, `/api/boxes/${box.name}`, { method: "DELETE" });
+    expect(res.status).toBeLessThan(300);
+    await ended;
+    await waitFor(() => !app.ssh.hasOpenConnection(box.boxId), "the connection to leave the count");
+  });
+
+  test("a box whose TTL has passed refuses the handshake with 409 and stays stopped", async () => {
+    const box = await makeBox("whiskey");
+    const host = app.hosts.get();
+    await stopBox(host, box.boxId);
+    const spec = host.specs.read(box.boxId);
+    if (!spec) throw new Error("the spec is missing");
+    host.specs.write({
+      ...spec,
+      createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+      lifecycle: { ...spec.lifecycle, ttlSec: 60 },
+    });
+    const attempt = await upgradeAttempt(`/api/ssh/${box.name}`, AUTH);
+    expect(attempt.status).toBe(409);
+    expect(errorKeyOf(attempt)).toBe("box_ttl_expired");
+    expect((await getBox(host, box.boxId)).running).toBe(false);
+  });
+
   test("typing counts as activity for the box, and repeated typing is throttled to one touch", async () => {
     const box = await makeBox("uniform");
+    // The sampler publishes box frames, as it does in a running server; the gateway listens for them.
+    const sampler = app.hosts.get().sampler;
+    sampler.start();
+    opened.push({ close: () => sampler.stop() });
     const { client } = await connectSsh(box.name);
     const stream = await openShell(client, true);
     let echoed = "";
