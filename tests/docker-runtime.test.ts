@@ -22,6 +22,7 @@ import { createDockerRuntime } from "../src/docker/runtime";
 import { OutputStore } from "../src/events/outputs";
 import { createRedactor } from "../src/events/redact";
 import { createLocalHost } from "../src/host/registry";
+import type { HostSampler } from "../src/host/sampler";
 import type { Runtime } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { ExecManager } from "../src/services/exec";
@@ -843,6 +844,117 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
           .getVolume(plain)
           .remove()
           .catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+});
+
+/** Counts the calls made through a runtime, by operation. The calls reach the engine unchanged. */
+function countingRuntime(target: Runtime): {
+  runtime: Runtime;
+  count: (op: keyof Runtime) => number;
+  reset: () => void;
+} {
+  const counts = new Map<string, number>();
+  const runtime = new Proxy(target, {
+    get(obj, prop) {
+      const value: unknown = Reflect.get(obj, prop, obj);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        counts.set(String(prop), (counts.get(String(prop)) ?? 0) + 1);
+        return Reflect.apply(value, obj, args);
+      };
+    },
+  });
+  return { runtime, count: (op) => counts.get(op) ?? 0, reset: () => counts.clear() };
+}
+
+/**
+ * A stream replays the last second or so of events when it opens, and the cache applies them after its first listing.
+ * Waiting that out keeps the replayed reads out of the counts.
+ */
+async function quiesce(sampler: HostSampler): Promise<void> {
+  await Bun.sleep(1_500);
+  await sampler.settle();
+}
+
+describe.skipIf(!enabled)("the box cache against a real engine", () => {
+  test(
+    "listing boxes and their usage costs the engine nothing, however many boxes exist",
+    async () => {
+      const restore = silenceLogs();
+      const counter = countingRuntime(runtime);
+      const reader = createLocalHost(cfg, counter.runtime, host.specs);
+      const made: boxes.Box[] = [];
+      const cachedRunning = (box: boxes.Box) => reader.sampler.find(box.boxId)?.running === true;
+      const engineReads = () =>
+        counter.count("listContainers") + counter.count("inspectContainer") + counter.count("containerStats");
+      try {
+        for (const name of ["cache-a", "cache-b", "cache-c"]) {
+          made.push(await boxes.createBox(host, { name, image: IMAGE, cpus: 0.5, memoryMb: 64 }));
+        }
+        reader.sampler.start();
+        await waitUntil(
+          async () => reader.sampler.ready() && made.every(cachedRunning),
+          "the first boxes in the cache",
+        );
+        await quiesce(reader.sampler);
+        // Boxes that earlier tests left running are in the cache too, so the totals count from what it already holds.
+        const known = reader.sampler.boxes({ withStats: false }).length;
+        counter.reset();
+        for (let tab = 0; tab < 10; tab++) await boxes.listBoxes(reader, { withStats: true });
+        expect(engineReads()).toBe(0);
+
+        for (const name of ["cache-d", "cache-e", "cache-f", "cache-g", "cache-h"]) {
+          made.push(await boxes.createBox(host, { name, image: IMAGE, cpus: 0.5, memoryMb: 64 }));
+        }
+        await waitUntil(async () => made.every(cachedRunning), "the new boxes in the cache");
+        await quiesce(reader.sampler);
+        counter.reset();
+
+        await reader.sampler.sampleNow();
+        const running = reader.sampler.boxes({ withStats: false }).filter((box) => box.running).length;
+        expect(running).toBeGreaterThan(0);
+        expect(counter.count("containerStats")).toBe(running);
+
+        counter.reset();
+        let listed: boxes.Box[] = [];
+        for (let tab = 0; tab < 10; tab++) listed = await boxes.listBoxes(reader, { withStats: true });
+        expect(listed).toHaveLength(known + 5);
+        expect(engineReads()).toBe(0);
+        expect(listed.filter((box) => box.running).every((box) => box.stats !== null)).toBe(true);
+      } finally {
+        reader.sampler.stop();
+        for (const box of made) await boxes.deleteBox(host, box.id, true).catch(() => {});
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a box stopped outside MiniBox reaches the cache through the engine's events, not a listing",
+    async () => {
+      const restore = silenceLogs();
+      const counter = countingRuntime(runtime);
+      const reader = createLocalHost(cfg, counter.runtime, host.specs);
+      const made: boxes.Box[] = [];
+      try {
+        const box = await boxes.createBox(host, { name: "cache-stop", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        made.push(box);
+        reader.sampler.start();
+        await waitUntil(async () => reader.sampler.find(box.boxId)?.running === true, "the box in the cache");
+        counter.reset();
+
+        await runtime.stopContainer(box.id, { timeoutSec: 1 });
+        await waitUntil(async () => reader.sampler.find(box.boxId)?.running === false, "the stop in the cache");
+        expect(counter.count("listContainers")).toBe(0);
+        expect(counter.count("inspectContainer")).toBeGreaterThan(0);
+      } finally {
+        reader.sampler.stop();
+        for (const box of made) await boxes.deleteBox(host, box.id, true).catch(() => {});
         restore();
       }
     },
