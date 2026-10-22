@@ -193,6 +193,24 @@ describe("startup command: giving a box one at create", () => {
     expect(await startupOf(fromSnapshot.box.id)).toMatchObject({ command: null, status: "none" });
     expect(await startupOf(source.id)).toMatchObject({ command: FIRST });
   });
+
+  test("a snapshot fork keeps the startup command it is given, and a token without exec and secret:use is refused it", async () => {
+    await createBox("source");
+    const keys = app.hosts.get().keys;
+    runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true", [keys.snapshotOf]: "source" });
+    const execOnly = tokenWith({ name: "exec-only", scopes: ["exec", "box:read", "box:write"] });
+
+    expect(
+      await refused("snapshot.fork", { name: "copy", ref: SNAPSHOT_REF, startupCommand: SECOND }, execOnly),
+    ).toMatchObject({ status: 403, key: "startup_command_forbidden" });
+    const forked = await run<{ box: BoxView }>("snapshot.fork", {
+      name: "copy",
+      ref: SNAPSHOT_REF,
+      startupCommand: SECOND,
+    });
+
+    expect(await startupOf(forked.box.id)).toMatchObject({ command: SECOND });
+  });
 });
 
 describe("startup command: the minibox-init session", () => {

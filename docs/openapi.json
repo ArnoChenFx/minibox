@@ -16786,6 +16786,12 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "startupCommand": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "description": "A shell command the box runs at every start, once its container has started: as its user, with bash -lc in /workspace and the box's env, in the minibox-init tmux session. It is stored as typed, up to 4096 bytes. It may hold secrets, so only a credential with the secret:use scope reads it back."
                   }
                 },
                 "required": [

@@ -146,7 +146,7 @@ function assertSecretUse(principal: TokenPrincipal, env: readonly BoxEnv[]): voi
 
 /**
  * A startup command runs in the box and may hold a secret the user typed, so a token needs exec and `secret:use` to give
- * a box one at create. The startup operations need `secret:use` from the scope check.
+ * a box one at create or at a snapshot fork. The startup operations need `secret:use` from the scope check.
  */
 function assertStartupUse(principal: TokenPrincipal, command: unknown): void {
   if (typeof command !== "string") return;
@@ -350,6 +350,7 @@ const forkRule: Rule = async ({ principal, host, input }) => {
   assertProfile(profile, undefined);
   await assertImageUsable(principal, host, String(input.ref ?? "").trim(), "snapshot");
   assertTtl(principal, input.ttlSec as number | null | undefined);
+  assertStartupUse(principal, input.startupCommand);
 };
 
 /** Update and rebuild: the box must be visible; a template, profile or TTL change must stay within the token's bounds. */
