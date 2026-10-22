@@ -2373,6 +2373,43 @@ textarea.token-lines {
   margin: 0;
 }
 
+/* ---------- Agent hosts ---------- */
+.agent-code-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.agent-code {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.agent-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.agent-expired {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.agent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 4px;
+}
+
 /* ---------- Tasks drawer ---------- */
 .icon-btn.has-task {
   position: relative;
