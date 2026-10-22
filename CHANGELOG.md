@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-23
+
 ### 新增
 - 宿主机 Agent（[#109](https://github.com/ArnoChenFx/minibox/issues/109)）：新镜像 `ghcr.io/arnochenfx/minibox-agent`（linux/amd64、linux/arm64）。在「设置 → 宿主机 → 添加宿主机」选择「Agent（推荐）」，生成一次性配对码和 bash、PowerShell 两种 `docker run` 命令；宿主机只需出站连接 MiniBox，无需开放端口或 SSH。每个 Agent 使用独立的 Ed25519 凭据，私钥仅保存在其数据卷中（600）；断线后指数退避重连；吊销会立即断开并阻止重连；协议不一致时提示「Agent 需要升级」。Agent 只执行固定的 Docker 操作白名单（只能挂载命名卷，不能使用宿主机网络，附加的容器能力限于 Docker 默认集合），其余操作返回 `unsupported`，且暂不支持迁移 Box 进出 Agent 宿主机。
 - Box 文件浏览器（#106）：Box 页面新增「文件」标签页，浏览 Box 挂载的卷（工作区、主目录及其他卷），Box 停止时也可用。支持面包屑、按名称、大小或修改时间排序、筛选、显示隐藏文件、预览不超过 256 KiB 的文本文件、下载文件（文件夹下载为 `.tar.gz`）。上传支持拖放与选择文件或文件夹，逐个上传并显示进度，可取消；遇到同名文件时只询问一次，可替换、跳过或取消。可新建文件夹、重命名与删除（删除前确认）。REST：`PUT /api/volumes/:id/files/stream` 以 `application/octet-stream` 流式上传单个文件（缺少 `Content-Length` 返回 `411`，超过上限返回 `413`），`GET /api/volumes/:id/files/stream` 下载，另有 `POST …/files/directory`、`POST …/files/move` 与 `DELETE …/files`（需 `confirm=true`）。上传上限为 `FILE_UPLOAD_MAX_MB`（默认 1024，范围 1 到 65536）。路径不能越出卷，指向卷外的符号链接被拒绝；上传的文件归 uid 1000 所有。命令行新增 `minibox upload`、`minibox download` 与 `minibox cp`。仅浏览卷中的文件，不浏览容器自身的文件系统。
