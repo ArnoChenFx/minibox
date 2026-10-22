@@ -55,7 +55,9 @@ export declare function kindsOf(checkpoint: CheckpointRow): string[];
 export declare function contentsOf(checkpoint: CheckpointRow): { roles: string[]; others: number; system: boolean };
 export declare function rowActions(checkpoint: CheckpointRow, state?: RowState): RowActions;
 export declare function passphraseOk(value: string): boolean;
-export declare function scheduleZone(schedule: { timezone?: string | null } | null | undefined): string;
+export declare function scheduleZone(
+  schedule: { timezone?: string | null; timezoneUnknown?: boolean } | null | undefined,
+): string;
 export declare function browserTimezone(): string;
 export declare function scheduleBody(
   mode: "interval" | "daily",

@@ -413,6 +413,8 @@ const markup = runConsole<Markup>(
     scheduleOn: component.scheduleHtml(fixtures.schedule),
     scheduleDaily: component.scheduleHtml(fixtures.dailySchedule),
     scheduleLegacy: component.scheduleHtml({ ...fixtures.dailySchedule, timezone: undefined }),
+    scheduleZoned: component.scheduleHtml(fixtures.dailySchedule, "Europe/Berlin"),
+    scheduleUnknown: component.scheduleHtml({ ...fixtures.dailySchedule, timezone: "Mars/Olympus", timezoneUnknown: true }, "Asia/Shanghai"),
     scheduleFormHere: component.scheduleFormHtml(fixtures.dailySchedule, "Asia/Shanghai"),
     scheduleFormMoved: component.scheduleFormHtml(fixtures.dailySchedule, "Europe/Berlin"),
     cardScheduled: component.checkpointCardHtml({ rows: [], pending: null, usage: null, schedule: fixtures.schedule }),
@@ -628,6 +630,21 @@ describe("checkpoint schedule", () => {
     expect(html).not.toContain("<b>boom</b>");
   });
 
+  test("the next and the last run name the browser's zone they are shown in", () => {
+    const html = markup.scheduleZoned ?? "";
+    expect(html).toMatch(/Next run: [^<]*\d{2}:\d{2} \(Europe\/Berlin\)<\/div>/);
+    expect(html).toMatch(/Last run: [^<]*\d{2}:\d{2} \(Europe\/Berlin\), failed: /);
+    expect(html).not.toContain("local time");
+  });
+
+  test("a schedule whose saved zone the server does not know says it runs in UTC, and asks for it to be set again", () => {
+    const html = markup.scheduleUnknown ?? "";
+    expect(html).toContain("Every day at 02:30 (UTC)");
+    expect(html).toContain("callout");
+    expect(html).toContain("The saved time zone Mars/Olympus is not one the server knows");
+    expect(markup.scheduleDaily ?? "").not.toContain("is not one the server knows");
+  });
+
   test("a daily schedule saved before time zones says it runs in UTC", () => {
     expect(markup.scheduleLegacy ?? "").toContain("Every day at 02:30 (UTC)");
   });
@@ -661,11 +678,16 @@ describe("the Chinese console", () => {
       `return {
       legacy: component.checkpointRowHtml(fixtures.legacy, {}),
       usage: component.usageHtml(fixtures.exceeded),
-      daily: component.scheduleHtml(fixtures.dailySchedule),
+      daily: component.scheduleHtml(fixtures.dailySchedule, "Asia/Shanghai"),
+      unknown: component.scheduleHtml({ ...fixtures.dailySchedule, timezone: "Mars/Olympus", timezoneUnknown: true }, "Asia/Shanghai"),
       form: component.scheduleFormHtml(fixtures.dailySchedule, "Asia/Shanghai"),
     };`,
     );
     expect(rendered.daily).toContain("每天 02:30（Asia/Shanghai）");
+    expect(rendered.daily).toMatch(/下次运行: [^<]*\d{2}:\d{2}（Asia\/Shanghai）<\/div>/);
+    expect(rendered.daily).toMatch(/上次运行: [^<]*\d{2}:\d{2}（Asia\/Shanghai），失败：/);
+    expect(rendered.daily).not.toContain("本地时间");
+    expect(rendered.unknown).toContain("保存的时区 Mars/Olympus 服务器无法识别，此计划暂按 UTC 运行");
     expect(rendered.form).toContain("你所在时区（Asia/Shanghai）的 HH:MM");
     expect(rendered.legacy).toContain(zh["ck.rollback"] ?? "\u0000");
     expect(rendered.legacy).toContain(escaped(zh["ck.reasonLegacy"] ?? ""));

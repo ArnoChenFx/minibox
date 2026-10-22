@@ -1122,7 +1122,7 @@ export default {
   "ck.scheduleDaily": "Every day at {at} ({zone})",
   "ck.nextRun": "Next run",
   "ck.lastRun": "Last run",
-  "ck.localTime": " (your local time)",
+  "ck.inZone": " ({zone})",
   "ck.lastRunNone": "none yet",
   "ck.runOk": "{time}, checkpoint taken",
   "ck.runSkipped": "{time}, skipped: {reason}",
@@ -1141,6 +1141,8 @@ export default {
   "ck.scheduleTime": "Time",
   "ck.scheduleTimeHelp": "HH:MM in your time zone, {zone}, such as 02:30.",
   "ck.scheduleZoneChange": "This schedule runs in {from}. Saving it here sets it to {zone}.",
+  "ck.scheduleZoneUnknown":
+    "The saved time zone {zone} is not one the server knows, so this schedule runs in UTC for now. Change the schedule to set a time zone again.",
   "ck.scheduleHelp":
     "Scheduled checkpoints are automatic. The retention policy removes the oldest beyond its limit, and a full repository skips a run until space is freed.",
   "ck.scheduleInvalid": "Enter a whole number of hours from 1 to 720, or a time of day.",

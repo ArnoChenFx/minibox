@@ -29,14 +29,33 @@ export interface ScheduleRule {
 
 const zoneFormats = new Map<string, Intl.DateTimeFormat>();
 
-/** The canonical name of an IANA time zone, such as `Asia/Shanghai` or `UTC`, or null when this runtime knows no such zone. */
+/**
+ * The canonical name of an IANA time zone, such as `Asia/Shanghai` or `UTC`, or null when this runtime knows no such
+ * zone. A UTC offset such as `+08:00` is not a zone name, so it is null too, although Intl accepts one: an offset does
+ * not follow daylight saving time, and the API names IANA zones only.
+ */
 export function canonicalTimezone(name: unknown): string | null {
   if (typeof name !== "string" || name.length === 0 || name.length > TIMEZONE_MAX) return null;
+  if (/^[+-]/.test(name.trim())) return null;
   try {
-    return new Intl.DateTimeFormat("en-US", { timeZone: name }).resolvedOptions().timeZone;
+    const zone = new Intl.DateTimeFormat("en-US", { timeZone: name }).resolvedOptions().timeZone;
+    return /^[+-]/.test(zone) ? null : zone;
   } catch {
     return null;
   }
+}
+
+/**
+ * The zone a schedule runs in. A daily schedule saved without a zone runs in UTC. A saved zone this runtime does not
+ * know, as after a time zone database change, also runs in UTC, and `unknown` names it so the problem can be shown.
+ */
+export function runZoneOf(schedule: { mode: string; timezone: string | null }): {
+  zone: string;
+  unknown: string | null;
+} {
+  if (schedule.mode !== "daily" || schedule.timezone === null) return { zone: DEFAULT_TIMEZONE, unknown: null };
+  const zone = canonicalTimezone(schedule.timezone);
+  return zone ? { zone, unknown: null } : { zone: DEFAULT_TIMEZONE, unknown: schedule.timezone };
 }
 
 function zoneFormat(timezone: string): Intl.DateTimeFormat {
@@ -148,12 +167,11 @@ export const BoxScheduleSchema = z
     mode: z.enum(["interval", "daily"]),
     everyHours: z.number().int().min(SCHEDULE_HOURS_MIN).max(SCHEDULE_HOURS_MAX).nullable(),
     at: z.string().regex(SCHEDULE_TIME_RE).nullable(),
-    /** Absent on a schedule saved before time zones, which reads as UTC. */
-    timezone: z
-      .string()
-      .refine((name) => canonicalTimezone(name) !== null, "not a time zone")
-      .nullable()
-      .default(null),
+    /**
+     * Absent on a schedule saved before time zones, which reads as UTC. A zone the runtime no longer knows still reads,
+     * so the schedule is kept; it runs in UTC until it is set again (see runZoneOf).
+     */
+    timezone: z.string().min(1).max(TIMEZONE_MAX).nullable().default(null),
     createdBy: z.string().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
@@ -196,7 +214,7 @@ export function nextDailyAfter(at: string, timezone: string, from: Date): Date {
  */
 export function nextRunAfterRun(schedule: BoxSchedule, now: Date): Date {
   if (schedule.mode === "daily") {
-    return nextDailyAfter(schedule.at ?? "00:00", schedule.timezone ?? DEFAULT_TIMEZONE, now);
+    return nextDailyAfter(schedule.at ?? "00:00", runZoneOf(schedule).zone, now);
   }
   const step = (schedule.everyHours ?? SCHEDULE_HOURS_MIN) * HOUR_MS;
   const due = Date.parse(schedule.nextRunAt);

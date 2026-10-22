@@ -183,6 +183,8 @@ export const CheckpointScheduleSchema = z.object({
   at: z.string().nullable(),
   /** IANA zone of the daily time. Null for an interval, and for a daily schedule saved before zones, which runs in UTC. */
   timezone: z.string().nullable(),
+  /** True when the saved zone is not one this server knows. The schedule then runs in UTC until it is set again. */
+  timezoneUnknown: z.boolean(),
   createdBy: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),

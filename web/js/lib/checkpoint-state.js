@@ -87,8 +87,11 @@ export function passphraseOk(value) {
   return value === value.trim() && !/[\r\n\0]/.test(value);
 }
 
-/** The zone a daily schedule runs in. One saved before zones has none, and runs in UTC. */
-export const scheduleZone = (schedule) => schedule?.timezone ?? "UTC";
+/**
+ * The zone a daily schedule runs in. One saved before zones has none, and one whose saved zone the server does not know
+ * (`timezoneUnknown`) falls back; both run in UTC.
+ */
+export const scheduleZone = (schedule) => (schedule?.timezoneUnknown ? "UTC" : (schedule?.timezone ?? "UTC"));
 
 /** The browser's IANA time zone, such as `Asia/Shanghai`, or UTC when the browser does not say. */
 export function browserTimezone() {

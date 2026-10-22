@@ -2197,7 +2197,7 @@
     "path": "/api/boxes/<id>/checkpoint-schedule",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"schedule\":{\"version\":1,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"mode\":\"interval\",\"everyHours\":6,\"at\":null,\"timezone\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null}}"
+    "body": "{\"schedule\":{\"version\":1,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"mode\":\"interval\",\"everyHours\":6,\"at\":null,\"timezone\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null,\"timezoneUnknown\":false}}"
   },
   {
     "step": "set a schedule with an hour and a time",
@@ -2221,7 +2221,7 @@
     "path": "/api/boxes/<id>/checkpoint-schedule",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"schedule\":{\"version\":1,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"mode\":\"interval\",\"everyHours\":6,\"at\":null,\"timezone\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null}}"
+    "body": "{\"schedule\":{\"version\":1,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"mode\":\"interval\",\"everyHours\":6,\"at\":null,\"timezone\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null,\"timezoneUnknown\":false}}"
   },
   {
     "step": "clear the schedule",

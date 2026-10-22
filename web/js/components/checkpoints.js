@@ -318,16 +318,21 @@ function skipText(reason) {
   return key ? t(key) : (reason ?? "");
 }
 
-function lastRunText(run) {
+/** A time in the browser's local time, with the zone it is in, such as `2026/10/23 03:00（Asia/Shanghai）`. */
+function zonedTime(iso, zone) {
+  return `${dateTime(iso)}${t("ck.inZone", { zone })}`;
+}
+
+function lastRunText(run, zone) {
   if (!run) return t("ck.lastRunNone");
-  const time = dateTime(run.at);
+  const time = zonedTime(run.at, zone);
   if (run.status === "ok") return t("ck.runOk", { time });
   if (run.status === "skipped") return t("ck.runSkipped", { time, reason: skipText(run.reason) });
   return t("ck.runFailed", { time, error: run.error ?? "" });
 }
 
 /** The schedule line of the card: off, or the rule with its next and last run, and the buttons that change it. */
-export function scheduleHtml(schedule) {
+export function scheduleHtml(schedule, zone = browserTimezone()) {
   if (!schedule) {
     return `<div class="ck-schedule">
       <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge">${esc(t("ck.scheduleOff"))}</span></div>
@@ -337,9 +342,10 @@ export function scheduleHtml(schedule) {
   }
   return `<div class="ck-schedule">
     <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge badge-accent">${esc(ruleText(schedule))}</span></div>
-    <div class="help">${esc(t("ck.nextRun"))}: ${esc(dateTime(schedule.nextRunAt))}<span class="subtle">${esc(t("ck.localTime"))}</span></div>
-    <div class="help">${esc(t("ck.lastRun"))}: ${esc(lastRunText(schedule.lastRun))}</div>
+    <div class="help">${esc(t("ck.nextRun"))}: ${esc(zonedTime(schedule.nextRunAt, zone))}</div>
+    <div class="help">${esc(t("ck.lastRun"))}: ${esc(lastRunText(schedule.lastRun, zone))}</div>
     <div class="help">${esc(t("ck.scheduleNote"))}</div>
+    ${schedule.timezoneUnknown ? callout("warn", t("ck.scheduleZoneUnknown", { zone: schedule.timezone ?? "" })) : ""}
     <div class="ck-schedule-actions">
       <button class="btn btn-sm" data-action="ck-schedule">${icon("clock")}${esc(t("ck.scheduleEdit"))}</button>
       <button class="btn btn-sm" data-action="ck-schedule-off">${icon("x")}${esc(t("ck.scheduleTurnOff"))}</button>

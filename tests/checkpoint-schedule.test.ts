@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,12 +13,14 @@ import {
   nextDailyAfter,
   nextRunAfterRun,
   ruleOf,
+  runZoneOf,
   SCHEDULE_HOURS_MAX,
   type ScheduleRule,
 } from "../src/checkpoints/schedule";
 import type { Config } from "../src/config";
 import type { HostMetrics } from "../src/host/metrics";
 import type { HostCtx } from "../src/host/registry";
+import { log } from "../src/lib/logger";
 import * as boxes from "../src/services/boxes";
 import { applyRetention } from "../src/services/checkpoint-retention";
 import { CheckpointScheduler, clearSchedule, scheduleOf, setSchedule } from "../src/services/checkpoint-schedule";
@@ -145,6 +147,15 @@ describe("schedule time zones", () => {
     expect(ruleOf({ everyHours: 6, timezone: "Asia/Shanghai" })?.timezone).toBeNull();
   });
 
+  test("a UTC offset is not a zone name, although Intl takes one, so it is refused like an unknown zone", () => {
+    for (const name of ["+08:00", "-05:00", "+0800", "+08", " +08:00", "-00:00"]) {
+      expect(canonicalTimezone(name)).toBeNull();
+      expect(ruleOf({ at: "03:00", timezone: name })).toBeNull();
+    }
+    // The Etc zones are IANA names, even though they read like offsets.
+    expect(canonicalTimezone("Etc/GMT-8")).toBe("Etc/GMT-8");
+  });
+
   test("a daily time runs at that time on the zone's clock", () => {
     const shanghai = rule({ at: "03:00", timezone: "Asia/Shanghai" });
     // 21:30 in Shanghai on the 22nd is 13:30 UTC; 03:00 the next morning there is 19:00 UTC on the 22nd.
@@ -161,7 +172,7 @@ describe("schedule time zones", () => {
     // New York moves from EDT (UTC-4) to EST (UTC-5) on 1 November 2026.
     const before = scheduleWith({ at: "03:00", timezone: "America/New_York" }, utc(2026, 9, 31, 7, 0));
     expect(nextRunAfterRun(before, utc(2026, 9, 31, 7, 1))).toEqual(utc(2026, 10, 1, 8, 0));
-    // And back to EDT on 8 March 2026.
+    // And forward to EDT on 8 March 2026.
     expect(nextDailyAfter("03:00", "America/New_York", utc(2026, 2, 7, 8, 1))).toEqual(utc(2026, 2, 8, 7, 0));
     // London: BST ends on 25 October 2026.
     expect(nextDailyAfter("09:00", "Europe/London", utc(2026, 9, 24, 8, 1))).toEqual(utc(2026, 9, 25, 9, 0));
@@ -195,7 +206,20 @@ describe("schedule time zones", () => {
     const parsed = BoxScheduleSchema.parse(saved);
     expect(parsed.timezone).toBeNull();
     expect(nextRunAfterRun(parsed, utc(2026, 9, 22, 3, 1))).toEqual(utc(2026, 9, 23, 3, 0));
-    expect(BoxScheduleSchema.safeParse({ ...saved, timezone: "Mars/Olympus" }).success).toBe(false);
+    expect(runZoneOf(parsed)).toEqual({ zone: "UTC", unknown: null });
+  });
+
+  test("a saved zone the runtime does not know keeps the schedule, which runs in UTC and names the zone it lost", () => {
+    const known = scheduleWith({ at: "03:00", timezone: "Asia/Shanghai" }, utc(2026, 9, 22, 19, 0));
+    expect(runZoneOf(known)).toEqual({ zone: "Asia/Shanghai", unknown: null });
+    for (const lost of ["Mars/Olympus", "+08:00"]) {
+      const parsed = BoxScheduleSchema.parse({ ...known, timezone: lost });
+      expect(parsed.timezone).toBe(lost);
+      expect(runZoneOf(parsed)).toEqual({ zone: "UTC", unknown: lost });
+      expect(nextRunAfterRun(parsed, utc(2026, 9, 22, 19, 1))).toEqual(utc(2026, 9, 23, 3, 0));
+    }
+    // An interval has no zone to lose.
+    expect(runZoneOf({ mode: "interval", timezone: null })).toEqual({ zone: "UTC", unknown: null });
   });
 });
 
@@ -277,6 +301,36 @@ describe("checkpoint schedules over the scheduler", () => {
     expect(host.checkpoints.list()).toHaveLength(1);
     expect(host.pulse.lastAt(box.boxId)).toBe(before);
     expect(host.pulse.isHeld(box.boxId)).toBe(false);
+  });
+
+  test("a schedule whose saved zone is unknown is kept: it runs in UTC, is flagged, and is warned about once", async () => {
+    const box = await makeBox("lost-zone");
+    const set = await setSchedule(host, box.boxId, rule({ at: "03:00", timezone: "Asia/Shanghai" }), "owner", clock);
+    expect(set.timezoneUnknown).toBe(false);
+    const saved = host.checkpoints.readSchedule(box.boxId);
+    if (!saved) throw new Error("the schedule was not saved");
+    host.checkpoints.writeSchedule({ ...saved, timezone: "Mars/Olympus", nextRunAt: iso(clock) });
+    const warnings = spyOn(log, "warn").mockImplementation(() => {});
+    try {
+      const read = await scheduleOf(host, box.boxId);
+      expect(read).toMatchObject({ mode: "daily", at: "03:00", timezone: "Mars/Olympus", timezoneUnknown: true });
+
+      expect(await scheduler.run()).toEqual([box.boxId]);
+      expect(await scheduler.run()).toEqual([]);
+      const after = await scheduleOf(host, box.boxId);
+      expect(after?.lastRun).toMatchObject({ status: "ok" });
+      // The next 03:00 in UTC, and the saved name is left on disk as it was.
+      const next = new Date(clock);
+      next.setUTCHours(3, 0, 0, 0);
+      if (next <= clock) next.setUTCDate(next.getUTCDate() + 1);
+      expect(after).toMatchObject({ nextRunAt: iso(next), timezone: "Mars/Olympus", timezoneUnknown: true });
+
+      const warned = warnings.mock.calls.filter(([message]) => message === "checkpoint.schedule_timezone_unknown");
+      expect(warned).toHaveLength(1);
+      expect(warned[0]?.[1]).toMatchObject({ box: box.boxId, timezone: "Mars/Olympus", fallback: "UTC" });
+    } finally {
+      warnings.mockRestore();
+    }
   });
 
   test("a stopped box is skipped: nothing is taken, the box stays stopped, and the skip is the last run", async () => {
@@ -552,7 +606,13 @@ describe("the schedule routes", () => {
         await call(harness.base, pathOf(boxId), { method: "PUT", body: { at: "03:00", timezone: "Mars/Olympus" } }),
       ),
     ).toEqual({ status: 400, key: "schedule_timezone_invalid" });
-    expect(bodyOf(await call(harness.base, pathOf(boxId)))).toMatchObject({ timezone: "Asia/Shanghai" });
+    expect(
+      refused(await call(harness.base, pathOf(boxId), { method: "PUT", body: { at: "03:00", timezone: "+08:00" } })),
+    ).toEqual({ status: 400, key: "schedule_timezone_invalid" });
+    expect(bodyOf(await call(harness.base, pathOf(boxId)))).toMatchObject({
+      timezone: "Asia/Shanghai",
+      timezoneUnknown: false,
+    });
 
     const interval = await call(harness.base, pathOf(boxId), {
       method: "PUT",
