@@ -1111,7 +1111,7 @@ function notifyDialog(view, existing = null) {
         </div>
         <label class="field">${t("st.notifyType")}<select class="select" name="type">${typeOptions}</select></label>
         <div data-notify-panel="webhook">
-          <label class="field">${t("st.notifyUrl")}<input class="input mono" name="url" inputmode="url" placeholder="https://hooks.example.com/minibox" value="${esc(existing?.url ?? "")}" /><span class="help">${t("st.notifyUrlHelp")}</span></label>
+          <label class="field">${t("st.notifyUrl")}<input class="input mono" name="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="${esc(existing?.type === "webhook" && existing.url ? existing.url : "https://hooks.example.com/minibox")}" /><span class="help">${existing?.type === "webhook" && existing.url ? t("st.notifyUrlKept") : t("st.notifyUrlHelp")}</span></label>
         </div>
         <div data-notify-panel="ntfy"><div class="grid grid-2 form-grid">
           <label class="field">${t("st.notifyServer")}<input class="input mono" name="server" placeholder="https://ntfy.sh" value="${esc(existing?.server ?? "")}" /><span class="help">${t("st.notifyServerHelp")}</span></label>

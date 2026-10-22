@@ -121,8 +121,8 @@ Every path is under `DATA_DIR`.
 | `volumes/<id>.json`, `pools.json` | `src/volumes/store.ts` | Volume records and storage pools |
 | `tokens.json`, `sessions.json`, `access_key` | `src/tokens/store.ts`, `src/sessions.ts`, `src/data-dir.ts` | Hashed agent tokens, browser sessions and the access key |
 | `secrets/env/` | `src/secrets/store.ts` | Host secrets |
-| `notify.json` | `src/notify/store.ts` | Notification channels: their settings and endpoints, never a secret |
-| `secrets/notify/` | `src/notify/store.ts` | Notification channel secrets: signing keys, ntfy tokens and Telegram bot tokens |
+| `notify.json` | `src/notify/store.ts` | Notification channels: their settings and endpoints, never a secret or a webhook URL |
+| `secrets/notify/` | `src/notify/store.ts` | Notification channel secrets: signing keys, ntfy tokens, Telegram bot tokens and webhook URLs |
 | `checkpoints/` | `src/checkpoints/store.ts` | Checkpoint records |
 | `checkpoints/schedules/` | `src/checkpoints/store.ts`, `src/services/checkpoint-schedule.ts` | Checkpoint schedules, one per box |
 | `packages/` | `src/checkpoints/packages.ts` | Exported checkpoint packages, sealed with a passphrase |

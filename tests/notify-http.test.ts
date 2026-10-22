@@ -193,6 +193,35 @@ describe("channel settings and their secrets over HTTP", () => {
     expect(JSON.stringify(events.json)).toContain("notify.channel.set");
   });
 
+  test("a webhook URL is answered masked, never in full, and a change that omits it keeps the stored one", async () => {
+    const harness = startApp();
+    const hook = receiverFor();
+    const url = `${hook.url}/hook/token-in-path?key=query-token`;
+    const created = await put(harness.base, "ops", { type: "webhook", name: "Ops", events: ["box.oom"], url });
+    expect(json<{ channel: { url: string } }>(created).channel.url).toBe(`${hook.url}/…`);
+
+    const renamed = await put(harness.base, "ops", { type: "webhook", name: "Renamed", events: ["box.oom"] });
+    expect(renamed.status).toBe(200);
+    expect(json<{ channel: { name: string; url: string } }>(renamed).channel).toMatchObject({
+      name: "Renamed",
+      url: `${hook.url}/…`,
+    });
+
+    expect((await sendTest(harness.base, "ops")).status).toBe(200);
+    await waitFor(() => hook.hits.length === 1, "the test notice");
+    expect(hook.hits[0]?.path).toBe("/hook/token-in-path");
+
+    const listing = await call(harness.base, "/api/notify/channels");
+    const events = await call(harness.base, "/api/events?limit=200");
+    for (const reply of [created, renamed, listing, events]) {
+      expect(JSON.stringify(reply.json)).not.toContain("token-in-path");
+      expect(JSON.stringify(reply.json)).not.toContain("query-token");
+    }
+
+    const fresh = await put(harness.base, "new", { type: "webhook", name: "New", events: ["box.oom"] });
+    expect(refused(fresh)).toMatchObject({ status: 400 });
+  });
+
   test("a webhook answers with its stored signature for the owner's test, and the receiver can verify it", async () => {
     const harness = startApp();
     const hook = receiverFor();

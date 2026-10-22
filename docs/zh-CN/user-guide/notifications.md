@@ -103,7 +103,7 @@ MiniBox 会把通知发送到 `<服务器>/<主题>`。**ntfy 服务器** 默认
 
 ## 私有地址
 
-MiniBox 默认只向公网地址发送。回环、私有网络、链路本地、共享地址与保留地址都会被拒绝，因此渠道无法访问你本机或局域网中的服务。若要发送到自建的 ntfy 服务器，或发送到你网络中的 Webhook，请设置 `NOTIFY_ALLOW_PRIVATE=true`。该设置对所有渠道生效。参见 [配置](../../reference/configuration.md#notifications)。
+MiniBox 默认只向公网地址发送。回环、私有网络、链路本地、共享地址与保留地址都会被拒绝，因此渠道无法访问你本机或局域网中的服务。若要发送到自建的 ntfy 服务器，或发送到你网络中的 Webhook，请设置 `NOTIFY_ALLOW_PRIVATE=true`。该设置对所有渠道生效。参见 [配置](../../reference/configuration.md#notifications)。`198.18.0.0/15` 中的地址是允许的，因为 Clash、Surge 等 fake-IP 模式的 DNS 代理会用这一段地址应答所有域名。
 
 ## 限制与隐私
 
@@ -111,7 +111,8 @@ MiniBox 默认只向公网地址发送。回环、私有网络、链路本地、
 - 通知标题最多 200 个字符，正文最多 500 个字符。
 - 通知不包含命令输出，也不包含密钥的值。发送前会从文本中移除已知密钥。
 - 渠道的签名密钥、ntfy 访问令牌或机器人令牌保存在 `DATA_DIR/secrets/notify/<渠道标识>` 中，权限为 600。保存后不会再次显示。
-- 渠道的其他设置保存在 `DATA_DIR/notify.json` 中，权限同样为 600，包括 Webhook 地址、ntfy 服务器与主题，以及 Telegram 聊天 ID。部分聊天服务会把令牌放在 Webhook 地址里，这样的地址同样保存在该文件中，因此请保持数据目录的私密性。参见 [数据目录](../../admin/data-directory.md)。
+- 部分聊天服务会把令牌放在 Webhook 地址里，因此 Webhook 地址同样按密钥保存在 `DATA_DIR/secrets/notify/<渠道标识>.url` 中。接口与设置卡片只显示其来源部分，例如 `https://hooks.example.com/…`。要更换地址，请输入完整的新地址；留空即保留已保存的地址。
+- 渠道的其他设置保存在 `DATA_DIR/notify.json` 中，权限同样为 600：ntfy 服务器与主题、Telegram 聊天 ID、订阅的通知与 Box 筛选。参见 [数据目录](../../admin/data-directory.md)。
 - 只有所有者可以查看或修改渠道，Agent 令牌不能。
 
 ## 通过 API 管理渠道

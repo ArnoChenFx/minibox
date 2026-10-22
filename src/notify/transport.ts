@@ -37,7 +37,7 @@ interface Pinned {
 
 /** Whether an address is one a notification should reach: not loopback, private, link-local, shared or reserved. */
 export function isPublicAddress(address: string): boolean {
-  const mapped = ipv4Mapped(address);
+  const mapped = ipv4Mapped(address) ?? nat64(address);
   if (mapped !== null) return isPublicIPv4(mapped);
   if (isIP(address) === 4) return isPublicIPv4(address);
   return isPublicIPv6(address.toLowerCase());
@@ -55,6 +55,17 @@ function ipv4Mapped(address: string): string | null {
   return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
 }
 
+/** The IPv4 address inside the well-known NAT64 prefix 64:ff9b::/96, which a NAT64 gateway forwards to that address. */
+function nat64(address: string): string | null {
+  const lower = address.toLowerCase();
+  if (!lower.startsWith("64:ff9b::")) return null;
+  return ipv4Mapped(`::ffff:${lower.slice("64:ff9b::".length)}`);
+}
+
+/**
+ * 198.18.0.0/15 is not refused: fake-IP DNS proxies (Clash, Surge, sing-box) answer every name from it and then
+ * connect to the real address themselves, so refusing it would refuse every channel behind such a proxy.
+ */
 function isPublicIPv4(address: string): boolean {
   const [a = -1, b = -1] = address.split(".").map(Number);
   if (a === 0 || a === 10 || a === 127) return false;
@@ -62,7 +73,6 @@ function isPublicIPv4(address: string): boolean {
   if (a === 169 && b === 254) return false;
   if (a === 172 && b >= 16 && b <= 31) return false;
   if (a === 192 && b === 168) return false;
-  if (a === 198 && (b === 18 || b === 19)) return false;
   return a < 224;
 }
 
@@ -70,7 +80,7 @@ function isPublicIPv6(address: string): boolean {
   if (address === "::" || address === "::1") return false;
   const first = address.split(":")[0] ?? "";
   if (first.startsWith("fc") || first.startsWith("fd")) return false;
-  if (/^fe[89ab]/.test(first)) return false;
+  if (/^fe[89a-f]/.test(first)) return false;
   return !first.startsWith("ff");
 }
 

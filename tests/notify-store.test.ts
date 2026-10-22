@@ -122,6 +122,41 @@ describe("the notification channel store", () => {
     expect(() => openStore().store.load()).toThrow("lists channel ops more than once");
   });
 
+  test("a webhook URL is kept under secrets/notify, never in the notify file, and comes back after a restart", () => {
+    const url = "https://hooks.slack.example/services/T000/B000/token-in-path";
+    const first = openStore();
+    first.store.save(channelOf({ url }));
+
+    const text = readFileSync(notifyPath(dataDir), "utf8");
+    expect(text).not.toContain("token-in-path");
+    expect(JSON.parse(text).channels[0].url).toBeNull();
+    const file = join(dataDir, "secrets", "notify", "ops.url");
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+
+    const second = openStore();
+    second.store.load();
+    expect(second.store.get("ops")?.url).toBe(url);
+
+    second.store.save(channelOf({ type: "ntfy", url: null, topic: "alerts" }));
+    expect(existsSync(file)).toBe(false);
+  });
+
+  test("a URL written into the notify file by hand is moved under secrets/notify on load", () => {
+    writeNotifyFile(JSON.stringify({ version: 1, channels: [channelOf({ url: "https://hooks.example.com/x?k=v1" })] }));
+    const { store } = openStore();
+    store.load();
+    expect(store.get("ops")?.url).toBe("https://hooks.example.com/x?k=v1");
+    expect(readFileSync(notifyPath(dataDir), "utf8")).not.toContain("k=v1");
+    expect(existsSync(join(dataDir, "secrets", "notify", "ops.url"))).toBe(true);
+  });
+
+  test("removing a webhook channel removes its stored URL", () => {
+    const { store } = openStore();
+    store.save(channelOf());
+    store.remove("ops");
+    expect(existsSync(join(dataDir, "secrets", "notify", "ops.url"))).toBe(false);
+  });
+
   test("a channel saved without a secret reads as having none, and the secret directory need not exist", () => {
     const { store } = openStore();
     store.save(channelOf());

@@ -1640,6 +1640,8 @@ export default {
   "st.notifyType": "Type",
   "st.notifyUrl": "Webhook URL",
   "st.notifyUrlHelp": "Each notice is sent to this address as a JSON POST, over HTTP or HTTPS.",
+  "st.notifyUrlKept":
+    "The URL is stored as a secret, because hook URLs often carry a token, and is shown masked. Leave this blank to keep it.",
   "st.notifyServer": "ntfy server",
   "st.notifyServerHelp": "Leave blank for https://ntfy.sh.",
   "st.notifyTopic": "Topic",

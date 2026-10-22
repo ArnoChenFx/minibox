@@ -1529,6 +1529,7 @@ export default {
   "st.notifyType": "类型",
   "st.notifyUrl": "Webhook 地址",
   "st.notifyUrlHelp": "每条通知都以 JSON POST 的形式发送到此地址，支持 HTTP 或 HTTPS。",
+  "st.notifyUrlKept": "Webhook 地址常带有令牌，所以按密钥保存，只显示打码后的形式。留空即保持不变。",
   "st.notifyServer": "ntfy 服务器",
   "st.notifyServerHelp": "留空则使用 https://ntfy.sh。",
   "st.notifyTopic": "主题",

@@ -48,8 +48,9 @@ describe("which addresses a notification may reach", () => {
     { address: "169.254.169.254", reachable: false },
     { address: "100.64.0.1", reachable: false },
     { address: "100.127.255.255", reachable: false },
-    { address: "198.18.0.1", reachable: false },
-    { address: "198.19.0.1", reachable: false },
+    // Fake-IP DNS proxies answer from 198.18.0.0/15 and connect to the real address themselves.
+    { address: "198.18.0.1", reachable: true },
+    { address: "198.19.0.1", reachable: true },
     { address: "0.0.0.0", reachable: false },
     { address: "224.0.0.1", reachable: false },
     { address: "240.0.0.1", reachable: false },
@@ -62,6 +63,11 @@ describe("which addresses a notification may reach", () => {
     { address: "ff02::1", reachable: false },
     { address: "::ffff:127.0.0.1", reachable: false },
     { address: "::ffff:7f00:1", reachable: false },
+    { address: "::ffff:a9fe:a9fe", reachable: false },
+    { address: "64:ff9b::a9fe:a9fe", reachable: false },
+    { address: "64:ff9b::10.0.0.1", reachable: false },
+    { address: "64:ff9b::808:808", reachable: true },
+    { address: "fec0::1", reachable: false },
   ])("$address reachable: $reachable", ({ address, reachable }) => {
     expect(isPublicAddress(address)).toBe(reachable);
   });
@@ -147,6 +153,18 @@ describe("sending a request", () => {
     });
     expect(status).toBe(202);
     expect(seen).toEqual([{ method: "POST", path: "/hook/path", type: "application/json", body: '{"ok":true}' }]);
+  });
+
+  test("a redirect is not followed: its status is the answer, so a public hook cannot bounce to a private address", async () => {
+    const paths: string[] = [];
+    const server = listen((req) => {
+      paths.push(new URL(req.url).pathname);
+      return new Response("", { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data" } });
+    });
+    expect(await send(request(`http://127.0.0.1:${server.port}/hook`), { allowPrivate: true, timeoutMs: 2000 })).toBe(
+      302,
+    );
+    expect(paths).toEqual(["/hook"]);
   });
 
   test("an error status is an answer, not a failure: the status is returned for the caller to judge", async () => {

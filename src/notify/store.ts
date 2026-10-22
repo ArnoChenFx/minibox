@@ -18,9 +18,15 @@ export interface NotifyStoreOptions {
 }
 
 /**
+ * The secret name that holds a webhook channel's URL. A channel id has no dot, so it never meets a channel's own secret.
+ */
+const urlSecret = (id: string) => `${id}.url`;
+
+/**
  * Notification channels: `DATA_DIR/notify.json` holds their settings and never a secret, and each secret is a file under
- * `secrets/notify`, the same format as the host secrets. The file is read once at startup and kept in memory, so a
- * notice is matched without I/O.
+ * `secrets/notify`, the same format as the host secrets. A webhook URL is kept there too, because Slack, Discord and
+ * similar hooks carry their token in the URL. The file is read once at startup and kept in memory, so a notice is
+ * matched without I/O.
  */
 export class NotifyStore {
   private readonly channels = new Map<string, StoredChannel>();
@@ -47,14 +53,25 @@ export class NotifyStore {
       const where = issue?.path.length ? issue.path.join(".") : "the file";
       throw new NotifyFileError(`${path} does not match the notification format at ${where}. Fix or remove it.`);
     }
+    let inline = false;
     for (const channel of parsed.data.channels) {
       if (this.channels.has(channel.id)) {
         throw new NotifyFileError(`${path} lists channel ${channel.id} more than once. Fix or remove it.`);
       }
-      this.channels.set(channel.id, channel as StoredChannel);
+      // A URL written into the file by hand is moved under secrets/notify on the next write.
+      const stored = this.options.secrets.value(urlSecret(channel.id));
+      if (channel.url !== null) {
+        inline = true;
+        if (channel.type === "webhook" && stored === null) {
+          this.options.secrets.set(urlSecret(channel.id), channel.url, new Date().toISOString());
+        }
+      }
+      const url = channel.type === "webhook" ? (stored ?? channel.url) : null;
+      this.channels.set(channel.id, { ...channel, url } as StoredChannel);
       const secret = this.secret(channel.id);
       if (secret !== null) this.options.onSecret(secret);
     }
+    if (inline) this.write();
   }
 
   list(): StoredChannel[] {
@@ -65,8 +82,16 @@ export class NotifyStore {
     return this.channels.get(id);
   }
 
-  /** Adds or replaces a channel's settings and writes the file. The secret is changed separately. */
+  /**
+   * Adds or replaces a channel's settings and writes the file. A webhook URL goes under `secrets/notify`, never into the
+   * file. The channel's secret is changed separately.
+   */
   save(channel: StoredChannel): void {
+    if (channel.url !== null) {
+      this.options.secrets.set(urlSecret(channel.id), channel.url, new Date().toISOString());
+    } else {
+      this.options.secrets.remove(urlSecret(channel.id));
+    }
     this.channels.set(channel.id, channel);
     this.write();
   }
@@ -75,6 +100,7 @@ export class NotifyStore {
   remove(id: string): boolean {
     if (!this.channels.delete(id)) return false;
     this.options.secrets.remove(id);
+    this.options.secrets.remove(urlSecret(id));
     this.write();
     return true;
   }
@@ -99,7 +125,7 @@ export class NotifyStore {
   }
 
   private write(): void {
-    const body = { version: 1, channels: this.list() };
+    const body = { version: 1, channels: this.list().map((channel) => ({ ...channel, url: null })) };
     writeFileAtomic(notifyPath(this.dataDir), `${JSON.stringify(body, null, 2)}\n`, SECRET_FILE_MODE);
   }
 }

@@ -29920,7 +29920,7 @@
                             "description": "Box names or ids the channel is limited to. Empty means every box."
                           },
                           "url": {
-                            "description": "The webhook URL. Null for the other types.",
+                            "description": "The webhook URL with its path and query masked, such as https://hooks.example.com/…, because a hook URL can carry a token. The full URL is never returned. Null for the other types.",
                             "type": [
                               "string",
                               "null"
@@ -30145,7 +30145,7 @@
                   "url": {
                     "type": "string",
                     "maxLength": 2048,
-                    "description": "Webhook URL, http or https, without a user name or password. Used by webhook channels."
+                    "description": "Webhook URL, http or https, without a user name or password. Used by webhook channels. Stored as a secret and never returned in full; omitted on a change, the stored URL is kept."
                   },
                   "server": {
                     "type": "string",
@@ -30231,7 +30231,7 @@
                           "description": "Box names or ids the channel is limited to. Empty means every box."
                         },
                         "url": {
-                          "description": "The webhook URL. Null for the other types.",
+                          "description": "The webhook URL with its path and query masked, such as https://hooks.example.com/…, because a hook URL can carry a token. The full URL is never returned. Null for the other types.",
                           "type": [
                             "string",
                             "null"

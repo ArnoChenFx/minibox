@@ -2773,7 +2773,7 @@
     "path": "/api/notify/channels/alerts",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"channel\":{\"id\":\"alerts\",\"type\":\"webhook\",\"name\":\"Alerts\",\"enabled\":true,\"events\":[\"box.oom\"],\"boxes\":[],\"url\":\"http://127.0.0.1:9/hook\",\"server\":null,\"topic\":null,\"chatId\":null,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"hasSecret\":true},\"created\":true,\"valueChange\":\"set\"}"
+    "body": "{\"channel\":{\"id\":\"alerts\",\"type\":\"webhook\",\"name\":\"Alerts\",\"enabled\":true,\"events\":[\"box.oom\"],\"boxes\":[],\"url\":\"http://127.0.0.1:9/…\",\"server\":null,\"topic\":null,\"chatId\":null,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"hasSecret\":true},\"created\":true,\"valueChange\":\"set\"}"
   },
   {
     "step": "create a webhook channel with a URL that is not http",
@@ -2797,7 +2797,7 @@
     "path": "/api/notify/channels",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"channels\":[{\"id\":\"alerts\",\"type\":\"webhook\",\"name\":\"Alerts\",\"enabled\":true,\"events\":[\"box.oom\"],\"boxes\":[],\"url\":\"http://127.0.0.1:9/hook\",\"server\":null,\"topic\":null,\"chatId\":null,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"hasSecret\":true}]}"
+    "body": "{\"channels\":[{\"id\":\"alerts\",\"type\":\"webhook\",\"name\":\"Alerts\",\"enabled\":true,\"events\":[\"box.oom\"],\"boxes\":[],\"url\":\"http://127.0.0.1:9/…\",\"server\":null,\"topic\":null,\"chatId\":null,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"hasSecret\":true}]}"
   },
   {
     "step": "send a test notice to a channel on a private address",

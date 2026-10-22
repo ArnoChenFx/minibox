@@ -42,7 +42,10 @@ const ChannelSchema = z.object({
   boxes: z
     .array(z.string())
     .meta({ description: "Box names or ids the channel is limited to. Empty means every box." }),
-  url: z.string().nullable().meta({ description: "The webhook URL. Null for the other types." }),
+  url: z.string().nullable().meta({
+    description:
+      "The webhook URL with its path and query masked, such as https://hooks.example.com/…, because a hook URL can carry a token. The full URL is never returned. Null for the other types.",
+  }),
   server: z.string().nullable().meta({ description: "The ntfy server. Null for the other types." }),
   topic: z.string().nullable().meta({ description: "The ntfy topic. Null for the other types." }),
   chatId: z.string().nullable().meta({ description: "The Telegram chat id or channel. Null for the other types." }),
@@ -214,7 +217,8 @@ const ChannelInput = z.object({
   url: field((value) => checkOptionalText(value, isHttpUrl, "notify_url_invalid", "url"), {
     type: "string",
     maxLength: URL_MAX,
-    description: "Webhook URL, http or https, without a user name or password. Used by webhook channels.",
+    description:
+      "Webhook URL, http or https, without a user name or password. Used by webhook channels. Stored as a secret and never returned in full; omitted on a change, the stored URL is kept.",
   }).optional(),
   server: field((value) => checkOptionalText(value, isHttpUrl, "notify_server_invalid", "server"), {
     type: "string",
@@ -261,21 +265,42 @@ function requireChannel(ctx: OperationContext, id: string): StoredChannel {
   return channel;
 }
 
+/** A webhook URL as answers show it: the origin, and an ellipsis where a path or query was. */
+export function maskedUrl(url: string | null): string | null {
+  if (url === null) return null;
+  try {
+    const parsed = new URL(url);
+    const rest = parsed.pathname !== "/" || parsed.search !== "" || parsed.hash !== "";
+    return rest ? `${parsed.origin}/…` : parsed.origin;
+  } catch {
+    return "…";
+  }
+}
+
 function viewOf(store: NotifyStore, channel: StoredChannel): ChannelView {
   return {
     ...channel,
+    url: maskedUrl(channel.url),
     events: [...channel.events],
     boxes: [...channel.boxes],
     hasSecret: store.hasSecret(channel.id),
   };
 }
 
-/** The settings a channel of this type keeps. Fields that belong to another type are not stored. */
-function endpointsOf(input: ChannelInputValue): Pick<StoredChannel, "url" | "server" | "topic" | "chatId"> {
+/**
+ * The settings a channel of this type keeps. Fields that belong to another type are not stored. A webhook write that
+ * omits the URL keeps the stored one, since answers never show it in full.
+ */
+function endpointsOf(
+  input: ChannelInputValue,
+  existing: StoredChannel | null,
+): Pick<StoredChannel, "url" | "server" | "topic" | "chatId"> {
   switch (input.type) {
-    case "webhook":
-      if (!input.url) throw badRequest(msg("notify_url_required"), { field: "url" });
-      return { url: input.url, server: null, topic: null, chatId: null };
+    case "webhook": {
+      const url = input.url ?? (existing?.type === "webhook" ? existing.url : null);
+      if (!url) throw badRequest(msg("notify_url_required"), { field: "url" });
+      return { url, server: null, topic: null, chatId: null };
+    }
     case "ntfy":
       if (!input.topic) throw badRequest(msg("notify_topic_required"), { field: "topic" });
       return { url: null, server: input.server ?? NTFY_SERVER, topic: input.topic, chatId: null };
@@ -286,9 +311,9 @@ function endpointsOf(input: ChannelInputValue): Pick<StoredChannel, "url" | "ser
 }
 
 /** The audit names the server a channel sends to, never the path or query, which can carry a token. */
-function auditedEndpoint(input: ChannelInputValue): string {
+function auditedEndpoint(input: ChannelInputValue, existing: StoredChannel | null): string {
   if (input.type === "telegram") return "telegram";
-  const address = input.type === "webhook" ? input.url : (input.server ?? NTFY_SERVER);
+  const address = input.type === "webhook" ? (input.url ?? existing?.url) : (input.server ?? NTFY_SERVER);
   try {
     return new URL(address ?? "").origin;
   } catch {
@@ -305,7 +330,7 @@ function saveChannel(
   if (existing === null && store.list().length >= CHANNEL_LIMIT) {
     throw conflict(msg("notify_channel_limit", { max: CHANNEL_LIMIT }));
   }
-  const endpoints = endpointsOf(input);
+  const endpoints = endpointsOf(input, existing);
   const typeChanged = existing !== null && existing.type !== input.type;
   const keepsStored = input.secret === undefined && existing !== null && !typeChanged && store.hasSecret(input.id);
   if (input.type === "telegram" && typeof input.secret !== "string" && !keepsStored) {
@@ -401,14 +426,14 @@ export const notifyChannelSet = defineOperation({
   activity: { action: () => "notify.channel.set", target: (input) => input.id },
   audit: {
     target: ({ id }, _resolved, result) => ({ kind: "notify", id, name: result?.channel.name ?? id }),
-    detail: (input, _resolved, result) => ({
+    detail: (input, resolved, result) => ({
       id: input.id,
       type: input.type,
       name: input.name,
       enabled: input.enabled,
       events: input.events,
       boxes: input.boxes ?? [],
-      endpoint: auditedEndpoint(input),
+      endpoint: auditedEndpoint(input, resolved ?? null),
       valueChange: result?.valueChange ?? null,
     }),
   },

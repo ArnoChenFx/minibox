@@ -103,7 +103,7 @@ Every attempt is also recorded in the event log as `notify.deliver`, so it is ke
 
 ## Private addresses
 
-By default MiniBox sends only to public addresses. It refuses loopback, private network, link-local, shared and reserved addresses, so a channel cannot reach services on your machine or your local network. To send to a self-hosted ntfy server or to a webhook on your network, set `NOTIFY_ALLOW_PRIVATE=true`. The setting applies to every channel. See [Configuration](../reference/configuration.md#notifications).
+By default MiniBox sends only to public addresses. It refuses loopback, private network, link-local, shared and reserved addresses, so a channel cannot reach services on your machine or your local network. To send to a self-hosted ntfy server or to a webhook on your network, set `NOTIFY_ALLOW_PRIVATE=true`. The setting applies to every channel. See [Configuration](../reference/configuration.md#notifications). Addresses in `198.18.0.0/15` are allowed, because fake-IP DNS proxies such as Clash or Surge answer every name from that range.
 
 ## Limits and privacy
 
@@ -111,7 +111,8 @@ By default MiniBox sends only to public addresses. It refuses loopback, private 
 - A notice's title is at most 200 characters, and its body at most 500.
 - A notice carries no command output and no secret value. Known secrets are removed from its text before it is sent.
 - A channel's signing secret, ntfy token or bot token is stored in `DATA_DIR/secrets/notify/<channel id>`, with mode 600. It is never shown again after you save it.
-- A channel's other settings are stored in `DATA_DIR/notify.json`, also with mode 600. That includes the webhook URL, the ntfy server and topic, and the Telegram chat id. Some chat services put a token in the webhook URL. Such a URL is kept in that file, so keep the data directory private. See [Data directory](../admin/data-directory.md).
+- A webhook URL is stored as a secret too, in `DATA_DIR/secrets/notify/<channel id>.url`, because some chat services put a token in it. Answers and the settings card show only its origin, such as `https://hooks.example.com/…`. To change it, type the whole new URL; leave the field blank to keep the stored one.
+- A channel's other settings are stored in `DATA_DIR/notify.json`, also with mode 600: the ntfy server and topic, the Telegram chat id, the notices and the box filter. See [Data directory](../admin/data-directory.md).
 - Only the owner can see or change channels. Agent tokens cannot.
 
 ## Manage channels through the API
