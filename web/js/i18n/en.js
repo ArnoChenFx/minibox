@@ -238,7 +238,7 @@ export default {
   "err.host_key_unconfirmed":
     "The SSH host key {fingerprint} has not been confirmed. Check it against the host, then add the host with that fingerprint.",
   "err.host_key_mismatch":
-    "The SSH host key {presented} is not the key you confirmed ({expected}). Nothing was sent to the host.",
+    "The SSH host key {presented} is not the key you confirmed ({expected}). No credentials were sent to the host.",
   "err.host_unreachable": "The host could not be reached: {detail}",
   "err.host_unsupported": "{feature} is not supported on remote hosts yet.",
   "err.preview_remote_unsupported": "Port preview is not supported on remote hosts yet.",

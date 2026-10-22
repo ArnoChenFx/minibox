@@ -210,7 +210,7 @@ export default {
   "err.host_key_encrypted": "{field} 已加密。请使用不带口令的密钥。",
   "err.host_key_invalid": "无法使用该 SSH 密钥：{reason}",
   "err.host_key_unconfirmed": "尚未确认 SSH 主机密钥 {fingerprint}。请与宿主机核对后，用该指纹添加宿主机。",
-  "err.host_key_mismatch": "SSH 主机密钥 {presented} 与您确认的密钥（{expected}）不一致。未向宿主机发送任何内容。",
+  "err.host_key_mismatch": "SSH 主机密钥 {presented} 与您确认的密钥（{expected}）不一致。未向宿主机发送任何凭据。",
   "err.host_unreachable": "无法连接宿主机：{detail}",
   "err.host_unsupported": "远程宿主机暂不支持{feature}。",
   "err.preview_remote_unsupported": "远程宿主机暂不支持端口预览。",

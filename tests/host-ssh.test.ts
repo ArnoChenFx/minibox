@@ -82,7 +82,7 @@ afterAll(async () => {
 });
 
 describe("an SSH host, added with the OpenSSH key it presents", () => {
-  test("a host whose key was not confirmed is refused with the key it presented, and nothing is sent to it", async () => {
+  test("a host whose key was not confirmed is refused with the key it presented, before any login", async () => {
     const res = await api("/api/hosts", {
       method: "POST",
       body: JSON.stringify({ id: "edge", endpoint: endpointOf(sshHost.port), privateKey: trusted.privateKey }),
