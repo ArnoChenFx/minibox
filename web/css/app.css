@@ -2975,3 +2975,233 @@ textarea.token-lines {
   align-items: center;
   gap: 4px;
 }
+
+/* ---------- Box files ---------- */
+.fb.is-dropping {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.fb-intro p {
+  margin: 0;
+}
+.fb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.fb-root-select {
+  width: auto;
+  min-width: 220px;
+  max-width: 100%;
+  height: 32px;
+  font-size: 13px;
+}
+.fb-crumbs {
+  display: flex;
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.fb-crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: nowrap;
+}
+.fb-crumbs li {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.fb-crumb {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+}
+button.fb-crumb {
+  cursor: pointer;
+}
+button.fb-crumb:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.fb-crumb[aria-current="page"] {
+  color: var(--text);
+  font-weight: 600;
+}
+.fb-sep {
+  display: inline-grid;
+  color: var(--text-3);
+}
+.fb-sep .icon {
+  width: 14px;
+  height: 14px;
+}
+.fb-hidden {
+  flex: none;
+  font-size: 13px;
+}
+.fb-table {
+  table-layout: fixed;
+}
+.fb-col-name {
+  width: auto;
+}
+.fb-col-size {
+  width: 120px;
+}
+.fb-col-modified {
+  width: 200px;
+}
+.fb-col-actions {
+  width: 176px;
+}
+th.num,
+td.num {
+  text-align: right;
+}
+.fb-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.fb-sort:hover,
+th[aria-sort="ascending"] .fb-sort,
+th[aria-sort="descending"] .fb-sort {
+  color: var(--text);
+}
+.fb-arrow {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.15s ease;
+}
+.fb-arrow.is-up {
+  transform: rotate(180deg);
+}
+.fb-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+button.fb-name {
+  cursor: pointer;
+}
+button.fb-name:hover span {
+  text-decoration: underline;
+}
+.fb-name span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fb-type {
+  flex: none;
+  color: var(--text-3);
+}
+.fb-type.is-dir {
+  color: var(--accent-text);
+}
+.fb-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 2px;
+}
+.fb-upload {
+  display: grid;
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.fb-upload-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.fb-upload-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.fb-upload-line > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fb-upload-bytes {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.fb-note {
+  margin: 0;
+  padding: 12px 18px;
+}
+.fb-names {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  max-height: 200px;
+  overflow: auto;
+  font-size: 13px;
+}
+.fb-preview {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 96px;
+}
+.fb-code {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
+@media (max-width: 720px) {
+  .fb-col-modified {
+    display: none;
+  }
+}
