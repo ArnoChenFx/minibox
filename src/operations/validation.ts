@@ -774,7 +774,7 @@ const TEMPLATE_SOURCE_META: Meta = {
   type: "object",
   required: ["kind"],
   description:
-    "Where the template's files come from. kind dockerfile takes text, the Dockerfile itself, at most 64 KB with a FROM instruction. kind git takes url, with optional branch, subdir (the build context inside the repository) and dockerfile (relative to the context), and secretRef, as for a box. kind context takes url of a .tar or .tar.gz build context, with optional dockerfile. kind devcontainer takes url of a repository, with optional branch, path (the devcontainer.json inside it, default .devcontainer/devcontainer.json) and secretRef; it reads image, build.dockerfile, build.context, build.args and containerEnv, and refuses any other setting. Each build fetches the files again, so a rebuild picks up the newest commit or archive.",
+    "Where the template's files come from. kind dockerfile takes text, the Dockerfile itself, at most 64 KB with a FROM instruction. kind git takes url, with optional branch, subdir (the build context inside the repository) and dockerfile (relative to the context), and secretRef, as for a box. kind context takes url of a .tar or .tar.gz build context, with optional dockerfile. kind devcontainer takes url of a repository, with optional branch, path (the devcontainer.json inside it; without it, .devcontainer/devcontainer.json, then .devcontainer.json) and secretRef; it reads image, build.dockerfile, build.context, build.args and containerEnv, and refuses any other setting. Each build fetches the files again, so a rebuild picks up the newest commit or archive.",
   properties: {
     kind: { type: "string", enum: ["dockerfile", "git", "context", "devcontainer"] },
     text: { type: "string", maxLength: DOCKERFILE_MAX_BYTES },

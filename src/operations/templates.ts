@@ -110,7 +110,7 @@ export const templateCreate = defineOperation({
     toolset: "tools",
     name: "create_template",
     description:
-      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv is kept, and any other devcontainer.json setting is refused. Returns a task id; the task log shows the build.",
+      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv is kept, and any other devcontainer.json setting is refused. Owner only. Returns a task id; the task log shows the build.",
   },
   precondition: async ({ host }) => localOnly(host, "templates"),
   beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
@@ -146,7 +146,7 @@ export const templateRebuild = defineOperation({
     toolset: "tools",
     name: "rebuild_template",
     description:
-      "Rebuild a template from the source it was built from, so a branch or an archive gives its newest content. The tag moves only when the build succeeds, and a failed rebuild keeps the image the template had. Returns a task id.",
+      "Rebuild a template from the source it was built from, so a branch or an archive gives its newest content. The tag moves only when the build succeeds, and a failed rebuild keeps the image the template had. Owner only. Returns a task id.",
   },
   precondition: async ({ host }) => localOnly(host, "templates"),
   resolve: ({ host }, input) => declaredTemplate(host, input.ref),

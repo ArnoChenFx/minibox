@@ -22,7 +22,7 @@ export const imagePull = defineOperation({
     toolset: "tools",
     name: "pull_image",
     description:
-      "Pull an image from its registry onto this engine, so a box or a template can start from it. An image that is already present is left alone. MiniBox's own template, snapshot and checkpoint images are never pulled. Returns a task id; the task log shows each layer.",
+      "Pull an image from its registry onto this engine, so a box or a template can start from it. An image that is already present is left alone. MiniBox's own template, snapshot and checkpoint images are never pulled. Owner only. Returns a task id; the task log shows each layer.",
   },
   precondition: async ({ host }) => localOnly(host, "templates"),
   beforeTask: async ({ host }, input) => assertImageAvailable(host, input.ref),
