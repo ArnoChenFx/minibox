@@ -36,6 +36,7 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/packages/:id/download",
   "GET /api/hosts/usage",
   "GET /api/pools",
+  "GET /api/preview/setup",
   "GET /api/secrets",
   "GET /api/system",
   "GET /api/tokens",
