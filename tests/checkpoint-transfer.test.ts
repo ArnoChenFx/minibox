@@ -451,6 +451,27 @@ describe("importing a package", () => {
     expect((await call(target.base, "/api/checkpoints")).json.checkpoints).toEqual([]);
   });
 
+  test("a record that cannot be written leaves no snapshots behind, so the same package imports on the next try", async () => {
+    const source = open();
+    const target = open();
+    const boxId = await makeBox(source, "alpha");
+    const checkpoint = await take(source, boxId);
+    const pkg = await exportOf(source, checkpoint.id);
+    const stored = uploaded(await upload(target, (await downloaded(source, pkg.id)).bytes));
+
+    const local = target.app.hosts.get();
+    const failing = spyOn(local.checkpoints, "write").mockImplementationOnce(() => {
+      throw new Error("the disk is full");
+    });
+    const failed = await importOf(target, stored.id);
+    failing.mockRestore();
+    expect(failed.status).toBe("failed");
+    expect(await local.checkpointEngine.tagged(local, `checkpoint:${checkpoint.id}`)).toEqual([]);
+    expect((await downloaded(target, stored.id)).status).toBe(200);
+
+    expect((await importOf(target, stored.id)).status).toBe("succeeded");
+  });
+
   test("a package whose checkpoint is already here is refused with checkpoint_import_exists, and the checkpoint is untouched", async () => {
     const harness = open();
     const boxId = await makeBox(harness, "alpha");

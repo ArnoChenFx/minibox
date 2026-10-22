@@ -274,7 +274,12 @@ async function restorePackage(
       createdAt: manifest.createdAt,
       updatedAt: now,
     };
-    host.checkpoints.write(record);
+    try {
+      host.checkpoints.write(record);
+    } catch (e) {
+      await discardCopies(host, manifest.id);
+      throw e;
+    }
     log.info("checkpoint.imported", { id: manifest.id, box: manifest.boxName, layers: data.length });
     return viewOf(record);
   } finally {
