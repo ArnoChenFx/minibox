@@ -83,9 +83,8 @@ describe("MCP", () => {
   });
   afterEach(() => restoreLogs());
 
-  test("the agent snippet is the one in the README and the agents doc", () => {
-    expect(readFileSync(join(ROOT, "README.md"), "utf8")).toContain(AGENTS_MD_SNIPPET);
-    expect(readFileSync(join(ROOT, "docs", "agents.md"), "utf8")).toContain(AGENTS_MD_SNIPPET);
+  test("the agent snippet is the one in the agents guide", () => {
+    expect(readFileSync(join(ROOT, "docs", "user-guide", "agents.md"), "utf8")).toContain(AGENTS_MD_SNIPPET);
   });
 
   test("requires a bearer token and refuses GET", async () => {
@@ -146,7 +145,8 @@ describe("MCP", () => {
       const initBody = (await init.json()) as { result: { protocolVersion: string; instructions: string } };
       expect(initBody.result.protocolVersion).toBe("2025-03-26");
       expect(initBody.result.instructions).toContain(AGENTS_MD_SNIPPET);
-      expect(initBody.result.instructions).toContain("27");
+      expect(initBody.result.instructions).not.toContain("design catalog");
+      expect(initBody.result.instructions).toContain("Checkpoints have no MCP tools");
 
       const listed = await post(env.base, rpc(2, "tools/list"), { "mcp-session-id": session ?? "" });
       const tools = ((await listed.json()) as { result: { tools: { name: string }[] } }).result.tools.map(

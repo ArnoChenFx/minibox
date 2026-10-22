@@ -10,9 +10,10 @@ const REPO = "https://github.com/ArnoChenFx/minibox";
 
 function projectLinks() {
   const readme = lang === "zh-CN" ? "README-zh.md" : "README.md";
+  const docs = lang === "zh-CN" ? "docs/zh-CN/README.md" : "docs/README.md";
   return [
     { icon: "bookOpen", label: t("about.readme"), meta: t("about.readmeMeta"), href: `${REPO}/blob/main/${readme}` },
-    { icon: "folder", label: t("about.docs"), meta: t("about.docsMeta"), href: `${REPO}/tree/main/docs` },
+    { icon: "folder", label: t("about.docs"), meta: t("about.docsMeta"), href: `${REPO}/blob/main/${docs}` },
     {
       icon: "history",
       label: t("about.changelog"),

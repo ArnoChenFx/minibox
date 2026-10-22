@@ -1,6 +1,6 @@
 FROM node:26-bookworm-slim
 
-# Box user convention (docs/design.md §11.4). Every MiniBox template uses the same uid and gid, so a volume that
+# Box user convention. Every MiniBox template uses the same uid and gid, so a volume that
 # several boxes mount has one owner. Change these only together with the volumes that already use them.
 ARG DEV_UID=1000
 ARG DEV_GID=1000
@@ -29,9 +29,9 @@ RUN if getent passwd node >/dev/null; then userdel node && rm -rf /home/node; fi
  && chmod 0440 /etc/sudoers.d/dev \
  && visudo -cf /etc/sudoers.d/dev
 
-# Mount points. Until the storage work (#24) attaches volumes, these are plain directories in the image. The tools
-# volume is read-only inside boxes (docs/design.md §11.2). The tools writer runs as uid 1000 and takes the volume back
-# for that uid before each write, because Docker copies this root-owned directory into an empty volume on first mount.
+# Mount points for the box volumes. The tools volume is read-only inside boxes. The tools writer runs as uid 1000 and
+# takes the volume back for that uid before each write, because Docker copies this root-owned directory into an empty
+# volume on first mount.
 RUN mkdir -p /workspace /opt/minibox/tools/bin /home/dev/.cache \
  && chown dev:dev /workspace /home/dev/.cache
 

@@ -1,6 +1,6 @@
 /**
- * Pasteable instructions for an agent working through MiniBox. README.md and docs/agents.md include this text,
- * and the MCP `instructions` field does too, so the three stay the same.
+ * Pasteable instructions for an agent working through MiniBox. docs/user-guide/agents.md includes this text,
+ * and the MCP `instructions` field does too, so the two stay the same.
  */
 export const AGENTS_MD_SNIPPET = `## MiniBox
 
@@ -23,9 +23,9 @@ Use the MiniBox MCP server (\`/mcp\`, Bearer access key or agent token) to work 
 - The storage toolset (\`/mcp?toolsets=storage\`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
 - The network toolset (\`/mcp?toolsets=network\`) holds list_ports and expose_port for path-mode previews under \`/box/<name>/<port>/\`.
 - read_file, write_file, list_files and copy_files act on volumes (not boxes). They work when no box is running, via a helper container and the Docker archive API. A call keeps the boxes that mount the volume awake while it runs, and it never starts a stopped box. Paths are jailed inside the volume. write_file stamps uid/gid 1000 (dev). exec already implies volume RW on mounts of boxes the token may use; files:* only matters without exec.
-- The default toolsets are core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.`;
+- The default toolsets are core and meta. Add others with \`?toolsets=\`, for example \`/mcp?toolsets=core,meta,session\`. Checkpoints have no MCP tools: use the REST API (\`/api/boxes/{id}/checkpoints\`, \`/api/checkpoints\`).`;
 
 /** What the MCP initialize result tells the client. Checkpoints are named so an agent does not invent them. */
-export const MCP_INSTRUCTIONS = `Recommended flow: list_boxes or create_box, then exec and the file tools (read_file / write_file / list_files / copy_files) on volumes. Checkpoints are not available yet. The design catalog has 27 tools and the default toolsets are core and meta (15 tools). This server exposes the implemented tools in the requested toolsets. rebuild_box is in the rebuild toolset. The session toolset holds session_start, session_send and session_read. The volume and pool tools are in the storage toolset. The tools toolset holds tool install operations, the owner's custom catalog operations, and save_template, which saves a box's system layer as a template. The network toolset holds list_ports and expose_port for path-mode previews.
+export const MCP_INSTRUCTIONS = `Recommended flow: list_boxes or create_box, then exec and the file tools (read_file / write_file / list_files / copy_files) on volumes. Checkpoints have no MCP tools; they are in the REST API. The default toolsets are core and meta. tools/list returns the tools of the requested toolsets that this token may use. rebuild_box is in the rebuild toolset. The session toolset holds session_start, session_send and session_read. The volume and pool tools are in the storage toolset. The tools toolset holds tool install operations, the owner's custom catalog operations, and save_template, which saves a box's system layer as a template. The network toolset holds list_ports and expose_port for path-mode previews.
 
 ${AGENTS_MD_SNIPPET}`;
