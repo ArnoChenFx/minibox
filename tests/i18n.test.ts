@@ -49,6 +49,38 @@ describe("i18n dictionaries", () => {
   });
 });
 
+describe("save as template strings", () => {
+  const added = [
+    "tp.saveAction",
+    "tp.saveTitle",
+    "tp.saveDesc",
+    "tp.saveScope",
+    "tp.saved",
+    "tp.openTemplate",
+    "tp.saveFailed",
+    "task.op.template.save",
+    "err.template_name_taken",
+    "sn.legacyTitle",
+    "sn.legacyText",
+  ];
+
+  test("each one has its own Chinese text, not the English copied across", () => {
+    for (const key of added) expect([key, zh[key] !== en[key]]).toEqual([key, true]);
+  });
+
+  test("the scope line names checkpoints for data in both languages", () => {
+    expect(en["tp.saveScope"]).toContain("checkpoint");
+    expect(zh["tp.saveScope"]).toContain("检查点");
+  });
+
+  test("login.feat2 names checkpoints for data and templates for the environment in both languages", () => {
+    expect(en["login.feat2"]).toMatch(/checkpoints/i);
+    expect(en["login.feat2"]).toMatch(/templates/i);
+    expect(zh["login.feat2"]).toContain("检查点");
+    expect(zh["login.feat2"]).toContain("模板");
+  });
+});
+
 describe("console translations", () => {
   const used = consoleFiles(WEB).flatMap((path) =>
     literalKeys(readFileSync(path, "utf8")).map((key) => ({ key, file: relative(WEB, path) })),
