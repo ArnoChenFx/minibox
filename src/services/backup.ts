@@ -48,6 +48,7 @@ export interface BackupServiceOptions {
  */
 export class BackupService {
   readonly store: BackupStore;
+  private readonly receiving = new Set<string>();
 
   constructor(private readonly options: BackupServiceOptions) {
     this.store = new BackupStore(options.dataDir);
@@ -94,10 +95,16 @@ export class BackupService {
     return this.store.list();
   }
 
+  /** The record of a backup whose archive is whole, or null. A record without its archive is not a backup. */
+  whole(id: string): BackupRecord | null {
+    const record = this.store.read(id);
+    return record !== null && this.store.fileBytes(id) === record.bytes ? record : null;
+  }
+
   /** A backup whose archive is whole. Anything else is not found. */
   stored(id: string): BackupRecord {
-    const record = this.store.read(id);
-    if (!record || this.store.fileBytes(id) !== record.bytes) throw notFound(msg("backup_not_found", { id }));
+    const record = this.whole(id);
+    if (!record) throw notFound(msg("backup_not_found", { id }));
     return record;
   }
 
@@ -119,12 +126,17 @@ export class BackupService {
 
   /**
    * Stores an archive pulled from a target. The record is the one the target kept beside it, and the bytes must match
-   * it, so a damaged or substituted archive is refused and leaves nothing behind.
+   * it, so a damaged or substituted archive is refused and leaves nothing behind. A leftover from an interrupted receive
+   * is replaced; a whole backup with the same id is not, and neither is a second receive of an id already in flight.
    */
   async receive(record: BackupRecord, source: AsyncIterable<Uint8Array>): Promise<BackupRecord> {
-    if (this.store.exists(record.id)) throw conflict(msg("backup_exists", { id: record.id }));
-    this.store.ensureDir();
+    if (this.receiving.has(record.id) || this.whole(record.id) !== null) {
+      throw conflict(msg("backup_exists", { id: record.id }));
+    }
+    this.receiving.add(record.id);
     try {
+      this.store.remove(record.id);
+      this.store.ensureDir();
       const received = await writeStream(this.store.partialPath(record.id), source, record.bytes);
       if (received.bytes !== record.bytes || received.sha256 !== record.sha256) {
         throw badRequest(msg("backup_invalid", { reason: "the archive does not match its record" }));
@@ -136,6 +148,8 @@ export class BackupService {
     } catch (e) {
       this.store.remove(record.id);
       throw e;
+    } finally {
+      this.receiving.delete(record.id);
     }
   }
 }

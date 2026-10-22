@@ -254,6 +254,34 @@ describe("receiving a backup pulled from a target", () => {
     expect(await bytesOf(app, ctx, backup.id)).toEqual(archive);
   });
 
+  test("an id that is already stored whole is refused, and the stored archive is kept", async () => {
+    const { app } = createTestApp();
+    const ctx = ctxOf(app);
+    const backup = await backupOf(app, ctx);
+    const archive = await bytesOf(app, ctx, backup.id);
+    const record = {
+      version: 1 as const,
+      id: backup.id,
+      origin: "target" as const,
+      targetId: "tgt_test",
+      createdBy: "owner",
+      bytes: archive.byteLength,
+      sha256: backup.sha256,
+      entries: 1,
+      createdAt: new Date().toISOString(),
+    };
+    const refused = await rejectionOf(
+      app.backups.receive(
+        record,
+        (async function* () {
+          yield archive;
+        })(),
+      ),
+    );
+    expect(refused).toMatchObject({ status: 409, key: "backup_exists" });
+    expect(await bytesOf(app, ctx, backup.id)).toEqual(archive);
+  });
+
   test("an archive that does not match its record is refused and leaves nothing behind", async () => {
     const { app } = createTestApp();
     const ctx = ctxOf(app);

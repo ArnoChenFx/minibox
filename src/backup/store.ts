@@ -136,13 +136,15 @@ export class BackupStore {
   }
 
   /**
-   * Removes what a crash left behind: partial archives, staging folders and temporary records. Called once at startup,
-   * before any backup can be running.
+   * Removes what a crash left behind: partial archives, staging folders, temporary records, and archives whose record was
+   * never written. Called once at startup, before any backup can be running.
    */
   sweepPartial(): number {
     let removed = 0;
-    for (const name of this.names()) {
-      if (!name.startsWith(".")) continue;
+    const names = this.names();
+    for (const name of names) {
+      const orphan = this.isOrphanArchive(name, names);
+      if (!name.startsWith(".") && !orphan) continue;
       rmSync(join(this.dir(), name), { recursive: true, force: true });
       removed += 1;
     }
@@ -165,5 +167,11 @@ export class BackupStore {
       if (isEnoent(e)) return [];
       throw e;
     }
+  }
+
+  private isOrphanArchive(name: string, names: string[]): boolean {
+    if (!name.endsWith(BACKUP_EXTENSION)) return false;
+    const id = name.slice(0, -BACKUP_EXTENSION.length);
+    return isBackupId(id) && !names.includes(`${id}.json`);
   }
 }

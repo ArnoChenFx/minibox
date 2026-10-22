@@ -97,6 +97,17 @@ describe("backup store", () => {
     expect(store.list().map((record) => record.id)).toEqual([finished]);
   });
 
+  test("sweepPartial removes an archive whose record was never written", () => {
+    const finished = store.allocateId();
+    finish(finished, "2026-10-07T00:00:00.000Z");
+    const orphan = store.allocateId();
+    store.ensureDir();
+    writeFileSync(store.pathFor(orphan), "archive without a record");
+
+    expect(store.sweepPartial()).toBe(1);
+    expect(readdirSync(store.dir()).toSorted()).toEqual([`${finished}.json`, `${finished}.mbbak`]);
+  });
+
   test("remove deletes the archive and its record, and a retry is harmless", () => {
     const id = store.allocateId();
     finish(id, "2026-10-06T00:00:00.000Z");
