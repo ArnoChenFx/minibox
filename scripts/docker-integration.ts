@@ -80,6 +80,7 @@ const TEST_FILES = [
   "tests/docker-sessions.test.ts",
   "tests/docker-ssh.test.ts",
   "tests/docker-tools.test.ts",
+  "tests/docker-hosts.test.ts",
 ];
 
 /** Runs each file in its own process, so each one's cleanup sees only what it made. The first failure is the status. */
