@@ -25368,7 +25368,8 @@
                           "enum": [
                             "idle",
                             "ttl",
-                            "manual"
+                            "manual",
+                            "volume_limit"
                           ]
                         },
                         {
@@ -25726,6 +25727,89 @@
                         "null"
                       ]
                     },
+                    "limits": {
+                      "type": "object",
+                      "properties": {
+                        "softBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "hardBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "warn",
+                            "stop"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "softBytes",
+                        "hardBytes",
+                        "action"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "usage": {
+                      "type": "object",
+                      "properties": {
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "volume",
+                            "share"
+                          ]
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "ok",
+                            "soft",
+                            "hard"
+                          ]
+                        },
+                        "history": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "bytes"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "lastError": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "level",
+                        "history",
+                        "lastError"
+                      ],
+                      "additionalProperties": false
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -25781,6 +25865,8 @@
                     "engineName",
                     "bytes",
                     "bytesAt",
+                    "limits",
+                    "usage",
                     "createdAt",
                     "mounts",
                     "unattached",
