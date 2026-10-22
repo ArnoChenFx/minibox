@@ -1122,7 +1122,7 @@ export default {
   "ck.scheduleDaily": "Every day at {at} ({zone})",
   "ck.nextRun": "Next run",
   "ck.lastRun": "Last run",
-  "ck.localTime": "(your local time)",
+  "ck.localTime": " (your local time)",
   "ck.lastRunNone": "none yet",
   "ck.runOk": "{time}, checkpoint taken",
   "ck.runSkipped": "{time}, skipped: {reason}",

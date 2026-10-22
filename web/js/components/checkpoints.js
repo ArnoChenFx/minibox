@@ -337,7 +337,7 @@ export function scheduleHtml(schedule) {
   }
   return `<div class="ck-schedule">
     <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge badge-accent">${esc(ruleText(schedule))}</span></div>
-    <div class="help">${esc(t("ck.nextRun"))}: ${esc(dateTime(schedule.nextRunAt))} <span class="subtle">${esc(t("ck.localTime"))}</span></div>
+    <div class="help">${esc(t("ck.nextRun"))}: ${esc(dateTime(schedule.nextRunAt))}<span class="subtle">${esc(t("ck.localTime"))}</span></div>
     <div class="help">${esc(t("ck.lastRun"))}: ${esc(lastRunText(schedule.lastRun))}</div>
     <div class="help">${esc(t("ck.scheduleNote"))}</div>
     <div class="ck-schedule-actions">
