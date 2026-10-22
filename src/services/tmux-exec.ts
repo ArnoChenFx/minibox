@@ -13,7 +13,8 @@ export const TMUX_ENV = ["TERM=xterm-256color", "LANG=C.UTF-8"];
 /** The most output one tmux command is read for. Past it the oldest bytes are dropped, so the newest screen still shows. */
 const OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 
-export interface TmuxRun {
+/** The result of one command run in the box: its status and what it printed. */
+export interface BoxRun {
   readonly code: number;
   readonly stdout: string;
   readonly stderr: string;
@@ -44,9 +45,14 @@ export async function startInBox(host: HostCtx, containerId: string, spec: ExecS
 }
 
 /** Runs `tmux` in the box as `dev`, collects what it prints, and returns its status. */
-export async function runTmux(host: HostCtx, containerId: string, args: readonly string[]): Promise<TmuxRun> {
+export function runTmux(host: HostCtx, containerId: string, args: readonly string[]): Promise<BoxRun> {
+  return runInBox(host, containerId, ["tmux", "-u", ...args]);
+}
+
+/** Runs a command in the box as `dev`, collects what it prints, and returns its status. */
+export async function runInBox(host: HostCtx, containerId: string, cmd: readonly string[]): Promise<BoxRun> {
   const session = await startInBox(host, containerId, {
-    cmd: ["tmux", "-u", ...args],
+    cmd: [...cmd],
     env: TMUX_ENV,
     workingDir: "/",
     user: "dev",
@@ -124,7 +130,8 @@ async function exitCodeOf(session: ExecSession): Promise<number> {
   }
 }
 
-function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+/** Waits for `promise` for at most `ms` milliseconds. Resolves to undefined when the time runs out first. */
+export function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const limit = new Promise<undefined>((resolve) => {
     timer = setTimeout(() => resolve(undefined), ms);

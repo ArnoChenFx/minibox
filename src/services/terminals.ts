@@ -27,7 +27,7 @@ import {
   type TmuxSession,
 } from "../tmux/format";
 import { type Box, ensureRunning } from "./boxes";
-import { runTmux, startInBox, TMUX_ENV, type TmuxRun, unsupportedImage } from "./tmux-exec";
+import { type BoxRun, runTmux, startInBox, TMUX_ENV, unsupportedImage } from "./tmux-exec";
 
 /** The most a single `session_read` returns. Each line is at most a pane row, so this bounds the response. */
 export const READ_LINES_MAX = 2000;
@@ -620,7 +620,7 @@ export class TerminalService {
     this.tracked.delete(tracked.key);
   }
 
-  private failure(run: TmuxRun, containerId: string, name: string): AppError {
+  private failure(run: BoxRun, containerId: string, name: string): AppError {
     const kind = classifyTmuxFailure(run.code, run.stderr);
     if (kind === "not_found" || kind === "no_server") return this.missingSession(containerId, name);
     if (kind === "unrunnable") return unsupportedImage();
