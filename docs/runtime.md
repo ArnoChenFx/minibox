@@ -27,7 +27,7 @@
 - 容器：`listContainers`、`inspectContainer`、`createContainer`、`startContainer`、`stopContainer`、`restartContainer`、`pauseContainer`、`unpauseContainer`、`removeContainer`、`renameContainer`、`updateContainer`、`containerLogs`、`containerDiff`、`containerStats`、`commitContainer`、`putArchive`、`getArchive`、`statPath`
 - exec：`startExec` 返回会话。未设置 `tty` 时是交互终端（Web 终端走这条路径）：`stream` 同时承载输入和输出，并带 `resize()` 与 `inspect()`。`tty: false` 时标准输出与标准错误分开，会话还提供 `stdout`、`stderr` 与 `kill()`。`user` 缺省时沿用容器自己的用户；命令 exec 传入 `dev`。所有 exec（包括交互终端）都经一层 `/bin/sh` 包装运行，包装 shell 的参数中，`minibox-exec` 之后紧跟一个随机令牌。`kill()` 在容器内执行一段 POSIX `sh` 脚本：「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本通过 `/proc/*/cmdline` 找到包装 shell。`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选 pid，每个候选同样要核对命令行。之后沿 `/proc/<pid>/stat` 的父进程号收集进程；包装 shell 自己是会话或进程组首进程时，同一会话与进程组中的进程也一并收集。每个进程先用 `SIGSTOP` 冻结，并等待其停止后才继续扫描，直到一次扫描不再发现新进程（最多 5 轮）。然后逐个 `SIGKILL`，包装 shell 最后结束。脚本退出码：0 表示全部结束；1 表示有进程无法发信号（脚本恢复其余进程并退出），或有进程存活（其余进程保持冻结，以便重试）；2 表示找不到包装 shell。终止脚本以 `/` 为工作目录启动，而不是 exec 自己的目录：runc 在进程开始前会进入工作目录，而那个目录可能是一个挂起的 NFS 路径。创建与启动终止 exec 的时限为 5 秒，超时则 `kill()` 抛出 `engine` 错误。`kill()` 只有在 Docker 报告 exec 已结束后才算成功，否则抛出 `engine` 错误，exec 仍在运行，可以再次调用。exec 已结束时 `kill()` 直接返回。交互终端的 `kill()` 同样可用，以 exec 的用户（`dev`）执行：Web 终端断开时用它结束其中的 tmux attach 进程；tmux 服务器不在这棵进程树里，会话因此保留。这一层要求容器里有 `/bin/sh`、`cat`、`rm` 与 `sleep`（`sleep` 需支持小数秒）。
 - 事件：`events`，按标签与类型过滤；`since`（Unix 秒）让引擎补发该时间之后记录的事件，订阅者因此可以在订阅之后再列出容器而不漏掉变化；消费者停止迭代或 `signal` 中止时结束
-- 镜像：`listImages`、`inspectImage`、`pullImage`、`removeImage`、`buildImage`
+- 镜像：`listImages`、`inspectImage`、`pullImage`、`removeImage`、`buildImage`、`saveImage`、`loadImage`
 - 卷：`inspectVolume`、`listVolumes`、`createVolume`、`removeVolume`、`volumeRootOwner`、`setVolumeRootOwner`
 - 辅助容器与磁盘：`runHelper`、`diskUsage`
 - 网络：`ensureBridgeNetwork`、`reattachNetwork`
@@ -37,6 +37,7 @@
 - `startContainer` 对运行中的容器成功，`stopContainer` 对已停止的容器成功。
 - `pauseContainer` 冻结运行中容器的全部进程，容器仍报告为运行中（`running: true`，`state: paused`）。对已暂停或已停止的容器返回 `conflict`；`unpauseContainer` 对未暂停的容器不做任何事，与 `startContainer` 一样可以重复调用。
 - `pullImage(ref)` 只在镜像不在本地时拉取，本地已有时不访问镜像仓库。引擎返回 404（仓库或标签不存在）时为 `not_found`；拉取过程中报告的错误为 `engine`。
+- `saveImage(ref)` 返回镜像的 tar 归档流，格式与 `docker save` 相同，包含镜像拥有的全部标签。调用方读取流，提前停止时须 `destroy()` 它。`loadImage(archive)` 在本引擎上装载归档：镜像保留其 id，归档中的标签在此生效，同名标签原先指向的其它镜像会被移走。多宿主机的迁移用这一对方法把模板镜像送到目标引擎，并检查装载后的 id 与源端一致（见「多宿主机」的第二部分）。
 - 运行中的容器只有 `removeContainer(id, { force: true })` 才能删除。
 - 仍被容器挂载的卷不能删除，`removeVolume` 返回 `conflict`。
 - `createVolume` 对已存在的卷成功，并保留原有标签和驱动选项。第三个参数选择驱动，例如本地驱动配上 NFS 或 bind 选项。
@@ -86,13 +87,13 @@
 ## Host 模型
 
 - `Host` 为 `{ id, name, kind, endpoint, labels, status, transport }`。`transport` 为 `local`、`unix`、`tcp` 或 `ssh`，`endpoint` 是不含凭据的文本。`probeHost()` 调用 `ping` 后把 `status` 记为 `online` 或 `offline`，`/api/health` 使用它。
-- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, stopTimeoutSec, readTimeoutMs, templatesDir, security, monitor, sampler, specs, volumes, pulse, checkpoints, checkpointEngine, checkpointPolicy, power, capacity(), multiHost() }`。`readTimeoutMs` 是远端引擎一次读取的上限（`ENGINE_READ_TIMEOUT_MS`，5 秒）。`monitor` 只在本机运行并读取 `/proc`，远端的 `capacity()` 来自 `docker info`。`multiHost()` 在控制面有多于一台宿主机时为真，箱子的响应只在此时带 `hostId`。services 的函数接收 `HostCtx`，而不是 host id。`stopTimeoutSec` 来自 `STOP_TIMEOUT_SEC`（默认 3，允许 0 到 300），停止与重启 Box 时传给 `stopContainer` 与 `restartContainer`。`specs`、`volumes` 与 `checkpoints` 都是控制面共享的一份存储（`DATA_DIR/boxes`、`DATA_DIR/volumes`、`DATA_DIR/pools.json` 与 `DATA_DIR/checkpoints`），不是每个引擎一份；`pulse` 是共享的内存心跳。每条卷与检查点记录自己带 `hostId`。检查点的 restic 仓库则是每台宿主机一个（见「多宿主机」）。
+- `HostCtx` 是业务代码拿到的上下文：`{ host, runtime, prefix, keys, baseTemplateTag, stopTimeoutSec, readTimeoutMs, templatesDir, security, monitor, sampler, specs, volumes, secrets, pulse, checkpoints, checkpointEngine, checkpointPolicy, power, capacityPolicy, capacity(), multiHost() }`。`capacityPolicy` 为 `HOST_OVERCOMMIT`，即容量预留允许超出容量的倍数。`readTimeoutMs` 是远端引擎一次读取的上限（`ENGINE_READ_TIMEOUT_MS`，5 秒）。`monitor` 只在本机运行并读取 `/proc`，远端的 `capacity()` 来自 `docker info`。`multiHost()` 在控制面有多于一台宿主机时为真，箱子的响应只在此时带 `hostId`。services 的函数接收 `HostCtx`，而不是 host id。`stopTimeoutSec` 来自 `STOP_TIMEOUT_SEC`（默认 3，允许 0 到 300），停止与重启 Box 时传给 `stopContainer` 与 `restartContainer`。`specs`、`volumes` 与 `checkpoints` 都是控制面共享的一份存储（`DATA_DIR/boxes`、`DATA_DIR/volumes`、`DATA_DIR/pools.json` 与 `DATA_DIR/checkpoints`），不是每个引擎一份；`pulse` 是共享的内存心跳。每条卷与检查点记录自己带 `hostId`。检查点的 restic 仓库则是每台宿主机一个（见「多宿主机」）。
 - `ContainerInfo` 还包含 `imageId`、`pidsLimit`、`restart` 与 `mounts`。`updateContainer` 可以改 CPU、内存、swap、进程数上限和重启策略，且不会重建容器，也不会改标签。
 - `HostRegistry` 的 `add()` 对重复 id 抛错；`get(hostId = "local")` 对未知 id 抛错。
 
 ## 多宿主机
 
-第一部分（[#21](https://github.com/ArnoChenFx/minibox/issues/21)）加入直连的远端宿主机，以及控制台中的宿主机管理。Agent、`host: "auto"` 调度、跨机迁移与远端端口预览留到后续部分。
+第一部分（[#21](https://github.com/ArnoChenFx/minibox/issues/21)）加入直连的远端宿主机，以及控制台中的宿主机管理。第二部分加入远端的指标与容量预留、`host: "auto"` 调度与跨机迁移（见下文）。Agent 与远端端口预览留到后续部分。
 
 - **登记**：`HostManager`（`src/host/manager.ts`）在应用创建时读取 `DATA_DIR/hosts.json`（`HostStore`，权限 600）。每台远端宿主机在 `HostRegistry` 中有一个 `HostCtx`，登记时调用 `attach()` 开启它的采样器与容器监视。连接方式由端点决定：`unix://` 直接使用套接字，`tcp://` 使用双向 TLS，`ssh://` 由 `SshTunnel` 在本地开一个 Unix 套接字，每条连接经 SSH 转发到远端的引擎套接字。`local` 由 `createLocalHost()` 创建，不能删除。
 - **凭据**：TLS 与 SSH 的凭据写入 `DATA_DIR/hosts/<id>/`，目录权限 700，文件权限 600。它们不在 `hosts.json` 中，也不出现在任何响应、日志或审计中。读取时权限过宽的文件会收紧为 600。凭据文件缺失时宿主机仍然登记，但它的运行时对每次调用都返回 `unavailable`（`unreachableRuntime()`），其箱子显示为不可达，而不是消失。
@@ -100,7 +101,13 @@
 - **读取超时**：远端宿主机的每次引擎读取最多等待 `ENGINE_READ_TIMEOUT_MS`（5 秒）。列表（`fromEveryHost()`、`listAllBoxes()`）并行读取所有宿主机。超时、失败或已离线的远端宿主机不阻塞其它宿主机：其箱子以 `unreachable` 状态列出，卷与检查点则从结果中略去。本机的失败仍使整个列表失败。
 - **探测**：`HostManager.refresh()` 每 30 秒（`PROBE_INTERVAL_MS`）对每台宿主机调用 `ping` 与 `info`，记录延迟、引擎版本与容量。`GET /api/hosts` 返回这些结果，离线宿主机保留条目，并给出最近一次失败的原因。
 - **管理接口**：`/api/hosts` 的列表、添加、测试与删除只允许所有者（scope `host:manage`），令牌无论持有什么 `hosts` 授权都不能使用。`POST /api/hosts/test` 不保存任何东西。添加 SSH 宿主机时，请求必须带上核对过的 `hostKeyFingerprint`（见 [design.md](design.md) 决策 77）。
-- **已知限制**：远端的端口预览（`src/preview/proxy.ts`）、快照接口与存为模板（`template.save`）返回 `501`。宿主机级的 CPU 与内存占用只统计本机，远端只显示 `docker info` 报告的核数与内存容量；箱子自己的占用仍来自各自的容器统计。模板与检查点不复制到其它宿主机，所选宿主机缺少模板镜像时，创建返回 `400`（`template_image_missing`）。`host: "auto"` 调度与跨机迁移尚未实现。
+- **已知限制**：远端的端口预览（`src/preview/proxy.ts`）、快照接口与存为模板（`template.save`）返回 `501`。宿主机级的 CPU 与内存占用只统计本机，远端只显示 `docker info` 报告的核数与内存容量；箱子自己的占用仍来自各自的容器统计。模板与检查点不复制到其它宿主机，所选宿主机缺少模板镜像时，创建返回 `400`（`template_image_missing`）。
+
+- **第二部分**（[#21](https://github.com/ArnoChenFx/minibox/issues/21)）：远端的指标与容量预留、`host: "auto"` 调度、跨机迁移。
+  - **指标与容量**：`host.usage`（`GET /api/hosts/usage`，仅所有者）汇总每台宿主机的容器数（最近一次成功检查时记录）、`bookedOn()` 的预留（优先取采样器缓存）与各运行中 Box 最新统计样本之和。远端的 `capacity()` 读取 `docker info`。`assertCapacity` 检查单个 Box 能否放进宿主机，在所有安装上都运行；`assertRoom` 只在多宿主机时运行，检查预留是否超过 `HOST_OVERCOMMIT`，且只检查增长的维度。
+  - **放置**：`placeBox()` 只在 `host: "auto"` 时运行，只考虑在线、持有模板镜像且有余量的宿主机。
+  - **迁移**：`moveBox()` 在源、目标两台 `HostCtx` 之间协调。模板镜像经 `saveImage` 与 `loadImage` 流式发送。运行中的源 Box 在复制本地卷时由 `pauseContainer` 暂停。卷数据经两个未启动的辅助容器（`createContainer`，不 `startContainer`），用归档接口复制：`getArchive` 读取源端的 `/mnt/.`，`putArchive` 写入目标端的 `/mnt`。目标容器由 `createContainer` 创建，需要时由 `startContainer` 启动。规格在源端锁下提交（`commitMove`）。提交之后，`removeContainer` 删除源端容器并删除复制的卷，失败记入 `leftovers`；提交之前的失败由 `undoMove` 删除目标容器、回滚卷记录并 `unpauseContainer` 源端。
+  - **已知限制**：绑定挂载与未由 MiniBox 登记的卷会拒绝迁移。启动已停止的 Box 不做容量检查，因为它不占用预留。
 
 ## 盒子缓存与采样器
 
@@ -149,6 +156,8 @@
 - 真实引擎：`tests/docker-runtime.test.ts` 中的 `the box cache against a real engine` 检查列表不调用引擎，以及在 MiniBox 外部停止的盒子经由事件进入缓存。同一文件中的 `a stats call gives up when its signal aborts, so a sampler's timeout ends the engine request` 检查采样超时所用的 signal 确实结束引擎请求；`an inspect and a listing give up when their signal is already aborted...` 检查 `inspect` 与列出接受取消信号（设置 `MINIBOX_TEST_DOCKER=1` 时运行）。
 - 多宿主机（进程内）：`tests/host-endpoint.test.ts` 检查端点的解析与拒绝；`tests/host-store.test.ts` 检查 `hosts.json` 的严格解析与凭据文件的权限；`tests/host-credentials.test.ts` 检查凭据不出现在响应、文件、错误、审计与日志中；`tests/host-tls.test.ts` 用 `tests/support/pki.ts` 生成的证书检查双向 TLS 的接受与拒绝；`tests/host-ssh.test.ts` 用 `startSshHost()`（进程内的 ssh2 服务）检查主机密钥的确认、不符时不登录，以及私钥文件的权限；`tests/host-ssh-tunnel.test.ts` 检查隧道保持半关闭，客户端结束发送后仍能读完回复（exec 关闭 stdin 时依赖这一点）；`tests/host-routing.test.ts` 检查按 `host` 路由、名称全局唯一、容量在目标宿主机上校验，以及删除前的占用检查；`tests/host-aggregation.test.ts` 检查超时、离线与本机失败；`tests/host.test.ts` 检查登记表与 `probeHost()`。`tests/token-routes.test.ts` 检查令牌不能使用宿主机管理，`tests/parity.test.ts` 的 HTTP 录制包含宿主机的操作。
 - 第二台宿主机（真实引擎）：`tests/docker-hosts.test.ts` 经 SSH 添加宿主机，SSH 一侧是进程内的 ssh2 服务，把通道转到真实的 Docker 套接字（需要 `MINIBOX_TEST_DOCKER=1`，`bun run test:docker` 会运行它）。它检查未确认的密钥被拒绝且不登录；确认后宿主机在线，报告的版本与容量与真实引擎一致；两台宿主机上各有一个真实容器；停止与启动在远端生效；远端的命令经隧道返回完整的输出与退出码；删除远端箱子时，它拥有的卷一并删除，即使本机的缓存也看到同一引擎；有箱子或卷时删除被拒绝（`host_in_use`），删除箱子并删除宿主机的共享工具卷后可以删除。
+- 迁移与容量（进程内）：`tests/box-move.test.ts` 用假运行时检查预览、确认、源端删除的顺序、卷数据的复制、失败时的撤销、与重建和更新的互斥，以及同名容器的后缀；`tests/host-capacity.test.ts` 检查预留、超额比例、停止的 Box、缩小与放置；`tests/host-usage.test.ts` 检查 `GET /api/hosts/usage` 与离线宿主机；`tests/host-shared-engine.test.ts` 检查两台宿主机共享同一引擎时各自只认领自己的 Box。`tests/config.test.ts` 检查 `HOST_OVERCOMMIT` 的解析。
+- 迁移（真实引擎）：`tests/docker-move.test.ts` 经 SSH 添加第二台宿主机，两者共享同一个真实引擎，检查卷中的文件在迁移后保留、模板镜像经 `docker save | docker load` 送到目标、已停止的 Box 可以迁移，并检查同名容器的后缀（需要 `MINIBOX_TEST_DOCKER=1`，`bun run test:docker` 会运行它）。
 - CI 中的 `Integration tests (real Docker engine)` 任务运行 `bun run test:docker`，不是必需检查。
 
 ## 已知限制
