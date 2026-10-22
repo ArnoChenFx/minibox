@@ -144,7 +144,8 @@ export class SshTunnel {
   constructor(private readonly target: SshTarget) {
     this.dir = mkdtempSync(join(tmpdir(), "mbh-"));
     this.socketPath = join(this.dir, "docker.sock");
-    this.server = createServer((local) => this.forward(local));
+    // Half-open, so a client that ends its side (Docker's exec closes stdin) still reads the engine's reply to the end.
+    this.server = createServer({ allowHalfOpen: true }, (local) => this.forward(local));
     this.server.on("error", (e) => log.error("host.tunnel_failed", { host: target.hostname, error: String(e) }));
     this.server.listen(this.socketPath);
   }
@@ -180,7 +181,8 @@ export class SshTunnel {
           return;
         }
         remote.on("error", () => local.destroy());
-        remote.on("close", () => local.destroy());
+        // End rather than destroy: a reply the engine sent just before it closed may still be on its way to the client.
+        remote.on("close", () => local.end());
         local.on("close", () => remote.destroy());
         local.pipe(remote);
         remote.pipe(local);
