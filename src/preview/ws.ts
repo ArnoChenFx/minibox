@@ -13,6 +13,54 @@ export interface PreviewSocketData {
   closed?: boolean;
   /** Keeps the box awake for as long as the socket is open (#12). Called once, when the socket closes. */
   release?: () => void;
+  /** The console sign-in the preview runs under. Ending it closes the socket. */
+  sessionId?: string;
+  /** Epoch milliseconds when the preview's grant runs out. Absent when the preview has no grant. */
+  expiresAt?: number;
+  /** The box's own cookies, sent to the box when the socket opens. Only a subdomain preview sets it. */
+  cookie?: string;
+  /** Stops watching the sign-in and the grant expiry. Set by `watchPreviewSocket`. */
+  endWatch?: () => void;
+}
+
+export interface PreviewSocketLife {
+  readonly watch: (sessionId: string, listener: () => void) => () => void;
+  readonly now?: () => number;
+  /** Calls `fn` after `ms`, and returns the function that cancels it. Tests replace it to fire the timer at once. */
+  readonly schedule?: (fn: () => void, ms: number) => () => void;
+}
+
+const scheduleOnce = (fn: () => void, ms: number): (() => void) => {
+  const timer = setTimeout(fn, ms);
+  timer.unref?.();
+  return () => clearTimeout(timer);
+};
+
+/**
+ * Closes a preview socket when its console sign-in ends, or when its grant runs out. A socket outlives the request that
+ * opened it, so the sign-in is watched for the whole life of the socket. Returns false when the socket was closed here
+ * because its sign-in had already ended, in which case nothing should be attached to it.
+ */
+export function watchPreviewSocket(ws: ServerWebSocket<PreviewSocketData>, life: PreviewSocketLife): boolean {
+  const { sessionId, expiresAt } = ws.data;
+  if (sessionId === undefined) return true;
+  let ended = false;
+  const stops: (() => void)[] = [
+    life.watch(sessionId, () => {
+      ended = true;
+      ws.close(1008, "session ended");
+    }),
+  ];
+  if (ended) return false;
+  if (expiresAt !== undefined) {
+    const now = life.now ?? Date.now;
+    const delay = Math.max(0, expiresAt - now());
+    stops.push((life.schedule ?? scheduleOnce)(() => ws.close(1008, "preview expired"), delay));
+  }
+  ws.data.endWatch = () => {
+    for (const stop of stops) stop();
+  };
+  return true;
 }
 
 export function isPreviewSocket(data: object): data is PreviewSocketData {
@@ -38,6 +86,7 @@ export async function attachPreviewUpstream(
       headers: {
         origin: requestHeaders.get("origin") ?? "",
         "user-agent": requestHeaders.get("user-agent") ?? "MiniBox-preview",
+        ...(ws.data.cookie ? { cookie: ws.data.cookie } : {}),
       },
     };
     upstream = new WebSocket(upstreamUrl, options as unknown as ConstructorParameters<typeof WebSocket>[1]);
@@ -95,6 +144,8 @@ export function previewWsHandlers(pulse: ActivityPulse) {
       const upstream = ws.data.upstream;
       if (upstream && upstream.readyState === WebSocket.OPEN) upstream.close(1000, "client closed");
       ws.data.upstream = undefined;
+      ws.data.endWatch?.();
+      ws.data.endWatch = undefined;
       ws.data.release?.();
       ws.data.release = undefined;
     },

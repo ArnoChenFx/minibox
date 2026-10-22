@@ -110,6 +110,11 @@ export class SessionStore {
     return this.markUsed(this.byId(id), now);
   }
 
+  /** Whether a session is still live. Unlike `touchId`, asking does not count as use, so a check does not renew it. */
+  hasLive(id: string, now = this.now()): boolean {
+    return this.liveById(id, now) !== null;
+  }
+
   /** Live sessions, most recently used first. */
   list(now = this.now()): SessionInfo[] {
     return [...this.records.values()]

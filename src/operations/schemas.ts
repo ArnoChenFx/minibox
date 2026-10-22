@@ -74,7 +74,7 @@ export const BoxSchema = z.object({
   desired: z.enum(["running", "stopped"]),
   idleTimeoutSec: z.number().nullable(),
   ttlSec: z.number().nullable(),
-  stopReason: z.enum(["idle", "ttl", "manual"]).nullable(),
+  stopReason: z.enum(["idle", "ttl", "manual", "volume_limit"]).nullable(),
   sleeping: z.boolean(),
   lastActivityAt: z.string().nullable(),
   labels: z.record(z.string(), z.string()),

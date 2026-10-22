@@ -210,9 +210,16 @@ MiniBox's reachability check does not use your `hard` or `soft` setting. It moun
 - Stopping a box still works.
 - A **running** box with a `hard` mount freezes any process that touches `/workspace` or `/home/dev` until the server returns. That includes commands from `exec` and terminals. A foreground `exec` with a timeout still returns soon after the timeout. See [Known issues](#known-issues).
 - The pools are checked side by side. A pool that does not answer within 5 seconds shows as unreachable, with the message `no answer within 5 s`. The **Volumes** page answers within about 5 seconds, however many NFS servers are down.
+- Usage sampling does not wait for the NAS either. A share's usage is read with a 30-second deadline. A share that does not answer in time is recorded as a failed sample, with its reason, and the other volumes are still sampled on their own schedule.
 - When the server returns, frozen processes continue. The next check shows the pool as **Reachable**, and stopped boxes can start again. Nothing needs to be remounted.
 
 Before NAS maintenance, such as a reboot or a firmware update, stop the boxes that use its pools.
+
+## Usage and quotas
+
+MiniBox reads an NFS pool's usage with `df` on the pool's root. The figure is the usage of the whole share, shared by every volume on the pool, and the console marks it as a share figure. MiniBox never walks the folders of a share, which can be very large on a NAS.
+
+Volumes on an NFS pool take no soft or hard limits, because a limit on one volume would not hold for the whole share. To cap the space that boxes use on the NAS, set a quota on the NAS itself, for the shared folder, where the NAS offers one. MiniBox's soft alerts are best effort, not a quota. See [Volumes and storage](volumes-and-storage.md#usage-limits-and-free-space).
 
 ## Backups
 
