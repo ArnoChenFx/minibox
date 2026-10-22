@@ -44,6 +44,7 @@ export function parseCatalogEntry(raw: unknown, file: string): CatalogEntry {
   const needsRoot = raw.needsRoot === true;
   const estimatedMb = typeof raw.estimatedMb === "number" && raw.estimatedMb > 0 ? Math.floor(raw.estimatedMb) : 50;
   const requires = typeof raw.requires === "string" && raw.requires.trim() ? raw.requires.trim() : undefined;
+  const stop = typeof raw.stop === "string" && raw.stop.trim() ? raw.stop.trim() : undefined;
   return {
     id,
     name: requireString(raw, "name", file),
@@ -58,6 +59,7 @@ export function parseCatalogEntry(raw: unknown, file: string): CatalogEntry {
     install: requireString(raw, "install", file),
     upgrade: requireString(raw, "upgrade", file),
     uninstall: requireString(raw, "uninstall", file),
+    stop,
     detect: requireString(raw, "detect", file),
   };
 }

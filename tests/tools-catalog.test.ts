@@ -64,6 +64,12 @@ describe("tool catalog parse", () => {
     expect(() => parseCatalogEntry({ ...sample, category: 3 }, "x.json")).toThrow(AppError);
   });
 
+  test("reads the optional stop command, and a blank one counts as absent", () => {
+    expect(parseCatalogEntry({ ...sample, stop: " claude stop " }, "x.json").stop).toBe("claude stop");
+    expect(parseCatalogEntry({ ...sample, stop: "   " }, "x.json").stop).toBeUndefined();
+    expect(parseCatalogEntry(sample, "x.json").stop).toBeUndefined();
+  });
+
   test("reads needsRoot and defaults it to false", () => {
     expect(parseCatalogEntry({ ...sample, needsRoot: true }, "x.json").needsRoot).toBe(true);
     const raw: Record<string, unknown> = { ...sample };

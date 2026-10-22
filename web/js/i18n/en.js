@@ -1140,6 +1140,7 @@ export default {
   "err.tool_volume_missing":
     "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
   "err.tool_install_failed": "Installing “{id}” failed: {detail}",
+  "err.tool_stop_failed": "Could not stop “{id}” in the box, so it was not uninstalled: {detail}",
   "err.tool_install_timeout": "Installing “{id}” timed out.",
   "err.tool_detect_failed": "Could not check which tools are installed in this box: {detail}",
   "err.tool_reconcile_failed": "Could not install the requested tools: {detail}.",
