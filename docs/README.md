@@ -43,6 +43,7 @@ For the person who installs and runs MiniBox.
 - [CLI](reference/cli.md): every command and flag.
 - [MCP tools](reference/mcp.md): the MCP endpoint, toolsets and tools.
 - [Configuration](reference/configuration.md): every environment variable and its default.
+- [Agent](reference/agent.md): the host agent: its command, options, data volume, protocol and allowed operations.
 
 ## For developers
 

@@ -43,6 +43,7 @@
 - [CLI（英文）](../reference/cli.md)：全部命令与标志。
 - [MCP 工具（英文）](../reference/mcp.md)：MCP 端点、工具集与工具。
 - [配置（英文）](../reference/configuration.md)：每个环境变量及其默认值。
+- [Agent（英文）](../reference/agent.md)：宿主机 Agent 的命令、参数、数据卷、协议与允许的操作。
 
 ## 面向开发者
 
