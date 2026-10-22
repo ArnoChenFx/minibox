@@ -13,7 +13,7 @@ import type { TokenStore } from "../tokens/store";
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
 
-export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild";
+export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild" | "move";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 

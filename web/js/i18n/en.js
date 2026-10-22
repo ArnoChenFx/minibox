@@ -288,6 +288,7 @@ export default {
   "err.move_confirm":
     "Moving copies the box's volumes to {to}, starts it there if it runs now, and removes it from {from} once it runs there. Send confirm: true to continue.",
   "err.move_same_host": "The box already runs on host {host}, so it cannot move there.",
+  "err.move_owner_only": "Only the owner or an admin credential may move a box.",
   "err.move_changed": "The box changed while it was moving, so the move was undone. Refresh the box and try again.",
   "err.move_template_moved":
     "Template {tag} now names a newer image than this box runs. Rebuild the box onto it, then move the box.",

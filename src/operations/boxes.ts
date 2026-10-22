@@ -23,6 +23,7 @@ import {
   updateBox,
 } from "../services/boxes";
 import { assertCapacity, assertNewBox, assertResizeRoom } from "../services/capacity";
+import { moveBox, moveConfirmation, previewMove } from "../services/move";
 import { placeBox } from "../services/placement";
 import { rebuildBox } from "../services/rebuild";
 import { hasRebuildFields } from "../specs/plan";
@@ -57,6 +58,7 @@ import {
   hostId,
   hostOrAuto,
   statsFlag,
+  storageConfirmFlag,
   tail,
   templateImage,
   ttl,
@@ -478,6 +480,79 @@ export const boxRebuild = defineOperation({
   },
 });
 
+const LeftoverSchema = z.object({
+  kind: z.enum(["container", "volume"]),
+  name: z.string(),
+});
+
+export const boxMove = defineOperation({
+  name: "box.move",
+  tag: "boxes",
+  summary: "Move a box to another host",
+  kind: "write",
+  scope: "box:write",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    id: boxId(),
+    host: hostId().meta({ description: "The host to move the box to. It must differ from the box's current host." }),
+    confirm: storageConfirmFlag(),
+    expectedRevision: expectedRevision(),
+  }),
+  output: z.object({
+    box: BoxSchema,
+    from: hostId(),
+    to: hostId(),
+    checkpoints: z.number().int().meta({
+      description: "Checkpoints the box has on its old host. They stay there and are not restored on the new one.",
+    }),
+    leftovers: z.array(LeftoverSchema).meta({
+      description: "What stayed on the old host after the move, when its removal failed. Empty when it was cleaned up.",
+    }),
+  }),
+  rest: [{ method: "POST", path: "/api/boxes/:id/move", body: true, ifMatch: true, status: 202 }],
+  cli: "box move",
+  mcp: {
+    toolset: "move",
+    name: "move_box",
+    description:
+      "Move a box to another host. Owner or admin only: the token needs box write and every host and box granted, as the admin preset has. Without confirm true the call is refused with a preview: the volumes that would be copied or attached, whether the box starts on the new host, the template image that would be sent, and the state that is lost. With confirm, the image is sent, local volumes are copied, the box is recreated on the new host and started there if it runs now, and the old container is removed once the new one runs. NFS volumes stay where they are and are attached on the new host. Bind mounts and volumes MiniBox did not create refuse the move. The box keeps its id, name, volumes, env and history, and loses its writable layer, processes and IP. Its checkpoints stay on the old host. Pass expectedRevision, the box's current revision.",
+  },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
+  resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async (ctx, input) => {
+    const preview = await previewMove(
+      ctx.host,
+      hostById(ctx, input.host),
+      input.id,
+      requireRevision(input.expectedRevision),
+    );
+    if (!input.confirm) throw moveConfirmation(preview);
+  },
+  exclusive: ({ host }, _input, box) => `box.move:${host.host.id}:${box.boxId}`,
+  activity: { action: () => "box.move", target: (_input, box) => box.name },
+  audit: {
+    target: (_input, box) => box && boxTarget(box),
+    detail: (input) => ({ host: input.host, confirm: input.confirm }),
+  },
+  run: async (ctx, input) => {
+    const result = await moveBox(
+      ctx.host,
+      hostById(ctx, input.host),
+      input.id,
+      requireRevision(input.expectedRevision),
+      ctx.task,
+    );
+    return {
+      box: result.box,
+      from: result.from,
+      to: result.to,
+      checkpoints: result.checkpoints,
+      leftovers: [...result.leftovers],
+    };
+  },
+});
+
 export const boxLogs = defineOperation({
   name: "box.logs",
   tag: "boxes",
@@ -524,6 +599,7 @@ export const boxOperations = [
   boxResources,
   boxUpdate,
   boxRebuild,
+  boxMove,
   boxLogs,
   boxStats,
 ];

@@ -370,6 +370,20 @@ const updateRule: Rule = async (check) => {
   assertSecretUse(check.principal, envAfterRebuild(check));
 };
 
+/**
+ * A move reaches every host, so only a credential granted every host and every box may make one: the owner, or the
+ * admin preset. The box's own host is checked by the access check that runs before this rule. The move recreates the
+ * box with its env on the target, so the token also needs the box's secrets.
+ */
+const moveRule: Rule = async (check) => {
+  const { grants } = check.principal;
+  if (grants.hosts.type !== "all" || grants.boxes.type !== "all") throw refusal("move_owner_only");
+  await boxRule(check);
+  const to = String(check.input.host ?? "");
+  if (!hostAllowed(grants.hosts, to)) throw refusal("host_not_granted", { host: to });
+  assertSecretUse(check.principal, storedEnv(check.host, resolvedBox(check.resolved).boxId));
+};
+
 /** File API: volume must be visible; writes also need a writable volume (tools stays owner-only). */
 const volumeFileWriteRule: Rule = async ({ principal, host, resolved }) => {
   const view = resolved as { id: string; name: string } | undefined;
@@ -421,6 +435,7 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["box.resources", boxRule],
   ["box.update", updateRule],
   ["box.rebuild", rebuildRule],
+  ["box.move", moveRule],
   ["box.logs", boxRule],
   ["box.stats", boxRule],
   ["snapshot.create", boxRule],

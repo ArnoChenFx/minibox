@@ -255,6 +255,7 @@ export default {
   "err.move_confirm":
     "迁移会把 Box 的卷复制到 {to}，若它正在运行则在那里启动，然后从 {from} 移除。请发送 confirm: true 以继续。",
   "err.move_same_host": "Box 已在宿主机 {host} 上运行，无需迁移到该宿主机。",
+  "err.move_owner_only": "只有所有者或管理员凭据可以迁移 Box。",
   "err.move_changed": "Box 在迁移过程中发生了变化，因此已撤销迁移。请刷新 Box 后重试。",
   "err.move_template_moved": "模板 {tag} 现在指向比此 Box 所运行镜像更新的镜像。请先把 Box 重建到新镜像，再迁移。",
   "err.move_template_differs":

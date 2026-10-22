@@ -72,6 +72,7 @@ describe("OpenAPI document", () => {
       "box.get",
       "box.list",
       "box.logs",
+      "box.move",
       "box.rebuild",
       "box.resources",
       "box.rollback",

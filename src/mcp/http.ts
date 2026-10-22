@@ -12,7 +12,7 @@ import { MCP_INSTRUCTIONS } from "./instructions";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"] as const;
 const DEFAULT_PROTOCOL: (typeof PROTOCOL_VERSIONS)[number] = "2025-06-18";
-const TOOLSETS: readonly Toolset[] = ["core", "session", "network", "storage", "tools", "meta", "rebuild"];
+const TOOLSETS: readonly Toolset[] = ["core", "session", "network", "storage", "tools", "meta", "rebuild", "move"];
 
 interface RpcRequest {
   jsonrpc?: unknown;
