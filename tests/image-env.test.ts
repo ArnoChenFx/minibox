@@ -55,7 +55,7 @@ describe("the environment a commit writes", () => {
     expect(await envOf(runtime, snap.ref)).toEqual(["PATH=/usr/local/bin:/usr/bin", "API_TOKEN="]);
   });
 
-  test("the commit names each given variable with an empty value, and no secret reference", async () => {
+  test("the commit names each variable with an empty value, a secret reference too, and no value", async () => {
     const { runtime, host } = lab();
     const box = await boxWithEnv(host, [
       { name: "API_TOKEN", value: "s3cret-value" },
@@ -65,8 +65,9 @@ describe("the environment a commit writes", () => {
     await createSnapshot(host, box.boxId, "envtest");
 
     const { changes } = commitAt(runtime);
-    expect(changes.filter((change) => change.startsWith("ENV "))).toEqual(['ENV API_TOKEN=""']);
+    expect(changes.filter((change) => change.startsWith("ENV "))).toEqual(['ENV API_TOKEN=""', 'ENV DB_PASSWORD=""']);
     expect(changes.join("\n")).not.toContain("s3cret-value");
+    expect(changes.join("\n")).not.toContain("db-password");
   });
 
   test("a box with no environment value writes no ENV instruction", async () => {
@@ -78,13 +79,13 @@ describe("the environment a commit writes", () => {
     expect(commitAt(runtime).changes.some((change) => change.startsWith("ENV "))).toBe(false);
   });
 
-  test("a secret reference alone is not injected, so there is nothing to scrub", async () => {
+  test("a secret reference is scrubbed as well, so an injected secret value cannot reach the image", async () => {
     const { runtime, host } = lab();
     const box = await boxWithEnv(host, [{ name: "TOKEN", secretRef: "vault" }]);
 
     await createSnapshot(host, box.boxId, "vaulted");
 
-    expect(commitAt(runtime).changes.some((change) => change.startsWith("ENV "))).toBe(false);
+    expect(commitAt(runtime).changes.filter((change) => change.startsWith("ENV "))).toEqual(['ENV TOKEN=""']);
   });
 
   test("a name the image sets goes back to the image's own value", async () => {

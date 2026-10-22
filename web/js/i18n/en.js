@@ -960,7 +960,7 @@ export default {
   "tp.namePlaceholder": "e.g. python-ml",
   "tp.description": "Description",
   "tp.saveScope":
-    "Saves the container's system layer: apt and sudo installs and system file changes. /workspace and home volumes are not included; use a checkpoint for data.",
+    "Saves the container's system layer: files changed outside the volumes, such as software installed as root and settings under /etc. /workspace and home volumes (including tools installed into home) are not included; use a checkpoint for data.",
   "tp.saveConfirm": "Save template",
   "tp.saving": "Saving…",
   "tp.saveStarted": "Saving box as template",

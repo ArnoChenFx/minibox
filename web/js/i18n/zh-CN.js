@@ -898,7 +898,7 @@ export default {
   "tp.namePlaceholder": "例如 python-ml",
   "tp.description": "描述",
   "tp.saveScope":
-    "保存容器的系统层：apt 与 sudo 安装的软件，以及系统文件的改动。不包含 /workspace 与 home 卷，数据请使用检查点。",
+    "保存容器的系统层：数据卷之外的文件改动，例如以 root 安装的软件和 /etc 下的配置。不包含 /workspace 与 home 卷（包括装在 home 里的工具），数据请使用检查点。",
   "tp.saveConfirm": "保存模板",
   "tp.saving": "正在保存…",
   "tp.saveStarted": "开始将 Box 存为模板",

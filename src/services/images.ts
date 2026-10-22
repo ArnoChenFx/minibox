@@ -50,7 +50,8 @@ export async function listImagesByLabel(host: HostCtx, label: string): Promise<I
  * remove a variable. The same happens when the image's value holds a control character, which an instruction cannot.
  */
 export async function envScrubChanges(host: HostCtx, box: Box): Promise<string[]> {
-  const given = box.env.filter((entry) => entry.value !== undefined).map((entry) => entry.name);
+  // Every entry, a secretRef one too: once a secret is injected, its value sits in the container's environment as well.
+  const given = box.env.map((entry) => entry.name);
   if (given.length === 0) return [];
   const { imageId } = await host.runtime.inspectContainer(box.id);
   const own = new Map<string, string>();

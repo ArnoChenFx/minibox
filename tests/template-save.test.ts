@@ -170,6 +170,25 @@ describe("a template name that is taken", () => {
   });
 });
 
+describe("two saves to one name at once", () => {
+  test("one is refused, and the template keeps the image of the save that went ahead", async () => {
+    const l = lab();
+    const alpha = await boxes.createBox(l.host, { name: "alpha", cpus: 1, memoryMb: 256 });
+    const beta = await boxes.createBox(l.host, { name: "beta", cpus: 1, memoryMb: 256 });
+
+    const results = await Promise.allSettled([
+      saveBoxAsTemplate(l.host, alpha.boxId, { name: "gold" }, "owner"),
+      saveBoxAsTemplate(l.host, beta.boxId, { name: "gold" }, "owner"),
+    ]);
+
+    expect(results.map((result) => result.status).toSorted()).toEqual(["fulfilled", "rejected"]);
+    const refused = results.find((result) => result.status === "rejected");
+    expect(refused?.status === "rejected" && refused.reason).toMatchObject({ status: 409, key: "template_name_taken" });
+    expect(l.runtime.callsTo("commitContainer")).toHaveLength(2);
+    expect(await l.runtime.listImages({ labels: { [l.keys.snapshot]: "true" } })).toEqual([]);
+  });
+});
+
 function namesOf(reply: Reply): (string | null)[] {
   return (reply.json.templates ?? []).map((template) => template.name);
 }

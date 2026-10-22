@@ -17,7 +17,7 @@ export const BASE_DESCRIPTION = "Debian 12 · Node.js 26 · Python 3 · git · t
 
 /**
  * Refuses a template name that is already taken. A commit to a tag that exists moves the tag without a word, so the
- * name is checked before any commit, and again by the commit itself.
+ * name is checked before the task starts, and again under the name hold just before the commit.
  */
 export async function assertTemplateNameAvailable(host: HostCtx, name: string): Promise<void> {
   const taken = await host.runtime.inspectImage(`${host.prefix}-template:${name}`).then(
@@ -30,13 +30,42 @@ export async function assertTemplateNameAvailable(host: HostCtx, name: string): 
   if (taken) throw conflict(msg("template_name_taken", { name }));
 }
 
+/** Template names a save or a promotion is writing right now, as `<host id>:<name>`. */
+const writing = new Set<string>();
+
+/**
+ * Runs `fn` holding `name` for this host, so two saves or promotions to one name cannot both pass the check and have the
+ * second commit move the tag over the first (which would leave the first image untagged). The name must also be free.
+ */
+async function holdingTemplateName<T>(host: HostCtx, name: string, fn: () => Promise<T>): Promise<T> {
+  const key = `${host.host.id}:${name}`;
+  if (writing.has(key)) throw conflict(msg("template_name_taken", { name }));
+  writing.add(key);
+  try {
+    await assertTemplateNameAvailable(host, name);
+    return await fn();
+  } finally {
+    writing.delete(key);
+  }
+}
+
 /** Re-tag a snapshot image as a template by committing a throwaway container with template labels. */
-export async function promoteSnapshot(
+export function promoteSnapshot(
   host: HostCtx,
   ref: string,
   name: string,
   description?: string,
   createdBy = "owner",
+): Promise<{ ref: string; name: string }> {
+  return holdingTemplateName(host, name, () => promoteHeld(host, ref, name, description, createdBy));
+}
+
+async function promoteHeld(
+  host: HostCtx,
+  ref: string,
+  name: string,
+  description: string | undefined,
+  createdBy: string,
 ): Promise<{ ref: string; name: string }> {
   const { runtime, keys: k, prefix } = host;
   const info = await runtime.inspectImage(ref).catch((e: unknown) => {
@@ -49,7 +78,6 @@ export async function promoteSnapshot(
   const sourceName = labels[k.snapshotOf];
   const source = sourceName ?? ref;
   const sourceId = labels[k.snapshotOfId];
-  await assertTemplateNameAvailable(host, name);
   const tmp = await runtime.createContainer({ image: ref, cmd: ["true"] });
   const repo = `${prefix}-template`;
   try {
@@ -89,26 +117,27 @@ export async function saveBoxAsTemplate(
   progress?: Progress,
 ): Promise<{ ref: string; name: string }> {
   const { boxId } = await getBox(host, ref);
-  return underBox(host, boxId, async (box) => {
-    await assertTemplateNameAvailable(host, input.name);
-    const snapshot = await createSnapshot(host, box.boxId, input.name, progress, createdBy);
-    try {
-      progress?.log?.(`Saving ${box.name} as template ${input.name}…\n`);
-      const template = await promoteSnapshot(
-        host,
-        snapshot.ref,
-        input.name,
-        input.description ?? `Saved from box ${box.name}`,
-        createdBy,
-      );
-      progress?.log?.(`Saved ${template.ref}\n`);
-      return template;
-    } finally {
-      await deleteSnapshot(host, snapshot.ref).catch((e: unknown) => {
-        log.warn("template.snapshot_left", { ref: snapshot.ref, error: String(e) });
-      });
-    }
-  });
+  return underBox(host, boxId, (box) =>
+    holdingTemplateName(host, input.name, async () => {
+      const snapshot = await createSnapshot(host, box.boxId, input.name, progress, createdBy);
+      try {
+        progress?.log?.(`Saving ${box.name} as template ${input.name}…\n`);
+        const template = await promoteHeld(
+          host,
+          snapshot.ref,
+          input.name,
+          input.description ?? `Saved from box ${box.name}`,
+          createdBy,
+        );
+        progress?.log?.(`Saved ${template.ref}\n`);
+        return template;
+      } finally {
+        await deleteSnapshot(host, snapshot.ref).catch((e: unknown) => {
+          log.warn("template.snapshot_left", { ref: snapshot.ref, error: String(e) });
+        });
+      }
+    }),
+  );
 }
 
 export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> {
