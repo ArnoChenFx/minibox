@@ -313,6 +313,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       tasks,
       hosts,
       hostAdmin,
+      previewBaseDomain: cfg.previewBaseDomain,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,
         audit,

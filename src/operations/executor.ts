@@ -87,6 +87,8 @@ export interface ExecutorDeps {
   readonly hosts?: { list(): readonly HostCtx[] };
   /** Adds, tests and removes hosts. Host operations read it from the context. */
   readonly hostAdmin?: HostManager;
+  /** The base domain of subdomain previews, or null in path mode. */
+  readonly previewBaseDomain?: string | null;
 }
 
 /** What the executor knows when one execution ends. Fields the run never reached stay undefined. */
@@ -173,6 +175,7 @@ export class Executor {
       ...ctx,
       tasks: ctx.tasks ?? this.deps.tasks,
       hostAdmin: ctx.hostAdmin ?? this.deps.hostAdmin,
+      previewBaseDomain: ctx.previewBaseDomain ?? this.deps.previewBaseDomain ?? null,
       boxViews: ctx.boxViews ?? (() => (hosts ? allBoxViews(hosts.list()) : specViews(ctx.host.specs.list()))),
       allHosts: ctx.allHosts ?? (() => (hosts ? hosts.list() : [ctx.host])),
       startTask: (child, childInput, childResolved) => {
