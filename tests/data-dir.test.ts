@@ -70,7 +70,14 @@ describe("layout and secret files", () => {
     const dataDir = join(dir, "data");
     ensureDataDir(dataDir);
     ensureDataDir(dataDir);
-    expect(readdirSync(dataDir).toSorted()).toEqual(["boxes", "checkpoints", "exec", "secrets", "volumes"]);
+    expect(readdirSync(dataDir).toSorted()).toEqual([
+      "boxes",
+      "checkpoints",
+      "exec",
+      "secrets",
+      "template-recipes",
+      "volumes",
+    ]);
   });
   test("ensureDataDir tightens a looser existing directory", () => {
     const dataDir = join(dir, "data");

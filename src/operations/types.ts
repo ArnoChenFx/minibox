@@ -79,6 +79,11 @@ export interface OperationContext {
   /** Records an audit event parented to this operation. Exec uses it for start, finish and kill. */
   record?(note: AuditNote): void;
   /**
+   * Starts an async operation as a child task of this one, with input and resolved values the caller has already
+   * checked. A sync operation uses it for a long step it must not make its caller wait for, and gets the task id back.
+   */
+  startTask?(operation: Operation, input: Record<string, unknown>, resolved: unknown): Promise<{ taskId: string }>;
+  /**
    * Asks the authorize hook again for one scope and resource. The executor fills this in.
    * Absent in tests that call a service directly; those callers are already inside the process.
    */
@@ -126,6 +131,11 @@ export interface OperationMeta {
   readonly async: boolean;
   /** Can fail with a 409: a name that is taken, a busy object, or a change the caller must confirm first. */
   readonly conflicts?: boolean;
+  /**
+   * A sync operation that can outlast the server's idle timeout, such as a create that pulls its image. Its route
+   * lifts the timer for that request, so the caller is not cut off while the engine works.
+   */
+  readonly longSync?: boolean;
   readonly rest: readonly RestBinding[];
   readonly cli?: string;
   readonly mcp?: McpMetadata;

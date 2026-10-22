@@ -41,6 +41,16 @@ MiniBox is built for one trusted user, on a machine that the user controls. Read
 - Only the owner can set or delete secrets. A token needs `secret:use` to refer to one. Only the `admin` preset has that scope.
 - Events, the audit log, container labels and the server log show the secret's name, never its value.
 
+## Template builds and repository clones
+
+Building a template, rebuilding one and pulling an image are for the owner only. A repository clone at box create needs `box:write`, and `secret:use` when it names a secret. Each of these makes MiniBox fetch content from an address that someone supplies.
+
+- **The server makes the request.** MiniBox downloads a build context URL from its own process, and a clone runs in a helper container on the Docker network. Both follow redirects to any address. MiniBox does not block private, loopback or link-local addresses, or cloud metadata addresses. A build can therefore reach any service the host can reach, including MiniBox itself. This is server-side request forgery (SSRF). Give owner access only to people who should have that reach.
+- **Limits.** A context download stops after 2 minutes and is limited to 256 MB. The unpacked context is limited to 256 MB and 20,000 entries. A clone stops after 5 minutes, and runs in a helper with a read-only root, no Linux capabilities and 512 MB of memory.
+- **Paths.** MiniBox refuses an archive entry or repository file whose path has `..`, is absolute or contains a NUL byte. It also refuses hard links, devices and other special files. A symbolic link that resolves outside the build context is refused, and so is any write that would pass through a symbolic link.
+- **SSH host keys.** Each clone starts with an empty known-hosts file and accepts the host key the first time it connects (`StrictHostKeyChecking=accept-new`). An attacker on the network could answer that first connection. HTTPS with a token checks the server's certificate, so prefer it when the host offers it.
+- **Secrets.** A token or deploy key goes to the helper as a file, never on a command line, and is used only for its own clone. The task log removes its value from the clone output. The audit log records the size of a pasted Dockerfile, not its text. A template's recipe in `DATA_DIR/template-recipes/` keeps the pasted Dockerfile as text, so keep secrets out of it. The recipe keeps only the names of secrets.
+
 ## Requests and browsers
 
 - **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin in `ALLOWED_ORIGINS`. Requests without an `Origin` header, such as scripts that send a bearer token, are accepted.

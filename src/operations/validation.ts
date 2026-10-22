@@ -6,6 +6,16 @@ import { AUTO_HOST, HOST_ID_RE } from "../host/store";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import {
+  contextUrlProblem,
+  DOCKERFILE_MAX_BYTES,
+  dockerfileProblem,
+  relativePathProblem,
+  repoBranchProblem,
+  repoUrlProblem,
+  SOURCE_PATH_MAX,
+  SOURCE_URL_MAX,
+} from "../lib/source";
+import {
   accept,
   asObject,
   type Checked,
@@ -661,6 +671,136 @@ export const expectedRevision = () =>
     description:
       "The box's current revision. REST sends it as the If-Match header (a bare number, a quoted tag or a weak tag). MCP and the CLI pass this argument. Omitting it is rejected with 428; a stale value is rejected with 412.",
   });
+
+const SOURCE_BRANCH_MAX = 200;
+
+function optionalPath(value: unknown, field: string): Checked<string | undefined> {
+  if (value === undefined || value === null || value === "") return accept(undefined);
+  if (typeof value !== "string" || relativePathProblem(value)) return reject(msg("repo_path_invalid"), field);
+  return accept(value);
+}
+
+function checkRepo(value: unknown): Checked<RepoInput | undefined> {
+  if (value === undefined || value === null) return accept(undefined);
+  if (typeof value !== "object" || Array.isArray(value)) return reject(msg("repo_url_invalid"), "repo");
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.url !== "string") return reject(msg("repo_url_invalid"), "repo");
+  const problem = repoUrlProblem(entry.url);
+  if (problem === "credentials") return reject(msg("repo_url_credentials"), "repo");
+  if (problem) return reject(msg("repo_url_invalid"), "repo");
+  const repo: RepoInput = { url: entry.url };
+  if (entry.branch !== undefined && entry.branch !== null && entry.branch !== "") {
+    if (
+      typeof entry.branch !== "string" ||
+      entry.branch.length > SOURCE_BRANCH_MAX ||
+      repoBranchProblem(entry.branch)
+    ) {
+      return reject(msg("repo_branch_invalid"), "repo");
+    }
+    repo.branch = entry.branch;
+  }
+  if (entry.secretRef !== undefined && entry.secretRef !== null && entry.secretRef !== "") {
+    if (typeof entry.secretRef !== "string" || !IDENT_RE.test(entry.secretRef)) {
+      return reject(msg("secret_name_invalid"), "repo");
+    }
+    repo.secretRef = entry.secretRef;
+  }
+  return accept(repo);
+}
+
+const REPO_META: Meta = {
+  type: "object",
+  required: ["url"],
+  properties: {
+    url: { type: "string", maxLength: SOURCE_URL_MAX },
+    branch: { type: "string", maxLength: SOURCE_BRANCH_MAX },
+    secretRef: { type: "string", pattern: IDENT_RE.source, maxLength: 128 },
+  },
+  description:
+    "A Git repository to clone into /workspace. url is https:// or ssh:// or user@host:path, with no password in it. branch is a branch or tag, and omitted means the default branch. secretRef names a secret: a token for https (sent as the password), or a base64-encoded deploy key for ssh. The clone runs only on the first create of a box, and needs an empty writable /workspace.",
+};
+
+/** The repository a new box clones, or nothing. The clone itself is checked by the create that starts it. */
+export const repoSource = () => field(checkRepo, REPO_META).optional();
+
+const refuseSource = () => reject(msg("template_source_required"), "source");
+
+function checkTemplateSource(value: unknown): Checked<TemplateSourceInput> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return refuseSource();
+  const source = value as Record<string, unknown>;
+  if (source.kind === "dockerfile") {
+    if (typeof source.text !== "string" || dockerfileProblem(source.text)) {
+      return reject(msg("dockerfile_invalid"), "source");
+    }
+    return accept({ kind: "dockerfile", text: source.text });
+  }
+  if (source.kind === "git") {
+    const repo = checkRepo({ url: source.url, branch: source.branch, secretRef: source.secretRef });
+    if (!repo.ok) return repo;
+    if (!repo.value) return refuseSource();
+    const subdir = optionalPath(source.subdir, "source");
+    if (!subdir.ok) return subdir;
+    const dockerfile = optionalPath(source.dockerfile, "source");
+    if (!dockerfile.ok) return dockerfile;
+    return accept({ kind: "git", ...repo.value, subdir: subdir.value, dockerfile: dockerfile.value });
+  }
+  if (source.kind === "context") {
+    if (typeof source.url !== "string" || contextUrlProblem(source.url)) {
+      return reject(msg("context_url_invalid"), "source");
+    }
+    const dockerfile = optionalPath(source.dockerfile, "source");
+    if (!dockerfile.ok) return dockerfile;
+    return accept({ kind: "context", url: source.url, dockerfile: dockerfile.value });
+  }
+  if (source.kind === "devcontainer") {
+    const repo = checkRepo({ url: source.url, branch: source.branch, secretRef: source.secretRef });
+    if (!repo.ok) return repo;
+    if (!repo.value) return refuseSource();
+    const path = optionalPath(source.path, "source");
+    if (!path.ok) return path;
+    return accept({ kind: "devcontainer", ...repo.value, path: path.value });
+  }
+  return refuseSource();
+}
+
+type RepoInput = { url: string; branch?: string; secretRef?: string };
+type TemplateSourceInput =
+  | { kind: "dockerfile"; text: string }
+  | ({ kind: "git" } & RepoInput & { subdir?: string; dockerfile?: string })
+  | { kind: "context"; url: string; dockerfile?: string }
+  | ({ kind: "devcontainer" } & RepoInput & { path?: string });
+
+const TEMPLATE_SOURCE_META: Meta = {
+  type: "object",
+  required: ["kind"],
+  description:
+    "Where the template's files come from. kind dockerfile takes text, the Dockerfile itself, at most 64 KB with a FROM instruction. kind git takes url, with optional branch, subdir (the build context inside the repository) and dockerfile (relative to the context), and secretRef, as for a box. kind context takes url of a .tar or .tar.gz build context, with optional dockerfile. kind devcontainer takes url of a repository, with optional branch, path (the devcontainer.json inside it; without it, .devcontainer/devcontainer.json, then .devcontainer.json) and secretRef; it reads image, build.dockerfile, build.context, build.args and containerEnv, and refuses any other setting. Each build fetches the files again, so a rebuild picks up the newest commit or archive.",
+  properties: {
+    kind: { type: "string", enum: ["dockerfile", "git", "context", "devcontainer"] },
+    text: { type: "string", maxLength: DOCKERFILE_MAX_BYTES },
+    url: { type: "string", maxLength: SOURCE_URL_MAX },
+    branch: { type: "string", maxLength: SOURCE_BRANCH_MAX },
+    subdir: { type: "string", maxLength: SOURCE_PATH_MAX },
+    path: { type: "string", maxLength: SOURCE_PATH_MAX },
+    dockerfile: { type: "string", maxLength: SOURCE_PATH_MAX },
+    secretRef: { type: "string", pattern: IDENT_RE.source, maxLength: 128 },
+  },
+};
+
+/** Where a declared template is built from: a pasted Dockerfile, a Git repository, or a build context URL. */
+export const templateSource = () => field(checkTemplateSource, TEMPLATE_SOURCE_META);
+
+const PULL_REF_HELP = "Image to pull from its registry, such as node:24-bookworm-slim or ghcr.io/org/image:tag.";
+
+function checkPullRef(value: unknown): Checked<string> {
+  if (typeof value !== "string" || !value.trim()) return reject(msg("image_ref_invalid"), "ref");
+  const v = value.trim();
+  if (v.length > IMAGE_REF_MAX_LENGTH || !IMAGE_REF_RE.test(v)) return reject(msg("image_ref_invalid"), "ref");
+  return accept(v);
+}
+
+export const pullRef = () =>
+  field(checkPullRef, { type: "string", maxLength: IMAGE_REF_MAX_LENGTH, description: PULL_REF_HELP });
 
 /** Validates one input and reports the first failing field, in the order the handwritten validators checked them. */
 export function parseInput<T extends z.ZodObject>(schema: T, raw: unknown): z.output<T> {

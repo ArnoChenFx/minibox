@@ -18,6 +18,7 @@ import { Client } from "ssh2";
 
 import { isNewerVersion, runCli } from "../src/cli";
 import type { OperationContext, Principal } from "../src/operations/types";
+import type { HelperSpec } from "../src/runtime";
 import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
 import { parseTar } from "../src/services/files-tar";
@@ -469,6 +470,201 @@ describe("CLI", () => {
       const sink = io(bytesOf("{}"));
       expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
       expect(sink.err.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+async function settleTasks(env: ReturnType<typeof serve>): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    const res = await fetch(`${env.env.MINIBOX_URL}/api/tasks?status=running`, {
+      headers: { authorization: `Bearer ${TEST_KEY}` },
+    });
+    const body = (await res.json()) as { tasks: unknown[] };
+    if (body.tasks.length === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+describe("CLI templates, images and box clones", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("box create with --repo prints the box, follows the clone, and clones the branch with the secret's token", async () => {
+    const env = serve();
+    try {
+      env.app.hosts.get().secrets.set("gh-token", "ghp_cli_secret", "2026-10-22T00:00:00.000Z");
+      const clones: HelperSpec[] = [];
+      env.runtime.helperHandler = (spec) => {
+        if (spec.cmd[2]?.includes("credential.helper=")) {
+          clones.push(spec);
+          return { exitCode: 0, logs: "Cloning into '/workspace'...\n" };
+        }
+        return { exitCode: 0, logs: "" };
+      };
+      const created = io();
+      const code = await runCli(
+        [
+          "box",
+          "create",
+          "alpha",
+          "--repo",
+          "https://github.com/org/app.git",
+          "--branch",
+          "main",
+          "--secret",
+          "gh-token",
+          "--cpus",
+          "1",
+          "--memory",
+          "256",
+        ],
+        env.env,
+        created,
+        lines([]),
+      );
+      expect(code).toBe(0);
+      expect(created.out).toBe("alpha\n");
+      expect(created.err).toContain("Cloning into '/workspace'");
+      expect(created.err).not.toContain("ghp_cli_secret");
+      expect(clones).toHaveLength(1);
+      expect(clones[0]?.cmd.slice(5, 7)).toEqual(["https://github.com/org/app.git", "main"]);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("a clone that fails keeps the box, names the failure, and exits 1; --no-wait returns before the clone ends", async () => {
+    const env = serve();
+    try {
+      env.runtime.helperHandler = (spec) =>
+        spec.cmd[2]?.includes("credential.helper=")
+          ? { exitCode: 128, logs: "fatal: repository 'https://github.com/org/missing.git/' not found\n" }
+          : { exitCode: 0, logs: "" };
+      const failed = io();
+      expect(
+        await runCli(
+          ["box", "create", "beta", "--repo", "https://github.com/org/missing.git"],
+          env.env,
+          failed,
+          lines([]),
+        ),
+      ).toBe(1);
+      expect(failed.out).toBe("beta\n");
+      expect(failed.err).toContain("beta was created, but its clone did not finish");
+      const listed = io();
+      expect(await runCli(["box", "ls"], env.env, listed, lines([]))).toBe(0);
+      expect(listed.out).toContain("beta");
+
+      const detached = io();
+      expect(
+        await runCli(
+          ["box", "create", "gamma", "--repo", "https://github.com/org/missing.git", "--no-wait"],
+          env.env,
+          detached,
+          lines([]),
+        ),
+      ).toBe(0);
+      expect(detached.out).toBe("gamma\n");
+      expect(detached.err).toMatch(/The clone runs as task [0-9A-HJKMNP-TV-Z]{26}/);
+      await settleTasks(env);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("template create reads a Dockerfile from a file or stdin, prints the ref after the build log, and --json prints the task", async () => {
+    const env = serve();
+    try {
+      const file = join(mkdtempSync(join(tmpdir(), "mb-cli-dockerfile-")), "Dockerfile");
+      writeFileSync(file, "FROM alpine:3.20\nRUN echo built\n");
+      const built = io();
+      const code = await runCli(
+        ["template", "create", "tool", "--dockerfile", file, "--description", "Build tools"],
+        env.env,
+        built,
+        lines([]),
+      );
+      expect(code).toBe(0);
+      expect(built.out).toBe("mbtest-template:tool\n");
+      expect(built.err).toContain("Successfully built");
+      expect(env.runtime.builds.at(-1)?.tag).toBe("mbtest-template:tool");
+
+      const piped = io(bytesOf("FROM alpine:3.20\n"));
+      expect(
+        await runCli(["template", "create", "piped", "--dockerfile", "-", "--json"], env.env, piped, lines([])),
+      ).toBe(0);
+      expect(JSON.parse(piped.out)).toMatchObject({
+        status: "succeeded",
+        result: { template: { ref: "mbtest-template:piped", name: "piped" } },
+      });
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("template rebuild and image pull follow their tasks; a pull the registry refuses exits 1 with its message", async () => {
+    const env = serve();
+    try {
+      const file = join(mkdtempSync(join(tmpdir(), "mb-cli-rebuild-")), "Dockerfile");
+      writeFileSync(file, "FROM alpine:3.20\n");
+      expect(await runCli(["template", "create", "tool", "--dockerfile", file], env.env, io(), lines([]))).toBe(0);
+
+      const rebuilt = io();
+      expect(await runCli(["template", "rebuild", "mbtest-template:tool"], env.env, rebuilt, lines([]))).toBe(0);
+      expect(rebuilt.out).toBe("mbtest-template:tool\n");
+
+      const pulled = io();
+      expect(await runCli(["image", "pull", "node:24-bookworm-slim"], env.env, pulled, lines([]))).toBe(0);
+      expect(pulled.out).toBe("node:24-bookworm-slim\n");
+      expect(await env.runtime.inspectImage("node:24-bookworm-slim")).toBeDefined();
+
+      env.runtime.unpullable.add("ghost:latest");
+      const refused = io();
+      expect(await runCli(["image", "pull", "ghost:latest"], env.env, refused, lines([]))).toBe(1);
+      expect(refused.out).toBe("");
+      expect(refused.err).toContain("was not found in its registry");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("the new commands take --help, and their usage errors exit 2 without calling the server", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    const dir = mkdtempSync(join(tmpdir(), "mb-cli-usage-"));
+    const dockerfile = join(dir, "Dockerfile");
+    writeFileSync(dockerfile, "FROM alpine:3.20\n");
+    const helped = io();
+    expect(await runCli(["template", "create", "--help"], env, helped, lines([]))).toBe(0);
+    expect(helped.out).toContain("minibox template create");
+    const cases: string[][] = [
+      ["box", "create"],
+      ["box", "create", "alpha", "extra"],
+      ["box", "create", "alpha", "--branch", "main"],
+      ["box", "create", "alpha", "--cpus", "lots"],
+      ["box", "create", "alpha", "--color", "red"],
+      ["template"],
+      ["template", "frobnicate"],
+      ["template", "create", "tool"],
+      ["template", "create", "tool", "--dockerfile", dockerfile, "--repo", "https://github.com/org/app.git"],
+      ["template", "create", "tool", "--dockerfile", join(dir, "missing")],
+      ["template", "create", "tool", "--dockerfile", dockerfile, "--branch", "main"],
+      ["template", "create", "tool", "--context", "https://example.com/context.tar", "--branch", "main"],
+      ["template", "create", "tool", "--repo", "https://github.com/org/app.git", "--devcontainer-path", "x.json"],
+      ["template", "create", "tool", "--repo"],
+      ["template", "rebuild"],
+      ["template", "rebuild", "a", "b"],
+      ["image"],
+      ["image", "pull"],
+      ["image", "pull", "alpine", "--color", "red"],
+    ];
+    for (const argv of cases) {
+      const sink = io(bytesOf("FROM alpine:3.20\n"));
+      expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
+      expect(sink.err.length).toBeGreaterThan(0);
+      expect(sink.out).toBe("");
     }
   });
 });

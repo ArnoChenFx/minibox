@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 84 operations in 15 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 99 operations in 15 groups.
 
 ## Authentication
 
@@ -39,7 +39,7 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `port:expose` | `port:expose` |
 | `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 
-The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` and `secret:use` are token scopes with no operation of their own: `box:ssh` allows the SSH gateway, and `secret:use` allows a create or rebuild that refers to a secret.
+The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` and `secret:use` are token scopes with no operation of their own: `box:ssh` allows the SSH gateway, and `secret:use` allows a create or rebuild that refers to a secret, including the secret of a repository clone.
 
 ## Requests
 
@@ -122,7 +122,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes` | List boxes |
-| `POST` | `/api/boxes` | Create and start a box |
+| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. The response's `clone.taskId` names the clone task |
 | `GET` | `/api/boxes/{id}` | Get one box |
 | `PATCH` | `/api/boxes/{id}` | Update a box in place |
 | `DELETE` | `/api/boxes/{id}` | Delete a box |
@@ -251,10 +251,15 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/templates` | List templates |
+| `POST` | `/api/templates` | Build a template from a source, as a task. Owner only |
+| `POST` | `/api/templates/{ref}/rebuild` | Rebuild a template from the source it was built from, as a task. Owner only |
+| `POST` | `/api/images/pull` | Pull an image from its registry, as a task, unless the engine has it. Owner only |
 | `POST` | `/api/snapshots/{ref}/promote` | Promote a snapshot to a template |
 | `POST` | `/api/boxes/{id}/template` | Save a box as a template |
 | `POST` | `/api/templates/base/build` | Build the bundled base template |
 | `DELETE` | `/api/templates/{ref}` | Delete a template |
+
+`POST /api/templates` takes `name`, an optional `description` and a `source`. The source's `kind` is `dockerfile` (with `text`), `git` (with `url`, and optional `branch`, `subdir`, `dockerfile` and `secretRef`), `context` (with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`) or `devcontainer` (with `url`, and optional `branch`, `path` and `secretRef`). The task's result holds `template.ref`, such as `minibox-template:node-tools`. `POST /api/images/pull` takes `ref`, such as `node:24-bookworm-slim`, and its task's result holds `image.ref` and `image.id`. See [Templates](../user-guide/templates.md).
 
 ### tasks
 

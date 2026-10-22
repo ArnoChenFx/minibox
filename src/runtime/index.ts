@@ -185,6 +185,8 @@ export interface HelperSpec {
    * exists only for the run.
    */
   secrets?: HelperSecret[];
+  /** Owner of the staged secret files, so a helper that runs as another user can read them. Absent means root. */
+  secretsOwner?: VolumeOwner;
   /**
    * When true, the helper joins the engine's default bridge so it can reach npm / PyPI / GitHub.
    * Absent or false keeps NetworkMode `none` (volume probes and chown).
@@ -249,6 +251,10 @@ export interface CommitSpec {
 export interface BuildSpec {
   contextDir: string;
   dockerfile: string;
+  /** Top-level entries of `contextDir` to send. Absent sends only `dockerfile`. */
+  src?: string[];
+  /** Build arguments, passed as `--build-arg`. */
+  args?: Record<string, string>;
   tag: string;
   labels: Record<string, string>;
   /** Called with each chunk of build output as the engine produces it. */
@@ -444,9 +450,10 @@ export interface Runtime {
   inspectImage(ref: string): Promise<ImageDetails>;
   /**
    * Makes `ref` present locally. An image that is already present is left alone and no registry is contacted. A
-   * reference the registry does not have fails with `not_found`.
+   * reference the registry does not have fails with `not_found`. `onLog` receives a line each time the status of a layer
+   * or of the pull changes.
    */
-  pullImage(ref: string): Promise<void>;
+  pullImage(ref: string, opts?: { onLog?(text: string): void }): Promise<void>;
   removeImage(ref: string, opts: { force: boolean }): Promise<void>;
   /**
    * The image `ref` as a tar archive, the form `docker save` writes, with the tags it has. The caller reads the stream
