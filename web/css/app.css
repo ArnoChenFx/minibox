@@ -1,5 +1,6 @@
 /* MiniBox design system — tokens, base, components. */
-/* The parts in app/ are imported in cascade order. Keep that order when you add or move a part. */
+/* The parts in app/ are imported in cascade order. Keep that order when you add or move a part. src/static.ts inlines
+   these imports when it serves this file, so the page still loads one stylesheet. */
 @import "app/base.css";
 @import "app/layout.css";
 @import "app/buttons.css";
