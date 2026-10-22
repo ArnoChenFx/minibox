@@ -2078,6 +2078,12 @@ textarea.token-lines {
 .ssh-step .help {
   margin: 4px 0 8px;
 }
+.ssh-step .ssh-label {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
 .ssh-cmd {
   position: relative;
 }

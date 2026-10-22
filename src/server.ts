@@ -26,6 +26,7 @@ import { isPreviewPath } from "./preview/path";
 import { proxyHttp, resolvePreview } from "./preview/proxy";
 import { attachPreviewUpstream, type PreviewSocketData } from "./preview/ws";
 import { routes } from "./routes";
+import { handleCli } from "./routes/cli";
 import { matchRoute, routeAllows } from "./routes/router";
 import { type Box, locateBox, wakeIfSleeping } from "./services/boxes";
 import { reconcileHost } from "./services/reconcile";
@@ -70,7 +71,8 @@ async function sshRequest(
   if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
   if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
     await app.ssh.probe(app.hosts.get(), ref, caller);
-    return new Response(null, { status: 204 });
+    // The CLI compares this with its own version. A box:ssh token cannot read /api/system, which is owner-only.
+    return new Response(null, { status: 204, headers: { "x-minibox-version": app.version } });
   }
   const lease = await app.ssh.enter(app.hosts.get(), ref, caller);
   const data: SshSocketData = { kind: "ssh", lease };
@@ -225,6 +227,7 @@ export function startServer(app: App): Server<SocketData> {
           }
           res = await proxyHttp(req, resolved);
         } else if (url.pathname === "/mcp") res = await handleMcp(app, req, url, addressOf(app, req, server));
+        else if (url.pathname.startsWith("/cli/")) res = await handleCli(app, req, url, server);
         else
           res = url.pathname.startsWith("/api/")
             ? await handleApi(app, req, url, server)
