@@ -68,6 +68,7 @@ export interface Body {
   snapshots?: { ref: string; source: string | null; createdBy: string | null }[];
   templates?: { ref: string; name: string | null; createdBy: string | null }[];
   taskId?: string;
+  clone?: { taskId?: string };
   tasks?: { id: string }[];
   events?: {
     seq: number;
@@ -141,10 +142,17 @@ export async function call(base: string, path: string, init: CallInit = {}): Pro
 }
 
 /** Polls a background task until it leaves `running`, and returns its final view. */
-export async function finishedTask(base: string, taskId: string): Promise<{ status: string; result?: Body["result"] }> {
+export async function finishedTask(
+  base: string,
+  taskId: string,
+): Promise<{ status: string; result?: Body["result"]; error?: { code: string; key?: string; message: string } }> {
   for (;;) {
     const view = await call(base, `/api/tasks/${taskId}`);
-    const json = view.json as unknown as { status: string; result?: Body["result"] };
+    const json = view.json as unknown as {
+      status: string;
+      result?: Body["result"];
+      error?: { code: string; key?: string; message: string };
+    };
     if (json.status !== "running") return json;
     await Bun.sleep(5);
   }
