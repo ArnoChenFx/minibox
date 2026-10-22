@@ -203,7 +203,7 @@ export default {
   "err.devcontainer_unsupported_hint":
     "MiniBox 只读取 image、build.dockerfile、build.context、build.args 和 containerEnv。请把其他设置移入 Dockerfile 或删除后重试。",
   "err.devcontainer_post_create":
-    "MiniBox 暂不执行 postCreateCommand 或其他生命周期命令。请把安装步骤写成 Dockerfile 中的 RUN 指令，删除该配置项后重试。",
+    "MiniBox 不执行 postCreateCommand 或其他生命周期命令。请把安装步骤写成 Dockerfile 中的 RUN 指令，删除该配置项后重试。",
   "err.devcontainer_source": "devcontainer.json 必须设置 image 或 build.dockerfile，且只能设置其中一个。",
   "err.devcontainer_build_invalid":
     "build.dockerfile 必须是 Dockerfile 的路径，build.context 必须是构建上下文的路径，二者都相对于 devcontainer.json。",

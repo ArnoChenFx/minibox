@@ -227,7 +227,7 @@ export default {
   "err.devcontainer_unsupported_hint":
     "MiniBox reads image, build.dockerfile, build.context, build.args and containerEnv. Move other settings into the Dockerfile, remove them, then try again.",
   "err.devcontainer_post_create":
-    "MiniBox does not run postCreateCommand or other lifecycle commands yet. Add the install steps to the Dockerfile as RUN instructions, remove the key, then try again.",
+    "MiniBox does not run postCreateCommand or other lifecycle commands. Add the install steps to the Dockerfile as RUN instructions, remove the key, then try again.",
   "err.devcontainer_source": "devcontainer.json must set image or build.dockerfile, and not both.",
   "err.devcontainer_build_invalid":
     "build.dockerfile must be a path to the Dockerfile, and build.context a path to the build context, both relative to devcontainer.json.",
