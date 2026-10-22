@@ -108,6 +108,12 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 
 `src/notify/` turns events into notices and sends them. `rules.ts` maps a stored event to a notice, such as `box.oom` or `exec.failed`. `src/app.ts` passes every event to `Notifications` in `service.ts`, which also takes host link changes, and queues each notice for every channel that subscribes to it. Lifecycle warnings and terminal takeovers are events too, so they take the same path. Sends run in the background, with a bounded queue, a timeout and a fixed number of attempts. Each attempt is recorded as a `notify.deliver` event. `transport.ts` makes the request: it resolves the name once, refuses addresses that are not public, connects to the address it checked, and bounds the whole send with the timeout. `channels.ts` builds the request for each channel type and signs webhooks. `store.ts` keeps the channel settings in `notify.json` and their secrets under `secrets/notify`. The operations that configure channels are in `src/operations/notify.ts`.
 
+## Backups and off-site targets
+
+`src/backup/create.ts` writes a backup. It copies each SQLite store from a snapshot that `VACUUM INTO` makes in a worker thread (`snapshot.ts`), lists the other files, and streams them through a strict USTAR writer (`tar.ts`) into a sealing writer (`seal.ts`), which encrypts 1 MiB chunks with AES-256-GCM under a scrypt key. `restore.ts` reads an archive into an empty directory through a staging folder. `store.ts` keeps the archives under `DATA_DIR/backups`, each with a record written last. `src/services/backup.ts` and `src/operations/backup.ts` expose them.
+
+`src/targets/` reaches off-site targets. `s3.ts` uses Bun's S3 client with path-style addresses and a multipart writer. `sftp.ts` uses `ssh2`, with the host key pinned in `targets.json`. An adapter writes an object's archive before its record, and a pulled object is kept only when it matches its record. `src/services/targets.ts` runs the pushes and pulls, and `src/operations/targets.ts` exposes them. The credentials stay in `secrets/env` under the reserved `target.` names.
+
 ## Previews
 
 `src/preview/proxy.ts` forwards HTTP and WebSocket traffic to the box's container address and the port the caller asked for. Path-mode previews are served under `/box/`, and subdomain previews on their own hosts.
@@ -130,6 +136,8 @@ Every path is under `DATA_DIR`.
 | Preview tickets and grants (memory only) | `src/preview/grants.ts` | Not written to disk, so a restart ends them |
 | `checkpoints/schedules/` | `src/checkpoints/store.ts`, `src/services/checkpoint-schedule.ts` | Checkpoint schedules, one per box |
 | `packages/` | `src/checkpoints/packages.ts` | Exported checkpoint packages, sealed with a passphrase |
+| `backups/` | `src/backup/store.ts` | Stored backups: sealed archives, each with a record written last |
+| `targets.json` | `src/targets/store.ts` | Off-site targets: where each one is and its last sync. Their credentials are secrets named `target.<id>.<field>` |
 | `exec/` | `src/events/outputs.ts` | Saved output of commands |
 | `hosts.json`, `hosts/<id>/` | `src/host/store.ts` | Remote host records and their credential files |
 | `agents.json` | `src/host/agent/store.ts` | Paired host agents: ids, public keys and revocation. The private key stays in the agent's own volume |

@@ -17,6 +17,7 @@ minibox <command> --help
 | `MINIBOX_ACCESS_KEY` | none | The access key, or an agent token. Used as the bearer token. |
 | `ACCESS_KEY` | none | Used when `MINIBOX_ACCESS_KEY` is not set |
 | `MINIBOX_TOOLSETS` | none | Toolsets for `minibox mcp`, such as `core,session` |
+| `MINIBOX_BACKUP_PASSPHRASE` | none | The passphrase for `minibox backup` and `minibox restore`. It is never a command argument. See [Backups](../admin/backups.md). |
 
 Commands that talk to the server need `MINIBOX_ACCESS_KEY` or `ACCESS_KEY`. Otherwise they stop with an error.
 
@@ -211,6 +212,25 @@ Only the owner can use these commands. See [Tools](../user-guide/tools.md).
 | `minibox tool custom list [--json]` | Lists the custom entries in `DATA_DIR/tools.d` |
 | `minibox tool custom put <id> (--file FILE \| --stdin) [--override-builtin] [--json]` | Saves an entry from a JSON document. `--override-builtin` replaces a built-in tool's entry. |
 | `minibox tool custom delete <id> [--json]` | Removes the entry. Nothing is uninstalled from the shared tools volume. |
+
+## Backups
+
+The `backup` commands use the access key, and they are for the owner only. `restore` works on an archive file, and it needs no running server. See [Backups](../admin/backups.md).
+
+| Command | Meaning |
+|---|---|
+| `minibox backup [--out FILE] [--overwrite] [--passphrase-stdin] [--json]` | Backs up DATA_DIR on the server into a sealed archive, while MiniBox runs. With `--out`, it also downloads the archive to `FILE`, and checks its size and checksum. Without `--out`, the backup stays on the server, and the command prints its ID. |
+| `minibox backup ls [--json]` | Lists the backups kept on the server |
+| `minibox backup rm <id> [--json]` | Deletes a backup kept on the server |
+| `minibox restore <file> --data-dir DIR [--passphrase-stdin]` | Restores an archive into an empty `DIR`. Without `--data-dir`, it uses `DATA_DIR`. Stop MiniBox first. |
+
+The passphrase comes from `MINIBOX_BACKUP_PASSPHRASE`, or from the first line of standard input with `--passphrase-stdin`.
+
+```bash
+read -rs -p "Backup passphrase: " MINIBOX_BACKUP_PASSPHRASE && export MINIBOX_BACKUP_PASSPHRASE
+minibox backup --out minibox-backup.mbbak
+minibox restore minibox-backup.mbbak --data-dir /srv/minibox-data
+```
 
 ## Notifications
 

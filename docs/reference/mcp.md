@@ -35,7 +35,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `session` | Terminal sessions in boxes |
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
-| `storage` | Volumes, storage pools, and the owner's checkpoint export, import and schedules |
+| `storage` | Volumes, storage pools, the owner's checkpoint export, import and schedules, and the owner's backups and off-site targets |
 | `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, and pulling images |
 | `network` | Preview ports |
 
@@ -122,6 +122,17 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `get_checkpoint_schedule` | `GET /api/boxes/{id}/checkpoint-schedule`. Owner only |
 | `set_checkpoint_schedule` | `PUT /api/boxes/{id}/checkpoint-schedule`. Owner only |
 | `clear_checkpoint_schedule` | `DELETE /api/boxes/{id}/checkpoint-schedule`. Owner only |
+| `create_backup` | `POST /api/backups`. Owner only. The task result holds the backup |
+| `list_backups` | `GET /api/backups`. Owner only |
+| `delete_backup` | `DELETE /api/backups/{id}`. Owner only |
+| `list_targets` | `GET /api/targets`. Owner only |
+| `test_target` | `POST /api/targets/test`. Owner only |
+| `add_target` | `POST /api/targets`. Owner only |
+| `check_target` | `GET /api/targets/{id}/check`. Owner only |
+| `list_target_objects` | `GET /api/targets/{id}/objects`. Owner only |
+| `remove_target` | `DELETE /api/targets/{id}`. Owner only |
+| `push_to_target` | `POST /api/targets/{id}/push`. Owner only. Returns a task |
+| `pull_from_target` | `POST /api/targets/{id}/pull`. Owner only. Returns a task |
 
 ### tools
 
@@ -203,3 +214,11 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 ## Notification tools
 
 `set_notify_channel` takes the fields of `PUT /api/notify/channels/{id}`: `id`, `name`, `type` and `events`, and optionally `boxes`, `enabled`, `url`, `server`, `topic`, `chatId` and `secret`. A secret is never returned. `list_notify_channels` shows only whether one is stored, as `hasSecret`. Omit `secret` to keep the stored one, or send `null` to clear it. The tools are for the owner only, and a token does not see them in `tools/list`. See [Notifications](../user-guide/notifications.md).
+
+## Backup and target tools
+
+The backup and target tools are for the owner only, so a token does not see them in `tools/list`.
+
+- `create_backup` takes a `passphrase`, so the MCP client that calls it sees the passphrase. Use the [command-line tool](cli.md#backups) with `MINIBOX_BACKUP_PASSPHRASE` when an agent should not see it.
+- `add_target` takes the target's credentials as arguments, so the client sees them as well. MiniBox stores them as secrets, and no tool returns them. For an SFTP server, call `test_target` first. If the server's host key is not yet known, the call fails with the fingerprint the server presented. Pass that fingerprint to `add_target` as `hostKeyFingerprint` once you have confirmed it.
+- `push_to_target` and `pull_from_target` take an object ID, `pk_…` or `bk_…`. See [Backups](../admin/backups.md#push-and-pull).

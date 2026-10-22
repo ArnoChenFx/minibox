@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 108 operations in 16 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 120 operations in 18 groups.
 
 ## Authentication
 
@@ -38,7 +38,7 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
 | `secret:use` | `secret:use`. Setting, removing or running a box's startup command also needs `exec`. |
-| `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+| `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 
 The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
 
@@ -256,6 +256,30 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `GET` | `/api/boxes/{id}/checkpoint-schedule` | Read a box's checkpoint schedule, with its next and last run. `null` when none is set. `timezoneUnknown` is `true` when the saved zone is one the server no longer knows; the schedule then runs in UTC until it is set again. Owner only |
 | `PUT` | `/api/boxes/{id}/checkpoint-schedule` | Set a schedule `{ "everyHours" }` or `{ "at": "HH:MM", "timezone" }`, not both. `timezone` is an IANA zone such as `Asia/Shanghai`; without it the time is UTC, and an unknown zone or a UTC offset such as `+08:00` is `400`. Replaces any schedule the box has. Owner only |
 | `DELETE` | `/api/boxes/{id}/checkpoint-schedule` | Remove a box's schedule. Checkpoints already taken are kept. Owner only |
+
+### backups
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/backups` | Back up DATA_DIR into a sealed archive, as a task. Takes `{ "passphrase" }`. Returns `202`; the task result holds the backup. Owner only |
+| `GET` | `/api/backups` | List the backups kept on the server, newest first. Owner only |
+| `GET` | `/api/backups/{id}/download` | Download a backup archive as `<id>.mbbak`. Owner only |
+| `DELETE` | `/api/backups/{id}` | Delete a backup kept on the server. Owner only |
+
+### targets
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/targets` | List off-site targets. Credentials are never returned. Owner only |
+| `POST` | `/api/targets` | Add an S3-compatible or SFTP target. Takes its fields, and the credentials are stored as secrets. Owner only |
+| `POST` | `/api/targets/test` | Reach a target with the given details, and store nothing. Owner only |
+| `GET` | `/api/targets/{id}/check` | Reach a stored target with its own credentials. Owner only |
+| `GET` | `/api/targets/{id}/objects` | List the complete packages and backups on a target, newest first. Owner only |
+| `DELETE` | `/api/targets/{id}` | Remove a target and its stored credentials. Objects on the target are kept. Owner only |
+| `POST` | `/api/targets/{id}/push` | Push a package (`pk_…`) or a backup (`bk_…`) to a target, as a task. Owner only |
+| `POST` | `/api/targets/{id}/pull` | Pull a package or a backup from a target, as a task. Owner only |
+
+Targets take the fields of `POST /api/targets`. An S3 target takes `endpoint`, `region`, `bucket`, `accessKeyId` and `secretAccessKey`. An SFTP target takes `host`, `port`, `user`, `privateKey` and `hostKeyFingerprint`. The fingerprint comes from `POST /api/targets/test`, which reports the server's key when the key is not yet known. See [Backups](../admin/backups.md#off-site-targets).
 
 ### templates
 

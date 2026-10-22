@@ -14,8 +14,10 @@ The default location is `./data` in a source checkout, and `/data` in the releas
 | `checkpoints/` | `700` | One checkpoint record per file, `ck_….json`, mode `600`. The data itself is in the checkpoint repository volume. |
 | `checkpoints/schedules/` | `700` | One checkpoint schedule per box, `<box id>.json`, mode `600`. It holds the rule with its time zone, the next run and the last run. A box without a file has no schedule. It survives a restart. |
 | `packages/` | `700` | Checkpoint packages, `<id>.mbckpt`, mode `600`, each with a `<id>.json` record beside it. A package is sealed with the passphrase it was exported with. The hourly sweep removes it once it is 24 hours old. |
+| `backups/` | `700` | Stored backups, `<id>.mbbak`, mode `600`, each with a `<id>.json` record beside it. A backup is sealed with the passphrase it was made with. Backups pulled from an off-site target are kept here too. Not included in a backup. See [Backups](backups.md). |
+| `targets.json` | `600` | Off-site targets: name, kind, address, folder, the pinned SFTP host key and the last sync. It never holds a credential. Written when you add the first target. See [Backups](backups.md#off-site-targets). |
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per command. |
-| `secrets/` | `700` | Host secrets in `env/<name>`, mode `600`, each created when you set a secret. Notification channel secrets in `notify/<channel id>`, and webhook URLs in `notify/<channel id>.url`, mode `600`. Also `checkpoint-repo.key`, mode `600`, created when the checkpoint repository is first initialized. |
+| `secrets/` | `700` | Host secrets in `env/<name>`, mode `600`, each created when you set a secret. The credentials of off-site targets are among them, as `env/target.<id>.<field>`. Notification channel secrets in `notify/<channel id>`, and webhook URLs in `notify/<channel id>.url`, mode `600`. Also `checkpoint-repo.key`, mode `600`, created when the checkpoint repository is first initialized. |
 | `tools.d/` | `700` | Custom tool catalog entries, one `<id>.json` file each, mode `600`, created when you save a custom tool |
 | `hosts.json` | `600` | Remote hosts: ID, name, endpoint without any credential, the SSH host key fingerprint, and when each host was added. Written when you add the first remote host. |
 | `hosts/<id>/` | `700` | Credential files for each remote host, mode `600`: `ca.pem`, `cert.pem` and `key.pem` for `tcp://`, or `ssh_key` for `ssh://`. The API never returns them. |
@@ -35,4 +37,4 @@ If `DATA_DIR` is lost, and no key is set in `.env` or the environment, the next 
 
 ## Copying the databases
 
-Stop MiniBox before you copy `events.db` or `tasks.db`. In WAL mode, recent changes stay in the `-wal` file until SQLite writes them to the main file. Copying the main file alone can give you a stale copy.
+Stop MiniBox before you copy `events.db` or `tasks.db`. In WAL mode, recent changes stay in the `-wal` file until SQLite writes them to the main file. Copying the main file alone can give you a stale copy. To copy the data directory while MiniBox runs, use [Backups](backups.md), which copies the databases from a consistent snapshot.
