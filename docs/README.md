@@ -37,7 +37,7 @@ For the person who installs and runs MiniBox.
 - [Remote access and TLS](admin/remote-access.md): reach MiniBox from other machines.
 - [Subdomain previews](admin/preview-subdomains.md): give each port preview its own address, under a wildcard domain.
 - [Upgrades](admin/upgrades.md): move to a newer release.
-- [Backups](admin/backups.md): what to back up and how to restore it.
+- [Backups](admin/backups.md): back up MiniBox while it runs, restore it, and keep copies off the host.
 - [Security](admin/security.md): the trust model and the security settings.
 
 ## Reference

@@ -43,6 +43,7 @@ MiniBox 面向单一可信用户。它没有用户账户，因此任何持有访
 - **预览。** 通过 MiniBox 打开 Box 内运行的 Web 应用，而无需在宿主机上发布端口。
 - **Agent 访问。** 为每个 Agent 发放各自限定权限的令牌，通过 MCP、CLI、SSH 或 REST API 连接。
 - **通知。** 将 Box 内存耗尽、命令失败、检查点失败或宿主机离线等事件发送到 Webhook、ntfy 主题或 Telegram 聊天。
+- **备份。** 在 MiniBox 运行时把数据目录备份为一个用口令封装的文件，并可在新宿主机上离线恢复。检查点包与备份的副本可保存到 S3 兼容存储桶或 SFTP 服务器。
 - **多宿主机。** 通过 SSH、双向 TLS、Unix 套接字，或由宿主机上的 Agent 主动连接 MiniBox（使用一次性配对码，宿主机无需开放端口），在其他 Docker Engine 上运行 Box。可由 MiniBox 把 Box 放到最空闲的宿主机，也可以把 Box 连同卷迁移到另一台宿主机。
 
 <picture>
