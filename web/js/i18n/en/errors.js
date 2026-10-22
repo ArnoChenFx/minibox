@@ -338,6 +338,16 @@ export default {
   "err.storage_squash_hint":
     "On the NAS, set the export to all_squash,anonuid=1000,anongid=1000, or root_squash,anonuid=1000,anongid=1000, so the squashed user is uid 1000. Setup guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/nfs.md",
   "err.helper_image_missing": "Base template image {image} is missing, so volume helpers cannot run.",
+  "err.volume_over_limit":
+    "Volume {volume} is over its hard limit: {used} MB used, limit {limit} MB. Boxes that mount it cannot start.",
+  "err.volume_over_limit_hint": "Raise or clear the hard limit, or free space in the volume, then start the box.",
+  "err.volume_limit_order": "The soft limit must not be above the hard limit.",
+  "err.volume_limit_nfs":
+    "Volume {volume} is on an NFS pool, where usage is measured for the whole share, so a limit on it would not hold. Set a quota on the NAS export instead.",
+  "err.volume_usage_timeout": "Usage of volume {volume} did not answer within {seconds} s, so it was not measured.",
+  "err.host_disk_low":
+    "The host disk has {free}% free, below the minimum of {min}%, so MiniBox does not create volumes or checkpoints until space is freed.",
+  "err.host_disk_low_hint": "Free space on the disk the engine uses, or lower HOST_DISK_MIN_FREE_PERCENT.",
   "err.file_path_invalid": "File path must be at most 512 bytes, without NUL or line breaks.",
   "err.file_path_escape": "File path must stay inside the volume (no .. or absolute escape).",
   "err.file_symlink_loop": "Too many levels of symbolic links in the file path (more than {max}).",

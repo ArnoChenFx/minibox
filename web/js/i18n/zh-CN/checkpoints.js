@@ -164,6 +164,7 @@ export default {
   "ck.skip.sleeping": "Box 处于休眠状态",
   "ck.skip.stopped": "Box 已停止",
   "ck.skip.capacity": "仓库已满",
+  "ck.skip.disk": "宿主机磁盘可用空间不足",
   "ck.skip.gone": "Box 已不存在",
   "sn.legacyTitle": "旧快照",
   "sn.legacyText":

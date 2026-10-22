@@ -581,6 +581,15 @@ button {
   margin: 0;
   font-size: 11.5px;
 }
+.usage-cell .spark {
+  height: 26px;
+}
+tr.volume-over-soft > td:first-child {
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+tr.volume-over-hard > td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
 .bar-stacked {
   display: flex;
   height: 8px;

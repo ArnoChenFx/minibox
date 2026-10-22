@@ -177,6 +177,7 @@ export default {
   "ck.skip.sleeping": "the box was asleep",
   "ck.skip.stopped": "the box was stopped",
   "ck.skip.capacity": "the repository is full",
+  "ck.skip.disk": "the host disk is low on free space",
   "ck.skip.gone": "the box no longer exists",
   "sn.legacyTitle": "Legacy snapshots",
   "sn.legacyText":

@@ -120,7 +120,7 @@ Every profile also:
 ### Limits
 
 - **No egress filtering.** Box traffic leaves through Docker's normal NAT, without filtering. Boxes can reach services on the host's bridge gateway.
-- **No disk quotas.** Nothing limits how much disk a box uses.
+- **No hard disk quotas.** Nothing stops a box from writing as much as the disk holds. MiniBox samples each volume's usage, can stop the boxes that mount a volume over its hard limit, and refuses new volumes and checkpoints while the host disk is below its free-space minimum. Soft alerts are best effort, not a quota, and they are checked between samples. Filesystem quotas are later work. See [Volumes and storage](../user-guide/volumes-and-storage.md#usage-limits-and-free-space).
 
 ### Host scripts
 

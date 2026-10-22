@@ -285,6 +285,14 @@ export default {
   "err.storage_squash_hint":
     "在 NAS 上把导出设置为 all_squash,anonuid=1000,anongid=1000，或 root_squash,anonuid=1000,anongid=1000，使被映射的用户为 uid 1000。设置指南：https://github.com/ArnoChenFx/minibox/blob/main/docs/zh-CN/user-guide/nfs.md",
   "err.helper_image_missing": "基础模板镜像 {image} 不存在，因此无法运行卷辅助容器。",
+  "err.volume_over_limit": "卷 {volume} 超过硬上限：已用 {used} MB，上限 {limit} MB。挂载它的 Box 无法启动。",
+  "err.volume_over_limit_hint": "提高或取消硬上限，或释放卷内空间，然后再启动 Box。",
+  "err.volume_limit_order": "软上限不能高于硬上限。",
+  "err.volume_limit_nfs":
+    "卷 {volume} 位于 NFS 存储池，其用量按整个共享统计，因此无法对它设置上限。请改在 NAS 导出上设置配额。",
+  "err.volume_usage_timeout": "卷 {volume} 的用量在 {seconds} 秒内没有响应，因此未能统计。",
+  "err.host_disk_low": "宿主机磁盘剩余 {free}%，低于 {min}% 的最低值，因此在释放空间前 MiniBox 不会创建卷或检查点。",
+  "err.host_disk_low_hint": "释放引擎所用磁盘上的空间，或降低 HOST_DISK_MIN_FREE_PERCENT。",
   "err.file_path_invalid": "文件路径最多 512 字节，且不能包含 NUL 或换行。",
   "err.file_path_escape": "文件路径必须留在卷内（不能使用 .. 或绝对路径逃逸）。",
   "err.file_symlink_loop": "文件路径中的符号链接层级过多（超过 {max} 层）。",

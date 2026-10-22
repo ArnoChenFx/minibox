@@ -95,4 +95,28 @@ export default {
     "Leave a role on “use the rule” to put cache on the local pool and the other roles on the default pool.",
   "vol.loadingFailed": "Could not load storage",
   "vol.choose": "Volume",
+  "vol.limits": "Limits",
+  "vol.limitsTitle": "Usage limits for {name}",
+  "vol.limitsHelp":
+    "A soft limit only raises an alert. It is best effort, not a quota: usage is sampled every few minutes, so it can pass the limit between samples. A hard limit applies the action chosen below.",
+  "vol.limitsNfs":
+    "An NFS volume's usage is the whole share's, so a limit is set as a quota on the NAS export instead.",
+  "vol.softLimit": "Soft limit (GB)",
+  "vol.hardLimit": "Hard limit (GB)",
+  "vol.limitAction": "At the hard limit",
+  "vol.actionWarn": "Warn only",
+  "vol.actionStop": "Stop the boxes that mount it",
+  "vol.actionHelp":
+    "Stopping leaves the boxes stopped until the volume is back under its hard limit, or the limit is raised or cleared.",
+  "vol.noLimit": "No limit",
+  "vol.limitSoft": "soft limit {limit}",
+  "vol.limitHard": "hard limit {limit}",
+  "vol.limitsSaved": "Limits saved",
+  "vol.limitsFailed": "Could not save the limits",
+  "vol.limitInvalid": "Enter a positive number of GB, or leave the field empty for no limit.",
+  "vol.limitOrder": "The soft limit must not be above the hard limit.",
+  "vol.overSoft": "Over soft limit",
+  "vol.overHard": "Over hard limit",
+  "vol.usageShare": "whole NFS share",
+  "vol.usageFailed": "Last check failed: {error}",
 };

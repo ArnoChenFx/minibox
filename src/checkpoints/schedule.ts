@@ -13,7 +13,7 @@ const DAY_MS = 24 * HOUR_MS;
 /** A daily time as `HH:MM`, such as `02:30`, in the schedule's time zone. */
 export const SCHEDULE_TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 /** Why a due run took no checkpoint. The console names each one, so a new reason needs a translation. */
-export const SKIP_REASONS = ["sleeping", "stopped", "capacity", "gone"] as const;
+export const SKIP_REASONS = ["sleeping", "stopped", "capacity", "disk", "gone"] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 /** The zone of a daily time that names none, as schedules set before time zones did. */
 export const DEFAULT_TIMEZONE = "UTC";
