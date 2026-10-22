@@ -68,3 +68,41 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+      - name: Verify the published homepage and assets
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          node --input-type=module <<'JS'
+          const base = new URL(process.env.PAGE_URL);
+          const paths = [
+            ["", "text/html", "Your agents."],
+            ["styles.css", "text/css"],
+            ["main.js", "javascript"],
+            ["assets/logo-mark.svg", "image/svg+xml"],
+            ["assets/favicon.svg", "image/svg+xml"],
+            ["assets/screenshots/overview-light.png", "image/png"],
+            ["assets/screenshots/boxes-light.png", "image/png"],
+            ["assets/screenshots/terminal-light.png", "image/png"],
+          ];
+          for (const [path, type, expected] of paths) {
+            const url = new URL(path, base);
+            let error;
+            for (let attempt = 0; attempt < 10; attempt++) {
+              try {
+                const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                if (!response.headers.get("content-type")?.includes(type)) throw new Error("Unexpected content type");
+                const content = new Uint8Array(await response.arrayBuffer());
+                if (!content.length) throw new Error("Empty response");
+                if (expected && !new TextDecoder().decode(content).includes(expected)) throw new Error("Homepage content missing");
+                console.log(`Verified ${url} (${content.length} bytes)`);
+                error = undefined;
+                break;
+              } catch (failure) {
+                error = failure;
+                await new Promise(resolve => setTimeout(resolve, 3000));
+              }
+            }
+            if (error) throw error;
+          }
+          JS
