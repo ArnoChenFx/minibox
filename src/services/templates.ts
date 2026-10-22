@@ -46,14 +46,14 @@ export async function assertTemplateNameAvailable(host: HostCtx, name: string): 
   if (taken) throw conflict(msg("template_name_taken", { name }));
 }
 
-/** Template names a save or a promotion is writing right now, as `<host id>:<name>`. */
+/** Template names a save, a promotion or a declared build is writing right now, as `<host id>:<name>`. */
 const writing = new Set<string>();
 
 /**
- * Runs `fn` holding `name` for this host, so two saves or promotions to one name cannot both pass the check and have the
+ * Runs `fn` holding `name` for this host, so two saves, promotions or builds to one name cannot both pass the check and have the
  * second commit move the tag over the first (which would leave the first image untagged). The name must also be free.
  */
-async function holdingTemplateName<T>(host: HostCtx, name: string, fn: () => Promise<T>): Promise<T> {
+export async function holdingTemplateName<T>(host: HostCtx, name: string, fn: () => Promise<T>): Promise<T> {
   const key = `${host.host.id}:${name}`;
   if (writing.has(key)) throw conflict(msg("template_name_taken", { name }));
   writing.add(key);

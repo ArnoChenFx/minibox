@@ -50,6 +50,24 @@ describe("creating a template from a Dockerfile over REST", () => {
     expect(refused(again)).toEqual({ status: 409, key: "template_name_taken" });
   });
 
+  test("while a build runs, a box saved as the same name is refused instead of losing its tag to the build", async () => {
+    const gate = harness.runtime.hold("buildImage");
+    const started = await createTemplate("tool");
+    expect(started.status).toBe(202);
+    while (!harness.runtime.calls.some((c) => c.op === "buildImage")) await Bun.sleep(5);
+    const made = await call(harness.base, "/api/boxes", { body: { name: "alpha", cpus: 1, memoryMb: 256 } });
+    expect(made.status).toBe(201);
+
+    const saved = await call(harness.base, `/api/boxes/${made.json.box?.boxId ?? ""}/template`, {
+      body: { name: "tool" },
+    });
+    gate.release();
+
+    const savedTask = saved.status === 202 ? await finishedTask(harness.base, saved.json.taskId ?? "") : null;
+    expect(saved.status === 409 || savedTask?.status === "failed").toBe(true);
+    expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("succeeded");
+  });
+
   test("a Dockerfile that is not one is refused with 400 on the source field", async () => {
     const reply = await createTemplate("tool", "RUN nothing\n");
     expect(reply.status).toBe(400);

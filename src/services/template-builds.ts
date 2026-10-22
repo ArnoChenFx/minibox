@@ -298,8 +298,8 @@ export interface NewTemplate {
 }
 
 /**
- * Builds a new declared template. The caller holds the name, so no other save takes it while this runs. A build that
- * fails leaves no image and no recipe.
+ * Builds a new declared template. The caller holds the name through `holdingTemplateName`, so no save or promotion
+ * takes it while this runs. A build that fails leaves no image and no recipe.
  */
 export async function createDeclaredTemplate(
   host: HostCtx,

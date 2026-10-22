@@ -6,6 +6,7 @@ import { createDeclaredTemplate, declaredTemplate, rebuildDeclaredTemplate } fro
 import {
   assertTemplateNameAvailable,
   buildBaseTemplate,
+  holdingTemplateName,
   deleteTemplate,
   listTemplates,
   promoteSnapshot,
@@ -121,11 +122,14 @@ export const templateCreate = defineOperation({
     target: (input) => ({ kind: "template", name: input.name }),
     detail: (input) => ({ name: input.name, source: sourceDetail(input.source) }),
   },
+  // A save or a promotion holds the name the same way, so a build that runs for minutes cannot retag over one of them.
   run: async ({ host, principal, task }, input) => ({
-    template: await createDeclaredTemplate(
-      host,
-      { name: input.name, description: input.description, source: input.source, createdBy: principal.id },
-      { log: (text) => task?.log(text), signal: task?.signal },
+    template: await holdingTemplateName(host, input.name, () =>
+      createDeclaredTemplate(
+        host,
+        { name: input.name, description: input.description, source: input.source, createdBy: principal.id },
+        { log: (text) => task?.log(text), signal: task?.signal },
+      ),
     ),
   }),
 });
