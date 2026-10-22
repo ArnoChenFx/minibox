@@ -44,6 +44,7 @@ import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
 import { reconcileHost } from "./services/reconcile";
+import { TargetService } from "./services/targets";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { VolumeUsageWatcher } from "./services/volume-usage";
 import { SessionStore } from "./sessions";
@@ -101,6 +102,8 @@ export interface App {
   tasks: TaskManager;
   /** Backups of DATA_DIR: created, kept, and streamed to a download or a target. */
   backups: BackupService;
+  /** Off-site targets that packages and backups are pushed to and pulled from. */
+  targets: TargetService;
   operations: Executor;
   throttle: LoginLimiter;
   sessions: SessionStore;
@@ -266,6 +269,14 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   });
   const swept = backups.sweepPartial();
   if (swept > 0) log.info("backup.partial_swept", { count: swept });
+  const targets = new TargetService({
+    dataDir: cfg.dataDir,
+    secrets,
+    checkpoints,
+    backups,
+    onSecret: (value) => knownSecrets.push(value),
+  });
+  targets.start();
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const execs = new ExecManager(outputs, (text) => redactor.text(text));
   execs.setActivityHandler((boxId) => pulse.touch(boxId, "exec"));
@@ -365,6 +376,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     checkpointScheduler: new CheckpointScheduler(hosts, recordNote),
     tasks,
     backups,
+    targets,
     operations: new Executor(OPERATIONS, {
       activity,
       tasks,
@@ -373,6 +385,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       previewBaseDomain: cfg.previewBaseDomain,
       notify,
       backups,
+      targets,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,
         audit,

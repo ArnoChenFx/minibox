@@ -9,6 +9,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { Notifications } from "../notify/service";
 import type { BackupService } from "../services/backup";
+import type { TargetService } from "../services/targets";
 import type { TaskManager } from "../tasks/manager";
 import type { TaskError, TaskHandle } from "../tasks/types";
 import { allBoxViews, specViews } from "../tokens/model";
@@ -95,6 +96,8 @@ export interface ExecutorDeps {
   readonly notify?: Notifications;
   /** Backups of DATA_DIR. Backup operations read it from the context. */
   readonly backups?: BackupService;
+  /** Off-site targets. Target operations read it from the context. */
+  readonly targets?: TargetService;
 }
 
 /** What the executor knows when one execution ends. Fields the run never reached stay undefined. */
@@ -184,6 +187,7 @@ export class Executor {
       previewBaseDomain: ctx.previewBaseDomain ?? this.deps.previewBaseDomain ?? null,
       notify: ctx.notify ?? this.deps.notify,
       backups: ctx.backups ?? this.deps.backups,
+      targets: ctx.targets ?? this.deps.targets,
       boxViews: ctx.boxViews ?? (() => (hosts ? allBoxViews(hosts.list()) : specViews(ctx.host.specs.list()))),
       allHosts: ctx.allHosts ?? (() => (hosts ? hosts.list() : [ctx.host])),
       startTask: (child, childInput, childResolved) => {

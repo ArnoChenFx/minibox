@@ -220,7 +220,9 @@ describe("MCP", () => {
           .map((t) => t.name)
           .toSorted(),
       ).toEqual([
+        "add_target",
         "attach_volume",
+        "check_target",
         "clear_checkpoint_schedule",
         "create_backup",
         "create_volume",
@@ -233,11 +235,17 @@ describe("MCP", () => {
         "import_checkpoint",
         "list_backups",
         "list_pools",
+        "list_target_objects",
+        "list_targets",
         "list_volumes",
         "measure_volume",
+        "pull_from_target",
+        "push_to_target",
+        "remove_target",
         "replace_pools",
         "set_checkpoint_schedule",
         "set_volume_limits",
+        "test_target",
       ]);
 
       const rebuild = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=rebuild");
