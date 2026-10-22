@@ -47,6 +47,9 @@
     },
     {
       "name": "tokens"
+    },
+    {
+      "name": "hosts"
     }
   ],
   "paths": {
@@ -65,6 +68,16 @@
             "schema": {
               "type": "boolean",
               "description": "Include current resource usage of running boxes. Send false to skip it. Defaults to true."
+            }
+          },
+          {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
             }
           },
           {
@@ -437,6 +450,9 @@
                             ],
                             "additionalProperties": false
                           },
+                          "hostId": {
+                            "type": "string"
+                          },
                           "stats": {
                             "anyOf": [
                               {
@@ -699,6 +715,11 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "host": {
+                    "description": "Host to create the box on. Omitted, the box goes on the local host.",
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
                   },
                   "tools": {
                     "description": "Catalog tool ids to record on the box spec (version latest). After create, call reconcile_tools (or install_tool) to install them onto the shared tools volume.",
@@ -1073,6 +1094,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -1605,6 +1629,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         },
                         "stats": {
                           "anyOf": [
@@ -2413,6 +2440,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -2975,6 +3005,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -3497,6 +3530,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -4019,6 +4055,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -4581,6 +4620,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -5184,6 +5226,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -9435,6 +9480,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -10039,6 +10087,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -13594,6 +13645,16 @@
               }
             }
           },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected server error.",
             "content": {
@@ -14096,6 +14157,9 @@
                             "pools"
                           ],
                           "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -16891,6 +16955,9 @@
                     "pools"
                   ],
                   "additionalProperties": false
+                },
+                "hostId": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -17494,6 +17561,9 @@
                     "pools"
                   ],
                   "additionalProperties": false
+                },
+                "hostId": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -21791,6 +21861,1055 @@
         "x-scope": "token:manage",
         "x-async": false,
         "x-cli": "token revoke"
+      }
+    },
+    "/api/hosts": {
+      "get": {
+        "operationId": "host.list",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "List hosts",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hosts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Host id, such as local or lab. A box names its host in box.host."
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "local",
+                              "unix",
+                              "tcp",
+                              "ssh"
+                            ],
+                            "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, and ssh tunnels to the socket."
+                          },
+                          "endpoint": {
+                            "type": "string",
+                            "description": "The endpoint, without any credential."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "online",
+                              "offline",
+                              "unknown"
+                            ]
+                          },
+                          "latencyMs": {
+                            "description": "Round trip of the last successful ping, in milliseconds.",
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "capacity": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "cpus": {
+                                    "description": "CPUs boxes on this host may take. Null when the engine does not say.",
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "memoryBytes": {
+                                    "description": "Memory boxes on this host may take, in bytes.",
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "cpus",
+                                  "memoryBytes"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "dockerVersion": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "error": {
+                            "description": "The last failed check, as text. Null once a check succeeds.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "boxes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Boxes whose spec names this host."
+                          },
+                          "createdAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "transport",
+                          "endpoint",
+                          "status",
+                          "latencyMs",
+                          "capacity",
+                          "dockerVersion",
+                          "error",
+                          "boxes",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "hosts"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-cli": "host list",
+        "x-mcp": {
+          "name": "list_hosts",
+          "toolset": "meta"
+        }
+      },
+      "post": {
+        "operationId": "host.add",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Add a host",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "description": "Host id: lowercase letters, digits and hyphens, starting with a letter. local is taken."
+                  },
+                  "name": {
+                    "description": "Name shown in the UI. Defaults to the id.",
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "endpoint": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "description": "unix:///var/run/docker.sock, tcp://host:2376 (mutual TLS) or ssh://user@host (key login, socket /var/run/docker.sock)."
+                  },
+                  "ca": {
+                    "description": "PEM bundle of the CA that signed the engine's certificate. Stored under DATA_DIR and never returned. tcp only.",
+                    "type": "string"
+                  },
+                  "cert": {
+                    "description": "PEM certificate this control plane presents to the engine. Stored under DATA_DIR and never returned. tcp only.",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "PEM private key matching cert. Stored under DATA_DIR and never returned. tcp only.",
+                    "type": "string"
+                  },
+                  "privateKey": {
+                    "description": "OpenSSH or PKCS#8 private key used to log in. Stored under DATA_DIR and never returned. Passphrase-protected keys are refused. ssh only.",
+                    "type": "string"
+                  },
+                  "hostKeyFingerprint": {
+                    "description": "The SSH host key confirmed for an ssh host, as SHA256:…, from host.test. A different key is refused.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "endpoint"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Host id, such as local or lab. A box names its host in box.host."
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "transport": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "unix",
+                            "tcp",
+                            "ssh"
+                          ],
+                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, and ssh tunnels to the socket."
+                        },
+                        "endpoint": {
+                          "type": "string",
+                          "description": "The endpoint, without any credential."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "online",
+                            "offline",
+                            "unknown"
+                          ]
+                        },
+                        "latencyMs": {
+                          "description": "Round trip of the last successful ping, in milliseconds.",
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "capacity": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "cpus": {
+                                  "description": "CPUs boxes on this host may take. Null when the engine does not say.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "memoryBytes": {
+                                  "description": "Memory boxes on this host may take, in bytes.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "cpus",
+                                "memoryBytes"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "dockerVersion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error": {
+                          "description": "The last failed check, as text. Null once a check succeeds.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "boxes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Boxes whose spec names this host."
+                        },
+                        "createdAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "endpoint",
+                        "status",
+                        "latencyMs",
+                        "capacity",
+                        "dockerVersion",
+                        "error",
+                        "boxes",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "host"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-cli": "host add",
+        "x-mcp": {
+          "name": "add_host",
+          "toolset": "meta"
+        }
+      }
+    },
+    "/api/hosts/test": {
+      "post": {
+        "operationId": "host.test",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Test a host connection",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "description": "Host id: lowercase letters, digits and hyphens, starting with a letter. local is taken."
+                  },
+                  "name": {
+                    "description": "Name shown in the UI. Defaults to the id.",
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "endpoint": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "description": "unix:///var/run/docker.sock, tcp://host:2376 (mutual TLS) or ssh://user@host (key login, socket /var/run/docker.sock)."
+                  },
+                  "ca": {
+                    "description": "PEM bundle of the CA that signed the engine's certificate. Stored under DATA_DIR and never returned. tcp only.",
+                    "type": "string"
+                  },
+                  "cert": {
+                    "description": "PEM certificate this control plane presents to the engine. Stored under DATA_DIR and never returned. tcp only.",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "PEM private key matching cert. Stored under DATA_DIR and never returned. tcp only.",
+                    "type": "string"
+                  },
+                  "privateKey": {
+                    "description": "OpenSSH or PKCS#8 private key used to log in. Stored under DATA_DIR and never returned. Passphrase-protected keys are refused. ssh only.",
+                    "type": "string"
+                  },
+                  "hostKeyFingerprint": {
+                    "description": "The SSH host key confirmed for an ssh host, as SHA256:…, from host.test. A different key is refused.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "endpoint"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "online",
+                        "offline",
+                        "unknown"
+                      ]
+                    },
+                    "latencyMs": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "capacity": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "cpus": {
+                              "description": "CPUs boxes on this host may take. Null when the engine does not say.",
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "memoryBytes": {
+                              "description": "Memory boxes on this host may take, in bytes.",
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "cpus",
+                            "memoryBytes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dockerVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "hostKeyFingerprint": {
+                      "description": "The SSH host key the host presented, as SHA256:…. Confirm it, then send it as hostKeyFingerprint to host.add.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string"
+                            },
+                            "params": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": [
+                                  "string",
+                                  "number"
+                                ]
+                              }
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "status",
+                    "latencyMs",
+                    "capacity",
+                    "dockerVersion",
+                    "hostKeyFingerprint",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-cli": "host test",
+        "x-mcp": {
+          "name": "test_host",
+          "toolset": "meta"
+        }
+      }
+    },
+    "/api/hosts/{id}": {
+      "delete": {
+        "operationId": "host.remove",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Remove a host",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "Host id. The local host cannot be removed."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Host id, such as local or lab. A box names its host in box.host."
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "transport": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "unix",
+                            "tcp",
+                            "ssh"
+                          ],
+                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, and ssh tunnels to the socket."
+                        },
+                        "endpoint": {
+                          "type": "string",
+                          "description": "The endpoint, without any credential."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "online",
+                            "offline",
+                            "unknown"
+                          ]
+                        },
+                        "latencyMs": {
+                          "description": "Round trip of the last successful ping, in milliseconds.",
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "capacity": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "cpus": {
+                                  "description": "CPUs boxes on this host may take. Null when the engine does not say.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "memoryBytes": {
+                                  "description": "Memory boxes on this host may take, in bytes.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "cpus",
+                                "memoryBytes"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "dockerVersion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error": {
+                          "description": "The last failed check, as text. Null once a check succeeds.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "boxes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Boxes whose spec names this host."
+                        },
+                        "createdAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "endpoint",
+                        "status",
+                        "latencyMs",
+                        "capacity",
+                        "dockerVersion",
+                        "error",
+                        "boxes",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "host"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-cli": "host remove",
+        "x-mcp": {
+          "name": "remove_host",
+          "toolset": "meta"
+        }
       }
     }
   },

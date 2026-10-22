@@ -169,6 +169,7 @@ export const hostRemove = defineOperation({
   kind: "destructive",
   scope: "host:manage",
   async: false,
+  conflicts: true,
   input: z.object({
     id: z.string().min(1).max(32).meta({ description: "Host id. The local host cannot be removed." }),
   }),
