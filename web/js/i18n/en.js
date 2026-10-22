@@ -1237,11 +1237,15 @@ export default {
   "bd.sshInstall": "Install the CLI",
   "bd.sshInstallHelp":
     "Run it on the machine that will use ssh. It downloads the minibox CLI from this server, checks it against the server's checksum and installs it into ~/.local/bin without sudo. Keep that folder on your PATH.",
-  "bd.sshInstallUnix": "macOS or Linux",
-  "bd.sshInstallWindows": "Windows, in PowerShell",
+  "bd.sshUnix": "macOS or Linux",
+  "bd.sshWindows": "Windows, in PowerShell",
+  "bd.sshInstallWindowsNote":
+    "The installer adds its folder to your user PATH. Open a new PowerShell window after it finishes.",
   "bd.sshSetup": "Set up once",
   "bd.sshSetupHelp":
-    "Create a token with the box:ssh scope under {settings} › {tokens}, or use the access key. This writes ~/.ssh/config with this server's host key pinned. It also saves the server address and token to ~/.config/minibox/ssh-credentials.json (mode 600), so ssh, scp and Remote-SSH in an IDE work without exported variables.",
+    "Create a token with the box:ssh scope under {settings} › {tokens}, or use the access key. This writes ~/.ssh/config with this server's host key pinned. It also saves the server address and token to ~/.config/minibox/ssh-credentials.json (mode 600 on macOS and Linux), so ssh, scp and Remote-SSH in an IDE work without exported variables.",
+  "bd.sshSetupWindowsNote":
+    "Run it in a normal PowerShell window, not as administrator, so the files belong to your account. They go in %USERPROFILE%\\.ssh and %USERPROFILE%\\.config\\minibox.",
   "bd.sshConnect": "Connect",
   "bd.sshConnectHelp": "scp and sftp work the same way. Forwarding a port with -L also needs the port:expose scope.",
   "bd.sshCopy": "Copy",
