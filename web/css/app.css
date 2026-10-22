@@ -731,7 +731,24 @@ table.table {
 .table .actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 2px;
+}
+/* Icon buttons sit close together; labelled buttons need the usual button gap. */
+.table .actions > .btn + .btn {
+  margin-left: 6px;
+}
+/* A table that fills a card starts and ends at the card's own padding, so it lines up with the card header. Group
+   headers keep their own full-width button. */
+.card > .table-wrap > .table tr:not(.group-row) > :is(th, td):first-child {
+  padding-left: 18px;
+}
+.card > .table-wrap > .table tr:not(.group-row) > :is(th, td):last-child {
+  padding-right: 18px;
+}
+/* A short note between a card header and its table. */
+.card-note {
+  padding: 14px 18px 4px;
 }
 /* A group header spans every column, and its button fills the row, so the whole header is the click target. */
 .table tr.group-row > td {
@@ -1744,16 +1761,34 @@ input[type="range"] {
   flex-direction: column;
   gap: 8px;
 }
+/* Every row has the same four columns (name | kind | value or secret | remove) and the height of an input. The reveal
+   button sits inside the value input, so the value field is exactly as wide as the secret chooser. */
 .env-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 112px minmax(0, 1.6fr) auto;
+  grid-template-columns: minmax(120px, 1fr) 120px minmax(0, 1.6fr) auto;
+  grid-template-areas: "name kind value remove";
   gap: 8px;
   align-items: center;
 }
+.env-row > [data-env-name] {
+  grid-area: name;
+}
+.env-row > .dropdown-trigger,
+.env-row > [data-env-kind] {
+  grid-area: kind;
+  width: 100%;
+}
+.env-row > .env-field {
+  grid-area: value;
+}
+.env-row > [data-env-remove] {
+  grid-area: remove;
+  height: 36px;
+}
 .env-field {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
   min-width: 0;
 }
 .env-field[hidden] {
@@ -1765,8 +1800,39 @@ input[type="range"] {
   width: 100%;
   min-width: 0;
 }
+.env-field-reveal > .input {
+  padding-right: 40px;
+}
+.env-reveal {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  width: 30px;
+  height: 30px;
+  transform: translateY(-50%);
+}
+/* Overview card: names and values share one row height and one centre line, whatever a value holds. */
+.env-kv {
+  align-items: center;
+  row-gap: 6px;
+}
+.env-kv > dt,
+.env-kv > dd {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
+.env-kv-value {
+  gap: 6px;
+  flex-wrap: wrap;
+}
 .env-value {
   letter-spacing: 0.12em;
+  line-height: 1;
+}
+.env-kv-reveal {
+  width: 28px;
+  height: 28px;
 }
 .env-secret {
   font-family: var(--font-mono);
@@ -2100,9 +2166,21 @@ input[type="range"] {
   .grid-4 {
     grid-template-columns: 1fr;
   }
-  .rebuild-mount,
-  .env-row {
+  .rebuild-mount {
     grid-template-columns: 1fr;
+  }
+  /* Two lines per variable: name | kind, then value | remove. The columns still line up from row to row. */
+  .env-row {
+    grid-template-columns: minmax(0, 1fr) 112px;
+    grid-template-areas:
+      "name kind"
+      "value remove";
+  }
+  .env-row > [data-env-remove] {
+    width: 112px;
+  }
+  .env-rows {
+    gap: 14px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

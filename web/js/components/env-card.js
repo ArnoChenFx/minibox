@@ -28,16 +28,16 @@ function toggleReveal(button) {
 function entryHtml(entry, secrets) {
   if (entry.secretRef !== undefined) {
     const missing = secrets !== null && !secrets.includes(entry.secretRef);
-    return `<dt class="mono">${esc(entry.name)}</dt><dd><span class="badge badge-accent env-secret">${esc(t("env.secretLabel", { name: entry.secretRef }))}</span>${
+    return `<dt class="mono">${esc(entry.name)}</dt><dd class="env-kv-value"><span class="badge badge-accent env-secret">${esc(t("env.secretLabel", { name: entry.secretRef }))}</span>${
       missing ? ` <span class="badge badge-warning">${esc(t("env.secretMissing"))}</span>` : ""
     }</dd>`;
   }
   const value = entry.value ?? "";
   const shown = value
     ? `<span class="mono env-value" data-plain="${esc(value)}" data-revealed="false">${MASK}</span>
-      <button type="button" class="icon-btn" data-env-action="reveal" aria-pressed="false" aria-label="${esc(revealLabel(false))}" title="${esc(revealLabel(false))}">${icon("eye")}</button>`
+      <button type="button" class="icon-btn env-kv-reveal" data-env-action="reveal" aria-pressed="false" aria-label="${esc(revealLabel(false))}" title="${esc(revealLabel(false))}">${icon("eye")}</button>`
     : `<span class="subtle">${esc(t("env.emptyValue"))}</span>`;
-  return `<dt class="mono">${esc(entry.name)}</dt><dd>${shown}</dd>`;
+  return `<dt class="mono">${esc(entry.name)}</dt><dd class="env-kv-value">${shown}</dd>`;
 }
 
 /**
