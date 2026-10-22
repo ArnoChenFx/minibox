@@ -186,24 +186,25 @@ describe("a checkpoint holds the box's power lock", () => {
     await taking;
   });
 
-  test("the idle watcher leaves a box alone while a rollback restores it", async () => {
+  test("the idle watcher leaves a running box alone while a rollback restores its volumes", async () => {
     const rolling = await quietBox("rolling");
     const control = await quietBox("rolling-control");
     const view = await take(rolling.boxId);
-    const restoresBefore = engine.started;
     const revision = host.specs.read(rolling.boxId)?.revision ?? 0;
-    const gate = engine.hold();
+    const gate = engine.hold("restore");
     const restoring = rollbackBox(host, rolling.boxId, { checkpoint: view.id, confirm: true, revision }, "owner");
-    await waitFor(() => engine.started > restoresBefore);
+    await waitFor(() => gate.blocked() > 0);
 
     offsetMs = 10 * 60_000;
     const report = await watcher().tick();
     expect(report.slept).toEqual([control.boxId]);
+    expect(host.specs.read(rolling.boxId)?.lifecycle).toMatchObject({ desired: "running" });
     expect((await boxes.getBox(host, rolling.boxId)).running).toBe(true);
 
     gate.release();
     await restoring;
     offsetMs = 0;
+    expect((await boxes.getBox(host, rolling.boxId)).running).toBe(true);
   });
 });
 

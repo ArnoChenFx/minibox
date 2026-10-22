@@ -8,6 +8,8 @@ export interface FakeSnapshot {
   tags: string[];
 }
 
+type EngineCall = "backup" | "restore";
+
 const clone = (entry: FakeFsEntry): FakeFsEntry => ({
   ...entry,
   content: entry.content ? Buffer.from(entry.content) : undefined,
@@ -23,32 +25,48 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   readonly failBackupOf = new Set<string>();
   /** Backups and restores that have begun, held or not. A test waits on this to know a call reached the engine. */
   started = 0;
+  /** The size `usage` reports. Null reports the bytes of the snapshots held. */
+  reportedBytes: number | null = null;
+  /** Makes `usage` fail, as an engine that cannot be reached does. */
+  usageFails = false;
   private sequence = 0;
-  private gate: Promise<void> | null = null;
+  private gate: { promise: Promise<void>; kind: EngineCall | null; blocked: number } | null = null;
 
   constructor(private readonly runtime: FakeRuntime) {}
 
-  /** Holds every backup and restore from now until the returned `release`, so a test can have one in progress. */
-  hold(): { release(): void } {
+  /**
+   * Holds every backup and restore from now until the returned `release`, or only those of `kind`, so a test can have one
+   * in progress. `blocked` counts the calls waiting at the gate, so a test knows one has arrived.
+   */
+  hold(kind: EngineCall | null = null): { release(): void; blocked(): number } {
     let openGate: (() => void) | undefined;
-    this.gate = new Promise<void>((resolve) => {
-      openGate = resolve;
-    });
+    const gate = {
+      promise: new Promise<void>((resolve) => {
+        openGate = resolve;
+      }),
+      kind,
+      blocked: 0,
+    };
+    this.gate = gate;
     return {
       release: () => {
-        this.gate = null;
+        if (this.gate === gate) this.gate = null;
         openGate?.();
       },
+      blocked: () => gate.blocked,
     };
   }
 
-  private async enter(): Promise<void> {
+  private async enter(kind: EngineCall): Promise<void> {
     this.started += 1;
-    if (this.gate) await this.gate;
+    const gate = this.gate;
+    if (!gate || (gate.kind !== null && gate.kind !== kind)) return;
+    gate.blocked += 1;
+    await gate.promise;
   }
 
   async backup(_host: HostCtx, volume: string, tags: string[]): Promise<BackupResult> {
-    await this.enter();
+    await this.enter("backup");
     if (!this.runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
     if (this.failBackupOf.has(volume)) throw new RuntimeError("engine", `backup of ${volume} failed`);
     const files = new Map<string, FakeFsEntry>();
@@ -63,7 +81,7 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   }
 
   async restore(_host: HostCtx, snapshotId: string, volume: string): Promise<void> {
-    await this.enter();
+    await this.enter("restore");
     const snapshot = this.snapshots.get(snapshotId);
     if (!snapshot) throw new RuntimeError("engine", `restic restore exited with status 1: no snapshot ${snapshotId}`);
     if (!this.runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
@@ -75,5 +93,15 @@ export class FakeCheckpointEngine implements SnapshotEngine {
     if (!this.snapshots.delete(snapshotId)) {
       throw new RuntimeError("engine", `restic forget exited with status 1: no snapshot ${snapshotId}`);
     }
+  }
+
+  async usage(_host: HostCtx): Promise<{ bytes: number }> {
+    if (this.usageFails) throw new RuntimeError("engine", "restic stats exited with status 1");
+    if (this.reportedBytes !== null) return { bytes: this.reportedBytes };
+    let bytes = 0;
+    for (const snapshot of this.snapshots.values()) {
+      for (const entry of snapshot.files.values()) bytes += entry.content?.length ?? 0;
+    }
+    return { bytes };
   }
 }

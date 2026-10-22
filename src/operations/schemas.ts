@@ -84,7 +84,7 @@ export const BoxSchema = z.object({
   mounts: z.array(BoxMountSchema),
   /** Plain values and secret references. A secret reference is stored and not injected. */
   env: z.array(BoxEnvSchema),
-  /** Desired Agent CLIs from the box spec. */
+  /** Desired tools from the box spec. */
   tools: z.array(z.object({ id: z.string(), version: z.string() })),
   /** `unreachable` when a pool behind a mount could not be probed. The engine state stays in `state`. */
   storage: StorageStatusSchema,
@@ -140,6 +140,32 @@ export const CheckpointSchema = z.object({
   bytes: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+/** The checkpoint repository's size against its limit. `limitBytes` is null when no limit is set. */
+export const CheckpointUsageSchema = z.object({
+  bytes: z.number(),
+  limitBytes: z.number().nullable(),
+  state: z.enum(["unlimited", "ok", "warning", "exceeded"]),
+  policy: z.object({ keepLast: z.number(), keepDays: z.number() }),
+});
+
+/** A volume a rollback replaced or restored, and the path the box mounts it at. */
+export const RollbackVolumeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+});
+
+/** A rollback waiting for its confirm or undo. `null` in the response when the box has none. */
+export const PendingRollbackSchema = z.object({
+  boxId: z.string(),
+  checkpoint: z.object({ id: z.string(), label: z.string() }),
+  safetyCheckpointId: z.string(),
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  replaced: z.array(RollbackVolumeSchema),
+  restored: z.array(RollbackVolumeSchema),
 });
 
 /** A snapshot or template image, as the image list shows it. */

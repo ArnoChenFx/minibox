@@ -94,6 +94,42 @@ export function parsePathStat(header: string | string[] | undefined, path: strin
   };
 }
 
+const SECRET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+/**
+ * A tar archive of regular files for `putArchive` into a directory. Each file is owned by root and readable by root
+ * only, which is what a helper running as root needs. Names are plain file names, so nothing can land outside the
+ * directory.
+ */
+export function secretsArchive(files: { name: string; value: string }[]): Buffer {
+  const parts: Buffer[] = [];
+  for (const file of files) {
+    if (!SECRET_NAME.test(file.name)) throw new RuntimeError("invalid", `not a secret file name: ${file.name}`);
+    const data = Buffer.from(file.value, "utf8");
+    parts.push(ustarHeader(file.name, data.length), data, Buffer.alloc((BLOCK - (data.length % BLOCK)) % BLOCK));
+  }
+  parts.push(Buffer.alloc(BLOCK * 2));
+  return Buffer.concat(parts);
+}
+
+function ustarHeader(name: string, size: number): Buffer {
+  const header = Buffer.alloc(BLOCK);
+  header.write(name, 0, 100, "utf8");
+  header.write("0000400\0", 100, "ascii");
+  header.write("0000000\0", 108, "ascii");
+  header.write("0000000\0", 116, "ascii");
+  header.write(`${size.toString(8).padStart(11, "0")}\0`, 124, "ascii");
+  header.write("00000000000\0", 136, "ascii");
+  header.fill(0x20, 148, 156);
+  header.write("0", 156, "ascii");
+  header.write("ustar\0", 257, "ascii");
+  header.write("00", 263, "ascii");
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
+  return header;
+}
+
 /** A uid or gid from a PAX record, which is decimal text, or from a ustar field, which is already a number. */
 function ownerId(value: string | number): number {
   const id = typeof value === "string" ? (/^\d+$/.test(value) ? Number(value) : Number.NaN) : value;

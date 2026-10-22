@@ -25,6 +25,7 @@ const OWNER_ONLY_ROUTES = [
   "DELETE /api/tokens/:id",
   "GET /api/activity",
   "GET /api/auth/sessions",
+  "GET /api/checkpoints/usage",
   "GET /api/host/metrics",
   "GET /api/pools",
   "GET /api/system",
@@ -168,6 +169,7 @@ describe("fail-closed authorization", () => {
       .map((op) => op.name)
       .toSorted();
     expect(ownerOperations).toEqual([
+      "checkpoint.usage",
       "pool.list",
       "pool.replace",
       "task.cancel",

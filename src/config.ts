@@ -57,6 +57,12 @@ export interface Config {
   boxIdleCpuPercent: number;
   /** How often the lifecycle watcher checks idle sleep and TTL. */
   lifecycleIntervalMs: number;
+  /** Automatic checkpoints kept per box, newest first. Manual and pinned checkpoints are never removed by this. */
+  checkpointKeepLast: number;
+  /** Automatic checkpoints older than this many days are removed. 0 keeps them whatever their age. */
+  checkpointKeepDays: number;
+  /** Checkpoint repository size in MB at which new automatic checkpoints are refused. 0 sets no limit. */
+  checkpointCapacityMb: number;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -214,6 +220,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     boxIdleTimeoutSec: intInRange(get("BOX_IDLE_TIMEOUT_SEC"), 0, 0, 31_536_000),
     boxIdleCpuPercent: intInRange(get("BOX_IDLE_CPU_PERCENT"), 5, 0, 100),
     lifecycleIntervalMs: intOr(get("LIFECYCLE_INTERVAL_MS"), 30_000),
+    checkpointKeepLast: intInRange(get("CHECKPOINT_KEEP_LAST"), 20, 1, 10_000),
+    checkpointKeepDays: intInRange(get("CHECKPOINT_KEEP_DAYS"), 30, 0, 3650),
+    checkpointCapacityMb: intInRange(get("CHECKPOINT_CAPACITY_MB"), 0, 0, 1_000_000_000),
   };
 }
 

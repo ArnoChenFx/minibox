@@ -112,7 +112,7 @@ describe("ResticEngine backup", () => {
     expect(s.helpers[0]?.labels).toEqual({ "mbtest.internal": "true" });
   });
 
-  test("the password is generated once into the secrets directory and is the one every helper receives", async () => {
+  test("the password is generated once into the secrets directory and reaches every helper as a secret file", async () => {
     const s = scripted();
     await s.rt.createVolume("src", {});
     const engine = new ResticEngine({ dataDir: s.dataDir });
@@ -121,11 +121,15 @@ describe("ResticEngine backup", () => {
     expect(statSync(keyPath).mode & 0o777).toBe(0o600);
     const key = readFileSync(keyPath, "utf8").trim();
     expect(key).toMatch(/^[0-9a-f]{64}$/);
-    for (const spec of s.helpers) expect(spec.env).toContain(`RESTIC_PASSWORD=${key}`);
+    for (const spec of s.helpers) {
+      expect(spec.secrets).toEqual([{ name: "repo.key", value: key }]);
+      expect(spec.env).toContain("RESTIC_PASSWORD_FILE=/run/secrets/repo.key");
+      expect(spec.env?.some((entry) => entry.includes(key))).toBe(false);
+    }
 
     await new ResticEngine({ dataDir: s.dataDir }).backup(s.host, "src", []);
     expect(readFileSync(keyPath, "utf8").trim()).toBe(key);
-    expect(s.helpers.at(-1)?.env).toContain(`RESTIC_PASSWORD=${key}`);
+    expect(s.helpers.at(-1)?.secrets).toEqual([{ name: "repo.key", value: key }]);
   });
 
   test("a partial backup (exit 3) is a failure with restic's output, not a snapshot", async () => {

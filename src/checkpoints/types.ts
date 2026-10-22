@@ -71,3 +71,33 @@ export interface CheckpointRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+/** On-disk schema version of `DATA_DIR/checkpoints/rollbacks/<box id>.json`. */
+export const ROLLBACK_VERSION = 1;
+
+/** One volume a rollback restored or replaced, and the path the box mounts it at. */
+export interface RolledVolume {
+  volumeId: string;
+  name: string;
+  engineName: string;
+  path: string;
+}
+
+/**
+ * A rollback whose replaced volumes are still kept. The box mounts the restored ones. The replaced ones wait until the
+ * rollback is confirmed (they are deleted) or undone (the box mounts them again). A box has at most one.
+ */
+export interface PendingRollback {
+  version: typeof ROLLBACK_VERSION;
+  hostId: string;
+  boxId: string;
+  boxName: string;
+  checkpointId: string;
+  checkpointLabel: string;
+  /** The checkpoint taken just before the rollback. It still holds the replaced data after a confirm. */
+  safetyCheckpointId: string;
+  createdBy: string | null;
+  createdAt: string;
+  replaced: RolledVolume[];
+  restored: RolledVolume[];
+}
