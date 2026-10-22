@@ -6,6 +6,7 @@
 
 ### 变更
 - 工具目录已不只包含 Agent CLI：控制台、API 说明、MCP 说明与 README 中的「Agent CLI 工具」统一改称「工具」（Tools），接口与 id 不变（#8）。
+- 任务面板更易读：桌面端加宽到约 900px，左侧每项显示操作、工具或模板名、Box 与相对时间，右侧标题显示操作、对象与 Box、状态、开始时间与用时。命令收在可展开的「命令」一行中并可复制；输出为 12px 等宽字体的深色区域，默认不换行、可切换自动换行，运行中自动跟随到底部，手动向上滚动后停止跟随。ANSI 颜色与粗体安全渲染，其他控制序列与 `\r` 重绘不再显示为乱码。任务接口新增 `subject` 字段，记录工具 id、模板或快照名（旧任务为空）。
 
 ### 文档
 - 新增 NAS / NFS 部署指南（[`docs/nas.md`](docs/nas.md)、[`docs/nas-zh.md`](docs/nas-zh.md)）：Linux `/etc/exports` 与群晖、威联通、TrueNAS SCALE、Unraid 的导出设置，squash 与 uid 1000 的映射，「添加 NFS」各字段与等价的 API，推荐挂载选项，服务器不可用时的行为，以及根据实测整理的故障排查表。步骤已在 NFS-Ganesha 上经 Docker 实际验证；README 的存储池一节加了入口（#30）。

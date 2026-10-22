@@ -201,6 +201,18 @@ async function installCodex(boxId: string): Promise<string> {
 }
 
 describe("the tools writer", () => {
+  test("a tool task names the tool it installs, so the task list can tell two installs apart", async () => {
+    const boxId = await createBox("alpha");
+    answerDetection({});
+    const started = await call("POST", `/api/boxes/${boxId}/tools/install`, { tool: "codex", version: "latest" });
+    expect(started.status).toBe(202);
+    expect(await waitTask(String(started.json.taskId))).toMatchObject({
+      op: "tool.install",
+      subject: "codex",
+      target: { kind: "box", name: "alpha" },
+    });
+  });
+
   test("a local tools volume is handed to uid 1000 by a root helper just before the writer runs", async () => {
     const boxId = await createBox("alpha");
     answerDetection({});

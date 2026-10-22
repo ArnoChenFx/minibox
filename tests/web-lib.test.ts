@@ -196,6 +196,24 @@ describe("format helpers", () => {
     });
   });
 
+  test("an elapsed span is read to the second, and from an hour on it reads like a duration", () => {
+    const from = JSON.stringify(new Date(Date.UTC(2026, 9, 22, 0, 0, 0)).toISOString());
+    const at = (ms: number) => `Date.parse(${from}) + ${ms}`;
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `({
+          seconds: format.elapsed(${from}, ${at(42_000)}),
+          minutes: format.elapsed(${from}, ${at(185_000)}),
+          hours: format.elapsed(${from}, ${at(3_700_000)}),
+          future: format.elapsed(${from}, ${at(-5_000)}),
+          missing: format.elapsed(null),
+        })`,
+      ),
+    ).toEqual({ seconds: "42s", minutes: "3m 05s", hours: "1h 1m", future: "0s", missing: "—" });
+    expect(inBrowser({ saved: "zh-CN" }, `format.elapsed(${from}, ${at(185_000)})`)).toBe("3 分 05 秒");
+  });
+
   test("ids, levels and translated units in Chinese", () => {
     expect(
       inBrowser(

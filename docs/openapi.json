@@ -20006,6 +20006,9 @@
                           "summary": {
                             "type": "string"
                           },
+                          "subject": {
+                            "type": "string"
+                          },
                           "hostId": {
                             "type": "string"
                           },
@@ -20234,6 +20237,9 @@
                       ]
                     },
                     "summary": {
+                      "type": "string"
+                    },
+                    "subject": {
                       "type": "string"
                     },
                     "hostId": {
@@ -20467,6 +20473,9 @@
                       ]
                     },
                     "summary": {
+                      "type": "string"
+                    },
+                    "subject": {
                       "type": "string"
                     },
                     "hostId": {
