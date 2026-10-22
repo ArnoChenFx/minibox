@@ -212,21 +212,21 @@ describe("LifecycleWatcher", () => {
   });
 });
 
+function watcherAt(clock: () => number, notes: AuditNote[]): LifecycleWatcher {
+  return new LifecycleWatcher({
+    hosts: app.hosts,
+    pulse: app.pulse,
+    terminals: app.terminals,
+    execs: app.execs,
+    tasks: app.tasks,
+    cfg: app.cfg,
+    record: (_hostId, _source, _principal, note) => notes.push(note),
+    now: clock,
+  });
+}
+
 describe("warnings ahead of a TTL end or an idle sleep", () => {
   const MINUTE = 60_000;
-
-  function watcherAt(clock: () => number, notes: AuditNote[]): LifecycleWatcher {
-    return new LifecycleWatcher({
-      hosts: app.hosts,
-      pulse: app.pulse,
-      terminals: app.terminals,
-      execs: app.execs,
-      tasks: app.tasks,
-      cfg: app.cfg,
-      record: (_hostId, _source, _principal, note) => notes.push(note),
-      now: clock,
-    });
-  }
 
   test("a running box gets one TTL warning, five minutes before its end, and no more", async () => {
     const box = await newBox("ttl-warn", { ttlSec: 600, idleTimeoutSec: 0 });
