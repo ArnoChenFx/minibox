@@ -747,9 +747,18 @@
                     ]
                   },
                   "host": {
-                    "description": "Host to create the box on. Omitted, the box goes on the local host.",
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                    "description": "Host to create the box on: a host id, or auto to pick the online host with the most room that holds the template. Omitted, the box goes on the local host.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": "auto"
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                        "description": "Host id: local, or the id of a host added under Settings."
+                      }
+                    ]
                   },
                   "tools": {
                     "description": "Catalog tool ids to record on the box spec (version latest). After create, call reconcile_tools (or install_tool) to install them onto the shared tools volume.",
@@ -23620,7 +23629,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 32,
-                    "description": "Host id: lowercase letters, digits and hyphens, starting with a letter. local is taken."
+                    "description": "Host id: lowercase letters, digits and hyphens, starting with a letter. local and auto are taken."
                   },
                   "name": {
                     "description": "Name shown in the UI. Defaults to the id.",
@@ -23913,7 +23922,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 32,
-                    "description": "Host id: lowercase letters, digits and hyphens, starting with a letter. local is taken."
+                    "description": "Host id: lowercase letters, digits and hyphens, starting with a letter. local and auto are taken."
                   },
                   "name": {
                     "description": "Name shown in the UI. Defaults to the id.",

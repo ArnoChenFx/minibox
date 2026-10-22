@@ -61,7 +61,7 @@ const CREDENTIAL = {
 
 const hostFieldsInput = z.object({
   id: z.string().min(1).max(32).meta({
-    description: "Host id: lowercase letters, digits and hyphens, starting with a letter. local is taken.",
+    description: "Host id: lowercase letters, digits and hyphens, starting with a letter. local and auto are taken.",
   }),
   name: z.string().max(64).optional().meta({ description: "Name shown in the UI. Defaults to the id." }),
   endpoint: z.string().min(1).max(512).meta({

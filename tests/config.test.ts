@@ -308,6 +308,23 @@ describe("checkpoint retention and capacity", () => {
   });
 });
 
+describe("host overcommit", () => {
+  test("is 1, which books no more than a host has, when HOST_OVERCOMMIT is unset or blank", () => {
+    expect(load({ ACCESS_KEY: KEY }).hostOvercommit).toBe(1);
+    expect(load({ ACCESS_KEY: KEY, HOST_OVERCOMMIT: "  " }).hostOvercommit).toBe(1);
+  });
+  test("accepts a ratio from 1 to 10, fractions included", () => {
+    expect(load({ ACCESS_KEY: KEY, HOST_OVERCOMMIT: "1.5" }).hostOvercommit).toBe(1.5);
+    expect(load({ ACCESS_KEY: KEY, HOST_OVERCOMMIT: "3" }).hostOvercommit).toBe(3);
+    expect(load({ ACCESS_KEY: KEY, HOST_OVERCOMMIT: "10" }).hostOvercommit).toBe(10);
+  });
+  test("a ratio below 1 or above 10, or one that is not a number, stops startup", () => {
+    for (const value of ["0.5", "0", "11", "abc", "NaN", "Infinity"]) {
+      expect(() => load({ ACCESS_KEY: KEY, HOST_OVERCOMMIT: value })).toThrow("HOST_OVERCOMMIT");
+    }
+  });
+});
+
 describe("terminal takeover", () => {
   test("a human's takeover returns to the agent after 300 seconds without input by default", () => {
     expect(load({ ACCESS_KEY: KEY })).toMatchObject({ takeoverIdleSec: 300 });

@@ -46,6 +46,11 @@ export interface HostCapacity {
   readonly memoryBytes: number | null;
 }
 
+export interface CapacityPolicy {
+  /** The ratio of booked CPU and memory to capacity that is allowed. 1 is no overcommit. */
+  readonly overcommit: number;
+}
+
 /** Everything business code needs to act on one host. `host.id` is the hostId the internal APIs are scoped by. */
 export interface HostCtx {
   host: Host;
@@ -78,6 +83,8 @@ export interface HostCtx {
   checkpointPolicy: CheckpointPolicy;
   /** Serializes start, stop, sleep and wake of this host's boxes (#12). */
   power: BoxPower;
+  /** How far the CPU and memory booked on this host may exceed its capacity. See `HOST_OVERCOMMIT`. */
+  capacityPolicy: CapacityPolicy;
   /** CPU and memory a single box may take on this host. The local host reads the machine, others read the engine. */
   capacity(): Promise<HostCapacity>;
   /** True when the control plane holds more than one host. Box payloads name their host only then. */
@@ -160,6 +167,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
       capacityBytes: cfg.checkpointCapacityMb * 1024 * 1024,
     },
     power: new BoxPower(),
+    capacityPolicy: { overcommit: cfg.hostOvercommit },
     capacity: async () => {
       if (identity.transport !== "local") return engineCapacity(runtime);
       const metrics = await ctx.monitor.snapshot();

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { assertNoSecretInImage } from "../secrets/env";
 import { createBox, getBox } from "../services/boxes";
-import { assertCapacity } from "../services/capacity";
+import { assertNewBox } from "../services/capacity";
 import { createSnapshot, deleteSnapshot, listSnapshots } from "../services/snapshots";
 import { snapshotVisible, specViews, ttlFor } from "../tokens/model";
 import { underQuota } from "../tokens/quota";
@@ -66,7 +66,7 @@ export const snapshotFork = defineOperation({
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/snapshots/:ref/boxes", body: true, status: 201 }],
   cli: "snapshot fork",
-  precondition: ({ host }, input) => assertCapacity(host, input),
+  precondition: ({ host }, input) => assertNewBox(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: (input, _box, result) => ({ kind: "box", id: result?.box.id, name: input.name }) },
   run: async (ctx, input) => {

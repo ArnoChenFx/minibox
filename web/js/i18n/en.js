@@ -242,6 +242,9 @@ export default {
   "err.network_not_managed": "Boxes cannot join network {network}. Boxes join {managed}.",
   "err.cpu_over_host": "CPU cores exceed the host limit ({cores} cores).",
   "err.memory_over_host": "Memory exceeds the host limit ({gb} GB).",
+  "err.cpu_booked_over_host": "Running boxes on this host would take {booked} CPUs, more than its limit of {limit}.",
+  "err.memory_booked_over_host":
+    "Running boxes on this host would take {booked} GB of memory, more than its limit of {limit} GB.",
   "err.token_preset_invalid": "Preset must be one of readonly, operator, sandboxed-agent or admin.",
   "err.token_scope_invalid": "Scopes must be a list of known scope names, with at most {max} entries.",
   "err.token_scope_required": "Choose a preset or at least one scope.",
@@ -260,6 +263,10 @@ export default {
     "This credential cannot mount the volume “{volume}”. It needs volume:attach on that volume.",
   "err.host_not_granted": "This credential cannot use host “{host}”.",
   "err.host_id_invalid": "A host id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.",
+  "err.host_id_reserved": "“{host}” is reserved and cannot be a host id.",
+  "err.host_auto_offline": "No host is online to place the box on.",
+  "err.host_auto_no_room":
+    "No online host that holds the template has room for a box of {cpus} CPUs and {memoryMb} MB.",
   "err.host_exists": "A host with the id “{host}” already exists.",
   "err.host_not_found": "Host “{host}” was not found.",
   "err.host_is_local": "The local host cannot be removed.",

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { EventTarget } from "../events/types";
 import { type HostCtx, LOCAL_HOST_ID } from "../host/registry";
+import { AUTO_HOST } from "../host/store";
 import { AppError, badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
 import {
@@ -21,7 +22,8 @@ import {
   stopBox,
   updateBox,
 } from "../services/boxes";
-import { assertCapacity } from "../services/capacity";
+import { assertCapacity, assertNewBox, assertResizeRoom } from "../services/capacity";
+import { placeBox } from "../services/placement";
 import { rebuildBox } from "../services/rebuild";
 import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
@@ -53,6 +55,7 @@ import {
   requireUpdate,
   historyFlag,
   hostId,
+  hostOrAuto,
   statsFlag,
   tail,
   templateImage,
@@ -157,9 +160,10 @@ export const boxCreate = defineOperation({
     env: boxEnv("create"),
     idleTimeoutSec: idleTimeout(),
     ttlSec: ttl("create"),
-    host: hostId()
-      .optional()
-      .meta({ description: "Host to create the box on. Omitted, the box goes on the local host." }),
+    host: hostOrAuto().optional().meta({
+      description:
+        "Host to create the box on: a host id, or auto to pick the online host with the most room that holds the template. Omitted, the box goes on the local host.",
+    }),
     tools: z
       .array(
         z
@@ -183,10 +187,17 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional host names the machine to create it on (default local, see list_hosts). Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
-  hostFor: (ctx, input) => hostById(ctx, input.host ?? LOCAL_HOST_ID),
-  precondition: ({ host }, input) => assertCapacity(host, input),
+  hostFor: (ctx, input) => {
+    if (input.host !== AUTO_HOST) return hostById(ctx, input.host ?? LOCAL_HOST_ID);
+    return placeBox(ctx.allHosts?.() ?? [ctx.host], {
+      cpus: input.cpus,
+      memoryMb: input.memoryMb,
+      image: input.template ?? ctx.host.baseTemplateTag,
+    });
+  },
+  precondition: ({ host }, input) => assertNewBox(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: {
     target: ({ name }, _box, result) => ({ kind: "box", id: result?.box.id, name }),
@@ -297,13 +308,16 @@ export const boxResources = defineOperation({
   activity: { action: () => "box.resources", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async (ctx, input, box) =>
-    underQuota(ctx, { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
-      box: await updateBox(ctx.host, input.id, requireRevision(input.expectedRevision), {
-        cpus: input.cpus,
-        memoryMb: input.memoryMb,
-        pids: input.pids,
-      }),
-    })),
+    underQuota(ctx, { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb }, async () => {
+      await assertResizeRoom(ctx.host, box, input);
+      return {
+        box: await updateBox(ctx.host, input.id, requireRevision(input.expectedRevision), {
+          cpus: input.cpus,
+          memoryMb: input.memoryMb,
+          pids: input.pids,
+        }),
+      };
+    }),
 });
 
 function inPlacePatch(input: {
@@ -387,6 +401,7 @@ export const boxUpdate = defineOperation({
       ctx,
       { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb },
       async () => {
+        await assertResizeRoom(host, box, input);
         if (hasRebuildFields(request)) {
           try {
             await rebuildBox(host, input.id, requireRevision(input.expectedRevision), request, false);

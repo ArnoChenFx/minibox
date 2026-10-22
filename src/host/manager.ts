@@ -20,7 +20,7 @@ import {
   unreachableRuntime,
 } from "./registry";
 import { checkSshKey, HostKeyMismatchError, HostKeyUnconfirmedError, probeHostKey, SshKeyError } from "./ssh";
-import { HOST_ID_RE, type HostStore, type StoredHost } from "./store";
+import { AUTO_HOST, HOST_ID_RE, type HostStore, type StoredHost } from "./store";
 
 export const PROBE_INTERVAL_MS = 30_000;
 /** Longest one connection check takes: the link, a ping and the engine's version and capacity. */
@@ -288,6 +288,7 @@ export class HostManager {
   private idOf(raw: string): string {
     if (!HOST_ID_RE.test(raw)) throw badRequest(msg("host_id_invalid"), { field: "id" });
     if (raw === LOCAL_HOST_ID) throw conflict(msg("host_exists", { host: raw }));
+    if (raw === AUTO_HOST) throw badRequest(msg("host_id_reserved", { host: raw }), { field: "id" });
     return raw;
   }
 
