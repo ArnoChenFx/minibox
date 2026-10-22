@@ -158,6 +158,7 @@ export default {
   "err.box_ttl_expired_hint": "Clear the TTL or set a later one, then start the box.",
   "err.snapshot_not_found": "Snapshot not found.",
   "err.template_not_found": "Template not found.",
+  "err.template_name_taken": "A template named “{name}” already exists.",
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   "err.box_exists": "A box named “{name}” already exists.",

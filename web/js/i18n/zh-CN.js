@@ -144,6 +144,7 @@ export default {
   "err.box_ttl_expired_hint": "清除 TTL，或设置更晚的 TTL，然后再启动 Box。",
   "err.snapshot_not_found": "找不到该快照。",
   "err.template_not_found": "找不到该模板。",
+  "err.template_name_taken": "名为「{name}」的模板已存在。",
   "err.template_image_missing": "模板镜像 {image} 不存在，请先在「模板」页构建或选择其他模板。",
   "err.box_exists": "名为「{name}」的 Box 已存在。",
   "err.box_id_taken": "Box ID {id} 已被占用。",

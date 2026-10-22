@@ -1,10 +1,18 @@
 import { z } from "zod";
 
-import { buildBaseTemplate, deleteTemplate, listTemplates, promoteSnapshot } from "../services/templates";
+import { getBox } from "../services/boxes";
+import {
+  assertTemplateNameAvailable,
+  buildBaseTemplate,
+  deleteTemplate,
+  listTemplates,
+  promoteSnapshot,
+  saveBoxAsTemplate,
+} from "../services/templates";
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
 import { BuildResultSchema, ImageSchema, OkSchema, PromotedTemplateSchema } from "./schemas";
-import { snapshotRef, templateDescription, templateName, templateRef } from "./validation";
+import { boxId, snapshotRef, templateDescription, templateName, templateRef } from "./validation";
 
 export const templateList = defineOperation({
   name: "template.list",
@@ -41,6 +49,34 @@ export const templatePromote = defineOperation({
   audit: { target: ({ name }) => ({ kind: "template", name }) },
   run: async ({ host, principal }, input) => ({
     template: await promoteSnapshot(host, input.ref, input.name, input.description, principal.id),
+  }),
+});
+
+export const templateSave = defineOperation({
+  name: "template.save",
+  tag: "templates",
+  summary: "Save a box as a template",
+  kind: "write",
+  scope: "template:write",
+  async: true,
+  conflicts: true,
+  input: z.object({ id: boxId(), name: templateName(), description: templateDescription() }),
+  output: z.object({ template: PromotedTemplateSchema }),
+  rest: [{ method: "POST", path: "/api/boxes/:id/template", body: true, status: 202 }],
+  cli: "template save",
+  mcp: {
+    toolset: "tools",
+    name: "save_template",
+    description:
+      "Save a box as a template: the packages it installed and the system files it changed. /workspace and home volumes are not included, so use a checkpoint for data. Long-running; returns a task id.",
+  },
+  resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
+  exclusive: ({ host }, _input, box) => `template.save:${host.host.id}:${box.boxId}`,
+  activity: { action: () => "template.save", target: (_input, box) => box.name },
+  audit: { target: (input) => ({ kind: "template", name: input.name }) },
+  run: async ({ host, principal, task }, input, box) => ({
+    template: await saveBoxAsTemplate(host, box.boxId, input, principal.id, task),
   }),
 });
 
@@ -85,4 +121,4 @@ export const templateDelete = defineOperation({
   },
 });
 
-export const templateOperations = [templateList, templatePromote, templateBuild, templateDelete];
+export const templateOperations = [templateList, templatePromote, templateSave, templateBuild, templateDelete];

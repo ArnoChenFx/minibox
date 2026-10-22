@@ -104,6 +104,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.rollback.undo": (id) => ({ id, confirm: true, expectedRevision: "2" }),
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
+  "template.save": (id) => ({ id, name: "silver" }),
   "template.build": () => ({}),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
   "task.list": () => ({}),
@@ -828,7 +829,7 @@ describe("projections", () => {
       mcpTools(OPERATIONS, ["tools"])
         .map((tool) => tool.name)
         .toSorted(),
-    ).toEqual(["install_tool", "list_tools", "reconcile_tools", "uninstall_tool", "upgrade_tool"]);
+    ).toEqual(["install_tool", "list_tools", "reconcile_tools", "save_template", "uninstall_tool", "upgrade_tool"]);
   });
 
   test("rebuild_box is outside the default toolsets and only in the rebuild toolset", () => {
