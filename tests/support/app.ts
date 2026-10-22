@@ -62,6 +62,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     fileUploadMaxMb: 1024,
     hostOvercommit: 1,
     notifyAllowPrivate: false,
+    volumeUsageIntervalSec: 600,
+    hostDiskMinFreePercent: 10,
     ...overrides,
   };
 }

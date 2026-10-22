@@ -140,3 +140,91 @@ describe("notices an event calls for", () => {
     expect(noticeOfEvent(eventOf({ op: "box.create", target: alpha }))).toBeNull();
   });
 });
+
+describe("volume and host notices", () => {
+  const MB = 1024 * 1024;
+  const notes = { kind: "volume" as const, id: "vol_notes", name: "notes" };
+  const local = { kind: "host" as const, id: "local", name: "local" };
+
+  test("a volume over its soft limit is volume.usage_high, with its figure, its limit and that a soft limit is best effort", () => {
+    expect(
+      noticeOfEvent(
+        eventOf({
+          op: "volume.usage_high",
+          target: notes,
+          detail: { volumeId: "vol_notes", bytes: 3 * MB, softBytes: 2 * MB, hardBytes: 4 * MB },
+        }),
+      ),
+    ).toEqual({
+      kind: "volume.usage_high",
+      title: "Volume over its soft limit: notes",
+      body: "Using 3 MB against a soft limit of 2 MB. A soft limit is best effort, not a quota.",
+      at: TS,
+      dedupKey: "volume.usage_high:vol_notes",
+    });
+  });
+
+  test("a volume over its hard limit names the reason, the action and the boxes it stopped", () => {
+    const stopped = noticeOfEvent(
+      eventOf({
+        op: "volume.usage_limit",
+        status: "error",
+        target: notes,
+        detail: {
+          volumeId: "vol_notes",
+          bytes: 5 * MB,
+          hardBytes: 4 * MB,
+          action: "stop",
+          reason: "volume_limit",
+          boxes: [
+            { id: "bx_alpha", name: "alpha" },
+            { id: "bx_beta", name: "beta" },
+          ],
+        },
+      }),
+    );
+    expect(stopped).toEqual({
+      kind: "volume.usage_limit",
+      title: "Volume over its hard limit: notes",
+      body: "Reason: over the hard limit of 4 MB, with 5 MB used. Action: stop. Stopped: alpha, beta.",
+      at: TS,
+      dedupKey: "volume.usage_limit:vol_notes",
+    });
+
+    const warned = noticeOfEvent(
+      eventOf({
+        op: "volume.usage_limit",
+        status: "error",
+        target: notes,
+        detail: { bytes: 5 * MB, hardBytes: 4 * MB, action: "warn", reason: "volume_limit", boxes: [] },
+      }),
+    );
+    expect(warned?.body).toBe("Reason: over the hard limit of 4 MB, with 5 MB used. Action: warn.");
+  });
+
+  test("a low host disk is host.disk_low, named by the host, with its free share and the minimum", () => {
+    expect(
+      noticeOfEvent(
+        eventOf({
+          op: "host.disk_low",
+          status: "error",
+          target: local,
+          detail: { hostId: "local", freePercent: 5, minFreePercent: 10, freeBytes: 5, totalBytes: 100 },
+        }),
+      ),
+    ).toEqual({
+      kind: "host.disk_low",
+      title: "Host disk is low: local",
+      body: "5% free, below the minimum of 10%. New volumes and checkpoints are refused until space is freed.",
+      host: "local",
+      at: TS,
+      dedupKey: "host.disk_low:local",
+    });
+  });
+
+  test("a volume event that does not name a volume, and a disk event that does not name a host, are not notices", () => {
+    expect(noticeOfEvent(eventOf({ op: "volume.usage_high", target: alpha, detail: {} }))).toBeNull();
+    expect(noticeOfEvent(eventOf({ op: "volume.usage_limit", detail: {} }))).toBeNull();
+    expect(noticeOfEvent(eventOf({ op: "host.disk_low", target: notes, detail: {} }))).toBeNull();
+  });
+});
