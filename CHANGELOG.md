@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-22
+
 ### 新增
 - 多宿主机（[#21](https://github.com/ArnoChenFx/minibox/issues/21) 第一部分）：可以在控制台「设置 → 宿主机」或 API 中添加其它 Docker 引擎作为宿主机，创建箱子时选择宿主机（缺省 `local`）。三种连接方式：`unix://` 套接字、`tcp://`（必须双向 TLS）与 `ssh://user@host`（经 SSH 转发引擎套接字，添加前须确认主机密钥指纹）。
 - 宿主机登记在 `DATA_DIR/hosts.json`（权限 600），凭据存放在 `DATA_DIR/hosts/<id>/`（目录 700，文件 600）。凭据不出现在任何 API 响应、日志或审计中。没有 `hosts.json` 时只有本机，既有数据无需迁移。
@@ -34,9 +36,13 @@
 - 按宿主机限定 Box 的查找：引擎回退不会解析到另一台宿主机上的同名容器（[#21](https://github.com/ArnoChenFx/minibox/issues/21) 第一部分的审查）。
 - 远端宿主机拒绝某项功能时的提示，补充了中文的功能名称（`host_unsupported`）。
 - 环境变量界面对齐：编辑行的「显示」按钮移到值输入框内，普通值与密钥行的四列（名称、类型、值、移除）等宽等高；概览卡片的名称与值垂直居中在同一行；窄屏下每个变量分两行排列。「设置 › 密钥」表格的字号与令牌表一致，替换与删除按钮之间留出间距，窄屏只显示图标；卡片内表格的左右边距与卡片标题对齐。
+- 经 SSH 连接的宿主机上执行命令时丢失输出、以退出码 `126` 失败：SSH 隧道的本地连接改为半关闭，通道结束时不再提前断开（#101）。
 
 ### 文档
 - 新增 NAS / NFS 部署指南（[`docs/nas.md`](docs/user-guide/nfs.md)、[`docs/nas-zh.md`](docs/zh-CN/user-guide/nfs.md)）：Linux `/etc/exports` 与群晖、威联通、TrueNAS SCALE、Unraid 的导出设置，squash 与 uid 1000 的映射，「添加 NFS」各字段与等价的 API，推荐挂载选项，服务器不可用时的行为，以及根据实测整理的故障排查表。步骤已在 NFS-Ganesha 上经 Docker 实际验证；README 的存储池一节加了入口（#30）。
+- 文档重新整理：README 改为产品介绍，其余文档按类别放在 `docs/` 下（快速开始、用户手册、管理、参考），并提供简体中文版本与链接检查（#105）。
+- 新增中英双语的项目主页（`site/`），由 `main` 发布到 GitHub Pages：<https://arnochenfx.github.io/minibox/>（#98、#102）。
+- 许可证由 MIT 改为 Apache-2.0，新增 `NOTICE`（#103）。
 
 ### 升级必读（经隧道或反向代理访问的部署）
 - 通过隧道或反向代理访问 MiniBox 的部署，升级后请先检查以下设置：
@@ -93,7 +99,6 @@
 - 自定义工具目录管理：所有者可在 Box 的「工具」页新增、编辑与删除自定义工具（`DATA_DIR/tools.d/<id>.json`，中英文界面）。新操作 `tool.custom.list`、`tool.custom.put`、`tool.custom.delete` 同时提供 REST（`/api/tools/custom`）、CLI（`minibox tool custom`）与 MCP（`list_custom_tools` 等）。条目包含安装、升级、卸载、检测命令与可选的停止命令（卸载前在 Box 内以 `dev` 执行）。保存前按加载器的规则校验，原子写入；覆盖内置 id 需要 `overrideBuiltin`；删除只移除文件，不卸载共享工具卷上的工具。令牌一律不能使用这些操作。
 - 检查点（Refs #11，第一部分）：`POST /api/boxes/:id/checkpoints` 为 Box 拍下检查点，默认包含工作区 `/workspace` 与主目录 `/home/dev` 两个自有卷。`include.system` 可把可写层提交为系统镜像，`include.volumes` 可加入 Box 已挂载的共享卷，缓存与共享工具卷永不包含。`consistency` 取 `live`（默认）、`pause` 或 `stop`。数据保存在 restic 仓库中（镜像 `restic/restic:0.18.1`，仓库卷 `minibox-checkpoints-local`，密码位于 `DATA_DIR/secrets/checkpoint-repo.key`），检查点记录保存在 `DATA_DIR/checkpoints/`。`POST /api/checkpoints/:id/fork` 从检查点派生新 Box，使用新卷，默认不复制主目录（`copyHome: false`）。`POST /api/boxes/:id/rollback` 需要 `If-Match`：数据恢复到新卷，Box 重建到这些卷上，原卷保留；没有 `confirm: true` 时返回 `409 confirmation_required` 与预览。新增 `GET /api/checkpoints`、`GET /api/checkpoints/:id`、`PATCH /api/checkpoints/:id`（置顶与标签）与 `DELETE /api/checkpoints/:id`，置顶的检查点不能删除。已有的系统快照以只读检查点的形式出现，可以派生与删除。令牌使用既有的 scope（`checkpoint:create`、`checkpoint:restore`、`box:write`）与资源范围。拍摄、派生与回滚期间 Box 保持唤醒，空闲休眠不会打断它们；休眠中的 Box 不会因检查点被唤醒。保留策略、回滚的确认与撤销、配额与控制台见下一条。
 - 检查点（#11，第二部分）：回滚改为先确认或撤销。回滚前的安全检查点以停止式拍摄，数据恢复到新卷并重建 Box 后，旧卷保留为待定状态：`POST /api/boxes/:id/rollback/confirm` 确认后删除旧卷，`POST /api/boxes/:id/rollback/undo` 撤销后重新挂载旧卷并删除恢复出的卷（回滚之后写入的数据丢失），`GET /api/boxes/:id/rollback` 查看待定的回滚。保留策略：自动检查点按 Box 保留最新的 `CHECKPOINT_KEEP_LAST` 个（默认 20），并删除超过 `CHECKPOINT_KEEP_DAYS` 天（默认 30）的，手动与置顶的从不自动删除。容量：`CHECKPOINT_CAPACITY_MB`（默认 0，不限）达到 80% 时记录告警并在界面提示，达到上限时拒绝新的自动检查点（回滚也因此被拒绝），手动拍摄仍可进行。令牌配额 `maxCheckpoints` 限制令牌拍摄的手动检查点合计，`sandboxed-agent` 默认 20。启动时解冻因检查点中断而暂停的容器。`GET /api/checkpoints/usage` 仅所有者可读。控制台的 Box 详情新增「检查点」标签页（中英文）。尚未实现：导入导出（含加密导出包）、定时检查点、单文件取回、MCP 工具、独立卷快照、重建前的检查点、按 Box 覆盖的保留策略与回收站。
-- 检查点导出、导入与定时检查点（#11，第三部分）：`POST /api/checkpoints/:id/export`（202，任务）把一个检查点封装为 `.mbckpt` 包，口令 12 到 1024 个字符，首尾不能有空白，不能含换行或 NUL。口令只用于封装，不写入包、日志、审计或任务记录。包保存在 `DATA_DIR/packages/`（目录 700，文件 600），24 小时后自动清理；`GET /api/packages/:id/download` 下载，`POST /api/packages`（`application/octet-stream`）上传，`POST /api/packages/:id/import`（202，任务）导入到 `host` 指定的宿主机（缺省 `local`）。导入前重新校验包的字节与清单：口令不对返回 `400`（`package_passphrase_wrong`），包损坏或不是检查点包返回 `400`（`package_invalid`）。导入成功后删除包，失败则保留，以便再次尝试。包大小上限为 `CHECKPOINT_PACKAGE_MAX_MB`（默认 2048，范围 1 到 65536），超过返回 `413`。包只含这一个检查点的卷数据与清单，不含检查点仓库的密钥；带系统层、没有卷数据或早于检查点的快照不能导出（`409`）。密钥只以只读文件的形式交给辅助容器，从不进入环境变量。定时检查点：`GET`、`PUT` 与 `DELETE /api/boxes/:id/checkpoint-schedule` 为每个 Box 设置计划，每 1 到 720 个小时（`everyHours`）或每天 `HH:MM`（`at`，服务器时间）运行，二者只能选其一。后台每分钟检查一次，到点时拍下自动检查点，并遵守保留策略与仓库容量上限（`CHECKPOINT_CAPACITY_MB`）。停止或休眠的 Box 跳过，且不会因此被唤醒；仓库达到上限时同样跳过。计划保存在 `DATA_DIR/checkpoints/schedules/`，重启后继续执行；控制台显示上次与下次运行，未跳过的运行（成功或失败）写入审计 `checkpoint.scheduled`。缺省没有计划，单机行为不变。导出、导入与计划的 REST 与 MCP（`export_checkpoint`、`import_checkpoint`、`get_checkpoint_schedule`、`set_checkpoint_schedule`、`clear_checkpoint_schedule`，位于 `storage` 工具集）以及控制台 Box 详情页的「检查点」标签页都只对所有者开放，令牌不能获得这些权限；命令行暂无检查点命令。
 - 空闲自动休眠与按需唤醒（#12）：Box 空闲一段时间后自动停止（期望状态 `stopped`，原因 `idle`），容器与工作区卷保留。空闲时长由 `BOX_IDLE_TIMEOUT_SEC` 与每个 Box 的 `idleTimeoutSec` 决定，`0` 关闭休眠。活动包括终端的输入、输出与打开中的连接（无论由 MiniBox 还是箱内其它 tmux 客户端打开，如 `docker exec -it <box> tmux attach`）、exec、会话的启动 / 读取 / 发送、端口预览（含流式响应与预览 WebSocket）、卷上的文件调用（计入挂载该卷的每个 Box），以及箱内异步任务结束时；读取 Box 记录与统计不计入。exec 与 `session_start` 唤醒任何已停止的 Box；终端 WebSocket 与端口预览只唤醒休眠中的 Box，人为停止的 Box 仍返回 `409`。唤醒记入审计 `box.wake`。`ttlSec` 从创建时刻起算，到期后停止 Box（原因 `ttl`），已到期的 Box 不能被启动、重启、重建、唤醒、exec、会话、终端或预览再次启动（`409`，`box_ttl_expired`）。终端与预览会在所有已注册的 Docker 主机上查找 Box。控制台的终端页会说明休眠与 TTL 到期的原因，并可唤醒休眠中的 Box（中英文）。卷上的文件调用计入挂载该卷的每个 Box 的活动，但不启动已停止的 Box（#9、#12）。
 - Agent API 令牌（#13）：设置页或 `POST /api/tokens` 创建，`GET /api/tokens` 列出（不含明文），`DELETE /api/tokens/:id` 吊销。创建响应只包含一次明文。操作注册表的默认鉴权钩子改为按 scope、资源范围与配额检查；所有者与浏览器会话仍可做全部操作。`box.create` 与 `snapshot.fork` 接受可选的 `ttlSec`，并记入规格的 `lifecycle.ttlSec`。令牌省略 TTL 或传 `null` 时写入其上限；超过上限的值返回 `403`。到期后停止 Box 见 #12。事件列表与事件流按令牌范围过滤：所有者与未收窄的 admin 令牌看全部，其他令牌只看自己造成的事件以及有权使用的 Box 的事件。中英文界面均可创建、复制一次明文，并吊销令牌。
 - 数据卷与存储池（#24）：卷是独立对象，记录放在 `DATA_DIR/volumes`，并写明创建它的主机。Box 通过 `mounts` 挂载零到多个卷，每次挂载指定路径与读写模式。新建 Box 默认挂载工作区 `/workspace`、主目录 `/home/dev`、共享只读工具卷 `/opt/minibox/tools`（每个主机一只，名为 `<前缀>-tools-<主机 id>`）与本地缓存 `/home/dev/.cache`。存储池支持 `local`、`nfs` 与 `path` 三种后端：`PUT /api/pools` 替换配置，`GET /api/pools` 探测可达性；非本地池不可达时，启动、重启与创建返回 `503 docker_unavailable`。删除 Box 时 `deleteVolume=true` 只删除记录中所有者为本 Box、且没有其它 Box 挂载的卷。已有的 `<前缀>-ws-*` 卷会被识别为卷，不改名、不补标签。新增 `/api/volumes`、`/api/pools` 系列接口与控制台「卷」页面（中英文）。存储写入需要 `confirm: true`：`POST /api/volumes`、`DELETE /api/volumes/:id?confirm=true` 与 `PUT /api/pools` 没有该标志时返回 `409 confirmation_required` 与 `details.preview`，不改动任何内容；保存存储池与删除卷的界面会先显示预览（#24）。
@@ -144,7 +149,6 @@
 - 卸载前先停止守护进程：目录条目可声明 `stop` 命令，卸载时以 `dev` 在运行中的 Box 内执行。停止失败则工具保持已安装。
 
 ### 变更
-- 请求体上限：服务器整体的上限改为 `CHECKPOINT_PACKAGE_MAX_MB` 加 1 MiB，以便上传超过 Bun 默认 128 MiB 的检查点包（#11）。JSON 接口仍只接受 128 MiB 以内的请求体，超过时读取即停止并返回 `413`（`payload_too_large`）。
 - Box 的列表、详情、统计与主机指标改为读取每台主机的缓存。缓存由 Docker 容器事件保持最新，列表不再对每个容器调用 `inspect` 或 `docker stats`：Docker 调用次数与 Box 数量无关，也不随打开的标签页数增加。`HostMonitor` 不再每个间隔列出 Box，Box 汇总取自采样器。采样器未就绪时（启动之后、列出完成之前，或与引擎断开期间），读取退回引擎（#17）。
 - 控制台改为订阅 `GET /api/events/stream`。盒子列表、概览、详情与主机指标由推送更新，原有的 3 秒、5 秒、10 秒定时刷新取消。事件流断开时，各页面回退为轮询（主机指标与详情 3 秒，任务抽屉 2 秒，盒子列表与活动列表 5 秒，概览 10 秒），并按 1 秒起、最长 30 秒的间隔重连。详情页的资源图表读取后端的采样环形缓冲，长度由 `METRICS_HISTORY` 决定。日志面板开启自动刷新时改用日志流，只在日志流断开期间每 4 秒读取一次（#17）。终端会话列表仍每 10 秒轮询一次，会话没有实时帧。
 - 每台主机只有一个采样器和一条容器事件订阅。断线后按 1 秒起、最长 30 秒的退避重新订阅，并重新列出容器。`METRICS_INTERVAL_MS` 决定主机指标的间隔，并在有实时流打开时决定盒子采样的间隔（见下文）。同一盒子与 tail 的日志读取在 2 秒内共享一次引擎调用（#17）。
