@@ -192,6 +192,8 @@ export const MESSAGES = {
   volume_chown_failed: "Could not change ownership of a new volume: {detail}",
   volume_prepare_failed: "Could not prepare the volume directory: {detail}",
   storage_permission_denied: "Storage pool {pool} denied permission to create the volume directory: {detail}",
+  storage_unwritable:
+    "Uid 1000, the box user, cannot write the new volume directory {path}, so the volume was not created: {detail}",
   storage_squash_hint:
     "On the NAS, set the export to all_squash,anonuid=1000,anongid=1000, or root_squash,anonuid=1000,anongid=1000, so the squashed user is uid 1000. Setup guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/nas.md",
   helper_image_missing: "Base template image {image} is missing, so volume helpers cannot run.",

@@ -40,7 +40,8 @@ Boxes run as `dev`, uid **1000**, gid **1000**. Every file a box writes must end
 When MiniBox creates a volume on an NFS pool, a short-lived helper container runs as root on the compute machine and does this in the export:
 
 1. `mkdir -p <export>/<volume id>` (for example `vol_hakder7qn0`);
-2. `chown -R 1000:1000` on that directory. If chown fails, the helper prints `MINIBOX_CHOWN_SKIPPED`, MiniBox logs `volume.chown_skipped` and **the volume is still created**.
+2. `chown -R 1000:1000` on that directory. If chown fails, the helper prints `MINIBOX_CHOWN_SKIPPED` and MiniBox logs `volume.chown_skipped`.
+3. A check that uid 1000 can write the directory: a helper running as 1000:1000 creates and removes an empty file there. If the check fails, the volume is **not created**. MiniBox removes the new directory and the create returns `502` with code `bad_gateway` and message key `storage_unwritable`.
 
 How the server maps the helper's root decides whether this works. Tested with each squash mode:
 
@@ -50,8 +51,8 @@ How the server maps the helper's root decides whether this works. Tested with ea
 | `all_squash,anonuid=1000,anongid=1000` | root, mode 755 | Volume create fails with `502`, code `bad_gateway` and message key `storage_permission_denied`: `mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
 | `root_squash,anonuid=1000,anongid=1000` | 1000:1000 | Works. Root maps to 1000, `dev` stays 1000. Root inside the box also writes as 1000 |
 | `no_root_squash` | any | Works. The helper's chown succeeds. Root inside a box is real root on the export, so use it only on a dedicated export |
-| `root_squash` (anon uid is `nobody`) | 1000:1000, mode 755 | Volume create fails with `Permission denied` |
-| `root_squash` (anon uid is `nobody`) | mode 777 | Volume create **succeeds**, but the directory belongs to `nobody`, chown is skipped (`volume.chown_skipped`), and `dev` gets `Permission denied` on every write. Avoid |
+| `root_squash` (anon uid is `nobody`) | 1000:1000, mode 755 | Volume create fails with `Permission denied` (`storage_permission_denied`) |
+| `root_squash` (anon uid is `nobody`) | mode 777 | Volume create fails with `storage_unwritable` (`bad_gateway`). The directory belongs to `nobody` and chown is skipped, so `dev` cannot write it. MiniBox removes the directory and creates no volume. Use `root_squash,anonuid=1000,anongid=1000` instead |
 
 So: map everything to uid 1000, and make the export directory itself owned by 1000:1000.
 
@@ -225,7 +226,7 @@ All messages below were seen in the tests.
 | Pool `unreachable` | `… connection timed out` | Wrong server address, or the network or firewall drops the traffic |
 | Pool `unreachable` | `… no such file or directory` | The export path does not exist, or this client is not allowed. NFSv4 hides exports the client may not use, so a client restriction can look like a wrong path. Linux `nfsd` may say `access denied by server` instead |
 | Box create fails with `502` and code `bad_gateway` | `Storage pool nas denied permission to create the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` (`storage_permission_denied`) | The squashed uid cannot write the export root. Use `all_squash,anonuid=1000,anongid=1000` (or `root_squash,anonuid=1000,anongid=1000`) and make the export directory 1000:1000. The response's `hint` names these options and links this guide |
-| Box starts, but `dev` cannot write `/workspace`, and the server log has `volume.chown_skipped` | `Permission denied` inside the box; on the server the `vol_…` directory belongs to `nobody` (shown as 65534, or 4294967294 on Ganesha) | `root_squash` to `nobody`. Change the export to `all_squash,anonuid=1000,anongid=1000`, then on the server `chown -R 1000:1000 <export>/vol_…` |
+| Box create fails with `502` and code `bad_gateway` | `Uid 1000, the box user, cannot write the new volume directory <server>:<export>/vol_…, so the volume was not created: … Permission denied` (`storage_unwritable`). The server log has `volume.chown_skipped` | `root_squash` to `nobody`: the new directory belongs to `nobody` (65534, or 4294967294 on Ganesha) and the squashed root cannot chown it. Change the export to `all_squash,anonuid=1000,anongid=1000` (or `root_squash,anonuid=1000,anongid=1000`). A volume directory that already exists and belongs to `nobody` can be fixed on the server with `chown -R 1000:1000 <export>/vol_…` |
 | `chown` in the box "succeeds" but nothing changes | — | Expected with `all_squash`: every file belongs to the anon uid |
 | `Stale file handle` inside the box; then `start` fails with `lstat …/_data: stale NFS file handle` | | The volume's directory was deleted or replaced on the server while mounted (for example restored from a snapshot into a new folder). Stop the box and put the data back in place. In the test, start kept failing until the client's cache was dropped (`sync; echo 2 \| sudo tee /proc/sys/vm/drop_caches` on the compute machine) |
 | Commands in the box hang | — | `hard` mount and the server is unreachable. Bring the server back; the processes continue. Stop the box if you need it gone sooner |
@@ -236,7 +237,6 @@ All messages below were seen in the tests.
 Found while testing this guide:
 
 - An `exec` (and the timeout of a foreground `exec`) cannot finish while a `hard` mount is frozen: the kill MiniBox runs inside the box starts in the box's working directory `/workspace` and blocks with it. The call returns once the server is back.
-- With `root_squash` mapped to `nobody`, creating a volume succeeds although `dev` cannot write it; the only signal is the `volume.chown_skipped` log line.
 - Pools are probed one after another, so the pools page slows down with several unreachable NFS pools.
 
 ## Path pools

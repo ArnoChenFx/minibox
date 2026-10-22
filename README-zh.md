@@ -397,7 +397,7 @@ ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 
 - 已有的 Box 继续以旧模板的 root 用户运行，不会改名，也不会重建。
 - 从旧快照或旧模板创建的 Box，沿用该镜像的用户；在本次改动之前制作的镜像，用户是 root。
-- 新建的**本地**卷会由基础模板镜像拉起的短生命周期辅助容器（以 root 运行）执行 `chown -R 1000:1000`。如果该镜像不存在，则跳过 chown，并记录 `volume.chown_skipped`。NFS 与 path 卷必须先建好子目录；那里的 chown 是尽力而为，因为 `root_squash` 经常会拦住它（同一条日志，辅助容器会打印 `MINIBOX_CHOWN_SKIPPED`）。
+- 新建的**本地**卷会由基础模板镜像拉起的短生命周期辅助容器（以 root 运行）执行 `chown -R 1000:1000`。如果该镜像不存在，则跳过 chown，并记录 `volume.chown_skipped`。NFS 与 path 卷必须先建好子目录；那里的 chown 是尽力而为，因为 `root_squash` 经常会拦住它（同一条日志，辅助容器会打印 `MINIBOX_CHOWN_SKIPPED`）。随后 MiniBox 检查 uid 1000 能否写入新目录。不能写入时创建失败，返回 `bad_gateway`（`storage_unwritable`），删除该目录，不创建卷。见 [NAS / NFS 指南](docs/nas-zh.md#属主最关键的一点)。
 - 已有的 `minibox-ws-*` 卷在启动时会被识别，那时**不会**自动 chown。创建或重建到给出属主的模板（即带 `minibox.template.uid` 与 `minibox.template.gid` 标签的模板，基础模板会设置这两个标签）时，MiniBox 会在启动前把可写 `/workspace` 的根目录改为该属主，因此旧 Box 留下的 root 属主卷对 `dev` 变为可写。只改根目录，卷内已有文件的属主不变。只是被识别的卷，或模板不带这两个标签的 Box，保持原样。如果它的 `/workspace` 仍是 root 属主，对那一只卷执行一次即可，Box 运行时：
 
   ```bash

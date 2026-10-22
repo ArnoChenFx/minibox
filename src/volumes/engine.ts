@@ -115,6 +115,34 @@ async function prepareSubdir(host: HostCtx, pool: StoragePool, subpath: string, 
   }
 }
 
+/** Creates and removes a file in the directory `$1`. It runs as the box user, so it fails where the box would. */
+export const WRITE_CHECK = 'touch -- "$1/.minibox-write-check" && rm -f -- "$1/.minibox-write-check"';
+
+/** The directory of one volume as an operator finds it on the NAS or the host. */
+function storagePath(pool: StoragePool, subpath: string): string {
+  return pool.backend === "nfs" ? `${pool.server}:${pool.export}/${subpath}` : `${pool.root ?? "/"}/${subpath}`;
+}
+
+/**
+ * Proves the box user can write the directory `prepareSubdir` just made. A squashed root cannot chown, so the
+ * directory can stay with the squashed user, and the box would start with a volume it cannot write.
+ */
+async function assertWritable(host: HostCtx, pool: StoragePool, subpath: string): Promise<void> {
+  const source = pool.backend === "nfs" ? poolRootVolume(host.prefix, pool.name) : (pool.root ?? "/");
+  const kind = pool.backend === "path" ? "bind" : "volume";
+  const result = await host.runtime.runHelper({
+    image: host.baseTemplateTag,
+    user: DEV_OWNER,
+    cmd: ["sh", "-c", WRITE_CHECK, "minibox", `/mnt/${subpath}`],
+    mounts: [{ source, target: "/mnt", kind, mode: "rw" }],
+    timeoutSec: 120,
+    labels: { [host.keys.internal]: "true" },
+  });
+  if (result.exitCode === 0) return;
+  const detail = result.logs.trim().slice(0, 400) || String(result.exitCode);
+  throw storageRefusal(msg("storage_unwritable", { path: storagePath(pool, subpath), detail }));
+}
+
 /** The engine's volume of this name, or null. Other errors are the caller's to handle. */
 export async function inspectVolumeOrNull(host: HostCtx, name: string): Promise<VolumeInfo | null> {
   try {
@@ -187,6 +215,7 @@ export async function createEngineVolume(
   }
   await prepareSubdir(host, pool, subpath, known);
   changes.add(`directory ${subpath}`, () => removeEmptyDirectory(host, pool, subpath));
+  await assertWritable(host, pool, subpath);
   const driverOpts = pool.backend === "nfs" ? nfsDriverOpts(pool, subpath, false) : pathDriverOpts(pool, subpath);
   await host.runtime.createVolume(volume.engineName, labels, { driver: "local", driverOpts });
 }

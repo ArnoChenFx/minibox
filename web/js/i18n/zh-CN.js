@@ -226,6 +226,7 @@ export default {
   "err.volume_chown_failed": "无法修改新卷的所有者：{detail}",
   "err.volume_prepare_failed": "无法准备卷目录：{detail}",
   "err.storage_permission_denied": "存储池 {pool} 拒绝创建卷目录（权限不足）：{detail}",
+  "err.storage_unwritable": "uid 1000（Box 用户）无法写入新的卷目录 {path}，因此没有创建该卷：{detail}",
   "err.storage_squash_hint":
     "在 NAS 上把导出设置为 all_squash,anonuid=1000,anongid=1000，或 root_squash,anonuid=1000,anongid=1000，使被映射的用户为 uid 1000。设置指南：https://github.com/ArnoChenFx/minibox/blob/main/docs/nas-zh.md",
   "err.helper_image_missing": "基础模板镜像 {image} 不存在，因此无法运行卷辅助容器。",

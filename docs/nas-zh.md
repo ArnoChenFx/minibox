@@ -40,7 +40,8 @@ Box 以 `dev` 用户运行，uid **1000**，gid **1000**。Box 写的每个文�
 MiniBox 在 NFS 池上创建卷时，会在计算主机上起一个短生命周期的辅助容器，以 root 身份在导出目录里执行：
 
 1. `mkdir -p <导出目录>/<卷 id>`（例如 `vol_hakder7qn0`）；
-2. 对这个目录执行 `chown -R 1000:1000`。chown 失败时，辅助容器输出 `MINIBOX_CHOWN_SKIPPED`，MiniBox 记录 `volume.chown_skipped`，**卷照样创建成功**。
+2. 对这个目录执行 `chown -R 1000:1000`。chown 失败时，辅助容器输出 `MINIBOX_CHOWN_SKIPPED`，MiniBox 记录 `volume.chown_skipped`。
+3. 检查 uid 1000 能否写这个目录：以 1000:1000 身份在目录里创建并删除一个空文件。检查失败时，**卷不会被创建**。MiniBox 删除刚建的目录，创建请求返回 `502`，错误码 `bad_gateway`，消息键 `storage_unwritable`。
 
 能不能成功，取决于服务器怎样映射辅助容器的 root。各种 squash 方式的实测结果：
 
@@ -50,8 +51,8 @@ MiniBox 在 NFS 池上创建卷时，会在计算主机上起一个短生命周�
 | `all_squash,anonuid=1000,anongid=1000` | root，权限 755 | 创建卷失败，返回 `502`、错误码 `bad_gateway`、消息键 `storage_permission_denied`：`mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
 | `root_squash,anonuid=1000,anongid=1000` | 1000:1000 | 可用。root 映射为 1000，`dev` 仍是 1000。Box 里的 root 写出来的文件也是 1000 |
 | `no_root_squash` | 任意 | 可用，辅助容器的 chown 能成功。但 Box 里的 root 在导出目录上就是真正的 root，只应在专用导出上这样设置 |
-| `root_squash`（匿名用户是 `nobody`） | 1000:1000，权限 755 | 创建卷失败，`Permission denied` |
-| `root_squash`（匿名用户是 `nobody`） | 权限 777 | 创建卷**成功**，但目录属于 `nobody`，chown 被跳过（`volume.chown_skipped`），`dev` 每次写入都是 `Permission denied`。不要这样配 |
+| `root_squash`（匿名用户是 `nobody`） | 1000:1000，权限 755 | 创建卷失败，`Permission denied`（`storage_permission_denied`） |
+| `root_squash`（匿名用户是 `nobody`） | 权限 777 | 创建卷失败，返回 `storage_unwritable`（`bad_gateway`）。目录属于 `nobody`，chown 被跳过，`dev` 无法写入。MiniBox 删除该目录，不创建卷。请改用 `root_squash,anonuid=1000,anongid=1000` |
 
 结论：把所有用户映射到 uid 1000，并且让导出目录本身属于 1000:1000。
 
@@ -225,7 +226,7 @@ NAS 维护（重启、升级固件）之前，先停掉使用它的 Box。
 | 池 `unreachable` | `… connection timed out` | 服务器地址错了，或者网络、防火墙丢弃了流量 |
 | 池 `unreachable` | `… no such file or directory` | 导出路径不存在，或者这个客户端没有权限。NFSv4 会隐藏客户端无权访问的导出，所以客户端限制看起来像路径错误。Linux `nfsd` 可能会报 `access denied by server` |
 | 创建 Box 返回 `502`，错误码 `bad_gateway` | `存储池 nas 拒绝创建卷目录（权限不足）：mkdir: cannot create directory '/mnt/vol_…': Permission denied`（`storage_permission_denied`） | 被映射后的 uid 无法写导出根目录。使用 `all_squash,anonuid=1000,anongid=1000`（或 `root_squash,anonuid=1000,anongid=1000`），并把导出目录设为 1000:1000，然后重试。响应的 `hint` 会列出这些选项并链接本指南 |
-| Box 能启动，但 `dev` 无法写 `/workspace`，服务端日志里有 `volume.chown_skipped` | Box 里 `Permission denied`；服务器上 `vol_…` 目录属于 `nobody`（显示为 65534，Ganesha 上是 4294967294） | `root_squash` 映射到了 `nobody`。把导出改成 `all_squash,anonuid=1000,anongid=1000`，再在服务器上执行 `chown -R 1000:1000 <导出目录>/vol_…` |
+| 创建 Box 返回 `502`，错误码 `bad_gateway`；服务端日志里有 `volume.chown_skipped` | `uid 1000（Box 用户）无法写入新的卷目录 <服务器>:<导出目录>/vol_…，因此没有创建该卷：… Permission denied`（`storage_unwritable`） | `root_squash` 映射到了 `nobody`：新目录属于 `nobody`（显示为 65534，Ganesha 上是 4294967294），被压缩的 root 无法 chown。把导出改成 `all_squash,anonuid=1000,anongid=1000`（或 `root_squash,anonuid=1000,anongid=1000`）。已经存在、属于 `nobody` 的卷目录，可以在服务器上执行 `chown -R 1000:1000 <导出目录>/vol_…` 修复 |
 | 在 Box 里 `chown` 显示成功，但属主没变 | — | `all_squash` 下的正常现象：所有文件都属于匿名 uid |
 | Box 里报 `Stale file handle`，之后 `start` 失败并提示 `lstat …/_data: stale NFS file handle` | | 卷的目录在挂载期间被服务器端删除或替换了（例如从快照恢复到了新文件夹）。停掉 Box，把数据放回原位。测试中，直到在计算主机上清掉客户端缓存（`sync; echo 2 \| sudo tee /proc/sys/vm/drop_caches`）之后才能再次启动 |
 | Box 里的命令卡住 | — | `hard` 挂载且服务器不可达。让服务器恢复，进程会继续；急着结束的话可以停掉 Box |
@@ -236,7 +237,6 @@ NAS 维护（重启、升级固件）之前，先停掉使用它的 Box。
 写这篇文档的测试中发现：
 
 - `hard` 挂载卡住时，`exec`（以及前台 `exec` 的超时）无法结束：MiniBox 在 Box 里执行的终止命令以 Box 的工作目录 `/workspace` 启动，也会跟着卡住。服务器恢复后调用才返回。
-- `root_squash` 映射到 `nobody` 时，卷能创建成功，但 `dev` 无法写入，唯一的提示是 `volume.chown_skipped` 这条日志。
 - 存储池是逐个探测的，有多个不可达的 NFS 池时，存储池页面会变慢。
 
 ## path 池

@@ -586,6 +586,17 @@ describe("helper containers ask only for what their command needs", () => {
       expect(spec.capAdd).toBeUndefined();
     }
   });
+
+  test("the write check on each new NFS directory runs as the box user and holds no capability", async () => {
+    await savePools(host, nasPools, undefined);
+    await newBox("alpha");
+    const checks = helperSpecs(".minibox-write-check");
+    expect(checks).toHaveLength(3);
+    for (const spec of checks) {
+      expect(spec.user).toBe(DEV_OWNER);
+      expect(spec.capAdd).toBeUndefined();
+    }
+  });
 });
 
 /** Fails the helper whose command has `text`, with `logs`. Every other helper succeeds. */
@@ -642,6 +653,65 @@ describe("a storage server that refuses the box is a storage error", () => {
     const error = await rejectionOf(newBox("alpha"));
     expect(error).toMatchObject({ status: 400, code: "validation_failed", key: "volume_prepare_failed" });
     expect((error as AppError).hintKey).toBeUndefined();
+  });
+
+  test("a directory the box user cannot write fails the create as storage_unwritable, and the directory is removed", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = refuse(
+      ".minibox-write-check",
+      "touch: cannot touch '/mnt/vol_x/.minibox-write-check': Permission denied\n",
+    );
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toMatchObject({
+      status: 502,
+      code: "bad_gateway",
+      key: "storage_unwritable",
+      hintKey: "storage_squash_hint",
+      retryable: false,
+    });
+    expect((error as AppError).params?.path).toMatch(/^192\.168\.1\.10:\/volume1\/minibox\/vol_/);
+    const checked = helperSpecs(".minibox-write-check").map((spec) => spec.cmd.at(-1));
+    expect(checked).toHaveLength(1);
+    expect(helperSpecs("rmdir").map((spec) => spec.cmd.at(-1))).toEqual(checked);
+    expect([...runtime.volumes.keys()]).toEqual(["mbtest-pool-nas"]);
+    expect(runtime.containers.size).toBe(0);
+    expect(host.volumes.list()).toEqual([]);
+    expect(host.specs.findByName("alpha")).toBeNull();
+  });
+
+  test("a path pool directory the box user cannot write is refused the same way", async () => {
+    await savePools(
+      host,
+      [
+        { name: "local", backend: "local" },
+        { name: "disk", backend: "path", root: "/mnt/disk", default: true },
+      ],
+      undefined,
+    );
+    runtime.helperHandler = refuse(
+      ".minibox-write-check",
+      "touch: /mnt/vol_x/.minibox-write-check: Permission denied\n",
+    );
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toMatchObject({ status: 502, code: "bad_gateway", key: "storage_unwritable" });
+    expect((error as AppError).params?.path).toMatch(/^\/mnt\/disk\/vol_/);
+    expect(helperSpecs("rmdir")).toHaveLength(1);
+    expect(host.volumes.list()).toEqual([]);
+  });
+
+  test("a directory whose chown is refused is kept when the box user can still write it", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = (spec) =>
+      spec.cmd.join(" ").includes("chown")
+        ? { exitCode: 0, logs: "MINIBOX_CHOWN_SKIPPED\n" }
+        : { exitCode: 0, logs: "" };
+
+    const box = await newBox("alpha");
+    expect(box.mounts.map((mount) => mount.role).toSorted()).toEqual(["cache", "home", "tools", "workspace"]);
+    expect(helperSpecs(".minibox-write-check")).toHaveLength(3);
+    expect(helperSpecs("rmdir")).toHaveLength(0);
   });
 });
 
