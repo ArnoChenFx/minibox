@@ -822,11 +822,13 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 ### 11.3 工具目录
 
-声明式清单：`id`、名称、说明、安装/检测/升级/卸载命令、依赖（如 Node ≥ 20）、是否需要 root、预估体积、安装来源（npm / pip / 官方脚本）。
+声明式清单：`id`、名称、说明、安装/检测/升级/卸载命令、可选的停止命令、依赖（如 Node ≥ 20）、是否需要 root、预估体积、安装来源（npm / pip / 官方脚本）。
 
 - 分组（`category`）：`agents` AI 编程助手、`languages` 语言与运行时、`terminal` 终端与开发工具、`networking` 网络。`tools.d` 里没写 `category` 的旧自定义条目归入 `agents`。创建对话框与 Box 的「工具」页都按分组展示，并提供按名称、说明与分组过滤的搜索框。
-- 内置：AI 编程助手 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi；语言与运行时 Bun、uv、Rust（rustup）、Zig；终端与开发工具 herdr、luvus；网络 Tailscale（`needsRoot`）。
-- `needsRoot` 的条目只列出，安装、升级与卸载都被拒绝（`tool_needs_root`），MiniBox 从不以 root 安装。
+- 内置：AI 编程助手 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi；语言与运行时 Bun、uv、Rust（rustup）、Zig；终端与开发工具 herdr、luvus；网络 Tailscale（以 `dev` 用户安装，用户态网络模式）。
+- `needsRoot` 的条目只列出，安装、升级与卸载都被拒绝（`tool_needs_root`），MiniBox 从不以 root 安装。内置目录目前没有这样的条目。
+- 停止命令（`stop`）：卸载前在运行中的 Box 内以 `dev` 执行。写入 helper 访问不到 Box 内的进程，守护进程若不先停止，会继续运行已删除的二进制。停止失败则工具保持已安装。
+- Tailscale 以用户态网络运行：二进制装在工具卷，`minibox-tailscale up` 通过 `setsid` 双重 fork 启动 `tailscaled`，使它不随执行 `up` 的 exec 结束。状态在家目录卷的 `~/.local/state/tailscale` 中，卸载后保留。`tailscaled` 不需要 root，也不需要 `/dev/net/tun`。netstack 把发往本节点 tailnet IP 的入站 TCP/UDP 转发到 `127.0.0.1`；出站只能经 `localhost:1055` 的 SOCKS5/HTTP 代理，没有 ICMP。守护进程不随 Box 启动或唤醒自动拉起，tailnet 流量也不会唤醒休眠中的 Box。
 - 检测：镜像或家目录里已有的工具显示为已安装并带版本，但不计为受管；只有 tools 卷上的入口点才受管。升级与卸载只作用于受管工具，其它情况返回 `tool_unmanaged`。已检测到的工具不会被重复安装。
 - 清单放仓库 `catalog/*.json`，并允许在 `DATA_DIR/tools.d/` 放自定义条目。
 - 长耗时安装使用异步任务与进度流；兼容代理配置。
