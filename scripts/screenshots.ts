@@ -197,10 +197,18 @@ async function ownResources() {
     ...(await byLabel(["ps", "-a"], [PREFIX])),
     ...namedWithPrefix(await docker(["ps", "-a", "--format", "{{.ID}}\t{{.Names}}"]), 1),
   ];
-  const images = [
-    ...(await byLabel(["images"], [`${PREFIX}.template`, `${PREFIX}.snapshot`, PREFIX])),
-    ...namedWithPrefix(await docker(["images", "--format", "{{.ID}}\t{{.Repository}}"]), 1),
-  ];
+  // Images go by repository and tag, never by id, so a tag outside the prefix is never touched. An untagged image goes
+  // by id only when it carries this run's label.
+  const labelledImages = new Set(
+    await byLabel(["images", "--no-trunc"], [`${PREFIX}.template`, `${PREFIX}.snapshot`, PREFIX]),
+  );
+  const images = lines(await docker(["images", "--no-trunc", "--format", "{{.ID}}\t{{.Repository}}\t{{.Tag}}"]))
+    .map((line) => line.split("\t"))
+    .flatMap(([id = "", repo = "", tag = ""]) => {
+      if (repo.startsWith(`${PREFIX}-`) && tag !== "<none>") return [`${repo}:${tag}`];
+      if (repo === "<none>" && labelledImages.has(id)) return [id];
+      return [];
+    });
   const volumes = [
     ...(await byLabel(["volume", "ls"], [`${PREFIX}.volume`, `${PREFIX}.checkpoint`, `${PREFIX}.internal`])),
     ...lines(await docker(["volume", "ls", "--format", "{{.Name}}"])).filter((name) => name.startsWith(`${PREFIX}-`)),
@@ -220,7 +228,7 @@ async function ownResources() {
 async function sweep(): Promise<void> {
   const found = await ownResources();
   if (found.containers.length > 0) await docker(["rm", "-f", ...found.containers]);
-  if (found.images.length > 0) await docker(["rmi", "-f", ...found.images]);
+  if (found.images.length > 0) await docker(["rmi", ...found.images]);
   if (found.volumes.length > 0) await docker(["volume", "rm", ...found.volumes]);
   for (const network of found.networks) await docker(["network", "rm", network]);
 
@@ -588,6 +596,35 @@ async function captureAll(base: string, key: string, demo: Demo): Promise<void> 
   if (errors.length > 0) throw new Error(`the console raised errors:\n${errors.join("\n")}`);
 }
 
+/** Shrinks the published PNGs with pngquant, when it is installed, so each new capture adds little to the repository. */
+async function compress(dir: string): Promise<void> {
+  const pngquant = Bun.which("pngquant");
+  if (!pngquant) {
+    console.warn("[screenshots] pngquant is not installed; the published images are not compressed");
+    return;
+  }
+  for (const language of LANGUAGES) {
+    for (const screen of PUBLISHED) {
+      for (const theme of THEMES) {
+        const file = join(dir, language.code, `${screen}-${theme}.png`);
+        const proc = Bun.spawn([
+          pngquant,
+          "--quality=80-95",
+          "--speed=1",
+          "--strip",
+          "--force",
+          "--output",
+          file,
+          file,
+        ]);
+        const code = await proc.exited;
+        // 98 and 99 mean the result would be larger or below the quality floor; the original stays.
+        if (code !== 0 && code !== 98 && code !== 99) throw new Error(`pngquant failed on ${file} with ${code}`);
+      }
+    }
+  }
+}
+
 async function publish(): Promise<void> {
   await rm(PUBLISH_DIR, { recursive: true, force: true });
   for (const language of LANGUAGES) {
@@ -600,6 +637,7 @@ async function publish(): Promise<void> {
       }
     }
   }
+  await compress(PUBLISH_DIR);
   console.log(`[screenshots] published ${PUBLISHED.join(", ")} to docs/screenshots`);
 }
 

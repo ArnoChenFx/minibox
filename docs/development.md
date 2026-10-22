@@ -93,7 +93,7 @@ bun run openapi
 
 `bun run screenshots` captures the console for the README, the homepage and the docs. Run it by hand before a release. CI does not run it.
 
-The script starts its own MiniBox server, with a temporary data directory, a free port, the label prefix `minibox-demo` and its own Docker network. It seeds fixed demo content and captures 14 screens in light and dark, in English and Simplified Chinese, into `dist/screenshots/`. It publishes the overview, the box list and the box terminal to `docs/screenshots/en/` and `docs/screenshots/zh-CN/`. The host name in the captures is `workstation`, and the version comes from `package.json`.
+The script starts its own MiniBox server, with a temporary data directory, a free port, the label prefix `minibox-demo` and its own Docker network. It seeds fixed demo content and captures 14 screens in light and dark, in English and Simplified Chinese, into `dist/screenshots/`. It publishes the overview, the box list and the box terminal to `docs/screenshots/en/` and `docs/screenshots/zh-CN/`. When `pngquant` is installed, it compresses the published images. The host name in the captures is `workstation`, and the version comes from `package.json`.
 
 The run removes the containers, images, volumes and networks it created, and its data directory, even when a capture fails. The first run builds the base template, which takes a few minutes.
 

@@ -5,14 +5,9 @@
 ## [Unreleased]
 
 ### 亮点
-- **检查点导出与导入**：把检查点封装为口令保护的 `.mbckpt` 包，在本机或其他宿主机上导入。
-- **定时检查点与时区**：按固定间隔或每天固定时间自动拍摄检查点，每天的时间按所选时区计算。
-- **文件浏览器**：在 Box 的「文件」标签页中浏览、预览、上传和下载卷中的文件，并可新建文件夹、重命名和删除；Box 停止时也可使用。
-- **宿主机 Agent**：宿主机上运行 `minibox-agent`，用一次性配对码主动连接 MiniBox，无需开放端口或 SSH。
-- **声明式模板**：可从 Dockerfile、Git 代码仓库、构建上下文压缩包或 `devcontainer.json`（支持子集）构建模板；创建 Box 时还可把代码仓库克隆到 `/workspace`。
-- **启动命令**：每次启动 Box 时运行一条命令，在 `minibox-init` tmux 会话中进行，不会阻塞 Box 启动。
-- **事件通知**：把内存耗尽、命令失败、检查点失败、即将休眠或停止、会话被接管与宿主机离线等事件发送到 Webhook、ntfy 主题或 Telegram 聊天。
-- **测试提速**：测试套件更稳定、更快；计时测试改用假时钟，CI 摘要显示每个文件的耗时，本地可用 `bun run check:quick`。
+- **声明式模板**：从 Dockerfile、Git 代码仓库、构建上下文压缩包或 `devcontainer.json`（支持子集）构建模板，创建 Box 时可把代码仓库克隆到 `/workspace`。
+- **启动命令**：Box 每次启动时在 `minibox-init` tmux 会话中运行一条命令，不阻塞启动。
+- **事件通知**：把内存耗尽、命令失败、检查点失败、宿主机离线等事件发送到 Webhook、ntfy 主题或 Telegram 聊天。
 
 ### 新增
 - 声明式模板与镜像拉取：可从粘贴的 Dockerfile、Git 代码仓库（可选分支与子目录）、构建上下文压缩包 URL 或仓库中的 `devcontainer.json` 构建模板（`POST /api/templates`，任务），构建失败不留下模板；`POST /api/templates/:ref/rebuild` 按同一来源重新构建，成功后才替换镜像；`POST /api/images/pull` 按需拉取镜像；`POST /api/boxes` 的 `repo` 可在首次创建时把代码仓库克隆到 `/workspace`，私有仓库使用密钥。构建、重新构建与拉取仅限所有者（Refs #15）
@@ -23,6 +18,8 @@
 
 ### 文档
 - 新增通知指南（`docs/user-guide/notifications.md`，并提供 `docs/zh-CN/` 中文版本），并在设置、配置、API、MCP、数据目录、备份与安全文档中补充通知相关内容。
+- README、项目主页与文档的截图换成中英文、浅色与深色版本，由新脚本 `bun run screenshots` 在隔离的实例中生成（[#125](https://github.com/ArnoChenFx/minibox/issues/125)）。
+- 升级文档新增 1.0 之前的兼容性说明，并汇总 0.4 以来需要手动处理的升级步骤。
 
 ## [0.4.1] - 2026-10-23
 
