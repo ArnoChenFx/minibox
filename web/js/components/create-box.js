@@ -6,6 +6,7 @@ import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoices } from "../lib/mounts.js";
+import { STARTUP_COMMAND_MAX_BYTES, startupProblem, startupProblemKey } from "../lib/startup.js";
 import { getTemplates, hostNow, refreshHost } from "../lib/store.js";
 import { filterTools, groupTools } from "../lib/tool-list.js";
 import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
@@ -175,6 +176,12 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         </div>
       </details>`;
 
+  const startupSection = `<div class="field" id="cbStartupField">
+          <label class="label" for="cbStartup">${t("cb.startup")}</label>
+          <textarea class="textarea command-input" id="cbStartup" rows="2" spellcheck="false" placeholder="${esc(t("cb.startupPlaceholder"))}"></textarea>
+          <div class="help">${t("cb.startupHelp")}</div>
+          <div class="error-text" id="cbStartupErr"></div></div>`;
+
   const { root, close } = openDialog({
     title: snapshot ? t("cb.titleSnapshot") : t("cb.title"),
     description: t("cb.desc"),
@@ -208,6 +215,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
               `<button type="button" class="seg" data-profile="${p}" aria-pressed="${p === state.profile}"><strong>${t(`profile.${p}`)}</strong><span>${t(`profile.${p}Hint`)}</span></button>`,
           ).join("")}</div>
           <div class="help">${t("cb.profileHelp")}</div></div>
+        ${startupSection}
       </details>${toolsSection}${volumesSection}${envSection}`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
@@ -318,6 +326,15 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbEnv").open = true;
     q("#cbEnvErr").textContent = message;
   };
+
+  const showStartupError = (message) => {
+    q("#cbAdvanced").open = true;
+    q("#cbStartupErr").textContent = message;
+  };
+
+  q("#cbStartup").addEventListener("input", () => {
+    q("#cbStartupErr").textContent = "";
+  });
 
   const refreshMounts = () => {
     if (!choices) return;
@@ -462,6 +479,14 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       }
       env = checked.env;
     }
+    const startupCommand = q("#cbStartup").value.trim() === "" ? undefined : q("#cbStartup").value;
+    if (startupCommand !== undefined) {
+      const problem = startupProblem(startupCommand);
+      if (problem) {
+        showStartupError(t(startupProblemKey(problem), { max: STARTUP_COMMAND_MAX_BYTES }));
+        return;
+      }
+    }
     const btn = q("#cbSubmit");
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
@@ -471,6 +496,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       if (hostPick) body.host = hostPick.value;
       if (mounts) body.mounts = mounts;
       if (env?.length) body.env = env;
+      if (startupCommand !== undefined) body.startupCommand = startupCommand;
       const selectedToolIds = [...selectedTools];
       if (selectedToolIds.length) body.tools = selectedToolIds;
       const res = snapshot
@@ -496,6 +522,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         showVolumeError(e.message);
       } else if (!snapshot && (e.details?.field === "env" || isEnvErrorKey(e.key))) {
         showEnvError(`${e.message}${e.hint ? ` ${e.hint}` : ""}`);
+      } else if (e.details?.field === "startupCommand" || e.key === "startup_command_forbidden") {
+        showStartupError(e.message);
       } else if (e.details?.field === "name") {
         q("#cbName").classList.add("invalid");
         q("#cbNameErr").textContent = e.message;

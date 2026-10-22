@@ -6,6 +6,7 @@ import { deleteCustomTool, openCustomToolDialog } from "../components/custom-too
 import { mountEnvCard } from "../components/env-card.js";
 import { openSaveTemplate } from "../components/save-template.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
+import { mountStartupCard } from "../components/startup-card.js";
 import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
@@ -548,8 +549,9 @@ function toolRow(tool, isCustom) {
 
 const TAB_RENDER = {
   overview(root, { box, onChange }) {
-    root.innerHTML = `<div id="ovMain"></div><div id="ovEnv"></div><div id="ovMounts"></div>`;
+    root.innerHTML = `<div id="ovMain"></div><div id="ovEnv"></div><div id="ovStartup"></div><div id="ovMounts"></div>`;
     const env = mountEnvCard(root.querySelector("#ovEnv"), { box });
+    const startup = mountStartupCard(root.querySelector("#ovStartup"), { box });
     const draw = () => {
       const b = box();
       const s = b.stats;
@@ -592,10 +594,12 @@ const TAB_RENDER = {
     const off = onChange(() => {
       draw();
       env.onBoxChange();
+      startup.onBoxChange();
     });
     return () => {
       off();
       env.dispose();
+      startup.dispose();
     };
   },
 
