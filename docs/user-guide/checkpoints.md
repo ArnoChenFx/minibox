@@ -84,7 +84,7 @@ To import a package:
 
 1. On the **Checkpoints** tab of a box, click **Import**.
 2. Choose the **Package file**, a `.mbckpt` file, and type the **Passphrase** it was sealed with. If this instance has more than one host, choose the **Host** to import onto.
-3. Click **Import**. The import runs as a task. When it finishes, the checkpoint is in the list.
+3. Click **Import**. The import runs as a task. When it finishes, the checkpoint can be forked. It is listed on this tab only when this box is the one it was taken from, as described below.
 
 A wrong passphrase fails the import, and the package stays, so you can try again until it expires. A checkpoint whose id already exists on the instance is not imported, and nothing there changes.
 
@@ -105,7 +105,7 @@ The tab then shows the schedule with its **Next run** and **Last run**. The last
 
 A scheduled checkpoint is taken while the box keeps running, like a **Live** checkpoint. It is not pinned, and it counts as automatic, so the retention policy keeps or removes it in the same way as the checkpoints MiniBox takes before a rollback.
 
-MiniBox never wakes or starts a box for a schedule. A stopped or sleeping box is skipped. A run is also skipped while the checkpoint repository is at its limit, until space is freed. If the box has been deleted, its schedule is removed. A failed run records its error. While a host is offline, its schedules wait for it to come back.
+MiniBox never wakes or starts a box for a schedule. A stopped or sleeping box is skipped, and a scheduled checkpoint does not count as activity, so it never keeps an idle box from sleeping. A box moved to another host keeps its schedule, and the next run is taken on the new host. A run is also skipped while the checkpoint repository is at its limit, until space is freed. If the box has been deleted, its schedule is removed. A failed run records its error. While a host is offline, its schedules wait for it to come back.
 
 Schedules are checked every minute, and they are kept on the instance, so they survive a restart. A run that fell due while the server was down happens once after the server starts, within about a minute. An every-hours schedule keeps to its original times, so a late run does not move the later ones. A daily schedule runs at its next time.
 

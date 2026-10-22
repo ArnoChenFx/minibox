@@ -227,8 +227,12 @@ export function importFormHtml({ hosts, host }) {
             .join("")}</select>
           <div class="help">${esc(t("ck.importHostHelp"))}</div></div>`
       : "";
-  return `<div class="field"><label class="label" for="ckImportFile">${esc(t("ck.importFile"))}</label>
-      <input class="input" id="ckImportFile" type="file" accept=".mbckpt" />
+  return `<div class="field"><span class="label">${esc(t("ck.importFile"))}</span>
+      <div class="file-pick">
+        <input class="sr-only" id="ckImportFile" type="file" accept=".mbckpt" tabindex="-1" />
+        <button type="button" class="btn btn-sm" id="ckImportPick">${icon("upload")}${esc(t("ck.importChoose"))}</button>
+        <span class="file-pick-name" id="ckImportFileName">${esc(t("ck.importNoneChosen"))}</span>
+      </div>
       <div class="help">${esc(t("ck.importFileHelp"))}</div></div>
     <div class="field"><label class="label" for="ckImportPass">${esc(t("ck.passphrase"))}</label>
       <input class="input mono" id="ckImportPass" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" /></div>
@@ -258,6 +262,14 @@ export function importCheckpoint() {
     const hostInput = root.querySelector("#ckImportHost");
     const ok = root.querySelector("#ckImportOk");
     const err = root.querySelector("#ckImportErr");
+    const pick = root.querySelector("#ckImportPick");
+    const fileName = root.querySelector("#ckImportFileName");
+    pick.addEventListener("click", () => file.click());
+    file.addEventListener("change", () => {
+      const chosen = file.files?.[0];
+      fileName.textContent = chosen ? `${chosen.name} · ${bytes(chosen.size)}` : t("ck.importNoneChosen");
+      fileName.classList.toggle("chosen", Boolean(chosen));
+    });
     const run = async () => {
       err.textContent = "";
       if (!uploaded && !file.files?.[0]) {
@@ -273,6 +285,7 @@ export function importCheckpoint() {
           const { package: stored } = await api("/api/packages", { method: "POST", body: file.files[0] });
           uploaded = stored;
           file.disabled = true;
+          pick.disabled = true;
         }
         const body = { passphrase: pass.value, ...(hostInput ? { host: hostInput.value } : {}) };
         const started = await api(`/api/packages/${enc(uploaded.id)}/import`, { method: "POST", body });
@@ -342,7 +355,7 @@ export function scheduleFormHtml(schedule) {
       <input class="input" id="ckHours" type="number" min="${SCHEDULE_HOURS.min}" max="${SCHEDULE_HOURS.max}" step="1" inputmode="numeric" value="${esc(schedule?.everyHours ?? 6)}" />
       <div class="help">${esc(t("ck.scheduleHoursHelp"))}</div></div>
     <div class="field${mode === "interval" ? " hidden" : ""}" data-field="daily"><label class="label" for="ckAt">${esc(t("ck.scheduleTime"))}</label>
-      <input class="input" id="ckAt" type="time" value="${esc(schedule?.at ?? "02:00")}" />
+      <input class="input mono" id="ckAt" type="text" inputmode="numeric" maxlength="5" placeholder="02:30" autocomplete="off" spellcheck="false" value="${esc(schedule?.at ?? "02:00")}" />
       <div class="help">${esc(t("ck.scheduleTimeHelp"))}</div></div>
     <div class="error-text" id="ckScheduleErr"></div>
     ${callout("info", t("ck.scheduleHelp"))}`;
@@ -375,7 +388,7 @@ function askSchedule(schedule) {
     root.querySelector("#ckScheduleOk").addEventListener("click", () => {
       const body = scheduleBody(mode, {
         hours: root.querySelector("#ckHours").value,
-        at: root.querySelector("#ckAt").value,
+        at: root.querySelector("#ckAt").value.trim(),
       });
       err.textContent = body ? "" : t("ck.scheduleInvalid");
       if (!body) return;

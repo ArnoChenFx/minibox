@@ -334,9 +334,15 @@ async function resumeStep(
 /**
  * Runs `fn` under the box's power lock, and holds the box awake while it runs, so the idle watcher cannot sleep it and
  * its end counts as activity (#12). The box is read again under the lock, so a change made while this call waited is seen.
+ * `quiet` keeps the hold but does not count its end as activity, for work the scheduler starts on its own.
  */
-export async function underBox<T>(host: HostCtx, boxId: string, fn: (box: Box) => Promise<T>): Promise<T> {
-  const release = host.pulse.hold(boxId);
+export async function underBox<T>(
+  host: HostCtx,
+  boxId: string,
+  fn: (box: Box) => Promise<T>,
+  opts: { quiet?: boolean } = {},
+): Promise<T> {
+  const release = host.pulse.hold(boxId, opts);
   try {
     return await locked(host, boxId, fn);
   } finally {
@@ -423,11 +429,12 @@ export async function backupBox(
   createdBy: string | null,
   progress?: Progress,
   auto = false,
+  opts: { quiet?: boolean } = {},
 ): Promise<CheckpointView> {
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
   const layers = planLayers(host, spec, input.include.volumes);
-  const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume));
+  const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume, opts));
   try {
     return await writeCheckpoint(host, box, spec, layers, input, createdBy, auto, progress);
   } finally {

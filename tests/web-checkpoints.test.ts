@@ -577,6 +577,10 @@ describe("export and import controls", () => {
     expect(markup.card).toContain('data-action="ck-import"');
     expect(markup.card).toContain('data-action="ck-take"');
     expect(markup.importMulti).toContain('accept=".mbckpt"');
+    // The native file input is hidden; a styled button opens it and the chosen name is shown beside it.
+    expect(markup.importMulti).toContain('class="sr-only" id="ckImportFile" type="file"');
+    expect(markup.importMulti).toContain('id="ckImportPick"');
+    expect(markup.importMulti).toContain(escaped(en["ck.importNoneChosen"] ?? ""));
   });
 
   test("the host of an import is chosen only where there is more than one host, and defaults to the host given", () => {
@@ -620,7 +624,9 @@ describe("checkpoint schedule", () => {
     expect(html).toContain('data-mode="interval" aria-pressed="true"');
     expect(html).toContain('data-mode="daily" aria-pressed="false"');
     expect(html).toContain('data-field="interval"');
-    expect(html).toContain('type="time"');
+    // A custom-styled text field, not the browser's native time picker.
+    expect(html).toContain('id="ckAt" type="text"');
+    expect(html).not.toContain('type="time"');
     expect(html).toMatch(/<div class="field hidden" data-field="daily">/);
   });
 });

@@ -1,5 +1,5 @@
 import type { Caller } from "../auth";
-import { PACKAGE_EXTENSION } from "../checkpoints/package";
+import { PACKAGE_EXTENSION, packageTooLarge } from "../checkpoints/package";
 import { AppError, toAppError } from "../lib/errors";
 import { json } from "../lib/http";
 import { msg } from "../lib/messages";
@@ -28,6 +28,8 @@ async function uploadPackage(ctx: RouteCtx): Promise<Response> {
   const source = sourceOf(caller);
   const declared = req.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
   if (declared !== OCTET_STREAM) throw new AppError(415, "unsupported_media_type", msg("package_upload_type"));
+  const length = Number(req.headers.get("content-length") ?? 0);
+  if (length > host.checkpoints.packages.maxBytes) throw packageTooLarge(host.checkpoints.packages.maxBytes);
   // A large upload can outlast the server's idle cap, so this request has no idle timer, as a download does.
   server.timeout(req, 0);
   try {

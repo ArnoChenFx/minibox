@@ -18,7 +18,7 @@ import { accessKeyPath } from "./data-dir";
 import type { Source } from "./events/types";
 import { guardRequest } from "./guard";
 import { AppError, badRequest } from "./lib/errors";
-import { errorResponse, withSecurityHeaders } from "./lib/http";
+import { assertBodyAllowed, errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
 import { handleMcp } from "./mcp/http";
@@ -146,8 +146,9 @@ export function startServer(app: App): Server<SocketData> {
   return Bun.serve<SocketData>({
     hostname: app.cfg.host,
     port: app.cfg.port,
-    // Bun refuses a larger body before any route runs. Packages are the only body this large. The slack keeps a package
-    // a little over its limit on the package check, which answers with its JSON error, not Bun's plain one.
+    // Bun refuses a larger body before any route runs. Packages are the only body this large: every other route keeps the
+    // 128 MiB ceiling (assertBodyAllowed, readBodyText, and the preview proxy's limitedBody). The slack keeps a package a
+    // little over its limit on the package check, which answers with its JSON error, not Bun's plain one.
     maxRequestBodySize: app.cfg.checkpointPackageMaxMb * MB + PACKAGE_BODY_SLACK_BYTES,
     // Bun's idle timer is a hard cap measured from the start of the request, in 4-second steps, and writes do not
     // extend it. A handler that stays silent for longer than this is reset. Long work returns 202 and keeps running;
@@ -160,6 +161,7 @@ export function startServer(app: App): Server<SocketData> {
       let res: Response | undefined;
       try {
         guardRequest(req, app.cfg);
+        assertBodyAllowed(req, url.pathname);
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           const caller = await callerOf(app, req, server);

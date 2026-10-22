@@ -191,6 +191,18 @@ describe("checkpoint schedules over the scheduler", () => {
     expect(notes).toEqual([{ source: "scheduler", op: "checkpoint.scheduled", status: "ok" }]);
   });
 
+  test("a scheduled checkpoint is not activity: the box's idle clock is where it was, and no hold is left", async () => {
+    const box = await makeBox("idle");
+    await setSchedule(host, box.boxId, rule({ everyHours: 1 }), "owner", clock);
+    const before = host.pulse.lastAt(box.boxId);
+    advance(HOUR);
+
+    expect(await scheduler.run()).toEqual([box.boxId]);
+    expect(host.checkpoints.list()).toHaveLength(1);
+    expect(host.pulse.lastAt(box.boxId)).toBe(before);
+    expect(host.pulse.isHeld(box.boxId)).toBe(false);
+  });
+
   test("a stopped box is skipped: nothing is taken, the box stays stopped, and the skip is the last run", async () => {
     const box = await makeBox("beta");
     await boxes.stopBox(host, box.boxId);

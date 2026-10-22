@@ -357,7 +357,32 @@ describe("uploading a package", () => {
     const reply = await upload(harness, new Uint8Array((3 * MB) / 2));
     expect(refused(reply)).toEqual({ status: 413, key: "package_too_large" });
     expect(packagesOf(harness).list()).toEqual([]);
-    expect(readdirSync(packagesOf(harness).dir()).filter((name) => name.endsWith(PACKAGE_EXTENSION))).toEqual([]);
+    const dir = packagesOf(harness).dir();
+    expect(existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(PACKAGE_EXTENSION)) : []).toEqual([]);
+  });
+
+  test("a streamed upload with no declared length is cut at the size limit as it arrives, and leaves no file", async () => {
+    const harness = open({ checkpointPackageMaxMb: 1 });
+    const chunk = new Uint8Array(256 * 1024);
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 6) return controller.close();
+        sent += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const res = await fetch(`${harness.base}/api/packages`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TEST_KEY}`, "content-type": "application/octet-stream" },
+      body,
+    });
+    const reply: Reply = { status: res.status, json: (await res.json()) as Body, headers: res.headers };
+    // The scanner refuses the zero blocks first or the counter refuses the length; either way nothing is stored.
+    expect([400, 413]).toContain(reply.status);
+    expect(packagesOf(harness).list()).toEqual([]);
+    const dir = packagesOf(harness).dir();
+    expect(existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(PACKAGE_EXTENSION)) : []).toEqual([]);
   });
 
   test("bytes that are not a package are refused with package_invalid, and leave no file", async () => {

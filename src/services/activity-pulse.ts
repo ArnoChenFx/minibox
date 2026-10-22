@@ -13,9 +13,10 @@ export class ActivityPulse {
 
   /**
    * Keeps a box from idle sleep until the returned release is called. Use it for work that outlives the idle window,
-   * such as a preview response still streaming. Release counts as activity, so the idle clock starts from there.
+   * such as a preview response still streaming. Release counts as activity, so the idle clock starts from there, unless
+   * `quiet` is set: background work nobody asked for, such as a scheduled checkpoint, must not keep an idle box awake.
    */
-  hold(boxId: string): () => void {
+  hold(boxId: string, { quiet = false }: { quiet?: boolean } = {}): () => void {
     this.holds.set(boxId, (this.holds.get(boxId) ?? 0) + 1);
     let released = false;
     return () => {
@@ -24,7 +25,7 @@ export class ActivityPulse {
       const left = (this.holds.get(boxId) ?? 1) - 1;
       if (left > 0) this.holds.set(boxId, left);
       else this.holds.delete(boxId);
-      this.touch(boxId);
+      if (!quiet) this.touch(boxId);
     };
   }
 

@@ -52,20 +52,29 @@ export class CheckpointScheduler {
     this.timer = undefined;
   }
 
-  /** One pass at `now`. Returns the ids of the boxes whose schedule was due and ran. A pass already running returns none. */
+  /**
+   * One pass at `now`. Returns the ids of the boxes whose schedule was due and ran. A pass already running returns none.
+   * A schedule runs on the host its box lives on now, so a box moved to another host (#107) keeps its schedule there.
+   */
   async run(now = this.clock()): Promise<string[]> {
     if (this.passing) return [];
     this.passing = true;
     const ran: string[] = [];
     try {
-      for (const host of this.hosts.list()) {
-        if (host.host.transport !== "local" && host.host.status !== "online") continue;
-        for (const schedule of host.checkpoints.schedules()) {
-          if (schedule.hostId !== host.host.id) continue;
-          if (!host.specs.read(schedule.boxId)) {
-            await this.drop(host, schedule.boxId);
+      const hosts = this.hosts.list();
+      const seen = new Set<string>();
+      for (const store of hosts) {
+        for (const schedule of store.checkpoints.schedules()) {
+          if (seen.has(schedule.boxId)) continue;
+          seen.add(schedule.boxId);
+          const spec = store.specs.read(schedule.boxId);
+          if (!spec) {
+            await this.drop(store, schedule.boxId);
             continue;
           }
+          const host = hosts.find((item) => item.host.id === spec.hostId);
+          if (!host) continue;
+          if (host.host.transport !== "local" && host.host.status !== "online") continue;
           if (!isDue(schedule, now)) continue;
           ran.push(schedule.boxId);
           await this.runOne(host, schedule).catch((e: unknown) => {
@@ -105,6 +114,7 @@ export class CheckpointScheduler {
       const replaced = current.updatedAt !== schedule.updatedAt;
       host.checkpoints.writeSchedule({
         ...current,
+        hostId: host.host.id,
         nextRunAt: replaced ? current.nextRunAt : nextRunAfterRun(current, finished).toISOString(),
         lastRun: run,
       });
@@ -114,7 +124,8 @@ export class CheckpointScheduler {
 
   private async attempt(host: HostCtx, boxId: string): Promise<Outcome> {
     try {
-      return await underBox(host, boxId, (box) => this.take(host, box));
+      // Quiet: a scheduled checkpoint is not activity, so it never keeps an idle box from sleeping (#12).
+      return await underBox(host, boxId, (box) => this.take(host, box), { quiet: true });
     } catch (e) {
       if (e instanceof AppError && e.status === 404) return skipped("gone");
       return { status: "failed", reason: null, checkpointId: null, error: messageOf(e) };
@@ -142,6 +153,7 @@ export class CheckpointScheduler {
       null,
       undefined,
       true,
+      { quiet: true },
     );
     return { status: "ok", reason: null, checkpointId: checkpoint.id, error: null };
   }

@@ -1928,6 +1928,26 @@ input[type="range"] {
   gap: 8px;
   font-size: 13px;
 }
+.file-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.file-pick .btn {
+  flex: none;
+}
+.file-pick-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.file-pick-name.chosen {
+  color: var(--text);
+}
 .ck-schedule-actions {
   display: flex;
   flex-wrap: wrap;

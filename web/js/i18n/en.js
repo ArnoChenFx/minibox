@@ -1100,6 +1100,8 @@ export default {
   "ck.importFileHelp": "A .mbckpt file, as exported from a MiniBox instance.",
   "ck.importHostHelp":
     "The checkpoint is imported onto this host. Forking it there needs the template it was taken from.",
+  "ck.importChoose": "Choose file",
+  "ck.importNoneChosen": "No file chosen",
   "ck.importNoFile": "Choose a package file.",
   "ck.importConfirm": "Import",
   "ck.imported": "Checkpoint imported",
@@ -1129,7 +1131,7 @@ export default {
   "ck.scheduleDesc": "Takes a checkpoint of this box in the background, on the server's clock.",
   "ck.scheduleWhen": "When",
   "ck.scheduleModeEvery": "Every few hours",
-  "ck.scheduleModeEveryHint": "Runs this many hours after the last run.",
+  "ck.scheduleModeEveryHint": "Runs every set number of hours, counted from when you save it.",
   "ck.scheduleModeDaily": "Once a day",
   "ck.scheduleModeDailyHint": "Runs at the same time every day.",
   "ck.scheduleHours": "Hours",
