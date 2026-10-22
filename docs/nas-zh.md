@@ -4,7 +4,7 @@
 
 本文针对这样的部署：NAS 或一台 Linux 存储服务器存放 Box 的数据，另一台机器运行 MiniBox 和 Docker。MiniBox 通过 Docker 的 `local` 卷驱动挂载 NFS 导出目录，真正的 NFS 客户端是 Docker 宿主机的内核，MiniBox 自己不挂载任何东西。跟踪 issue：[#30](https://github.com/ArnoChenFx/minibox/issues/30)。
 
-标注**已测试**的步骤都在真实的 NFS 服务器上跑过：Debian 13 上的 NFS-Ganesha 6（用户态，VFS 后端），客户端是 Linux 6.12 内核，经 Docker 26 挂载。文中的挂载选项、文件属主结果和报错信息都来自这些测试。各家 NAS 的小节只是通用指引：不同型号和固件版本的菜单名称不一样，请以自己设备上的为准。
+标注**已测试**的步骤都在真实的 NFS 服务器上跑过。原指南的步骤跑在 Debian 13 上的 NFS-Ganesha 6（用户态，VFS 后端）上，客户端是 Linux 6.12 内核，经 Docker 26 挂载；存储修复的耗时和报错信息则是在 Ubuntu 24.04 上的 NFS-Ganesha 4.3、Linux 6.12 内核和 Docker 29.1.3 上重新测得的。文中的挂载选项、文件属主结果和报错信息都来自这两组测试。各家 NAS 的小节只是通用指引：不同型号和固件版本的菜单名称不一样，请以自己设备上的为准。
 
 ## 什么时候用 NFS
 
@@ -40,18 +40,19 @@ Box 以 `dev` 用户运行，uid **1000**，gid **1000**。Box 写的每个文�
 MiniBox 在 NFS 池上创建卷时，会在计算主机上起一个短生命周期的辅助容器，以 root 身份在导出目录里执行：
 
 1. `mkdir -p <导出目录>/<卷 id>`（例如 `vol_hakder7qn0`）；
-2. 对这个目录执行 `chown -R 1000:1000`。chown 失败时，辅助容器输出 `MINIBOX_CHOWN_SKIPPED`，MiniBox 记录 `volume.chown_skipped`，**卷照样创建成功**。
+2. 对这个目录执行 `chown -R 1000:1000`。chown 失败时，辅助容器输出 `MINIBOX_CHOWN_SKIPPED`，MiniBox 记录 `volume.chown_skipped`。
+3. 检查 uid 1000 能否写这个目录：以 1000:1000 身份在目录里创建并删除一个空文件。检查失败时，**卷不会被创建**。MiniBox 删除刚建的目录，创建请求返回 `502`，错误码 `bad_gateway`，消息键 `storage_unwritable`。
 
 能不能成功，取决于服务器怎样映射辅助容器的 root。各种 squash 方式的实测结果：
 
 | 服务器导出设置 | 导出目录属主 | 结果 |
 |---|---|---|
 | `all_squash,anonuid=1000,anongid=1000` | 1000:1000 | **可用，推荐。** 不管谁写，服务器上的文件都是 1000:1000。在 Box 里 `chown` 会返回成功，但什么也不改 |
-| `all_squash,anonuid=1000,anongid=1000` | root，权限 755 | 创建卷失败：`mkdir: cannot create directory '/mnt/vol_…': Permission denied`（`volume_prepare_failed`） |
+| `all_squash,anonuid=1000,anongid=1000` | root，权限 755 | 创建卷失败，返回 `502`、错误码 `bad_gateway`、消息键 `storage_permission_denied`：`mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
 | `root_squash,anonuid=1000,anongid=1000` | 1000:1000 | 可用。root 映射为 1000，`dev` 仍是 1000。Box 里的 root 写出来的文件也是 1000 |
 | `no_root_squash` | 任意 | 可用，辅助容器的 chown 能成功。但 Box 里的 root 在导出目录上就是真正的 root，只应在专用导出上这样设置 |
-| `root_squash`（匿名用户是 `nobody`） | 1000:1000，权限 755 | 创建卷失败，`Permission denied` |
-| `root_squash`（匿名用户是 `nobody`） | 权限 777 | 创建卷**成功**，但目录属于 `nobody`，chown 被跳过（`volume.chown_skipped`），`dev` 每次写入都是 `Permission denied`。不要这样配 |
+| `root_squash`（匿名用户是 `nobody`） | 1000:1000，权限 755 | 创建卷失败，`Permission denied`（`storage_permission_denied`） |
+| `root_squash`（匿名用户是 `nobody`） | 权限 777 | 创建卷失败，返回 `storage_unwritable`（`bad_gateway`）。目录属于 `nobody`，chown 被跳过，`dev` 无法写入。MiniBox 删除该目录，不创建卷。请改用 `root_squash,anonuid=1000,anongid=1000` |
 
 结论：把所有用户映射到 uid 1000，并且让导出目录本身属于 1000:1000。
 
@@ -200,10 +201,10 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 测试方法：停掉 NFS 服务器；另外用防火墙丢弃它的流量，模拟 NAS 断电。
 
 - 探测显示 `unreachable` 和挂载错误（服务器拒绝连接时是 `input/output error`，没有任何应答时是 `connection timed out`）。Box 列表和 Box 详情页会把受影响的 Box 标为「存储不可达」。
-- 在这个池上创建、启动、重启 Box，几秒内返回 `503`，错误码 `docker_unavailable`，消息键 `storage_unreachable`。什么都不会创建：没有容器，没有卷记录，本地磁盘的 `/var/lib/docker/volumes/<卷>/_data` 下也没有数据。
+- 在这个池上创建、启动、重启 Box，约 5 秒内返回 `503`，错误码 `docker_unavailable`，消息键 `storage_unreachable`。什么都不会创建：没有容器，没有卷记录，本地磁盘的 `/var/lib/docker/volumes/<卷>/_data` 下也没有数据。
 - 停止 Box 仍然可以。
-- **正在运行**的 Box 使用 `hard` 挂载时，任何访问 `/workspace` 或 `/home/dev` 的进程都会卡住直到服务器恢复，包括 MiniBox 的 `exec` 和终端。带 `timeoutSec` 的 `exec` 也要等服务器恢复才返回，见[已知问题](#已知问题)。
-- 同一台不可达服务器上有多个 NFS 池时，存储池页面的探测每个池要几秒；断网后的第一次探测超过了一分钟。
+- **正在运行**的 Box 使用 `hard` 挂载时，任何访问 `/workspace` 或 `/home/dev` 的进程都会卡住直到服务器恢复，包括 MiniBox 的 `exec` 和终端。前台的 `exec` 设了 `timeoutSec` 时，超时后最多 2 秒仍会返回，见[已知问题](#已知问题)。
+- 各个池并发探测。5 秒内没有完成探测的池会报告 `unreachable`，消息为 `no answer within 5 s`，因此即使多台 NFS 服务器都不可达，存储池页面也约 5 秒内返回。探测本身继续运行，结束时它的结果替换页面上显示的结果。
 - 服务器恢复后，卡住的进程继续运行，下一次探测显示 `reachable`，停止的 Box 可以重新启动，不需要重新挂载。
 
 NAS 维护（重启、升级固件）之前，先停掉使用它的 Box。
@@ -222,10 +223,11 @@ NAS 维护（重启、升级固件）之前，先停掉使用它的 Box。
 |---|---|---|
 | 池 `unreachable` | `… failed to mount local volume: … protocol not supported` | 选项里没写 `nfsvers=`，或者客户端内核不支持 NFSv3 却写了 `nfsvers=3`。加上 `nfsvers=4.1` |
 | 池 `unreachable` | `… input/output error` | 服务器没运行，或者 TCP 2049 上没有服务。启动 NFS 服务，检查防火墙 |
-| 池 `unreachable` | `… connection timed out` | 服务器地址错了，或者网络、防火墙丢弃了流量 |
+| 池 `unreachable` | `… connection timed out` | 服务器地址错了，或者网络、防火墙丢弃了流量。测试中，流量被丢弃的服务器约 2 秒就以这个报错失败 |
+| 池 `unreachable` | `no answer within 5 s` | 探测挂载 5 秒内没有完成，例如服务器被冻结（测试中用冻结的 NFS 服务器验证）。池在那一刻报告为不可达，探测继续运行。服务器应答后，探测结束，池显示 `reachable`。这期间发出的 `GET /api/pools?refresh=true` 会等待同一次探测，5 秒后返回同样的消息 |
 | 池 `unreachable` | `… no such file or directory` | 导出路径不存在，或者这个客户端没有权限。NFSv4 会隐藏客户端无权访问的导出，所以客户端限制看起来像路径错误。Linux `nfsd` 可能会报 `access denied by server` |
-| 创建 Box 失败 | `Could not prepare the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` | 被映射后的 uid 无法写导出根目录。把导出目录 `chown 1000:1000`，并使用 `all_squash,anonuid=1000,anongid=1000` |
-| Box 能启动，但 `dev` 无法写 `/workspace`，服务端日志里有 `volume.chown_skipped` | Box 里 `Permission denied`；服务器上 `vol_…` 目录属于 `nobody`（显示为 65534，Ganesha 上是 4294967294） | `root_squash` 映射到了 `nobody`。把导出改成 `all_squash,anonuid=1000,anongid=1000`，再在服务器上执行 `chown -R 1000:1000 <导出目录>/vol_…` |
+| 创建 Box 返回 `502`，错误码 `bad_gateway` | `存储池 nas 拒绝创建卷目录（权限不足）：mkdir: cannot create directory '/mnt/vol_…': Permission denied`（`storage_permission_denied`） | 被映射后的 uid 无法写导出根目录。使用 `all_squash,anonuid=1000,anongid=1000`（或 `root_squash,anonuid=1000,anongid=1000`），并把导出目录设为 1000:1000，然后重试。响应的 `hint` 会列出这些选项并链接本指南 |
+| 创建 Box 返回 `502`，错误码 `bad_gateway`；服务端日志里有 `volume.chown_skipped` | `uid 1000（Box 用户）无法写入新的卷目录 <服务器>:<导出目录>/vol_…，因此没有创建该卷：… Permission denied`（`storage_unwritable`） | `root_squash` 映射到了 `nobody`：新目录属于 `nobody`（显示为 65534，Ganesha 上是 4294967294），被压缩的 root 无法 chown。把导出改成 `all_squash,anonuid=1000,anongid=1000`（或 `root_squash,anonuid=1000,anongid=1000`）。已经存在、属于 `nobody` 的卷目录，可以在服务器上执行 `chown -R 1000:1000 <导出目录>/vol_…` 修复 |
 | 在 Box 里 `chown` 显示成功，但属主没变 | — | `all_squash` 下的正常现象：所有文件都属于匿名 uid |
 | Box 里报 `Stale file handle`，之后 `start` 失败并提示 `lstat …/_data: stale NFS file handle` | | 卷的目录在挂载期间被服务器端删除或替换了（例如从快照恢复到了新文件夹）。停掉 Box，把数据放回原位。测试中，直到在计算主机上清掉客户端缓存（`sync; echo 2 \| sudo tee /proc/sys/vm/drop_caches`）之后才能再次启动 |
 | Box 里的命令卡住 | — | `hard` 挂载且服务器不可达。让服务器恢复，进程会继续；急着结束的话可以停掉 Box |
@@ -235,10 +237,9 @@ NAS 维护（重启、升级固件）之前，先停掉使用它的 Box。
 
 写这篇文档的测试中发现：
 
-- `hard` 挂载卡住时，`exec`（以及前台 `exec` 的超时）无法结束：MiniBox 在 Box 里执行的终止命令以 Box 的工作目录 `/workspace` 启动，也会跟着卡住。服务器恢复后调用才返回。
-- `root_squash` 映射到 `nobody` 时，卷能创建成功，但 `dev` 无法写入，唯一的提示是 `volume.chown_skipped` 这条日志。
-- 导出目录上的权限错误会被报成 `400 validation_failed`，而不是存储错误。
-- 存储池是逐个探测的，有多个不可达的 NFS 池时，存储池页面会变慢。
+- 前台的 `exec` 设了 `timeoutSec` 时，即使 `hard` 挂载被冻结，超时后最多 2 秒调用也会返回。若终止仍未完成，调用返回 `status: running` 与 `timedOut: true`。MiniBox 在后台继续尝试终止进程，两次尝试之间依次等待 1、2、4 秒，以此类推，最多 30 秒。终止结束了进程时，exec 记为 `killed`；命令若先自行结束，则记为 `exited` 并保留它自己的退出码，`timedOut` 仍为 true。进程若仍卡在被冻结的挂载上，exec 会一直是 `running`，直到服务器恢复。测试中，卡在被冻结的 `hard` 挂载上的 `cat` 在 `timeoutSec` 为 3 秒时，3.2 秒后被终止，记为 `killed`；位于 `/workspace` 的 exec 在冻结期间于 5 秒时返回 `status: running`。服务器恢复后，一次测试中它记为 `killed`；另一次测试中它的 `touch` 先完成，记为 `exited`，退出码 0。
+- `timeoutSec` 不限制引擎自己启动 exec 的过程：超时从引擎启动进程之后才开始计算，启动若被阻塞，调用会等待它完成，不会被截断。测试中启动都立即返回，包括位于被冻结挂载上的 `/workspace` 中的 exec。
+- 服务器无应答期间，MiniBox 保留一个探测在等待该池的挂载。之后对该池的探测共用它，不会再另起一个。
 
 ## path 池
 

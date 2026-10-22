@@ -1,5 +1,5 @@
 import { api, enc } from "../lib/api.js";
-import { esc } from "../lib/dom.js";
+import { copyText, esc } from "../lib/dom.js";
 import { ENV_VALUE_MAX, SECRET_NAME_RE, validSecretValue } from "../lib/env.js";
 import { dateTime, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
@@ -364,7 +364,7 @@ function showTokenSecret(secret) {
   });
   root.querySelector("#stTokenCopy").addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(secret);
+      await copyText(secret);
       toast(t("st.tokenCopied"));
     } catch (e) {
       toastError(t("st.tokenCopy"), e);

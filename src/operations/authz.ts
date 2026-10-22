@@ -53,6 +53,15 @@ export async function assertCanAdministerPools(ctx: OperationContext): Promise<v
 }
 
 /**
+ * A custom entry becomes the install, upgrade and detect command of every later install, and its raw text is only
+ * visible to the owner. So only the owner may list, save or delete one, whatever token it holds.
+ */
+export async function assertCanAdministerCatalog(ctx: OperationContext): Promise<void> {
+  if (await allowed(ctx, "tool:custom")) return;
+  throw new AuthorizationDenied(new AppError(403, "forbidden", msg("tool_custom_forbidden")));
+}
+
+/**
  * Checks the mounts a create, update or rebuild asks for. A mount the box already has, with the same volume, path and
  * mode, is kept and is not checked again. Any other mount needs `volume:attach` on its volume, and a read-write one
  * also needs `volume:write`. A name with no record is a volume to create, so it needs `volume:write` either way.

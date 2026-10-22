@@ -7,11 +7,16 @@
 ### 新增
 - Box 的环境变量可以在创建时设置（创建对话框中默认折叠的「环境变量」），也可以在概览页编辑。保存通过重建完成，沿用预览与确认；普通值以掩码显示，可点击显示。`POST /api/boxes` 接受 `env`，最多 64 项。
 - 宿主机密钥：`GET /api/secrets`、`PUT /api/secrets/:name` 与 `DELETE /api/secrets/:name`，以及「设置」中的「密钥」卡片。环境变量的 `secretRef` 在创建与重建时注入容器；缺少的密钥返回 `400`（`env_secret_missing`），不会以空值启动。删除正在使用的密钥返回 `409` 并列出 Box，`force=true` 可强制删除。替换密钥的值在下一次重建时生效，启动不会读取它。
+- 盒子详情页新增「存为模板」：把 Box 的系统层（apt 与 sudo 安装的软件、系统文件的改动）保存为模板，并记录来源 Box。不包含 `/workspace` 与 home 卷，数据请使用检查点。接口为 `POST /api/boxes/:id/template`，MCP 工具为 `save_template`（`tools` 工具集），CLI 为 `template save`。权限与提升为模板相同；名称已存在时返回 `409`（#15）。
 
 ### 变更
 - `secretRef` 不再只存储：创建与重建时注入容器。升级前已保存的 `secretRef` 若没有对应密钥，之后的重建会返回 `400`，启动已停止的 Box 会返回 `409`。请先在「设置」中设置这些密钥。
 - 重建对话框的环境变量由 `NAME=value` 文本框改为逐行编辑。
 - 工具目录已不只包含 Agent CLI：控制台、API 说明、MCP 说明与 README 中的「Agent CLI 工具」统一改称「工具」（Tools），接口与 id 不变（#8）。
+- 侧边栏的「快照」并入「模板」：旧快照显示在模板页的「旧快照」折叠区域，可提升为模板、从它创建 Box 或删除。`#/snapshots` 会打开模板页。快照的 REST、MCP 与 CLI 接口保持不变，作为底层方式（#15）。
+- 登录页与 README 的说明统一为：检查点保存数据，模板保存环境（#15）。
+- 快照提升为模板时，若名称已被占用，`POST /api/snapshots/:ref/promote` 返回 `409`（`template_name_taken`），不再覆盖同名模板。
+- 任务面板更易读：桌面端加宽到约 900px，左侧每项显示操作、工具或模板名、Box 与相对时间，右侧标题显示操作、对象与 Box、状态、开始时间与用时。命令收在可展开的「命令」一行中并可复制；输出为 12px 等宽字体的深色区域，默认不换行、可切换自动换行，运行中自动跟随到底部，手动向上滚动后停止跟随。ANSI 颜色与粗体安全渲染，其他控制序列与 `\r` 重绘不再显示为乱码。任务接口新增 `subject` 字段，记录工具 id、模板或快照名（旧任务为空）。
 
 ### 文档
 - 新增 NAS / NFS 部署指南（[`docs/nas.md`](docs/nas.md)、[`docs/nas-zh.md`](docs/nas-zh.md)）：Linux `/etc/exports` 与群晖、威联通、TrueNAS SCALE、Unraid 的导出设置，squash 与 uid 1000 的映射，「添加 NFS」各字段与等价的 API，推荐挂载选项，服务器不可用时的行为，以及根据实测整理的故障排查表。步骤已在 NFS-Ganesha 上经 Docker 实际验证；README 的存储池一节加了入口（#30）。
@@ -27,7 +32,8 @@
 - 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
 
 ### 安全
-- 宿主机密钥只保存在 `DATA_DIR/secrets/env/<名称>`（权限 `600`）中，任何接口都不返回其值，日志、事件、审计、容器标签与规格也不含值。管理密钥只限所有者；令牌引用密钥需要 `secret:use`，只有 `admin` 预设具有该 scope。快照与带系统镜像的检查点在 Box 引用密钥时返回 `409`（`secret_in_image`），因为镜像会保存容器环境。
+- 宿主机密钥只保存在 `DATA_DIR/secrets/env/<名称>`（权限 `600`）中，任何接口都不返回其值，日志、事件、审计、容器标签与规格也不含值。管理密钥只限所有者；令牌引用密钥需要 `secret:use`，只有 `admin` 预设具有该 scope。快照、存为模板与带系统镜像的检查点在 Box 引用密钥时返回 `409`（`secret_in_image`），因为镜像会保存容器环境。
+- 快照与检查点不再保存 Box 设置的环境变量值：`docker commit` 会把容器的环境变量复制进镜像，此前由快照或检查点创建的 Box 能读到这些值。之后的提交会为每个已设置的名称写入空值（镜像自带该变量时保留镜像的值）。升级前制作的快照与检查点仍含原值，若其中有敏感信息，请删除它们。
 - 检查点仓库的密码以只读文件 `/run/secrets/repo.key` 交给 restic 辅助容器（`RESTIC_PASSWORD_FILE`），不进入环境变量或容器配置，`docker inspect` 看不到它（#11）。
 - Agent API 令牌与访问密钥分开（#13）。明文（`mbx_…`）只在创建时返回一次，`DATA_DIR/tokens.json` 只保存 SHA-256。scope 包括 `box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`。资源范围默认是该令牌创建的 Box（`created-by-me`），也可以指定 id、标签或全部 Box；卷必须显式列出；宿主机默认只有 `local`。预设为 `readonly`、`operator`、`sandboxed-agent` 与 `admin`。`sandboxed-agent` 默认最多 5 个 Box、合计 8 个 CPU 与 16384 MB、TTL 最长 4 小时、每分钟 60 次请求。超出配额返回 `403`（`quota_*`），速率超限返回 `429`。吊销立即生效；`DELETE /api/tokens/:id?deleteCreated=true` 同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。创建 Box 时若工作区卷已经存在，或更新挂载指向已有卷，缺少对该卷的 `volume:attach` 会返回 `403`。签发与吊销令牌只有所有者可以做，`admin` 预设不能签发令牌。更换 `ACCESS_KEY` 不会吊销这些令牌。审计日志会打码本进程内创建的令牌，以及形如 `mbx_` 再加至少 20 个字符的值。同一枚令牌也可以作为 `/mcp` 的 Bearer 使用，`tools/list` 与每次调用都受其 scope 约束；吊销会结束它的 MCP 会话、终端、事件流与任务流，并在 `failedBoxes` 中列出无法删除的 Box。TTL 到期后 Box 会停止、不删除（#12）。
 - 错误的 `Authorization: Bearer` 密钥计入登录限流：`/api/`、`/mcp` 与终端 WebSocket 和登录共用同一计数，超限后返回 `429`。正确的密钥不计入，也不会被拒绝。此前 Bearer 密钥的错误不受限制。
@@ -67,6 +73,7 @@
 - 接管锁不约束在箱内以 `dev` 运行的 `exec`：它与 tmux 服务器同属一个用户，可直接调用 `tmux send-keys` 或 `tmux kill-session`。README、README-zh 与 `docs/agents.md` 已说明这一边界（#14）。
 
 ### 新增
+- 自定义工具目录管理：所有者可在 Box 的「工具」页新增、编辑与删除自定义工具（`DATA_DIR/tools.d/<id>.json`，中英文界面）。新操作 `tool.custom.list`、`tool.custom.put`、`tool.custom.delete` 同时提供 REST（`/api/tools/custom`）、CLI（`minibox tool custom`）与 MCP（`list_custom_tools` 等）。条目包含安装、升级、卸载、检测命令与可选的停止命令（卸载前在 Box 内以 `dev` 执行）。保存前按加载器的规则校验，原子写入；覆盖内置 id 需要 `overrideBuiltin`；删除只移除文件，不卸载共享工具卷上的工具。令牌一律不能使用这些操作。
 - 检查点（Refs #11，第一部分）：`POST /api/boxes/:id/checkpoints` 为 Box 拍下检查点，默认包含工作区 `/workspace` 与主目录 `/home/dev` 两个自有卷。`include.system` 可把可写层提交为系统镜像，`include.volumes` 可加入 Box 已挂载的共享卷，缓存与共享工具卷永不包含。`consistency` 取 `live`（默认）、`pause` 或 `stop`。数据保存在 restic 仓库中（镜像 `restic/restic:0.18.1`，仓库卷 `minibox-checkpoints-local`，密码位于 `DATA_DIR/secrets/checkpoint-repo.key`），检查点记录保存在 `DATA_DIR/checkpoints/`。`POST /api/checkpoints/:id/fork` 从检查点派生新 Box，使用新卷，默认不复制主目录（`copyHome: false`）。`POST /api/boxes/:id/rollback` 需要 `If-Match`：数据恢复到新卷，Box 重建到这些卷上，原卷保留；没有 `confirm: true` 时返回 `409 confirmation_required` 与预览。新增 `GET /api/checkpoints`、`GET /api/checkpoints/:id`、`PATCH /api/checkpoints/:id`（置顶与标签）与 `DELETE /api/checkpoints/:id`，置顶的检查点不能删除。已有的系统快照以只读检查点的形式出现，可以派生与删除。令牌使用既有的 scope（`checkpoint:create`、`checkpoint:restore`、`box:write`）与资源范围。拍摄、派生与回滚期间 Box 保持唤醒，空闲休眠不会打断它们；休眠中的 Box 不会因检查点被唤醒。保留策略、回滚的确认与撤销、配额与控制台见下一条。
 - 检查点（#11，第二部分）：回滚改为先确认或撤销。回滚前的安全检查点以停止式拍摄，数据恢复到新卷并重建 Box 后，旧卷保留为待定状态：`POST /api/boxes/:id/rollback/confirm` 确认后删除旧卷，`POST /api/boxes/:id/rollback/undo` 撤销后重新挂载旧卷并删除恢复出的卷（回滚之后写入的数据丢失），`GET /api/boxes/:id/rollback` 查看待定的回滚。保留策略：自动检查点按 Box 保留最新的 `CHECKPOINT_KEEP_LAST` 个（默认 20），并删除超过 `CHECKPOINT_KEEP_DAYS` 天（默认 30）的，手动与置顶的从不自动删除。容量：`CHECKPOINT_CAPACITY_MB`（默认 0，不限）达到 80% 时记录告警并在界面提示，达到上限时拒绝新的自动检查点（回滚也因此被拒绝），手动拍摄仍可进行。令牌配额 `maxCheckpoints` 限制令牌拍摄的手动检查点合计，`sandboxed-agent` 默认 20。启动时解冻因检查点中断而暂停的容器。`GET /api/checkpoints/usage` 仅所有者可读。控制台的 Box 详情新增「检查点」标签页（中英文）。尚未实现：导入导出（含加密导出包）、定时检查点、单文件取回、MCP 工具、独立卷快照、重建前的检查点、按 Box 覆盖的保留策略与回收站。
 - 空闲自动休眠与按需唤醒（#12）：Box 空闲一段时间后自动停止（期望状态 `stopped`，原因 `idle`），容器与工作区卷保留。空闲时长由 `BOX_IDLE_TIMEOUT_SEC` 与每个 Box 的 `idleTimeoutSec` 决定，`0` 关闭休眠。活动包括终端的输入、输出与打开中的连接（无论由 MiniBox 还是箱内其它 tmux 客户端打开，如 `docker exec -it <box> tmux attach`）、exec、会话的启动 / 读取 / 发送、端口预览（含流式响应与预览 WebSocket）、卷上的文件调用（计入挂载该卷的每个 Box），以及箱内异步任务结束时；读取 Box 记录与统计不计入。exec 与 `session_start` 唤醒任何已停止的 Box；终端 WebSocket 与端口预览只唤醒休眠中的 Box，人为停止的 Box 仍返回 `409`。唤醒记入审计 `box.wake`。`ttlSec` 从创建时刻起算，到期后停止 Box（原因 `ttl`），已到期的 Box 不能被启动、重启、重建、唤醒、exec、会话、终端或预览再次启动（`409`，`box_ttl_expired`）。终端与预览会在所有已注册的 Docker 主机上查找 Box。控制台的终端页会说明休眠与 TTL 到期的原因，并可唤醒休眠中的 Box（中英文）。卷上的文件调用计入挂载该卷的每个 Box 的活动，但不启动已停止的 Box（#9、#12）。
@@ -113,6 +120,7 @@
 - 新增配置 `STREAM_MAX_CONNECTIONS`（默认 `256`）：同时打开的事件流、任务流与日志流上限，三者共用。超出时新连接返回 `429`，错误码为 `too_many_requests`，`key` 为 `stream_limit`，响应体给出上限。控制台按退避间隔重试，连接结束时名额即释放。README、README-zh 与 `.env.example` 均有说明（#17）。
 - SSH 访问：`ssh`、`scp`、`sftp` 与 `ssh -L` 经由 MiniBox 进入 Box，不发布宿主机端口。`GET /api/ssh/:box` 以 WebSocket 承载一条 SSH 连接，用户为 `dev` 或 Box id，其他用户名（包括 `root`）一律拒绝。访问密钥或令牌在握手时鉴权；令牌需要新增的 `box:ssh` 范围，默认拒绝，`operator` 与 `admin` 预设包含它，`sandboxed-agent` 不包含。与 `exec` 一样，它能在 Box 内执行命令并读写全部挂载。`-L` 只转发到 Box 内的回环地址，并需要 `port:expose`；`-R`、Unix 套接字转发、X11 与 agent 转发被拒绝并审计。停止或休眠的 Box 在连接时启动，打开的 SSH 连接让 Box 保持运行；停止（手动、空闲或 TTL）、删除或重建 Box 会断开它的 SSH 连接，TTL 已过的 Box 拒绝连接（`409 box_ttl_expired`）。连接、通道与断开都写入审计日志。每个 Box 最多 8 个连接，全局 64 个，每个连接 16 个通道。新增 `GET /api/ssh/host-key`，主机密钥保存在 `DATA_DIR/ssh_host_ed25519_key`。CLI 新增 `minibox ssh-proxy <box>` 与 `minibox ssh-config [--append]`，后者写入 `~/.ssh/config`、固定主机密钥，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600），ProxyCommand 无需导出环境变量。Box 详情页新增「SSH」按钮与对话框（中英文）。
 - CLI 随服务器分发（Refs #85）：`GET /cli/install.sh`（macOS 与 Linux）与 `GET /cli/install.ps1`（Windows）把 `minibox` 安装到 `~/.local/bin`（或 `MINIBOX_INSTALL_DIR`），不需要 sudo，并按 `GET /cli/checksums.txt` 校验；`GET /cli/minibox-<os>-<arch>` 提供 `linux-x64`、`linux-arm64`、`darwin-x64`、`darwin-arm64` 与 `windows-x64.exe` 五个二进制。这些路由公开只读，每个客户端每分钟最多 120 次请求。二进制在该版本的首次请求时由 `bun build --compile` 构建，缓存于 `DATA_DIR/cli`；与服务器不同的平台需要的 Bun 运行时（约 90 MB）从 npm 下载一次，无法访问 npm 时返回 `503` 与原因及替代方法（`HTTPS_PROXY`，或在源码目录执行 `bun run build:cli`）。`minibox --version` 输出构建该二进制所用的版本。`minibox <命令> --help` 把帮助输出到标准输出并以 0 退出；此前 `--help` 以 2 退出并输出到标准错误，无参数仍以 2 退出。`ssh-proxy` 发现服务器比 CLI 新时输出一行升级提示，`GET /api/ssh/:box` 的探测响应带 `x-minibox-version`。Box 页面的 SSH 对话框（中英文）第一步改为安装命令，并填入当前地址。
+- Windows 上的 SSH（Refs #85）：`minibox ssh-config` 以 `USERPROFILE` 作为用户目录；编译版 CLI 的 `ProxyCommand` 写入带引号的绝对路径（使用 `/`），`UserKnownHostsFile` 同样加引号；新增 `--url` 与 `--token`。`install.ps1` 把安装目录加入用户 PATH，并把已有的 `minibox.exe` 移为 `minibox.exe.old`；新文件无法运行时移回原处。Box 详情页的 SSH 对话框新增 PowerShell 步骤，每条命令都带复制按钮；长命令在空格处换行或横向滚动，不再从单词中间断开。
 - Agent CLI 工具（#8）：创建 Box 时可勾选，运行中的 Box 可在「工具」页安装、升级与卸载。目录按四组展示（AI 编程助手、语言与运行时、终端与开发工具、网络），创建对话框与「工具」页都带搜索框，可按名称、说明或分组过滤。目录内容见 `catalog/*.json`，每一项都从其官方来源安装。镜像或家目录里已有的工具显示为已安装并附版本，不会重复安装；升级与卸载只作用于 MiniBox 装在 tools 卷上的工具。
 - Tailscale 无需 root：目录条目以 `dev` 用户从官方静态包安装，并核对发布的 sha256，任一步失败即中止。`minibox-tailscale up` 以用户态网络模式（`--tun=userspace-networking`）在后台启动 `tailscaled`，状态保存在家目录的 `~/.local/state/tailscale`，然后打印登录链接。守护进程在 `localhost:1055` 提供 SOCKS5 与 HTTP 代理，访问 tailnet 主机的出站连接需经它（`ALL_PROXY=socks5h://localhost:1055`）。发往 Box tailnet IP 的入站 TCP 与 UDP 被转发到 Box 内的 `127.0.0.1`。没有 ICMP。Box 重启或唤醒后需重新执行 `minibox-tailscale up`。
 - 卸载前先停止守护进程：目录条目可声明 `stop` 命令，卸载时以 `dev` 在运行中的 Box 内执行。停止失败则工具保持已安装。
@@ -200,6 +208,10 @@
 - 基础模板等标签被重新指向新镜像后，以该标签创建的 Box 重建时，此前即使传入同一个模板名也返回 `rebuild_empty`，容器仍运行旧镜像；确认重建后规格仍记录旧摘要，Box 报告 `digest` 漂移。现在这类 Box 跟随标签：预览列出 `标签 (旧镜像短 ID) → 标签 (新镜像短 ID)` 的模板变更，确认后运行标签当前指向的镜像，`template.digest` 随之更新。快照 Box 与标签已删除的 Box 不跟随。
 - 镜像早于基础模板的 Box（缺少 `tmux`，或没有 `dev` 用户）启动会话时，此前显示引擎的原始错误（`docker_error`，或 `tmux failed: exit status 126`）。现在返回 `409` 与 `session_image_unsupported`，提示重新构建基础模板，并把该 Box 重建到新模板上。会话列表、启动与附着、终端错误帧都走同一映射。
 - 创建 Box，或重建到另一个镜像时，若模板的 `minibox.template.uid` 与 `minibox.template.gid` 标签给出的属主，与可写 `/workspace` 卷根目录的属主不同，启动前把根目录改为模板的属主（只改根目录，不递归）。此前已有内容的卷保留原来的 root 属主，`dev` 无法写入 `/workspace`。重建回滚时恢复原属主。只读挂载与不带属主标签的模板不做改动。
+- NFS 池上的 exec 超时不再等待冻结的挂载：终止命令、终端附着与 SSH 中继改在 `/` 下启动，终止命令的创建与启动限时 5 秒。前台 exec 超时后，若终止超过 2 秒仍未完成，调用返回 `status: running` 与 `timedOut: true`，终止在后台继续重试。此前 `hard` 挂载冻结时，带 `timeoutSec` 的 exec 要等服务器恢复才返回。辅助容器的工作目录也统一为 `/`。
+- 新建卷时，MiniBox 会以 Box 用户（uid 1000）在新的卷目录中试写一次。写不进去时创建失败，返回 `502 bad_gateway`（`storage_unwritable`），并删除刚建的子目录。错误提示说明应设置 `all_squash,anonuid=1000,anongid=1000`（或 `root_squash,anonuid=1000,anongid=1000`），并链接 NAS 指南。此前导出目录映射为 `nobody` 时，卷会静默创建，Box 内却无法写入。
+- NAS 拒绝创建卷目录（`Permission denied` 或 `Operation not permitted`）时，返回 `502 bad_gateway` 与 `storage_permission_denied`，不再是 `400 validation_failed`，错误提示同样指向 NAS 指南。其他准备失败仍是 `400`（`volume_prepare_failed`）。
+- 存储池改为并发探测。一台服务器无应答时，其余池照常报告，整次探测约 5 秒返回。单个池 5 秒内没有完成探测即报告 `unreachable`（`no answer within 5 s`），探测本身继续在后台运行，结束时更新缓存。15 秒缓存不变。此前池逐个探测，排在前面的池一直没有应答时，后面池的结果也要等它返回。
 
 ### 文档
 - README、README-zh 与 `docs/agents.md` 说明会话工具、接管与归还的规则、`SESSION_TAKEOVER_IDLE_SEC`、终端 WebSocket 的参数与控制帧、MCP 工具数（13 个），以及事件表中的活动与审计分档。`docs/design.md` 新增 §10.5 实现说明并更新 §8.9；`docs/runtime.md` 说明 FakeRuntime 对 tmux 的模拟（#14）。

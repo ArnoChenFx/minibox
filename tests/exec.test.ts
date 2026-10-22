@@ -340,6 +340,62 @@ describe("exec", () => {
     });
   });
 
+  test("a timeout whose kill hangs returns as running after the grace, and the stop finishes later", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const id = await createBox(app, ctx);
+    const gate = runtime.holdExecKill();
+    const started = Date.now();
+    const result = (await app.operations.run("exec.run", ctx, {
+      id,
+      argv: ["sleep", "30"],
+      timeoutSec: 1,
+    })) as { execId: string };
+    expect(Date.now() - started).toBeLessThan(4000);
+    expect(result).toMatchObject({ status: "running", exitCode: null, timedOut: true });
+
+    gate.release();
+    expect(await app.operations.run("exec.get", ctx, { execId: result.execId, waitMs: 2000 })).toMatchObject({
+      status: "killed",
+      exitCode: 137,
+      timedOut: true,
+    });
+  });
+
+  test("a process that exits on its own while its timeout's kill is still running is recorded as exited", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const id = await createBox(app, ctx);
+    const gate = runtime.holdExecKill();
+    const pending = app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 });
+    await Bun.sleep(1500);
+    runtime.execs.at(-1)?.exit(0);
+
+    const result = (await pending) as { execId: string };
+    expect(result).toMatchObject({ status: "exited", exitCode: 0, timedOut: true });
+    gate.release();
+    await Bun.sleep(50);
+    // The stop that finishes later finds the exec ended, and does not turn the record into a kill.
+    expect(await app.operations.run("exec.get", ctx, { execId: result.execId })).toMatchObject({
+      status: "exited",
+      exitCode: 0,
+      timedOut: true,
+    });
+  });
+
+  test("an exec that ends with a signal while its timeout's kill is still running is recorded as killed", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const id = await createBox(app, ctx);
+    const gate = runtime.holdExecKill();
+    const pending = app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 });
+    await Bun.sleep(1500);
+    runtime.execs.at(-1)?.exit(137);
+
+    expect(await pending).toMatchObject({ status: "killed", exitCode: 137, timedOut: true });
+    gate.release();
+  });
+
   test("a timeout whose stop keeps failing is retried with a growing delay until it stops the exec", async () => {
     const { app, runtime, ctx } = setup();
     runtime.execScript = null;

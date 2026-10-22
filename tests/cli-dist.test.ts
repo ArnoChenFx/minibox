@@ -11,7 +11,7 @@ import { FixedWindowLimiter, Gate } from "../src/cli-dist/limits";
 import { renderInstallScript, requestOrigin } from "../src/cli-dist/scripts";
 import { CLI_TARGETS, type CliTarget, cliTargetByFileName, hostCliTarget } from "../src/cli-dist/targets";
 import { ROOT } from "../src/config";
-import { rejectionOf, silenceLogs } from "./support/app";
+import { rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 import { startHarness } from "./support/tokens";
 
 const POSIX = process.platform === "linux" || process.platform === "darwin";
@@ -732,6 +732,40 @@ describe.skipIf(!POSIX || HOST === null)("install.sh, run as curl | sh", () => {
   );
 });
 
+describe.skipIf(!POSIX || HOST === null)("the compiled CLI's ssh-config, as the installer leaves it", () => {
+  test(
+    "a CLI installed in a folder with a space writes a ProxyCommand that sh runs to the box's ssh-proxy",
+    async () => {
+      const h = startHarness();
+      const work = tempDir();
+      try {
+        const env = { ...installEnv(work), MINIBOX_INSTALL_DIR: join(work, "my tools") };
+        expect((await capture(curlInstall(h.base), env)).code).toBe(0);
+        const installed = join(work, "my tools", "minibox");
+        const setup = await capture([installed, "ssh-config", "--append", "--url", h.base, "--token", TEST_KEY], env);
+        expect(setup.stderr).toBe("");
+        expect(setup.code).toBe(0);
+
+        const config = readFileSync(join(work, ".ssh", "config"), "utf8");
+        const proxy =
+          config
+            .split("\n")
+            .find((line) => line.includes("ProxyCommand"))
+            ?.trim() ?? "";
+        expect(proxy).toBe(`ProxyCommand "${installed}" ssh-proxy %h`);
+
+        const command = proxy.slice("ProxyCommand ".length).replace("%h", "missing.minibox");
+        const proxied = await capture(["sh", "-c", command], env);
+        expect(proxied.code).toBe(1);
+        expect(proxied.stderr).toContain("Box not found");
+      } finally {
+        h.stop();
+      }
+    },
+    REAL_BUILD_MS,
+  );
+});
+
 /** Runs one PowerShell command line, as `irm <url> | iex` would be typed into pwsh. */
 function powershell(command: string, env: Record<string, string>): Promise<Ran> {
   return capture([PWSH ?? "pwsh", "-NoProfile", "-NonInteractive", "-Command", command], env);
@@ -779,5 +813,55 @@ describe.skipIf(PWSH === null || process.platform !== "linux")("install.ps1 unde
     } finally {
       h.stop();
     }
+  }, 60_000);
+
+  test("a new minibox.exe that does not run puts the previous one back at minibox.exe", async () => {
+    const h = startHarness({}, { cliBuild: stubBuilder(() => STUB_CLI).build });
+    const work = tempDir();
+    mkdirSync(join(work, "bin"));
+    writeFileSync(join(work, "bin", "minibox.exe"), "the previous build\n");
+    try {
+      const ran = await powershell(`irm ${h.base}/cli/install.ps1 | iex`, installEnv(work));
+      expect(ran.code).not.toBe(0);
+      expect(ran.stdout + ran.stderr).toContain("the previous minibox.exe was kept");
+      expect(readFileSync(join(work, "bin", "minibox.exe"), "utf8")).toBe("the previous build\n");
+      expect(readdirSync(join(work, "bin"))).toEqual(["minibox.exe"]);
+    } finally {
+      h.stop();
+    }
+  }, 60_000);
+});
+
+/** The installer without its final call, so a test can run its functions and nothing else. */
+function functionsOnly(file: string): void {
+  const installer = renderInstallScript("install.ps1", "https://minibox.example");
+  writeFileSync(file, installer.replace(/^Install-MiniBoxCli\s*$/m, ""));
+}
+
+describe.skipIf(PWSH === null || process.platform !== "linux")("install.ps1 PATH handling", () => {
+  test("Merge-PathEntry appends the install folder once, whatever the case or trailing slash of an entry", async () => {
+    const file = join(tempDir(), "install-functions.ps1");
+    functionsOnly(file);
+    const ran = await powershell(
+      `. '${file}'; ConvertTo-Json -Compress @(` +
+        "(Merge-PathEntry -Path 'C:\\Tools;C:\\Users\\a\\.local\\bin' -Directory 'c:\\users\\a\\.local\\bin\\'), " +
+        "(Merge-PathEntry -Path '' -Directory 'C:\\Users\\a\\.local\\bin'), " +
+        "(Merge-PathEntry -Path 'C:\\Tools;;' -Directory 'C:\\Users\\a\\.local\\bin'))",
+      {},
+    );
+    expect(ran.stderr).toBe("");
+    expect(JSON.parse(ran.stdout)).toEqual([
+      "C:\\Tools;C:\\Users\\a\\.local\\bin",
+      "C:\\Users\\a\\.local\\bin",
+      "C:\\Tools;C:\\Users\\a\\.local\\bin",
+    ]);
+  }, 60_000);
+
+  test("off Windows, Add-UserPathEntry changes nothing and reports no change", async () => {
+    const file = join(tempDir(), "install-functions.ps1");
+    functionsOnly(file);
+    const ran = await powershell(`. '${file}'; Add-UserPathEntry -Directory 'C:\\Users\\a\\.local\\bin'`, {});
+    expect(ran.stderr).toBe("");
+    expect(ran.stdout.trim()).toBe("False");
   }, 60_000);
 });

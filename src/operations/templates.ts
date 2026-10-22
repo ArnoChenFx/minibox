@@ -1,10 +1,19 @@
 import { z } from "zod";
 
-import { buildBaseTemplate, deleteTemplate, listTemplates, promoteSnapshot } from "../services/templates";
+import { assertNoSecretInImage } from "../secrets/env";
+import { getBox } from "../services/boxes";
+import {
+  assertTemplateNameAvailable,
+  buildBaseTemplate,
+  deleteTemplate,
+  listTemplates,
+  promoteSnapshot,
+  saveBoxAsTemplate,
+} from "../services/templates";
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
 import { BuildResultSchema, ImageSchema, OkSchema, PromotedTemplateSchema } from "./schemas";
-import { snapshotRef, templateDescription, templateName, templateRef } from "./validation";
+import { boxId, snapshotRef, templateDescription, templateName, templateRef } from "./validation";
 
 export const templateList = defineOperation({
   name: "template.list",
@@ -44,6 +53,37 @@ export const templatePromote = defineOperation({
   }),
 });
 
+export const templateSave = defineOperation({
+  name: "template.save",
+  tag: "templates",
+  summary: "Save a box as a template",
+  kind: "write",
+  scope: "template:write",
+  async: true,
+  conflicts: true,
+  input: z.object({ id: boxId(), name: templateName(), description: templateDescription() }),
+  output: z.object({ template: PromotedTemplateSchema }),
+  rest: [{ method: "POST", path: "/api/boxes/:id/template", body: true, status: 202 }],
+  cli: "template save",
+  mcp: {
+    toolset: "tools",
+    name: "save_template",
+    description:
+      "Save a box as a template: the packages it installed and the system files it changed. /workspace and home volumes are not included, so use a checkpoint for data. Long-running; returns a task id.",
+  },
+  resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async ({ host }, input, box) => {
+    assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []);
+    await assertTemplateNameAvailable(host, input.name);
+  },
+  exclusive: ({ host }, _input, box) => `template.save:${host.host.id}:${box.boxId}`,
+  activity: { action: () => "template.save", target: (_input, box) => box.name },
+  audit: { target: (input) => ({ kind: "template", name: input.name }) },
+  run: async ({ host, principal, task }, input, box) => ({
+    template: await saveBoxAsTemplate(host, box.boxId, input, principal.id, task),
+  }),
+});
+
 export const templateBuild = defineOperation({
   name: "template.build",
   tag: "templates",
@@ -58,6 +98,7 @@ export const templateBuild = defineOperation({
   cli: "template build",
   resolve: async ({ host }) => ({ ref: host.baseTemplateTag }),
   exclusive: ({ host }) => `template.build:${host.host.id}`,
+  subject: () => "base",
   activity: { action: () => "template.build", target: (_input, base) => base.ref },
   audit: { target: (_input, base) => base && { kind: "template", name: base.ref } },
   run: async ({ host, task }) => {
@@ -85,4 +126,4 @@ export const templateDelete = defineOperation({
   },
 });
 
-export const templateOperations = [templateList, templatePromote, templateBuild, templateDelete];
+export const templateOperations = [templateList, templatePromote, templateSave, templateBuild, templateDelete];

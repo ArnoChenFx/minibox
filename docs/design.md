@@ -220,7 +220,7 @@ flowchart LR
 - **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, waitMs)` 长轮询（最长 25000 毫秒，不依赖客户端是否支持流式输出）；`exec_kill` 终止进程树。
 - **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。已到期 TTL 的 Box 不会被启动，返回 `409 box_ttl_expired`。空闲休眠与 TTL 的规则见 [5.10](#510-实现说明12)。
 - **默认用户**：非 root 用户 `dev`。工作目录默认 `/workspace`。
-- **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
+- **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。停止仍未结束时，前台调用最多再等 2 秒，然后返回 `status: running` 与 `timedOut: true`，停止在后台继续。
 - **并发上限**：后台 exec 每个 Box 最多 8 个，全部 MiniBox 最多 64 个。超限的调用返回 `429`，且不会唤醒已停止的 Box（决策 47）。前台调用不计入。
 - **终止在箱内完成**（决策 44）：非 TTY 的命令经包装 shell 运行，包装 shell 的参数中带有一个随机令牌。终止时，箱内的脚本在 `/proc` 中按命令行找到包装 shell；`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选，同样要核对命令行。「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本冻结整棵进程树（沿父进程号收集；包装 shell 自己是会话或进程组首进程时，同一会话与进程组也一并收集），再逐个 `SIGKILL`，并重新扫描直到没有新进程。宿主机从不向 Docker 报告的宿主机 pid 发送信号。Docker 报告 exec 已结束后才算成功；否则返回 `502`，exec 保持 `running`，可以重试。不在保证范围内的进程：调用 `setsid` 换了会话、且父进程已先退出的进程；命令结束后留在箱内的后台进程；处于不可中断睡眠的进程。Box 需要 `/bin/sh`、`cat`、`rm` 与 `sleep`。
 - **权限**：`exec` 意味着可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。挂载卷需要对该卷的 `volume:attach`，读写挂载或新建卷还需要 `volume:write`（见 [9.2](#92-必须写进文档与测试的安全约束)）。所有者密钥拥有全部范围；Agent 令牌只拥有创建时授予的范围（#13）。
@@ -457,9 +457,9 @@ pools:
 第一版实现与上文的差异如下。
 
 - **引擎名**：新建卷的 Docker 卷名就是卷 id（`vol_…`），显示名另存。Docker 不能在创建后补标签，所以已有的 `<prefix>-ws-*` 只写入所有权记录，不改名、不补标签、启动时不 chown；创建或重建采用该卷时的属主修正见 §6.2。认领容器也不改名。
-- **chown**：新建的本地卷用基础模板镜像的辅助容器（root，`0:0`）执行 `chown -R 1000:1000`，失败则创建失败。镜像不存在时跳过并记 `volume.chown_skipped`。NFS 与 path 必须先建子目录；chown 尽力而为（`root_squash` 常见，辅助容器打印 `MINIBOX_CHOWN_SKIPPED`）。重建不递归 chown 已有数据。创建或重建到带属主标签的模板时，只把可写 `/workspace` 的根目录改为模板属主（见 §6.2）；其余遗留的 root 属主工作区仍用 README 中的一次性命令。
+- **chown**：新建的本地卷用基础模板镜像的辅助容器（root，`0:0`）执行 `chown -R 1000:1000`，失败则创建失败。镜像不存在时跳过并记 `volume.chown_skipped`。NFS 与 path 必须先建子目录；chown 尽力而为（`root_squash` 常见，辅助容器打印 `MINIBOX_CHOWN_SKIPPED`）。之后以 1000:1000 在目录里创建并删除一个文件（写入检查）；不能写入则创建失败，返回 `bad_gateway`（`storage_unwritable`），子目录按 `VolumeChanges` 删除。重建不递归 chown 已有数据。创建或重建到带属主标签的模板时，只把可写 `/workspace` 的根目录改为模板属主（见 §6.2）；其余遗留的 root 属主工作区仍用 README 中的一次性命令。
 - **重建改名**：挂载变更会重建容器，新容器名为 `<prefix>-<box id>`。失败则回滚名称，并在原先处于运行时重新启动旧容器，不写规格。界面在容器 id 变化后跳到新 id；稳定 box id 在 API 里仍然有效。
-- **探测**：池健康缓存在 `VolumeStore` 的内存里，15 秒。`GET /api/pools` 会探测（`refresh=true` 强制）。列出 Box 不探测 NFS，因此 `storage.status` 在探测前是 `unknown`；界面只把 `unreachable` 标成警告。启动、重启和创建在非本地池不是 `reachable`（含缺少基础镜像时的 `unknown`）时返回 503 `docker_unavailable`，消息键 `storage_unreachable`。本地池只有引擎探测失败才算不可达。协调器捕获该错误，记 `reconcile.start_failed` 后继续。
+- **探测**：池健康缓存在 `VolumeStore` 的内存里，15 秒。`GET /api/pools` 会探测（`refresh=true` 强制）。各池并发探测；单次探测 5 秒内没有应答则报告 `unreachable`（`no answer within 5 s`），探测本身继续运行，结束时更新缓存。同一池的探测仍在进行时，新的探测加入它，不另起一个。列出 Box 不探测 NFS，因此 `storage.status` 在探测前是 `unknown`；界面只把 `unreachable` 标成警告。启动、重启和创建在非本地池不是 `reachable`（含缺少基础镜像时的 `unknown`）时返回 503 `docker_unavailable`，消息键 `storage_unreachable`。本地池只有引擎探测失败才算不可达。协调器捕获该错误，记 `reconcile.start_failed` 后继续。
 - **NFS**：数据卷使用用户选项（通常 `hard`）。探测根卷 `<prefix>-pool-<pool>` 强制 `soft,timeo=10,retrans=1`，并在驱动选项变化时重建，避免死服务器挂起探测。已有数据卷保持创建时的选项。不要把 Docker data-root 搬到网络存储上。
 - **path**：辅助容器以只读方式绑定根目录，并 `test -f` 标记文件（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在则为不可达，不写入、不创建标记。
 - **能力**：由后端计算，用户不能设置。全部可共享；`snapshots`、`quota`、`clone` 为 false；只有 nfs 的 `crossHost` 为 true。无每卷配额。
@@ -656,10 +656,10 @@ Event
 
 长操作不再占用一条 HTTP 连接直到结束。
 
-- **受理**：`template.build` 与 `snapshot.create` 在校验、前置条件和解析通过后写入一条 `started` 审计事件（`ref.taskId`），立刻返回 `202` `{ "taskId" }`。领域结果（模板的 `{ ref }`、快照的 `{ snapshot }`）写在任务的 `result` 上，OpenAPI 用 `x-task-result` 标出。校验失败和互斥冲突不创建任务。
+- **受理**：`template.build`、`template.save` 与 `snapshot.create` 在校验、前置条件和解析通过后写入一条 `started` 审计事件（`ref.taskId`），立刻返回 `202` `{ "taskId" }`。领域结果（模板的 `{ ref }`、存为模板的 `{ template }`、快照的 `{ snapshot }`）写在任务的 `result` 上，OpenAPI 用 `x-task-result` 标出。校验失败和互斥冲突不创建任务。
 - **进度**：日志和状态变更发布到总线主题 `task`，经 `GET /api/tasks/:id/events` 流出。这条 SSE 复用事件流的心跳、重放上限和 `reset`，不另建一套。它和事件流一样不进操作注册表。新连接不回放历史；界面先 `GET` 任务上保留的输出，再用 `after` 续上（浏览器的 `EventSource` 第一次请求带不上 `Last-Event-ID`）。
 - **存储**：`DATA_DIR/tasks.db`（WAL）。每个任务只保留最新 64 KB 日志，避免把构建输出写进一年期的审计库（审计明细还有 8 KB 上限）。
-- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`），每个 Box 同时只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。冲突返回 `409`，`details.taskId` 指向持有锁的任务：正在运行的任务，或已取消但后台工作尚未返回的任务。
+- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`）。每个 Box 同时只能存为一个模板（`template.save:<host>:<boxId>`），也只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。存为模板在 Box 的电源锁（`underBox`）下执行，与检查点的拍摄、回滚依次进行；快照提交不取该锁。冲突返回 `409`，`details.taskId` 指向持有锁的任务：正在运行的任务，或已取消但后台工作尚未返回的任务。
 - **取消**：把任务标为 `cancelled` 并中止 `AbortSignal`。构建关掉引擎的输出流，并在连接关闭后才返回（引擎在此之前可能仍在构建）。`docker commit` 无法中途取消：开始前和返回后各检查一次；若提交已经完成，镜像留下，任务仍可以是 `cancelled`，不回滚。互斥锁在后台工作返回之后才释放，所以取消后，同一主机或同一 Box 的新任务要等到引擎调用结束才能开始，期间返回 `409`。
 - **重启**：启动时把上次仍为 `running` 的任务标为 `interrupted`，不续跑，并释放所有互斥锁（包括已取消但工作未返回的任务持有的锁，持锁的进程已经不在了）。关闭时同样中止、标记并释放。
 - **空闲超时**：Bun 的 `idleTimeout` 从请求开始计算，按 4 秒进位，写出的字节（包括 SSE 心跳）不会延长它。只有 `server.timeout(req, 0)` 能关掉它。因此心跳只对付反向代理的 `proxy_read_timeout`，对付不了 Bun 自己。构建改为 202 之后，那条会被掐断的长连接不复存在；进度流显式关掉计时。这一点在 Bun 1.4.3 上用 4 秒上限核实过：静默处理和每秒心跳的流都会在约 4 秒被断开，`timeout 0` 可以撑过更长的等待。仓库不保留测 Bun 内部的用例（那类用例靠时间阈值判断，在 CI 上不稳定）；`tests/long-work-routes.test.ts` 只断言 MiniBox 自己的保证：202 立即返回，进度流和事件流调用 `server.timeout(req, 0)`，普通请求保留 Bun 的上限。生产配置保持 60 秒。
@@ -746,7 +746,7 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - **MCP**：设置页和 README 给出可粘贴的配置。`/mcp` 接受令牌，并与 REST 共用鉴权路径，每次调用都以令牌主体执行，因此同样经过 scope 与授权规则。会话绑定到打开它的主体，令牌吊销时结束；其他主体按会话 id 也读不到它。
 - **事件名称**：事件接口（列表与实时流）按 Box 名称匹配时，只计入该 Box 创建之后记录的事件（`createdAt`），因此同名的早先 Box 的事件不会泄露给后来的令牌。按 id 匹配不受此限制，重建替换容器 id 之后，事件仍按名称与创建时间匹配。已知限制：创建操作自己的事件以操作开始时间记录，早于 `createdAt`，所以在 Box 被重建后，授予令牌的 Box 的创建事件不再可见。这是失败关闭，只会少显示。
 - **任务**：任务列表、任务读取与任务进度流按任务的发起者，或其目标 Box 对令牌可见来判断；目标 Box 在所有宿主机上查找（T3）。
-- **模板与快照**：令牌只能从 `template=true` 的镜像与自己可见的快照创建、重建或派生；按 sha256 或镜像 id 引用时先解析再检查（T2）。`template.promote` 检查快照的所有者，`template.delete` 只允许所有者或模板的创建者，`template.build` 只允许所有者。
+- **模板与快照**：令牌只能从 `template=true` 的镜像与自己可见的快照创建、重建或派生；按 sha256 或镜像 id 引用时先解析再检查（T2）。`template.promote` 检查快照的所有者，`template.delete` 只允许所有者或模板的创建者，`template.build` 只允许所有者。`template.save` 与 `template.promote` 一样需要 `tool:install`，检查 Box 的可用性，并拒绝已被占用的名称（`template_out_of_scope`）。
 - **卷**：挂载按卷记录判断（`ownerBoxId`、`createdBy`），而不按名称。池根卷对所有主体拒绝；令牌不能挂载其他令牌创建的卷，即使它的卷授权是 `all`。`pool:admin` 不是令牌可以持有的 scope，存储池管理只属于所有者。
 - **宿主机**：Box 没有记录宿主机时，只有 `all` 的宿主机授权才允许访问（失败关闭，N4）。
 - **活动**：`/api/activity` 只对所有者开放（路由默认 `OWNER_ONLY`）。令牌使用按范围过滤的 `/api/events`。
@@ -831,6 +831,8 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 - Tailscale 以用户态网络运行：二进制装在工具卷，`minibox-tailscale up` 通过 `setsid` 双重 fork 启动 `tailscaled`，使它不随执行 `up` 的 exec 结束。状态在家目录卷的 `~/.local/state/tailscale` 中，卸载后保留。`tailscaled` 不需要 root，也不需要 `/dev/net/tun`。netstack 把发往本节点 tailnet IP 的入站 TCP/UDP 转发到 `127.0.0.1`；出站只能经 `localhost:1055` 的 SOCKS5/HTTP 代理，没有 ICMP。守护进程不随 Box 启动或唤醒自动拉起，tailnet 流量也不会唤醒休眠中的 Box。
 - 检测：镜像或家目录里已有的工具显示为已安装并带版本，但不计为受管；只有 tools 卷上的入口点才受管。升级与卸载只作用于受管工具，其它情况返回 `tool_unmanaged`。已检测到的工具不会被重复安装。
 - 清单放仓库 `catalog/*.json`，并允许在 `DATA_DIR/tools.d/` 放自定义条目。
+- 自定义条目由所有者管理：`tool.custom.list`、`tool.custom.put` 与 `tool.custom.delete` 是三个 `defineOperation`，REST、CLI、MCP 与控制台共用一份定义。写入前用 `parseCatalogEntry`（与加载器相同的规则）校验，只有通过校验的内容才会写入；文件经临时文件加重命名原子写入，权限 0644，目录不存在时创建。可选的 `stop` 命令与内置条目相同：卸载前在运行中的 Box 内以 `dev` 执行，失败则不卸载。覆盖内置 id 必须显式传 `overrideBuiltin`，控制台在这种情况下给出警告。删除只移除 `tools.d` 中的文件，不卸载共享卷上的工具；没有 `tools.d` 覆盖的内置 id 不能删除。`tool:custom` 不是令牌可以持有的 scope，只有所有者（访问密钥或登录会话）能调用，令牌一律以 `operation_forbidden` 拒绝。`tools.d` 中无法读取的文件使整个目录加载失败（与加载器一致，错误信息给出文件路径）；删除按文件名 `<id>.json` 进行，即使其 JSON 已损坏。
+- 控制台：Box 的「工具」页在所有者会话中显示「自定义工具」按钮，自定义条目带「自定义」标记，并可编辑或删除。页面通过 `GET /api/tools/custom` 探测权限，请求失败（例如 403，或目录中有无法读取的文件）时不显示这些控制。表单里的提示只是便利，服务端的校验为准。
 - 长耗时安装使用异步任务与进度流；兼容代理配置。
 - API Key：短期用环境变量输入，密钥单独存储；长期方向是宿主机侧密钥注入，避免把密钥写进 Box。
 
@@ -1225,7 +1227,7 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | 69 | 引用密钥需要 `secret:use` | 创建或重建时 `env` 含有 `secretRef`，或挂载、卸载卷会重建的 Box 上存有 `secretRef`，令牌都需要 `secret:use`。该 scope 只在 `admin` 预设中（`operator` 也不含），因此 Agent 令牌无法把宿主机密钥挂进它控制的 Box。不重建 Box 的原地更新不受限制。所有者的访问密钥拥有全部 scope |
 | 70 | 缺少密钥 | 创建、重建与更新在任何改动之前检查每个引用，缺少即返回 `400 env_secret_missing`，绝不以空值启动。启动与重启检查已存储的环境，缺少则返回 `409`，错误键相同 |
 | 71 | 新值何时生效 | 替换密钥不修改运行中的容器。下一次创建或重建读取当前值；启动不读取密钥。重建预览列出值与容器中现有值不同的密钥，比较只在内存中完成，预览里只出现名称 |
-| 72 | 镜像不能携带密钥 | `docker commit` 会保留容器的 `Config.Env`，因此引用了密钥的 Box 不能制作快照，也不能拍摄带系统镜像的检查点，二者返回 `409 secret_in_image`。不带系统镜像的检查点不提交镜像，仍可拍摄。检查在操作受理时进行，写入检查点的电源锁内再检查一次 |
+| 72 | 镜像不能携带密钥 | `docker commit` 会保留容器的 `Config.Env`，因此引用了密钥的 Box 不能制作快照、不能存为模板，也不能拍摄带系统镜像的检查点，三者返回 `409 secret_in_image`。不带系统镜像的检查点不提交镜像，仍可拍摄。检查在操作受理时进行，写入检查点的电源锁内再检查一次 |
 | 73 | 删除正在使用的密钥 | 删除返回 `409` 并列出引用它的 Box（只返回名称）。`force=true` 强制删除，之后这些 Box 在重新设置密钥之前不能重建或启动（决策 70） |
 | 74 | 读取密钥的途径 | 密钥作为容器环境到达 Box，因此 Box 内的进程，以及有 `exec`、`box:ssh` 或终端进入该 Box 的人都能读到它。这是注入的本意，不另加限制；防护靠的是决策 69 与「只给应当持有密钥的 Box 授予这些 scope」。引擎自己返回的错误文本不做脱敏 |
 

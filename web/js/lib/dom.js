@@ -11,6 +11,39 @@ export function el(html) {
   return t.content.firstElementChild;
 }
 
+/**
+ * Copies text to the clipboard. The async API exists only in secure contexts, so a dashboard opened over plain HTTP
+ * falls back to selecting the text in a hidden field and running the copy command.
+ */
+export async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    // Plain HTTP has no navigator.clipboard, and a browser may refuse it; the copy command below still works there.
+  }
+  const previous = document.activeElement;
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.setAttribute("aria-hidden", "true");
+  field.style.position = "fixed";
+  field.style.top = "0";
+  field.style.left = "0";
+  field.style.opacity = "0";
+  field.style.pointerEvents = "none";
+  document.body.append(field);
+  let copied = false;
+  try {
+    field.select();
+    copied = document.execCommand("copy");
+  } finally {
+    field.remove();
+    if (previous instanceof HTMLElement) previous.focus({ preventScroll: true });
+  }
+  if (!copied) throw new Error("the browser refused the copy");
+}
+
 /** Delegate clicks on `[data-action]` within root to handlers[action](el, event). */
 export function delegate(root, handlers) {
   root.addEventListener("click", (e) => {

@@ -32,6 +32,11 @@ describe("console navigation", () => {
     expect([...new Set(routes.map((r) => r.nav))].toSorted()).toEqual([...new Set(sidebar)].toSorted());
   });
 
+  test("Snapshots is not a page of its own: the snapshots that remain are listed on Templates", () => {
+    expect(sidebar).not.toContain("snapshots");
+    expect(routes.map((r) => r.nav)).not.toContain("snapshots");
+  });
+
   test("About sits directly after Settings in the sidebar", () => {
     expect(routes.some((r) => r.nav === "about")).toBe(true);
     expect(sidebar.indexOf("about")).toBe(sidebar.indexOf("settings") + 1);

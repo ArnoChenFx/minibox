@@ -4,7 +4,7 @@ import { abortError } from "../lib/abort";
 import { log } from "../lib/logger";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "./boxes";
-import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
+import { envScrubChanges, type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 
 export function snapshotTag(prefix: string, base: string, now = new Date()): { repo: string; tag: string } {
   const ts = now.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
@@ -25,6 +25,7 @@ export async function createSnapshot(
   assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []);
   const { repo, tag } = snapshotTag(host.prefix, name ?? box.name);
   const k = host.keys;
+  const scrub = await envScrubChanges(host, box);
   progress?.log?.(`Committing ${box.name}…\n`);
   await host.runtime.commitContainer(box.id, {
     repo,
@@ -42,6 +43,7 @@ export async function createSnapshot(
       labelChange(k.templateName, name ?? box.name),
       labelChange(k.templateDesc, `Snapshot of box ${box.name}`),
       labelChange(k.created, new Date().toISOString()),
+      ...scrub,
       'CMD ["sleep","infinity"]',
     ],
   });

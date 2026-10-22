@@ -1,20 +1,28 @@
 import { mountActivity } from "../components/activity-panel.js";
 import { deleteBox, editResources, lifecycle, openRebuild, rebuildPreviewHtml } from "../components/box-actions.js";
 import { mountCheckpoints, takeCheckpoint } from "../components/checkpoints.js";
+import { deleteCustomTool, openCustomToolDialog } from "../components/custom-tool-dialog.js";
 import { mountEnvCard } from "../components/env-card.js";
+import { openSaveTemplate } from "../components/save-template.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
 import { applySamples } from "../lib/box-state.js";
-import { delegate, esc } from "../lib/dom.js";
+import { copyText, delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, dateTime, duration, gbOrMb, mem, pct, shortId } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
-import { connectCommands, installCommands, setupCommands, windowsInstallCommands } from "../lib/ssh.js";
+import {
+  connectCommands,
+  installCommands,
+  setupCommands,
+  windowsInstallCommands,
+  windowsSetupCommands,
+} from "../lib/ssh.js";
 import { filterTools, groupTools, toolAction } from "../lib/tool-list.js";
 import {
   boxState,
@@ -120,6 +128,7 @@ export function render(view, id, tab = "overview") {
         <button class="btn" data-action="restart">${icon("restart")}${t("act.restart")}</button>
         <button class="btn" data-action="ssh">${icon("terminal")}${t("act.ssh")}</button>
         <button class="btn" data-action="checkpoint">${icon("camera")}${t("act.checkpoint")}</button>
+        <button class="btn" data-action="save-template">${icon("layers")}${t("tp.saveAction")}</button>
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
@@ -226,6 +235,7 @@ export function render(view, id, tab = "overview") {
     restart: (b) => lifecycle(box, "restart", b).then(rerender),
     ssh: () => openSshDialog(box),
     checkpoint: () => takeCheckpoint(box).then((taken) => taken && tab === "checkpoints" && rerender()),
+    "save-template": () => openSaveTemplate(box),
     rebuild: async () => {
       try {
         const { box: fresh } = await api(`/api/boxes/${enc(ref())}`);
@@ -312,12 +322,21 @@ function mountsCard(box) {
     <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;
 }
 
-/** `blocks` are the commands of one step, each with an optional label, such as the shell or PowerShell line. */
+/**
+ * `blocks` are the commands of one step. Each has an optional label (the shell or PowerShell line) and an optional
+ * note. The command scrolls sideways instead of breaking inside a word, and its copy button stays beside its label.
+ */
 function sshStep(number, title, help, blocks) {
   const commands = blocks
     .map(
-      ({ label, commands: text }) => `${label ? `<p class="help ssh-label">${esc(label)}</p>` : ""}
-    <div class="ssh-cmd"><pre class="token-snippet">${esc(text)}</pre><button class="btn btn-sm" type="button" data-copy="${esc(text)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button></div>`,
+      ({ label = "", commands: text, note = "" }) => `<div class="ssh-cmd">
+      <div class="ssh-cmd-head">
+        <span class="ssh-label">${esc(label)}</span>
+        <button class="btn btn-sm" type="button" data-copy="${esc(text)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button>
+      </div>
+      <pre class="token-snippet" tabindex="0">${esc(text)}</pre>
+      ${note ? `<p class="help ssh-note">${esc(note)}</p>` : ""}
+    </div>`,
     )
     .join("");
   return `<section class="ssh-step">
@@ -336,11 +355,12 @@ function openSshDialog(box) {
     wide: true,
     body: `<div class="ssh-steps">
       ${sshStep(1, t("bd.sshInstall"), t("bd.sshInstallHelp"), [
-        { label: t("bd.sshInstallUnix"), commands: installCommands(origin) },
-        { label: t("bd.sshInstallWindows"), commands: windowsInstallCommands(origin) },
+        { label: t("bd.sshUnix"), commands: installCommands(origin) },
+        { label: t("bd.sshWindows"), commands: windowsInstallCommands(origin), note: t("bd.sshInstallWindowsNote") },
       ])}
       ${sshStep(2, t("bd.sshSetup"), t("bd.sshSetupHelp", { settings: t("nav.settings"), tokens: t("st.tokens") }), [
-        { commands: setupCommands(origin) },
+        { label: t("bd.sshUnix"), commands: setupCommands(origin) },
+        { label: t("bd.sshWindows"), commands: windowsSetupCommands(origin), note: t("bd.sshSetupWindowsNote") },
       ])}
       ${sshStep(3, t("bd.sshConnect"), t("bd.sshConnectHelp"), [{ commands: connectCommands(box.name) }])}
     </div>`,
@@ -350,7 +370,7 @@ function openSshDialog(box) {
     const button = event.target.closest("[data-copy]");
     if (!button) return;
     try {
-      await navigator.clipboard.writeText(button.dataset.copy);
+      await copyText(button.dataset.copy);
       toast(t("bd.sshCopied"));
     } catch (err) {
       toastError(t("bd.sshCopyFailed"), err);
@@ -481,7 +501,7 @@ function toolGroupRow(group, collapsed) {
 }
 
 function toolInstalledCell(tool) {
-  if (!tool.installed) return `<span class="subtle">${esc(t("bd.toolsNotInstalled"))}</span>`;
+  if (!tool.installed) return `<span class="subtle tool-missing">${esc(t("bd.toolsNotInstalled"))}</span>`;
   const version = tool.installedVersion ? `<span class="mono subtle">${esc(tool.installedVersion)}</span>` : "";
   const outside = tool.managed ? "" : `<span class="help">${esc(t("tool.foundOutside"))}</span>`;
   return `<div class="tool-state"><span class="badge badge-success">${esc(t("bd.toolsInstalled"))}</span>${version}${outside}</div>`;
@@ -502,13 +522,22 @@ function toolActionCell(tool) {
   }
 }
 
-function toolRow(tool) {
+function customActionCell(tool) {
+  const id = esc(tool.id);
+  return `<button class="btn btn-sm btn-ghost" data-action="tool-custom-edit" data-tool="${id}">${esc(t("bd.customEdit"))}</button>
+        <button class="btn btn-sm btn-ghost" data-action="tool-custom-delete" data-tool="${id}">${esc(t("bd.customDelete"))}</button>`;
+}
+
+function toolRow(tool, isCustom) {
+  const badge = isCustom
+    ? ` <span class="badge badge-accent" title="${esc(t("bd.customBadgeHelp"))}">${esc(t("bd.customBadge"))}</span>`
+    : "";
   return `<tr>
-    <td><strong>${esc(tool.name)}</strong><div class="help">${esc(tool.description)}</div>${tool.requires ? `<div class="help">${esc(tool.requires)}</div>` : ""}</td>
+    <td><strong>${esc(tool.name)}</strong>${badge}<div class="help">${esc(tool.description)}</div>${tool.requires ? `<div class="help">${esc(tool.requires)}</div>` : ""}</td>
     <td class="mono">${esc(tool.id)}</td>
     <td>${tool.desiredVersion ? esc(tool.desiredVersion) : "—"}</td>
     <td>${toolInstalledCell(tool)}</td>
-    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool)}</div></td>
+    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool)}${isCustom ? customActionCell(tool) : ""}</div></td>
   </tr>`;
 }
 
@@ -710,11 +739,14 @@ const TAB_RENDER = {
     const collapsed = new Set();
     const pending = new Set();
     let tools = null;
+    /** The custom entries by id. Only an owner can list them, so for everyone else this stays empty. */
+    let custom = new Map();
     let query = "";
     root.innerHTML = `<div class="card">
       <div class="card-head with-tools"><h3>${t("bd.toolsTitle")}</h3>
         <div class="list-tools">
           ${searchBoxHtml({ id: "bdToolSearch", placeholder: t("tool.searchPlaceholder"), label: t("tool.search") })}
+          <button class="btn btn-sm" data-action="tool-custom-add" id="bdToolCustomAdd" hidden>${icon("plus")}${t("bd.customAdd")}</button>
           <button class="btn btn-sm" data-action="tool-reconcile">${icon("refresh")}${t("bd.toolsReconcile")}</button>
         </div></div>
       <div class="card-body"><p class="help">${t("bd.toolsHelp")}</p></div>
@@ -722,6 +754,7 @@ const TAB_RENDER = {
         <th>${t("bd.toolsColName")}</th><th>${t("bd.toolsColId")}</th><th>${t("bd.toolsColDesired")}</th><th>${t("bd.toolsColInstalled")}</th><th></th>
       </tr></thead><tbody id="bdToolRows"><tr><td colspan="${TOOL_COLUMNS}"><span class="spinner"></span> ${esc(t("bd.toolsLoading"))}</td></tr></tbody></table></div></div>`;
     const body = root.querySelector("#bdToolRows");
+    const addButton = root.querySelector("#bdToolCustomAdd");
 
     const drawRows = () => {
       if (!tools) return;
@@ -738,19 +771,32 @@ const TAB_RENDER = {
       body.innerHTML = groupTools(matches)
         .map((group) => {
           const isCollapsed = collapsed.has(group.id);
-          return toolGroupRow(group, isCollapsed) + (isCollapsed ? "" : group.rows.map(toolRow).join(""));
+          const rows = group.rows.map((tool) => toolRow(tool, custom.has(tool.id))).join("");
+          return toolGroupRow(group, isCollapsed) + (isCollapsed ? "" : rows);
         })
         .join("");
     };
     const load = async () => {
-      try {
-        tools = (await api(`/api/tools?id=${enc(box().id)}`)).tools;
-      } catch (e) {
-        body.innerHTML = `<tr><td colspan="${TOOL_COLUMNS}">${emptyState({ iconName: "alert", title: t("bd.toolsLoadFailed"), text: esc(e.message) })}</td></tr>`;
+      const [listed, entries] = await Promise.allSettled([
+        api(`/api/tools?id=${enc(box().id)}`),
+        api("/api/tools/custom"),
+      ]);
+      custom = new Map(entries.status === "fulfilled" ? entries.value.tools.map((entry) => [entry.id, entry]) : []);
+      addButton.hidden = entries.status !== "fulfilled";
+      if (listed.status === "rejected") {
+        body.innerHTML = `<tr><td colspan="${TOOL_COLUMNS}">${emptyState({ iconName: "alert", title: t("bd.toolsLoadFailed"), text: esc(listed.reason.message) })}</td></tr>`;
         return;
       }
+      tools = listed.value.tools;
       drawRows();
     };
+    const customDialog = (entry) =>
+      openCustomToolDialog({
+        entry,
+        catalogIds: new Set((tools ?? []).map((item) => item.id)),
+        customById: custom,
+        onSaved: () => void load(),
+      });
     const search = bindSearchBox(root.querySelector("#bdToolSearch"), (text) => {
       query = text;
       drawRows();
@@ -791,6 +837,11 @@ const TAB_RENDER = {
       if (btn.dataset.action === "tool-upgrade") void start(`/api/boxes/${enc(b.id)}/tools/upgrade`, tool);
       if (btn.dataset.action === "tool-uninstall") void start(`/api/boxes/${enc(b.id)}/tools/uninstall`, tool);
       if (btn.dataset.action === "tool-reconcile") void start(`/api/boxes/${enc(b.id)}/tools/reconcile`);
+      if (btn.dataset.action === "tool-custom-add") customDialog(null);
+      if (btn.dataset.action === "tool-custom-edit" && custom.has(tool)) customDialog(custom.get(tool));
+      if (btn.dataset.action === "tool-custom-delete" && custom.has(tool)) {
+        void deleteCustomTool(custom.get(tool), { onDeleted: () => void load() });
+      }
     });
     void load();
     return () => offTask();

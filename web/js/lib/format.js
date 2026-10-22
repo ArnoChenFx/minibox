@@ -33,6 +33,17 @@ export function duration(sec) {
   return t("fmt.minutes", { m: Math.max(m, 0) });
 }
 
+/** A span read to the second, such as "42s" or "3m 05s". From an hour on it reads as `duration` does. */
+export function elapsed(fromIso, toMs = Date.now()) {
+  const from = new Date(fromIso ?? "").getTime();
+  if (Number.isNaN(from)) return "—";
+  const sec = Math.max(0, Math.floor((toMs - from) / 1000));
+  if (sec >= 3600) return duration(sec);
+  const m = Math.floor(sec / 60);
+  if (!m) return t("fmt.seconds", { s: sec });
+  return t("fmt.minutesSeconds", { m, s: String(sec % 60).padStart(2, "0") });
+}
+
 export function relTime(iso) {
   if (!iso) return "—";
   const ts = new Date(iso).getTime();

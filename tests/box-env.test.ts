@@ -394,6 +394,18 @@ describe("snapshots and system images", () => {
     expect(JSON.stringify(error)).not.toContain(SECRET_VALUE);
   });
 
+  test("saving a box that names a secret as a template is refused before any task or commit", async () => {
+    setSecret("vault", SECRET_VALUE);
+    const { box } = await run("box.create", createInput("alpha", [{ name: "TOKEN", secretRef: "vault" }]));
+    const error = await rejectionOf(
+      app.operations.run("template.save", contextFor(OWNER), { id: box.boxId, name: "saved" }),
+    );
+    expect(error).toMatchObject({ status: 409, key: "secret_in_image", params: { env: "TOKEN", name: "vault" } });
+    expect(runtime.callsTo("commitContainer")).toEqual([]);
+    expect(app.tasks.list({ limit: 10 })).toEqual([]);
+    expect(JSON.stringify(error)).not.toContain(SECRET_VALUE);
+  });
+
   test("a checkpoint with a system image of a box that names a secret is refused before any backup starts", async () => {
     setSecret("vault", SECRET_VALUE);
     const { box } = await run("box.create", createInput("alpha", [{ name: "TOKEN", secretRef: "vault" }]));

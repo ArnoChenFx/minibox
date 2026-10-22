@@ -449,6 +449,13 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
     },
   ],
   [
+    "template.save",
+    async (check) => {
+      await boxRule(check);
+      await assertTemplateNameFree(check.host, String(check.input.name));
+    },
+  ],
+  [
     "template.delete",
     async ({ principal, host, input }) => assertOwnedImage(principal, host, String(input.ref), "template"),
   ],

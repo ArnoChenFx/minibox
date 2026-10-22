@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   closeSync,
+  fchmodSync,
   fsyncSync,
   mkdirSync,
   openSync,
@@ -48,7 +49,8 @@ export function tokensPath(dataDir: string): string {
 
 /**
  * Replace `path` with `contents` so a reader sees either the old file or the new one, never a partial write.
- * The new file is flushed before the rename, and the temporary file is removed if any step fails.
+ * The new file is flushed before the rename, and the temporary file is removed if any step fails. `mode` is applied
+ * exactly: the umask only narrows the mode passed to open, so the chmod is what makes 0644 hold under any umask.
  */
 export function writeFileAtomic(path: string, contents: string, mode = SECRET_FILE_MODE): void {
   // A dot-prefixed temporary name cannot be taken for a record: a listing that filters on the name never sees one.
@@ -56,6 +58,7 @@ export function writeFileAtomic(path: string, contents: string, mode = SECRET_FI
   try {
     const fd = openSync(tmp, "wx", mode);
     try {
+      fchmodSync(fd, mode);
       writeFileSync(fd, contents);
       fsyncSync(fd);
     } finally {

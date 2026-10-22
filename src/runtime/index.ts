@@ -128,6 +128,8 @@ export interface ImageSummary {
 export interface ImageDetails {
   id: string;
   labels: Record<string, string>;
+  /** The image's own `NAME=value` entries, as the engine reports them in the image configuration. */
+  env: string[];
 }
 
 export interface VolumeInfo {
