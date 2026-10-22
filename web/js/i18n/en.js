@@ -324,7 +324,7 @@ export default {
   "err.storage_unwritable":
     "Uid 1000, the box user, cannot write the new volume directory {path}, so the volume was not created: {detail}",
   "err.storage_squash_hint":
-    "On the NAS, set the export to all_squash,anonuid=1000,anongid=1000, or root_squash,anonuid=1000,anongid=1000, so the squashed user is uid 1000. Setup guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/nas.md",
+    "On the NAS, set the export to all_squash,anonuid=1000,anongid=1000, or root_squash,anonuid=1000,anongid=1000, so the squashed user is uid 1000. Setup guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/nfs.md",
   "err.helper_image_missing": "Base template image {image} is missing, so volume helpers cannot run.",
   "err.file_path_invalid": "File path must be at most 512 bytes, without NUL or line breaks.",
   "err.file_path_escape": "File path must stay inside the volume (no .. or absolute escape).",
@@ -1360,15 +1360,15 @@ export default {
   "about.docker": "Docker engine",
   "about.links": "Project links",
   "about.readme": "README",
-  "about.readmeMeta": "Quick start, configuration and API reference",
+  "about.readmeMeta": "What MiniBox is, and how to install it",
   "about.docs": "Docs",
-  "about.docsMeta": "Design notes, runtime notes and the OpenAPI spec",
+  "about.docsMeta": "Quick start, user guide, administration and reference",
   "about.changelog": "Changelog",
   "about.changelogMeta": "Release notes, newest first",
   "about.issues": "Issues",
   "about.issuesMeta": "Report a bug or request a feature",
   "about.license": "License",
-  "about.licenseMeta": "MIT License",
+  "about.licenseMeta": "Apache License 2.0",
   "nav.volumes": "Volumes",
   "vol.subtitle":
     "Storage pools and volumes. Cache stays on the local pool unless you override it. A hard NFS mount that cannot be reached is reported here instead of hanging a box.",

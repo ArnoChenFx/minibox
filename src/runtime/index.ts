@@ -351,7 +351,7 @@ export const isRuntimeError = (e: unknown, kind: RuntimeErrorKind): e is Runtime
 
 /**
  * Operations MiniBox needs from a container engine. Engine failures are RuntimeError; anything else is an
- * unexpected Error. See docs/runtime.md for the contract.
+ * unexpected Error.
  */
 export interface Runtime {
   ping(): Promise<void>;

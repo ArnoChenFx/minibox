@@ -732,7 +732,7 @@ export async function rollbackBox(
 /**
  * A confirmed rollback, run under the box's power lock. The box is refused first when its lifetime has ended, before any
  * volume is made, as a rebuild starts the box too (decision 53). The box's owned volumes are then backed up as an
- * automatic safety checkpoint, with the box stopped (design §7.2), so the data the rollback replaces survives whatever
+ * automatic safety checkpoint, with the box stopped, so the data the rollback replaces survives whatever
  * follows.
  *
  * The rollback record is written only once the box runs on the restored volumes. Written earlier, it would name volumes
@@ -823,7 +823,7 @@ function rolledOf(volume: VolumeRecord, path: string): RolledVolume {
   return { volumeId: volume.id, name: volume.name, engineName: volume.engineName, path };
 }
 
-/** The checkpoint a rollback takes before it replaces anything. The box is stopped for it, as design §7.2 requires. */
+/** The checkpoint a rollback takes before it replaces anything. The box is stopped for it. */
 function safetyInput(target: CheckpointView): TakeCheckpointInput {
   return {
     label: `Before rollback to ${target.label}`,

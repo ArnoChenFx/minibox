@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks a built base template against a real Docker daemon: the dev user and uid convention, sudo, tools, mount
 # points, cache variables, the PATH of login shells, whether containers sharing one volume can read and write it, and
-# how each box profile (docs/design.md §14) treats capabilities, no-new-privileges, sudo and ping.
+# how each box profile treats capabilities, no-new-privileges, sudo and ping.
 #   bun run build:template && scripts/check-box-image.sh
 #   PLATFORM=linux/arm64 scripts/check-box-image.sh minibox-template:base-arm64
 set -euo pipefail

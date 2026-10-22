@@ -8,7 +8,7 @@ import { isVolumeId } from "../volumes/id";
 import type { VolumeRecord } from "../volumes/types";
 
 /**
- * The volume the image mounts at `/data` (README: `-v minibox-data:/data`). It holds the access key and the sessions
+ * The volume the image mounts at `/data` (see docs/admin/install.md). It holds the access key and the sessions
  * file, so a box that mounted it could read both.
  */
 export const DATA_VOLUME = "minibox-data";
@@ -33,7 +33,7 @@ export async function mountTarget(host: HostCtx, engineName: string): Promise<Mo
 }
 
 /**
- * Refuses a mount that `box` may not make (design §9.2). `box` is null while a box is being created.
+ * Refuses a mount that `box` may not make. `box` is null while a box is being created.
  * - The data volume, the pool roots and internal helper volumes are always refused.
  * - A volume the box already mounts is kept, unless the engine no longer has it.
  * - A recorded or already-mounted volume that the engine no longer has is refused, never recreated.

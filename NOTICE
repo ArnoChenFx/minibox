@@ -1,0 +1,10 @@
+MiniBox
+Copyright (c) 2026 Arno Chen
+
+MiniBox is distributed under the Apache License, Version 2.0. See LICENSE.
+
+Third-party components retain their own copyright notices and licenses:
+- web/vendor/xterm/LICENSE
+- web/vendor/xterm-addon-fit/LICENSE
+- site/assets/agents/LICENSE (Lobe Icons; also see the accompanying README.md)
+Other dependencies include their license notices in their installed packages.

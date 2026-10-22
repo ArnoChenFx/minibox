@@ -141,7 +141,7 @@ interface Row {
   count: number;
 }
 
-/** Operations whose events are activity: terminal session start, sends and close (design §8.3). */
+/** Operations whose events are activity: terminal session start, sends and close. */
 const ACTIVITY_OPS: ReadonlySet<string> = new Set(["session.start", "session.send", "session.close"]);
 /** Event families that are activity: exec, terminal attachments and container events from Docker. */
 const ACTIVITY_PREFIXES = ["exec.", "terminal.", "container."] as const;
