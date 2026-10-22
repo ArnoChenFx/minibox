@@ -284,6 +284,9 @@ export default {
   "err.host_unsupported": "{feature} is not supported on remote hosts yet.",
   "err.preview_remote_unsupported": "Port preview is not supported on remote hosts yet.",
   "err.box_moving": "This box is moving to another host. Try again when the move finishes.",
+  "err.box_changing": "This box is being rebuilt or updated. Try the move again when that finishes.",
+  "err.move_confirm":
+    "Moving copies the box's volumes to {to}, starts it there if it runs now, and removes it from {from} once it runs there. Send confirm: true to continue.",
   "err.move_same_host": "The box already runs on host {host}, so it cannot move there.",
   "err.move_changed": "The box changed while it was moving, so the move was undone. Refresh the box and try again.",
   "err.move_template_moved":

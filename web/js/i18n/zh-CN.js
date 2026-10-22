@@ -251,6 +251,9 @@ export default {
   "err.host_unsupported": "远程宿主机暂不支持{feature}。",
   "err.preview_remote_unsupported": "远程宿主机暂不支持端口预览。",
   "err.box_moving": "此 Box 正在迁移到另一台宿主机，请等迁移完成后再试。",
+  "err.box_changing": "此 Box 正在重建或更新，请等它完成后再迁移。",
+  "err.move_confirm":
+    "迁移会把 Box 的卷复制到 {to}，若它正在运行则在那里启动，然后从 {from} 移除。请发送 confirm: true 以继续。",
   "err.move_same_host": "Box 已在宿主机 {host} 上运行，无需迁移到该宿主机。",
   "err.move_changed": "Box 在迁移过程中发生了变化，因此已撤销迁移。请刷新 Box 后重试。",
   "err.move_template_moved": "模板 {tag} 现在指向比此 Box 所运行镜像更新的镜像。请先把 Box 重建到新镜像，再迁移。",

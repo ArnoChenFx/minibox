@@ -232,6 +232,9 @@ export const MESSAGES = {
   host_unsupported: "{feature} is not supported on remote hosts yet.",
   preview_remote_unsupported: "Port preview is not supported on remote hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
+  box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
+  move_confirm:
+    "Moving copies the box's volumes to {to}, starts it there if it runs now, and removes it from {from} once it runs there. Send confirm: true to continue.",
   move_same_host: "The box already runs on host {host}, so it cannot move there.",
   move_changed: "The box changed while it was moving, so the move was undone. Refresh the box and try again.",
   move_template_moved:

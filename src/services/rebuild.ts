@@ -22,7 +22,7 @@ import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox, refuseExpired } from "./boxes";
-import { assertNotMoving } from "./moving";
+import { beginChange } from "./moving";
 import { alignVolumeRoot, type RecordNote, restoreVolumeRoot, writableWorkspaceVolume } from "./volume-owner";
 
 interface SwapState {
@@ -51,7 +51,22 @@ export async function rebuildBox(
   record?: RecordNote,
 ): Promise<Box> {
   const box = await getBox(host, ref);
-  assertNotMoving(box.boxId);
+  const release = beginChange(box.boxId);
+  try {
+    return await rebuildChanging(host, box, revision, request, confirm, record);
+  } finally {
+    release();
+  }
+}
+
+async function rebuildChanging(
+  host: HostCtx,
+  box: Box,
+  revision: number,
+  request: RebuildRequest,
+  confirm: boolean,
+  record?: RecordNote,
+): Promise<Box> {
   await host.specs.exclusive(async () => {
     const spec = host.specs.read(box.boxId);
     if (!spec) throw notFound(msg("box_not_found"));
