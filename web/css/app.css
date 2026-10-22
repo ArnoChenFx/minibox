@@ -2447,7 +2447,8 @@ textarea.token-lines {
   align-items: center;
   gap: 6px;
 }
-.tool-action-cell {
+.tool-action-cell,
+.tool-missing {
   white-space: nowrap;
 }
 .tool-actions {

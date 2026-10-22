@@ -467,7 +467,7 @@ function toolGroupRow(group, collapsed) {
 }
 
 function toolInstalledCell(tool) {
-  if (!tool.installed) return `<span class="subtle">${esc(t("bd.toolsNotInstalled"))}</span>`;
+  if (!tool.installed) return `<span class="subtle tool-missing">${esc(t("bd.toolsNotInstalled"))}</span>`;
   const version = tool.installedVersion ? `<span class="mono subtle">${esc(tool.installedVersion)}</span>` : "";
   const outside = tool.managed ? "" : `<span class="help">${esc(t("tool.foundOutside"))}</span>`;
   return `<div class="tool-state"><span class="badge badge-success">${esc(t("bd.toolsInstalled"))}</span>${version}${outside}</div>`;
