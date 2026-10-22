@@ -5,6 +5,7 @@ import type { VolumeInfo } from "../runtime";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { claimOne, inspectVolumeOrNull, ownedByAnotherBox } from "../volumes/engine";
 import { isVolumeId } from "../volumes/id";
+import { assertMountsWithinLimits } from "../volumes/limits";
 import type { VolumeRecord } from "../volumes/types";
 
 /**
@@ -82,6 +83,7 @@ export async function assertRebuildAttachments(
   for (const mount of mounts) {
     assertMountAllowed(host, box, mount.volume, await mountTarget(host, mount.volume));
   }
+  assertMountsWithinLimits(host, mounts);
   assertNetworkAllowed(host, box, network);
 }
 

@@ -325,6 +325,23 @@ describe("host overcommit", () => {
   });
 });
 
+describe("volume usage sampling and the host disk floor", () => {
+  test("a volume is sampled every 600 seconds by default, and VOLUME_USAGE_INTERVAL_SEC sets it from 60 to 86400", () => {
+    expect(load({ ACCESS_KEY: KEY }).volumeUsageIntervalSec).toBe(600);
+    expect(load({ ACCESS_KEY: KEY, VOLUME_USAGE_INTERVAL_SEC: "60" }).volumeUsageIntervalSec).toBe(60);
+    expect(load({ ACCESS_KEY: KEY, VOLUME_USAGE_INTERVAL_SEC: "86400" }).volumeUsageIntervalSec).toBe(86400);
+    for (const value of ["30", "86401", "1.5", "often"]) {
+      expect(load({ ACCESS_KEY: KEY, VOLUME_USAGE_INTERVAL_SEC: value }).volumeUsageIntervalSec).toBe(600);
+    }
+  });
+  test("HOST_DISK_MIN_FREE_PERCENT is 10 by default, 0 turns the floor off, and a value above 100 is ignored", () => {
+    expect(load({ ACCESS_KEY: KEY }).hostDiskMinFreePercent).toBe(10);
+    expect(load({ ACCESS_KEY: KEY, HOST_DISK_MIN_FREE_PERCENT: "0" }).hostDiskMinFreePercent).toBe(0);
+    expect(load({ ACCESS_KEY: KEY, HOST_DISK_MIN_FREE_PERCENT: "25" }).hostDiskMinFreePercent).toBe(25);
+    expect(load({ ACCESS_KEY: KEY, HOST_DISK_MIN_FREE_PERCENT: "101" }).hostDiskMinFreePercent).toBe(10);
+  });
+});
+
 describe("file upload limit", () => {
   test("FILE_UPLOAD_MAX_MB is 1024 by default and can be set from the environment", () => {
     expect(load({ ACCESS_KEY: KEY }).fileUploadMaxMb).toBe(1024);
@@ -376,6 +393,26 @@ describe("permissions", () => {
     chmodSync(dataDir, 0o755);
     load({ ACCESS_KEY: KEY });
     expect(mode(dataDir)).toBe(0o700);
+  });
+});
+
+describe("PREVIEW_BASE_DOMAIN", () => {
+  beforeEach(() => setLogLevel("error"));
+  afterEach(() => setLogLevel("info"));
+
+  test("is off when unset or blank, which keeps path previews", () => {
+    expect(load({ ACCESS_KEY: KEY }).previewBaseDomain).toBeNull();
+    expect(load({ ACCESS_KEY: KEY, PREVIEW_BASE_DOMAIN: "  " }).previewBaseDomain).toBeNull();
+  });
+  test("is read as a lower-case domain", () => {
+    expect(load({ ACCESS_KEY: KEY, PREVIEW_BASE_DOMAIN: " Minibox-Preview.NET " }).previewBaseDomain).toBe(
+      "minibox-preview.net",
+    );
+  });
+  test("refuses startup when it is not a domain", () => {
+    expect(() => load({ ACCESS_KEY: KEY, PREVIEW_BASE_DOMAIN: "https://minibox-preview.net" })).toThrow(
+      /PREVIEW_BASE_DOMAIN: .* must be a domain name/,
+    );
   });
 });
 

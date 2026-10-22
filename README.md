@@ -13,7 +13,10 @@
 
 <p align="center"><b>English</b> | <a href="README-zh.md">简体中文</a></p>
 
-![The MiniBox overview page](docs/screenshots/overview-light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png" />
+  <img src="docs/screenshots/en/overview-light.png" alt="The MiniBox overview page" />
+</picture>
 
 ## What is MiniBox?
 
@@ -33,15 +36,19 @@ MiniBox is built for one trusted user. It has no user accounts, so anyone with t
 
 - **Boxes.** Create, start, stop, restart and delete boxes, and change their CPU and memory limits. Commands run as the non-root `dev` user by default. Idle boxes can sleep and wake on demand. A box can also run a startup command each time it starts.
 - **Storage.** Keep `/workspace` and `/home/dev` across rebuilds. Use Docker volumes, NFS exports or host paths as storage pools. Browse, upload and download a box's files from its **Files** tab, whether the box is running or stopped.
-- **Templates.** Start new boxes from the bundled base template (Debian 12, Node.js 26, Python 3, git and tmux) or from a template you save from a box.
-- **Checkpoints.** Copy a box's data into a restic repository, then fork a new box from it or roll the box back. Export a checkpoint as a passphrase-sealed package, import it on this or another instance, and schedule checkpoints.
+- **Templates.** Start new boxes from the bundled base template (Debian 12, Node.js 26, Python 3, git and tmux), from a template you save from a box, or from one you build from a Dockerfile, a Git repository, a build context archive or a `devcontainer.json`. A box can clone a repository into `/workspace` when it is created.
+- **Checkpoints.** Copy a box's data into a restic repository, then fork a new box from it or roll the box back. Export a checkpoint as a passphrase-sealed package, import it on this or another instance, and schedule checkpoints by interval or at a daily time in the time zone you choose.
 - **Tools.** Install Agent CLIs and language runtimes from a catalog, or add your own entries.
 - **Terminals and sessions.** Open a browser terminal, or let an agent drive a tmux session that you can take over.
 - **Previews.** Open a web app that runs in a box, through MiniBox, without publishing a host port.
 - **Agent access.** Give each agent its own scoped token, and connect it through MCP, the CLI, SSH or the REST API.
-- **Multiple hosts.** Run boxes on other Docker engines, through SSH, mutual TLS or a Unix socket. Let MiniBox place a box on the freest host, and move a box to another host with its volumes.
+- **Notifications.** Send events, such as an out-of-memory stop, a failed command or checkpoint, or an offline host, to a webhook, an ntfy topic or a Telegram chat.
+- **Multiple hosts.** Run boxes on other Docker engines, reached through SSH, mutual TLS, a Unix socket, or a host agent that connects out to MiniBox with a one-time pairing code, so the host opens no port. Let MiniBox place a box on the freest host, and move a box to another host with its volumes.
 
-![The boxes list in the MiniBox console](docs/screenshots/boxes-light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/boxes-dark.png" />
+  <img src="docs/screenshots/en/boxes-light.png" alt="The boxes list in the MiniBox console" />
+</picture>
 
 ## Install
 

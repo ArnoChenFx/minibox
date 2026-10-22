@@ -1707,7 +1707,7 @@ function mutateVolume(files: Map<string, FakeFsEntry>, root: string, cmd: string
   return { exitCode: 0, logs: "" };
 }
 
-function volumeAwareHelper(rt: FakeRuntime, spec: HelperSpec): HelperResult {
+export function volumeAwareHelper(rt: FakeRuntime, spec: HelperSpec): HelperResult {
   const mount = spec.mounts?.[0];
   const volume = mount?.source;
   const root = (mount?.target ?? "/minibox-volume").replace(/\/+$/, "");
@@ -1741,6 +1741,12 @@ function volumeAwareHelper(rt: FakeRuntime, spec: HelperSpec): HelperResult {
       lines.push(`${kind}\t${size}\t${mtime}\t${full}\0`);
     }
     return { exitCode: 0, logs: lines.join("") };
+  }
+
+  if (cmd0 === "du") {
+    let bytes = 0;
+    for (const entry of files.values()) if (entry.type === "file") bytes += entry.content?.byteLength ?? 0;
+    return { exitCode: 0, logs: `${bytes}\t/mnt\n` };
   }
 
   if (cmd0 === "mv" || cmd0 === "rm") return mutateVolume(files, root, spec.cmd);

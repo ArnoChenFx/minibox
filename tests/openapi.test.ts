@@ -176,6 +176,7 @@ describe("OpenAPI document", () => {
       "volume.delete",
       "volume.detach",
       "volume.get",
+      "volume.limits.set",
       "volume.list",
       "volume.usage",
     ]);

@@ -37,6 +37,7 @@ import {
 import { requireRevision } from "../specs/revision";
 import { snapshotVisible, specViews, ttlFor } from "../tokens/model";
 import { assertCheckpointQuota, assertWithinQuota, underCheckpointQuota, underQuota } from "../tokens/quota";
+import { assertHostDiskRoom } from "../volumes/disk";
 import { assertCanCreateDefaultMounts, assertCanWrite } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
@@ -177,6 +178,7 @@ export const checkpointCreate = defineOperation({
   beforeTask: async (ctx, input, box) => {
     assertTakeable(ctx.host, box, takeInput(input));
     assertCheckpointQuota(ctx);
+    await assertHostDiskRoom(ctx.host);
   },
   exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
   activity: { action: () => "checkpoint.create", target: (_input, box) => box.name },
@@ -219,6 +221,7 @@ export const checkpointFork = defineOperation({
     if (ctx.host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
     await assertCanCreateDefaultMounts(ctx, input.name);
     assertWithinQuota(ctx, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb });
+    await assertHostDiskRoom(ctx.host);
   },
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: (input, _checkpoint, result) => ({ kind: "box", id: result?.box.id, name: input.name }) },
@@ -332,6 +335,7 @@ export const boxRollback = defineOperation({
     if (!input.confirm) throw rollbackConfirmation(await previewRollback(host, input.id, input.checkpoint, revision));
     await planRollback(host, input.id, input.checkpoint, revision);
     await assertAutomaticAllowed(host);
+    await assertHostDiskRoom(host);
   },
   exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
   activity: { action: () => "box.rollback", target: (_input, box) => box.name },
