@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { EventTarget } from "../events/types";
 import { type HostCtx, LOCAL_HOST_ID } from "../host/registry";
+import { AUTO_HOST } from "../host/store";
 import { AppError, badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
 import {
@@ -21,16 +22,19 @@ import {
   stopBox,
   updateBox,
 } from "../services/boxes";
-import { assertCapacity } from "../services/capacity";
+import { assertCapacity, assertNewBox, assertResizeRoom } from "../services/capacity";
+import { moveBox, moveConfirmation, previewMove } from "../services/move";
+import { placeBox } from "../services/placement";
 import { rebuildBox } from "../services/rebuild";
 import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
-import { boxVisible, ttlFor, viewOfBox } from "../tokens/model";
+import { boxVisible, hostAllowed, refusal, ttlFor, viewOfBox } from "../tokens/model";
 import { underQuota } from "../tokens/quota";
 import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
 import { hostById, hostOfBox } from "./routing";
 import { BoxSchema, BoxWithStatsSchema, StatSampleSchema, StatsSchema } from "./schemas";
+import type { OperationContext } from "./types";
 import {
   boxEnv,
   boxId,
@@ -53,7 +57,9 @@ import {
   requireUpdate,
   historyFlag,
   hostId,
+  hostOrAuto,
   statsFlag,
+  storageConfirmFlag,
   tail,
   templateImage,
   ttl,
@@ -127,6 +133,19 @@ export const boxGet = defineOperation({
   }),
 });
 
+/**
+ * The hosts a create may place a box on: every host for the owner, and only the granted ones for a token. Automatic
+ * placement never picks, or even reads, a host the caller cannot use.
+ */
+function grantedHosts(ctx: OperationContext): HostCtx[] {
+  const hosts = ctx.allHosts?.() ?? [ctx.host];
+  const { principal } = ctx;
+  if (principal.type !== "token") return [...hosts];
+  const granted = hosts.filter((host) => hostAllowed(principal.grants.hosts, host.host.id));
+  if (granted.length === 0) throw refusal("host_not_granted", { host: AUTO_HOST });
+  return granted;
+}
+
 export const boxCreate = defineOperation({
   name: "box.create",
   tag: "boxes",
@@ -157,9 +176,10 @@ export const boxCreate = defineOperation({
     env: boxEnv("create"),
     idleTimeoutSec: idleTimeout(),
     ttlSec: ttl("create"),
-    host: hostId()
-      .optional()
-      .meta({ description: "Host to create the box on. Omitted, the box goes on the local host." }),
+    host: hostOrAuto().optional().meta({
+      description:
+        "Host to create the box on: a host id, or auto to pick the online host with the most room that holds the template. Omitted, the box goes on the local host.",
+    }),
     tools: z
       .array(
         z
@@ -183,10 +203,17 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional host names the machine to create it on (default local, see list_hosts). Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
-  hostFor: (ctx, input) => hostById(ctx, input.host ?? LOCAL_HOST_ID),
-  precondition: ({ host }, input) => assertCapacity(host, input),
+  hostFor: (ctx, input) => {
+    if (input.host !== AUTO_HOST) return hostById(ctx, input.host ?? LOCAL_HOST_ID);
+    return placeBox(grantedHosts(ctx), {
+      cpus: input.cpus,
+      memoryMb: input.memoryMb,
+      image: input.template ?? ctx.host.baseTemplateTag,
+    });
+  },
+  precondition: ({ host }, input) => assertNewBox(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: {
     target: ({ name }, _box, result) => ({ kind: "box", id: result?.box.id, name }),
@@ -297,13 +324,16 @@ export const boxResources = defineOperation({
   activity: { action: () => "box.resources", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async (ctx, input, box) =>
-    underQuota(ctx, { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
-      box: await updateBox(ctx.host, input.id, requireRevision(input.expectedRevision), {
-        cpus: input.cpus,
-        memoryMb: input.memoryMb,
-        pids: input.pids,
-      }),
-    })),
+    underQuota(ctx, { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb }, async () => {
+      await assertResizeRoom(ctx.host, box, input);
+      return {
+        box: await updateBox(ctx.host, input.id, requireRevision(input.expectedRevision), {
+          cpus: input.cpus,
+          memoryMb: input.memoryMb,
+          pids: input.pids,
+        }),
+      };
+    }),
 });
 
 function inPlacePatch(input: {
@@ -387,6 +417,7 @@ export const boxUpdate = defineOperation({
       ctx,
       { kind: "resize", boxId: box.boxId, cpus: input.cpus, memoryMb: input.memoryMb },
       async () => {
+        await assertResizeRoom(host, box, input);
         if (hasRebuildFields(request)) {
           try {
             await rebuildBox(host, input.id, requireRevision(input.expectedRevision), request, false);
@@ -463,6 +494,79 @@ export const boxRebuild = defineOperation({
   },
 });
 
+const LeftoverSchema = z.object({
+  kind: z.enum(["container", "volume"]),
+  name: z.string(),
+});
+
+export const boxMove = defineOperation({
+  name: "box.move",
+  tag: "boxes",
+  summary: "Move a box to another host",
+  kind: "write",
+  scope: "box:write",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    id: boxId(),
+    host: hostId().meta({ description: "The host to move the box to. It must differ from the box's current host." }),
+    confirm: storageConfirmFlag(),
+    expectedRevision: expectedRevision(),
+  }),
+  output: z.object({
+    box: BoxSchema,
+    from: hostId(),
+    to: hostId(),
+    checkpoints: z.number().int().meta({
+      description: "Checkpoints the box has on its old host. They stay there and are not restored on the new one.",
+    }),
+    leftovers: z.array(LeftoverSchema).meta({
+      description: "What stayed on the old host after the move, when its removal failed. Empty when it was cleaned up.",
+    }),
+  }),
+  rest: [{ method: "POST", path: "/api/boxes/:id/move", body: true, ifMatch: true, status: 202 }],
+  cli: "box move",
+  mcp: {
+    toolset: "move",
+    name: "move_box",
+    description:
+      "Move a box to another host. Owner or admin only: the token needs box write and every host and box granted, as the admin preset has. Without confirm true the call is refused with a preview: the volumes that would be copied or attached, whether the box starts on the new host, the template image that would be sent, and the state that is lost. With confirm, the image is sent, local volumes are copied, the box is recreated on the new host and started there if it runs now, and the old container is removed once the new one runs. NFS volumes stay where they are and are attached on the new host. Bind mounts and volumes MiniBox did not create refuse the move. The box keeps its id, name, volumes, env and history, and loses its writable layer, processes and IP. Its checkpoints stay on the old host. Pass expectedRevision, the box's current revision.",
+  },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
+  resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async (ctx, input) => {
+    const preview = await previewMove(
+      ctx.host,
+      hostById(ctx, input.host),
+      input.id,
+      requireRevision(input.expectedRevision),
+    );
+    if (!input.confirm) throw moveConfirmation(preview);
+  },
+  exclusive: ({ host }, _input, box) => `box.move:${host.host.id}:${box.boxId}`,
+  activity: { action: () => "box.move", target: (_input, box) => box.name },
+  audit: {
+    target: (_input, box) => box && boxTarget(box),
+    detail: (input) => ({ host: input.host, confirm: input.confirm }),
+  },
+  run: async (ctx, input) => {
+    const result = await moveBox(
+      ctx.host,
+      hostById(ctx, input.host),
+      input.id,
+      requireRevision(input.expectedRevision),
+      ctx.task,
+    );
+    return {
+      box: result.box,
+      from: result.from,
+      to: result.to,
+      checkpoints: result.checkpoints,
+      leftovers: [...result.leftovers],
+    };
+  },
+});
+
 export const boxLogs = defineOperation({
   name: "box.logs",
   tag: "boxes",
@@ -509,6 +613,7 @@ export const boxOperations = [
   boxResources,
   boxUpdate,
   boxRebuild,
+  boxMove,
   boxLogs,
   boxStats,
 ];

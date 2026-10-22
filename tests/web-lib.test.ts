@@ -573,6 +573,28 @@ describe("api errors", () => {
   });
 });
 
+describe("remote host refusals", () => {
+  test("the feature a remote-host refusal names is translated, not left in English", () => {
+    const failure = {
+      error: {
+        code: "unsupported",
+        message: "Snapshots is not supported on remote hosts yet.",
+        key: "host_unsupported",
+        params: { feature: "snapshots" },
+      },
+    };
+    const message = inBrowser<string>(
+      { languages: ["zh-CN"] },
+      `await api.api("/api/boxes/alpha/snapshots", { method: "POST", body: {} }).then(() => null, (e) => e.message)`,
+      [
+        `globalThis.fetch = async () => new Response(${JSON.stringify(JSON.stringify(failure))}, { status: 501, headers: { "content-type": "application/json" } });`,
+        `const api = await import(${JSON.stringify(join(LIB, "api.js"))});`,
+      ],
+    );
+    expect(message).toBe("远程宿主机暂不支持快照。");
+  });
+});
+
 describe("mount lists", () => {
   test("a mount path is valid by the rule the server applies to it", () => {
     const samples = [

@@ -22,6 +22,7 @@ import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox, refuseExpired } from "./boxes";
+import { beginChange } from "./moving";
 import { alignVolumeRoot, type RecordNote, restoreVolumeRoot, writableWorkspaceVolume } from "./volume-owner";
 
 interface SwapState {
@@ -50,6 +51,22 @@ export async function rebuildBox(
   record?: RecordNote,
 ): Promise<Box> {
   const box = await getBox(host, ref);
+  const release = beginChange(box.boxId);
+  try {
+    return await rebuildChanging(host, box, revision, request, confirm, record);
+  } finally {
+    release();
+  }
+}
+
+async function rebuildChanging(
+  host: HostCtx,
+  box: Box,
+  revision: number,
+  request: RebuildRequest,
+  confirm: boolean,
+  record?: RecordNote,
+): Promise<Box> {
   await host.specs.exclusive(async () => {
     const spec = host.specs.read(box.boxId);
     if (!spec) throw notFound(msg("box_not_found"));
@@ -121,7 +138,7 @@ async function inspectOld(host: HostCtx, id: string): Promise<ContainerInfo> {
  * template when the template is the image it was created from (`ref` equals `image`). A snapshot box is labelled
  * `snapshot:<ref>`, so it stays on its snapshot. A tag that no longer exists is not a move.
  */
-async function movedTag(host: HostCtx, spec: BoxSpec): Promise<MovedTag | null> {
+export async function movedTag(host: HostCtx, spec: BoxSpec): Promise<MovedTag | null> {
   if (spec.template.ref !== spec.template.image) return null;
   let tagged: ImageDetails;
   try {
@@ -246,7 +263,7 @@ function containerLabels(
   return labels;
 }
 
-function containerSpec(
+export function containerSpec(
   host: HostCtx,
   spec: BoxSpec,
   planned: PlannedRebuild,
@@ -288,7 +305,7 @@ function canon(mounts: { volume: string; path: string; mode: string }[]): string
  * A rebuild that sets the template also checks the image id. A tag can move between the inspect and the create, and the
  * spec must not record a digest the container does not run. Returns what the engine reports for the container.
  */
-async function assertFresh(
+export async function assertFresh(
   host: HostCtx,
   id: string,
   template: BoxSpec["template"],

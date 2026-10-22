@@ -4,7 +4,7 @@ import { applyBoxFrame, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, duration, gbOrMb, mem, pct, relTime } from "../lib/format.js";
 import { boxesOnHost, HOST_BADGE, isUnreachable } from "../lib/host-list.js";
-import { hostFilter, hostName, onHosts } from "../lib/hosts.js";
+import { hostFilter, hostName, hostsNow, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
@@ -20,6 +20,7 @@ const ACTION_ICON = {
   "box.restart": "restart",
   "box.resources": "sliders",
   "box.rebuild": "refresh",
+  "box.move": "move",
   "box.rollback": "history",
   "box.rollback.confirm": "check",
   "box.rollback.undo": "refresh",
@@ -40,6 +41,9 @@ const ACTION_ICON = {
 function metricSkeleton() {
   return '<div class="card"><div class="skeleton sk-block"></div></div>';
 }
+
+/** How often the host cards re-read what each host runs and uses. The sampler keeps its figures current between reads. */
+const HOST_USAGE_MS = 10_000;
 
 export function render(view) {
   view.innerHTML = `
@@ -94,9 +98,25 @@ export function render(view) {
     activityTimer = setTimeout(loadActivity, 300);
   };
 
+  let hostList = hostsNow();
+  let usageById = new Map();
+  const drawHosts = () => renderHostCards(view, hostList, usageById);
+  const loadUsage = async () => {
+    if (hostList.length < 2) return;
+    try {
+      usageById = new Map((await api("/api/hosts/usage")).hosts.map((host) => [host.id, host]));
+      drawHosts();
+    } catch {
+      /* the cards keep the figures they have */
+    }
+  };
+  const usageTimer = setInterval(loadUsage, HOST_USAGE_MS);
+
   const offs = [
     onHosts((list) => {
-      renderHostCards(view, list);
+      hostList = list;
+      drawHosts();
+      void loadUsage();
       if (loaded) renderBoxes(view, boxes);
     }),
     subscribe("sync", (frame) => {
@@ -119,6 +139,7 @@ export function render(view) {
     for (const unsubscribe of offs) unsubscribe();
     stopPolling();
     clearTimeout(activityTimer);
+    clearInterval(usageTimer);
   };
 }
 
@@ -220,22 +241,47 @@ function renderBoxes(view, boxes) {
     .join("")}</ul>`;
 }
 
-function renderHostCards(view, hosts) {
+function renderHostCards(view, hosts, usageById) {
   const root = view.querySelector("#ovHosts");
   root.hidden = hosts.length < 2;
-  root.innerHTML = root.hidden ? "" : hosts.map(hostCard).join("");
+  root.innerHTML = root.hidden ? "" : hosts.map((host) => hostCard(host, usageById.get(host.id))).join("");
 }
 
-function hostCard(host) {
+function hostCard(host, usage) {
   const capacity = host.capacity
     ? `${cpus(host.capacity.cpus)} · ${mem(host.capacity.memoryBytes)}`
     : t("common.unknown");
   const latency = host.latencyMs == null ? "" : ` · ${host.latencyMs} ms`;
+  const containers = usage?.containers
+    ? `<div class="metric-sub">${t("ov.hostContainers", usage.containers)}</div>`
+    : "";
   return `<div class="card metric" data-host="${esc(host.id)}">
     <div class="metric-top"><span>${esc(host.name)}</span>${icon("server")}</div>
     <div class="metric-value">${host.boxes}<small>${t("ov.hostBoxes", { n: host.boxes })}</small></div>
     <div class="metric-sub">${esc(t(`st.transport.${host.transport}`))} · ${capacity}${latency}</div>
+    ${containers}
+    ${hostAllocation(host, usage)}
     <div style="margin-top:auto"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span></div>
+  </div>`;
+}
+
+const barLevel = (p) => (p > 100 ? "crit" : p > 75 ? "warn" : "");
+
+/** The CPU and memory the running boxes book on a host, as bars against its capacity, and what they use now. */
+function hostAllocation(host, usage) {
+  const allocated = usage?.allocated;
+  if (!allocated || !host.capacity?.cpus || !host.capacity.memoryBytes) return "";
+  const cpuP = (allocated.cpus / host.capacity.cpus) * 100;
+  const memP = (allocated.memoryBytes / host.capacity.memoryBytes) * 100;
+  const using = usage.usage
+    ? t("ov.hostUsing", { cpu: +usage.usage.cpus.toFixed(2), mem: gbOrMb(usage.usage.memoryBytes) })
+    : t("common.unknown");
+  return `<div class="stack" style="gap:8px;margin-top:8px">
+    <div><div class="bar-label"><span>${t("ov.cpuQuota")}</span><span>${t("ov.cpuAlloc", { used: +allocated.cpus.toFixed(2), cores: host.capacity.cpus, pct: pct(cpuP, 0) })}</span></div>
+      <div class="bar ${barLevel(cpuP)}"><span style="width:${Math.min(cpuP, 100)}%"></span></div></div>
+    <div><div class="bar-label"><span>${t("ov.memQuota")}</span><span>${t("ov.memAlloc", { used: gbOrMb(allocated.memoryBytes), total: bytes(host.capacity.memoryBytes), pct: pct(memP, 0) })}</span></div>
+      <div class="bar mem ${barLevel(memP)}"><span style="width:${Math.min(memP, 100)}%"></span></div></div>
+    <div class="metric-sub">${using}</div>
   </div>`;
 }
 

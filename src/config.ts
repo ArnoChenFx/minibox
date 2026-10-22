@@ -63,6 +63,11 @@ export interface Config {
   checkpointKeepDays: number;
   /** Checkpoint repository size in MB at which new automatic checkpoints are refused. 0 sets no limit. */
   checkpointCapacityMb: number;
+  /**
+   * How far the CPU and memory that running boxes book on a host may exceed the host's capacity, as a ratio. 1 books no
+   * more than the host has. Checked only on a control plane with more than one host.
+   */
+  hostOvercommit: number;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -160,6 +165,18 @@ function parseBoxPidsLimit(value: string | undefined): number {
   return n;
 }
 
+const MAX_HOST_OVERCOMMIT = 10;
+
+function parseHostOvercommit(value: string | undefined): number {
+  const v = nonBlank(value);
+  if (v === undefined) return 1;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 1 || n > MAX_HOST_OVERCOMMIT) {
+    throw new Error(`HOST_OVERCOMMIT: "${v}" must be a number from 1 to ${MAX_HOST_OVERCOMMIT}`);
+  }
+  return n;
+}
+
 const RUNTIME_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 
 function parseContainerRuntime(value: string | undefined): string | null {
@@ -223,6 +240,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     checkpointKeepLast: intInRange(get("CHECKPOINT_KEEP_LAST"), 20, 1, 10_000),
     checkpointKeepDays: intInRange(get("CHECKPOINT_KEEP_DAYS"), 30, 0, 3650),
     checkpointCapacityMb: intInRange(get("CHECKPOINT_CAPACITY_MB"), 0, 0, 1_000_000_000),
+    hostOvercommit: parseHostOvercommit(get("HOST_OVERCOMMIT")),
   };
 }
 

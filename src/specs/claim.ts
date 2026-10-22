@@ -145,15 +145,22 @@ const RECOVERY_HINT = {
 /**
  * Returns the spec for a container, writing one when DATA_DIR does not have it yet.
  * Does not rename the container and does not change its labels.
+ *
+ * Returns `null` when the container is another host's box. Hosts that share an engine list the same containers, so a
+ * container is only ever claimed by the host whose spec names it, and never by a host that merely sees it.
  */
-export async function ensureSpec(host: HostCtx, info: ContainerInfo): Promise<{ spec: BoxSpec; created: boolean }> {
+export async function ensureSpec(
+  host: HostCtx,
+  info: ContainerInfo,
+): Promise<{ spec: BoxSpec; created: boolean } | null> {
   return host.specs.exclusive(async () => {
     const labeledId = info.labels[host.keys.id] ?? "";
-    const byContainer = host.specs.findByContainer(info.id, info.name);
-    if (byContainer && (byContainer.containerId === info.id || byContainer.containerName === info.name)) {
-      return { spec: byContainer, created: false };
-    }
+    const holders = host.specs.holdersOf(info.id, info.name);
+    if (holders.some((spec) => spec.hostId !== host.host.id)) return null;
+    const byContainer = holders[0];
+    if (byContainer) return { spec: byContainer, created: false };
     const labeled = isBoxId(labeledId) ? host.specs.read(labeledId) : null;
+    if (labeled && labeled.hostId !== host.host.id) return null;
     if (labeled && (labeled.containerId === info.id || labeled.containerName === info.name)) {
       return { spec: labeled, created: false };
     }

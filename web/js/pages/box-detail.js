@@ -1,5 +1,6 @@
 import { mountActivity } from "../components/activity-panel.js";
 import { deleteBox, editResources, lifecycle, openRebuild, rebuildPreviewHtml } from "../components/box-actions.js";
+import { openMove } from "../components/box-move.js";
 import { mountCheckpoints, takeCheckpoint } from "../components/checkpoints.js";
 import { deleteCustomTool, openCustomToolDialog } from "../components/custom-tool-dialog.js";
 import { mountEnvCard } from "../components/env-card.js";
@@ -11,6 +12,7 @@ import { api, enc } from "../lib/api.js";
 import { applySamples } from "../lib/box-state.js";
 import { copyText, delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, dateTime, duration, gbOrMb, mem, pct, shortId } from "../lib/format.js";
+import { multiHost, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
@@ -129,6 +131,7 @@ export function render(view, id, tab = "overview") {
         <button class="btn" data-action="ssh">${icon("terminal")}${t("act.ssh")}</button>
         <button class="btn" data-action="checkpoint">${icon("camera")}${t("act.checkpoint")}</button>
         <button class="btn" data-action="save-template">${icon("layers")}${t("tp.saveAction")}</button>
+        ${multiHost() ? `<button class="btn" data-action="move">${icon("move")}${t("bd.move")}</button>` : ""}
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
@@ -244,6 +247,7 @@ export function render(view, id, tab = "overview") {
         toastError(t("bd.loadFailed"), err);
       }
     },
+    move: () => openMove(box),
     delete: async () => {
       if (await deleteBox(box)) location.hash = "#/boxes";
     },
@@ -278,6 +282,7 @@ export function render(view, id, tab = "overview") {
       notify();
     }),
     subscribe("sync", () => void refresh()),
+    onHosts(() => paintHead()),
   ];
   const stopFallback = pollWhileDown(() => void refresh(), FALLBACK_MS);
   mount();

@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 82 operations in 15 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 84 operations in 15 groups.
 
 ## Authentication
 
@@ -131,6 +131,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/boxes/{id}/restart` | Restart a box |
 | `PATCH` | `/api/boxes/{id}/resources` | Change the CPU, memory or process limit of a box |
 | `POST` | `/api/boxes/{id}/rebuild` | Rebuild a box from its spec |
+| `POST` | `/api/boxes/{id}/move` | Move a box to another host. Needs `If-Match`. Without `confirm: true` it returns `409 confirmation_required` with a preview |
 | `GET` | `/api/boxes/{id}/logs` | Read the recent log output of a box |
 | `GET` | `/api/boxes/{id}/stats` | Read the current resource usage of a box |
 
@@ -270,6 +271,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/hosts` | List hosts |
+| `GET` | `/api/hosts/usage` | Show what each host runs and uses |
 | `POST` | `/api/hosts` | Add a host |
 | `POST` | `/api/hosts/test` | Test a host connection |
 | `DELETE` | `/api/hosts/{id}` | Remove a host |

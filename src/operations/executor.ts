@@ -196,7 +196,7 @@ export class Executor {
       }
       const parsed = operation.parse(raw);
       input = parsed;
-      if (operation.hostFor) bound = { ...bound, host: operation.hostFor(bound, parsed) };
+      if (operation.hostFor) bound = { ...bound, host: await operation.hostFor(bound, parsed) };
       if (operation.precondition) await operation.precondition(bound, parsed);
       resolved = operation.resolve ? await operation.resolve(bound, parsed) : undefined;
       const access = { principal: bound.principal, operation, phase: "access" as const, host: bound.host };

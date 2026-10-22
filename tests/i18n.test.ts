@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { ROOT } from "../src/config";
 import { AppError } from "../src/lib/errors";
 import { errorResponse } from "../src/lib/http";
-import { MESSAGES, msg } from "../src/lib/messages";
+import { FEATURES, MESSAGES, msg } from "../src/lib/messages";
 import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
 
@@ -100,6 +100,18 @@ describe("server messages", () => {
   test("msg interpolates params and label names", () => {
     expect(msg("field_required", { label: "boxName" }).text).toBe("Box name is required.");
     expect(msg("box_exists", { name: "dev" }).text).toBe("A box named “dev” already exists.");
+  });
+  test("every feature name a message can carry has a UI translation", () => {
+    for (const k of Object.keys(FEATURES)) {
+      expect([k, `feature.${k}` in en && `feature.${k}` in zh]).toEqual([k, true]);
+    }
+  });
+  test("a remote-host refusal names its feature by key, and the Chinese text takes the translated name", () => {
+    const refusal = msg("host_unsupported", { feature: "snapshots" });
+    expect(refusal.text).toBe("Snapshots is not supported on remote hosts yet.");
+    expect(refusal.params).toEqual({ feature: "snapshots" });
+    const template = zh["err.host_unsupported"] ?? "";
+    expect(template.replace("{feature}", zh["feature.snapshots"] ?? "")).toBe("远程宿主机暂不支持快照。");
   });
   test("error responses carry key and params", async () => {
     const res = errorResponse(new AppError(409, "conflict", msg("box_exists", { name: "dev" })));

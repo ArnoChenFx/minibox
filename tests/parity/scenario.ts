@@ -735,6 +735,20 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("remove the lab host", "DELETE", "/api/hosts/lab");
     await send("remove a missing host", "DELETE", "/api/hosts/missing");
     await send("list hosts after removing lab", "GET", "/api/hosts");
+    await send("list host usage after removing lab", "GET", "/api/hosts/usage");
+    const mover = boxId(
+      (await post("create a box to move", "/api/boxes", { name: "mover", cpus: 1, memoryMb: 256 })).json,
+    );
+    const moveBox = (step: string, id: string, body: unknown, revision: number) =>
+      send(step, "POST", `/api/boxes/${id}/move`, {
+        body: JSON.stringify(body),
+        contentType: JSON_TYPE,
+        headers: ifMatch(revision),
+      });
+    await moveBox("move a box to its own host", mover, { host: "local" }, 1);
+    await moveBox("move a box with a stale revision", mover, { host: "local", confirm: true }, 9);
+    await moveBox("move a box to a host that is not added", mover, { host: "lab", confirm: true }, 1);
+    await moveBox("move a missing box", "missing", { host: "lab", confirm: true }, 1);
   } finally {
     server.stop(true);
     app.throttle.stop();
