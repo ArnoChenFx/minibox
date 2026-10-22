@@ -15,13 +15,14 @@ The default location is `./data` in a source checkout, and `/data` in the releas
 | `checkpoints/schedules/` | `700` | One checkpoint schedule per box, `<box id>.json`, mode `600`. It holds the rule with its time zone, the next run and the last run. A box without a file has no schedule. It survives a restart. |
 | `packages/` | `700` | Checkpoint packages, `<id>.mbckpt`, mode `600`, each with a `<id>.json` record beside it. A package is sealed with the passphrase it was exported with. The hourly sweep removes it once it is 24 hours old. |
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per command. |
-| `secrets/` | `700` | Host secrets in `env/<name>`, mode `600`, each created when you set a secret. Also `checkpoint-repo.key`, mode `600`, created when the checkpoint repository is first initialized. |
+| `secrets/` | `700` | Host secrets in `env/<name>`, mode `600`, each created when you set a secret. Notification channel secrets in `notify/<channel id>`, mode `600`. Also `checkpoint-repo.key`, mode `600`, created when the checkpoint repository is first initialized. |
 | `tools.d/` | `700` | Custom tool catalog entries, one `<id>.json` file each, mode `600`, created when you save a custom tool |
 | `hosts.json` | `600` | Remote hosts: ID, name, endpoint without any credential, the SSH host key fingerprint, and when each host was added. Written when you add the first remote host. |
 | `hosts/<id>/` | `700` | Credential files for each remote host, mode `600`: `ca.pem`, `cert.pem` and `key.pem` for `tcp://`, or `ssh_key` for `ssh://`. The API never returns them. |
 | `agents.json` | `600` | Paired host agents: ID, public key, version, pairing and revocation times. Written when an agent pairs. It never holds a private key, which stays in the agent's own data volume. See [Agent](../reference/agent.md). |
 | `volumes/` | `700` | One volume record per file, `vol_….json`, mode `600`. |
 | `pools.json` | `600` | Storage pools and the role defaults, written when you change pool settings. If the file is missing, MiniBox uses the local pool. A corrupt file is left in place and treated as missing. |
+| `notify.json` | `600` | Notification channels: name, type, notices, box filter and endpoint, such as a webhook URL, an ntfy topic or a Telegram chat id. Written when you save a channel. Their secrets are in `secrets/notify/`. See [Notifications](../user-guide/notifications.md). |
 | `events.db`, `events.db-wal`, `events.db-shm` | | The event log, an SQLite database in WAL mode, opened when the server starts. See [Security](security.md) for what it records. |
 | `tasks.db`, `tasks.db-wal`, `tasks.db-shm` | | Task status, and the newest 64 KB of each task's output, opened when the server starts. |
 | `cli/` | `700` | Cached CLI binaries the server builds on first download request, under `<version>-<hash>/` with a `.sha256` sidecar, plus `runtimes/` for Bun runtimes used to compile them. |
