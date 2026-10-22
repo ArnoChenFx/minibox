@@ -241,7 +241,7 @@ export function claimInfo(host: HostCtx, info: VolumeInfo, specs: BoxSpec[], now
   const legacy = new RegExp(`^${host.prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-ws-.+$`).test(info.name);
   const labeled = info.labels[host.keys.box] === "true" || info.labels[host.keys.volume] === "true";
   if (!legacy && !labeled) return null;
-  if (host.volumes.findByEngine(host.host.id, info.name)) return null;
+  if (host.volumes.findByEngineName(info.name)) return null;
 
   const users = specs.filter(
     (spec) => spec.hostId === host.host.id && spec.mounts.some((mount) => mount.volume === info.name),

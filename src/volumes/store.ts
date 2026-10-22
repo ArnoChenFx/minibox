@@ -110,6 +110,11 @@ export class VolumeStore {
     );
   }
 
+  /** The record of an engine volume, whichever host holds it. Two hosts on one engine list the same volumes. */
+  findByEngineName(engineName: string): VolumeRecord | null {
+    return this.records().records.find((record) => record.engineName === engineName) ?? null;
+  }
+
   write(record: VolumeRecord): void {
     ensureDataDir(this.dataDir);
     try {

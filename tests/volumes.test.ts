@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { statSync } from "node:fs";
 
+import type { Config } from "../src/config";
 import type { AuditNote } from "../src/events/types";
-import type { HostCtx } from "../src/host/registry";
+import { createLocalHost, type HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { AuditEvent, ExecutorHooks } from "../src/operations/executor";
 import type { OperationContext } from "../src/operations/types";
@@ -19,6 +20,7 @@ const mode = (path: string) => statSync(path).mode & 0o777;
 
 let runtime: FakeRuntime;
 let host: HostCtx;
+let config: Config;
 let restoreLogs: () => void;
 
 beforeAll(() => {
@@ -29,6 +31,7 @@ afterAll(() => restoreLogs());
 beforeEach(() => {
   const created = createTestApp({ labelPrefix: "mbtest" });
   runtime = created.runtime;
+  config = created.app.cfg;
   host = created.app.hosts.get();
   runtime.seedImage(host.baseTemplateTag, { [host.keys.template]: "true" });
 });
@@ -859,5 +862,28 @@ describe("write, attach and pool scopes", () => {
       details: { preview: { containerName: { to: `${app.host.prefix}-${box.boxId}` } } },
     });
     expect(app.host.specs.read(box.boxId)?.mounts).toEqual(kept);
+  });
+});
+
+describe("two hosts on one engine", () => {
+  test("a volume is recorded once, by the host that made it, whichever host lists the engine", async () => {
+    const lab = createLocalHost(config, runtime, host.specs, host.volumes, undefined, host.pulse, {
+      id: "lab",
+      name: "Lab",
+    });
+    await newBox("alpha");
+    await createVolume(lab, { name: "lab-data", role: null, createdBy: null });
+
+    await claimEngineVolumes(host);
+    await claimEngineVolumes(lab);
+
+    const recordsOf = (hostId: string) =>
+      host.volumes
+        .list()
+        .filter((record) => record.hostId === hostId)
+        .map((record) => record.name)
+        .toSorted();
+    expect(recordsOf("lab")).toEqual(["lab-data"]);
+    expect(recordsOf("local")).toHaveLength(4);
   });
 });
