@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+# MiniBox agent image: a compute-only host that dials out to a MiniBox control plane. Multi-arch (linux/amd64, linux/arm64).
+#   docker build -f Dockerfile.agent -t minibox-agent .
+
+FROM oven/bun:1 AS deps
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
+
+FROM oven/bun:1-slim
+ARG MINIBOX_VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="MiniBox agent" \
+      org.opencontainers.image.description="Runs boxes for a MiniBox control plane. It dials out, so it needs no open port." \
+      org.opencontainers.image.source="https://github.com/ArnoChenFx/minibox" \
+      org.opencontainers.image.url="https://github.com/ArnoChenFx/minibox" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${MINIBOX_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
+
+ENV NODE_ENV=production \
+    MINIBOX_VERSION=${MINIBOX_VERSION} \
+    DATA_DIR=/data \
+    DOCKER_SOCKET=/var/run/docker.sock
+
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json bun.lock tsconfig.json ./
+COPY LICENSE NOTICE ./
+COPY src ./src
+
+# The agent's identity and private key live here. Mount a named volume (-v minibox-agent:/data), which copies this mode.
+RUN mkdir -m 700 /data
+
+# Runs as root so it can use the mounted /var/run/docker.sock (root:docker on most hosts).
+ENTRYPOINT ["bun", "src/agent/main.ts"]

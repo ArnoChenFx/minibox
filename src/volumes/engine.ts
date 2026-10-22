@@ -48,6 +48,9 @@ async function imageReady(host: HostCtx, known: Set<string>): Promise<boolean> {
   }
 }
 
+/** The owner a new volume's root takes on an agent host, where no helper container runs to chown it recursively. */
+const AGENT_VOLUME_OWNER = { uid: 1000, gid: 1000 };
+
 /**
  * Hands a new local volume to uid 1000. NFS and path pools chown inside the directory helper instead:
  * a squashed root cannot chown, and the mkdir helper already tried.
@@ -56,6 +59,12 @@ export async function chownEngines(host: HostCtx, engines: string[], known: Set<
   if (engines.length === 0) return;
   if (!(await imageReady(host, known))) {
     log.warn("volume.chown_skipped", { image: host.baseTemplateTag, count: engines.length });
+    return;
+  }
+  if (host.host.transport === "agent") {
+    for (const engine of engines) {
+      await host.runtime.setVolumeRootOwner(engine, AGENT_VOLUME_OWNER, host.baseTemplateTag);
+    }
     return;
   }
   const mounts = engines.map((source, index) => ({ source, target: `/mnt/${index}` }));

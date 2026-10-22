@@ -15,12 +15,23 @@ const CapacitySchema = z.object({
   memoryBytes: z.number().nullable().meta({ description: "Memory boxes on this host may take, in bytes." }),
 });
 
+const AgentViewSchema = z.object({
+  connected: z.boolean().meta({ description: "Whether the agent is connected to this control plane now." }),
+  version: z.string().meta({ description: "The agent's version, as it last said hello." }),
+  protocol: z.number().int().meta({ description: "The agent protocol the agent speaks." }),
+  lastSeenAt: z.string().nullable().meta({ description: "When the agent last sent a frame, as ISO time." }),
+  upgradeRequired: z.boolean().meta({
+    description: "The agent speaks another protocol than this control plane, so it is refused until it is upgraded.",
+  }),
+  revoked: z.boolean(),
+});
+
 export const HostViewSchema = z.object({
   id: z.string().meta({ description: "Host id, such as local or lab. A box names its host in box.host." }),
   name: z.string(),
-  transport: z.enum(["local", "unix", "tcp", "ssh"]).meta({
+  transport: z.enum(["local", "unix", "tcp", "ssh", "agent"]).meta({
     description:
-      "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, and ssh tunnels to the socket.",
+      "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, ssh tunnels to the socket, and agent is a MiniBox agent that dials in.",
   }),
   endpoint: z.string().meta({ description: "The endpoint, without any credential." }),
   status: HostStatusSchema,
@@ -30,6 +41,14 @@ export const HostViewSchema = z.object({
   error: z.string().nullable().meta({ description: "The last failed check, as text. Null once a check succeeds." }),
   boxes: z.number().int().meta({ description: "Boxes whose spec names this host." }),
   createdAt: z.string().nullable(),
+  agent: AgentViewSchema.optional().meta({ description: "The agent connection. Present on an agent host only." }),
+});
+
+const PairingIssueSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string().meta({ description: "One-time code the agent pairs with. It works once and expires." }),
+  expiresAt: z.string().meta({ description: "When the code stops working, as ISO time." }),
 });
 
 const HostErrorSchema = z.object({
@@ -244,4 +263,48 @@ export const hostRemove = defineOperation({
   run: async (ctx, input): Promise<{ host: HostView }> => ({ host: await hostsOf(ctx).remove(input.id) }),
 });
 
-export const hostOperations = [hostList, hostUsage, hostAdd, hostTest, hostRemove];
+export const hostPairingCreate = defineOperation({
+  name: "host.pairing.create",
+  tag: "hosts",
+  summary: "Create a pairing code for an agent host",
+  kind: "write",
+  scope: "host:manage",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({
+      description: "Host id the agent joins as: lowercase letters, digits and hyphens. Same rules as host.add.",
+    }),
+    name: z.string().max(64).optional().meta({ description: "Name shown in the UI. Defaults to the id." }),
+  }),
+  output: PairingIssueSchema,
+  rest: [{ method: "POST", path: "/api/hosts/pairing", body: true, status: 201 }],
+  activity: { action: () => "host.pairing.create", target: (input) => input.id },
+  audit: {
+    target: ({ id }) => ({ kind: "host", id, name: id }),
+    detail: ({ id, name }) => ({ id, name: name ?? null }),
+  },
+  run: async (ctx, input) => hostsOf(ctx).createPairing(input),
+});
+
+export const hostRevoke = defineOperation({
+  name: "host.revoke",
+  tag: "hosts",
+  summary: "Revoke an agent host",
+  kind: "destructive",
+  scope: "host:manage",
+  async: false,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({ description: "Id of an agent host. Other hosts are refused." }),
+  }),
+  output: z.object({ host: HostViewSchema }),
+  rest: [{ method: "POST", path: "/api/hosts/:id/revoke" }],
+  activity: { action: () => "host.revoke", target: (input) => input.id },
+  audit: {
+    target: ({ id }, _resolved, result) => ({ kind: "host", id, name: result?.host.name ?? id }),
+    detail: ({ id }) => ({ id }),
+  },
+  run: async (ctx, input): Promise<{ host: HostView }> => ({ host: await hostsOf(ctx).revoke(input.id) }),
+});
+
+export const hostOperations = [hostList, hostUsage, hostAdd, hostTest, hostRemove, hostPairingCreate, hostRevoke];

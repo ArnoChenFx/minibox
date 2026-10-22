@@ -151,6 +151,9 @@ async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, rev
   if (spec.hostId !== from.host.id) throw notFound(msg("box_not_found"));
   if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
   if (to.host.id === from.host.id) throw badRequest(msg("move_same_host", { host: to.host.id }), { field: "host" });
+  if (from.host.transport === "agent" || to.host.transport === "agent") {
+    throw new AppError(501, "unsupported", msg("move_agent_unsupported"));
+  }
   await assertReachable(to);
   refuseExpired(from, spec.id);
   if (from.checkpoints.pendingRollback(spec.id)) throw conflict(msg("rollback_pending", { box: box.name }));

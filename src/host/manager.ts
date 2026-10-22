@@ -1,3 +1,4 @@
+import { AGENT_PROTOCOL, type PairRequest, type PairResponse, isEd25519PublicKey } from "../agent/protocol";
 import type { Config } from "../config";
 import { untilAborted } from "../lib/abort";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
@@ -5,8 +6,16 @@ import { log } from "../lib/logger";
 import { type Msg, type Params, msg } from "../lib/messages";
 import { type EngineTarget, type Runtime, RuntimeError } from "../runtime";
 import { bookedOn, type Booking } from "../services/capacity";
+import type { AgentEvent, AgentHub, AgentStatus } from "./agent/hub";
 import { type Endpoint, endpointLabel, parseEndpoint } from "./endpoint";
-import { type HostCredentials, type Link, MissingCredentialsError, openLink } from "./link";
+import {
+  type HostCredentials,
+  isAgentTarget,
+  type Link,
+  type LinkTarget,
+  MissingCredentialsError,
+  openLink,
+} from "./link";
 import type { LinkFrame } from "./live";
 import {
   ENGINE_READ_TIMEOUT_MS,
@@ -64,6 +73,16 @@ export interface HostView {
   readonly error: string | null;
   readonly boxes: number;
   readonly createdAt: string | null;
+  /** The agent's connection and version. Present on an agent host only. */
+  readonly agent?: AgentStatus;
+}
+
+/** A code issued for a host an agent will pair with. The code is shown once and expires. */
+export interface PairingIssue {
+  readonly id: string;
+  readonly name: string;
+  readonly code: string;
+  readonly expiresAt: string;
 }
 
 /** What a host runs and uses now, for the overview. An offline host has no current figures. */
@@ -108,6 +127,8 @@ export interface HostManagerOptions {
   readonly detach: (host: HostCtx) => void;
   /** Called when a remote host's engine becomes reachable, so its boxes are reconciled. */
   readonly onLive?: (host: HostCtx) => void;
+  /** The agents that dial in. An agent host's engine is reached through its connection here. */
+  readonly agents: AgentHub;
   readonly now?: () => Date;
 }
 
@@ -161,6 +182,18 @@ function keyProblem(presented: string | null, given: string | undefined): Msg | 
 
 function hostErrorOf(error: Msg): HostError {
   return { key: error.key, params: error.params, message: error.text };
+}
+
+/** The agent a stored host is served by, or null for a host reached by address. */
+function agentIdOf(stored: StoredHost): string | null {
+  const endpoint = parseEndpoint(stored.endpoint);
+  return endpoint.kind === "agent" ? endpoint.agentId : null;
+}
+
+/** The engine target of a link that has a socket or address. Only an agent link has none, and it is never checked here. */
+function engineTargetOf(target: LinkTarget): EngineTarget {
+  if (isAgentTarget(target)) throw new Error("an agent link has no engine target of its own");
+  return target;
 }
 
 /**
@@ -277,6 +310,9 @@ export class HostManager {
         throw new AppError(409, "conflict", msg("host_in_use", { host: id, count: usage.total }), usage);
       }
       const view = this.view(ctx);
+      const stored = this.stored.get(id);
+      const agentId = stored ? agentIdOf(stored) : null;
+      if (agentId !== null) this.options.agents.forget(agentId);
       this.options.store.save([...this.stored.values()].filter((host) => host.id !== id));
       this.options.detach(ctx);
       this.options.registry.remove(id);
@@ -288,6 +324,87 @@ export class HostManager {
       log.info("host.removed", { host: id });
       return view;
     });
+  }
+
+  /**
+   * Issues a one-time code for an agent host that does not exist yet. The host is created when an agent pairs with the
+   * code, so a code that is never used leaves nothing behind.
+   */
+  createPairing(input: { readonly id: string; readonly name?: string }): Promise<PairingIssue> {
+    return this.exclusive(async () => {
+      const id = this.idOf(input.id);
+      if (this.options.registry.has(id) || this.stored.has(id)) throw conflict(msg("host_exists", { host: id }));
+      const name = input.name?.trim() || id;
+      const issued = this.options.agents.issueCode(id, name);
+      return { id, name, code: issued.code, expiresAt: issued.expiresAt };
+    });
+  }
+
+  /**
+   * Completes an agent's pairing. The code is spent only once the key and protocol are acceptable, so an agent that
+   * speaks another protocol can retry with the same code after it is upgraded. A failure leaves no host and no record.
+   */
+  pairAgent(input: PairRequest): Promise<PairResponse> {
+    return this.exclusive(async () => {
+      if (!isEd25519PublicKey(input.publicKey)) throw badRequest(msg("agent_key_invalid"), { field: "publicKey" });
+      if (input.protocol !== AGENT_PROTOCOL) {
+        throw conflict(msg("agent_protocol_mismatch", { agent: input.protocol, server: AGENT_PROTOCOL }));
+      }
+      const grant = this.options.agents.spendCode(input.code);
+      if (this.options.registry.has(grant.hostId) || this.stored.has(grant.hostId)) {
+        throw conflict(msg("host_exists", { host: grant.hostId }));
+      }
+      const now = this.now().toISOString();
+      const record = this.options.agents.enroll({
+        hostId: grant.hostId,
+        publicKeyPem: input.publicKey,
+        version: input.version,
+        protocol: input.protocol,
+        pairedAt: now,
+      });
+      const host: StoredHost = {
+        id: grant.hostId,
+        name: grant.name,
+        endpoint: `agent://${record.agentId}`,
+        hostKeyFingerprint: null,
+        createdAt: now,
+      };
+      try {
+        this.persist(host, {});
+      } catch (e) {
+        this.options.agents.forget(record.agentId);
+        throw e;
+      }
+      this.register(host);
+      await this.probe(this.options.registry.get(grant.hostId));
+      log.info("host.added", { host: grant.hostId, transport: "agent" });
+      return { agentId: record.agentId, hostId: grant.hostId, protocol: AGENT_PROTOCOL };
+    });
+  }
+
+  /** Revokes an agent host's agent. Its connection drops at once and it cannot reconnect. The host stays listed until removed. */
+  revoke(id: string): Promise<HostView> {
+    return this.exclusive(async () => {
+      const agentId = this.agentIdOfHost(id);
+      this.options.agents.revoke(agentId);
+      const ctx = this.options.registry.get(id);
+      ctx.host.status = "offline";
+      log.info("agent.revoked", { host: id });
+      return this.view(ctx);
+    });
+  }
+
+  /** Keeps an agent host's state in step with its agent's connection. A connection that comes back is retried at once. */
+  onAgent(event: AgentEvent): void {
+    const hostId = this.hostOfAgent(event.agentId);
+    if (hostId === null || !this.options.registry.has(hostId)) return;
+    const ctx = this.options.registry.get(hostId);
+    if (event.type === "connected") {
+      ctx.sampler.reconnect();
+      void this.probe(ctx);
+      return;
+    }
+    ctx.host.status = "offline";
   }
 
   /** Records the link state the sampler reports. A remote host that comes live is handed on to be reconciled. */
@@ -333,6 +450,8 @@ export class HostManager {
         });
         return { endpoint, credentials: { ssh: { privateKey, hostKeyFingerprint: presented } }, presented };
       }
+      case "agent":
+        throw badRequest(msg("host_endpoint_agent"), { field: "endpoint" });
     }
   }
 
@@ -357,7 +476,7 @@ export class HostManager {
   private async check(prepared: Prepared): Promise<Pick<HostTest, "latencyMs" | "capacity" | "dockerVersion">> {
     const link = openLink(prepared.endpoint, prepared.credentials);
     try {
-      const runtime = this.options.connect(link.target);
+      const runtime = this.options.connect(engineTargetOf(link.target));
       await within(link.connect(), CHECK_TIMEOUT_MS).catch((e: unknown) => {
         if (e instanceof HostKeyMismatchError) {
           throw new AppError(
@@ -434,14 +553,18 @@ export class HostManager {
       endpoint: stored.endpoint,
     };
     let runtime: Runtime;
-    try {
-      const link = openLink(endpoint, this.credentialsOf(stored, endpoint));
-      this.links.set(stored.id, link);
-      runtime = this.options.connect(link.target);
-    } catch (e) {
-      const reason = reasonOf(e);
-      log.warn("host.credentials_unavailable", { host: stored.id, error: reason });
-      runtime = unreachableRuntime(reason);
+    if (endpoint.kind === "agent") {
+      runtime = this.options.agents.runtimeFor(endpoint.agentId);
+    } else {
+      try {
+        const link = openLink(endpoint, this.credentialsOf(stored, endpoint));
+        this.links.set(stored.id, link);
+        runtime = this.options.connect(engineTargetOf(link.target));
+      } catch (e) {
+        const reason = reasonOf(e);
+        log.warn("host.credentials_unavailable", { host: stored.id, error: reason });
+        runtime = unreachableRuntime(reason);
+      }
     }
     const ctx = createHost(this.options.cfg, runtime, this.options.shared, identity);
     this.options.registry.add(ctx);
@@ -450,7 +573,7 @@ export class HostManager {
 
   private credentialsOf(stored: StoredHost, endpoint: Endpoint): HostCredentials {
     const { store } = this.options;
-    if (endpoint.kind === "unix") return {};
+    if (endpoint.kind === "unix" || endpoint.kind === "agent") return {};
     if (endpoint.kind === "tcp") {
       const ca = store.readCredential(stored.id, "ca");
       const cert = store.readCredential(stored.id, "cert");
@@ -530,6 +653,35 @@ export class HostManager {
       error: probe?.error ?? null,
       boxes: ctx.specs.list().filter((spec) => spec.hostId === id).length,
       createdAt: this.stored.get(id)?.createdAt ?? null,
+      ...this.agentFieldOf(id),
     };
+  }
+
+  /** The agent connection, on an agent host only. Other hosts keep the view they always had. */
+  private agentFieldOf(id: string): { agent?: AgentStatus } {
+    const status = this.agentStatusOf(id);
+    return status ? { agent: status } : {};
+  }
+
+  /** The agent id of a host that must be an agent host. Any other host is refused, since it has no agent to revoke. */
+  private agentIdOfHost(id: string): string {
+    if (!this.options.registry.has(id)) throw notFound(msg("host_not_found", { host: id }));
+    const stored = this.stored.get(id);
+    const agentId = stored ? agentIdOf(stored) : null;
+    if (agentId === null) throw badRequest(msg("host_not_agent", { host: id }), { field: "id" });
+    return agentId;
+  }
+
+  private hostOfAgent(agentId: string): string | null {
+    for (const stored of this.stored.values()) {
+      if (agentIdOf(stored) === agentId) return stored.id;
+    }
+    return null;
+  }
+
+  private agentStatusOf(id: string): AgentStatus | null {
+    const stored = this.stored.get(id);
+    const agentId = stored ? agentIdOf(stored) : null;
+    return agentId === null ? null : this.options.agents.status(agentId);
   }
 }

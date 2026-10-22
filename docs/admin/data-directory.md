@@ -19,6 +19,7 @@ The default location is `./data` in a source checkout, and `/data` in the releas
 | `tools.d/` | `700` | Custom tool catalog entries, one `<id>.json` file each, mode `600`, created when you save a custom tool |
 | `hosts.json` | `600` | Remote hosts: ID, name, endpoint without any credential, the SSH host key fingerprint, and when each host was added. Written when you add the first remote host. |
 | `hosts/<id>/` | `700` | Credential files for each remote host, mode `600`: `ca.pem`, `cert.pem` and `key.pem` for `tcp://`, or `ssh_key` for `ssh://`. The API never returns them. |
+| `agents.json` | `600` | Paired host agents: ID, public key, version, pairing and revocation times. Written when an agent pairs. It never holds a private key, which stays in the agent's own data volume. See [Agent](../reference/agent.md). |
 | `volumes/` | `700` | One volume record per file, `vol_….json`, mode `600`. |
 | `pools.json` | `600` | Storage pools and the role defaults, written when you change pool settings. If the file is missing, MiniBox uses the local pool. A corrupt file is left in place and treated as missing. |
 | `events.db`, `events.db-wal`, `events.db-shm` | | The event log, an SQLite database in WAL mode, opened when the server starts. See [Security](security.md) for what it records. |

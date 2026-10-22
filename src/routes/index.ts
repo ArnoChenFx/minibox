@@ -1,4 +1,5 @@
 import { OPERATIONS } from "../operations/registry";
+import { agentRoutes } from "./agent";
 import { authRoutes } from "./auth";
 import { boxLogRoutes } from "./box-logs";
 import { checkpointPackageRoutes } from "./checkpoint-packages";
@@ -11,6 +12,7 @@ import { taskRoutes } from "./tasks";
 
 export const routes: Route[] = [
   ...authRoutes,
+  ...agentRoutes,
   ...systemRoutes,
   ...eventRoutes,
   ...taskRoutes,

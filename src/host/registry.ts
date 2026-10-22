@@ -30,7 +30,7 @@ export interface Host {
   labels: Record<string, string>;
   status: "online" | "offline" | "unknown";
   /** `local` is the machine MiniBox runs on. The others are the ways a remote engine is reached. */
-  transport: "local" | "unix" | "tcp" | "ssh";
+  transport: "local" | "unix" | "tcp" | "ssh" | "agent";
 }
 
 /** Box hardening settings that apply to one engine. Each box records the profile it was created with. */
