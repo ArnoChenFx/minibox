@@ -27,8 +27,11 @@ import { HostStore } from "./host/store";
 import { Bus } from "./lib/bus";
 import { log } from "./lib/logger";
 import { McpSessions } from "./mcp/sessions";
+import { Notifications, type NotificationsOptions } from "./notify/service";
+import { NotifyStore } from "./notify/store";
 import { type AuditEvent, Executor, type ExecutorHooks, logAudit } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
+import { OWNER } from "./operations/types";
 import type { EngineTarget, Runtime } from "./runtime";
 import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
@@ -82,6 +85,8 @@ export interface App {
   containers: ContainerWatch;
   /** Writes an audit note for an action a route takes outside the operation registry, such as opening a log stream. */
   recordNote: RecordNote;
+  /** Sends notices to the notification channels. The event bus feeds it, and the channel operations reach it. */
+  notify: Notifications;
   mcpSessions: McpSessions;
   bus: Bus<AppTopics>;
   retention: RetentionJob;
@@ -120,6 +125,8 @@ export interface AppDeps {
   sessions?: SessionStore;
   /** Compiles a CLI binary. Defaults to `bun build --compile`. Tests pass a stub, because a real build takes seconds. */
   cliBuild?: CliBuilder;
+  /** Replaces how a notification is sent, so a test reaches no channel. Anything omitted keeps its default. */
+  notify?: Pick<NotificationsOptions, "transport" | "sleep" | "telegramBase" | "maxAttempts" | "timeoutMs" | "dedupMs">;
 }
 
 const MB = 1024 * 1024;
@@ -245,6 +252,19 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   });
   const audit = deps.hooks?.audit ?? recordAudit(events, bus);
   const recordNote = recordNoteWith(audit);
+  const notifyStore = new NotifyStore(cfg.dataDir, {
+    secrets: new SecretStore(cfg.dataDir, "notify"),
+    onSecret: (value) => knownSecrets.push(value),
+  });
+  notifyStore.load();
+  const notify = new Notifications({
+    store: notifyStore,
+    version,
+    allowPrivate: cfg.notifyAllowPrivate,
+    record: (note) => recordNote(local.host.id, "system", OWNER, note),
+    redact: (text) => redactor.text(text),
+    ...deps.notify,
+  });
   const containers = new ContainerWatch(hosts, recordNote);
   const agents = new AgentHub({
     store: new AgentStore(cfg.dataDir),
@@ -270,6 +290,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   });
   hostAdmin.load();
   bus.subscribe("link", (frame) => hostAdmin.onLink(frame));
+  bus.subscribe("link", (frame) => notify.onLink(frame));
+  bus.subscribe("event", (event) => notify.onEvent(event));
   agents.subscribe((event) => hostAdmin.onAgent(event));
   const terminals = new TerminalService({
     record: recordNote,
@@ -313,6 +335,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       tasks,
       hosts,
       hostAdmin,
+      notify,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,
         audit,
@@ -334,6 +357,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     ssh,
     cli: new CliDistribution({ dataDir: cfg.dataDir, version, root: ROOT, build: deps.cliBuild }),
     record: recordNote,
+    notify,
     version,
     startedAt: new Date(),
   };

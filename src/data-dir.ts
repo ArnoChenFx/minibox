@@ -52,6 +52,11 @@ export function hostsPath(dataDir: string): string {
   return join(dataDir, "hosts.json");
 }
 
+/** Notification channels: their settings, never a secret. Mode 600. Secrets live under `secrets/notify`. */
+export function notifyPath(dataDir: string): string {
+  return join(dataDir, "notify.json");
+}
+
 /** Paired host agents: ids, public keys and revocation, never a private key. Mode 600. */
 export function agentsPath(dataDir: string): string {
   return join(dataDir, "agents.json");
