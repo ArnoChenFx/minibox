@@ -66,7 +66,7 @@ export interface Body {
     createdBy: string | null;
   };
   boxes?: { id: string; name: string; createdBy: string | null }[];
-  volume?: { id: string; name: string };
+  volume?: { id: string; name: string; engineName?: string };
   volumes?: { id: string; name: string; createdBy: string | null }[];
   snapshots?: { ref: string; source: string | null; createdBy: string | null }[];
   templates?: { ref: string; name: string | null; createdBy: string | null }[];
@@ -86,8 +86,11 @@ export interface Body {
     snapshot?: { ref?: string };
     checkpoint?: CheckpointBody;
     box?: { boxId: string; name: string };
+    volume?: { id: string; name: string; engineName: string } | null;
     replaced?: { id: string; name: string }[];
   };
+  trash?: TrashRefBody | TrashEntryBody[] | null;
+  safety?: { id: string; label: string } | null;
   deletedBoxes?: string[];
   failedBoxes?: { id: string; name: string; hostId: string; message: string }[];
   tools?: { name: string; description: string; stop?: string | null }[];
@@ -96,6 +99,23 @@ export interface Body {
   restoredBuiltin?: boolean;
   isError?: boolean;
   error?: { code: string; key?: string; details?: { field?: string; taskId?: string; preview?: RollbackPreviewBody } };
+}
+
+export interface TrashRefBody {
+  id: string;
+  expiresAt: string;
+}
+
+export interface TrashEntryBody {
+  id: string;
+  hostId: string;
+  kind: "box" | "volume";
+  sourceId: string;
+  sourceName: string;
+  deletedAt: string;
+  expiresAt: string;
+  bytes: number;
+  createdBy: string | null;
 }
 
 export interface CheckpointBody {

@@ -452,7 +452,8 @@ async function consumeEntry(host: HostCtx, id: string): Promise<void> {
 
 /**
  * Deletes a box, keeping a copy of its data in the recycle bin unless `skipTrash` is set. The copy is taken under the
- * box's power lock, before the container is removed, so a failed copy leaves the box as it was.
+ * box's power lock, before the container is removed, so a failed copy leaves the box as it was. A removal that fails
+ * after the copy leaves the box in place, so the copy is dropped with it.
  */
 export async function deleteBoxToTrash(
   host: HostCtx,
@@ -460,7 +461,26 @@ export async function deleteBoxToTrash(
   deleteVolume: boolean,
   opts: { skipTrash: boolean; createdBy: string | null; record?: RecordNote },
 ): Promise<DeleteBoxResult> {
-  return deleteBox(host, ref, deleteVolume, {
-    keep: opts.skipTrash ? undefined : (box) => trashBox(host, box, opts.createdBy, opts.record),
-  });
+  const copy: { ref: TrashRef | null } = { ref: null };
+  try {
+    return await deleteBox(host, ref, deleteVolume, {
+      keep: opts.skipTrash
+        ? undefined
+        : async (box) => {
+            copy.ref = await trashBox(host, box, opts.createdBy, opts.record);
+            return copy.ref;
+          },
+    });
+  } catch (e) {
+    if (copy.ref !== null) await dropCopy(host, copy.ref, opts.record);
+    throw e;
+  }
+}
+
+async function dropCopy(host: HostCtx, copy: TrashRef, record?: RecordNote): Promise<void> {
+  try {
+    await purgeEntry(host, copy.id, "failed", record);
+  } catch (e) {
+    log.warn("box.delete_copy_kept", { id: copy.id, error: String(e) });
+  }
 }
