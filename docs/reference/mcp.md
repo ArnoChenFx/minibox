@@ -36,7 +36,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
 | `storage` | Volumes, storage pools, and the owner's checkpoint export, import and schedules |
-| `tools` | Installing tools, custom tools and saving templates |
+| `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, and pulling images |
 | `network` | Preview ports |
 
 ## Tools by toolset
@@ -126,6 +126,9 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `put_custom_tool` | `PUT /api/tools/custom/{id}` |
 | `delete_custom_tool` | `DELETE /api/tools/custom/{id}` |
 | `save_template` | `POST /api/boxes/{id}/template` |
+| `create_template` | `POST /api/templates`. Owner only |
+| `rebuild_template` | `POST /api/templates/{ref}/rebuild`. Owner only |
+| `pull_image` | `POST /api/images/pull`. Owner only |
 
 ### network
 
@@ -167,3 +170,16 @@ A session that a person has taken over in the console refuses `session_send` wit
 To give a box a host secret, pass `env` with `{ "name", "secretRef" }` entries to `create_box`. The call takes the secret's name, never its value. The token needs the `secret:use` scope, and the secret must exist.
 
 Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audit log keeps commands and argv, but never `env` values.
+
+## Repository and template sources
+
+`create_box` takes `repo` to clone a Git repository into `/workspace` on the first create. It has `url`, and optional `branch` and `secretRef`. The clone runs as a task, returned as `clone.taskId`. A `secretRef` names a secret that holds a token for HTTPS, or a base64 deploy key for SSH.
+
+`create_template` takes `name`, an optional `description`, and a `source` whose `kind` is one of these:
+
+- `dockerfile`, with `text`.
+- `git`, with `url`, and optional `branch`, `subdir`, `dockerfile` and `secretRef`.
+- `context`, with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`.
+- `devcontainer`, with `url`, and optional `branch`, `path` and `secretRef`. It reads `image`, `build` and `containerEnv` from the `devcontainer.json` file, and refuses any other setting, including lifecycle commands.
+
+`rebuild_template` takes the template's `ref`, and `pull_image` takes an image `ref`, such as `node:24-bookworm-slim`. Building, rebuilding and pulling are owner only. Each returns a task, and its log shows the build or the layers. See [Templates](../user-guide/templates.md).
