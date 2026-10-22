@@ -384,7 +384,7 @@ export function checkpointRowHtml(checkpoint, state) {
     <td><div>${esc(checkpoint.label)}</div>${checkpoint.reason ? `<div class="help">${esc(checkpoint.reason)}</div>` : ""}</td>
     <td><div class="ck-badges">${kinds}</div></td>
     <td>${esc(contentsText(checkpoint))}</td>
-    <td class="num">${esc(bytes(checkpoint.bytes))}</td>
+    <td class="num" style="text-align:right">${esc(bytes(checkpoint.bytes))}</td>
     <td><div class="actions ck-row-actions">
       ${rowButton("ck-fork", checkpoint, "copy", t("ck.fork"), rules.fork)}
       ${rowButton("ck-rollback", checkpoint, "refresh", t("ck.rollback"), rules.rollback)}
