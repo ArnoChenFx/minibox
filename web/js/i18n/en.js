@@ -1301,9 +1301,14 @@ export default {
   "ct.deleteFailed": "Could not delete the custom tool",
   "bd.sshTitle": "SSH access",
   "bd.sshIntro": "Connect from your machine with an OpenSSH client. A stopped box starts when you connect.",
+  "bd.sshInstall": "Install the CLI",
+  "bd.sshInstallHelp":
+    "Run it on the machine that will use ssh. It downloads the minibox CLI from this server, checks it against the server's checksum and installs it into ~/.local/bin without sudo. Keep that folder on your PATH.",
+  "bd.sshInstallUnix": "macOS or Linux",
+  "bd.sshInstallWindows": "Windows, in PowerShell",
   "bd.sshSetup": "Set up once",
   "bd.sshSetupHelp":
-    "Run from a MiniBox checkout. It installs the minibox CLI into ~/.local/bin (keep that on your PATH) and writes ~/.ssh/config with this server's host key pinned. It also saves the server address and token to ~/.config/minibox/ssh-credentials.json (mode 600), so ssh, scp and Remote-SSH in an IDE work without exported variables. Use an access key, or a token with the box:ssh scope.",
+    "Create a token with the box:ssh scope under {settings} › {tokens}, or use the access key. This writes ~/.ssh/config with this server's host key pinned. It also saves the server address and token to ~/.config/minibox/ssh-credentials.json (mode 600), so ssh, scp and Remote-SSH in an IDE work without exported variables.",
   "bd.sshConnect": "Connect",
   "bd.sshConnectHelp": "scp and sftp work the same way. Forwarding a port with -L also needs the port:expose scope.",
   "bd.sshCopy": "Copy",

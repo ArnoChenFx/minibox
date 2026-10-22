@@ -14,7 +14,7 @@ import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
-import { connectCommands, setupCommands } from "../lib/ssh.js";
+import { connectCommands, installCommands, setupCommands, windowsInstallCommands } from "../lib/ssh.js";
 import { filterTools, groupTools, toolAction } from "../lib/tool-list.js";
 import {
   boxState,
@@ -312,23 +312,37 @@ function mountsCard(box) {
     <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;
 }
 
-function sshStep(number, title, help, commands) {
+/** `blocks` are the commands of one step, each with an optional label, such as the shell or PowerShell line. */
+function sshStep(number, title, help, blocks) {
+  const commands = blocks
+    .map(
+      ({ label, commands: text }) => `${label ? `<p class="help ssh-label">${esc(label)}</p>` : ""}
+    <div class="ssh-cmd"><pre class="token-snippet">${esc(text)}</pre><button class="btn btn-sm" type="button" data-copy="${esc(text)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button></div>`,
+    )
+    .join("");
   return `<section class="ssh-step">
     <div class="ssh-step-head"><span class="ssh-step-num">${number}</span><strong>${esc(title)}</strong></div>
     <p class="help">${esc(help)}</p>
-    <div class="ssh-cmd"><pre class="token-snippet">${esc(commands)}</pre><button class="btn btn-sm" type="button" data-copy="${esc(commands)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button></div>
+    ${commands}
   </section>`;
 }
 
 function openSshDialog(box) {
+  const origin = location.origin;
   const { root } = openDialog({
     title: t("bd.sshTitle"),
     description: esc(t("bd.sshIntro")),
     iconName: "terminal",
     wide: true,
     body: `<div class="ssh-steps">
-      ${sshStep(1, t("bd.sshSetup"), t("bd.sshSetupHelp"), setupCommands(location.origin))}
-      ${sshStep(2, t("bd.sshConnect"), t("bd.sshConnectHelp"), connectCommands(box.name))}
+      ${sshStep(1, t("bd.sshInstall"), t("bd.sshInstallHelp"), [
+        { label: t("bd.sshInstallUnix"), commands: installCommands(origin) },
+        { label: t("bd.sshInstallWindows"), commands: windowsInstallCommands(origin) },
+      ])}
+      ${sshStep(2, t("bd.sshSetup"), t("bd.sshSetupHelp", { settings: t("nav.settings"), tokens: t("st.tokens") }), [
+        { commands: setupCommands(origin) },
+      ])}
+      ${sshStep(3, t("bd.sshConnect"), t("bd.sshConnectHelp"), [{ commands: connectCommands(box.name) }])}
     </div>`,
     footer: `<button class="btn" data-close type="button">${t("common.close")}</button>`,
   });

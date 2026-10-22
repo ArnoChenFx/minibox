@@ -319,9 +319,12 @@ Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https:/
 
 ## SSH 访问
 
-`ssh`、`scp`、`sftp` 与 `ssh -L` 通过 MiniBox 连接 Box：经由服务器自身地址上的 WebSocket，不发布宿主机端口。在运行 `ssh` 的机器上，用 `bun run build:cli` 构建 CLI，并把 `dist/minibox` 放进 `PATH`。
+`ssh`、`scp`、`sftp` 与 `ssh -L` 通过 MiniBox 连接 Box：经由服务器自身地址上的 WebSocket，不发布宿主机端口。服务器同时分发自己的 CLI，因此运行 `ssh` 的机器无需源码目录：先从服务器安装 CLI。
 
 ```sh
+# 只需一次：把 minibox 安装到 ~/.local/bin（macOS 或 Linux；Windows 在 PowerShell 中运行：irm https://minibox.example.com/cli/install.ps1 | iex）
+curl -fsSL https://minibox.example.com/cli/install.sh | sh
+
 # 只需一次：访问密钥，或带 box:ssh 的 Agent 令牌
 MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
 ssh mybox.minibox
@@ -329,6 +332,8 @@ scp ./build.tar.gz mybox.minibox:/workspace/
 sftp mybox.minibox
 ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 ```
+
+安装脚本会识别系统与 CPU，从服务器下载 `minibox-<os>-<arch>`，按 `/cli/checksums.txt` 校验后安装到 `~/.local/bin`（或 `MINIBOX_INSTALL_DIR`）。它不需要 sudo；该目录不在 `PATH` 中时会打印一行 `PATH` 设置。服务器在该版本的首次请求时用 `bun build --compile` 构建各个二进制，并保存在 `DATA_DIR/cli` 下。与服务器不同的平台还需要该平台的 Bun 运行时，约 90 MB，每台服务器只从 npm 下载一次；无法访问 npm 的服务器会返回 `503` 与原因。此时请为 MiniBox 设置 `HTTPS_PROXY`。若想自行构建，可在源码目录运行 `bun run build:cli`，并把 `dist/minibox` 放进 `PATH`。
 
 `ssh-config --append` 在 `~/.ssh/config` 顶部写入 `Host *.minibox` 配置块，把服务器主机密钥固定在 `~/.ssh/minibox_known_hosts`，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600）。`ProxyCommand`（`minibox ssh-proxy %h`）在没有设置 `MINIBOX_ACCESS_KEY` 时读取该文件，因此从任何 shell 或 IDE 的 Remote-SSH 启动 ssh 都能使用。已导出的 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY` 仍然优先。
 
@@ -639,7 +644,18 @@ sudo touch /mnt/minibox/.minibox-mounted
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/ssh/host-key` | 网关的主机密钥：`algorithm`（`ssh-ed25519`）、`fingerprint` 与 `publicKey`。令牌需要 `box:ssh` |
-| `GET` | `/api/ssh/:box` | 带 `Upgrade: websocket` 时，把一条 SSH 连接接到该 Box（按名称或 id）。不带时执行同样的检查：通过返回 `204`，拒绝则返回 JSON 错误。仅接受 Bearer 凭据 |
+| `GET` | `/api/ssh/:box` | 带 `Upgrade: websocket` 时，把一条 SSH 连接接到该 Box（按名称或 id）。不带时执行同样的检查：通过返回 `204`（并带 `x-minibox-version`，即本服务器版本），拒绝则返回 JSON 错误。仅接受 Bearer 凭据 |
+
+### CLI 下载
+
+公开且只读：不需要密钥，二进制文件不含任何机密。每个客户端对这些路由每分钟最多 120 次请求，超过后返回 `429` 与 `retry-after`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/cli/install.sh` | 适用于 macOS 与 Linux 的安装脚本，已写入本服务器的地址。它会校验二进制，且不需要 sudo |
+| `GET` | `/cli/install.ps1` | 适用于 Windows PowerShell 的安装脚本，步骤相同 |
+| `GET` | `/cli/checksums.txt` | 已构建二进制的 `sha256sum` 行，安装脚本据此校验 |
+| `GET` | `/cli/minibox-<os>-<arch>` | 一个 CLI 二进制，以附件形式返回：`minibox-linux-x64`、`minibox-linux-arm64`、`minibox-darwin-x64`、`minibox-darwin-arm64` 或 `minibox-windows-x64.exe`。该版本的首次请求时构建，并缓存在 `DATA_DIR/cli` 下。不在此列表中的名称返回 `404`。构建失败返回 `503` 与原因及替代方法 |
 
 ### 快照与模板
 
@@ -743,8 +759,8 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 # { "mcpServers": { "minibox": { "url": "http://127.0.0.1:3920/mcp",
 #   "headers": { "Authorization": "Bearer mbx_…" } } } }
 
-# 或使用 CLI（bun run build:cli 生成 dist/minibox）：
-MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
+# 或使用 CLI（经服务器安装，见 SSH 访问）：
+MINIBOX_ACCESS_KEY=$KEY minibox exec agent-dev -- npm test
 ```
 
 前台 exec 的 `timeoutSec` 最长 55 秒，因为服务器会在 60 秒后关闭空闲连接。更长的命令使用 `background: true`（`timeoutSec` 最长 3600），或 `minibox exec --background --timeout SEC`，并用 `GET /api/execs/:execId`（`waitMs` 最长 25000）或 `exec_get` 读取结果。每个 Box 最多同时运行 8 个后台 exec，整个 MiniBox 最多 64 个；超过任一上限的调用返回 `429`，且不会启动已停止的 Box。超时会杀掉进程树，CLI 以 124 退出。如果停止失败，exec 保持 `status: running`，停止会按递增的间隔（1 秒、2 秒、4 秒，最长 30 秒）再次尝试，也可以随时通过 `POST /api/execs/:execId/kill` 重试。把密钥放在 `env` 里，不要放在 `cmd` 或 `argv` 中：审计日志会记录命令与 argv（脱敏规则见[事件](#事件)），而 `env` 只记录变量名。
@@ -759,7 +775,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
 
-用 `bun run build:cli` 编译 CLI（`bun build --compile`，输出 `dist/minibox`，不提交）。它访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。
+用 [SSH 访问](#ssh-访问) 中的一行安装脚本从服务器安装 CLI，或在源码目录用 `bun run build:cli` 编译（`bun build --compile`，输出 `dist/minibox`，不提交）。`minibox --version` 输出构建该二进制所用的版本，`minibox <命令> --help` 输出帮助并以 0 退出。CLI 访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。`ssh-proxy` 发现服务器比 CLI 新时，会打印一行如何更新的提示。
 
 ```bash
 minibox box ls

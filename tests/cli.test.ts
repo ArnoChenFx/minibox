@@ -6,7 +6,7 @@ import { Duplex } from "node:stream";
 
 import { Client } from "ssh2";
 
-import { runCli } from "../src/cli";
+import { isNewerVersion, runCli } from "../src/cli";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
@@ -113,16 +113,107 @@ describe("CLI", () => {
   });
   afterEach(() => restoreLogs());
 
-  test("help and unknown commands exit 2 without a server", async () => {
+  test("help exits 0 on stdout, while a bare command or an unknown one exits 2 on stderr", async () => {
     const help = io();
-    expect(await runCli(["--help"], {}, help, lines([]))).toBe(2);
-    expect(help.err).toContain("minibox exec");
-    expect(help.err).toContain("minibox box ls");
+    expect(await runCli(["--help"], {}, help, lines([]))).toBe(0);
+    expect(help.out).toContain("minibox exec");
+    expect(help.out).toContain("minibox box ls");
+    expect(help.err).toBe("");
+    const bare = io();
+    expect(await runCli([], {}, bare, lines([]))).toBe(2);
+    expect(bare.err).toContain("minibox exec");
+    expect(bare.out).toBe("");
     const missing = io();
     expect(await runCli(["box", "ls"], {}, missing, lines([]))).toBe(2);
     expect(missing.err).toContain("MINIBOX_ACCESS_KEY");
     const unknown = io();
     expect(await runCli(["nope"], { MINIBOX_ACCESS_KEY: "x" }, unknown, lines([]))).toBe(2);
+  });
+
+  test("--version reports the build it came from, and dev when it runs from source", async () => {
+    const fromSource = io();
+    expect(await runCli(["--version"], {}, fromSource, lines([]))).toBe(0);
+    expect(fromSource.out).toBe("minibox dev\n");
+    for (const flag of ["version", "-v"]) {
+      const built = io();
+      expect(await runCli([flag], {}, built, lines([]), "0.3.0-62-gef442f5")).toBe(0);
+      expect(built.out).toBe("minibox 0.3.0-62-gef442f5\n");
+      expect(built.err).toBe("");
+    }
+  });
+
+  test("every command takes --help, which exits 0 before it needs a key or reaches the server", async () => {
+    const sink = io();
+    expect(await runCli(["ssh-config", "--help"], { MINIBOX_URL: "http://127.0.0.1:9" }, sink, lines([]))).toBe(0);
+    expect(sink.out).toContain("minibox ssh-config [--append]");
+    expect(sink.err).toBe("");
+  });
+
+  test("--help after -- is the box command's argument, not the CLI's", async () => {
+    const env = serve();
+    try {
+      await env.app.operations.run("box.create", env.ctx, { name: "alpha", cpus: 1, memoryMb: 256 });
+      env.runtime.execScript = { stdout: "npm usage\n", stderr: "", code: 0 };
+      const ran = io();
+      expect(await runCli(["exec", "alpha", "--", "npm", "--help"], env.env, ran, lines([]))).toBe(0);
+      expect(ran.out).toBe("npm usage\n");
+      expect(env.runtime.execs.at(-1)?.spec.cmd).toEqual(["npm", "--help"]);
+      const asked = io();
+      expect(await runCli(["exec", "alpha", "--help"], env.env, asked, lines([]))).toBe(0);
+      expect(asked.out).toContain("minibox exec");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("isNewerVersion compares release and git-describe builds, and never guesses about a dev build", () => {
+    expect(isNewerVersion("0.4.0", "0.3.0")).toBe(true);
+    expect(isNewerVersion("0.10.0", "0.9.0")).toBe(true);
+    expect(isNewerVersion("0.3.0", "0.3.0")).toBe(false);
+    expect(isNewerVersion("0.3.0", "0.4.0")).toBe(false);
+    expect(isNewerVersion("0.3.0-62-gef442f5", "0.3.0")).toBe(true);
+    expect(isNewerVersion("0.3.0", "0.3.0-62-gef442f5")).toBe(false);
+    expect(isNewerVersion("0.3.0-62-gef442f5-dirty", "0.3.0-61-gabc1234")).toBe(true);
+    expect(isNewerVersion("0.3.1", "0.3.0-62-gef442f5")).toBe(true);
+    expect(isNewerVersion("0.4.0", "dev")).toBe(false);
+    expect(isNewerVersion("dev", "0.3.0")).toBe(false);
+  });
+
+  test("the SSH probe names the server's version, and ssh-proxy warns once when the server is newer", async () => {
+    const env = serve();
+    try {
+      await env.app.operations.run("box.create", env.ctx, { name: "alpha", cpus: 1, memoryMb: 256 });
+      const ops = mint(env.app, { name: "ops", scopes: ["box:ssh"], boxes: { type: "all" } });
+      const probe = await fetch(`${env.env.MINIBOX_URL}/api/ssh/alpha`, {
+        headers: { authorization: `Bearer ${ops.secret}` },
+      });
+      expect(probe.status).toBe(204);
+      expect(probe.headers.get("x-minibox-version")).toBe("0.0.0-test");
+
+      env.app.version = "0.4.0";
+      const newer = io();
+      await runCli(
+        ["ssh-proxy", "alpha.minibox"],
+        { ...env.env, MINIBOX_ACCESS_KEY: ops.secret },
+        newer,
+        lines([]),
+        "0.3.0",
+      );
+      expect(newer.err.match(/newer than this CLI \(0\.3\.0\)/g)).toHaveLength(1);
+      expect(newer.err).toContain(`Update it with: curl -fsSL ${env.env.MINIBOX_URL}/cli/install.sh | sh`);
+
+      const same = io();
+      await runCli(
+        ["ssh-proxy", "alpha.minibox"],
+        { ...env.env, MINIBOX_ACCESS_KEY: ops.secret },
+        same,
+        lines([]),
+        "0.4.0",
+      );
+      expect(same.err).not.toContain("newer than this CLI");
+    } finally {
+      env.stop();
+    }
   });
 
   test("box ls and exec print the server's answer and keep the command's exit code", async () => {

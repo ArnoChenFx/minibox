@@ -7,6 +7,9 @@ const DEFAULT_URL = "http://127.0.0.1:3920";
 const SSH_SUFFIX = ".minibox";
 const SSH_BLOCK_BEGIN = "# BEGIN minibox ssh-config";
 const SSH_BLOCK_END = "# END minibox ssh-config";
+/** The server version the binary was compiled from. `bun build --env` inlines it; a run from source reports `dev`. */
+const BUILT_VERSION = process.env.MINIBOX_CLI_BUILD_VERSION?.trim() || "dev";
+const VERSION_SHAPE = /^(\d+)\.(\d+)\.(\d+)(?:-(\d+)-g[0-9a-f]+)?(?:-dirty)?$/;
 
 interface CliIo {
   stdout(text: string): void;
@@ -68,7 +71,9 @@ Commands:
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
   minibox ssh-config [--append]        Print the ~/.ssh/config block and host key pin; --append writes both
   minibox ssh-proxy <box>              Carry one SSH connection over stdio (the ProxyCommand from ssh-config)
+  minibox --version                    Print the MiniBox version this CLI was built from
 
+Every command takes --help. Install this CLI from the server: curl -fsSL <MINIBOX_URL>/cli/install.sh | sh
 A foreground exec may use --timeout up to 55 seconds. Longer commands use --background with a larger --timeout.
 The process exit code is the command's exit code, 124 when the command times out, 1 on an API error, and 2 on usage.
 exec can read and write every volume mounted on the box.
@@ -88,7 +93,7 @@ async function request(
   method: string,
   path: string,
   body?: unknown,
-): Promise<{ status: number; json: unknown; text: string }> {
+): Promise<{ status: number; json: unknown; text: string; headers: Headers }> {
   const base = (env.MINIBOX_URL ?? DEFAULT_URL).replace(/\/$/, "");
   const key = env.MINIBOX_ACCESS_KEY ?? env.ACCESS_KEY;
   if (!key) throw new Error("Set MINIBOX_ACCESS_KEY or ACCESS_KEY.");
@@ -111,7 +116,7 @@ async function request(
       json = null;
     }
   }
-  return { status: res.status, json, text };
+  return { status: res.status, json, text, headers: res.headers };
 }
 
 function fail(io: CliIo, status: number, json: unknown, text: string): number {
@@ -463,11 +468,35 @@ async function forwardStdin(input: AsyncIterable<Uint8Array>, ws: WebSocket): Pr
   if (ws.readyState === WebSocket.OPEN) ws.close(1000, "ssh finished");
 }
 
+/** Whether `candidate` is a later build than `current`, both as `git describe` writes them, such as 0.3.0 or 0.3.0-62-gef442f5. */
+export function isNewerVersion(candidate: string, current: string): boolean {
+  const left = parseVersion(candidate);
+  const right = parseVersion(current);
+  if (left === null || right === null) return false;
+  for (let i = 0; i < 4; i += 1) {
+    const a = left[i] ?? 0;
+    const b = right[i] ?? 0;
+    if (a !== b) return a > b;
+  }
+  return false;
+}
+
+function parseVersion(text: string): number[] | null {
+  const match = VERSION_SHAPE.exec(text.trim());
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4] ?? 0)];
+}
+
 /**
  * Carries one SSH connection over stdio, so `ssh` can reach a box through this server. The server's checks run first,
  * so a refusal prints its reason. A WebSocket reports only that the upgrade failed, not the status it got.
  */
-async function sshProxy(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+async function sshProxy(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+  version: string,
+): Promise<number> {
   const [host, ...extra] = argv;
   if (!host || host.startsWith("--") || extra.length > 0) throw new Error("minibox ssh-proxy needs one box name");
   const name = host.endsWith(SSH_SUFFIX) ? host.slice(0, -SSH_SUFFIX.length) : host;
@@ -476,6 +505,12 @@ async function sshProxy(argv: string[], env: Record<string, string | undefined>,
   const probe = await request(env, "GET", path);
   if (probe.status >= 400) return fail(io, probe.status, probe.json, probe.text);
   const base = (env.MINIBOX_URL ?? DEFAULT_URL).replace(/\/$/, "");
+  const served = probe.headers.get("x-minibox-version");
+  if (served && isNewerVersion(served, version)) {
+    io.stderr(
+      `minibox: ${base} runs MiniBox ${served}, newer than this CLI (${version}). Update it with: curl -fsSL ${base}/cli/install.sh | sh\n`,
+    );
+  }
   const ws = new WebSocket(`${base}${path}`.replace(/^http/, "ws"), {
     headers: { authorization: `Bearer ${accessKey(env)}` },
   });
@@ -718,18 +753,37 @@ async function toolCommand(argv: string[], env: Record<string, string | undefine
   return 0;
 }
 
+/** `--help` anywhere before a `--`, so `minibox exec box -- npm --help` still runs npm. */
+function asksForHelp(args: readonly string[]): boolean {
+  const end = args.indexOf("--");
+  return (end === -1 ? args : args.slice(0, end)).includes("--help");
+}
+
 /** Runs one CLI invocation. `bun src/cli.ts` and the compiled binary both call this. */
 export async function runCli(
   argv: readonly string[],
   env: Record<string, string | undefined>,
   io: CliIo,
   lines: AsyncIterable<string> = stdinLines(),
+  version: string = BUILT_VERSION,
 ): Promise<number> {
   const [command, sub, ...rest] = argv;
   try {
-    if (command === undefined || command === "--help" || command === "-h" || command === "help") {
+    if (command === undefined) {
       io.stderr(HELP);
       return 2;
+    }
+    if (command === "--help" || command === "-h" || command === "help") {
+      io.stdout(HELP);
+      return 0;
+    }
+    if (command === "--version" || command === "-v" || command === "version") {
+      io.stdout(`minibox ${version}\n`);
+      return 0;
+    }
+    if (asksForHelp(argv.slice(1))) {
+      io.stdout(HELP);
+      return 0;
     }
     if (command === "box" && (sub === "ls" || sub === "list")) return await boxLs(rest, env, io);
     if (command === "exec") return await execCommand(sub === undefined ? [] : [sub, ...rest], env, io);
@@ -739,7 +793,7 @@ export async function runCli(
     if (command === "mcp") return await mcpProxy(sub === undefined ? [] : [sub, ...rest], env, io, lines);
     if (command === "ssh-config") return await sshConfig(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "ssh-proxy")
-      return await sshProxy(sub === undefined ? [] : [sub, ...rest], await proxyEnv(env), io);
+      return await sshProxy(sub === undefined ? [] : [sub, ...rest], await proxyEnv(env), io, version);
     io.stderr(`Unknown command ${command}\n${HELP}`);
     return 2;
   } catch (e) {
