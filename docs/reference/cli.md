@@ -106,6 +106,24 @@ minibox files write my-volume notes.txt --content "hello"
 minibox files read my-volume notes.txt
 ```
 
+### Copy files to and from a box
+
+`upload`, `download` and `cp` move files between this machine and a box's volumes. A path on the box is written `<box>:<path>`. They work while the box is stopped. Uploads stream each file's body, and a download is written to a temporary file that is then renamed into place.
+
+| Command | Meaning |
+|---|---|
+| `minibox upload <local>... <box>:<path> [--overwrite]` | Uploads files or folders. With several sources, or a path that ends in `/`, the files go into that folder. A folder is uploaded with its tree. |
+| `minibox download <box>:<path> [local] [--overwrite]` | Downloads a file, or a folder as `<name>.tar.gz`, into `local`. The default is this folder. |
+| `minibox cp <from>... <to> [--overwrite]` | Copies in either direction. The side with the box path is the box. A box path that no volume backs is refused, and so is a copy with a box on both sides or on neither. |
+
+Symbolic links inside an uploaded folder are skipped, with a note on standard error, and are never followed. An existing file is kept unless `--overwrite` is given.
+
+```bash
+minibox upload ./site mybox:/workspace/
+minibox download mybox:/workspace/report.txt
+minibox cp mybox:/workspace/report.txt ./report.txt
+```
+
 ## Custom tools
 
 Only the owner can use these commands. See [Tools](../user-guide/tools.md).

@@ -42,6 +42,7 @@ Click a box in the list to open it. The box page has these tabs:
 | **Checkpoints** | Copies of the box's data. See [Checkpoints](checkpoints.md). |
 | **Ports** | Listening ports, and ports you add for preview. See [Port preview](port-preview.md). |
 | **Tools** | Tools that you can install, upgrade or remove. See [Tools](tools.md). |
+| **Files** | Browse, upload and download the files in the box's volumes, even while the box is stopped. See [Files](files.md). |
 
 ## Start, stop and restart
 
