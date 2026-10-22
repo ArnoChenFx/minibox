@@ -35,7 +35,7 @@ export const snapshotCreate = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/snapshots", body: true, status: 202 }],
   cli: "snapshot create",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
-  precondition: async ({ host }) => localOnly(host, "Snapshots"),
+  precondition: async ({ host }) => localOnly(host, "snapshots"),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, _input, box) => assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []),
   exclusive: ({ host }, _input, box) => `snapshot.create:${host.host.id}:${box.id}`,

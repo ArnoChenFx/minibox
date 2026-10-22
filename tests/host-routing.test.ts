@@ -212,7 +212,11 @@ describe("features with no remote form yet answer 501 on a remote host", () => {
     const commits = edge.callsTo("commitContainer").length;
     const res = await post(`/api/boxes/${box.boxId}/snapshots`, {});
     expect(res.status).toBe(501);
-    expect(await errorOf(res)).toMatchObject({ code: "unsupported", key: "host_unsupported" });
+    expect(await errorOf(res)).toMatchObject({
+      code: "unsupported",
+      key: "host_unsupported",
+      params: { feature: "snapshots" },
+    });
     expect(edge.callsTo("commitContainer")).toHaveLength(commits);
   });
 
@@ -221,7 +225,11 @@ describe("features with no remote form yet answer 501 on a remote host", () => {
     const localCalls = local.calls.length;
     const res = await post(`/api/boxes/${box.boxId}/template`, { name: "edge-tpl" });
     expect(res.status).toBe(501);
-    expect(await errorOf(res)).toMatchObject({ code: "unsupported", key: "host_unsupported" });
+    expect(await errorOf(res)).toMatchObject({
+      code: "unsupported",
+      key: "host_unsupported",
+      params: { feature: "templates" },
+    });
     expect(local.calls.length).toBe(localCalls);
   });
 

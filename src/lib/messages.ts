@@ -28,6 +28,13 @@ export const LABELS = {
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
+/** Features a `host_unsupported` error names. The UI translates each key through `feature.<key>`. */
+export const FEATURES = {
+  snapshots: "Snapshots",
+  templates: "Templates",
+} as const;
+export type FeatureKey = keyof typeof FEATURES;
+
 export const MESSAGES = {
   invalid_json_object: "Request body must be a JSON object.",
   invalid_json: "Request body is not valid JSON.",
@@ -391,12 +398,23 @@ export interface Msg {
   text: string;
 }
 
+/**
+ * The English text of one parameter. A `label` or `feature` names a key of its table, and the text is that entry's
+ * English name. Anything else is shown as it is.
+ */
+function paramText(name: string, value: string | number): string {
+  if (typeof value !== "string") return String(value);
+  if (name === "label" && Object.hasOwn(LABELS, value)) return LABELS[value as LabelKey];
+  if (name === "feature" && Object.hasOwn(FEATURES, value)) return FEATURES[value as FeatureKey];
+  return value;
+}
+
 /** Build a message: English text for logs/API clients plus key/params for UI translation. */
 export function msg(key: MessageKey, params?: Params): Msg {
   const text = MESSAGES[key].replace(/\{(\w+)\}/g, (m, k: string) => {
     const v = params?.[k];
     if (v === undefined) return m;
-    return k === "label" && typeof v === "string" && v in LABELS ? LABELS[v as LabelKey] : String(v);
+    return paramText(k, v);
   });
   return { key, params, text };
 }

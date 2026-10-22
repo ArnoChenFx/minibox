@@ -86,6 +86,8 @@ export default {
   "label.toolUninstall": "卸载命令",
   "label.toolStop": "停止命令",
   "label.toolDetect": "检测命令",
+  "feature.snapshots": "快照",
+  "feature.templates": "模板",
   "err.invalid_json_object": "请求体必须是 JSON 对象。",
   "err.invalid_json": "请求体不是合法的 JSON。",
   "err.field_required": "{label}不能为空。",

@@ -87,6 +87,8 @@ export default {
   "label.toolUninstall": "Uninstall command",
   "label.toolStop": "Stop command",
   "label.toolDetect": "Detect command",
+  "feature.snapshots": "Snapshots",
+  "feature.templates": "Templates",
   "err.invalid_json_object": "Request body must be a JSON object.",
   "err.invalid_json": "Request body is not valid JSON.",
   "err.field_required": "{label} is required.",
