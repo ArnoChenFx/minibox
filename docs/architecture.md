@@ -33,13 +33,14 @@ flowchart LR
 
   console --> guard
   cli --> guard
-  cli -->|"downloads from /cli/"| downloads
   agent --> guard
-  sshclient --> ws
-  viewer --> preview
+  sshclient --> guard
+  viewer -->|"session cookie"| guard
   guard --> routes
   guard --> mcp
   guard --> ws
+  guard -->|"public, no sign-in"| downloads
+  guard --> preview
   routes --> executor
   mcp --> executor
   ws --> services
@@ -49,6 +50,7 @@ flowchart LR
   executor --> data
   services --> data
   tasks --> data
+  downloads --> data
   services -->|"local socket, or a unix, tcp (TLS) or ssh host"| engines
   sshgw --> boxes
   preview --> boxes
@@ -60,7 +62,7 @@ flowchart LR
 ## Request path
 
 1. `src/server.ts` routes each request. It serves console files from `web/`, CLI downloads under `/cli/`, port previews under `/box/<name>/<port>/`, and the MCP and API paths described below.
-2. `src/guard.ts` refuses cross-site browser requests. `src/auth.ts` finds the caller from a bearer token, which is the access key or an agent token from `src/tokens/`, or from a browser session in `src/sessions.ts`.
+2. `src/guard.ts` checks every request first, and refuses cross-site browser requests. `src/auth.ts` finds the caller from a bearer token, which is the access key or an agent token from `src/tokens/`, or from a browser session in `src/sessions.ts`.
 3. The REST routes in `src/routes/` and the MCP endpoint in `src/mcp/http.ts` both call `app.operations.run`. The executor in `src/operations/executor.ts` checks the caller's scopes, validates the input, runs the operation and writes an audit event to `events.db`.
 4. Services in `src/services/` do the work. They read and write the stores in `DATA_DIR`, and they call the runtime in `src/runtime/`. The Docker implementation is `src/docker/runtime.ts`.
 5. Long operations, such as template builds, checkpoints, rollbacks and tool installs, run as tasks in `src/tasks/`. They return `202` with a task ID at once, and their progress streams as server-sent events.

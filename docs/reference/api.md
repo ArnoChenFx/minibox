@@ -17,6 +17,30 @@ Operations marked **public** need no credentials. A token can call only the oper
 curl -s -H "Authorization: Bearer $MINIBOX_ACCESS_KEY" http://127.0.0.1:3920/api/boxes
 ```
 
+## Operation scopes and token scopes
+
+Each operation in `openapi.json` has an `x-scope` value, such as `box:session` or `template:write`. This is the operation's own scope. It is not a token scope, and you cannot give it to a token. A token passes an operation when it holds one of the token scopes in this table. The [token scopes](../user-guide/access-and-tokens.md#scopes) are the ones you choose when you create a token.
+
+| Operation scope (`x-scope`) | Token scopes that allow it |
+|---|---|
+| `box:read`, `events:read`, `task:read`, `template:read` | `box:read` |
+| `box:write` | `box:write` |
+| `box:delete` | `box:delete` |
+| `box:exec`, `box:session` | `exec` |
+| `snapshot:read`, `checkpoint:read` | `box:read`, `checkpoint:create` or `checkpoint:restore` |
+| `snapshot:write`, `snapshot:delete`, `checkpoint:create`, `checkpoint:write`, `checkpoint:delete` | `checkpoint:create` |
+| `checkpoint:restore` | `checkpoint:restore` |
+| `template:write`, `template:delete`, `tool:install` | `tool:install` |
+| `volume:read` | `volume:read` |
+| `volume:write` | `volume:write` |
+| `volume:attach` | `volume:attach` |
+| `files:read` | `files:read` or `exec` |
+| `files:write` | `files:write` or `exec` |
+| `port:expose` | `port:expose` |
+| `checkpoint:usage`, `host:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+
+The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` and `secret:use` are token scopes with no operation of their own: `box:ssh` allows the SSH gateway, and `secret:use` allows a create or rebuild that refers to a secret.
+
 ## Requests
 
 - Send JSON bodies, and set `Content-Type: application/json` on every write. A write with another content type gets `415`. A write with neither a body nor a `Content-Type` is accepted.

@@ -59,19 +59,19 @@ Each preset is a set of these scopes:
 
 | Scope | What it allows |
 |---|---|
-| `box:read` | See boxes and their details |
+| `box:read` | See boxes and their details, templates, tasks and the events of visible boxes |
 | `box:write` | Create and change boxes |
 | `box:delete` | Delete boxes |
 | `exec` | Run commands in boxes. Commands can read and write every volume the box mounts. |
 | `box:ssh` | Open SSH connections to boxes |
 | `files:read`, `files:write` | Read and write files in volumes |
 | `port:expose` | Preview ports, and forward ports over SSH |
-| `checkpoint:create` | Take checkpoints, and change or delete the ones the token created |
+| `checkpoint:create` | Take checkpoints and snapshots, and change or delete the ones the token created |
 | `checkpoint:restore` | Roll a box back to a checkpoint |
 | `volume:read` | See volumes |
 | `volume:write` | Create volumes |
 | `volume:attach` | Mount existing volumes into boxes |
-| `tool:install` | Install and upgrade tools |
+| `tool:install` | Install, upgrade and remove tools. Save a box as a template, and delete templates. |
 | `secret:use` | Give a box a host secret |
 
 Only the owner can create, change or revoke tokens. A token cannot create other tokens.

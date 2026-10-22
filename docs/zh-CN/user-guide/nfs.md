@@ -1,26 +1,25 @@
 # NFS 与 NAS 存储
 
-本指南说明如何将 Box 数据放在 NAS 或其他 NFS 服务器上。计算机器运行 MiniBox 与 Docker。NFS 服务器通过 NFS 卷保存数据。
+本指南说明如何将 Box 数据放在 NAS 或其他 NFS 服务器上。计算节点运行 MiniBox 与 Docker。NFS 服务器通过 NFS 卷保存数据。
 
-MiniBox 不会自行挂载 NFS。它使用 `local` 驱动器及 NFS 选项创建 Docker 卷。由 Docker 宿主机内核完成挂载。
+MiniBox 不会自行挂载 NFS。它使用 `local` 驱动及 NFS 选项创建 Docker 卷。由 Docker 宿主机内核完成挂载。
 
 ## 何时使用 NFS
 
 在以下情况使用 NFS 存储池：
 
-- 计算机器磁盘较小，希望 Box 数据放在 NAS 上。
-- 希望以后把 Box 迁到另一台计算机器。只有 NFS 存储池支持这一点。
+- 计算节点磁盘较小，希望 Box 数据放在 NAS 上。
 - NAS 已有快照与备份，希望 Box 数据也纳入其中。
 
 请注意：
 
-- **仅使用可信网络。** NFS 默认不加密，并信任客户端发送的用户 ID。在你控制的 LAN 上运行，或通过 WireGuard 或 Tailscale。只允许计算机器的地址挂载该 NFS 导出。
+- **仅使用可信网络。** NFS 默认不加密，并信任客户端发送的用户 ID。在你控制的 LAN 上运行，或通过 WireGuard 或 Tailscale。只允许计算节点的地址挂载该 NFS 导出。
 - **小文件较慢。** 每次 create、`stat` 和 `fsync` 都是一次网络往返。在 1 GbE 或更快网络上，大块顺序读写没问题。会触及大量小文件的命令（如 `git status`、`npm install` 和构建）会感觉更慢。
 - **缓存保留在本地池。** 这是默认行为。`~/.cache` 目录存放包缓存与构建输出。它们重建成本低，走 NFS 却很慢。若某个项目很慢，可在其 `node_modules` 目录挂载本地卷。
 - **数据库需要单一使用者。** SQLite 可在 NFSv4 上使用。同一时刻只能有一台机器使用某个数据库文件。不要让不同宿主机上的两个 Box 写入同一数据库。
 - **文件监视器看不到远程变更。** inotify 只能看到经同一客户端产生的变更。在另一台机器上或直接 NAS 上的编辑不会传过来。
-- **切勿把 Docker 数据根目录放在 NFS 上。** 镜像、容器层与 MiniBox 数据目录留在计算机器上。只有卷放到 NAS。
-- **检查点保留在本地。** 检查点仓库是本地 Docker 卷。请单独备份，并与计算机器上的加密密钥一并保存。参见[检查点](checkpoints.md)。
+- **切勿把 Docker 数据根目录放在 NFS 上。** 镜像、容器层与 MiniBox 数据目录留在计算节点上。只有卷放到 NAS。
+- **检查点保留在本地。** 检查点仓库是本地 Docker 卷。请单独备份，并与计算节点上的加密密钥一并保存。参见[检查点](checkpoints.md)。
 
 各类数据所在位置：
 
@@ -30,7 +29,7 @@ MiniBox 不会自行挂载 NFS。它使用 `local` 驱动器及 NFS 选项创建
 | 工具（`/opt/minibox/tools`） | 默认池，除非**工具**角色指定了其他池。每个池有各自的共享 tools 卷，因此在 NFS 池上的 Box 会从空卷开始。请在该 Box 的**工具**标签页重新安装工具 |
 | 缓存（`/home/dev/.cache`） | 本地池。这是默认行为。 |
 | 独立卷 | 创建时选择的存储池 |
-| 镜像、容器层、数据目录、检查点仓库 | 计算机器 |
+| 镜像、容器层、数据目录、检查点仓库 | 计算节点 |
 
 ## 所有权：唯一必须搞对的事情
 
@@ -47,11 +46,11 @@ MiniBox 在 NFS 存储池上创建卷时，计算机会以 root 运行一个短�
 | 服务器导出选项 | 导出文件夹所有者 | 结果 |
 |---|---|---|
 | `all_squash,anonuid=1000,anongid=1000` | 1000:1000 | **可行。推荐。** 每个文件都属于 1000:1000。在 Box 内执行 `chown` 会成功，但不会改变任何内容。 |
-| `all_squash,anonuid=1000,anongid=1000` | root，权限 755 | 创建卷失败，错误 `storage_permission_denied`：`mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
+| `all_squash,anonuid=1000,anongid=1000` | root，权限 755 | 创建卷失败，返回 `502`：`Storage pool … denied permission to create the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
 | `root_squash,anonuid=1000,anongid=1000` | 1000:1000 | 可行。root 映射为 1000，`dev` 亦然。 |
 | `no_root_squash` | 任意 | 可行，但 Box 内的 root 在导出目录上是真正的 root。仅用于专用导出。 |
-| `root_squash` 且默认匿名用户（`nobody`） | 1000:1000，权限 755 | 创建卷失败，错误 `storage_permission_denied` |
-| `root_squash` 且默认匿名用户（`nobody`） | 权限 777 | 创建卷失败，错误 `storage_unwritable`。文件夹属于 `nobody`，`dev` 无法写入。请改用 `root_squash,anonuid=1000,anongid=1000`。 |
+| `root_squash` 且默认匿名用户（`nobody`） | 1000:1000，权限 755 | 创建卷失败，返回 `502`，消息说明存储池拒绝创建卷目录 |
+| `root_squash` 且默认匿名用户（`nobody`） | 权限 777 | 创建卷失败，返回 `502`，消息说明 uid 1000 无法写入新的卷目录。文件夹属于 `nobody`，`dev` 无法写入。请改用 `root_squash,anonuid=1000,anongid=1000`。 |
 
 将所有身份映射到用户 1000，并让导出文件夹归 1000:1000 所有。
 
@@ -67,7 +66,7 @@ sudo mkdir -p /srv/minibox
 sudo chown 1000:1000 /srv/minibox
 ```
 
-在 `/etc/exports` 中加入以下行。它允许位于 `192.168.1.20` 的计算机器挂载该文件夹：
+在 `/etc/exports` 中加入以下行。它允许位于 `192.168.1.20` 的计算节点挂载该文件夹：
 
 ```
 /srv/minibox  192.168.1.20(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000)
@@ -76,7 +75,7 @@ sudo chown 1000:1000 /srv/minibox
 - `rw,sync`：`sync` 使服务器在应答前落盘写入。`async` 更快，但服务器崩溃时可能丢失 Box 认为已保存的写入。
 - `no_subtree_check`：常见默认项。重命名文件时可避免 stale handle。
 - `all_squash,anonuid=1000,anongid=1000`：见[所有权](#所有权唯一必须搞对的事情)。若其他客户端在此导出上需要各自的用户 ID，请改用 `root_squash,anonuid=1000,anongid=1000`。
-- 用地址或子网指定客户端，例如 `192.168.1.0/24`。不要使用 `*`。使用 Tailscale 时，用计算机器的 `100.x.y.z` 地址。
+- 用地址或子网指定客户端，例如 `192.168.1.0/24`。不要使用 `*`。使用 Tailscale 时，用计算节点的 `100.x.y.z` 地址。
 - 为 MiniBox 使用专用文件夹。MiniBox 会为每个卷创建一个名为 `vol_…` 的子文件夹。
 
 应用更改并检查：
@@ -86,16 +85,16 @@ sudo exportfs -ra
 sudo exportfs -v
 ```
 
-**防火墙。** NFSv4 只需计算机器访问 TCP **2049** 端口。NFSv3 还需要 `rpcbind`（端口 111）、`mountd`、`statd` 和 `lockd`。除非固定端口，否则这些端口是动态的。这也是应使用 NFSv4 的原因之一。
+**防火墙。** NFSv4 只需计算节点访问 TCP **2049** 端口。NFSv3 还需要 `rpcbind`（端口 111）、`mountd`、`statd` 和 `lockd`。除非固定端口，否则这些端口是动态的。这也是应使用 NFSv4 的原因之一。
 
-**NFSv4.1 或 4.2，不要用 v3。** MiniBox 通过 Docker 的 `local` 驱动器挂载，该驱动器不会协商 NFS 版本。务必在存储池选项中设置 `nfsvers=`。未设置时内核会尝试 NFSv3。在内核不支持 NFSv3 时，挂载失败并报 `protocol not supported`。使用 NFSv3 时，除非计算机器运行 `rpc.statd`，否则文件锁也会失败。
+**NFSv4.1 或 4.2，不要用 v3。** MiniBox 通过 Docker 的 `local` 驱动挂载，该驱动不会协商 NFS 版本。务必在存储池选项中设置 `nfsvers=`。未设置时内核会尝试 NFSv3。在内核不支持 NFSv3 时，挂载失败并报 `protocol not supported`。使用 NFSv3 时，除非计算节点运行 `rpc.statd`，否则文件锁也会失败。
 
 ### Synology DSM（一般说明）
 
 不同型号与固件版本的菜单名称可能不同。请对照你的设备核对以下步骤。
 
 - 启用 NFS 服务，并将最高协议设为允许 NFSv4.1。
-- 为 MiniBox 创建共享文件夹。为计算机器地址添加 NFS 规则，授予读写权限。
+- 为 MiniBox 创建共享文件夹。为计算节点地址添加 NFS 规则，授予读写权限。
 - DSM 的 squash 设置不能指定任意用户 ID。它会把所有用户或 root 映射为 `admin` 或 `guest`，或不作映射。最接近 `all_squash,anonuid=1000` 的做法是将所有用户映射为 `admin`，并让共享文件夹对 `admin` 可写。
 - DSM 账户的用户 ID 通常从 1024 起，而非 1000。通过 SSH 执行 `id <user>` 查看 ID。Box 内显示的文件所有者会是该 ID，而非 1000。写入仍可工作。会将文件所有者与当前用户比较的工具（如 git 的 `safe.directory` 检查）可能拒绝该仓库。
 - 除非你能接受 NAS 崩溃后丢失最近写入，否则不要开启异步写入。
@@ -104,14 +103,14 @@ sudo exportfs -v
 ### QNAP QTS（一般说明）
 
 - 启用 NFS 服务并选择 NFSv4，在提供 4.1 时选用 4.1。
-- 在共享文件夹上，将 NFS 主机访问设为计算机器地址，并授予读写权限。
+- 在共享文件夹上，将 NFS 主机访问设为计算节点地址，并授予读写权限。
 - 选择将所有用户或 root 映射到同一账户的 squash 选项。若固件允许，将匿名用户 ID 设为 1000。与 DSM 一样，请核对所映射账户的真实用户 ID。
 - 对存放共享文件夹的卷做快照。
 
 ### TrueNAS SCALE（一般说明）
 
 - 为 MiniBox 创建 dataset。将所有者设为用户 1000、组 1000。创建具有这些 ID 的本地用户，或直接设置数字所有者。
-- 为该 dataset 添加 NFS 共享。限制为计算机器地址或网段。
+- 为该 dataset 添加 NFS 共享。限制为计算节点地址或网段。
 - 在共享的高级选项中，将 map-all 用户与组设为该用户与组。这相当于 `all_squash,anonuid=1000,anongid=1000`。若改为设置 map-root 用户与组，则对应 `root_squash,anonuid=1000` 变体。TrueNAS 新用户默认从用户 ID 3000 起，请显式将该用户 ID 设为 1000。
 - 在 NFS 服务设置中启用 NFSv4。
 - 为 dataset 安排定期快照。
@@ -119,13 +118,13 @@ sudo exportfs -v
 ### Unraid（一般说明）
 
 - 创建 MiniBox 共享并通过 NFS 导出。导出路径为 `/mnt/user/<share>`。
-- 若你的版本提供 NFS 安全规则，将共享限制为计算机器，例如 `192.168.1.20(rw,sync,all_squash,anonuid=1000,anongid=1000)`。若无此类规则，Unraid 通常把所有人映射为 `nobody`（用户 99，组 100）。写入可用，但 Box 内文件显示为用户 99。与 DSM 相同的注意事项适用。
+- 若你的版本提供 NFS 安全规则，将共享限制为计算节点，例如 `192.168.1.20(rw,sync,all_squash,anonuid=1000,anongid=1000)`。若无此类规则，Unraid 通常把所有人映射为 `nobody`（用户 99，组 100）。写入可用，但 Box 内文件显示为用户 99。与 DSM 相同的注意事项适用。
 - 若版本支持，启用 NFSv4。旧版本仅提供 NFSv3。
 - 在 Unraid shell 中，将共享文件夹设为 1000:1000 所有。
 
 ## MiniBox 端
 
-### 从计算机器检查导出
+### 从计算节点检查导出
 
 安装 NFS 客户端工具，在添加到 MiniBox 之前手动挂载导出：
 
@@ -233,7 +232,7 @@ NAS 维护（如重启或固件升级）前，请停止使用该 NAS 存储池�
 | 创建 Box 失败，`502`，错误码 `bad_gateway` | `Storage pool nas denied permission to create the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` | squash 后的用户无法写入导出根目录。使用 `all_squash,anonuid=1000,anongid=1000` 或 `root_squash,anonuid=1000,anongid=1000`，并将导出文件夹设为 1000:1000 所有。错误响应的 hint 会列出这些选项。 |
 | 创建 Box 失败，`502`，错误码 `bad_gateway` | `Uid 1000, the box user, cannot write the new volume directory …, so the volume was not created` | 新文件夹属于 `nobody`，squash 后的 root 无法改所有者。将导出改为 `all_squash,anonuid=1000,anongid=1000`。若文件夹已存在，在服务器上执行 `chown -R 1000:1000 <export>/vol_…`。 |
 | Box 内 `chown` 成功但无变化 | 无 | 使用 `all_squash` 时的预期行为。每个文件都属于匿名用户。 |
-| Box 内 `Stale file handle`，`start` 失败并报 `lstat …/_data: stale NFS file handle` | 无 | 挂载期间服务器上删除了该卷的文件夹或替换为新文件夹，例如恢复到新文件夹后。停止 Box 并将数据放回原处。若 start 仍失败，在计算机器上用 `sync; echo 2 \| sudo tee /proc/sys/vm/drop_caches` 清除客户端缓存。 |
+| Box 内 `Stale file handle`，`start` 失败并报 `lstat …/_data: stale NFS file handle` | 无 | 挂载期间服务器上删除了该卷的文件夹或替换为新文件夹，例如恢复到新文件夹后。停止 Box 并将数据放回原处。若 start 仍失败，在计算节点上用 `sync; echo 2 \| sudo tee /proc/sys/vm/drop_caches` 清除客户端缓存。 |
 | Box 内命令挂起 | 无 | 挂载为 `hard` 且服务器不可达。恢复服务器后进程继续。若需更快停止 Box，请停止 Box。 |
 | 启动或创建返回 `503`，`docker_unavailable` | `Storage pool nas is unreachable: …` | MiniBox 拒绝在无法访问的存储上启动 Box。不会写入本地磁盘。修复存储池后重试。 |
 
@@ -247,11 +246,11 @@ NAS 维护（如重启或固件升级）前，请停止使用该 NAS 存储池�
 
 若你更希望在宿主机上自行挂载 NAS（例如用 `autofs` 或 SMB），可使用路径存储池：
 
-1. 在计算机器上将共享挂载到固定路径。
+1. 在计算节点上将共享挂载到固定路径。
 2. 在已挂载文件系统上创建标记文件 `.minibox-mounted`：
 
    ```bash
-   sudo touch /mnt/minibox/.minibox-mounted
+   sudo touch /mnt/nas/minibox/.minibox-mounted
    ```
 
 3. 点击**卷**，再点击**添加路径**，添加存储池。

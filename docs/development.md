@@ -163,7 +163,7 @@ Write commit messages in the [Conventional Commits](https://www.conventionalcomm
 
 Add user-visible changes to the `[Unreleased]` section of `CHANGELOG.md`. The file follows [Keep a Changelog](https://keepachangelog.com/).
 
-When you change an English page in `docs/`, update the matching page in `docs/zh-CN/` too. Use the same terms in both languages.
+When you change an English page in `docs/`, update the matching page in `docs/zh-CN/` too. Use the same terms in both languages. In Chinese, use 工具 for tools, 检查点 for checkpoints, 模板 for templates, 密钥 for secrets and 宿主机 for hosts, as the console does.
 
 ## Releases
 

@@ -59,20 +59,20 @@ Agent API 令牌是以 `mbx_` 开头的密钥。每个 Agent 或脚本使用一�
 
 | scope | 允许的操作 |
 |---|---|
-| `box:read` | 查看 Box 及其详情 |
+| `box:read` | 查看 Box 及其详情、模板、任务，以及可见 Box 的事件 |
 | `box:write` | 创建和修改 Box |
 | `box:delete` | 删除 Box |
 | `exec` | 在 Box 中运行命令。命令可读写该 Box 挂载的每个卷。 |
 | `box:ssh` | 打开到 Box 的 SSH 连接 |
 | `files:read`, `files:write` | 读写卷中的文件 |
 | `port:expose` | 预览端口，以及通过 SSH 转发端口 |
-| `checkpoint:create` | 拍摄检查点，并修改或删除该令牌创建的检查点 |
+| `checkpoint:create` | 创建检查点和快照，并修改或删除该令牌创建的检查点 |
 | `checkpoint:restore` | 将 Box 回滚到某个检查点 |
 | `volume:read` | 查看卷 |
 | `volume:write` | 创建卷 |
 | `volume:attach` | 将已有卷挂载到 Box |
-| `tool:install` | 安装和升级工具 |
-| `secret:use` | 为 Box 提供宿主机密钥 |
+| `tool:install` | 安装、升级和卸载工具；把 Box 存为模板、删除模板 |
+| `secret:use` | 让 Box 引用密钥 |
 
 只有所有者可以创建、修改或吊销令牌。令牌不能创建其他令牌。
 

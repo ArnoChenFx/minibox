@@ -38,7 +38,7 @@ MiniBox is built for one trusted user. It has no user accounts, so anyone with t
 - **Tools.** Install Agent CLIs and language runtimes from a catalog, or add your own entries.
 - **Terminals and sessions.** Open a browser terminal, or let an agent drive a tmux session that you can take over.
 - **Previews.** Open a web app that runs in a box, through MiniBox, without publishing a host port.
-- **Agent access.** Connect agents through MCP, the CLI, SSH or the REST API, each with its own scoped token.
+- **Agent access.** Give each agent its own scoped token, and connect it through MCP, the CLI, SSH or the REST API.
 - **Multiple hosts.** Run boxes on other Docker engines, through SSH, mutual TLS or a Unix socket.
 
 ![The boxes list in the MiniBox console](docs/screenshots/boxes-light.png)

@@ -145,7 +145,8 @@ describe("MCP", () => {
       const initBody = (await init.json()) as { result: { protocolVersion: string; instructions: string } };
       expect(initBody.result.protocolVersion).toBe("2025-03-26");
       expect(initBody.result.instructions).toContain(AGENTS_MD_SNIPPET);
-      expect(initBody.result.instructions).toContain("27");
+      expect(initBody.result.instructions).not.toContain("design catalog");
+      expect(initBody.result.instructions).toContain("Checkpoints have no MCP tools");
 
       const listed = await post(env.base, rpc(2, "tools/list"), { "mcp-session-id": session ?? "" });
       const tools = ((await listed.json()) as { result: { tools: { name: string }[] } }).result.tools.map(

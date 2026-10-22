@@ -16,7 +16,7 @@
 - [模板](user-guide/templates.md)：基础模板，以及从 Box 保存的模板。
 - [检查点](user-guide/checkpoints.md)：复制 Box 数据、fork 或回滚。
 - [工具与自定义工具](user-guide/tools.md)：在 Box 中安装 Agent CLI 与运行时。
-- [环境变量与密钥](user-guide/environment-and-secrets.md)：设置变量并使用宿主机密钥。
+- [环境变量与密钥](user-guide/environment-and-secrets.md)：设置变量并使用密钥。
 - [卷与存储](user-guide/volumes-and-storage.md)：卷、存储池与挂载。
 - [NFS 与 NAS 存储](user-guide/nfs.md)：将 Box 数据放在网络文件服务器上。
 - [终端与会话](user-guide/terminal-and-sessions.md)：浏览器终端、tmux 会话与接管。

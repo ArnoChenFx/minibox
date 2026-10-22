@@ -9,7 +9,6 @@ MiniBox does not mount NFS itself. It creates Docker volumes with the `local` dr
 Use an NFS pool when:
 
 - The compute machine has a small disk, and you want box data on the NAS.
-- You want to move boxes to another compute machine later. Only NFS pools can do that.
 - The NAS already takes snapshots and backups, and you want box data covered by them.
 
 Keep these points in mind:
@@ -47,11 +46,11 @@ How the server maps root decides whether this works:
 | Server export | Owner of the export folder | Result |
 |---|---|---|
 | `all_squash,anonuid=1000,anongid=1000` | 1000:1000 | **Works. Recommended.** Every file belongs to 1000:1000. A `chown` inside a box succeeds, but changes nothing. |
-| `all_squash,anonuid=1000,anongid=1000` | root, mode 755 | The volume create fails with `storage_permission_denied`: `mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
+| `all_squash,anonuid=1000,anongid=1000` | root, mode 755 | The volume create fails with `502`: `Storage pool … denied permission to create the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
 | `root_squash,anonuid=1000,anongid=1000` | 1000:1000 | Works. Root maps to 1000, and so does `dev`. |
 | `no_root_squash` | Any | Works, but root in a box is real root on the export. Use it only for a dedicated export. |
-| `root_squash` with the default anonymous user (`nobody`) | 1000:1000, mode 755 | The volume create fails with `storage_permission_denied` |
-| `root_squash` with the default anonymous user (`nobody`) | Mode 777 | The volume create fails with `storage_unwritable`. The folder belongs to `nobody`, so `dev` cannot write to it. Use `root_squash,anonuid=1000,anongid=1000` instead. |
+| `root_squash` with the default anonymous user (`nobody`) | 1000:1000, mode 755 | The volume create fails with `502`, and the message says that the pool denied permission to create the volume directory |
+| `root_squash` with the default anonymous user (`nobody`) | Mode 777 | The volume create fails with `502`, and the message says that uid 1000 cannot write the new volume directory. The folder belongs to `nobody`, so `dev` cannot write to it. Use `root_squash,anonuid=1000,anongid=1000` instead. |
 
 Map everything to user 1000, and make the export folder owned by 1000:1000.
 
@@ -251,7 +250,7 @@ If you prefer to mount the NAS on the host yourself, for example with `autofs` o
 2. Create the marker file `.minibox-mounted` on the mounted filesystem:
 
    ```bash
-   sudo touch /mnt/minibox/.minibox-mounted
+   sudo touch /mnt/nas/minibox/.minibox-mounted
    ```
 
 3. Click **Volumes**, then **Add path**, and add the pool.
