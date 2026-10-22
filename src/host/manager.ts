@@ -4,6 +4,7 @@ import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { type Msg, type Params, msg } from "../lib/messages";
 import { type EngineTarget, type Runtime, RuntimeError } from "../runtime";
+import { bookedOn, type Booking } from "../services/capacity";
 import { type Endpoint, endpointLabel, parseEndpoint } from "./endpoint";
 import { type HostCredentials, type Link, MissingCredentialsError, openLink } from "./link";
 import type { LinkFrame } from "./live";
@@ -65,6 +66,18 @@ export interface HostView {
   readonly createdAt: string | null;
 }
 
+/** What a host runs and uses now, for the overview. An offline host has no current figures. */
+export interface HostUsage {
+  readonly id: string;
+  readonly status: Host["status"];
+  /** Containers the engine reported at its last successful check, running and in total. */
+  readonly containers: { readonly running: number; readonly total: number } | null;
+  /** CPUs and memory the running boxes book. Null while the host is offline or its boxes cannot be listed. */
+  readonly allocated: Booking | null;
+  /** CPU cores and memory the running boxes use, approximated from their newest samples. Null while no sample is current. */
+  readonly usage: { readonly cpus: number; readonly memoryBytes: number } | null;
+}
+
 export interface HostError {
   readonly key: string;
   readonly params?: Params;
@@ -102,6 +115,7 @@ interface Probe {
   latencyMs: number | null;
   capacity: HostCapacity | null;
   dockerVersion: string | null;
+  containers: { running: number; total: number } | null;
   error: string | null;
 }
 
@@ -194,6 +208,11 @@ export class HostManager {
 
   list(): HostView[] {
     return this.options.registry.list().map((ctx) => this.view(ctx));
+  }
+
+  /** What each host runs and uses now. Each online host is asked once, in parallel. */
+  usage(): Promise<HostUsage[]> {
+    return Promise.all(this.options.registry.list().map((ctx) => this.usageView(ctx)));
   }
 
   /** Probes each host's engine. A failed probe marks the host offline and records why. */
@@ -457,6 +476,7 @@ export class HostManager {
         latencyMs,
         capacity: { cpus: info.cpus, memoryBytes: info.memoryBytes },
         dockerVersion: info.version,
+        containers: { running: info.containers.running, total: info.containers.total },
         error: null,
       });
     } catch (e) {
@@ -465,9 +485,24 @@ export class HostManager {
         latencyMs: null,
         capacity: previous?.capacity ?? null,
         dockerVersion: previous?.dockerVersion ?? null,
+        containers: previous?.containers ?? null,
         error: reasonOf(e),
       });
     }
+  }
+
+  private async usageView(ctx: HostCtx): Promise<HostUsage> {
+    const id = ctx.host.id;
+    const lastKnown = this.probes.get(id)?.containers ?? null;
+    if (ctx.host.status !== "online")
+      return { id, status: ctx.host.status, containers: lastKnown, allocated: null, usage: null };
+    const [info] = await Promise.all([
+      within(ctx.runtime.info(), ENGINE_READ_TIMEOUT_MS).catch(() => null),
+      ctx.sampler.sampleSoon(),
+    ]);
+    const containers = info ? { running: info.containers.running, total: info.containers.total } : lastKnown;
+    const allocated = await bookedOn(ctx).catch(() => null);
+    return { id, status: ctx.host.status, containers, allocated, usage: ctx.sampler.usage() };
   }
 
   /** What a host still holds. Removal is refused while any of it exists. */

@@ -102,6 +102,7 @@ describe("OpenAPI document", () => {
       "host.list",
       "host.remove",
       "host.test",
+      "host.usage",
       "pool.list",
       "pool.replace",
       "port.expose",

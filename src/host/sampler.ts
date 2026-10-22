@@ -334,6 +334,24 @@ export class HostSampler {
     return summarizeBoxes(infos);
   }
 
+  /**
+   * The CPU cores and memory the running boxes use, summed from each box's newest sample. A running box with no current
+   * sample adds nothing, so the sum is an approximation. Null while the cache is not current.
+   */
+  usage(): { cpus: number; memoryBytes: number } | null {
+    if (!this.ready()) return null;
+    let cpus = 0;
+    let memoryBytes = 0;
+    for (const spec of this.specs.values()) {
+      if (!this.containerOf(spec)?.running) continue;
+      const stats = this.statsOf(spec.id);
+      if (!stats) continue;
+      cpus += stats.cpuPercent / 100;
+      memoryBytes += stats.memUsage;
+    }
+    return { cpus: Math.round(cpus * 100) / 100, memoryBytes };
+  }
+
   /** Samples every running box now, outside the cadence. */
   sampleNow(): Promise<void> {
     return this.sampleRound();

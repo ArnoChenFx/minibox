@@ -1,113 +1,45 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import os from "node:os";
 
-import type { Server } from "bun";
+import {
+  type Cluster,
+  type HostName,
+  boxOn as boxOnIn,
+  bootCluster,
+  errorOf,
+  GIB,
+  SMALL_SOCKET,
+} from "./support/cluster";
 
-import { type App, createApp } from "../src/app";
-import type { Config } from "../src/config";
-import type { EngineTarget } from "../src/runtime";
-import { startServer } from "../src/server";
-import type { SocketData } from "../src/ws/socket";
-import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
-import { FakeRuntime } from "./support/fake-runtime";
-import { FakeCheckpointEngine } from "./support/fake-snapshots";
-
-const GIB = 1024 ** 3;
-const SMALL_SOCKET = "/run/minibox-test/small-docker.sock";
-const LARGE_SOCKET = "/run/minibox-test/large-docker.sock";
-
-type Host = "local" | "small" | "large";
-
-interface Running {
-  app: App;
-  server: Server<SocketData>;
-  base: string;
-  local: FakeRuntime;
-  small: FakeRuntime;
-  large: FakeRuntime;
-  restoreLogs: () => void;
-}
-
-let running: Running | null = null;
+let cluster: Cluster | null = null;
 
 afterEach(() => {
-  if (!running) return;
-  running.app.hostAdmin.close();
-  running.app.sessions.stop();
-  running.app.tokens.stop();
-  running.server.stop(true);
-  running.restoreLogs();
-  running = null;
+  cluster?.close();
+  cluster = null;
 });
 
-function current(): Running {
-  if (!running) throw new Error("the test has not booted");
-  return running;
+function current(): Cluster {
+  if (!cluster) throw new Error("the test has not booted");
+  return cluster;
 }
 
-function api(path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(init.headers);
-  headers.set("authorization", `Bearer ${TEST_KEY}`);
-  if (init.body !== undefined) headers.set("content-type", "application/json");
-  return fetch(`${current().base}${path}`, { ...init, headers });
+async function boot(
+  overrides: Parameters<typeof bootCluster>[0] = {},
+  templates: HostName[] = ["local", "small", "large"],
+) {
+  cluster = await bootCluster(overrides, templates);
 }
 
-const post = (path: string, body: unknown) => api(path, { method: "POST", body: JSON.stringify(body) });
-
-type ErrorBody = { code: string; key?: string; params?: Record<string, unknown>; details?: Record<string, unknown> };
-
-async function errorOf(res: Response): Promise<ErrorBody> {
-  return ((await res.json()) as { error: ErrorBody }).error;
-}
-
-interface BoxRef {
-  id: string;
-  boxId: string;
-  hostId?: string;
-  revision: number;
-}
-
-async function boxOn(host: string | undefined, name: string, extra: Record<string, unknown> = {}): Promise<BoxRef> {
-  const res = await post("/api/boxes", { name, cpus: 1, memoryMb: 256, host, mounts: [], ...extra });
-  expect(res.status).toBe(201);
-  return ((await res.json()) as { box: BoxRef }).box;
-}
-
-/**
- * Two remote engines of different sizes, reached through unix sockets, and a local host. The template is seeded on the
- * hosts named in `templates` only, so a test decides which hosts `auto` may pick from. The local host reports the real
- * machine, so tests place boxes on the remote engines, whose capacity is fixed.
- */
-async function boot(overrides: Partial<Config> = {}, templates: Host[] = ["local", "small", "large"]): Promise<void> {
-  const restoreLogs = silenceLogs();
-  const local = new FakeRuntime();
-  const small = new FakeRuntime();
-  small.engine = { cpus: 2, memoryBytes: 4 * GIB };
-  const large = new FakeRuntime();
-  large.engine = { cpus: 8, memoryBytes: 16 * GIB };
-  const engines: Record<Host, FakeRuntime> = { local, small, large };
-  const app = createApp(testConfig({ labelPrefix: "mbtest", ...overrides }), "0.0.0-test", {
-    runtime: local,
-    connect: (target: EngineTarget) => ("socketPath" in target && target.socketPath === LARGE_SOCKET ? large : small),
-    checkpointEngine: new FakeCheckpointEngine(local),
-    eventsPath: ":memory:",
+const api = (path: string, init?: RequestInit) => current().api(path, init);
+const post = (path: string, body: unknown) => current().post(path, body);
+const boxOn = (host: string | undefined, name: string, extra: Record<string, unknown> = {}) =>
+  boxOnIn(current(), host, name, extra);
+const resize = (boxId: string, body: unknown, revision: number) =>
+  api(`/api/boxes/${boxId}/resources`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    headers: { "if-match": String(revision) },
   });
-  for (const host of templates) {
-    engines[host].seedImage(app.cfg.baseTemplateTag, {
-      [app.hosts.get().keys.template]: "true",
-      [app.hosts.get().keys.templateName]: "base",
-    });
-  }
-  const server = startServer(app);
-  running = { app, server, base: `http://127.0.0.1:${server.port}`, local, small, large, restoreLogs };
-  for (const [id, socket] of [
-    ["small", SMALL_SOCKET],
-    ["large", LARGE_SOCKET],
-  ] as const) {
-    const res = await post("/api/hosts", { id, endpoint: `unix://${socket}` });
-    expect(res.status).toBe(201);
-  }
-}
 
 describe("a running box books its CPU and memory against the host it runs on", () => {
   test("a box that would push the running boxes past the host's CPU limit is refused, and the refusal gives the total", async () => {
@@ -122,7 +54,7 @@ describe("a running box books its CPU and memory against the host it runs on", (
       params: { booked: 3, limit: 2 },
       details: { field: "cpus" },
     });
-    expect(current().small.callsTo("createContainer")).toHaveLength(1);
+    expect(current().engines.small.callsTo("createContainer")).toHaveLength(1);
   });
 
   test("the overcommit ratio raises the limit that the booked total is held to", async () => {
@@ -154,29 +86,23 @@ describe("a running box books its CPU and memory against the host it runs on", (
     expect((await api(`/api/boxes/${alpha.boxId}/stop`, { method: "POST" })).status).toBe(200);
 
     await boxOn("small", "beta", { cpus: 2 });
-    expect(current().small.callsTo("createContainer")).toHaveLength(2);
+    expect(current().engines.small.callsTo("createContainer")).toHaveLength(2);
   });
 
   test("a resize is checked for how much it grows a running box, and a shrink is never refused", async () => {
     await boot();
     const alpha = await boxOn("small", "alpha", { cpus: 1 });
     await boxOn("small", "beta", { cpus: 1 });
-    const resize = (body: unknown, revision: number) =>
-      api(`/api/boxes/${alpha.boxId}/resources`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-        headers: { "if-match": String(revision) },
-      });
 
-    const grown = await resize({ cpus: 2 }, alpha.revision);
+    const grown = await resize(alpha.boxId, { cpus: 2 }, alpha.revision);
     expect(grown.status).toBe(422);
     expect(await errorOf(grown)).toMatchObject({ key: "cpu_booked_over_host", params: { booked: 3, limit: 2 } });
 
-    const shrunk = await resize({ cpus: 0.5 }, alpha.revision);
+    const shrunk = await resize(alpha.boxId, { cpus: 0.5 }, alpha.revision);
     expect(shrunk.status).toBe(200);
     const revision = ((await shrunk.json()) as { box: { revision: number } }).box.revision;
 
-    expect((await resize({ memoryMb: 512 }, revision)).status).toBe(200);
+    expect((await resize(alpha.boxId, { memoryMb: 512 }, revision)).status).toBe(200);
   });
 
   test("a resize of a stopped box is not checked, since it books nothing", async () => {
@@ -185,11 +111,7 @@ describe("a running box books its CPU and memory against the host it runs on", (
     expect((await api(`/api/boxes/${alpha.boxId}/stop`, { method: "POST" })).status).toBe(200);
     await boxOn("small", "beta", { cpus: 2 });
 
-    const res = await api(`/api/boxes/${alpha.boxId}/resources`, {
-      method: "PATCH",
-      body: JSON.stringify({ cpus: 2 }),
-      headers: { "if-match": String(alpha.revision + 1) },
-    });
+    const res = await resize(alpha.boxId, { cpus: 2 }, alpha.revision + 1);
     expect(res.status).toBe(200);
   });
 });
@@ -204,7 +126,7 @@ describe("a control plane with one host has no booking check", () => {
     await boxOn(undefined, "alpha", { cpus: cores });
     const second = await boxOn(undefined, "beta", { cpus: cores });
     expect(second.hostId).toBeUndefined();
-    expect(current().local.callsTo("createContainer")).toHaveLength(2);
+    expect(current().engines.local.callsTo("createContainer")).toHaveLength(2);
   });
 });
 
@@ -215,7 +137,7 @@ describe("host auto places a new box on the reachable host with the most room", 
 
     const placed = await boxOn("auto", "beta", { cpus: 1 });
     expect(placed.hostId).toBe("large");
-    expect(current().large.callsTo("createContainer")).toHaveLength(1);
+    expect(current().engines.large.callsTo("createContainer")).toHaveLength(1);
   });
 
   test("a host without the template is not a candidate, however empty it is", async () => {
@@ -224,7 +146,7 @@ describe("host auto places a new box on the reachable host with the most room", 
 
     const placed = await boxOn("auto", "beta", { cpus: 1 });
     expect(placed.hostId).toBe("small");
-    expect(current().large.callsTo("createContainer")).toHaveLength(0);
+    expect(current().engines.large.callsTo("createContainer")).toHaveLength(0);
   });
 
   test("an offline host is skipped, even when it is the emptiest", async () => {
@@ -237,8 +159,8 @@ describe("host auto places a new box on the reachable host with the most room", 
 
   test("equally free hosts keep the order they were added in", async () => {
     await boot({}, ["small", "large"]);
-    current().small.engine = { cpus: 4, memoryBytes: 8 * GIB };
-    current().large.engine = { cpus: 4, memoryBytes: 8 * GIB };
+    current().engines.small.engine = { cpus: 4, memoryBytes: 8 * GIB };
+    current().engines.large.engine = { cpus: 4, memoryBytes: 8 * GIB };
 
     const placed = await boxOn("auto", "alpha", { cpus: 1 });
     expect(placed.hostId).toBe("small");
@@ -256,7 +178,7 @@ describe("host auto places a new box on the reachable host with the most room", 
     const res = await post("/api/boxes", { name: "alpha", cpus: 16, memoryMb: 256, host: "auto", mounts: [] });
     expect(res.status).toBe(422);
     expect(await errorOf(res)).toMatchObject({ code: "insufficient_capacity", key: "host_auto_no_room" });
-    expect(current().large.callsTo("createContainer")).toHaveLength(0);
+    expect(current().engines.large.callsTo("createContainer")).toHaveLength(0);
   });
 
   test("auto is a reserved word, so no host can be added under that id", async () => {

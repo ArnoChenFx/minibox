@@ -735,6 +735,7 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("remove the lab host", "DELETE", "/api/hosts/lab");
     await send("remove a missing host", "DELETE", "/api/hosts/missing");
     await send("list hosts after removing lab", "GET", "/api/hosts");
+    await send("list host usage after removing lab", "GET", "/api/hosts/usage");
   } finally {
     server.stop(true);
     app.throttle.stop();

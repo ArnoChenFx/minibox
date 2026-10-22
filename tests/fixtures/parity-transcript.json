@@ -2102,5 +2102,13 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null}]}"
+  },
+  {
+    "step": "list host usage after removing lab",
+    "method": "GET",
+    "path": "/api/hosts/usage",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"hosts\":[{\"id\":\"local\",\"status\":\"online\",\"containers\":{\"running\":3,\"total\":4},\"allocated\":{\"cpus\":3,\"memoryBytes\":805306368},\"usage\":null}]}"
   }
 ]

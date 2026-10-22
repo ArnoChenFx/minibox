@@ -23890,6 +23890,220 @@
         }
       }
     },
+    "/api/hosts/usage": {
+      "get": {
+        "operationId": "host.usage",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Show what each host runs and uses",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hosts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "online",
+                              "offline",
+                              "unknown"
+                            ]
+                          },
+                          "containers": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "running": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "running",
+                                  "total"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Containers the engine reported at its last successful check. Null until one succeeds."
+                          },
+                          "allocated": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "cpus": {
+                                    "type": "number",
+                                    "description": "CPU cores, as a fraction where a box takes part of one."
+                                  },
+                                  "memoryBytes": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "cpus",
+                                  "memoryBytes"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "CPUs and memory the running boxes on this host book. Null while the host is offline."
+                          },
+                          "usage": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "cpus": {
+                                    "type": "number",
+                                    "description": "CPU cores, as a fraction where a box takes part of one."
+                                  },
+                                  "memoryBytes": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "cpus",
+                                  "memoryBytes"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "CPUs and memory the running boxes use now, from their newest stats samples, so an approximation. Null while the host is offline or no sample is current."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "status",
+                          "containers",
+                          "allocated",
+                          "usage"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "hosts"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-cli": "host usage",
+        "x-mcp": {
+          "name": "get_host_usage",
+          "toolset": "meta"
+        }
+      }
+    },
     "/api/hosts/test": {
       "post": {
         "operationId": "host.test",
