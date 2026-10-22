@@ -11200,7 +11200,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "List the Agent CLI catalog without install status",
+        "summary": "List the tool catalog without install status",
         "parameters": [
           {
             "name": "X-Minibox-Run",
@@ -11363,7 +11363,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "List Agent CLI catalog and install status",
+        "summary": "List tool catalog and install status",
         "parameters": [
           {
             "name": "id",
@@ -11574,7 +11574,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "Install an Agent CLI into the shared tools volume",
+        "summary": "Install a tool into the shared tools volume",
         "parameters": [
           {
             "name": "id",
@@ -11778,7 +11778,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "Upgrade an Agent CLI on the shared tools volume",
+        "summary": "Upgrade a tool on the shared tools volume",
         "parameters": [
           {
             "name": "id",
@@ -11982,7 +11982,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "Uninstall an Agent CLI from the shared tools volume",
+        "summary": "Uninstall a tool from the shared tools volume",
         "parameters": [
           {
             "name": "id",
@@ -12178,7 +12178,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "Install missing Agent CLIs from the box spec",
+        "summary": "Install missing tools from the box spec",
         "parameters": [
           {
             "name": "id",

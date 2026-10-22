@@ -276,7 +276,7 @@ docker run -d --name minibox --restart unless-stopped \
 - Tags: `X.Y.Z`, `X.Y` and `latest` (pre-releases such as `1.0.0-rc.1` only get their exact tag).
 - Build locally: `docker build --build-arg MINIBOX_VERSION=0.3.0 -t minibox .`
 
-## Agent CLI tools
+## Tools
 
 Create-box can tick Agent CLIs and other tools. The list is grouped into AI coding agents, languages and runtimes, terminal and dev utilities, and networking, and a search field above it filters by name, description or category. The box's **Tools** page uses the same groups and search, and install, upgrade and uninstall live there too. The catalog covers Claude Code, Codex, OpenCode, Pi coding agent, fx agent, Antigravity CLI, Grok Build CLI, Qoder CLI, oh-my-pi, herdr, luvus, Bun, uv, Rust, Zig and Tailscale. Each entry installs from its official source (see `catalog/*.json`), and `DATA_DIR/tools.d/*.json` can add or override entries. Binaries go on the shared read-only tools volume (`/opt/minibox/tools`). Installs run in a networked helper that mounts that volume read-write as uid `1000`, never as root. A tool already in the image or the home volume shows as installed with its version and is left alone. Upgrade and uninstall apply only to tools MiniBox installed on the tools volume. Tailscale needs root, so MiniBox lists it but refuses to install or remove it. Long installs are async tasks with live logs. API: `GET /api/tools`, `GET /api/tools/catalog`, `POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`. MCP toolset `tools` (`list_tools`, `install_tool`, …). Honor `HTTP_PROXY` / `HTTPS_PROXY` when set on the MiniBox process.
 
@@ -756,7 +756,7 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 > **Warning: the main access key grants full owner access over `/mcp`.** A client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Give an agent an agent token ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) rather than the key, and keep the key out of prompts, logs and repositories.
 
-The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for Agent CLI install operations. See [`docs/agents.md`](docs/agents.md).
+The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
 
 Build the CLI with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). It talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token.
 
@@ -810,7 +810,7 @@ minibox/
 │   ├── docker/              # Docker adapter, the only dockerode user: runtime / errors / logs / stats / proc
 │   ├── specs/               # Box spec store, claim, drift, history and rebuild plan
 │   ├── volumes/             # Volume records, pool config, probes and engine claim
-│   ├── tools/               # Agent CLI catalog load and command rendering
+│   ├── tools/               # Tool catalog load and command rendering
 │   ├── services/            # Business logic on Runtime: boxes / exec / volumes / rebuild / images / snapshots / templates / reconcile / terminals
 │   ├── tmux/                # tmux command lines, session names and parsing of tmux output
 │   ├── mcp/                 # Streamable HTTP MCP at /mcp
@@ -828,7 +828,7 @@ minibox/
 │   ├── css/app.css          # Design system (tokens, components, light / dark)
 │   ├── js/                  # app, pages/*, components/*, lib/*
 │   └── assets/              # Logo, favicons, icons
-├── catalog/              # Built-in Agent CLI tool definitions (#8)
+├── catalog/              # Built-in tool definitions (#8)
 ├── templates/base/Dockerfile
 ├── tests/                   # bun test unit tests; support/ has FakeRuntime and test helpers
 ├── scripts/restart.sh       # Restart helper for hosts without systemd

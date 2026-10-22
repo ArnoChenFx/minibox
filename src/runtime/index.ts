@@ -167,7 +167,7 @@ export interface HelperSpec {
   capAdd?: string[];
   timeoutSec?: number;
   labels?: Record<string, string>;
-  /** `NAME=value` entries. Used by Agent CLI installs for HTTP_PROXY and npm/pip settings. */
+  /** `NAME=value` entries. Used by tool installs for HTTP_PROXY and npm/pip settings. */
   env?: string[];
   /**
    * Secrets the helper reads from `/run/secrets/<name>`, read-only. A secret never goes into `env` or the container

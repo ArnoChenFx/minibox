@@ -277,7 +277,7 @@ export const MESSAGES = {
   mcp_not_sse: "GET /mcp does not stream events.",
   tool_catalog_invalid: "Tool catalog entry {file} is invalid: {detail}.",
   tool_unknown: "Unknown tool “{id}”.",
-  tool_needs_root: "Tool “{id}” requires root, which MiniBox does not run for Agent CLI installs.",
+  tool_needs_root: "Tool “{id}” requires root, which MiniBox does not run for tool installs.",
   tool_volume_missing: "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
   tool_install_failed: "Installing “{id}” failed: {detail}",
   tool_install_timeout: "Installing “{id}” timed out.",

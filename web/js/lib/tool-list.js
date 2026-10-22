@@ -1,5 +1,5 @@
 /**
- * The Agent CLI picker's groups, search and row actions, shared by the create dialog and the running box's tools panel.
+ * The tool picker's groups, search and row actions, shared by the create dialog and the running box's tools panel.
  * Pure: the labels come from the caller, and the functions return category ids for the page to translate.
  */
 
