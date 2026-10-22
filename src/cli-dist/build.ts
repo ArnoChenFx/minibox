@@ -53,6 +53,7 @@ export async function compileWithBun(job: CliBuildJob, timeoutMs = CLI_BUILD_TIM
     if (value !== undefined) env[name] = value;
   }
   env.MINIBOX_CLI_BUILD_VERSION = job.version;
+  env.MINIBOX_CLI_BUILD_COMPILED = "1";
   env.BUN_INSTALL_CACHE_DIR = job.runtimeCache;
   const proc = Bun.spawn(
     [
