@@ -23,6 +23,7 @@ export const LABELS = {
   toolInstall: "Install command",
   toolUpgrade: "Upgrade command",
   toolUninstall: "Uninstall command",
+  toolStop: "Stop command",
   toolDetect: "Detect command",
 } as const;
 export type LabelKey = keyof typeof LABELS;

@@ -80,6 +80,7 @@ export default {
   "label.toolInstall": "安装命令",
   "label.toolUpgrade": "升级命令",
   "label.toolUninstall": "卸载命令",
+  "label.toolStop": "停止命令",
   "label.toolDetect": "检测命令",
   "err.invalid_json_object": "请求体必须是 JSON 对象。",
   "err.invalid_json": "请求体不是合法的 JSON。",
@@ -1207,6 +1208,9 @@ export default {
   "ct.install": "安装",
   "ct.upgrade": "升级",
   "ct.uninstall": "卸载",
+  "ct.stop": "停止（可选）",
+  "ct.stopHelp":
+    "卸载前在运行中的 Box 内以 dev 用户执行，用于先停掉该工具启动的守护进程。失败时工具保持安装。没有守护进程的工具留空。",
   "ct.detect": "检测",
   "ct.detectHelp": "工具存在时以 0 退出，打印版本号可选。",
   "ct.builtin": "“{id}”是内置工具。保存后，所有 Box 都将以此条目替代其内置条目。",

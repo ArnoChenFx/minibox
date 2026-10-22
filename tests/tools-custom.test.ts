@@ -48,6 +48,7 @@ const put = (id: string, body: unknown, token?: string) =>
   call(h.base, `/api/tools/custom/${id}`, { method: "PUT", body, token });
 const remove = (id: string, token?: string) => call(h.base, `/api/tools/custom/${id}`, { method: "DELETE", token });
 const list = (token?: string) => call(h.base, "/api/tools/custom", { token });
+const stopOf = async () => (await list()).json.tools?.[0]?.stop;
 const catalogName = (id: string) => findCatalogEntry(loadCatalog(h.app.cfg.dataDir), id)?.name;
 
 describe("saving a custom entry", () => {
@@ -80,6 +81,34 @@ describe("saving a custom entry", () => {
     expect((await list()).json.tools).toEqual([expect.objectContaining({ id: "sample-tool", requires: "Node ≥ 20" })]);
   });
 
+  test("a stop command is saved, read back by the loader and listed, and a save without one removes it", async () => {
+    const withStop = { ...ENTRY, stop: "  {{prefix}}/bin/sample-tool stop  " };
+    const saved = await put("sample-tool", withStop);
+    expect(saved.status).toBe(200);
+    expect(saved.json.tool?.stop).toBe("{{prefix}}/bin/sample-tool stop");
+    const stored = JSON.parse(readFileSync(fileOf("sample-tool"), "utf8"));
+    expect(Object.keys(stored).slice(-3)).toEqual(["uninstall", "stop", "detect"]);
+    expect(stored.stop).toBe("{{prefix}}/bin/sample-tool stop");
+    expect(findCatalogEntry(loadCatalog(h.app.cfg.dataDir), "sample-tool")?.stop).toBe(
+      "{{prefix}}/bin/sample-tool stop",
+    );
+    expect(await stopOf()).toBe("{{prefix}}/bin/sample-tool stop");
+
+    expect((await put("sample-tool", { ...ENTRY, stop: "   " })).status).toBe(200);
+    expect(JSON.parse(readFileSync(fileOf("sample-tool"), "utf8"))).not.toHaveProperty("stop");
+    expect(await stopOf()).toBeNull();
+  });
+
+  test("overriding a built-in with a stop command keeps it, so the override still stops the daemon", async () => {
+    const tailscale = findCatalogEntry(loadCatalog(h.app.cfg.dataDir), "tailscale");
+    expect(tailscale?.stop).toBeTruthy();
+    const { id: _id, ...body } = tailscale as NonNullable<typeof tailscale>;
+    const saved = await put("tailscale", { ...body, name: "Tailscale (mine)", overrideBuiltin: true });
+    expect(saved.status).toBe(200);
+    const merged = findCatalogEntry(loadCatalog(h.app.cfg.dataDir), "tailscale");
+    expect(merged).toMatchObject({ name: "Tailscale (mine)", stop: tailscale?.stop, install: tailscale?.install });
+  });
+
   test("a save replaces the entry, a multi-line command is kept as written, and omitted optional fields are defaulted", async () => {
     await put("sample-tool", ENTRY);
     const multiline = {
@@ -107,9 +136,12 @@ describe("saving a custom entry", () => {
       ["sample-tool", { ...ENTRY, bin: "../escape" }, "bin"],
       ["sample-tool", { ...ENTRY, estimatedMb: 0 }, "estimatedMb"],
       ["sample-tool", { ...ENTRY, needsRoot: "yes" }, "needsRoot"],
-      ["sample-tool", { ...ENTRY, requires: "x".repeat(121) }, "requires"],
+      ["sample-tool", { ...ENTRY, requires: "x".repeat(CUSTOM_LIMITS.requires + 1) }, "requires"],
       ["sample-tool", { ...ENTRY, install: "npm install {{home}}" }, "install"],
-      ["sample-tool", { ...ENTRY, upgrade: "x".repeat(2001) }, "upgrade"],
+      ["sample-tool", { ...ENTRY, upgrade: "x".repeat(CUSTOM_LIMITS.command + 1) }, "upgrade"],
+      ["sample-tool", { ...ENTRY, stop: "kill {{pid}}" }, "stop"],
+      ["sample-tool", { ...ENTRY, stop: "stop\u0000" }, "stop"],
+      ["sample-tool", { ...ENTRY, stop: 42 }, "stop"],
       ["sample-tool", { ...ENTRY, detect: "echo\u0007" }, "detect"],
       ["sample-tool", { ...ENTRY, overrideBuiltin: "yes" }, "overrideBuiltin"],
     ];

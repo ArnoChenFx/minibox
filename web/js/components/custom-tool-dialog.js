@@ -16,6 +16,7 @@ import { confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/u
 
 const SOURCES = ["npm", "pip", "script"];
 const SOURCE_HELP = { npm: "ct.sourceHelpNpm", pip: "ct.sourceHelpPip", script: "ct.sourceHelpScript" };
+const COMMAND_HELP = { stop: "ct.stopHelp", detect: "ct.detectHelp" };
 const INPUT_FIELDS = ["id", "name", "description", "category", "source", "package", "bin", "requires", "estimatedMb"];
 
 const categoryOptions = (selected) =>
@@ -56,7 +57,7 @@ function formHtml(values, editing) {
     ${field("estimatedMb", t("ct.estimatedMb"), `<input class="input" id="ct-estimatedMb" name="estimatedMb" type="number" min="1" step="1" value="${esc(values.estimatedMb)}" />`)}
     <label class="checkbox field-wide"><input type="checkbox" name="needsRoot" ${values.needsRoot ? "checked" : ""} /><span>${esc(t("ct.needsRoot"))}<div class="help">${esc(t("ct.needsRootHelp"))}</div></span></label>
     <div class="section-intro field-wide"><h3>${esc(t("ct.commands"))}</h3><p class="help">${esc(t("ct.commandsHelp"))}</p></div>
-    ${COMMAND_FIELDS.map((name) => field(name, t(`ct.${name}`), command(name), { wide: true, help: name === "detect" ? t("ct.detectHelp") : "" })).join("")}
+    ${COMMAND_FIELDS.map((name) => field(name, t(`ct.${name}`), command(name), { wide: true, help: COMMAND_HELP[name] ? t(COMMAND_HELP[name]) : "" })).join("")}
   </form>`;
 }
 

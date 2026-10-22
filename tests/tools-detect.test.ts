@@ -417,6 +417,17 @@ describe("stopping a tool before its uninstall", () => {
     expect(phases).toEqual(["stop", "writer"]);
   });
 
+  test("a stop command saved through the API runs before the writer, the same as one written by hand", async () => {
+    const { id: _id, ...body } = DAEMON_TOOL;
+    expect((await call("PUT", "/api/tools/custom/daemon-api", { ...body, bin: "daemon-tool" })).status).toBe(200);
+    const boxId = await createBox("alpha", { tools: ["daemon-api"] });
+    answerDetection({ "daemon-api": { managed: true, version: "1.0.0" } });
+
+    const started = await call("POST", `/api/boxes/${boxId}/tools/uninstall`, { tool: "daemon-api" });
+    expect((await waitTask(String(started.json.taskId))).status).toBe("succeeded");
+    expect(stopRuns()).toBe(1);
+  });
+
   test("a failed stop keeps the tool on the box, and the writer does not run", async () => {
     const boxId = await createBox("alpha", { tools: ["daemon-tool"] });
     answerDetection({ "daemon-tool": { managed: true, version: "1.0.0" } });

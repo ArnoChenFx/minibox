@@ -1813,7 +1813,7 @@
     "path": "/api/tools/custom/parity-tool",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"tool\":{\"id\":\"parity-tool\",\"name\":\"Parity tool\",\"description\":\"A custom entry for the transcript.\",\"category\":\"terminal\",\"source\":\"npm\",\"package\":\"parity-tool\",\"bin\":\"parity-tool\",\"needsRoot\":false,\"estimatedMb\":50,\"requires\":\"Node ≥ 20\",\"install\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"upgrade\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"uninstall\":\"npm uninstall -g --prefix {{prefix}} {{package}}\",\"detect\":\"command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null\",\"overridesBuiltin\":false}}"
+    "body": "{\"tool\":{\"id\":\"parity-tool\",\"name\":\"Parity tool\",\"description\":\"A custom entry for the transcript.\",\"category\":\"terminal\",\"source\":\"npm\",\"package\":\"parity-tool\",\"bin\":\"parity-tool\",\"needsRoot\":false,\"estimatedMb\":50,\"requires\":\"Node ≥ 20\",\"install\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"upgrade\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"uninstall\":\"npm uninstall -g --prefix {{prefix}} {{package}}\",\"stop\":null,\"detect\":\"command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null\",\"overridesBuiltin\":false}}"
   },
   {
     "step": "list custom tools after a save",
@@ -1821,7 +1821,7 @@
     "path": "/api/tools/custom",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"tools\":[{\"id\":\"parity-tool\",\"name\":\"Parity tool\",\"description\":\"A custom entry for the transcript.\",\"category\":\"terminal\",\"source\":\"npm\",\"package\":\"parity-tool\",\"bin\":\"parity-tool\",\"needsRoot\":false,\"estimatedMb\":50,\"requires\":\"Node ≥ 20\",\"install\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"upgrade\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"uninstall\":\"npm uninstall -g --prefix {{prefix}} {{package}}\",\"detect\":\"command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null\",\"overridesBuiltin\":false}]}"
+    "body": "{\"tools\":[{\"id\":\"parity-tool\",\"name\":\"Parity tool\",\"description\":\"A custom entry for the transcript.\",\"category\":\"terminal\",\"source\":\"npm\",\"package\":\"parity-tool\",\"bin\":\"parity-tool\",\"needsRoot\":false,\"estimatedMb\":50,\"requires\":\"Node ≥ 20\",\"install\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"upgrade\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"uninstall\":\"npm uninstall -g --prefix {{prefix}} {{package}}\",\"stop\":null,\"detect\":\"command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null\",\"overridesBuiltin\":false}]}"
   },
   {
     "step": "save a custom tool with an unknown placeholder",

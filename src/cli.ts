@@ -60,7 +60,7 @@ Commands:
   minibox files cp <volume> <from> <to>
   minibox files download <volume> [path]   Print a base64 tar of the path
   minibox files upload <volume> [path]     Read a base64 tar from stdin and extract
-  minibox tool custom list [--json]    List the custom Agent CLI entries in DATA_DIR/tools.d (owner only)
+  minibox tool custom list [--json]    List the custom tool entries in DATA_DIR/tools.d (owner only)
   minibox tool custom put <id> (--file FILE | --stdin) [--override-builtin] [--json]
                                        Save an entry from a JSON document (owner only)
   minibox tool custom delete <id> [--json]

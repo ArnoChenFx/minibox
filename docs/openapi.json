@@ -12371,7 +12371,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "List the custom Agent CLI entries in DATA_DIR/tools.d",
+        "summary": "List the custom tool entries in DATA_DIR/tools.d",
         "parameters": [
           {
             "name": "X-Minibox-Run",
@@ -12454,6 +12454,12 @@
                           "uninstall": {
                             "type": "string"
                           },
+                          "stop": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "detect": {
                             "type": "string"
                           },
@@ -12476,6 +12482,7 @@
                           "install",
                           "upgrade",
                           "uninstall",
+                          "stop",
                           "detect",
                           "overridesBuiltin"
                         ],
@@ -12568,7 +12575,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "Create or replace a custom Agent CLI entry in DATA_DIR/tools.d",
+        "summary": "Create or replace a custom tool entry in DATA_DIR/tools.d",
         "parameters": [
           {
             "name": "id",
@@ -12653,27 +12660,32 @@
                   },
                   "requires": {
                     "type": "string",
-                    "maxLength": 120,
-                    "description": "Dependency note shown under the entry, such as Node ≥ 20. At most 120 characters."
+                    "maxLength": 600,
+                    "description": "Dependency note shown under the entry, such as Node ≥ 20. At most 600 characters."
                   },
                   "install": {
                     "type": "string",
-                    "maxLength": 2000,
-                    "description": "Install. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 2000 characters."
+                    "maxLength": 16000,
+                    "description": "Install. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 16000 characters."
                   },
                   "upgrade": {
                     "type": "string",
-                    "maxLength": 2000,
-                    "description": "Upgrade. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 2000 characters."
+                    "maxLength": 16000,
+                    "description": "Upgrade. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 16000 characters."
                   },
                   "uninstall": {
                     "type": "string",
-                    "maxLength": 2000,
-                    "description": "Uninstall. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 2000 characters."
+                    "maxLength": 16000,
+                    "description": "Uninstall. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 16000 characters."
+                  },
+                  "stop": {
+                    "type": "string",
+                    "maxLength": 16000,
+                    "description": "Optional. Runs as the box user (dev) inside the running box before an uninstall, so a daemon the tool started exits before its binary is removed. A failure keeps the tool installed. Placeholders as for install."
                   },
                   "detect": {
                     "type": "string",
-                    "maxLength": 2000,
+                    "maxLength": 16000,
                     "description": "Prints one line with the version (or nothing) and exits 0 when the tool is present. It runs in each box's image. Placeholders as for install."
                   },
                   "overrideBuiltin": {
@@ -12762,6 +12774,12 @@
                         "uninstall": {
                           "type": "string"
                         },
+                        "stop": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "detect": {
                           "type": "string"
                         },
@@ -12784,6 +12802,7 @@
                         "install",
                         "upgrade",
                         "uninstall",
+                        "stop",
                         "detect",
                         "overridesBuiltin"
                       ],
@@ -12903,7 +12922,7 @@
         "tags": [
           "tools"
         ],
-        "summary": "Delete a custom Agent CLI entry from tools.d. Nothing is uninstalled from the shared tools volume.",
+        "summary": "Delete a custom tool entry from tools.d. Nothing is uninstalled from the shared tools volume.",
         "parameters": [
           {
             "name": "id",

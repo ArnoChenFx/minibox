@@ -118,7 +118,7 @@ export function deleteCustomEntry(
   return { restoredBuiltin: builtin };
 }
 
-/** The JSON the loader reads back: fixed field order, and `requires` only when it is set. */
+/** The JSON the loader reads back: fixed field order, and `requires` and `stop` only when they are set. */
 function toFile(entry: CatalogEntry): Record<string, unknown> {
   return {
     id: entry.id,
@@ -134,6 +134,7 @@ function toFile(entry: CatalogEntry): Record<string, unknown> {
     install: entry.install,
     upgrade: entry.upgrade,
     uninstall: entry.uninstall,
+    ...(entry.stop === undefined ? {} : { stop: entry.stop }),
     detect: entry.detect,
   };
 }

@@ -233,7 +233,14 @@ export const toolCatalog = defineOperation({
   run: async ({ host }) => ({ tools: catalogSummary(dirname(host.specs.dir())) }),
 });
 
-const CUSTOM_LIMITS = { name: 80, description: 300, requires: 120, package: 214, command: 2000, estimatedMb: 102_400 };
+const CUSTOM_LIMITS = {
+  name: 80,
+  description: 300,
+  requires: 600,
+  package: 214,
+  command: 16_000,
+  estimatedMb: 102_400,
+};
 const PACKAGE_RE = /^[A-Za-z0-9@][A-Za-z0-9@._/+-]*$/;
 const PLACEHOLDER_RE = /\{\{([^{}]*)\}\}/g;
 const PLACEHOLDERS: readonly string[] = ["prefix", "version", "package", "package_spec", "bin"];
@@ -283,6 +290,12 @@ function checkCommand(value: unknown, key: string, label: LabelKey): Checked<str
   return accept(text);
 }
 
+function checkOptionalCommand(value: unknown, key: string, label: LabelKey): Checked<string | undefined> {
+  if (value === undefined || value === null || (typeof value === "string" && !value.trim())) return accept(undefined);
+  const checked = checkCommand(value, key, label);
+  return checked.ok ? accept(checked.value) : checked;
+}
+
 /** The package is spliced unquoted into the install command, so only characters that are inert in `sh` pass. */
 function checkPackage(value: unknown): Checked<string> {
   const text = typeof value === "string" ? value.trim() : "";
@@ -330,7 +343,7 @@ const customId = () =>
   });
 
 const COMMAND_HELP =
-  "Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 2000 characters.";
+  "Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 16000 characters.";
 
 const customInput = z.object({
   id: customId(),
@@ -380,7 +393,7 @@ const customInput = z.object({
   requires: field((value) => checkOptionalLine(value, "requires", "toolRequires", CUSTOM_LIMITS.requires), {
     type: "string",
     maxLength: CUSTOM_LIMITS.requires,
-    description: "Dependency note shown under the entry, such as Node ≥ 20. At most 120 characters.",
+    description: `Dependency note shown under the entry, such as Node ≥ 20. At most ${CUSTOM_LIMITS.requires} characters.`,
   }).optional(),
   install: field((value) => checkCommand(value, "install", "toolInstall"), {
     type: "string",
@@ -397,6 +410,12 @@ const customInput = z.object({
     maxLength: CUSTOM_LIMITS.command,
     description: `Uninstall. ${COMMAND_HELP}`,
   }),
+  stop: field((value) => checkOptionalCommand(value, "stop", "toolStop"), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.command,
+    description:
+      "Optional. Runs as the box user (dev) inside the running box before an uninstall, so a daemon the tool started exits before its binary is removed. A failure keeps the tool installed. Placeholders as for install.",
+  }).optional(),
   detect: field((value) => checkCommand(value, "detect", "toolDetect"), {
     type: "string",
     maxLength: CUSTOM_LIMITS.command,
@@ -424,6 +443,7 @@ const CustomToolSchema = z.object({
   install: z.string(),
   upgrade: z.string(),
   uninstall: z.string(),
+  stop: z.string().nullable(),
   detect: z.string(),
   overridesBuiltin: z.boolean().meta({
     description: "True when the id is a built-in tool and this entry replaces its catalog entry.",
@@ -433,13 +453,13 @@ const CustomToolSchema = z.object({
 const dataDirOf = (ctx: OperationContext) => dirname(ctx.host.specs.dir());
 
 function customOutput(entry: CustomEntry) {
-  return { ...entry, requires: entry.requires ?? null };
+  return { ...entry, requires: entry.requires ?? null, stop: entry.stop ?? null };
 }
 
 export const toolCustomList = defineOperation({
   name: "tool.custom.list",
   tag: "tools",
-  summary: "List the custom Agent CLI entries in DATA_DIR/tools.d",
+  summary: "List the custom tool entries in DATA_DIR/tools.d",
   kind: "read",
   scope: "tool:custom",
   async: false,
@@ -451,7 +471,7 @@ export const toolCustomList = defineOperation({
     toolset: "tools",
     name: "list_custom_tools",
     description:
-      "List the custom Agent CLI entries in DATA_DIR/tools.d, with their commands. overridesBuiltin marks an entry that replaces a built-in id. Owner only.",
+      "List the custom tool entries in DATA_DIR/tools.d, with their commands. overridesBuiltin marks an entry that replaces a built-in id. Owner only.",
   },
   run: async (ctx) => {
     await assertCanAdministerCatalog(ctx);
@@ -462,7 +482,7 @@ export const toolCustomList = defineOperation({
 export const toolCustomPut = defineOperation({
   name: "tool.custom.put",
   tag: "tools",
-  summary: "Create or replace a custom Agent CLI entry in DATA_DIR/tools.d",
+  summary: "Create or replace a custom tool entry in DATA_DIR/tools.d",
   kind: "write",
   scope: "tool:custom",
   async: false,
@@ -475,7 +495,7 @@ export const toolCustomPut = defineOperation({
     toolset: "tools",
     name: "put_custom_tool",
     description:
-      "Create or replace a custom Agent CLI entry, saved as DATA_DIR/tools.d/<id>.json. It takes effect for every later install, upgrade and detect. A built-in id needs overrideBuiltin true. Owner only.",
+      "Create or replace a custom tool entry, saved as DATA_DIR/tools.d/<id>.json. It takes effect for every later install, upgrade and detect. A built-in id needs overrideBuiltin true. Owner only.",
   },
   activity: { action: () => "tool.custom.put", target: (input) => input.id },
   audit: {
@@ -500,7 +520,7 @@ export const toolCustomPut = defineOperation({
 export const toolCustomDelete = defineOperation({
   name: "tool.custom.delete",
   tag: "tools",
-  summary: "Delete a custom Agent CLI entry from tools.d. Nothing is uninstalled from the shared tools volume.",
+  summary: "Delete a custom tool entry from tools.d. Nothing is uninstalled from the shared tools volume.",
   kind: "destructive",
   scope: "tool:custom",
   async: false,
@@ -518,7 +538,7 @@ export const toolCustomDelete = defineOperation({
     toolset: "tools",
     name: "delete_custom_tool",
     description:
-      "Delete the tools.d file of a custom Agent CLI entry. It does not uninstall the tool from the shared tools volume. A built-in id with no tools.d file cannot be deleted. Owner only.",
+      "Delete the tools.d file of a custom tool entry. It does not uninstall the tool from the shared tools volume. A built-in id with no tools.d file cannot be deleted. Owner only.",
   },
   activity: { action: () => "tool.custom.delete", target: (input) => input.id },
   audit: { target: (input) => ({ kind: "tool", name: input.id }) },

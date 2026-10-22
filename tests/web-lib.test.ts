@@ -835,15 +835,18 @@ describe("custom tool form", () => {
   });
 
   test("a source change moves the commands still holding a template and keeps the ones the admin typed", () => {
-    const typed = { ...npm, upgrade: "my upgrade" };
-    expect(commandsForSource(typed, "npm", "pip")).toEqual({ ...pip, upgrade: "my upgrade" });
+    const typed = { ...npm, upgrade: "my upgrade", stop: "my stop" };
+    expect(commandsForSource(typed, "npm", "pip")).toEqual({ ...pip, upgrade: "my upgrade", stop: "my stop" });
     expect(commandsForSource(typed, "npm", "script")).toEqual({
       install: "",
       upgrade: "my upgrade",
       uninstall: "",
+      stop: "my stop",
       detect: "",
     });
-    expect(commandsForSource({ install: "", upgrade: "", uninstall: "", detect: "" }, "script", "npm")).toEqual(npm);
+    expect(
+      commandsForSource({ install: "", upgrade: "", uninstall: "", stop: "", detect: "" }, "script", "npm"),
+    ).toEqual({ ...npm, stop: "" });
   });
 
   test("a new entry starts on npm with its templates, and an existing entry shows its own text", () => {
@@ -860,8 +863,9 @@ describe("custom tool form", () => {
       needsRoot: false,
       overrideBuiltin: false,
       ...npm,
+      stop: "",
     });
-    const existing = customToolForm({
+    const entry = {
       id: "acme",
       name: "Acme",
       description: "Acme CLI",
@@ -876,8 +880,10 @@ describe("custom tool form", () => {
       install: "i",
       upgrade: "u",
       uninstall: "x",
+      stop: "s" as string | null,
       detect: "d",
-    });
+    };
+    const existing = customToolForm(entry);
     expect(existing).toEqual({
       id: "acme",
       name: "Acme",
@@ -893,8 +899,10 @@ describe("custom tool form", () => {
       install: "i",
       upgrade: "u",
       uninstall: "x",
+      stop: "s",
       detect: "d",
     });
+    expect(customToolForm({ ...entry, stop: null }).stop).toBe("");
   });
 
   test("an id is built in when the merged catalog lists it, unless a custom entry says otherwise", () => {
@@ -937,6 +945,8 @@ describe("custom tool form", () => {
     });
     expect(body).not.toHaveProperty("id");
     expect(customToolBody({ ...values, requires: " Node ≥ 22 " }).requires).toBe("Node ≥ 22");
+    expect(body).not.toHaveProperty("stop");
+    expect(customToolBody({ ...values, stop: "  {{prefix}}/bin/acme stop  " }).stop).toBe("{{prefix}}/bin/acme stop");
     expect(customToolBody({ ...values, estimatedMb: "1.5" }).estimatedMb).toBe("1.5");
     expect(customToolBody({ ...values, estimatedMb: "" }).estimatedMb).toBe("");
   });

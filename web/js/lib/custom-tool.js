@@ -4,7 +4,10 @@
  * the body again, so these rules only keep the form in step with it.
  */
 
-export const COMMAND_FIELDS = ["install", "upgrade", "uninstall", "detect"];
+export const COMMAND_FIELDS = ["install", "upgrade", "uninstall", "stop", "detect"];
+
+/** Command fields that may be left blank. A blank one is left out of the request body. */
+export const OPTIONAL_COMMANDS = ["stop"];
 
 /** The server's limits, so the inputs can refuse what the server would refuse. */
 export const CUSTOM_LIMITS = Object.freeze({
@@ -13,8 +16,8 @@ export const CUSTOM_LIMITS = Object.freeze({
   description: 300,
   package: 214,
   bin: 63,
-  requires: 120,
-  command: 2000,
+  requires: 600,
+  command: 16000,
 });
 
 const CUSTOM_ID_RE = /^[a-z][a-z0-9-]{0,62}$/;
@@ -47,7 +50,7 @@ export function commandTemplate(source) {
 
 /**
  * The commands after the source changes. A command still holding the old source's template follows the new source (a
- * script has none, so it clears), and a command the admin typed or changed stays as it is.
+ * script has none, so it clears; no source has a stop template), and a command the admin typed or changed stays as it is.
  */
 export function commandsForSource(commands, fromSource, toSource) {
   const before = commandTemplate(fromSource) ?? {};
@@ -77,6 +80,7 @@ export function customToolForm(entry) {
       needsRoot: false,
       overrideBuiltin: false,
       ...commandTemplate("npm"),
+      stop: "",
     };
   }
   return {
@@ -94,6 +98,7 @@ export function customToolForm(entry) {
     install: entry.install,
     upgrade: entry.upgrade,
     uninstall: entry.uninstall,
+    stop: entry.stop ?? "",
     detect: entry.detect,
   };
 }
@@ -135,5 +140,7 @@ export function customToolBody(values) {
   };
   const requires = values.requires.trim();
   if (requires) body.requires = requires;
+  const stop = (values.stop ?? "").trim();
+  if (stop) body.stop = stop;
   return body;
 }

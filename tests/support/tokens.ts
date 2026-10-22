@@ -86,8 +86,8 @@ export interface Body {
   };
   deletedBoxes?: string[];
   failedBoxes?: { id: string; name: string; hostId: string; message: string }[];
-  tools?: { name: string; description: string }[];
-  tool?: { id: string; name: string; overridesBuiltin: boolean };
+  tools?: { name: string; description: string; stop?: string | null }[];
+  tool?: { id: string; name: string; overridesBuiltin: boolean; stop?: string | null };
   id?: string;
   restoredBuiltin?: boolean;
   isError?: boolean;

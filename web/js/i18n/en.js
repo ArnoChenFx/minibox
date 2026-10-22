@@ -81,6 +81,7 @@ export default {
   "label.toolInstall": "Install command",
   "label.toolUpgrade": "Upgrade command",
   "label.toolUninstall": "Uninstall command",
+  "label.toolStop": "Stop command",
   "label.toolDetect": "Detect command",
   "err.invalid_json_object": "Request body must be a JSON object.",
   "err.invalid_json": "Request body is not valid JSON.",
@@ -1283,6 +1284,9 @@ export default {
   "ct.install": "Install",
   "ct.upgrade": "Upgrade",
   "ct.uninstall": "Uninstall",
+  "ct.stop": "Stop (optional)",
+  "ct.stopHelp":
+    "Runs as dev inside the running box before an uninstall, so a daemon the tool started exits first. A failure keeps the tool installed. Leave it blank for a tool with no daemon.",
   "ct.detect": "Detect",
   "ct.detectHelp": "Exit 0 when the tool is present. Printing a version is optional.",
   "ct.builtin": "“{id}” is a built-in tool. Saving replaces its catalog entry for every box.",

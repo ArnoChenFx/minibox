@@ -1,4 +1,4 @@
-export type CommandField = "install" | "upgrade" | "uninstall" | "detect";
+export type CommandField = "install" | "upgrade" | "uninstall" | "stop" | "detect";
 
 export interface CommandTemplate {
   install: string;
@@ -9,6 +9,7 @@ export interface CommandTemplate {
 
 /** A custom entry as the API reports it. */
 export interface CustomEntryLike extends CommandTemplate {
+  stop: string | null;
   id: string;
   name: string;
   description: string;
@@ -24,6 +25,7 @@ export interface CustomEntryLike extends CommandTemplate {
 
 /** The form's values, as the inputs hold them. */
 export interface CustomToolValues extends CommandTemplate {
+  stop: string;
   id: string;
   name: string;
   description: string;
@@ -38,6 +40,7 @@ export interface CustomToolValues extends CommandTemplate {
 }
 
 export declare const COMMAND_FIELDS: readonly CommandField[];
+export declare const OPTIONAL_COMMANDS: readonly CommandField[];
 export declare const CUSTOM_LIMITS: Readonly<{
   id: number;
   name: number;
@@ -53,7 +56,7 @@ export declare function commandsForSource(
   commands: Readonly<Record<CommandField, string>>,
   fromSource: string,
   toSource: string,
-): CommandTemplate;
+): Record<CommandField, string>;
 export declare function customToolForm(entry: CustomEntryLike | null): CustomToolValues;
 export declare function validCustomId(id: string): boolean;
 export declare function isBuiltinId(
