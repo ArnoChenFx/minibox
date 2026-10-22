@@ -1,7 +1,8 @@
 /**
  * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-checkpoint.test.ts,
  * tests/docker-sessions.test.ts, tests/docker-ssh.test.ts, tests/docker-templates.test.ts,
- * tests/docker-tools.test.ts, tests/docker-hosts.test.ts and tests/docker-move.test.ts) against the local Docker engine,
+ * tests/docker-tools.test.ts, tests/docker-hosts.test.ts, tests/docker-move.test.ts and tests/docker-agent.test.ts)
+ * against the local Docker engine,
  * one file per process.
  *
  *   bun run test:docker
@@ -84,6 +85,7 @@ const TEST_FILES = [
   "tests/docker-tools.test.ts",
   "tests/docker-hosts.test.ts",
   "tests/docker-move.test.ts",
+  "tests/docker-agent.test.ts",
 ];
 
 /**
