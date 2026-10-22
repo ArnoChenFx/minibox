@@ -6,7 +6,9 @@ The public MiniBox website is a standalone static site in `site/`, separate from
 
 The visual direction uses MiniBox's existing purple cube mark, a warm light background, large editorial type, and a workspace/terminal illustration. The illustration is labeled as an example; the product gallery uses real console screenshots from `docs/screenshots/`.
 
-The page introduces the product, shows the console, explains the main capabilities, walks through connecting an agent, provides the source installation commands, and links to the public roadmap. English is the default. The language button switches to Chinese, remembers the choice when storage is available, and updates the URL to `?lang=zh` for sharing. An explicit `?lang=en` overrides a remembered preference.
+The page introduces the product, shows the console, explains the main capabilities, walks through connecting an agent, and provides the source installation commands. English is the default. The language button switches to Chinese, remembers the choice when storage is available, and updates the URL to `?lang=zh` for sharing. An explicit `?lang=en` overrides a remembered preference.
+
+The agent strip uses the Claude Code, Codex and OpenCode brand icons vendored under `site/assets/agents/`, with pinned upstream provenance and the MIT license included there. It has no external icon requests. The homepage does not include a roadmap section or navigation entry.
 
 Content is based on the README, `docs/design.md`, `docs/agents.md`, and the repository's issues. The design document and tracking checklists can lag implementation, so the page distinguishes implemented capabilities from unfinished work:
 
@@ -18,7 +20,6 @@ Content is based on the README, `docs/design.md`, `docs/agents.md`, and the repo
 | Scoped tokens and quotas | Available | #13 |
 | Agent tool installation | Available | #8 |
 | Checkpoints | Take, fork, rollback and retention available; scheduling, import/export and MCP tools still planned | #11, README “Checkpoints” |
-| Multi-host, richer templates, console refinements | Planned; links to individual issues | #21, #15, #26 |
 
 The page describes Docker container isolation accurately and does not present it as a security boundary for untrusted third-party code. “No platform subscription” refers to MiniBox, not hardware or paid AI services.
 
@@ -57,4 +58,4 @@ The repository is configured under **Settings → Pages → Build and deployment
 
 To verify a release, check GitHub's Pages deployment/build status, request the public URL, and confirm that the logo, stylesheet, JavaScript and all three gallery images load under `/minibox/`. A successful local build or branch push alone does not establish a successful public deployment.
 
-Screenshot files named `homepage-*` in `docs/screenshots/` document the design review and are intended for embedding in the PR description; the build only copies the three console screenshots explicitly listed in `scripts/build-site.ts`.
+Generated homepage review screenshots stay outside the checkout, under the workspace artifacts directory. Do not commit them or link to repository-hosted review screenshots in the PR. The build uses only the three pre-existing console screenshots explicitly listed in `scripts/build-site.ts`.

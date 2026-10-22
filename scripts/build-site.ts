@@ -13,6 +13,7 @@ for (const file of ["index.html", "styles.css", "main.js"]) {
 for (const file of ["logo-mark.svg", "favicon.svg"]) {
   cpSync(join(root, "web", "assets", file), join(output, "assets", file));
 }
+cpSync(join(root, "site", "assets", "agents"), join(output, "assets", "agents"), { recursive: true });
 for (const file of ["overview-light.png", "boxes-light.png", "terminal-light.png"]) {
   cpSync(join(root, "docs", "screenshots", file), join(output, "assets", "screenshots", file));
 }
