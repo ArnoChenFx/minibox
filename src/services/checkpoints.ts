@@ -23,6 +23,7 @@ import { REBUILD_LOSES } from "../specs/plan";
 import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
+import { assertHostDiskRoom } from "../volumes/disk";
 import { createRestoredVolume, provisionDefaultMounts } from "../volumes/provision";
 import { ROLE_MOUNT, type VolumeRecord, type VolumeRole } from "../volumes/types";
 import { type Box, createBox, getBox, locked, refuseExpired, startLocked } from "./boxes";
@@ -433,6 +434,7 @@ export async function backupBox(
 ): Promise<CheckpointView> {
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
+  await assertHostDiskRoom(host);
   const layers = planLayers(host, spec, input.include.volumes);
   const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume, opts));
   try {

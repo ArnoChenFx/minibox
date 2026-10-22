@@ -401,6 +401,15 @@ async function recordScenario(): Promise<Exchange[]> {
     const spare = await post("create spare volume", "/api/volumes", { name: "spare", confirm: true });
     const spareId = String((spare.json?.volume as { id?: string } | undefined)?.id ?? "");
     await send("measure spare", "POST", `/api/volumes/${spareId}/usage`);
+    await put("set spare limits", `/api/volumes/${spareId}/limits`, {
+      softBytes: GB,
+      hardBytes: 2 * GB,
+      action: "warn",
+    });
+    await put("set spare limits with soft above hard", `/api/volumes/${spareId}/limits`, {
+      softBytes: 2 * GB,
+      hardBytes: GB,
+    });
     await send("write a file on spare", "PUT", `/api/volumes/${spareId}/files/content`, {
       body: JSON.stringify({ path: "hello.txt", content: "hi\n" }),
       contentType: JSON_TYPE,

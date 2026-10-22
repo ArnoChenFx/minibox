@@ -44,6 +44,7 @@ import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
 import { reconcileHost } from "./services/reconcile";
 import { type RecordNote, TerminalService } from "./services/terminals";
+import { VolumeUsageWatcher } from "./services/volume-usage";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
 import { SshGateway } from "./ssh/gateway";
@@ -108,6 +109,8 @@ export interface App {
   streams: StreamSlots;
   pulse: ActivityPulse;
   lifecycle: LifecycleWatcher;
+  /** Samples each volume's usage and raises the limit and host disk events. See `VOLUME_USAGE_INTERVAL_SEC`. */
+  volumeUsage: VolumeUsageWatcher;
   ssh: SshGateway;
   /** The CLI binaries served under /cli, built on first request for this version. */
   cli: CliDistribution;
@@ -327,6 +330,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     record: recordNote,
     ssh,
   });
+  const volumeUsage = new VolumeUsageWatcher({ hosts, record: recordNote, cfg });
   return {
     cfg,
     hosts,
@@ -366,6 +370,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     streams: new StreamSlots(cfg.streamMaxConnections),
     pulse,
     lifecycle,
+    volumeUsage,
     ssh,
     cli: new CliDistribution({ dataDir: cfg.dataDir, version, root: ROOT, build: deps.cliBuild }),
     record: recordNote,

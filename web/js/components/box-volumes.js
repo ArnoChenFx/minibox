@@ -4,6 +4,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { toastError, openDialog, confirmDialog, toast } from "../lib/ui.js";
 import { rebuildPreviewHtml } from "./box-actions.js";
+import { usageInlineHtml } from "./volume-usage.js";
 
 const ROLE_LABEL = {
   workspace: "vol.roleWorkspace",
@@ -12,7 +13,7 @@ const ROLE_LABEL = {
   cache: "vol.roleCache",
 };
 
-export function mountsCard(box) {
+export function mountsCard(box, volumes) {
   const rows = (box.mounts ?? [])
     .map((mount) => {
       const detach = mount.volumeId
@@ -24,6 +25,7 @@ export function mountsCard(box) {
         <td>${mount.role ? esc(t(ROLE_LABEL[mount.role])) : "—"}</td>
         <td>${esc(mount.mode)}</td>
         <td>${esc(mount.pool || "—")}</td>
+        <td>${usageInlineHtml(volumes.get(mount.volumeId))}</td>
         <td>${detach}</td>
       </tr>`;
     })
@@ -32,7 +34,7 @@ export function mountsCard(box) {
     <button class="btn btn-sm" data-action="attach-volume">${icon("plus")}${t("vol.attach")}</button></div>
     <div class="table-wrap">${
       rows
-        ? `<table class="table"><thead><tr><th>${t("vol.colPath")}</th><th>${t("vol.choose")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colMode")}</th><th>${t("vol.colPool")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        ? `<table class="table"><thead><tr><th>${t("vol.colPath")}</th><th>${t("vol.choose")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colMode")}</th><th>${t("vol.colPool")}</th><th>${t("vol.colBytes")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : `<div class="card-body"><p class="subtle">${t("vol.noMounts")}</p></div>`
     }</div>
     <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;

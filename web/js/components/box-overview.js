@@ -1,3 +1,4 @@
+import { api } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { pct, cpus, gbOrMb, mem, duration, dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
@@ -48,6 +49,8 @@ export function mountOverview(root, { box, onChange }) {
   root.innerHTML = `<div id="ovMain"></div><div id="ovEnv"></div><div id="ovStartup"></div><div id="ovMounts"></div>`;
   const env = mountEnvCard(root.querySelector("#ovEnv"), { box });
   const startup = mountStartupCard(root.querySelector("#ovStartup"), { box });
+  let volumes = new Map();
+  let open = true;
   const draw = () => {
     const b = box();
     const s = b.stats;
@@ -84,15 +87,23 @@ export function mountOverview(root, { box, onChange }) {
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
           <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(b.containerName || `minibox-${b.name}`)} bash</code></dd>
         </dl></div></div>`;
-    root.querySelector("#ovMounts").innerHTML = mountsCard(b);
+    root.querySelector("#ovMounts").innerHTML = mountsCard(b, volumes);
   };
   draw();
+  api("/api/volumes")
+    .then(({ volumes: listed }) => {
+      if (!open) return;
+      volumes = new Map(listed.map((volume) => [volume.id, volume]));
+      draw();
+    })
+    .catch(() => undefined);
   const off = onChange(() => {
     draw();
     env.onBoxChange();
     startup.onBoxChange();
   });
   return () => {
+    open = false;
     off();
     env.dispose();
     startup.dispose();

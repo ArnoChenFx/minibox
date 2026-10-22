@@ -5,6 +5,7 @@ import { msg } from "../lib/messages";
 import { RuntimeError } from "../runtime";
 import type { BoxMount } from "../specs/types";
 import { VolumeChanges } from "./changes";
+import { assertHostDiskRoom } from "./disk";
 import {
   adoptLegacyWorkspace,
   assertVolumesPresent,
@@ -47,6 +48,7 @@ export async function materialize(
   const pool = file.pools.find((item) => item.name === input.pool);
   if (!pool) throw notFound(msg("pool_not_found", { pool: input.pool }));
   if (nameTaken(host, input.name)) throw conflict(msg("volume_exists", { name: input.name }));
+  await assertHostDiskRoom(host);
   const now = new Date().toISOString();
   const record = blankRecord(host, input, host.volumes.allocateId(), now);
   if ((await inspectVolumeOrNull(host, record.engineName)) !== null) {

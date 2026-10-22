@@ -64,6 +64,7 @@ const OWNER_ONLY_ROUTES = [
   "PUT /api/pools",
   "PUT /api/secrets/:id",
   "PUT /api/tools/custom/:id",
+  "PUT /api/volumes/:id/limits",
 ];
 
 /** The path a route was compiled from, read back from its pattern: `/api/boxes/:id`. */
@@ -232,6 +233,7 @@ describe("fail-closed authorization", () => {
       "tool.custom.delete",
       "tool.custom.list",
       "tool.custom.put",
+      "volume.limits.set",
     ]);
     const unruled = OPERATIONS.filter((op) => requiredScopes(op.scope) !== "owner" && !hasAccessRule(op.name));
     expect(unruled.map((op) => op.name)).toEqual([]);
