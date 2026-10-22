@@ -72,6 +72,8 @@ export interface Config {
    * more than the host has. Checked only on a control plane with more than one host.
    */
   hostOvercommit: number;
+  /** Lets a notification channel send to an address that is not public, such as a self-hosted ntfy or a LAN webhook. */
+  notifyAllowPrivate: boolean;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -247,6 +249,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     checkpointPackageMaxMb: intInRange(get("CHECKPOINT_PACKAGE_MAX_MB"), 2048, 1, 65536),
     fileUploadMaxMb: intInRange(get("FILE_UPLOAD_MAX_MB"), 1024, 1, 65536),
     hostOvercommit: parseHostOvercommit(get("HOST_OVERCOMMIT")),
+    notifyAllowPrivate: isTruthy(get("NOTIFY_ALLOW_PRIVATE")),
   };
 }
 

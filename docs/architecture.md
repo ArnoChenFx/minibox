@@ -103,6 +103,10 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 - `src/ws/terminal.ts` connects a browser terminal to a tmux session in a box, through `src/services/terminals.ts`. Each terminal is a tmux client that Docker starts inside the box.
 - `src/ws/ssh.ts` and `src/ssh/gateway.ts` run an SSH server inside the MiniBox process, using the `ssh2` library. Shell, exec and SFTP channels run inside the box.
 
+## Notifications
+
+`src/notify/` turns events into notices and sends them. `rules.ts` maps a stored event to a notice, such as `box.oom` or `exec.failed`. `src/app.ts` passes every event to `Notifications` in `service.ts`, which also takes host link changes, and queues each notice for every channel that subscribes to it. Lifecycle warnings and terminal takeovers are events too, so they take the same path. Sends run in the background, with a bounded queue, a timeout and a fixed number of attempts. Each attempt is recorded as a `notify.deliver` event. `transport.ts` makes the request: it resolves the name once, refuses addresses that are not public, connects to the address it checked, and bounds the whole send with the timeout. `channels.ts` builds the request for each channel type and signs webhooks. `store.ts` keeps the channel settings in `notify.json` and their secrets under `secrets/notify`. The operations that configure channels are in `src/operations/notify.ts`.
+
 ## Previews
 
 `src/preview/proxy.ts` forwards HTTP and WebSocket traffic to the box's container address and the port the caller asked for.
@@ -117,6 +121,8 @@ Every path is under `DATA_DIR`.
 | `volumes/<id>.json`, `pools.json` | `src/volumes/store.ts` | Volume records and storage pools |
 | `tokens.json`, `sessions.json`, `access_key` | `src/tokens/store.ts`, `src/sessions.ts`, `src/data-dir.ts` | Hashed agent tokens, browser sessions and the access key |
 | `secrets/env/` | `src/secrets/store.ts` | Host secrets |
+| `notify.json` | `src/notify/store.ts` | Notification channels: their settings and endpoints, never a secret or a webhook URL |
+| `secrets/notify/` | `src/notify/store.ts` | Notification channel secrets: signing keys, ntfy tokens, Telegram bot tokens and webhook URLs |
 | `checkpoints/` | `src/checkpoints/store.ts` | Checkpoint records |
 | `checkpoints/schedules/` | `src/checkpoints/store.ts`, `src/services/checkpoint-schedule.ts` | Checkpoint schedules, one per box |
 | `packages/` | `src/checkpoints/packages.ts` | Exported checkpoint packages, sealed with a passphrase |

@@ -32,13 +32,17 @@ function isRecord(value: unknown): value is SecretRecord {
 /**
  * Secrets that box environment variables reference: `DATA_DIR/secrets/env/<name>`, one JSON file per secret with mode
  * 600. A value is read only to put it into a container. The API, the event log and the logs carry names, never values.
- * Writes are atomic, so a reader sees the old value or the new one.
+ * Writes are atomic, so a reader sees the old value or the new one. `area` names another store under `secrets/`, such
+ * as `notify` for channel secrets, which keep the same format.
  */
 export class SecretStore {
-  constructor(private readonly dataDir: string) {}
+  constructor(
+    private readonly dataDir: string,
+    private readonly area = "env",
+  ) {}
 
   dir(): string {
-    return join(this.dataDir, "secrets", "env");
+    return join(this.dataDir, "secrets", this.area);
   }
 
   /** Every stored secret, sorted by name. A file whose name is not a valid secret name is not a secret, and is skipped. */

@@ -8,7 +8,7 @@ test("loads from the Pages subpath without broken assets or runtime errors", asy
   });
   await page.goto("./");
   await expect(page).toHaveTitle("MiniBox — Your agents. Your machine. Your rules.");
-  await expect(page.locator("h1")).toHaveText("Your agents.Your machine.Your rules.");
+  await expect(page.locator("h1")).toHaveText("Your agentsYour machineYour rules");
   await page.locator("#product").scrollIntoViewIfNeeded();
   await expect(page.locator("#product-screenshot")).toHaveJSProperty("naturalWidth", 2880);
   await expect(page.locator(".volume-labels")).toContainText("/opt/minibox/tools");
@@ -29,15 +29,15 @@ test("switches languages, persists the choice, and accepts shareable language UR
   await page.goto("./");
   await page.getByRole("button", { name: "切换为中文" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-  await expect(page.locator("h1")).toContainText("你说了算。");
+  await expect(page.locator("h1")).toContainText("你说了算");
   await expect(page).toHaveURL(/\?lang=zh/);
   await expect(page.locator("#install-command")).toContainText("ghcr.io/arnochenfx/minibox:latest");
   await page.reload();
-  await expect(page.locator("h1")).toContainText("你的机器。");
+  await expect(page.locator("h1")).toContainText("你的机器");
   await page.goto("./?lang=en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await expect(page.locator("h1")).toContainText("Your machine.");
-  await expect(page.locator("#start-title")).toContainText("A small setup.");
+  await expect(page.locator("h1")).toContainText("Your machine");
+  await expect(page.locator("#start-title")).toContainText("A small setup");
 });
 
 test("changes real screenshots with pointer and keyboard and opens a dismissible preview", async ({ page }) => {
@@ -78,7 +78,7 @@ test("keeps content and navigation usable without JavaScript", async ({ browser 
   const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.goto("http://127.0.0.1:4173/minibox/");
-  await expect(page.locator("h1")).toContainText("Your agents.");
+  await expect(page.locator("h1")).toContainText("Your agents");
   await page.locator(".mobile-menu summary").click();
   await page.locator('.mobile-menu a[href="#how-it-works"]').click();
   await expect(page).toHaveURL(/#how-it-works$/);

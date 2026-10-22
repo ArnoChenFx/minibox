@@ -61,6 +61,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     checkpointPackageMaxMb: 2048,
     fileUploadMaxMb: 1024,
     hostOvercommit: 1,
+    notifyAllowPrivate: false,
     ...overrides,
   };
 }
@@ -69,7 +70,7 @@ export function createTestApp(
   overrides: Partial<Config> = {},
   runtime = new FakeRuntime(),
   hooks: Partial<ExecutorHooks> = {},
-  deps: Pick<AppDeps, "cliBuild"> = {},
+  deps: Pick<AppDeps, "cliBuild" | "notify"> = {},
 ): { app: App; runtime: FakeRuntime; checkpoints: FakeCheckpointEngine } {
   const cfg = testConfig(overrides);
   const checkpoints = new FakeCheckpointEngine(runtime);
