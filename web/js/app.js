@@ -7,6 +7,7 @@ import { onHosts, refreshHosts, setHostFilter } from "./lib/hosts.js";
 import { applyI18n, bindLangButton, t } from "./lib/i18n.js";
 import { icon } from "./lib/icons.js";
 import { setCrumbs } from "./lib/layout.js";
+import { retiredRedirect } from "./lib/retired-routes.js";
 import { onHost } from "./lib/store.js";
 import { applyTheme, currentTheme, toggleTheme } from "./lib/theme.js";
 import { confirmDialog } from "./lib/ui.js";
@@ -15,7 +16,6 @@ import * as boxDetail from "./pages/box-detail.js";
 import * as boxes from "./pages/boxes.js";
 import * as overview from "./pages/overview.js";
 import * as settings from "./pages/settings.js";
-import * as snapshots from "./pages/snapshots.js";
 import * as templates from "./pages/templates.js";
 import * as volumes from "./pages/volumes.js";
 
@@ -24,8 +24,7 @@ const ROUTES = [
   { re: /^\/boxes$/, page: boxes, nav: "boxes", crumbs: ["nav.boxes"] },
   { re: /^\/volumes$/, page: volumes, nav: "volumes", crumbs: ["nav.volumes"] },
   { re: /^\/boxes\/([^/]+)(?:\/(\w+))?$/, page: boxDetail, nav: "boxes", crumbs: ["nav.boxes"] },
-  { re: /^\/snapshots$/, page: snapshots, nav: "snapshots", crumbs: ["nav.snapshots"] },
-  { re: /^\/templates$/, page: templates, nav: "templates", crumbs: ["nav.templates"] },
+  { re: /^\/templates(?:\/([^/]+))?$/, page: templates, nav: "templates", crumbs: ["nav.templates"] },
   { re: /^\/settings$/, page: settings, nav: "settings", crumbs: ["nav.settings"] },
   { re: /^\/about$/, page: about, nav: "about", crumbs: ["nav.about"] },
 ];
@@ -34,6 +33,12 @@ let cleanup = null;
 
 function route() {
   const path = location.hash.replace(/^#/, "") || "/overview";
+  const retired = retiredRedirect(path);
+  if (retired) {
+    history.replaceState(null, "", retired);
+    route();
+    return;
+  }
   const match = ROUTES.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
   if (!match) {
     location.hash = "#/overview";

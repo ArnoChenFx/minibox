@@ -216,6 +216,7 @@ describe("rebuild swap", () => {
 
   test("mounts, env and template are applied, and a removed volume is kept", async () => {
     const box = await newBox("alpha");
+    host.secrets.set("vault", "hunter2-token", new Date().toISOString());
     runtime.seedImage("other:1");
     const rebuilt = await rebuildBox(
       host,
@@ -249,10 +250,12 @@ describe("rebuild swap", () => {
     expect(runtime.volumes.has(box.volume)).toBe(true);
     expect(runtime.volumes.has(extra.engineName)).toBe(true);
     const container = runtime.containers.get(rebuilt.id);
-    expect(container?.spec.env).toEqual(["FOO=marker-value"]);
+    expect(container?.spec.env).toEqual(["FOO=marker-value", "TOKEN=hunter2-token"]);
     expect(container?.spec.mounts).toEqual([{ source: extra.engineName, target: "/data", mode: "ro" }]);
     expect(JSON.stringify(container?.labels)).not.toContain("marker-value");
     expect(JSON.stringify(container?.labels)).not.toContain("vault");
+    expect(JSON.stringify(container?.labels)).not.toContain("hunter2-token");
+    expect(JSON.stringify(rebuilt)).not.toContain("hunter2-token");
   });
 
   test("the swap stops the old container with the host's configured stop timeout", async () => {
@@ -614,6 +617,7 @@ describe("rebuild over HTTP", () => {
 
   test("an env value is not stored on the audit event", async () => {
     const box = await newBox("alpha");
+    host.secrets.set("vault", "supersecret-value", new Date().toISOString());
     const before = app.events.head();
     await app.operations.run(
       "box.rebuild",
@@ -628,13 +632,17 @@ describe("rebuild over HTTP", () => {
         id: box.id,
         confirm: true,
         expectedRevision: "1",
-        env: [{ name: "TOKEN", value: "supersecret", secretRef: "vault" }],
+        env: [
+          { name: "TOKEN", secretRef: "vault" },
+          { name: "PLAIN", value: "plainvalue-xyz" },
+        ],
       },
     );
     const [event] = app.events.after(before, {}, 10);
-    expect(event?.detail).toMatchObject({ env: ["TOKEN"], confirm: true });
-    expect(JSON.stringify(event)).not.toContain("supersecret");
+    expect(event?.detail).toMatchObject({ env: ["TOKEN", "PLAIN"], confirm: true });
+    expect(JSON.stringify(event)).not.toContain("supersecret-value");
     expect(JSON.stringify(event)).not.toContain("vault");
+    expect(JSON.stringify(event)).not.toContain("plainvalue-xyz");
   });
 });
 

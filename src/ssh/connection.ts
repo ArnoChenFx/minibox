@@ -395,7 +395,7 @@ export class SshConnection {
     port: number,
     release: () => void,
   ): Promise<void> {
-    const exec = await this.start(relayArgv(port), false, defaultEnv(null, {})).catch((error: unknown) => {
+    const exec = await this.start(relayArgv(port), false, defaultEnv(null, {}), "/").catch((error: unknown) => {
       log.warn("ssh.relay_failed", { box: this.boxId, port, error: failureText(error) });
       return null;
     });
@@ -430,15 +430,16 @@ export class SshConnection {
 
   /**
    * Starts one process in the box as dev. A process that started after the connection ended is stopped at once, so a
-   * channel opened just before a disconnect cannot leave a shell or a relay running in the box.
+   * channel opened just before a disconnect cannot leave a shell or a relay running in the box. A relay names no path,
+   * so it starts in `/`, where a stuck volume cannot hold it.
    */
-  private async start(argv: string[], tty: boolean, env: string[]): Promise<ExecSession> {
+  private async start(argv: string[], tty: boolean, env: string[], workingDir = SSH_WORKDIR): Promise<ExecSession> {
     if (this.ended) throw new Error("the SSH connection has ended");
     const box = await awakeBox(this.target.host, this.boxId, (note) => this.recordFor(note));
     const exec = await this.target.host.runtime.startExec(box.id, {
       cmd: argv,
       env,
-      workingDir: SSH_WORKDIR,
+      workingDir,
       user: SSH_USER,
       stopAs: box.profile === "strict" ? SSH_USER : "root",
       tty,

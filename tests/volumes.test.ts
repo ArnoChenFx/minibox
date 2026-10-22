@@ -7,12 +7,13 @@ import { createLocalHost, type HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { AuditEvent, ExecutorHooks } from "../src/operations/executor";
 import type { OperationContext } from "../src/operations/types";
-import { type HelperSpec, RuntimeError } from "../src/runtime";
+import { type HelperResult, type HelperSpec, RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
 import { attachVolume, createVolume, getPools, listVolumes, measureVolume, savePools } from "../src/services/volumes";
 import { claimEngineVolumes } from "../src/volumes/engine";
-import { DEV_OWNER } from "../src/volumes/types";
+import { probePool, probePools } from "../src/volumes/health";
+import { DEV_OWNER, type StoragePool } from "../src/volumes/types";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 
@@ -588,6 +589,251 @@ describe("helper containers ask only for what their command needs", () => {
       expect(spec.user).toBe(DEV_OWNER);
       expect(spec.capAdd).toBeUndefined();
     }
+  });
+
+  test("the write check on each new NFS directory runs as the box user and holds no capability", async () => {
+    await savePools(host, nasPools, undefined);
+    await newBox("alpha");
+    const checks = helperSpecs(".minibox-write-check");
+    expect(checks).toHaveLength(3);
+    for (const spec of checks) {
+      expect(spec.user).toBe(DEV_OWNER);
+      expect(spec.capAdd).toBeUndefined();
+    }
+  });
+});
+
+/** Fails the helper whose command has `text`, with `logs`. Every other helper succeeds. */
+const refuse =
+  (text: string, logs: string) =>
+  (spec: HelperSpec): HelperResult =>
+    spec.cmd.join(" ").includes(text) ? { exitCode: 1, logs } : { exitCode: 0, logs: "" };
+
+describe("a storage server that refuses the box is a storage error", () => {
+  const nasPools = [
+    { name: "local", backend: "local" as const },
+    {
+      name: "nas",
+      backend: "nfs" as const,
+      server: "192.168.1.10",
+      export: "/volume1/minibox",
+      options: ["nfsvers=4.1", "hard"],
+      default: true,
+    },
+  ];
+
+  test("permission denied creating the export subdirectory is a 502 storage_permission_denied, not a 400", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = refuse("mkdir -p", "mkdir: cannot create directory '/mnt/vol_x': Permission denied\n");
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({
+      status: 502,
+      code: "bad_gateway",
+      key: "storage_permission_denied",
+      params: { pool: "nas" },
+      hintKey: "storage_squash_hint",
+      retryable: false,
+    });
+    expect(runtime.containers.size).toBe(0);
+    expect(host.volumes.list()).toEqual([]);
+  });
+
+  test("operation not permitted is the same refusal", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = refuse("mkdir -p", "mkdir: cannot create directory: Operation not permitted\n");
+
+    expect(await rejectionOf(newBox("alpha"))).toMatchObject({ status: 502, key: "storage_permission_denied" });
+  });
+
+  test("a prepare failure that is not a refusal stays a 400 volume_prepare_failed", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = refuse(
+      "mkdir -p",
+      "mkdir: cannot create directory '/mnt/vol_x': No such file or directory\n",
+    );
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toMatchObject({ status: 400, code: "validation_failed", key: "volume_prepare_failed" });
+    expect((error as AppError).hintKey).toBeUndefined();
+  });
+
+  test("a directory the box user cannot write fails the create as storage_unwritable, and the directory is removed", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = refuse(
+      ".minibox-write-check",
+      "touch: cannot touch '/mnt/vol_x/.minibox-write-check': Permission denied\n",
+    );
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toMatchObject({
+      status: 502,
+      code: "bad_gateway",
+      key: "storage_unwritable",
+      hintKey: "storage_squash_hint",
+      retryable: false,
+    });
+    expect((error as AppError).params?.path).toMatch(/^192\.168\.1\.10:\/volume1\/minibox\/vol_/);
+    const checked = helperSpecs(".minibox-write-check").map((spec) => spec.cmd.at(-1));
+    expect(checked).toHaveLength(1);
+    expect(helperSpecs("rmdir").map((spec) => spec.cmd.at(-1))).toEqual(checked);
+    expect([...runtime.volumes.keys()]).toEqual(["mbtest-pool-nas"]);
+    expect(runtime.containers.size).toBe(0);
+    expect(host.volumes.list()).toEqual([]);
+    expect(host.specs.findByName("alpha")).toBeNull();
+  });
+
+  test("a path pool directory the box user cannot write is refused the same way", async () => {
+    await savePools(
+      host,
+      [
+        { name: "local", backend: "local" },
+        { name: "disk", backend: "path", root: "/mnt/disk", default: true },
+      ],
+      undefined,
+    );
+    runtime.helperHandler = refuse(
+      ".minibox-write-check",
+      "touch: /mnt/vol_x/.minibox-write-check: Permission denied\n",
+    );
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toMatchObject({ status: 502, code: "bad_gateway", key: "storage_unwritable" });
+    expect((error as AppError).params?.path).toMatch(/^\/mnt\/disk\/vol_/);
+    expect(helperSpecs("rmdir")).toHaveLength(1);
+    expect(host.volumes.list()).toEqual([]);
+  });
+
+  test("a directory whose chown is refused is kept when the box user can still write it", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = (spec) =>
+      spec.cmd.join(" ").includes("chown")
+        ? { exitCode: 0, logs: "MINIBOX_CHOWN_SKIPPED\n" }
+        : { exitCode: 0, logs: "" };
+
+    const box = await newBox("alpha");
+    expect(box.mounts.map((mount) => mount.role).toSorted()).toEqual(["cache", "home", "tools", "workspace"]);
+    expect(helperSpecs(".minibox-write-check")).toHaveLength(3);
+    expect(helperSpecs("rmdir")).toHaveLength(0);
+  });
+});
+
+/** Waits for `check` to hold, for about a second, so a test that expects a state can fail with a clear message. */
+async function eventually(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !check(); i++) await Bun.sleep(5);
+}
+
+const dfCalls = () => helperSpecs("df -B1 -P").length;
+const stuckPool = () => host.volumes.readPools().pools.find((pool) => pool.name === "stuck") as StoragePool;
+
+describe("pool probes run side by side and give up at a deadline", () => {
+  const pools = [
+    { name: "local", backend: "local" as const },
+    {
+      name: "stuck",
+      backend: "nfs" as const,
+      server: "192.168.1.10",
+      export: "/volume1/stuck",
+      options: ["nfsvers=4.1", "hard"],
+    },
+    {
+      name: "fine",
+      backend: "nfs" as const,
+      server: "192.168.1.11",
+      export: "/volume1/fine",
+      options: ["nfsvers=4.1", "hard"],
+      default: true,
+    },
+  ];
+  const STUCK_ROOT = "mbtest-pool-stuck";
+  const stuckHeld = () =>
+    runtime.hold("runHelper", (args) => (args[0] as HelperSpec).mounts?.[0]?.source === STUCK_ROOT);
+  const stuckCalls = () => helperSpecs("df -B1 -P").filter((spec) => spec.mounts?.[0]?.source === STUCK_ROOT).length;
+
+  test("every pool's probe starts before any has answered, so a pool still waiting holds back none", async () => {
+    await savePools(host, pools, undefined);
+    const before = dfCalls();
+    const held = runtime.hold("runHelper", (args) => (args[0] as HelperSpec).cmd.join(" ").includes("df -B1 -P"));
+    const probing = probePools(host, { force: true, deadlineMs: 5000 });
+    try {
+      await eventually(() => dfCalls() - before >= 2);
+      expect(dfCalls() - before).toBe(2);
+    } finally {
+      held.release();
+    }
+    expect((await probing).map((probe) => probe.status)).toEqual(["reachable", "reachable", "reachable"]);
+  });
+
+  test("a pool that does not answer by the deadline is unreachable, and the other pools still report", async () => {
+    await savePools(host, pools, undefined);
+    const held = stuckHeld();
+    try {
+      const started = Date.now();
+      const probes = await probePools(host, { force: true, deadlineMs: 300 });
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(Object.fromEntries(probes.map((probe) => [probe.pool, probe.status]))).toEqual({
+        local: "reachable",
+        stuck: "unreachable",
+        fine: "reachable",
+      });
+      expect(probes.find((probe) => probe.pool === "stuck")?.message).toBe("no answer within 0.3 s");
+      expect(host.volumes.healthOf(host.host.id, "stuck")).toMatchObject({ status: "unreachable" });
+    } finally {
+      held.release();
+    }
+  });
+
+  test("two servers that do not answer share one deadline, so the call still returns in about one", async () => {
+    const dead = {
+      name: "dead",
+      backend: "nfs" as const,
+      server: "192.168.1.12",
+      export: "/volume1/dead",
+      options: ["nfsvers=4.1", "hard"],
+    };
+    await savePools(host, [...pools, dead], undefined);
+    const held = runtime.hold("runHelper", (args) =>
+      [STUCK_ROOT, "mbtest-pool-dead"].includes((args[0] as HelperSpec).mounts?.[0]?.source ?? ""),
+    );
+    try {
+      const started = Date.now();
+      const probes = await probePools(host, { force: true, deadlineMs: 500 });
+      expect(Date.now() - started).toBeLessThan(900);
+      expect(
+        probes
+          .filter((probe) => probe.status === "unreachable")
+          .map((probe) => probe.pool)
+          .toSorted(),
+      ).toEqual(["dead", "stuck"]);
+    } finally {
+      held.release();
+    }
+  });
+
+  test("a timed-out pool is answered from the cache, and a forced probe joins the one still running", async () => {
+    await savePools(host, pools, undefined);
+    const held = stuckHeld();
+    try {
+      await probePools(host, { force: true, deadlineMs: 100 });
+      const calls = stuckCalls();
+
+      expect(await probePool(host, stuckPool())).toMatchObject({ status: "unreachable" });
+      expect(stuckCalls()).toBe(calls);
+
+      expect(await probePool(host, stuckPool(), { force: true, deadlineMs: 100 })).toMatchObject({
+        status: "unreachable",
+      });
+      expect(stuckCalls()).toBe(calls);
+    } finally {
+      held.release();
+    }
+
+    await eventually(() => host.volumes.healthOf(host.host.id, "stuck")?.status === "reachable");
+    expect(host.volumes.healthOf(host.host.id, "stuck")).toMatchObject({ status: "reachable" });
+    const calls = stuckCalls();
+    await probePool(host, stuckPool(), { force: true });
+    expect(stuckCalls()).toBe(calls + 1);
   });
 });
 

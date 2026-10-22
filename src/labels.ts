@@ -129,6 +129,9 @@ export function quoteLabelValue(value: string): string {
 
 export const labelChange = (key: string, value: string): string => `LABEL ${key}=${quoteLabelValue(value)}`;
 
+/** The `ENV` instruction for a commit. The value is quoted as a label's is, so it is taken literally. */
+export const envChange = (name: string, value: string): string => `ENV ${name}=${quoteLabelValue(value)}`;
+
 /** Fixed, unprefixed: the base template Dockerfile writes these, whatever the configured prefix. */
 export const TEMPLATE_UID_LABEL = "minibox.template.uid";
 export const TEMPLATE_GID_LABEL = "minibox.template.gid";

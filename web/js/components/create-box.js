@@ -1,5 +1,6 @@
 import { api, enc } from "../lib/api.js";
 import { $$, esc } from "../lib/dom.js";
+import { checkEnvRows, isEnvErrorKey } from "../lib/env.js";
 import { bytes, gbOrMb } from "../lib/format.js";
 import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
@@ -8,6 +9,7 @@ import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoi
 import { getTemplates, hostNow, refreshHost } from "../lib/store.js";
 import { filterTools, groupTools } from "../lib/tool-list.js";
 import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
+import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "./search-box.js";
 import { openTasks } from "./tasks.js";
@@ -93,6 +95,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   } catch {
     catalog = [];
   }
+  const secrets = snapshot ? [] : await secretNames();
   const picker = !snapshot && catalog.length > 0;
   const toolsSection = picker
     ? `<div class="field" id="cbToolsField">
@@ -149,6 +152,18 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         <div class="error-text" id="cbVolErr"></div>
       </details>`;
 
+  const envSection = snapshot
+    ? ""
+    : `<details class="advanced" id="cbEnv">
+        <summary id="cbEnvSummary">${t("env.section")}</summary>
+        <div class="stack">
+          <div class="help">${t("env.createHelp")}</div>
+          <div class="env-rows" id="cbEnvRows"></div>
+          <div><button type="button" class="btn" id="cbAddEnv">${icon("plus")}${t("env.add")}</button></div>
+          <div class="error-text" id="cbEnvErr"></div>
+        </div>
+      </details>`;
+
   const { root, close } = openDialog({
     title: snapshot ? t("cb.titleSnapshot") : t("cb.title"),
     description: t("cb.desc"),
@@ -182,7 +197,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
               `<button type="button" class="seg" data-profile="${p}" aria-pressed="${p === state.profile}"><strong>${t(`profile.${p}`)}</strong><span>${t(`profile.${p}Hint`)}</span></button>`,
           ).join("")}</div>
           <div class="help">${t("cb.profileHelp")}</div></div>
-      </details>${toolsSection}${volumesSection}`,
+      </details>${toolsSection}${volumesSection}${envSection}`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
 
@@ -265,6 +280,11 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     }
     q("#cbVolumes").open = true;
     q("#cbVolErr").textContent = message;
+  };
+
+  const showEnvError = (message) => {
+    q("#cbEnv").open = true;
+    q("#cbEnvErr").textContent = message;
   };
 
   const refreshMounts = () => {
@@ -365,6 +385,20 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     drawTools();
   }
   sync();
+  if (!snapshot) {
+    const rows = q("#cbEnvRows");
+    const refreshEnv = () => {
+      q("#cbEnvErr").textContent = "";
+      const n = rows.children.length;
+      q("#cbEnvSummary").textContent = n ? t("env.sectionCount", { n }) : t("env.section");
+    };
+    bindEnvRows(rows, refreshEnv);
+    q("#cbAddEnv").addEventListener("click", () => {
+      rows.append(envRow({ name: "", kind: "value", value: "", secretRef: "" }, secrets));
+      refreshEnv();
+      rows.lastElementChild.querySelector("[data-env-name]").focus();
+    });
+  }
 
   const submit = async () => {
     const name = q("#cbName").value.trim();
@@ -387,6 +421,15 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       }
       mounts = checked.mounts;
     }
+    let env;
+    if (!snapshot) {
+      const checked = checkEnvRows(readEnvRows(q("#cbEnvRows")));
+      if ("problem" in checked) {
+        showEnvError(envProblemText(checked.problem));
+        return;
+      }
+      env = checked.env;
+    }
     const btn = q("#cbSubmit");
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
@@ -395,6 +438,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       const hostPick = q("#cbHost");
       if (hostPick) body.host = hostPick.value;
       if (mounts) body.mounts = mounts;
+      if (env?.length) body.env = env;
       const selectedToolIds = [...selectedTools];
       if (selectedToolIds.length) body.tools = selectedToolIds;
       const res = snapshot
@@ -418,6 +462,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       btn.innerHTML = `${icon("play")}${t("cb.submit")}`;
       if (isVolumeErrorKey(e.key)) {
         showVolumeError(e.message);
+      } else if (!snapshot && (e.details?.field === "env" || isEnvErrorKey(e.key))) {
+        showEnvError(`${e.message}${e.hint ? ` ${e.hint}` : ""}`);
       } else if (e.details?.field === "name") {
         q("#cbName").classList.add("invalid");
         q("#cbNameErr").textContent = e.message;

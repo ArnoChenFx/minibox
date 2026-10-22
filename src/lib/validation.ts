@@ -4,6 +4,9 @@ import { type LabelKey, type Msg, msg } from "./messages";
 /** Docker-safe resource name: starts alphanumeric, then [A-Za-z0-9_.-], max 63 chars. */
 export const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
 
+/** A reference name that is also a file name: starts alphanumeric, then [A-Za-z0-9_.-], max 128 chars. */
+export const IDENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+
 export const LIMITS = {
   minCpus: 0.1,
   maxCpus: 64,

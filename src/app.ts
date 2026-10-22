@@ -5,7 +5,9 @@ import { LoginLimiter } from "./auth";
 import type { SnapshotEngine } from "./checkpoints/engine";
 import { ResticEngine } from "./checkpoints/restic";
 import { CheckpointStore } from "./checkpoints/store";
-import type { Config } from "./config";
+import { type CliBuilder } from "./cli-dist/build";
+import { CliDistribution } from "./cli-dist/distribution";
+import { type Config, ROOT } from "./config";
 import { sessionsPath, tokensPath } from "./data-dir";
 import { createDockerRuntime } from "./docker/runtime";
 import { OutputStore } from "./events/outputs";
@@ -25,6 +27,7 @@ import { McpSessions } from "./mcp/sessions";
 import { type AuditEvent, Executor, type ExecutorHooks, logAudit } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
 import type { EngineTarget, Runtime } from "./runtime";
+import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
 import { CheckpointSweep } from "./services/checkpoint-retention";
 import { ContainerWatch } from "./services/container-watch";
@@ -87,6 +90,8 @@ export interface App {
   pulse: ActivityPulse;
   lifecycle: LifecycleWatcher;
   ssh: SshGateway;
+  /** The CLI binaries served under /cli, built on first request for this version. */
+  cli: CliDistribution;
   /** Writes an audit note for a request caused by a transport, such as a wake from a terminal or preview. */
   record: RecordNote;
   version: string;
@@ -105,6 +110,8 @@ export interface AppDeps {
   /** The SQLite file of the event store. Defaults to `events.db` under DATA_DIR. Tests pass `:memory:`. */
   eventsPath?: string;
   sessions?: SessionStore;
+  /** Compiles a CLI binary. Defaults to `bun build --compile`. Tests pass a stub, because a real build takes seconds. */
+  cliBuild?: CliBuilder;
 }
 
 const MB = 1024 * 1024;
@@ -192,6 +199,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const checkpoints = new CheckpointStore(cfg.dataDir);
   const checkpointEngine = deps.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir });
   const multiHost = () => hosts.list().length > 1;
+  const secrets = new SecretStore(cfg.dataDir);
   const local = createLocalHost(
     cfg,
     deps.runtime ?? createDockerRuntime(cfg.dockerSocket),
@@ -199,7 +207,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     volumes,
     bus,
     pulse,
-    { checkpoints, checkpointEngine, multiHost },
+    { checkpoints, checkpointEngine, multiHost, secrets },
   );
   hosts.add(local);
   const activity = new ActivityLog();
@@ -234,7 +242,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     cfg,
     registry: hosts,
     store: new HostStore(cfg.dataDir),
-    shared: { specs, volumes, live: bus, pulse, checkpoints, checkpointEngine, multiHost },
+    shared: { specs, volumes, secrets, live: bus, pulse, checkpoints, checkpointEngine, multiHost },
     connect: deps.connect ?? createDockerRuntime,
     attach: (host) => {
       containers.watch(host);
@@ -307,6 +315,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     pulse,
     lifecycle,
     ssh,
+    cli: new CliDistribution({ dataDir: cfg.dataDir, version, root: ROOT, build: deps.cliBuild }),
     record: recordNote,
     version,
     startedAt: new Date(),

@@ -182,6 +182,8 @@ const KILL_ATTEMPTS = 10;
 const KILL_STREAM_MS = 5000;
 const KILL_EXIT_MS = 2000;
 const KILL_CONFIRM_MS = 3000;
+/** Longest a kill may take to be created and started. A kill that cannot start fails, and the stop is tried again. */
+const KILL_START_MS = 5000;
 
 const NANO_CPUS_PER_CPU = 1e9;
 const ICC_OPTION = "com.docker.network.bridge.enable_icc";
@@ -479,6 +481,7 @@ function helperMountOf(mount: Mount): Docker.MountSettings {
 /**
  * The options for a helper container. It joins no network, has a read-only root filesystem and only the capabilities it
  * names, cannot gain privileges, and is capped on memory and processes. AutoRemove lets the engine delete it on exit.
+ * It starts in `/`, not in the image's working directory, which can be a path on a volume the helper mounts.
  */
 export function toHelperOptions(spec: HelperSpec, name: string): Docker.ContainerCreateOptions {
   const memory = spec.memoryBytes ?? HELPER_MEMORY_BYTES;
@@ -498,7 +501,13 @@ export function toHelperOptions(spec: HelperSpec, name: string): Docker.Containe
     noNewPrivileges: true,
     pidsLimit: spec.pidsLimit ?? HELPER_PIDS_LIMIT,
   });
-  const opts: Docker.ContainerCreateOptions = { Image: spec.image, name, Cmd: spec.cmd, HostConfig: hostConfig };
+  const opts: Docker.ContainerCreateOptions = {
+    Image: spec.image,
+    name,
+    Cmd: spec.cmd,
+    WorkingDir: "/",
+    HostConfig: hostConfig,
+  };
   if (spec.user !== undefined) opts.User = spec.user;
   if (spec.labels !== undefined) opts.Labels = spec.labels;
   if (spec.env !== undefined) opts.Env = spec.env;
@@ -716,6 +725,11 @@ export function createDockerRuntime(target: string | EngineTarget): Runtime {
       return toContainerInfo(await call(() => docker.getContainer(id).inspect(withSignal({}, opts?.signal))));
     },
 
+    async inspectEnv(id) {
+      const info = await call(() => docker.getContainer(id).inspect());
+      return info.Config?.Env ?? [];
+    },
+
     async createContainer(spec) {
       const container = await mutate(() => docker.createContainer(toCreateOptions(spec)));
       return { id: container.id };
@@ -928,7 +942,7 @@ export function createDockerRuntime(target: string | EngineTarget): Runtime {
 
     async inspectImage(ref) {
       const info = await call(() => docker.getImage(ref).inspect());
-      return { id: info.Id, labels: info.Config?.Labels ?? {} };
+      return { id: info.Id, labels: info.Config?.Labels ?? {}, env: info.Config?.Env ?? [] };
     },
 
     async pullImage(ref) {
@@ -1094,7 +1108,7 @@ async function stopExec(
 ): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     if (!(await execRunning(docker, execId))) return;
-    const code = await runKillScript(docker, containerId, token, stopAs);
+    const code = await runKillScript(docker, containerId, execId, token, stopAs);
     if (code === 0) {
       if (await waitForEnd(docker, execId, KILL_CONFIRM_MS)) return;
       throw engineFailure(execId, "its process was still running after the kill");
@@ -1117,25 +1131,42 @@ function engineFailure(execId: string, reason: string): RuntimeError {
   return new RuntimeError("engine", `exec ${execId} could not be stopped: ${reason}`);
 }
 
-/** A raw engine exec, not `startExec`, so a kill is never wrapped or recorded as a command of its own. */
+/**
+ * A raw engine exec, not `startExec`, so a kill is never wrapped or recorded as a command of its own. It runs in `/`:
+ * runc enters the working directory before the kill starts, and the exec's own directory can be a volume on a storage
+ * server that is not answering. Creating and starting it is bounded, so a kill that hangs fails and the stop is retried.
+ */
 async function runKillScript(
   docker: Docker,
   containerId: string,
+  execId: string,
   token: string,
   stopAs: string | undefined,
 ): Promise<number | null> {
-  const exec = await call(() =>
-    docker.getContainer(containerId).exec({
-      Cmd: ["/bin/sh", "-c", KILL_TREE_SCRIPT, "minibox-kill", token],
-      AttachStdout: true,
-      AttachStderr: true,
-      ...(stopAs ? { User: stopAs } : {}),
-    }),
-  );
-  const stream = (await call(() => exec.start({ hijack: true }))) as Duplex;
-  stream.resume();
-  await streamEnds(stream, KILL_STREAM_MS);
-  return exitStatusOf(docker, exec.id);
+  const started = (async () => {
+    const exec = await call(() =>
+      docker.getContainer(containerId).exec({
+        Cmd: ["/bin/sh", "-c", KILL_TREE_SCRIPT, "minibox-kill", token],
+        AttachStdout: true,
+        AttachStderr: true,
+        WorkingDir: "/",
+        ...(stopAs ? { User: stopAs } : {}),
+      }),
+    );
+    const stream = (await call(() => exec.start({ hijack: true }))) as Duplex;
+    return { exec, stream };
+  })();
+  const attached = await within(started, KILL_START_MS);
+  if (!attached) {
+    started.then(
+      ({ stream }) => stream.destroy(),
+      () => undefined,
+    );
+    throw engineFailure(execId, `its kill did not start within ${KILL_START_MS / 1000} s`);
+  }
+  attached.stream.resume();
+  await streamEnds(attached.stream, KILL_STREAM_MS);
+  return exitStatusOf(docker, attached.exec.id);
 }
 
 /** An exec the engine no longer knows has ended. */

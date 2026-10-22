@@ -1,4 +1,4 @@
-import type { App } from "../../src/app";
+import type { App, AppDeps } from "../../src/app";
 import type { Config } from "../../src/config";
 import type { TokenPrincipal } from "../../src/operations/types";
 import { startServer } from "../../src/server";
@@ -14,8 +14,8 @@ export interface Harness {
 }
 
 /** An app with its base template seeded, served on an ephemeral port. `stop` ends every watcher the app opened. */
-export function startHarness(overrides: Partial<Config> = {}): Harness {
-  const { app, runtime } = createTestApp({ labelPrefix: "mbtest", ...overrides });
+export function startHarness(overrides: Partial<Config> = {}, deps: Pick<AppDeps, "cliBuild"> = {}): Harness {
+  const { app, runtime } = createTestApp({ labelPrefix: "mbtest", ...overrides }, undefined, {}, deps);
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   const server = startServer(app);
@@ -86,7 +86,10 @@ export interface Body {
   };
   deletedBoxes?: string[];
   failedBoxes?: { id: string; name: string; hostId: string; message: string }[];
-  tools?: { name: string; description: string }[];
+  tools?: { name: string; description: string; stop?: string | null }[];
+  tool?: { id: string; name: string; overridesBuiltin: boolean; stop?: string | null };
+  id?: string;
+  restoredBuiltin?: boolean;
   isError?: boolean;
   error?: { code: string; key?: string; details?: { field?: string; taskId?: string; preview?: RollbackPreviewBody } };
 }

@@ -6,7 +6,7 @@ import type { BoxSpec } from "../specs/types";
 /**
  * Scopes a token may carry. Operations keep their own scope strings; `requiredScopes` maps those onto this list.
  * Anything that maps to no scope here is the owner's alone: token management, pool administration, pool listing,
- * template build, task cancellation, the console's session and system routes.
+ * the custom tool catalog, template build, task cancellation, the console's session and system routes.
  */
 export const SCOPES = [
   "box:read",
@@ -23,6 +23,7 @@ export const SCOPES = [
   "volume:write",
   "volume:attach",
   "tool:install",
+  "secret:use",
 ] as const;
 
 export type Scope = (typeof SCOPES)[number];
@@ -129,7 +130,8 @@ export interface TokenDraft {
 }
 
 const READ_SCOPES: readonly Scope[] = ["box:read", "files:read"];
-const OPERATOR_SCOPES: readonly Scope[] = [...SCOPES];
+/** Every scope but `secret:use`: a box that receives a host secret is the owner's decision, so only the admin preset has it. */
+const OPERATOR_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "secret:use");
 const SANDBOX_SCOPES: readonly Scope[] = OPERATOR_SCOPES.filter(
   (scope) => scope !== "volume:attach" && scope !== "tool:install" && scope !== "box:ssh",
 );

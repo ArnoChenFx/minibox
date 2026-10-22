@@ -66,6 +66,8 @@ export interface FakeImage {
   id: string;
   tags: string[];
   labels: Record<string, string>;
+  /** `NAME=value` entries of the image configuration, as `docker commit` copies them from the container. */
+  env: string[];
   createdAt: string;
   size: number;
 }
@@ -176,6 +178,29 @@ function labelsFromChanges(changes: string[]): Record<string, string> {
     if (match) labels[match[1] ?? ""] = (match[2] ?? "").replace(/^"(.*)"$/, "$1");
   }
   return labels;
+}
+
+/** The `ENV NAME=value` lines of a commit, as `NAME=value` entries. A quoted value has its escapes read, as Docker does. */
+function envFromChanges(changes: string[]): string[] {
+  const entries: string[] = [];
+  for (const change of changes) {
+    const match = /^ENV\s+([^=\s]+)=(.*)$/.exec(change);
+    if (!match) continue;
+    const raw = match[2] ?? "";
+    const value = /^".*"$/.test(raw) ? raw.slice(1, -1).replace(/\\([\\"$])/g, "$1") : raw;
+    entries.push(`${match[1]}=${value}`);
+  }
+  return entries;
+}
+
+/** Entries over a base, one per name. A name in `overrides` takes its value and keeps its place, as Docker's environment does. */
+function mergeEnv(base: readonly string[], overrides: readonly string[]): string[] {
+  const merged = new Map<string, string>();
+  for (const entry of [...base, ...overrides]) {
+    const at = entry.indexOf("=");
+    merged.set(at < 0 ? entry : entry.slice(0, at), at < 0 ? "" : entry.slice(at + 1));
+  }
+  return [...merged].map(([name, value]) => `${name}=${value}`);
 }
 
 async function collect(stream: Readable): Promise<Buffer> {
@@ -385,9 +410,9 @@ export class FakeRuntime implements Runtime {
     return this.calls.map((call) => call.op);
   }
 
-  seedImage(ref: string, labels: Record<string, string> = {}, createdAt = now()): string {
+  seedImage(ref: string, labels: Record<string, string> = {}, createdAt = now(), env: string[] = []): string {
     const id = newImageId();
-    this.images.set(id, { id, tags: [normalizeRef(ref)], labels: { ...labels }, createdAt, size: 1024 });
+    this.images.set(id, { id, tags: [normalizeRef(ref)], labels: { ...labels }, env: [...env], createdAt, size: 1024 });
     return id;
   }
 
@@ -396,7 +421,14 @@ export class FakeRuntime implements Runtime {
    * container that runs it. Seeding does not record a call.
    */
   moveTag(ref: string, labels: Record<string, string> = {}): string {
-    const image: FakeImage = { id: newImageId(), tags: [], labels: { ...labels }, createdAt: now(), size: 1024 };
+    const image: FakeImage = {
+      id: newImageId(),
+      tags: [],
+      labels: { ...labels },
+      env: [],
+      createdAt: now(),
+      size: 1024,
+    };
     this.images.set(image.id, image);
     this.tag(image, normalizeRef(ref));
     return image.id;
@@ -644,6 +676,13 @@ export class FakeRuntime implements Runtime {
     return info;
   }
 
+  async inspectEnv(id: string): Promise<string[]> {
+    this.enter("inspectEnv", [id]);
+    const env = [...(this.getContainer(id).spec.env ?? [])];
+    await this.gate("inspectEnv", [id]);
+    return env;
+  }
+
   async createContainer(spec: CreateContainerSpec): Promise<{ id: string }> {
     this.enter("createContainer", [spec]);
     const image = this.getImage(spec.image);
@@ -848,10 +887,12 @@ export class FakeRuntime implements Runtime {
     await this.gate("commitContainer", [id, spec]);
     if (spec.signal?.aborted) throw abortError();
     const c = this.getContainer(id);
+    const imageEnv = this.images.get(c.imageId)?.env ?? [];
     const image: FakeImage = {
       id: newImageId(),
       tags: [],
       labels: { ...c.labels, ...labelsFromChanges(spec.changes) },
+      env: mergeEnv(mergeEnv(imageEnv, c.spec.env ?? []), envFromChanges(spec.changes)),
       createdAt: now(),
       size: 1024,
     };
@@ -1182,7 +1223,7 @@ export class FakeRuntime implements Runtime {
   async inspectImage(ref: string): Promise<ImageDetails> {
     this.enter("inspectImage", [ref]);
     const img = this.getImage(ref);
-    return { id: img.id, labels: { ...img.labels } };
+    return { id: img.id, labels: { ...img.labels }, env: [...img.env] };
   }
 
   /** Any reference the registry is assumed to have. A test that needs a missing registry image fails the pull with `fail`. */
@@ -1210,7 +1251,14 @@ export class FakeRuntime implements Runtime {
     spec.onLog?.(this.buildLog);
     await this.gate("buildImage", [spec]);
     if (spec.signal?.aborted) throw abortError();
-    const image: FakeImage = { id: newImageId(), tags: [], labels: { ...spec.labels }, createdAt: now(), size: 1024 };
+    const image: FakeImage = {
+      id: newImageId(),
+      tags: [],
+      labels: { ...spec.labels },
+      env: [],
+      createdAt: now(),
+      size: 1024,
+    };
     this.images.set(image.id, image);
     this.tag(image, normalizeRef(spec.tag));
     return this.buildLog;
@@ -1262,6 +1310,7 @@ export class FakeRuntime implements Runtime {
 
   async runHelper(spec: HelperSpec): Promise<HelperResult> {
     this.enter("runHelper", [spec]);
+    await this.gate("runHelper", [spec]);
     this.getImage(spec.image);
     this.ensureVolumes(spec.mounts);
     if (this.helperHandler !== defaultHelper) return this.helperHandler(spec);

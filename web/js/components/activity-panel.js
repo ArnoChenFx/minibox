@@ -124,7 +124,7 @@ export function mountActivity(root, { box }) {
       <summary>${icon("logs")}<strong>${t("bd.dockerLogs")}</strong><span class="subtle">${t("bd.dockerLogsHint")}</span></summary>
       <div class="row docker-logs-tools">
         <select class="select" id="lTail" style="width:auto;height:30px">${[200, 1000, 5000].map((n) => `<option value="${n}">${t("bd.lastLines", { n })}</option>`).join("")}</select>
-        <label class="checkbox" style="align-items:center"><input type="checkbox" id="lAuto" style="accent-color:var(--accent);margin:0" checked />${t("bd.autoRefresh")}</label>
+        <label class="checkbox" style="align-items:center"><input type="checkbox" id="lAuto" style="margin:0" checked />${t("bd.autoRefresh")}</label>
         <button class="btn btn-sm" id="lRefresh">${icon("refresh")}${t("common.refresh")}</button>
         <span class="badge" id="lState" style="margin-left:auto"><span class="dot"></span><span id="lStateText"></span></span>
       </div>

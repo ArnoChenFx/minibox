@@ -469,7 +469,8 @@ export class TerminalService {
       exec = await startInBox(host, box.id, {
         cmd: attachCommand(name, options.source),
         env: TMUX_ENV,
-        workingDir: WORKDIR,
+        // The attach names its session, so its own directory is not used, and a stuck volume there must not hold it.
+        workingDir: "/",
         user: "dev",
         tty: true,
       });

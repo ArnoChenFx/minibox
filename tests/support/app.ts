@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { type App, createApp } from "../../src/app";
+import { type App, type AppDeps, createApp } from "../../src/app";
 import { DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT } from "../../src/box-profile";
 import { type Config, DEFAULT_SESSION_TTL_MS, ROOT } from "../../src/config";
 import type { ExecutorHooks } from "../../src/operations/executor";
@@ -64,6 +64,7 @@ export function createTestApp(
   overrides: Partial<Config> = {},
   runtime = new FakeRuntime(),
   hooks: Partial<ExecutorHooks> = {},
+  deps: Pick<AppDeps, "cliBuild"> = {},
 ): { app: App; runtime: FakeRuntime; checkpoints: FakeCheckpointEngine } {
   const cfg = testConfig(overrides);
   if (overrides.dataDir === undefined) cfg.dataDir = mkdtempSync(join(tmpdir(), "minibox-test-"));
@@ -74,6 +75,7 @@ export function createTestApp(
     hooks,
     eventsPath: ":memory:",
     checkpointEngine: checkpoints,
+    ...deps,
   });
   return { app, runtime, checkpoints };
 }

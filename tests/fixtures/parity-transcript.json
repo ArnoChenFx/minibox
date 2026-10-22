@@ -1117,7 +1117,7 @@
     "path": "/api/tasks",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"tasks\":[{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"truncated\":false,\"logSeq\":2},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:nightly-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3}]}"
+    "body": "{\"tasks\":[{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"subject\":\"base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"truncated\":false,\"logSeq\":2},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"subject\":\"nightly\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:nightly-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3}]}"
   },
   {
     "step": "read the base build task",
@@ -1125,7 +1125,7 @@
     "path": "/api/tasks/<ulid>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
+    "body": "{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"subject\":\"base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
   },
   {
     "step": "read a missing task",
@@ -1205,7 +1205,7 @@
     "path": "/api/tasks/<ulid>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"id\":\"<ulid>\",\"op\":\"tool.install\",\"status\":\"succeeded\",\"summary\":\"Install a tool into the shared tools volume: toolsbox\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"toolsbox\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"id\":\"claude-code\",\"version\":\"latest\",\"installedVersion\":\"1.0.0\"},\"output\":\"install claude-code@latest\\n$ npm install -g --prefix /opt/minibox/tools @anthropic-ai/claude-code@latest\\nUsing tools volume <volumeId> (read-write)\\nok\\n\",\"truncated\":false,\"logSeq\":4}"
+    "body": "{\"id\":\"<ulid>\",\"op\":\"tool.install\",\"status\":\"succeeded\",\"summary\":\"Install a tool into the shared tools volume: toolsbox\",\"subject\":\"claude-code\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"toolsbox\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"id\":\"claude-code\",\"version\":\"latest\",\"installedVersion\":\"1.0.0\"},\"output\":\"install claude-code@latest\\n$ npm install -g --prefix /opt/minibox/tools @anthropic-ai/claude-code@latest\\nUsing tools volume <volumeId> (read-write)\\nok\\n\",\"truncated\":false,\"logSeq\":4}"
   },
   {
     "step": "upgrade claude-code",
@@ -1656,6 +1656,118 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Checkpoint ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"checkpoint_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
   },
   {
+    "step": "list secrets with none",
+    "method": "GET",
+    "path": "/api/secrets",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secrets\":[]}"
+  },
+  {
+    "step": "set a secret",
+    "method": "PUT",
+    "path": "/api/secrets/vault",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secret\":{\"name\":\"vault\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"boxes\":[]},\"created\":true}"
+  },
+  {
+    "step": "set a secret with an empty value",
+    "method": "PUT",
+    "path": "/api/secrets/vault",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A secret value is between 1 and 8192 characters and holds no control characters, such as line breaks or tabs.\",\"retryable\":false,\"key\":\"secret_value_invalid\",\"params\":{\"max\":8192},\"details\":{\"field\":\"value\"}}}"
+  },
+  {
+    "step": "set a secret with a bad name",
+    "method": "PUT",
+    "path": "/api/secrets/-bad",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A secret name starts with a letter or digit, holds only letters, digits, dots, underscores and hyphens, and is at most 128 characters.\",\"retryable\":false,\"key\":\"secret_name_invalid\",\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "list secrets",
+    "method": "GET",
+    "path": "/api/secrets",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secrets\":[{\"name\":\"vault\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"boxes\":[]}]}"
+  },
+  {
+    "step": "delete a secret no box uses",
+    "method": "DELETE",
+    "path": "/api/secrets/vault",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"vault\",\"boxes\":[]}"
+  },
+  {
+    "step": "delete a missing secret",
+    "method": "DELETE",
+    "path": "/api/secrets/vault",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Secret vault was not found.\",\"retryable\":false,\"key\":\"secret_not_found\",\"params\":{\"name\":\"vault\"}}}"
+  },
+  {
+    "step": "set the secret a box uses",
+    "method": "PUT",
+    "path": "/api/secrets/vault",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secret\":{\"name\":\"vault\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"boxes\":[]},\"created\":true}"
+  },
+  {
+    "step": "create a box that names a missing secret",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Environment variable TOKEN refers to secret absent, which is not set.\",\"retryable\":false,\"hint\":\"Set the secret under Settings, Secrets, or remove the variable, then try again.\",\"key\":\"env_secret_missing\",\"params\":{\"name\":\"absent\",\"env\":\"TOKEN\"},\"hintKey\":\"env_secret_missing_hint\",\"details\":{\"field\":\"env\"}}}"
+  },
+  {
+    "step": "create a box with a secret",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"secretbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-secretbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[{\"name\":\"TOKEN\",\"secretRef\":\"vault\"},{\"name\":\"GREETING\",\"value\":\"hello\"}],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "read the box with a secret",
+    "method": "GET",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"secretbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-secretbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[{\"name\":\"TOKEN\",\"secretRef\":\"vault\"},{\"name\":\"GREETING\",\"value\":\"hello\"}],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}}"
+  },
+  {
+    "step": "delete a secret in use",
+    "method": "DELETE",
+    "path": "/api/secrets/vault",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Secret vault is used by secretbox. Those boxes cannot be rebuilt or started until the secret is set again. Send force to delete it anyway.\",\"retryable\":false,\"key\":\"secret_in_use\",\"params\":{\"name\":\"vault\",\"boxes\":\"secretbox\"},\"details\":{\"boxes\":[\"secretbox\"]}}}"
+  },
+  {
+    "step": "delete a secret in use with force",
+    "method": "DELETE",
+    "path": "/api/secrets/vault?force=true",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"vault\",\"boxes\":[\"secretbox\"]}"
+  },
+  {
+    "step": "delete the secret box",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"secretbox\",\"volumeDeleted\":false}"
+  },
+  {
     "step": "read the rolled back box",
     "method": "GET",
     "path": "/api/boxes/<id>",
@@ -1798,6 +1910,94 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"bytes\":0,\"limitBytes\":null,\"state\":\"unlimited\",\"policy\":{\"keepLast\":20,\"keepDays\":30}}"
+  },
+  {
+    "step": "save a box as a template",
+    "method": "POST",
+    "path": "/api/boxes/<id>/template",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "save a box under a taken template name",
+    "method": "POST",
+    "path": "/api/boxes/<id>/template",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A template named “saved” already exists.\",\"retryable\":false,\"key\":\"template_name_taken\",\"params\":{\"name\":\"saved\"}}}"
+  },
+  {
+    "step": "save a missing box as a template",
+    "method": "POST",
+    "path": "/api/boxes/missing/template",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "list custom tools",
+    "method": "GET",
+    "path": "/api/tools/custom",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tools\":[]}"
+  },
+  {
+    "step": "save a custom tool",
+    "method": "PUT",
+    "path": "/api/tools/custom/parity-tool",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tool\":{\"id\":\"parity-tool\",\"name\":\"Parity tool\",\"description\":\"A custom entry for the transcript.\",\"category\":\"terminal\",\"source\":\"npm\",\"package\":\"parity-tool\",\"bin\":\"parity-tool\",\"needsRoot\":false,\"estimatedMb\":50,\"requires\":\"Node ≥ 20\",\"install\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"upgrade\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"uninstall\":\"npm uninstall -g --prefix {{prefix}} {{package}}\",\"stop\":null,\"detect\":\"command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null\",\"overridesBuiltin\":false}}"
+  },
+  {
+    "step": "list custom tools after a save",
+    "method": "GET",
+    "path": "/api/tools/custom",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tools\":[{\"id\":\"parity-tool\",\"name\":\"Parity tool\",\"description\":\"A custom entry for the transcript.\",\"category\":\"terminal\",\"source\":\"npm\",\"package\":\"parity-tool\",\"bin\":\"parity-tool\",\"needsRoot\":false,\"estimatedMb\":50,\"requires\":\"Node ≥ 20\",\"install\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"upgrade\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"uninstall\":\"npm uninstall -g --prefix {{prefix}} {{package}}\",\"stop\":null,\"detect\":\"command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null\",\"overridesBuiltin\":false}]}"
+  },
+  {
+    "step": "save a custom tool with an unknown placeholder",
+    "method": "PUT",
+    "path": "/api/tools/custom/parity-tool",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Install command uses {{home}}, which is not a placeholder. Use prefix, version, package, package_spec or bin.\",\"retryable\":false,\"key\":\"tool_custom_placeholder_invalid\",\"params\":{\"label\":\"toolInstall\",\"placeholder\":\"{{home}}\"},\"details\":{\"field\":\"install\"}}}"
+  },
+  {
+    "step": "save a custom tool over a built-in id",
+    "method": "PUT",
+    "path": "/api/tools/custom/uv",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"“uv” is a built-in tool. Send overrideBuiltin as true to replace its catalog entry, or choose another id.\",\"retryable\":false,\"key\":\"tool_custom_builtin\",\"params\":{\"id\":\"uv\"}}}"
+  },
+  {
+    "step": "delete the custom tool",
+    "method": "DELETE",
+    "path": "/api/tools/custom/parity-tool",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"parity-tool\",\"restoredBuiltin\":false}"
+  },
+  {
+    "step": "delete a missing custom tool",
+    "method": "DELETE",
+    "path": "/api/tools/custom/parity-tool",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"No custom tool “parity-tool” is saved in tools.d.\",\"retryable\":false,\"key\":\"tool_custom_not_found\",\"params\":{\"id\":\"parity-tool\"}}}"
+  },
+  {
+    "step": "delete a built-in tool with no custom entry",
+    "method": "DELETE",
+    "path": "/api/tools/custom/uv",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"“uv” is a built-in tool with no custom entry, so there is nothing to delete.\",\"retryable\":false,\"key\":\"tool_custom_builtin_delete\",\"params\":{\"id\":\"uv\"}}}"
   },
   {
     "step": "list hosts before any is added",

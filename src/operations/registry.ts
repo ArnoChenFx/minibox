@@ -6,6 +6,7 @@ import { fileOperations } from "./files";
 import { hostOperations } from "./hosts";
 import { operationIdOf } from "./openapi";
 import { portOperations } from "./ports";
+import { secretOperations } from "./secrets";
 import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
 import { taskOperations } from "./tasks";
@@ -23,6 +24,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...fileOperations,
   ...volumeOperations,
   ...toolOperations,
+  ...secretOperations,
   ...sessionOperations,
   ...snapshotOperations,
   ...checkpointOperations,

@@ -11,6 +11,20 @@ export const LABELS = {
   cpus: "CPU cores",
   memory: "Memory",
   pids: "Process limit",
+  toolId: "Tool id",
+  toolName: "Tool name",
+  toolDescription: "Description",
+  toolCategory: "Category",
+  toolSource: "Source",
+  toolPackage: "Package",
+  toolBin: "Binary name",
+  toolRequires: "Requirements",
+  toolEstimatedMb: "Estimated size",
+  toolInstall: "Install command",
+  toolUpgrade: "Upgrade command",
+  toolUninstall: "Uninstall command",
+  toolStop: "Stop command",
+  toolDetect: "Detect command",
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
@@ -38,7 +52,22 @@ export const MESSAGES = {
   mount_invalid:
     "Each mount needs a volume name, an absolute path and a mode of rw or ro. At most {max} mounts, and each path once.",
   env_invalid:
-    "Each environment entry needs a name and a value or a secretRef. At most {max} entries, and each name once.",
+    "Each environment entry needs a name and either a value or a secretRef, not both. At most {max} entries, and each name once.",
+  env_secret_missing: "Environment variable {env} refers to secret {name}, which is not set.",
+  env_secret_missing_hint: "Set the secret under Settings, Secrets, or remove the variable, then try again.",
+  secret_name_invalid:
+    "A secret name starts with a letter or digit, holds only letters, digits, dots, underscores and hyphens, and is at most 128 characters.",
+  secret_value_invalid:
+    "A secret value is between 1 and {max} characters and holds no control characters, such as line breaks or tabs.",
+  secret_not_found: "Secret {name} was not found.",
+  secret_in_use:
+    "Secret {name} is used by {boxes}. Those boxes cannot be rebuilt or started until the secret is set again. Send force to delete it anyway.",
+  secret_reference_forbidden:
+    "This credential may not put secrets into a box. Give it the secret:use scope, or use the admin preset.",
+  secret_in_image:
+    "Environment variable {env} refers to secret {name}. A snapshot, a template or a checkpoint's system image keeps the box's environment, so it would store the secret's value.",
+  secret_in_image_hint:
+    "Remove the variable, then try again. A checkpoint without a system image keeps no environment, so it can still be taken.",
   network_invalid:
     "Network name must start with a letter or digit and contain only letters, digits, dots, underscores and hyphens.",
   rebuild_empty: "Nothing in this request changes the template, mounts, environment, network or security profile.",
@@ -109,6 +138,7 @@ export const MESSAGES = {
   session_not_found: "Session not found.",
   snapshot_not_found: "Snapshot not found.",
   template_not_found: "Template not found.",
+  template_name_taken: "A template named “{name}” already exists.",
   template_image_missing:
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   box_exists: "A box named “{name}” already exists.",
@@ -208,6 +238,11 @@ export const MESSAGES = {
   volume_create_forbidden: "This credential may not create volumes.",
   volume_chown_failed: "Could not change ownership of a new volume: {detail}",
   volume_prepare_failed: "Could not prepare the volume directory: {detail}",
+  storage_permission_denied: "Storage pool {pool} denied permission to create the volume directory: {detail}",
+  storage_unwritable:
+    "Uid 1000, the box user, cannot write the new volume directory {path}, so the volume was not created: {detail}",
+  storage_squash_hint:
+    "On the NAS, set the export to all_squash,anonuid=1000,anongid=1000, or root_squash,anonuid=1000,anongid=1000, so the squashed user is uid 1000. Setup guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/nas.md",
   helper_image_missing: "Base template image {image} is missing, so volume helpers cannot run.",
   mount_path_invalid: "Mount path {path} must be an absolute path without empty, . or .. segments.",
   mount_duplicate: "Mount path {path} is listed more than once.",
@@ -307,6 +342,27 @@ export const MESSAGES = {
   tool_version_invalid:
     "Tool version must be latest or a pin of letters, digits, dots, underscores, plus and hyphen (optional leading v), at most 64 characters.",
   tool_version_unsupported: "Tool “{id}” installs the latest release only, because its installer takes no version pin.",
+  tool_id_invalid:
+    "Tool id must start with a lowercase letter, continue with lowercase letters, digits or hyphens, and be at most 63 characters.",
+  tool_custom_text_invalid: "{label} must be one line of at most {max} characters, without control characters.",
+  tool_custom_command_invalid:
+    "{label} must be at most {max} characters. Line breaks and tabs are allowed, other control characters are not.",
+  tool_custom_placeholder_invalid:
+    "{label} uses {placeholder}, which is not a placeholder. Use prefix, version, package, package_spec or bin.",
+  tool_custom_package_invalid:
+    "{label} may contain only letters, digits, @, dots, underscores, slashes, plus and hyphen, must start with a letter, digit or @, and be at most 214 characters.",
+  tool_category_invalid: "Category must be one of agents, languages, terminal or networking.",
+  tool_source_invalid: "Source must be npm, pip or script.",
+  tool_estimated_invalid: "Estimated size must be a whole number of MB from 1 to {max}.",
+  tool_custom_forbidden: "This credential may not change the custom tool catalog.",
+  tool_custom_builtin:
+    "“{id}” is a built-in tool. Send overrideBuiltin as true to replace its catalog entry, or choose another id.",
+  tool_custom_builtin_delete: "“{id}” is a built-in tool with no custom entry, so there is nothing to delete.",
+  tool_custom_not_found: "No custom tool “{id}” is saved in tools.d.",
+  tool_custom_file_conflict:
+    "tools.d/{file} also defines “{id}”, so the saved entry would not take effect. Remove or rename that file, then try again.",
+  tool_custom_file_other:
+    "tools.d/{file} defines “{other}”. Saving “{id}” there would replace that entry. Remove or rename that file, then try again.",
   file_path_invalid: "File path must be at most 512 bytes, without NUL or line breaks.",
   file_path_escape: "File path must stay inside the volume (no .. or absolute escape).",
   file_symlink_loop: "Too many levels of symbolic links in the file path (more than {max}).",

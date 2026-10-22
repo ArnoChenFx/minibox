@@ -21,7 +21,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 
 **Why?**
 
-- Agents make a mess: random global installs, half-finished builds, stray processes. A box keeps that off your host and can be reset, snapshotted or deleted in one click.
+- Agents make a mess: random global installs, half-finished builds, stray processes. A box keeps that off your host and can be reset, checkpointed or deleted in one click.
 - Hosted sandboxes are great, but sometimes you want your own hardware, your own network and zero per-minute billing.
 - Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database server**. Images and volumes live in Docker. Specs, volume records and the event log live in a [data directory](#data-directory).
 
@@ -33,9 +33,9 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Volumes | Independent volumes and storage pools (`local`, `nfs`, `path`). A new box mounts workspace, home, a shared read-only tools volume and a local cache. See [Volumes and storage pools](#volumes-and-storage-pools) |
 | Box user | Boxes run as the non-root `dev` user (uid/gid 1000); the web terminal and `docker exec` start as `dev`. Three [security profiles](#security-profiles) set what a box can do: `standard` (default) keeps passwordless `sudo`, and `strict` blocks escalation. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
-| Snapshots | Save a box's system environment via `docker commit`, create new boxes from a snapshot, or promote it to a template |
+| Environment | Plain environment variables on a box, and host secrets injected by name with `secretRef`. Secret values are set in Settings and never returned. See [Environment variables and secrets](#environment-variables-and-secrets) |
 | Checkpoints | Copy a box's workspace and home into a restic repository, then fork a new box from the copy or roll the box back to it, confirming or undoing the rollback. Retention and a capacity limit apply. Available over REST and in the console's Checkpoints tab; MCP tools are not there yet. See [Checkpoints](#checkpoints) |
-| Templates | Bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
+| Templates | The environment new boxes start from: the bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user), plus templates you save from a box's page. A save keeps the box's system layer, such as apt and sudo installs and system file changes, not `/workspace` or home data. Use a checkpoint for data. See [Base template](#base-template) |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Multiple hosts | Add other Docker engines over a unix socket, mutual TLS or SSH, and create boxes on any of them. The SSH host key is confirmed when the host is added. Adding and removing hosts is owner-only, in Settings or the API. See [Multiple hosts](#multiple-hosts) |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
@@ -55,8 +55,8 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | ![Box list](docs/screenshots/boxes-light.png) | ![Create dialog](docs/screenshots/create-dialog-light.png) |
 | **Box detail** | **Web terminal** |
 | ![Box detail](docs/screenshots/box-detail-light.png) | ![Terminal](docs/screenshots/terminal-light.png) |
-| **Snapshots** | **Overview (dark)** |
-| ![Snapshots](docs/screenshots/snapshots-light.png) | ![Overview, dark](docs/screenshots/overview-dark.png) |
+| **Templates** | **Overview (dark)** |
+| ![Templates](docs/screenshots/templates-light.png) | ![Overview, dark](docs/screenshots/overview-dark.png) |
 
 More in [`docs/screenshots`](docs/screenshots).
 
@@ -107,8 +107,8 @@ flowchart LR
 
 - **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`). The restart policy is `no`: a startup reconciler starts or stops the container to match the spec's desired state (`running` or `stopped`). The spec file under `DATA_DIR/boxes/` is the authority for mutable state. Container labels are written once, at create, and are not changed later. A new box mounts `/workspace`, `/home/dev`, a shared read-only `/opt/minibox/tools` and `/home/dev/.cache`. New volumes are named `vol_…`. An existing `minibox-ws-<name>` volume is reused as that box's workspace and is not renamed. Changing mounts rebuilds the container and renames it to `minibox-<box id>`; claiming a container does not rename it. The container runs as the non-root user `dev` (see [Base template](#base-template)).
 - **Session** = a named tmux session inside a box, run as `dev`. The web terminal attaches to it, and agents send keys and read the screen through the session tools. Closing the page only detaches, so the session keeps running until it is closed or the box stops (see [Sessions](#sessions)).
-- **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
-- **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
+- **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`, made by `docker commit` from a box's container. It is the low-level path: the API and CLI create, promote and delete snapshots. Saving a box as a template makes one internally and removes it afterwards.
+- **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`. It holds a box's system environment, never its data. Save one from a box's page, or promote a snapshot.
 - **Live state** = one `HostSampler` per host. It keeps the box cache current from the engine's container events, and lists the containers again every minute to catch a change a stalled event stream missed. It samples each running box into a ring of `METRICS_HISTORY` points once per `METRICS_INTERVAL_MS` while a stream is open. With no stream, it samples every 30 seconds (or at `METRICS_INTERVAL_MS` if that is longer), but only while someone has read the box's usage in the last five minutes. It publishes box, sample, link and host frames on the event bus. `GET /api/events/stream` forwards them to the console, which polls only while the stream is down. Each box's log is followed once per host and shared by all of its log streams, `GET /api/boxes/:id/logs/stream`. Live frames carry environment variable names, never their values. At most `STREAM_MAX_CONNECTIONS` event, task and log streams are open at once, and the next one gets `429`. Samples stay in memory and never reach the event log.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
 
@@ -281,6 +281,8 @@ docker run -d --name minibox --restart unless-stopped \
 
 Create-box can tick Agent CLIs and other tools. The list is grouped into AI coding agents, languages and runtimes, terminal and dev utilities, and networking, and a search field above it filters by name, description or category. The box's **Tools** page uses the same groups and search, and install, upgrade and uninstall live there too. The catalog covers Claude Code, Codex, OpenCode, Pi coding agent, fx agent, Antigravity CLI, Grok Build CLI, Qoder CLI, oh-my-pi, herdr, luvus, Bun, uv, Rust, Zig and Tailscale. Each entry installs from its official source (see `catalog/*.json`), and `DATA_DIR/tools.d/*.json` can add or override entries. Binaries go on the shared read-only tools volume (`/opt/minibox/tools`). Installs run in a networked helper that mounts that volume read-write as uid `1000`, never as root. A tool already in the image or the home volume shows as installed with its version and is left alone. Upgrade and uninstall apply only to tools MiniBox installed on the tools volume, and uninstall first stops a tool's running daemon in the box. Tailscale installs as the `dev` user without root, in userspace networking mode: `minibox-tailscale up` starts the daemon in the box and prints the login URL. The box gets no tailnet network interface. Inbound TCP and UDP to the box's tailnet IP are forwarded to `127.0.0.1` in the box, so a program listening on localhost or `0.0.0.0` (IPv4) is reachable from the tailnet, subject to your tailnet ACLs; anything bound to localhost is exposed that way too. Outbound connections to tailnet hosts must go through the SOCKS5 or HTTP proxy at `localhost:1055`: set `ALL_PROXY=socks5h://localhost:1055` (the `h` makes the proxy resolve MagicDNS names) or `HTTP_PROXY`/`HTTPS_PROXY=http://localhost:1055` for HTTP clients. There is no ICMP, so `ping` to a tailnet host fails; use `minibox-tailscale ping`. The daemon does not start by itself after the box restarts or wakes from idle sleep, and tailnet traffic does not wake a sleeping box: run `minibox-tailscale up` again, and the saved login is reused. Uninstall stops the daemon only in the box it is run from; other boxes on the host keep theirs until they stop. Its login state stays on the home volume when it is uninstalled. Long installs are async tasks with live logs. API: `GET /api/tools`, `GET /api/tools/catalog`, `POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`. MCP toolset `tools` (`list_tools`, `install_tool`, …). Honor `HTTP_PROXY` / `HTTPS_PROXY` when set on the MiniBox process.
 
+**Custom tools** are managed by the owner. On a box's **Tools** page, **Custom tool** adds an entry, and **Edit** and **Delete** change or remove a custom one. Each entry is the file `DATA_DIR/tools.d/<id>.json`, in the same format as `catalog/*.json`, and the loader merges it with the bundled catalog. The form checks an entry with the loader's own rules before it writes the file, so a broken entry is never saved. A file that is edited by hand into something the loader rejects makes the catalog fail to load for every box, with the file's path in the error, until the file is fixed or deleted. `DELETE /api/tools/custom/<id>` removes a file named `<id>.json` even when its JSON is broken. An id that a built-in tool uses needs **Replace the built-in entry** (`overrideBuiltin`), and deleting that entry brings the built-in one back. Delete removes only the file: a tool already on the shared tools volume stays installed. API: `GET /api/tools/custom`, `PUT /api/tools/custom/:id` and `DELETE /api/tools/custom/:id`. CLI: `minibox tool custom list`, `minibox tool custom put <id> (--file FILE | --stdin) [--override-builtin]` and `minibox tool custom delete <id>`. MCP toolset `tools`: `list_custom_tools`, `put_custom_tool` and `delete_custom_tool`. All of them are owner-only, so agent tokens, admin-preset ones included, are refused. The form's commands are install, upgrade, uninstall and detect, plus an optional stop command that runs as `dev` inside the running box before an uninstall, so a daemon the tool started exits before its binary is removed. Install, upgrade and uninstall run in the tools-volume helper, and detect runs in each box's image with the volumes read-only, the same as for built-in entries. Each command is at most 16000 characters.
+
 See [Port preview](#port-preview) for `/box/<name>/<port>/` reverse proxy of in-box HTTP/WebSocket services (no host ports).
 
 ## Idle sleep
@@ -321,9 +323,12 @@ Framework tip: many bundlers assume `/` as the public base. For path-mode previe
 
 ## SSH access
 
-`ssh`, `scp`, `sftp` and `ssh -L` reach a box through MiniBox over a WebSocket on the server's own address, so no host port is published. On the machine that runs `ssh`, build the CLI with `bun run build:cli` and put `dist/minibox` on your `PATH`.
+`ssh`, `scp`, `sftp` and `ssh -L` reach a box through MiniBox over a WebSocket on the server's own address, so no host port is published. The server also distributes its CLI, so the machine that runs `ssh` needs no checkout: install the CLI from the server first.
 
 ```sh
+# once: install minibox into ~/.local/bin (macOS or Linux; on Windows, in PowerShell: irm https://minibox.example.com/cli/install.ps1 | iex)
+curl -fsSL https://minibox.example.com/cli/install.sh | sh
+
 # once: the access key, or an agent token with box:ssh
 MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
 ssh mybox.minibox
@@ -332,7 +337,9 @@ sftp mybox.minibox
 ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 ```
 
-`ssh-config --append` writes a `Host *.minibox` block at the top of `~/.ssh/config`, pins the server's host key in `~/.ssh/minibox_known_hosts`, and saves the server address and key to `~/.config/minibox/ssh-credentials.json` (mode 600). The `ProxyCommand` (`minibox ssh-proxy %h`) reads that file when `MINIBOX_ACCESS_KEY` is not set, so ssh started from any shell or an IDE's Remote-SSH works. Exported `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` still take precedence.
+The installer detects the OS and CPU, downloads `minibox-<os>-<arch>` from the server, checks it against `/cli/checksums.txt` and installs it into `~/.local/bin` (or `MINIBOX_INSTALL_DIR`). It needs no sudo and prints a `PATH` line when that folder is not on `PATH`. The server builds each binary with `bun build --compile` on the first request for its version and keeps it under `DATA_DIR/cli`. A platform other than the server's first needs Bun's runtime for it, about 90 MB downloaded from npm once per server, so a server that cannot reach npm answers `503` with the reason and a fallback. Set `HTTPS_PROXY` for MiniBox in that case. To build the CLI yourself instead, run `bun run build:cli` in a checkout and put `dist/minibox` on your `PATH`.
+
+`ssh-config --append` writes a `Host *.minibox` block at the top of `~/.ssh/config`, pins the server's host key in `~/.ssh/minibox_known_hosts`, and saves the server address and key to `~/.config/minibox/ssh-credentials.json` (mode 600 on macOS and Linux). The `ProxyCommand` (`minibox ssh-proxy %h`) reads that file when `MINIBOX_ACCESS_KEY` is not set, so ssh started from any shell or an IDE's Remote-SSH works. Exported `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` still take precedence. `--url URL` and `--token KEY` override them for that command, and `--append` saves the values they resolve to; `--token` leaves the key in your shell history, so prefer the environment variable.
 
 - The login user is `dev` or the box id. `root` and other names are refused. The access key or token is checked at the WebSocket handshake, so the box needs no key or password. A browser session cannot open an SSH connection.
 - A token needs the `box:ssh` scope and reaches only the boxes its selector allows. `operator` and `admin` include the scope, `sandboxed-agent` does not. Like `exec`, it can run commands and read and write every mount of the box, so grant it the same way. `-L` also needs `port:expose`.
@@ -340,6 +347,21 @@ ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 - A stopped or sleeping box starts on connect. An open connection keeps the box awake, and input over it counts as activity. Stopping the box (by hand, idle or TTL), deleting it or rebuilding it ends its SSH connections, and a box whose TTL has passed refuses new ones with `409 box_ttl_expired`. Limits: 8 connections per box, 64 in total, and 16 channels per connection. Past a box or server limit the handshake returns `429`.
 - `sftp` and `-L` need `openssh-sftp-server` and `socat`, which the [base template](#base-template) installs. An older box can add them with `sudo apt-get install -y openssh-sftp-server socat` in the standard profile, or be created again.
 - The host key is `DATA_DIR/ssh_host_ed25519_key`, created on first start. If you delete it, run `minibox ssh-config --append` again so clients pin the new key. Connections, channels, refused forwards and disconnects are written to the audit log.
+
+### SSH from Windows
+
+Run these in a normal PowerShell window, not as administrator. Windows OpenSSH expects the files in `%USERPROFILE%\.ssh` to belong to your account, and `ssh-config --append` reminds you of this on Windows.
+
+```powershell
+irm https://minibox.example.com/cli/install.ps1 | iex
+$env:MINIBOX_URL="https://minibox.example.com"; $env:MINIBOX_ACCESS_KEY="..."; minibox ssh-config --append
+ssh mybox.minibox
+```
+
+- The installer puts `minibox.exe` in `%USERPROFILE%\.local\bin` (or `MINIBOX_INSTALL_DIR`), adds that folder to your user PATH, and moves an older `minibox.exe` aside to `minibox.exe.old`. Open a new terminal afterwards so `minibox` and `ssh` are found. If the running `minibox.exe` cannot be moved, the installer stops with a message and the installed file stays as it was. If the new file does not run, the installer puts the previous one back.
+- `ssh` needs the OpenSSH Client optional feature (Settings, System, Optional features). The installer prints a hint when it is missing.
+- `ssh-config` writes `%USERPROFILE%\.ssh\config`, `%USERPROFILE%\.ssh\minibox_known_hosts` and `%USERPROFILE%\.config\minibox\ssh-credentials.json`. Windows has no mode 600, so these files take their permissions from `%USERPROFILE%\.ssh` and belong to your account. If ssh reports bad owner or permissions, check the owner and access rules with `icacls "%USERPROFILE%\.ssh\config"`: the owner should be you, and no other account should be able to write to it.
+- The `ProxyCommand` names the CLI by its full path, such as `"C:/Users/you/.local/bin/minibox.exe" ssh-proxy %h`, because OpenSSH for Windows starts it without a shell and it may not be on that process's PATH. After you move `minibox.exe`, run `minibox ssh-config --append` again.
 
 ## Configuration
 
@@ -401,7 +423,7 @@ Tools: `tmux`, `jq`, `ripgrep`, `openssh-client`, `unzip`, `less`, `vim-tiny` an
 
 - Existing boxes keep running as root on the template they were created from. Nothing is renamed or rebuilt.
 - Boxes created from an older snapshot or template keep that image's user, which is root for images made before this change.
-- A new **local** volume is `chown -R 1000:1000` by a short-lived helper container from the base template image, running as root. If that image is not present, the chown is skipped and MiniBox logs `volume.chown_skipped`. NFS and path volumes must have their subdirectory created; chown there is best-effort, because `root_squash` often blocks it (the same log line, with the helper printing `MINIBOX_CHOWN_SKIPPED`).
+- A new **local** volume is `chown -R 1000:1000` by a short-lived helper container from the base template image, running as root. If that image is not present, the chown is skipped and MiniBox logs `volume.chown_skipped`. NFS and path volumes must have their subdirectory created; chown there is best-effort, because `root_squash` often blocks it (the same log line, with the helper printing `MINIBOX_CHOWN_SKIPPED`). MiniBox then checks that uid 1000 can write the new directory. If it cannot, the create fails with `bad_gateway` (`storage_unwritable`), the directory is removed and no volume is created. See [NAS / NFS guide](docs/nas.md#ownership-the-one-thing-to-get-right).
 - An existing `minibox-ws-*` volume is recognized on startup and is **not** chowned then. When a box is created or rebuilt onto a template that names its owner (the `minibox.template.uid` and `minibox.template.gid` labels, which the base template sets), MiniBox sets the root of a writable `/workspace` to that owner before the box starts, so a root-owned volume left by an older box becomes writable for `dev`. Only the root changes: files already in the volume keep their owners. A volume that is only recognized, or a box made from a template without those labels, is left as it is. If its `/workspace` is root-owned, fix that volume once, with the box running:
 
   ```bash
@@ -431,7 +453,7 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
 | `checkpoints/` | `700` | One checkpoint record per file, `ck_….json` (mode `600`): the box spec it was taken from, its volume layers and their restic snapshot ids. The data itself is in the repository volume, not here |
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per exec. The in-memory record is dropped on restart; the file stays until retention removes it |
-| `secrets/` | `700` | Secret values and repository keys. `checkpoint-repo.key` (mode `600`) is the checkpoint repository's password, made on first use. Keep it with the repository volume: without it the checkpoints cannot be read |
+| `secrets/` | `700` | Host secrets and repository keys. Each secret is one file, `env/<name>` (mode `600`), read only to build a box's container. `checkpoint-repo.key` (mode `600`) is the checkpoint repository's password, made on first use. Keep it with the repository volume: without it the checkpoints cannot be read |
 | `volumes/` | `700` | One volume record per file, `vol_….json` (mode `600`). The engine volume is not renamed when this file is written |
 | `pools.json` | `600` | Storage pools and the role-to-pool defaults. Missing means the implicit local pool; a corrupt file is left in place and treated as missing |
 | `hosts.json` | `600` | Remote hosts: id, name, endpoint without any credential, the SSH host key fingerprint, and when each was added. Missing means only `local` |
@@ -474,7 +496,7 @@ To put boxes on a NAS, follow the [NAS / NFS guide](docs/nas.md): export setting
 | `nfs` | A Docker local volume with NFS options (`type=nfs`, `o=addr=<server>,<options>`, `device=:<export>/<volume id>`). A helper container creates the subdirectory on the export. **Data** volumes use the options you set, often `hard`. The **probe** mount is `soft,timeo=10,retrans=1` (your `hard`/`soft` is not copied onto it) so a dead server cannot hang the probe. Use NFS on a trusted network. Server setup, squash and uid mapping, mount options and troubleshooting: [NAS / NFS guide](docs/nas.md) |
 | `path` | A bind of `<root>/<volume id>` through a Docker volume (`type=none`, `o=bind`). Before any write, a helper bind-mounts `root` read-only and checks that the marker file exists (default `.minibox-mounted`, a single file name). A missing marker is **storage unreachable**; MiniBox does not create the marker and does not write the local disk |
 
-`GET /api/pools` probes reachability and caches the result for 15 seconds. `?refresh=true` probes again. Listing boxes does not probe NFS, so a box's `storage.status` stays `unknown` until something probes. `unreachable` is what the box list and the box page call out; `ok` and `unknown` do not. Starting, restarting or creating a box returns `503` `docker_unavailable` (message key `storage_unreachable`) when a non-local pool is not `reachable`, including when the base template image is missing, and when the local engine probe itself fails. The reconciler logs `reconcile.start_failed` and continues, so one unreachable pool does not stop the process. Free space under 5 GiB or under 10% is `lowSpace`. There is no per-volume quota.
+`GET /api/pools` probes reachability and caches the result for 15 seconds. The pools are probed side by side. A pool whose probe has not finished within 5 seconds is reported `unreachable` (`no answer within 5 s`), and its probe carries on in the background. `?refresh=true` probes again, joining a probe of that pool that is still running. Listing boxes does not probe NFS, so a box's `storage.status` stays `unknown` until something probes. `unreachable` is what the box list and the box page call out; `ok` and `unknown` do not. Starting, restarting or creating a box returns `503` `docker_unavailable` (message key `storage_unreachable`) when a non-local pool is not `reachable`, including when the base template image is missing, and when the local engine probe itself fails. The reconciler logs `reconcile.start_failed` and continues, so one unreachable pool does not stop the process. Free space under 5 GiB or under 10% is `lowSpace`. There is no per-volume quota.
 
 Mounting a volume needs `volume:attach` on that volume. A read-write mount also needs `volume:write`, and so does creating a volume, including the workspace, home and cache that a new box creates for itself. Changing the pool list needs `pool:admin`, and `volume:write` does not stand in for it. Each check is a separate call to the authorize hook, with the volume as the resource where there is one. Agent tokens are checked against the volume records: a token mounts only the volumes its grant covers, and a pool root is refused to every principal, including the owner ([#13](https://github.com/ArnoChenFx/minibox/issues/13)). Capabilities (`shareable`, `snapshots`, `quota`, `clone`, `crossHost`) are computed from the backend: every pool is shareable, only NFS is `crossHost`, and the rest are false.
 
@@ -495,7 +517,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ## Checkpoints
 
-A checkpoint is a copy of a box's data, kept in a restic repository. A new box can be forked from it, or the box can be rolled back to it. Unlike a snapshot, which keeps only the container's writable layer, a checkpoint includes `/workspace`. Issue [#11](https://github.com/ArnoChenFx/minibox/issues/11) covers them. Take, fork, rollback and retention work over the REST API, and the Checkpoints tab of a box in the console shows them. The MCP tools do not expose them yet.
+A checkpoint is a copy of a box's data, kept in a restic repository. A new box can be forked from it, or the box can be rolled back to it. Unlike a template, which keeps only the container's system layer, a checkpoint includes `/workspace`. Issue [#11](https://github.com/ArnoChenFx/minibox/issues/11) covers them. Take, fork, rollback and retention work over the REST API, and the Checkpoints tab of a box in the console shows them. The MCP tools do not expose them yet.
 
 **What a checkpoint holds.** The box's owned volumes: workspace and home. The cache and the shared tools volume are never included. A shared volume the box mounts is included only when the request names it in `include.volumes`. With `include.system: true` the writable layer is committed as an image, so a fork starts from the box's system state; otherwise a fork starts from the box's template. Each checkpoint also records the box's template, CPUs, memory, profile and spec revision.
 
@@ -588,6 +610,29 @@ Limits in this part:
 
 The MCP tools `list_hosts`, `test_host`, `add_host` and `remove_host` do the same work. They are in the `meta` toolset, which is on by default. The CLI has no host commands yet.
 
+## Environment variables and secrets
+
+A box's environment is a list of entries. A create sets it, and a rebuild replaces it. An entry is either a plain value, `{ "name", "value" }`, which the box spec stores, or a secret reference, `{ "name", "secretRef" }`, which names a host secret. A container gets a secret's value when it is created or rebuilt. The spec keeps only the name.
+
+| Entry | Stored in | Shown by the API and the console |
+|---|---|---|
+| `{ "name", "value" }` | the box spec, `DATA_DIR/boxes/<id>.json` | the value. The console masks it until you reveal it |
+| `{ "name", "secretRef" }` | `DATA_DIR/secrets/env/<name>` (mode `600`) | the name only, as `🔒 secret: NAME` in the console. The value is never returned |
+
+Set a box's variables in the create dialog, under Environment variables (collapsed by default), or on the box's Overview tab. Saving on the Overview tab rebuilds the box after the usual preview and confirmation, so its writable layer and running processes are lost. The rebuild dialog edits the same rows.
+
+The owner sets secrets in Settings, under Secrets. Adding or replacing a secret sends the value once, from a password field, and no screen shows it again. The REST routes are listed under [Secrets](#secrets). No CLI or MCP tool reads or writes secrets.
+
+- **A missing secret fails the request.** A create, a rebuild, or an update that rebuilds the box refuses a secret reference to an unset secret with `400` (`env_secret_missing`), before anything changes. No box starts with an empty value. Starting or restarting a stopped box whose stored env names an unset secret returns `409` with the same key.
+- **A new value takes effect on the next rebuild or create.** Replacing a secret does not change a running container, and starting a box does not read secrets again. The rebuild preview lists each secret whose value differs from the one the container has.
+- **Deleting a secret in use is refused.** `DELETE /api/secrets/:name` returns `409` and the names of the boxes that refer to it. The console asks first, names those boxes, and offers a forced delete. After a forced delete, those boxes cannot be rebuilt or started until the secret is set again.
+- **Snapshots, templates and system images refuse secrets.** `docker commit` keeps a container's environment, so a snapshot, a saved template (Save as template, `POST /api/boxes/:id/template`), or a checkpoint with a system image, of a box that holds a secret reference would store its value. All three return `409` (`secret_in_image`) before any task starts. A checkpoint without a system image is still taken. Plain values are not baked in either: each commit writes an empty value for every name the box sets, and keeps the image's own value where the image defines that name.
+- **Who may reference a secret.** A `secretRef` in a create or a rebuild needs the `secret:use` scope, and so does a volume attach or detach on a box that holds one. Only the `admin` preset has it, so an agent token cannot mount a host secret into a box it controls. Without it the request is `403` (`secret_reference_forbidden`). An in-place update that does not rebuild the box needs nothing extra. The owner key holds every scope.
+- **Who can read a value.** A process in a box can read its environment, and so can `exec`, `box:ssh` or a terminal into that box. Give those scopes only for boxes that should hold the secret.
+- **Nothing else carries a secret's value.** Live frames, events, the audit log, container labels and the server log name a secret, never its value. A plain value appears only where the box spec does: box details, spec revisions and rebuild previews.
+- **Limits.** A box takes at most 64 entries. A variable name is a letter or an underscore followed by letters, digits or underscores, up to 128 characters. A plain value is up to 8192 characters with no control characters. A secret value is 1 to 8192 characters with no control characters.
+- **Docker's own error text is not scrubbed.** A message the engine returns is passed on as the engine wrote it.
+
 ## API reference
 
 All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer` header. The bearer secret is the access key, or an agent API token (`mbx_…`) from Settings or `POST /api/tokens`. Writes must send `Content-Type: application/json`, except requests that have neither a body nor a `Content-Type` (any other declared type gets `415`), and browser requests from other websites get `403`.
@@ -600,7 +645,7 @@ Errors use a consistent shape and the matching HTTP status:
 { "error": { "code": "validation_failed", "message": "…", "hint": "…", "retryable": false, "details": { "field": "cpus" } } }
 ```
 
-`retryable` is always present. It is true for 408, 429 and 5xx unless a handler sets it. `hint` is present when a next step would help, with `hintKey` for the UI. Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `confirmation_required` (409), `precondition_failed` (412), `unsupported_media_type` (415), `insufficient_capacity` (422), `precondition_required` (428), `too_many_requests` (429), `docker_error` (502), `docker_unavailable` (503). Error messages are currently in English, with a `key` the UI translates.
+`retryable` is always present. It is true for 408, 429 and 5xx unless a handler sets it. `hint` is present when a next step would help, with `hintKey` for the UI. Common codes: `validation_failed` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `confirmation_required` (409), `precondition_failed` (412), `unsupported_media_type` (415), `insufficient_capacity` (422), `precondition_required` (428), `too_many_requests` (429), `docker_error` (502), `bad_gateway` (502, a storage server or upstream refused the request), `docker_unavailable` (503). Error messages are currently in English, with a `key` the UI translates.
 
 ### Auth & system
 
@@ -631,7 +676,7 @@ Errors use a consistent shape and the matching HTTP status:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | List boxes from the host's cache, which the engine's events keep current. While the cache is current the list makes no engine call. Running boxes carry their latest sample unless `stats=false`. The list covers every host; `?host=<id>` narrows it to one |
-| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "host"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults. `idleTimeoutSec` of `0` disables idle sleep for this box; `null`/omitted inherits `BOX_IDLE_TIMEOUT_SEC`. `ttlSec` is an absolute lifetime from create time. `host` picks the host the box runs on, `local` by default (see [Multiple hosts](#multiple-hosts)) |
+| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "host"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults. `idleTimeoutSec` of `0` disables idle sleep for this box; `null`/omitted inherits `BOX_IDLE_TIMEOUT_SEC`. `ttlSec` is an absolute lifetime from create time. `host` picks the host the box runs on, `local` by default (see [Multiple hosts](#multiple-hosts)). `env` is a list of up to 64 `{ "name", "value" }` or `{ "name", "secretRef" }` entries; see [Environment variables and secrets](#environment-variables-and-secrets) |
 | `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. `template`, `mounts`, `env`, `network` and `profile` are not applied in place: a difference returns `409 confirmation_required` with a preview and leaves the in-place fields unchanged |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete the box. `deleteVolume=true` also deletes owned volumes that no other box mounts. Independent volumes stay |
@@ -645,7 +690,7 @@ Errors use a consistent shape and the matching HTTP status:
 | `POST` | `/api/boxes/:id/exec` | Run a command. Body `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`. Send exactly one of `argv` (no shell) or `cmd` (`/bin/sh -c`). Defaults: user `dev`, directory `/workspace`, timeout 30s. A foreground call takes at most 55s, and `background: true` takes up to 3600s. A stopped box is started, which changes its revision. The result includes `status` (`running`, `exited` or `killed`), `exitCode`, `stdout`, `stderr`, `truncated`, `durationMs`, `timedOut` and `woke`. A non-zero exit is the program's status. Inline output keeps about 16 KiB from each end of each stream; `outputRef` names the saved window. Under the `strict` profile only `dev` or `1000` may be the user; other profiles may use `root`, and those runs are marked `privileged` in the audit. The box needs `/bin/sh`, `cat`, `rm` and `sleep` |
 | `GET` | `/api/execs/:execId?waitMs=` | Read an exec. `waitMs` long-polls while it is running, up to 25000 ms. `status` is `running`, `exited` or `killed` |
 | `GET` | `/api/execs/:execId/output` | Saved stdout and stderr (about 64 KiB from each end). Available after the in-memory record is gone, until retention deletes the file |
-| `POST` | `/api/execs/:execId/kill` | Kill a running exec and its process tree, from inside the box. The kill runs as `root` in the standard and relaxed profiles, and as the exec's user in the strict profile. An exec that has already exited returns `409`. If a process survives, or the exec does not end, the call returns `502` and the exec stays `running`, so the kill can be retried |
+| `POST` | `/api/execs/:execId/kill` | Kill a running exec and its process tree, from inside the box. The kill runs as `root` in the standard and relaxed profiles, and as the exec's user in the strict profile. An exec that has already exited returns `409`. The kill starts in `/`, not in the exec's directory, so a hung volume there cannot block it. If a process survives, the exec does not end, or the kill does not start within 5 seconds, the call returns `502` and the exec stays `running`, so the kill can be retried |
 
 `:id` is a container id, a container name (`minibox-<name>`, or `minibox-<box id>` after a mount change), a stable box id (`bx_…`), or the box name. Updates that change a box require `If-Match` set to its current revision (a bare number, a quoted tag, or a weak tag). A missing header is `428 precondition_required`; a stale revision is `412 precondition_failed`. Limits: CPU 0.1–64, memory 128–262144 MB, process limit 1–1000000, and a single box may not exceed the host's cores or total memory. Names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`.
 
@@ -665,7 +710,17 @@ Errors use a consistent shape and the matching HTTP status:
 | `GET` | `/api/pools?refresh=true` | Pools, role defaults and reachability. An unreachable pool is reported; the list itself does not fail |
 | `PUT` | `/api/pools` | Replace `{ "pools", "roles"?, "confirm"? }`. The local pool is restored if omitted. Without `"confirm": true` it is `409 confirmation_required` with the pools that would be added and removed, and nothing is saved. Needs `pool:admin` |
 
-A rebuild keeps mounted volumes, the stable id, the box name and the last 20 spec revisions. It drops the writable layer outside volumes, running processes (including tmux) and the container IP. Claim does not rename; the rename to `<LABEL_PREFIX>-<id>` happens on rebuild (decision D6). `secretRef` is stored and not injected. Stage 1 still creates one workspace volume; adding or removing a mount is a rebuild, not a volume pool. A checkpoint before rebuild is not part of this step. The public container id changes; the stable id and the box name do not. Restart policy stays `no`.
+A rebuild keeps mounted volumes, the stable id, the box name and the last 20 spec revisions. It drops the writable layer outside volumes, running processes (including tmux) and the container IP. Claim does not rename; the rename to `<LABEL_PREFIX>-<id>` happens on rebuild (decision D6). A rebuild reads each `secretRef` again, so a secret whose value changed takes effect here, not on start. A missing secret is refused with `400` before anything changes. Stage 1 still creates one workspace volume; adding or removing a mount is a rebuild, not a volume pool. A checkpoint before rebuild is not part of this step. The public container id changes; the stable id and the box name do not. Restart policy stays `no`.
+
+### Secrets
+
+Only the owner (the access key or a signed-in session) can call these routes; no agent token can. A secret's name is letters, digits, dots, underscores and hyphens, starting with a letter or digit, up to 128 characters. Values are never returned. See [Environment variables and secrets](#environment-variables-and-secrets).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/secrets` | Secrets as `{ "name", "createdAt", "updatedAt", "boxes" }`, where `boxes` lists the boxes whose env refers to the secret. The value is not included |
+| `PUT` | `/api/secrets/:name` | Create or replace a secret. Body `{ "value" }`: 1 to 8192 characters with no control characters. Returns `{ "secret", "created" }`. A new value reaches a box on its next rebuild or create |
+| `DELETE` | `/api/secrets/:name` | Delete a secret. While a box names it, the call is `409 conflict` with `details.boxes`. `?force=true` deletes it anyway; those boxes cannot be rebuilt or started until the secret is set again |
 
 ### Sessions
 
@@ -688,18 +743,32 @@ The terminal socket sends output as binary frames and `state` or `error` frames 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/ssh/host-key` | The gateway's host key: `algorithm` (`ssh-ed25519`), `fingerprint` and `publicKey`. A token needs `box:ssh` |
-| `GET` | `/api/ssh/:box` | With `Upgrade: websocket`, carries one SSH connection to the box, by name or id. Without it, runs the same checks and returns `204`, or the refusal as JSON. Bearer credentials only |
+| `GET` | `/api/ssh/:box` | With `Upgrade: websocket`, carries one SSH connection to the box, by name or id. Without it, runs the same checks and returns `204`, or the refusal as JSON, with `x-minibox-version` naming this server's version. Bearer credentials only |
+
+### CLI downloads
+
+Public and read-only: no key is needed, and the binaries hold no secrets. Each client may make 120 requests a minute to these routes, then gets `429` with `retry-after`.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/cli/install.sh` | The installer for macOS and Linux, with this server's address written in. It verifies the binary and needs no sudo |
+| `GET` | `/cli/install.ps1` | The installer for Windows PowerShell, the same steps |
+| `GET` | `/cli/checksums.txt` | `sha256sum` lines for the binaries built so far, which the installers check against |
+| `GET` | `/cli/minibox-<os>-<arch>` | One CLI binary, as an attachment: `minibox-linux-x64`, `minibox-linux-arm64`, `minibox-darwin-x64`, `minibox-darwin-arm64` or `minibox-windows-x64.exe`. Built on the first request for this version and cached under `DATA_DIR/cli`. A name not in this list gets `404`. A build that fails gets `503` with the reason and a fallback |
 
 ### Snapshots & templates
+
+A template holds a box's system environment, not its data. `POST /api/boxes/:id/template` saves one: it commits the box's container under the box's power lock, promotes the commit to a template, and removes the intermediate snapshot. The template records the box it came from. Snapshots are the low-level path behind it, and their endpoints stay for scripts.
 
 `:ref` is an image reference (e.g. `minibox-snap:demo-20261020-154259`) and must be URL-encoded.
 
 | Method | Path | Description |
 |---|---|---|
+| `POST` | `/api/boxes/:id/template` | Save the box as a template `{ "name", "description"? }`. Returns `202` `{ "taskId" }`; the result is the new template. A taken name returns `409` |
 | `GET` | `/api/snapshots` | List snapshots |
 | `DELETE` | `/api/snapshots/:ref` | Delete a snapshot |
 | `POST` | `/api/snapshots/:ref/boxes` | Create a box from a snapshot `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
-| `POST` | `/api/snapshots/:ref/promote` | Promote to a template `{ "name", "description"? }` |
+| `POST` | `/api/snapshots/:ref/promote` | Promote to a template `{ "name", "description"? }`. A taken name returns `409` |
 | `GET` | `/api/templates` | List templates |
 | `POST` | `/api/templates/base/build` | Start a build of the bundled base template. Returns `202` `{ "taskId" }` |
 | `DELETE` | `/api/templates/:ref` | Delete a template |
@@ -726,7 +795,7 @@ Only images carrying MiniBox labels can be deleted through the API.
 
 ### Tasks
 
-Template builds and snapshot commits run as tasks. The POST returns `202` and `{ "taskId" }` immediately, then the work continues on the server. One template build runs at a time, and one snapshot commit runs at a time per box; a second request gets `409` with `details.taskId` of the one already running.
+Template builds, template saves and snapshot commits run as tasks. The POST returns `202` and `{ "taskId" }` immediately, then the work continues on the server. One template build runs at a time, one save runs at a time per box, and one snapshot commit runs at a time per box; a second request of the same kind gets `409` with `details.taskId` of the one already running.
 
 | Method | Path | Description |
 |---|---|---|
@@ -792,11 +861,11 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 # { "mcpServers": { "minibox": { "url": "http://127.0.0.1:3920/mcp",
 #   "headers": { "Authorization": "Bearer mbx_…" } } } }
 
-# Or from the CLI (bun run build:cli writes dist/minibox):
-MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
+# Or from the CLI (installed from the server, see SSH access):
+MINIBOX_ACCESS_KEY=$KEY minibox exec agent-dev -- npm test
 ```
 
-A foreground exec may use `timeoutSec` up to 55 seconds, because the server closes an idle connection after 60. Longer commands use `background: true` with a `timeoutSec` up to 3600, or `minibox exec --background --timeout SEC`, and are read with `GET /api/execs/:execId` (`waitMs` up to 25000) or `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and the CLI exits 124. If the stop fails, the exec keeps running with `status: running`. The stop is retried after a growing delay (1 s, then 2 s, 4 s, up to 30 s), and `POST /api/execs/:execId/kill` can retry at any time. Pass secrets in `env`, not in `cmd` or `argv`: the audit log records the command and argv (redacted as described under Events) and only the names of the `env` variables.
+A foreground exec may use `timeoutSec` up to 55 seconds, because the server closes an idle connection after 60. Longer commands use `background: true` with a `timeoutSec` up to 3600, or `minibox exec --background --timeout SEC`, and are read with `GET /api/execs/:execId` (`waitMs` up to 25000) or `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and the CLI exits 124. A foreground call waits at most 2 seconds for the stop: if it is still running then, the call returns with `status: running` and `timedOut: true`, and the stop carries on in the background. If the stop fails, the exec also keeps running with `status: running`. The stop is retried after a growing delay (1 s, then 2 s, 4 s, up to 30 s), and `POST /api/execs/:execId/kill` can retry at any time. Pass secrets in `env`, not in `cmd` or `argv`: the audit log records the command and argv (redacted as described under Events) and only the names of the `env` variables.
 
 `exec` can read and write every volume mounted on that box. Finer `files:*` scopes only matter for a token that does not have `exec`. Volume file routes (`/api/volumes/:id/files…`) and MCP `read_file` / `write_file` / `list_files` / `copy_files` use a helper container plus the Docker archive API, so they work when the box is stopped. Mounting a volume needs `volume:attach` on that volume, and a read-write mount or a new volume also needs `volume:write`. Changing storage pools needs `pool:admin`. The owner key holds every scope. An agent token holds only the scopes it was created with ([#13](https://github.com/ArnoChenFx/minibox/issues/13)).
 
@@ -806,9 +875,9 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 > **Warning: the main access key grants full owner access over `/mcp`.** A client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Give an agent an agent token ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) rather than the key, and keep the key out of prompts, logs and repositories.
 
-The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
+The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
 
-Build the CLI with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). It talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token.
+Install the CLI from the server with the one-line installer in [SSH access](#ssh-access), or build it from a checkout with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). `minibox --version` prints the version the binary was built from, and `minibox <command> --help` prints the help and exits 0. The CLI talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token. When `ssh-proxy` finds the server newer than the CLI, it prints one line that says how to update.
 
 ```bash
 minibox box ls
@@ -826,6 +895,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision, unless the box's TTL has passed: then exec fails with box_ttl_expired. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
 - Pass secrets in env, not in argv or cmd. The audit log keeps commands and argv, but never env values.
+- To give a box a host secret, pass `env` with `{ "name", "secretRef" }` entries to `create_box`. The call takes the secret's name, never its value. A token without `secret:use` is refused, and a secret that is not set fails the create.
 - The result includes status, exitCode, stdout, stderr, truncated and durationMs. A non-zero exit code is the program's status.
 - Inline output keeps about 16 KiB from the start and 16 KiB from the end of each stream. When truncated is true, outputRef names the rest: GET /api/execs/{execId}/output.
 - A foreground exec may set timeoutSec up to 55. For a longer command, use exec with background true and a larger timeoutSec (up to 3600), then exec_get with waitMs (max 25000). exec_kill stops the process tree.
@@ -835,7 +905,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - A session started through MCP has origin agent. A person can take it over in the console. While they hold it, session_send fails with taken_over and retryable true: wait a little, read the session with session_read, and send again. session_read still works during a takeover.
 - session_read returns lines and a cursor. Pass the newest cursor as since to read only what is new. reset true means the screen was redrawn, and lines is the current window.
 - session_send takes keys (tmux names such as Enter, Tab, Escape or C-c) or text, but not both. The audit log keeps the counts, never the input.
-- The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool and reconcile_tools. Installs write to the shared tools volume and update BoxSpec.tools.
+- The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool, reconcile_tools and save_template. Installs write to the shared tools volume and update BoxSpec.tools. save_template saves a box as a template: it is long-running, returns a task id, and leaves out `/workspace` and home volumes. list_custom_tools, put_custom_tool and delete_custom_tool manage the custom catalog in DATA_DIR/tools.d. Only the owner may use them. delete_custom_tool removes the file and does not uninstall the tool.
 - The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
 - The network toolset (`/mcp?toolsets=network`) holds list_ports and expose_port for path-mode previews under `/box/<name>/<port>/`.
 - read_file, write_file, list_files and copy_files act on volumes (not boxes). They work when no box is running, via a helper container and the Docker archive API. A call keeps the boxes that mount the volume awake while it runs, and it never starts a stopped box. Paths are jailed inside the volume. write_file stamps uid/gid 1000 (dev). exec already implies volume RW on mounts of boxes the token may use; files:* only matters without exec.
@@ -850,6 +920,7 @@ minibox/
 │   ├── app.ts               # Composition root: config, Runtime, host registry, monitor, activity log
 │   ├── config.ts            # Env / .env loading, access key precedence
 │   ├── data-dir.ts          # DATA_DIR layout and secret files (600)
+│   ├── secrets/             # Host secret store (600 files) and the container env built from it
 │   ├── auth.ts              # Caller checks (bearer or session), session cookie, login throttle
 │   ├── sessions.ts          # Browser sessions: token hashes, expiry, sessions.json
 │   ├── tokens/              # Agent API tokens: scopes, presets, quotas, authorize hook
@@ -864,12 +935,13 @@ minibox/
 │   ├── services/            # Business logic on Runtime: boxes / exec / volumes / rebuild / images / snapshots / templates / reconcile / terminals
 │   ├── tmux/                # tmux command lines, session names and parsing of tmux output
 │   ├── mcp/                 # Streamable HTTP MCP at /mcp
-│   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy
+│   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy, ssh-config and ssh-proxy, --version
+│   ├── cli-dist/            # Serves the CLI: target whitelist, bun build runner, single-flight cache, installer scripts
 │   ├── host/                # Host registry, HostManager (add, test, remove), endpoints and links (unix, TLS, SSH), procfs parsers, HostSampler (box cache and samples), HostMonitor
 │   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, live frames, scope hook
 │   ├── tasks/               # Task store (SQLite), manager, progress stream on the event bus
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
-│   ├── routes/              # Router, route groups (auth / system / images) and the REST adapter for operations
+│   ├── routes/              # Router, route groups (auth / system / images / cli) and the REST adapter for operations
 │   ├── ws/terminal.ts       # WebSocket terminal: attach, control frames, heartbeat, backpressure
 │   ├── ssh/                 # SSH over WebSocket: host key, policy, one ssh2 server per connection
 │   └── lib/                 # errors / http / logger / bus (in-process event bus) / validation
@@ -936,7 +1008,8 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **The container runs as root**, because it needs the Docker socket, which is root-equivalent. To narrow that, put a socket proxy that forwards only the Docker API calls MiniBox uses in front of the socket, and point `DOCKER_SOCKET` at the proxy's Unix socket. Or run MiniBox against a rootless Docker or Podman socket.
 - **The access key is the only guard.** There are no user accounts, and a leaked key means full access. The key is compared in constant time. Login limiting only refuses wrong keys: a correct key always signs in, even while wrong keys are refused. Wrong keys sent as `Authorization: Bearer` to `/api/`, `/mcp` or the terminal count toward the same limit. Wrong keys are refused after 10 failures per client address (IPv6 addresses per /64) or 50 from all addresses together, within 5 minutes. The limiter does not stop guessing, because every key is still checked, so the key's length and randomness are what matter: use at least 20 random characters, such as `openssl rand -hex 32` (the generated key is 64 hex characters). At startup, a key shorter than 20 characters, or obviously low-entropy (one character class under 24 characters, or one repeated character), logs an `auth.weak_key` warning. MiniBox still starts, so existing deployments keep working. To rotate it, change `ACCESS_KEY` in `.env`, or delete `DATA_DIR/access_key` to get a newly generated key, then restart; every browser session ends when MiniBox starts with the new key.
 - **Sessions are revocable.** A sign-in does not put the key in the browser. The cookie holds a random 32-byte session token, and `DATA_DIR/sessions.json` keeps only its SHA-256 hash, so a copy of that file cannot be replayed as a cookie. The file also holds a scrypt check of the access key, so the key's strength still matters. Sessions end on logout, when revoked in Settings, at their expiry (`SESSION_TTL_DAYS`, 30 days by default), or when the access key changes. An open terminal and an open event stream close when their session ends.
-- **Agent API tokens are separate from the access key.** Create one in Settings or with `POST /api/tokens`. The plaintext (`mbx_…`) is shown once; `DATA_DIR/tokens.json` keeps only its SHA-256 hash. A token carries scopes (`box:read`, `box:write`, `box:delete`, `exec`, `box:ssh`, `files:read`, `files:write`, `port:expose`, `checkpoint:create`, `checkpoint:restore`, `volume:read`, `volume:write`, `volume:attach`, `tool:install`), a box selector (`created-by-me` by default, or ids, tags, or `*`), an explicit volume list, allowed hosts, and optional quotas. Presets are `readonly`, `operator`, `sandboxed-agent` and `admin`. `sandboxed-agent` starts at 5 boxes, 8 CPU cores and 16 GB in total, a 4 hour TTL, 60 requests per minute and 20 manual checkpoints. Revoke takes effect immediately, and can also delete the boxes that token created. `exec` and `box:ssh` can read and write every mount of a box the token may use. Mounting a volume that already exists requires `volume:attach` on that volume. Rotating `ACCESS_KEY` ends browser sessions and does not revoke API tokens. No preset can mint tokens: that stays with the access key or a signed-in session. A box whose TTL elapses is stopped, not deleted ([#12](https://github.com/ArnoChenFx/minibox/issues/12)). The same token is a bearer on REST and on `/mcp`, where `tools/list` and every call are held to its scopes. Revoking it also ends its MCP sessions, its terminals and its event and task streams, and deletes the boxes it created on every host when asked; a box that cannot be deleted is listed in `failedBoxes`. A read-only token limited to boxes it created sees nothing until you grant `*` or specific ids, because it cannot create a box.
+- **Agent API tokens are separate from the access key.** Create one in Settings or with `POST /api/tokens`. The plaintext (`mbx_…`) is shown once; `DATA_DIR/tokens.json` keeps only its SHA-256 hash. A token carries scopes (`box:read`, `box:write`, `box:delete`, `exec`, `box:ssh`, `files:read`, `files:write`, `port:expose`, `checkpoint:create`, `checkpoint:restore`, `volume:read`, `volume:write`, `volume:attach`, `tool:install`, `secret:use`), a box selector (`created-by-me` by default, or ids, tags, or `*`), an explicit volume list, allowed hosts, and optional quotas. Presets are `readonly`, `operator`, `sandboxed-agent` and `admin`. `sandboxed-agent` starts at 5 boxes, 8 CPU cores and 16 GB in total, a 4 hour TTL, 60 requests per minute and 20 manual checkpoints. Revoke takes effect immediately, and can also delete the boxes that token created. `exec` and `box:ssh` can read and write every mount of a box the token may use. Mounting a volume that already exists requires `volume:attach` on that volume. Naming a host secret in a box requires `secret:use`, which only the `admin` preset holds. Rotating `ACCESS_KEY` ends browser sessions and does not revoke API tokens. No preset can mint tokens: that stays with the access key or a signed-in session. A box whose TTL elapses is stopped, not deleted ([#12](https://github.com/ArnoChenFx/minibox/issues/12)). The same token is a bearer on REST and on `/mcp`, where `tools/list` and every call are held to its scopes. Revoking it also ends its MCP sessions, its terminals and its event and task streams, and deletes the boxes it created on every host when asked; a box that cannot be deleted is listed in `failedBoxes`. A read-only token limited to boxes it created sees nothing until you grant `*` or specific ids, because it cannot create a box.
+- **Host secrets stay on the host.** A secret is written once, to `DATA_DIR/secrets/env/<name>` (mode `600`), and no API returns its value. It reaches a box only as that container's environment, so the box's processes and anyone with `exec`, `box:ssh` or a terminal into it can read it. Only the owner sets or deletes secrets, and only a token with `secret:use` can reference one. See [Environment variables and secrets](#environment-variables-and-secrets).
 - **Cross-site requests are refused.** The terminal WebSocket and every write (`POST`, `PATCH`, `DELETE`) under `/api/` must come from MiniBox's own origin, or from an origin listed in `ALLOWED_ORIGINS`. Requests without an `Origin` header (scripts using `Authorization: Bearer`) are accepted. Writes must declare `Content-Type: application/json` unless they carry neither a body nor a `Content-Type`, which also blocks HTML form posts. The session cookie is `SameSite=Strict`, so a link from another website may ask you to sign in once more.
 - **Strict Content-Security-Policy.** Scripts load only from MiniBox itself (`script-src 'self'`), the pages have no inline scripts, and MiniBox can't be framed (`frame-ancestors 'none'`). Requests that arrive over HTTPS (directly, with an `https://` Origin, or through a proxy when `TRUST_PROXY=true`) also get `Strict-Transport-Security` for one year, without `includeSubDomains`.
 - **Bind to `127.0.0.1`** (the default). Don't set `HOST=0.0.0.0` on a machine with a public IP.
@@ -945,7 +1018,8 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **Container isolation, not a security sandbox.** Boxes share the host kernel. They are fine for your own agents, but **not for untrusted third-party code** — use gVisor or a microVM-based sandbox for that. Don't mount the Docker socket or sensitive host paths into a box.
 - **Boxes have passwordless `sudo` by default.** Under the default `standard` profile the `dev` user can become root inside its box, and root there can change anything in the box and in its workspace volume. `standard` also drops most Linux capabilities, so a box is not a privileged container. The `strict` profile stops escalation; see [Security profiles](#security-profiles).
 - **`/mcp` accepts the main access key, which grants full owner access.** An agent that connects with the key can run `exec` as root in a box that is not `strict`, delete boxes and rebuild them. Give agents an agent token instead ([#13](https://github.com/ArnoChenFx/minibox/issues/13)): its `tools/list` and every call are held to its scopes. See [Agents](#agents).
-- **Snapshots don't include `/workspace`.** `docker commit` skips mounted volumes; keep code in git or back up the volume separately. Checkpoints do include it, see [Checkpoints](#checkpoints).
+- **Templates don't include `/workspace` or home data.** A template keeps the container's system layer (apt and sudo installs, system file changes), because `docker commit` skips mounted volumes. Keep code in git or back up the volume separately. Checkpoints do include `/workspace`, see [Checkpoints](#checkpoints).
+- **Older snapshots and checkpoints may hold environment values.** `docker commit` copies a container's environment into its image. Images made before MiniBox blanked those values still carry them, so delete them if the values are sensitive.
 - `scripts/restart.sh` is a single-user sandbox convenience. It may start `dockerd` with `sudo`, then gives the Docker socket to your primary group with mode `660`, so only members of that group (normally just you) and root can use it. Docker access is still root-equivalent, so review the script before using it elsewhere.
 
 ### Security profiles
@@ -1021,7 +1095,6 @@ Not on the main path. Each needs a scope review before work starts.
 
 - [#28](https://github.com/ArnoChenFx/minibox/issues/28) MiniBox Agent framework: pairing, mTLS and an outbound channel
 - [#29](https://github.com/ArnoChenFx/minibox/issues/29) Storage-node role for NAS and Linux storage servers: directories, quotas, snapshots
-- Host-side secret injection: keep API keys on the host instead of in box environment variables (no tracking issue yet)
 
 ## License
 

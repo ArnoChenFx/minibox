@@ -6,6 +6,7 @@ import { CheckpointStore } from "../checkpoints/store";
 import type { Config } from "../config";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import { type Runtime, RuntimeError } from "../runtime";
+import { SecretStore } from "../secrets/store";
 import { ActivityPulse } from "../services/activity-pulse";
 import { BoxPower } from "../services/power";
 import { SpecStore } from "../specs/store";
@@ -65,6 +66,8 @@ export interface HostCtx {
   specs: SpecStore;
   /** Control-plane volume and pool store. One store is shared by every host; files live under `DATA_DIR`. */
   volumes: VolumeStore;
+  /** Secrets that box environment variables reference. One store is shared by every host; files live under `DATA_DIR/secrets/env`. */
+  secrets: SecretStore;
   /** In-memory activity heartbeats for idle sleep (#12). Shared across hosts of one control plane. */
   pulse: ActivityPulse;
   /** Checkpoint records. One store is shared by every host, files live under `DATA_DIR/checkpoints`. */
@@ -85,6 +88,7 @@ export interface HostCtx {
 export interface SharedStores {
   readonly specs: SpecStore;
   readonly volumes: VolumeStore;
+  readonly secrets: SecretStore;
   readonly live: LiveSink;
   readonly pulse: ActivityPulse;
   readonly checkpoints: CheckpointStore;
@@ -107,6 +111,8 @@ export interface LocalHostOptions {
   readonly checkpoints?: CheckpointStore;
   /** Defaults to the restic engine. */
   readonly checkpointEngine?: SnapshotEngine;
+  /** Defaults to a store under `DATA_DIR/secrets/env`. */
+  readonly secrets?: SecretStore;
   /** Defaults to a control plane with one host. The app passes the registry's count. */
   readonly multiHost?: () => boolean;
 }
@@ -144,6 +150,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
     ),
     specs: shared.specs,
     volumes: shared.volumes,
+    secrets: shared.secrets,
     pulse: shared.pulse,
     checkpoints: shared.checkpoints,
     checkpointEngine: shared.checkpointEngine,
@@ -188,6 +195,7 @@ export function createLocalHost(
     {
       specs,
       volumes,
+      secrets: options.secrets ?? new SecretStore(cfg.dataDir),
       live,
       pulse,
       checkpoints: options.checkpoints ?? new CheckpointStore(cfg.dataDir),

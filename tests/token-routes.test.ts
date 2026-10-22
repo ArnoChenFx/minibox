@@ -23,15 +23,19 @@ const SUBJECTS: readonly { name: string; input: TokenCreateInput }[] = [
 const OWNER_ONLY_ROUTES = [
   "DELETE /api/auth/sessions/:id",
   "DELETE /api/hosts/:id",
+  "DELETE /api/secrets/:id",
   "DELETE /api/tokens/:id",
+  "DELETE /api/tools/custom/:id",
   "GET /api/activity",
   "GET /api/auth/sessions",
   "GET /api/checkpoints/usage",
   "GET /api/host/metrics",
   "GET /api/hosts",
   "GET /api/pools",
+  "GET /api/secrets",
   "GET /api/system",
   "GET /api/tokens",
+  "GET /api/tools/custom",
   "POST /api/auth/sessions/revoke-others",
   "POST /api/hosts",
   "POST /api/hosts/test",
@@ -39,6 +43,8 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/tasks/:id/cancel",
   "POST /api/tokens",
   "PUT /api/pools",
+  "PUT /api/secrets/:id",
+  "PUT /api/tools/custom/:id",
 ];
 
 /** The path a route was compiled from, read back from its pattern: `/api/boxes/:id`. */
@@ -180,11 +186,17 @@ describe("fail-closed authorization", () => {
       "host.test",
       "pool.list",
       "pool.replace",
+      "secret.delete",
+      "secret.list",
+      "secret.set",
       "task.cancel",
       "template.build",
       "token.create",
       "token.list",
       "token.revoke",
+      "tool.custom.delete",
+      "tool.custom.list",
+      "tool.custom.put",
     ]);
     const unruled = OPERATIONS.filter((op) => requiredScopes(op.scope) !== "owner" && !hasAccessRule(op.name));
     expect(unruled.map((op) => op.name)).toEqual([]);

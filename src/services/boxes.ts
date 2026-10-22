@@ -19,6 +19,7 @@ import {
   type Runtime,
   RuntimeError,
 } from "../runtime";
+import { assertSecretsSet, assertSecretsStartable, containerEnv } from "../secrets/env";
 import { ClaimError, ensureSpec } from "../specs/claim";
 import { pushHistory } from "../specs/history";
 import { ttlExpired } from "../specs/lifetime";
@@ -52,6 +53,8 @@ export interface CreateBoxInput {
    * An empty list creates a box with no mounts.
    */
   mounts?: BoxMount[];
+  /** Env entries stored on the spec. A secret's value is read into the container when it is created. */
+  env?: BoxEnv[];
   /** `null` inherits the global default. `0` disables idle sleep for this box. */
   idleTimeoutSec?: number | null;
   /** Absolute lifetime from create time. `null` means no TTL. */
@@ -455,6 +458,8 @@ async function buildBox(
 ): Promise<string> {
   const { runtime, keys, prefix, security } = host;
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
+  const env = input.env ?? [];
+  assertSecretsSet(host.secrets, env);
 
   const image = input.image ?? host.baseTemplateTag;
   const profile = input.profile ?? security.defaultProfile;
@@ -497,6 +502,7 @@ async function buildBox(
       host,
       mounts.map((mount) => mount.volume),
     );
+    const containerVars = containerEnv(host.secrets, env);
     const created = await runtime
       .createContainer({
         name,
@@ -513,6 +519,7 @@ async function buildBox(
         init: true,
         network: security.network,
         hardening: hardeningFor(profile, security),
+        ...(containerVars.length > 0 ? { env: containerVars } : {}),
       })
       .catch((e: unknown) => {
         // The engine enforces unique container names, so a name it already holds is refused here, not by a racy list.
@@ -539,7 +546,7 @@ async function buildBox(
       resources,
       createdResources: resources,
       mounts,
-      env: [],
+      env,
       tools: desiredToolsOf(input.tools, loadCatalog(dirname(host.specs.dir()))),
       labels: {},
       lifecycle: {
@@ -612,9 +619,17 @@ export function refuseExpired(host: HostCtx, boxId: string): void {
   }
 }
 
+/** The env a box's spec names. Start and restart check it, because neither recreates the container. */
+function storedEnv(host: HostCtx, boxId: string): BoxEnv[] {
+  return host.specs.read(boxId)?.env ?? [];
+}
+
 /** Starts the box for a caller that already holds its power lock (see `locked`). */
 export async function startLocked(host: HostCtx, box: Box, options: StartOptions): Promise<Box> {
-  if (!box.running) refuseExpired(host, box.boxId);
+  if (!box.running) {
+    refuseExpired(host, box.boxId);
+    assertSecretsStartable(host.secrets, storedEnv(host, box.boxId));
+  }
   const previousReason = (host.specs.read(box.boxId)?.lifecycle.stopReason ?? null) as StopReason | null;
   await ensureRunningStorage(host, box);
   await attachToBoxNetwork(host, box);
@@ -693,6 +708,7 @@ export async function sleepBox(
 export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   return locked(host, ref, async (box) => {
     refuseExpired(host, box.boxId);
+    assertSecretsStartable(host.secrets, storedEnv(host, box.boxId));
     await ensureRunningStorage(host, box);
     await attachToBoxNetwork(host, box);
     await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });

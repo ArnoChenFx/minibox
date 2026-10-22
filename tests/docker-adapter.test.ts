@@ -28,6 +28,22 @@ const recorded: Recorded[] = [];
 /** Bodies of the container creates the adapter sent. */
 const createBodies: Record<string, unknown>[] = [];
 
+interface FakeExec {
+  id: string;
+  body: { Cmd?: string[]; WorkingDir?: string; User?: string };
+  running: boolean;
+  exitCode: number | null;
+  /** Closes the output of a command exec, which is how its end reaches the adapter. */
+  closeOutput?: () => void;
+}
+/** Execs the adapter created. A start of a kill is answered from here, and it ends the command the kill names. */
+const fakeExecs: FakeExec[] = [];
+/** How the engine answers the start of a kill: at once, or after `KILL_LATE_MS`, which is past the adapter's deadline. */
+let killStart: "normal" | "late" = "normal";
+/** Kill streams the adapter closed after their late answer. */
+let lateKillsClosed = 0;
+const KILL_LATE_MS = 5500;
+
 /** Each request as `METHOD path`, with a wait's condition after it, so the order of a helper's calls can be checked. */
 const trailOf = (requests: Recorded[]): string[] =>
   requests.map((r) => {
@@ -214,6 +230,71 @@ function eventsStream(): Response {
   return new Response(events.map((event) => `${JSON.stringify(event)}\n`).join(""));
 }
 
+/**
+ * The output of a command exec stays open until the test ends the command, as a running process does. An empty frame
+ * goes first, so the headers are sent at once, as the engine sends them.
+ */
+function commandOutput(exec: FakeExec): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(logFrame(1, ""));
+      exec.closeOutput = () => controller.close();
+    },
+    cancel() {
+      exec.closeOutput = undefined;
+    },
+  });
+  return new Response(body);
+}
+
+/** Ends a command exec as its process would: it stops running, and its output closes. */
+function endFakeExec(exec: FakeExec, exitCode: number): void {
+  if (!exec.running) return;
+  exec.running = false;
+  exec.exitCode = exitCode;
+  exec.closeOutput?.();
+}
+
+/** Answers a kill once the adapter has given up on it, and counts the close once the adapter drops the answer. */
+function lateKillOutput(req: Request): Response {
+  let closed = false;
+  const countClose = () => {
+    if (closed) return;
+    closed = true;
+    lateKillsClosed += 1;
+  };
+  req.signal.addEventListener("abort", countClose, { once: true });
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(logFrame(1, ""));
+    },
+    cancel: countClose,
+  });
+  return new Response(body);
+}
+
+/**
+ * Starts an exec the adapter created. A kill is answered at once, and ends the command with the same token, or after
+ * `KILL_LATE_MS` when `killStart` is "late".
+ */
+async function startFakeExec(req: Request, id: string): Promise<Response> {
+  const exec = fakeExecs.find((candidate) => candidate.id === id);
+  if (!exec) return json({ message: "No such exec" }, 404);
+  const cmd = exec.body.Cmd ?? [];
+  if (cmd[3] !== "minibox-kill") return commandOutput(exec);
+  if (killStart === "late") {
+    await Bun.sleep(KILL_LATE_MS);
+    return lateKillOutput(req);
+  }
+  const command = fakeExecs.find(
+    (candidate) => candidate.body.Cmd?.[3] === "minibox-exec" && candidate.body.Cmd[4] === cmd[4],
+  );
+  if (command) endFakeExec(command, 137);
+  exec.running = false;
+  exec.exitCode = 0;
+  return new Response(null, { status: 200 });
+}
+
 async function engine(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/v[\d.]+(?=\/)/, "");
@@ -262,6 +343,21 @@ async function engine(req: Request): Promise<Response> {
     if (stats[1] === "hung") return hang(req);
   }
   if (req.method === "POST" && path === "/build") return slowBuild(req);
+  const containerExec = /^\/containers\/([^/]+)\/exec$/.exec(path);
+  if (req.method === "POST" && containerExec) {
+    const body = (await req.json()) as FakeExec["body"];
+    const exec: FakeExec = { id: `fake-exec-${fakeExecs.length + 1}`, body, running: true, exitCode: null };
+    fakeExecs.push(exec);
+    return json({ Id: exec.id }, 201);
+  }
+  const execStart = /^\/exec\/([^/]+)\/start$/.exec(path);
+  if (req.method === "POST" && execStart) return startFakeExec(req, execStart[1] ?? "");
+  const execInspect = /^\/exec\/([^/]+)\/json$/.exec(path);
+  if (req.method === "GET" && execInspect) {
+    const exec = fakeExecs.find((candidate) => candidate.id === execInspect[1]);
+    if (!exec) return json({ message: "No such exec" }, 404);
+    return json({ ID: exec.id, Running: exec.running, ExitCode: exec.exitCode, Pid: exec.running ? 4242 : 0 });
+  }
   if (req.method === "POST" && path === "/containers/create") {
     if (url.searchParams.get("name") === "taken") {
       return json({ message: 'Conflict. The container name "/taken" is already in use' }, 409);
@@ -792,4 +888,39 @@ describe("Docker adapter volume root owner", () => {
       ),
     ).toMatchObject({ kind: "engine", detail: "No such image: missing:latest" });
   });
+});
+
+describe("Docker adapter exec kill", () => {
+  const COMMAND = { cmd: ["sleep", "60"], env: [], workingDir: "/workspace", user: "dev", tty: false };
+
+  test("a kill starts in / while the command it stops keeps its own working directory", async () => {
+    fakeExecs.length = 0;
+    const session = await runtime().startExec("ok", COMMAND);
+    await session.kill();
+
+    const command = fakeExecs.find((exec) => exec.body.Cmd?.[3] === "minibox-exec");
+    const kill = fakeExecs.find((exec) => exec.body.Cmd?.[3] === "minibox-kill");
+    expect(command?.body.WorkingDir).toBe("/workspace");
+    expect(kill).toMatchObject({ body: { WorkingDir: "/", User: "dev" }, running: false, exitCode: 0 });
+    expect(command).toMatchObject({ running: false, exitCode: 137 });
+  });
+
+  test("a kill that does not start within 5 seconds fails, and the answer that comes late is closed", async () => {
+    fakeExecs.length = 0;
+    const session = await runtime().startExec("ok", COMMAND);
+    const closes = lateKillsClosed;
+    killStart = "late";
+    try {
+      expect(await rejectionOf(session.kill())).toMatchObject({
+        kind: "engine",
+        detail: expect.stringContaining("did not start within 5 s"),
+      });
+      const closed = () => lateKillsClosed > closes;
+      for (let i = 0; i < 400 && !closed(); i++) await Bun.sleep(5);
+      expect(lateKillsClosed - closes).toBe(1);
+    } finally {
+      killStart = "normal";
+      for (const exec of fakeExecs) endFakeExec(exec, 137);
+    }
+  }, 15_000);
 });

@@ -331,6 +331,7 @@ describe("SSH channels", () => {
     const relay = runtime.execs.at(-1);
     expect(relay?.spec.cmd).toEqual(["socat", "-", "TCP4:127.0.0.1:8080"]);
     expect(relay?.spec.user).toBe("dev");
+    expect(relay?.spec.workingDir).toBe("/");
     const received = new Promise<string>((resolve) =>
       channel.once("data", (chunk: Buffer) => resolve(chunk.toString())),
     );

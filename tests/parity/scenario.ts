@@ -168,6 +168,8 @@ async function recordScenario(): Promise<Exchange[]> {
   const JSON_TYPE = "application/json";
   const post = (step: string, path: string, body: unknown) =>
     send(step, "POST", path, { body: JSON.stringify(body), contentType: JSON_TYPE });
+  const put = (step: string, path: string, body: unknown) =>
+    send(step, "PUT", path, { body: JSON.stringify(body), contentType: JSON_TYPE });
   const patch = (step: string, path: string, body: unknown, headers?: Record<string, string>) =>
     send(step, "PATCH", path, { body: JSON.stringify(body), contentType: JSON_TYPE, headers });
   const raw = (step: string, method: string, path: string, body: string) =>
@@ -609,6 +611,39 @@ async function recordScenario(): Promise<Exchange[]> {
     await waitTask(base, (await send("delete the checkpoint", "DELETE", `/api/checkpoints/${ckId}`)).json);
     await send("read the deleted checkpoint", "GET", `/api/checkpoints/${ckId}`);
 
+    await send("list secrets with none", "GET", "/api/secrets");
+    await raw("set a secret", "PUT", "/api/secrets/vault", JSON.stringify({ value: "parity-value" }));
+    await raw("set a secret with an empty value", "PUT", "/api/secrets/vault", JSON.stringify({ value: "" }));
+    await raw("set a secret with a bad name", "PUT", "/api/secrets/-bad", JSON.stringify({ value: "x" }));
+    await send("list secrets", "GET", "/api/secrets");
+    await send("delete a secret no box uses", "DELETE", "/api/secrets/vault");
+    await send("delete a missing secret", "DELETE", "/api/secrets/vault");
+
+    await raw("set the secret a box uses", "PUT", "/api/secrets/vault", JSON.stringify({ value: "parity-value" }));
+    await post("create a box that names a missing secret", "/api/boxes", {
+      name: "secretbox",
+      cpus: 1,
+      memoryMb: 256,
+      env: [{ name: "TOKEN", secretRef: "absent" }],
+    });
+    const secretBox = boxId(
+      (
+        await post("create a box with a secret", "/api/boxes", {
+          name: "secretbox",
+          cpus: 1,
+          memoryMb: 256,
+          env: [
+            { name: "TOKEN", secretRef: "vault" },
+            { name: "GREETING", value: "hello" },
+          ],
+        })
+      ).json,
+    );
+    await send("read the box with a secret", "GET", `/api/boxes/${secretBox}`);
+    await send("delete a secret in use", "DELETE", "/api/secrets/vault");
+    await send("delete a secret in use with force", "DELETE", "/api/secrets/vault?force=true");
+    await send("delete the secret box", "DELETE", `/api/boxes/${secretBox}`);
+
     const afterRollback = await send("read the rolled back box", "GET", `/api/boxes/${rolledBox}`);
     const rolledRevision = (afterRollback.json?.box as { revision?: number } | undefined)?.revision ?? 1;
     await send("read the rollback that waits", "GET", rollbackAt(rolledBox));
@@ -655,6 +690,35 @@ async function recordScenario(): Promise<Exchange[]> {
     await waitTask(base, freed.json);
     await send("read the rollback after confirm", "GET", rollbackAt(rolledAgain));
     await send("read the checkpoint repository usage", "GET", "/api/checkpoints/usage");
+
+    const saved = await post("save a box as a template", `/api/boxes/${rolledAgain}/template`, { name: "saved" });
+    await waitTask(base, saved.json);
+    await post("save a box under a taken template name", `/api/boxes/${rolledAgain}/template`, { name: "saved" });
+    await post("save a missing box as a template", "/api/boxes/missing/template", { name: "other" });
+    const customTool = {
+      name: "Parity tool",
+      description: "A custom entry for the transcript.",
+      category: "terminal",
+      source: "npm",
+      package: "parity-tool",
+      bin: "parity-tool",
+      requires: "Node ≥ 20",
+      install: "npm install -g --prefix {{prefix}} {{package_spec}}",
+      upgrade: "npm install -g --prefix {{prefix}} {{package_spec}}",
+      uninstall: "npm uninstall -g --prefix {{prefix}} {{package}}",
+      detect: "command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null",
+    };
+    await send("list custom tools", "GET", "/api/tools/custom");
+    await put("save a custom tool", "/api/tools/custom/parity-tool", customTool);
+    await send("list custom tools after a save", "GET", "/api/tools/custom");
+    await put("save a custom tool with an unknown placeholder", "/api/tools/custom/parity-tool", {
+      ...customTool,
+      install: "npm install -g {{home}}",
+    });
+    await put("save a custom tool over a built-in id", "/api/tools/custom/uv", customTool);
+    await send("delete the custom tool", "DELETE", "/api/tools/custom/parity-tool");
+    await send("delete a missing custom tool", "DELETE", "/api/tools/custom/parity-tool");
+    await send("delete a built-in tool with no custom entry", "DELETE", "/api/tools/custom/uv");
     await send("list hosts before any is added", "GET", "/api/hosts");
     await post("test a tcp host without credentials", "/api/hosts/test", {
       id: "edge",

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { assertNoSecretInImage } from "../secrets/env";
 import { createBox, getBox } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
 import { createSnapshot, deleteSnapshot, listSnapshots } from "../services/snapshots";
@@ -36,7 +37,9 @@ export const snapshotCreate = defineOperation({
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   precondition: async ({ host }) => localOnly(host, "Snapshots"),
   resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async ({ host }, _input, box) => assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []),
   exclusive: ({ host }, _input, box) => `snapshot.create:${host.host.id}:${box.id}`,
+  subject: (input) => input.name,
   activity: { action: () => "snapshot.create", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, task, principal }, input) => ({
