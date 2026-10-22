@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, describe, expect, jest, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -469,16 +469,21 @@ describe("browser sessions (end to end)", () => {
   });
 
   test("SESSION_TTL_DAYS caps a session's life, and SESSION_IDLE_DAYS renews it only up to that cap", async () => {
-    await withServer({ SESSION_TTL_DAYS: days(3), SESSION_IDLE_DAYS: days(2) }, async ({ base }) => {
-      const token = await signIn(base);
-      await Bun.sleep(1000);
-      expect(await statusWith(base, token)).toBe(200);
-      await Bun.sleep(1000);
-      expect(await statusWith(base, token)).toBe(200);
-      await Bun.sleep(1500);
-      expect(await statusWith(base, token)).toBe(401);
-    });
-  }, 10_000);
+    jest.useFakeTimers();
+    try {
+      await withServer({ SESSION_TTL_DAYS: days(3), SESSION_IDLE_DAYS: days(2) }, async ({ base }) => {
+        const token = await signIn(base);
+        jest.advanceTimersByTime(1000);
+        expect(await statusWith(base, token)).toBe(200);
+        jest.advanceTimersByTime(1000);
+        expect(await statusWith(base, token)).toBe(200);
+        jest.advanceTimersByTime(1500);
+        expect(await statusWith(base, token)).toBe(401);
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
   test("the session list marks this browser, revoking one ends only that session, and an unknown id is a 404", async () => {
     await withServer({}, async ({ base }) => {

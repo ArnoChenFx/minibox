@@ -360,8 +360,19 @@ function opNamed(name: string): Operation {
   return operation;
 }
 
+/** One `test.each` row per registered operation, so each row builds its own app and a slow row fails by itself. */
+function registeredNames(): [string][] {
+  return OPERATIONS.map((operation) => [operation.name]);
+}
+
+const appsMade: App[] = [];
+afterEach(() => {
+  for (const app of appsMade.splice(0)) for (const host of app.hosts.list()) host.sampler.stop();
+});
+
 function appWith(hooks: Partial<ExecutorHooks> = {}) {
   const { app, runtime } = createTestApp({ labelPrefix: "mbtest" }, undefined, hooks);
+  appsMade.push(app);
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
@@ -582,49 +593,47 @@ describe("executor", () => {
     expect(app.activity.list()).toEqual([]);
   });
 
-  test("every registered operation records its outcome when it succeeds", async () => {
-    for (const operation of OPERATIONS) {
-      const events: AuditEvent[] = [];
-      const { app, ctx, runtime } = appWith({ audit: (event) => events.push(event) });
-      const boxId = await withBox(app, ctx);
-      const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
-      events.length = 0;
-      try {
-        const result = await app.operations.run(
-          operation.name,
-          prepared.body ? { ...ctx, body: prepared.body } : ctx,
-          prepared.input,
-        );
-        if (isByteStream(result)) await result.body.cancel();
-        prepared.release?.();
-        await app.tasks.drain();
-        const mine = events.filter((event) => event.op === operation.name);
-        expect(mine.map((event) => [event.op, event.kind, event.status])).toEqual(
-          operation.async
-            ? [
-                [operation.name, operation.kind, "started"],
-                [operation.name, operation.kind, "ok"],
-              ]
-            : [[operation.name, operation.kind, "ok"]],
-        );
-      } finally {
-        prepared.release?.();
-        await app.tasks.drain();
-      }
+  test.each(registeredNames())("every registered operation records its outcome when it succeeds: %s", async (name) => {
+    const operation = opNamed(name);
+    const events: AuditEvent[] = [];
+    const { app, ctx, runtime } = appWith({ audit: (event) => events.push(event) });
+    const boxId = await withBox(app, ctx);
+    const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
+    events.length = 0;
+    try {
+      const result = await app.operations.run(
+        operation.name,
+        prepared.body ? { ...ctx, body: prepared.body } : ctx,
+        prepared.input,
+      );
+      if (isByteStream(result)) await result.body.cancel();
+      prepared.release?.();
+      await app.tasks.drain();
+      const mine = events.filter((event) => event.op === operation.name);
+      expect(mine.map((event) => [event.op, event.kind, event.status])).toEqual(
+        operation.async
+          ? [
+              [operation.name, operation.kind, "started"],
+              [operation.name, operation.kind, "ok"],
+            ]
+          : [[operation.name, operation.kind, "ok"]],
+      );
+    } finally {
+      prepared.release?.();
+      await app.tasks.drain();
     }
   });
 
-  test("every registered operation calls the audit sink when it fails", async () => {
-    for (const operation of OPERATIONS) {
-      const events: AuditEvent[] = [];
-      const { app, ctx } = appWith({ audit: (event) => events.push(event) });
-      await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
-      await app.tasks.drain();
-      expect(events.map((event) => event.op)).toEqual(
-        operation.name === "template.build" ? ["template.build", "template.build"] : [operation.name],
-      );
-      if (operation.name === "template.build") expect(events.map((event) => event.status)).toEqual(["started", "ok"]);
-    }
+  test.each(registeredNames())("every registered operation calls the audit sink when it fails: %s", async (name) => {
+    const operation = opNamed(name);
+    const events: AuditEvent[] = [];
+    const { app, ctx } = appWith({ audit: (event) => events.push(event) });
+    await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
+    await app.tasks.drain();
+    expect(events.map((event) => event.op)).toEqual(
+      operation.name === "template.build" ? ["template.build", "template.build"] : [operation.name],
+    );
+    if (operation.name === "template.build") expect(events.map((event) => event.status)).toEqual(["started", "ok"]);
   });
 
   test("an execution's event names the caller, the source, the host and the summary of the target", async () => {
@@ -770,8 +779,10 @@ describe("event log", () => {
   });
   afterEach(() => restoreLogs());
 
-  test("every registered operation leaves its outcome in the event log when it succeeds", async () => {
-    for (const operation of OPERATIONS) {
+  test.each(registeredNames())(
+    "every registered operation leaves its outcome in the event log when it succeeds: %s",
+    async (name) => {
+      const operation = opNamed(name);
       const { app, ctx, runtime } = appWith();
       const boxId = await withBox(app, ctx);
       const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
@@ -799,29 +810,33 @@ describe("event log", () => {
         prepared.release?.();
         await app.tasks.drain();
       }
-    }
-  });
+    },
+  );
 
-  test("every registered operation leaves one stored event when it is refused", async () => {
-    for (const operation of OPERATIONS) {
+  test.each(registeredNames())(
+    "every registered operation leaves one stored event when it is refused: %s",
+    async (name) => {
+      const operation = opNamed(name);
       const { app, ctx } = appWith({ authorize: () => false });
       await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
       expect(app.events.after(0, {}, 10).map((event) => [event.op, event.status])).toEqual([
         [operation.name, "denied"],
       ]);
-    }
-  });
+    },
+  );
 
-  test("every registered operation leaves one stored event whatever its input", async () => {
-    for (const operation of OPERATIONS) {
+  test.each(registeredNames())(
+    "every registered operation leaves one stored event whatever its input: %s",
+    async (name) => {
+      const operation = opNamed(name);
       const { app, ctx } = appWith();
       await app.operations.run(operation.name, ctx, {}).catch(() => undefined);
       await app.tasks.drain();
       expect(app.events.after(0, {}, 10).map((event) => event.op)).toEqual(
         operation.name === "template.build" ? ["template.build", "template.build"] : [operation.name],
       );
-    }
-  });
+    },
+  );
 
   test("a send records the counts it delivered, and a send that fails records none", async () => {
     const { app, ctx } = appWith();

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, jest, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -38,11 +38,19 @@ interface FakeExec {
 }
 /** Execs the adapter created. A start of a kill is answered from here, and it ends the command the kill names. */
 const fakeExecs: FakeExec[] = [];
-/** How the engine answers the start of a kill: at once, or after `KILL_LATE_MS`, which is past the adapter's deadline. */
-let killStart: "normal" | "late" = "normal";
+/**
+ * While set, the engine holds the start of a kill: `arrived` runs when the request reaches it, and the answer waits for
+ * `release`. A test releases the answer after the adapter has given up on the kill.
+ */
+let heldKillStart: { arrived: () => void; release: Promise<void> } | undefined;
 /** Kill streams the adapter closed after their late answer. */
 let lateKillsClosed = 0;
-const KILL_LATE_MS = 5500;
+
+/** A promise a test can settle from outside, for holding the fake engine until the test lets it answer. */
+function latch(): { promise: Promise<void>; open: () => void } {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  return { promise, open: () => resolve() };
+}
 
 /** Each request as `METHOD path`, with a wait's condition after it, so the order of a helper's calls can be checked. */
 const trailOf = (requests: Recorded[]): string[] =>
@@ -274,16 +282,17 @@ function lateKillOutput(req: Request): Response {
 }
 
 /**
- * Starts an exec the adapter created. A kill is answered at once, and ends the command with the same token, or after
- * `KILL_LATE_MS` when `killStart` is "late".
+ * Starts an exec the adapter created. A kill is answered at once, and ends the command with the same token, unless
+ * `heldKillStart` holds it.
  */
 async function startFakeExec(req: Request, id: string): Promise<Response> {
   const exec = fakeExecs.find((candidate) => candidate.id === id);
   if (!exec) return json({ message: "No such exec" }, 404);
   const cmd = exec.body.Cmd ?? [];
   if (cmd[3] !== "minibox-kill") return commandOutput(exec);
-  if (killStart === "late") {
-    await Bun.sleep(KILL_LATE_MS);
+  if (heldKillStart) {
+    heldKillStart.arrived();
+    await heldKillStart.release;
     return lateKillOutput(req);
   }
   const command = fakeExecs.find(
@@ -909,18 +918,29 @@ describe("Docker adapter exec kill", () => {
     fakeExecs.length = 0;
     const session = await runtime().startExec("ok", COMMAND);
     const closes = lateKillsClosed;
-    killStart = "late";
+    const arrival = latch();
+    const release = latch();
+    heldKillStart = { arrived: arrival.open, release: release.promise };
+    jest.useFakeTimers();
     try {
-      expect(await rejectionOf(session.kill())).toMatchObject({
+      const failed = rejectionOf(session.kill());
+      await arrival.promise;
+      jest.advanceTimersByTime(5000);
+      expect(await failed).toMatchObject({
         kind: "engine",
         detail: expect.stringContaining("did not start within 5 s"),
       });
+
+      jest.useRealTimers();
+      release.open();
       const closed = () => lateKillsClosed > closes;
       for (let i = 0; i < 400 && !closed(); i++) await Bun.sleep(5);
       expect(lateKillsClosed - closes).toBe(1);
     } finally {
-      killStart = "normal";
+      jest.useRealTimers();
+      heldKillStart = undefined;
+      release.open();
       for (const exec of fakeExecs) endFakeExec(exec, 137);
     }
-  }, 15_000);
+  });
 });

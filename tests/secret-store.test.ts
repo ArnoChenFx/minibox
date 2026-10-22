@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { SecretStore } from "../src/secrets/store";
+import { silenceLogs } from "./support/app";
 
 let dataDir: string;
 let store: SecretStore;
@@ -85,9 +86,14 @@ describe("the secret store", () => {
     writeFileSync(join(dir, "broken"), "{not json");
     writeFileSync(join(dir, "shaped"), JSON.stringify({ value: 42, createdAt: NOW, updatedAt: NOW }));
 
-    expect(store.value("broken")).toBeNull();
-    expect(store.value("shaped")).toBeNull();
-    expect(store.list()).toEqual([]);
+    const restoreLogs = silenceLogs();
+    try {
+      expect(store.value("broken")).toBeNull();
+      expect(store.value("shaped")).toBeNull();
+      expect(store.list()).toEqual([]);
+    } finally {
+      restoreLogs();
+    }
   });
 
   test("a loose file mode is tightened to 600 when the value is read", () => {
