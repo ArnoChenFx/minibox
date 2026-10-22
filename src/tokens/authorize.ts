@@ -8,6 +8,7 @@ import type { Box } from "../services/boxes";
 import { getBox } from "../services/boxes";
 import { type CheckpointView, getCheckpoint } from "../services/checkpoints";
 import type { ExecTarget } from "../services/exec";
+import type { BoxEnv } from "../specs/types";
 import { inspectVolumeOrNull } from "../volumes/engine";
 import type { VolumeRecord } from "../volumes/types";
 import {
@@ -121,6 +122,25 @@ const boxRule: Rule = async ({ principal, host, resolved }) => {
   assertBoxVisible(principal, boxViewOf(host, resolvedBox(resolved)));
 };
 
+/** The env a box's spec names. A rebuild or attach that keeps it injects the same secrets again. */
+function storedEnv(host: HostCtx, boxId: string): readonly BoxEnv[] {
+  return host.specs.read(boxId)?.env ?? [];
+}
+
+/** The env an operation's input carries, or none when the input leaves env out. */
+function envOf(value: unknown): readonly BoxEnv[] {
+  return Array.isArray(value) ? (value as BoxEnv[]) : [];
+}
+
+/**
+ * A box that holds a secret reference gets that secret's value when it is created or rebuilt. A token needs `secret:use`
+ * to put one there, so an agent cannot mount a host secret into a box it controls.
+ */
+function assertSecretUse(principal: TokenPrincipal, env: readonly BoxEnv[]): void {
+  if (!env.some((entry) => entry.secretRef !== undefined)) return;
+  if (!principal.grants.scopes.includes("secret:use")) throw refusal("secret_reference_forbidden");
+}
+
 /** A checkpoint is visible as a snapshot is: to its creator, and to a token that sees the box it was taken from. */
 function assertCheckpointVisible(principal: TokenPrincipal, host: HostCtx, checkpoint: CheckpointView): void {
   const visible = snapshotVisible(
@@ -193,6 +213,7 @@ const rollbackRule: Rule = async (check) => {
   await boxRule(check);
   const checkpoint = await getCheckpoint(check.host, String(check.input.checkpoint ?? ""));
   assertCheckpointVisible(check.principal, check.host, checkpoint);
+  assertSecretUse(check.principal, storedEnv(check.host, resolvedBox(check.resolved).boxId));
 };
 
 /** An exec names its box by container id. Anything that cannot be matched to a visible spec is refused. */
@@ -285,6 +306,7 @@ const createRule: Rule = async ({ principal, host, input }) => {
   const template = typeof input.template === "string" ? input.template : host.baseTemplateTag;
   await assertImageUsable(principal, host, template, "template");
   assertTtl(principal, input.ttlSec as number | null | undefined);
+  assertSecretUse(principal, envOf(input.env));
 };
 
 const forkRule: Rule = async ({ principal, host, input }) => {
@@ -315,9 +337,16 @@ async function assertTrackedTemplateVisible(check: Check, box: Box): Promise<voi
   await assertImageUsable(check.principal, check.host, spec.template.image, "template");
 }
 
+/** The env a rebuild leaves the box with: the request's env when it names one, else the stored env. */
+function envAfterRebuild(check: Check): readonly BoxEnv[] {
+  if (check.input.env !== undefined) return envOf(check.input.env);
+  return storedEnv(check.host, resolvedBox(check.resolved).boxId);
+}
+
 const rebuildRule: Rule = async (check) => {
   await changeRule(check);
   if (check.input.template === undefined) await assertTrackedTemplateVisible(check, resolvedBox(check.resolved));
+  assertSecretUse(check.principal, envAfterRebuild(check));
 };
 
 /** Only an update that changes the box's template, mounts, env, network or profile rebuilds it. */
@@ -326,9 +355,9 @@ const REBUILD_FIELDS = ["template", "mounts", "env", "network", "profile"] as co
 const updateRule: Rule = async (check) => {
   await changeRule(check);
   const rebuilds = REBUILD_FIELDS.some((field) => check.input[field] !== undefined);
-  if (rebuilds && check.input.template === undefined) {
-    await assertTrackedTemplateVisible(check, resolvedBox(check.resolved));
-  }
+  if (!rebuilds) return;
+  if (check.input.template === undefined) await assertTrackedTemplateVisible(check, resolvedBox(check.resolved));
+  assertSecretUse(check.principal, envAfterRebuild(check));
 };
 
 /** File API: volume must be visible; writes also need a writable volume (tools stays owner-only). */
@@ -364,6 +393,7 @@ const volumeDeleteRule: Rule = async ({ principal, host, resolved }) => {
 const volumeAttachRule: Rule = async ({ principal, host, input }) => {
   const box = await getBox(host, String(input.box ?? ""));
   assertBoxVisible(principal, boxViewOf(host, box));
+  assertSecretUse(principal, storedEnv(host, box.boxId));
 };
 
 /** A template name a token promotes into must be free: promotion would otherwise overwrite that tag. */

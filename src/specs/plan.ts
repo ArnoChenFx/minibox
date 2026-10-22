@@ -98,6 +98,7 @@ export function planRebuild(
   spec: BoxSpec,
   request: RebuildRequest,
   moved: MovedTag | null = null,
+  rotated: readonly string[] = [],
 ): PlannedRebuild {
   const changes: RebuildChange[] = [];
   const requestedRef =
@@ -121,6 +122,9 @@ export function planRebuild(
   const env = request.env ?? spec.env;
   if (request.env !== undefined && canonEnv(request.env) !== canonEnv(spec.env)) {
     changes.push({ field: "env", from: canonEnv(spec.env), to: canonEnv(env) });
+  }
+  for (const name of rotated) {
+    changes.push({ field: "env", from: `secret ${name}: value in use`, to: `secret ${name}: new value` });
   }
 
   const network = request.network ?? spec.network;

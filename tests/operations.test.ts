@@ -824,6 +824,7 @@ describe("projections", () => {
       "memoryMb",
       "profile",
       "mounts",
+      "env",
       "idleTimeoutSec",
       "ttlSec",
       "tools",

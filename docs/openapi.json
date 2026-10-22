@@ -677,6 +677,33 @@
                       ]
                     }
                   },
+                  "env": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+                          "maxLength": 128
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 8192
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+                          "maxLength": 128
+                        }
+                      }
+                    },
+                    "description": "Environment variables of the new box. Each entry is { name, value } for a plain value or { name, secretRef } for a secret set with secret.set. Give one or the other. A secret's value goes into the container when it is created and is never returned. A secret that is not set is refused with 400."
+                  },
                   "idleTimeoutSec": {
                     "description": "Idle timeout in seconds. 0 disables idle sleep for this box; null inherits the global default (BOX_IDLE_TIMEOUT_SEC). A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
                     "anyOf": [
@@ -19772,7 +19799,8 @@
                                 "volume:read",
                                 "volume:write",
                                 "volume:attach",
-                                "tool:install"
+                                "tool:install",
+                                "secret:use"
                               ]
                             }
                           },
@@ -20166,11 +20194,12 @@
                         "volume:read",
                         "volume:write",
                         "volume:attach",
-                        "tool:install"
+                        "tool:install",
+                        "secret:use"
                       ]
                     },
-                    "maxItems": 14,
-                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install."
+                    "maxItems": 15,
+                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install, secret:use."
                   },
                   "boxes": {
                     "description": "Which boxes this token may use. \"created-by-me\" (the default), \"*\" for every box, {\"ids\":[\"bx_…\"]}, or {\"tags\":[\"env=prod\"]}. A tag is a label key, or key=value."
@@ -20302,7 +20331,8 @@
                               "volume:read",
                               "volume:write",
                               "volume:attach",
-                              "tool:install"
+                              "tool:install",
+                              "secret:use"
                             ]
                           }
                         },
@@ -20748,7 +20778,8 @@
                               "volume:read",
                               "volume:write",
                               "volume:attach",
-                              "tool:install"
+                              "tool:install",
+                              "secret:use"
                             ]
                           }
                         },

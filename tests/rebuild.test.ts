@@ -216,6 +216,7 @@ describe("rebuild swap", () => {
 
   test("mounts, env and template are applied, and a removed volume is kept", async () => {
     const box = await newBox("alpha");
+    host.secrets.set("vault", "hunter2-token", new Date().toISOString());
     runtime.seedImage("other:1");
     const rebuilt = await rebuildBox(
       host,
@@ -249,10 +250,12 @@ describe("rebuild swap", () => {
     expect(runtime.volumes.has(box.volume)).toBe(true);
     expect(runtime.volumes.has(extra.engineName)).toBe(true);
     const container = runtime.containers.get(rebuilt.id);
-    expect(container?.spec.env).toEqual(["FOO=bar"]);
+    expect(container?.spec.env).toEqual(["FOO=bar", "TOKEN=hunter2-token"]);
     expect(container?.spec.mounts).toEqual([{ source: extra.engineName, target: "/data", mode: "ro" }]);
     expect(JSON.stringify(container?.labels)).not.toContain("bar");
     expect(JSON.stringify(container?.labels)).not.toContain("vault");
+    expect(JSON.stringify(container?.labels)).not.toContain("hunter2-token");
+    expect(JSON.stringify(rebuilt)).not.toContain("hunter2-token");
   });
 
   test("the swap stops the old container with the host's configured stop timeout", async () => {
