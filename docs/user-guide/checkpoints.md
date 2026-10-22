@@ -28,7 +28,7 @@ Checkpoints are not a backup of the whole server. They are stored on the same ho
 
 The checkpoint appears in the list when it is ready. Follow the progress in the **Tasks** panel.
 
-While the host disk is below its free-space minimum, MiniBox refuses a checkpoint you create by hand, and a rollback, which takes a safety checkpoint first. Both return `507` (`insufficient_storage`). A scheduled checkpoint is skipped instead. See [Volumes and storage](volumes-and-storage.md#usage-limits-and-free-space).
+While the host disk is below its free-space minimum, MiniBox refuses a checkpoint you create by hand, a box you make from a checkpoint, and a rollback, which takes a safety checkpoint first. Each returns `507` (`insufficient_storage`) at once. A scheduled checkpoint is skipped instead. See [Volumes and storage](volumes-and-storage.md#usage-limits-and-free-space).
 
 ## Checkpoint list
 

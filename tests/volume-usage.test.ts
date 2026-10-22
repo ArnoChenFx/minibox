@@ -27,7 +27,7 @@ import { recordSample, SHARE_DEADLINE_MS, sampleWithin, TREE_DEADLINE_MS } from 
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { advance, turn } from "./support/clock";
 import { type FakeRuntime, volumeAwareHelper } from "./support/fake-runtime";
-import { call, refused, startHarness } from "./support/tokens";
+import { call, type Harness, refused, startHarness } from "./support/tokens";
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -621,6 +621,47 @@ describe("the host's free-space floor", () => {
     expect((await createVolume(host, { name: "scratch", pool: "local", role: null, createdBy: "owner" })).name).toBe(
       "scratch",
     );
+  });
+});
+
+describe("the host's free-space floor over HTTP", () => {
+  let harness: Harness;
+  let restoreLogs: () => void;
+
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+    harness = startHarness();
+  });
+
+  afterEach(() => {
+    harness.stop();
+    restoreLogs();
+  });
+
+  test("a volume, a checkpoint, a fork and a rollback are refused at once with 507, before any task starts", async () => {
+    const local = harness.app.hosts.get();
+    const alpha = await boxes.createBox(local, { name: "alpha", cpus: 1, memoryMb: 256 });
+    const checkpoint = await takeCheckpoint(
+      local,
+      alpha.boxId,
+      { pinned: false, include: { system: false, volumes: [] }, consistency: "live" },
+      "owner",
+    );
+    harness.runtime.disk = { totalBytes: DISK_TOTAL, freeBytes: 5 * GB };
+    await remeasureHostDisk(local);
+
+    const volume = await call(harness.base, "/api/volumes", { body: { name: "scratch", confirm: true } });
+    const started = await call(harness.base, `/api/boxes/${alpha.boxId}/checkpoints`, { body: {} });
+    const forked = await call(harness.base, `/api/checkpoints/${checkpoint.id}/fork`, { body: { name: "beta" } });
+    const rolled = await call(harness.base, `/api/boxes/${alpha.boxId}/rollback`, {
+      body: { checkpoint: checkpoint.id, confirm: true },
+      headers: { "if-match": String(alpha.revision) },
+    });
+
+    for (const reply of [volume, started, forked, rolled]) {
+      expect(reply).toMatchObject({ status: 507, json: { error: { code: "insufficient_storage" } } });
+      expect(reply.json).not.toHaveProperty("taskId");
+    }
   });
 });
 

@@ -89,7 +89,7 @@ Click **Limits** on a volume to set its limits. Each limit is in GB, and an empt
 MiniBox checks the free space on the disk that the engine uses. When it falls below `HOST_DISK_MIN_FREE_PERCENT`, 10% by default:
 
 - MiniBox records a `host.disk_low` event and sends a notice, once for that low spell.
-- MiniBox refuses to create a volume, which includes the volumes of a new box, and to take a checkpoint, including the safety checkpoint that a rollback takes first. A scheduled checkpoint is skipped instead, and shows as skipped because the disk is low.
+- MiniBox refuses at once, with `507` (`insufficient_storage`), a request that would create a volume or a checkpoint. That covers a new volume, the volumes of a new box or of a box made from a checkpoint, a checkpoint you take, the safety checkpoint that a rollback takes first, a rollback, and a move to this host. A scheduled checkpoint is skipped instead, and shows as skipped because the disk is low.
 
 The refusal ends when free space is back above the floor. Set `HOST_DISK_MIN_FREE_PERCENT=0` to turn the floor off. If MiniBox cannot read the disk, it refuses nothing.
 
