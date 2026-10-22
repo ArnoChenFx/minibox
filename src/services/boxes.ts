@@ -421,6 +421,7 @@ async function undoCreate(host: HostCtx, attempt: CreateAttempt): Promise<void> 
         return;
       }
     }
+    host.specs.retire(containerId);
   }
   if (attempt.boxId) {
     try {
@@ -752,6 +753,7 @@ export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolea
       .filter((volume): volume is VolumeRecord => volume !== null);
     await host.specs.exclusive(async () => {
       await host.runtime.removeContainer(box.id, { force: true });
+      host.specs.retire(box.id);
       host.specs.remove(box.boxId);
     });
     await host.sampler.observe(box.id);

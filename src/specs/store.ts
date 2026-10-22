@@ -27,6 +27,9 @@ function isSpec(value: unknown): value is BoxSpec {
 /** A spec was written, or a box was removed. Listeners hear it after the file has changed. */
 export type SpecChange = { kind: "write"; spec: BoxSpec } | { kind: "remove"; id: string };
 
+/** Long enough that no read started before a removal can still be waiting to claim the container it names. */
+const RETIRED_MS = 10 * 60_000;
+
 /**
  * `DATA_DIR/boxes/<id>.json`. Writes are atomic (temp file in the same directory, then rename)
  * and the file mode is 600, matching the other control-plane files. One store is shared by every host.
@@ -34,6 +37,7 @@ export type SpecChange = { kind: "write"; spec: BoxSpec } | { kind: "remove"; id
 export class SpecStore {
   private tail: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<(change: SpecChange) => void>();
+  private readonly retired = new Map<string, number>();
 
   constructor(private readonly dataDir: string) {}
 
@@ -133,6 +137,20 @@ export class SpecStore {
       if (!isEnoent(e)) throw e;
     }
     this.notify({ kind: "remove", id });
+  }
+
+  /**
+   * Records that a container was removed along with its spec. A read taken before the removal can reach its claim after
+   * the spec is gone, and must not write a spec for a container that no longer exists. Docker does not reuse container ids.
+   */
+  retire(containerId: string): void {
+    const now = Date.now();
+    for (const [id, until] of this.retired) if (until <= now) this.retired.delete(id);
+    this.retired.set(containerId, now + RETIRED_MS);
+  }
+
+  isRetired(containerId: string): boolean {
+    return (this.retired.get(containerId) ?? 0) > Date.now();
   }
 
   private notify(change: SpecChange): void {

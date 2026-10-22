@@ -22,7 +22,7 @@ import { labelKeys } from "../src/labels";
 import type { Runtime } from "../src/runtime";
 import { startServer } from "../src/server";
 import type { SocketData } from "../src/ws/socket";
-import { TEST_KEY, testConfig } from "./support/app";
+import { rejectionOf, TEST_KEY, testConfig } from "./support/app";
 import { type FakeSshHost, type KeyPair, newKeyPair, startSshHost } from "./support/engines";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
@@ -45,6 +45,7 @@ let sshHost: FakeSshHost;
 interface ErrorBody {
   code: string;
   key?: string;
+  details?: Record<string, number>;
 }
 
 interface HostJson {
@@ -63,6 +64,16 @@ interface BoxJson {
   state: string;
   running: boolean;
   hostId?: string;
+  mounts: { volumeName: string | null }[];
+}
+
+interface VolumeJson {
+  id: string;
+  name: string;
+  hostId: string;
+  role: string | null;
+  ownership: string;
+  engineName: string;
 }
 
 function api(path: string, init: RequestInit = {}): Promise<Response> {
@@ -199,19 +210,61 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
   );
 
   test(
-    "the host stays while a box on it exists, and goes once the box is removed",
+    "deleting a box on the second host removes the volumes it owns, though the local host's cache sees the same engine",
+    async () => {
+      const made = await post("/api/boxes", {
+        name: "lab-owned",
+        template: IMAGE,
+        cpus: 0.5,
+        memoryMb: 128,
+        host: "lab",
+      });
+      expect(made.status).toBe(201);
+      const { box } = (await made.json()) as { box: BoxJson };
+      const volumes = box.mounts.map((mount) => mount.volumeName ?? "");
+      expect(volumes.length).toBeGreaterThan(0);
+
+      const res = await api(`/api/boxes/${box.id}?deleteVolume=true`, { method: "DELETE" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ name: "lab-owned", volumeDeleted: true });
+      expect(await containersNamed("lab-owned")).toHaveLength(0);
+      for (const volume of volumes) {
+        expect(await rejectionOf(runtime.inspectVolume(volume))).toMatchObject({ kind: "not_found" });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "the host stays while a box or a volume on it exists, and goes once both are removed",
     async () => {
       const { hosts } = (await (await api("/api/hosts")).json()) as { hosts: HostJson[] };
       expect(hosts.find((host) => host.id === "lab")).toMatchObject({ status: "online", boxes: 1 });
 
       const refused = await api("/api/hosts/lab", { method: "DELETE" });
       expect(refused.status).toBe(409);
-      expect(await errorOf(refused)).toMatchObject({ code: "conflict", key: "host_in_use" });
+      expect(await errorOf(refused)).toMatchObject({
+        code: "conflict",
+        key: "host_in_use",
+        details: { boxes: 1, volumes: 1, checkpoints: 0 },
+      });
 
       const { boxes } = (await (await api("/api/boxes")).json()) as { boxes: BoxJson[] };
       const id = boxes.find((box) => box.name === "lab-box")?.id ?? "";
       expect((await api(`/api/boxes/${id}`, { method: "DELETE" })).status).toBe(200);
       expect(await containersNamed("lab-box")).toHaveLength(0);
+
+      const stillHeld = await api("/api/hosts/lab", { method: "DELETE" });
+      expect(stillHeld.status).toBe(409);
+      expect(await errorOf(stillHeld)).toMatchObject({ key: "host_in_use", details: { boxes: 0, volumes: 1 } });
+
+      const { volumes } = (await (await api("/api/volumes")).json()) as { volumes: VolumeJson[] };
+      const onLab = volumes.filter((volume) => volume.hostId === "lab");
+      expect(onLab).toMatchObject([{ role: "tools", ownership: "independent" }]);
+      const [tools] = onLab;
+      if (!tools) throw new Error("the host should still hold its shared tools volume");
+      expect((await api(`/api/volumes/${tools.id}?confirm=true`, { method: "DELETE" })).status).toBe(200);
+      expect(await rejectionOf(runtime.inspectVolume(tools.engineName))).toMatchObject({ kind: "not_found" });
 
       expect((await api("/api/hosts/lab", { method: "DELETE" })).status).toBe(200);
       const after = (await (await api("/api/hosts")).json()) as { hosts: HostJson[] };

@@ -11,6 +11,7 @@ import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
+import { ClaimError, ensureSpec } from "../src/specs/claim";
 import { parseRevision } from "../src/specs/revision";
 import { RESET_FIELDS } from "../src/specs/types";
 import type { TerminalData } from "../src/ws/terminal";
@@ -134,6 +135,16 @@ describe("claim and old routes", () => {
     expect((await boxes.getBox(host, "mbtest-legacy")).boxId).toBe(box.boxId);
     expect((await boxes.getBox(host, box.boxId)).id).toBe(id);
     expect((await boxes.getBox(host, "legacy")).id).toBe(id);
+  });
+
+  test("a deleted box's container is not claimed back, even by a read taken before the deletion", async () => {
+    const box = await newBox("retired");
+    const stale = await runtime.inspectContainer(box.id);
+
+    await boxes.deleteBox(host, box.boxId, false);
+    await expect(ensureSpec(host, stale)).rejects.toBeInstanceOf(ClaimError);
+    expect(host.specs.list()).toEqual([]);
+    expect(host.specs.findByContainer(box.id, box.containerName)).toBeNull();
   });
 
   test("a lost spec is restored from labels, and mutable fields need to be set again", async () => {
