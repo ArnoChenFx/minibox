@@ -107,6 +107,24 @@ export const MESSAGES = {
   preview_port_invalid: "Port must be an integer between 1 and 65535.",
   preview_port_not_manual: "That port is not on the manual preview list.",
   preview_unauthorized: "Sign in to open a box port preview.",
+  preview_grant_required:
+    "Open this preview from the MiniBox console. Its link has been used, has expired, or the box was renamed or removed.",
+  preview_host_unknown: "No box port is served at this address.",
+  preview_subdomain_off: "Subdomain previews are off. Set PREVIEW_BASE_DOMAIN and restart MiniBox to turn them on.",
+  preview_check_console_in_base:
+    "The console is at {host}, which is inside the preview domain {base}. Serve the console from a domain outside it.",
+  preview_check_console_ok: "The console is outside the preview domain.",
+  preview_check_same_site:
+    "The console and {base} are the same site, so a box page could reach the console's site. Use a preview domain that is not under the console's domain, such as minibox-preview.net.",
+  preview_check_same_site_ok: "The console and the preview domain are different sites.",
+  preview_check_dns:
+    "Nothing resolves {host}. Add a wildcard DNS record for *.{base} that points at MiniBox or at the tunnel that reaches it.",
+  preview_check_dns_ok: "Names under the preview domain resolve.",
+  preview_check_https:
+    "Could not reach {host} over HTTPS: {detail}. Route *.{base} to MiniBox, with a certificate that covers it.",
+  preview_check_other_server:
+    "{host} answers, but not from MiniBox. Route the wildcard for {base} to MiniBox, not to another server.",
+  preview_check_ok: "Preview names reach MiniBox over HTTPS.",
   unauthorized: "Not signed in, or the access key is invalid.",
   operation_forbidden: "This credential may not run {op}.",
   run_invalid:

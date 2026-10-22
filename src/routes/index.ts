@@ -5,6 +5,7 @@ import { boxLogRoutes } from "./box-logs";
 import { checkpointPackageRoutes } from "./checkpoint-packages";
 import { eventRoutes } from "./events";
 import { operationRoutes } from "./operations";
+import { previewRoutes } from "./preview";
 import type { Route } from "./router";
 import { sshRoutes } from "./ssh";
 import { systemRoutes } from "./system";
@@ -18,6 +19,7 @@ export const routes: Route[] = [
   ...taskRoutes,
   ...sshRoutes,
   ...boxLogRoutes,
+  ...previewRoutes,
   ...checkpointPackageRoutes,
   ...operationRoutes(OPERATIONS),
 ];

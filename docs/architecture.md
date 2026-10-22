@@ -61,7 +61,7 @@ flowchart LR
 
 ## Request path
 
-1. `src/server.ts` routes each request. It serves console files from `web/`, CLI downloads under `/cli/`, port previews under `/box/<name>/<port>/`, and the MCP and API paths described below.
+1. `src/server.ts` routes each request. A request to a preview host goes to `src/preview/subdomain.ts` first, before the console's guard. Otherwise it serves console files from `web/`, CLI downloads under `/cli/`, path-mode port previews under `/box/<name>/<port>/`, and the MCP and API paths described below.
 2. `src/guard.ts` checks every request first, and refuses cross-site browser requests. `src/auth.ts` finds the caller from a bearer token, which is the access key or an agent token from `src/tokens/`, or from a browser session in `src/sessions.ts`.
 3. The REST routes in `src/routes/` and the MCP endpoint in `src/mcp/http.ts` both call `app.operations.run`. The executor in `src/operations/executor.ts` checks the caller's scopes, validates the input, runs the operation and writes an audit event to `events.db`.
 4. Services in `src/services/` do the work. They read and write the stores in `DATA_DIR`, and they call the runtime in `src/runtime/`. The Docker implementation is `src/docker/runtime.ts`.
@@ -110,7 +110,9 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 
 ## Previews
 
-`src/preview/proxy.ts` forwards HTTP and WebSocket traffic to the box's container address and the port the caller asked for.
+`src/preview/proxy.ts` forwards HTTP and WebSocket traffic to the box's container address and the port the caller asked for. Path-mode previews are served under `/box/`, and subdomain previews on their own hosts.
+
+In subdomain mode, `src/preview/subdomain.ts` serves the preview host. It spends a one-time ticket, which `src/routes/preview.ts` issues when the console opens a port, and checks the grant cookie from `src/preview/grants.ts`. It also refuses a write or a WebSocket from another origin. `src/preview/headers.ts` sets the preview's Content-Security-Policy and filters cookies in both directions. `src/preview/ws.ts` closes a socket when its sign-in ends or its grant expires. `src/preview/selfcheck.ts` runs the checks on the Settings page.
 
 ## Where state lives
 
@@ -125,6 +127,7 @@ Every path is under `DATA_DIR`.
 | `notify.json` | `src/notify/store.ts` | Notification channels: their settings and endpoints, never a secret or a webhook URL |
 | `secrets/notify/` | `src/notify/store.ts` | Notification channel secrets: signing keys, ntfy tokens, Telegram bot tokens and webhook URLs |
 | `checkpoints/` | `src/checkpoints/store.ts` | Checkpoint records |
+| Preview tickets and grants (memory only) | `src/preview/grants.ts` | Not written to disk, so a restart ends them |
 | `checkpoints/schedules/` | `src/checkpoints/store.ts`, `src/services/checkpoint-schedule.ts` | Checkpoint schedules, one per box |
 | `packages/` | `src/checkpoints/packages.ts` | Exported checkpoint packages, sealed with a passphrase |
 | `exec/` | `src/events/outputs.ts` | Saved output of commands |

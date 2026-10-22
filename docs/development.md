@@ -6,7 +6,7 @@ This page is for people who change MiniBox. To run MiniBox, read [Install](admin
 
 - [Bun](https://bun.sh) 1.4.3 or later. `package.json` sets this as the minimum version.
 - Docker Engine, for the template check and the real-engine tests. The unit tests do not need Docker.
-- Chromium, only for the homepage browser tests.
+- Chromium, for the homepage browser tests, the preview isolation test and `bun run screenshots`. See [Tests](#tests).
 
 ## Set up
 
@@ -36,14 +36,17 @@ bun run check
 
 `bun test` also runs `tests/docs-links.test.ts`, which checks the relative links and anchors in every Markdown file.
 
+For a quicker local run, `bun run check:quick` runs the same three static checks, and `bun test` only for the test files that changed since `origin/main`. It stops at the first failure.
+
 ## Tests
 
 | Command | Needs | What it covers |
 |---|---|---|
-| `bun test` | Nothing | Unit and API tests. Part of `bun run check`. |
+| `bun test` | Nothing, except Chromium for the preview isolation test | Unit and API tests. Part of `bun run check`. `tests/preview-browser.test.ts` uses Chromium when one is available. |
 | `bun run test:docker` | Docker | Real-engine tests in `tests/docker-*.test.ts`. Not part of `bun run check`. |
 | `bun run build:template` and `bun run check:template` | Docker | The base template: its user, tools, mount points and each security profile. |
 | `bun run test:site` | Chromium | Browser tests for the homepage. |
+| `bun run screenshots` | Docker and Chromium | Captures the console screenshots for the README and the homepage. Not part of CI. See [Screenshots](#screenshots). |
 
 `bun run test:docker` runs nine test files, one process each. Every run uses its own label prefix, which starts with `mbit`, and removes the containers, images, volumes and networks it created, even when a test fails. `DOCKER_SOCKET` selects another Docker socket. `MINIBOX_TEST_IMAGE` replaces the default test image, `alpine:3.20`.
 
@@ -81,10 +84,22 @@ bun run openapi
 
 | Workflow | When it runs | What it does |
 |---|---|---|
-| CI (`ci.yml`) | Pushes to `main`, pull requests, and calls from the release workflow | The `check` job runs `fmt:check`, `lint`, `typecheck` and `bun test`. The `docker` job builds the release image, starts it and probes `/login`. It also builds the base template for `linux/amd64` and `linux/arm64` and runs `scripts/check-box-image.sh` on each. |
+| CI (`ci.yml`) | Pushes to `main`, pull requests, and calls from the release workflow | The `check` job installs Chromium with Playwright, then runs `fmt:check`, `lint`, `typecheck` and `bun test`. The `docker` job builds the release image, starts it and probes `/login`. It also builds the base template for `linux/amd64` and `linux/arm64` and runs `scripts/check-box-image.sh` on each. |
 | Integration (`integration.yml`) | Pushes to `main`, pull requests, and manual runs | Runs `bun run test:docker` on the runner's Docker engine. |
 | Project homepage (`pages.yml`) | Changes to the homepage files, on pushes to `main`, pull requests, and manual runs | Runs the browser tests. On `main` only, deploys `dist/site` to GitHub Pages. |
 | Release (`release.yml`) | Tags that match `v*.*.*` | Runs the CI checks, checks that the tag matches `package.json`, pushes the multi-architecture image to `ghcr.io/arnochenfx/minibox`, and creates a GitHub release from the matching CHANGELOG section. |
+
+## Screenshots
+
+`bun run screenshots` captures the console for the README, the homepage and the docs. Run it by hand before a release. CI does not run it.
+
+The script starts its own MiniBox server, with a temporary data directory, a free port, the label prefix `minibox-demo` and its own Docker network. It seeds fixed demo content and captures 14 screens in light and dark, in English and Simplified Chinese, into `dist/screenshots/`. It publishes the overview, the box list and the box terminal to `docs/screenshots/en/` and `docs/screenshots/zh-CN/`. When `pngquant` is installed, it compresses the published images. The host name in the captures is `workstation`, and the version comes from `package.json`.
+
+The run removes the containers, images, volumes and networks it created, and its data directory, even when a capture fails. The first run builds the base template, which takes a few minutes.
+
+It needs a Docker engine at `DOCKER_SOCKET` (`/var/run/docker.sock` by default) and Chromium. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an installed Chrome, or run `bunx playwright install chromium` once.
+
+Do not edit the images in `docs/screenshots/` by hand. Run the script again after a change to the console, and commit the new files with that change.
 
 ## Project homepage
 
@@ -95,7 +110,7 @@ bun run build:site      # writes dist/site
 bun run preview:site    # builds the site, then serves it at http://127.0.0.1:4173/minibox/
 ```
 
-`SITE_PORT` changes the preview port. The build copies the three site source files, `LICENSE` and `NOTICE` from the repository root, the logo and favicon from `web/assets/`, the agent logos from `site/assets/agents/`, and three console screenshots from `docs/screenshots/`. It also writes `.nojekyll`, `robots.txt` and `sitemap.xml`.
+`SITE_PORT` changes the preview port. The build copies the three site source files, `LICENSE` and `NOTICE` from the repository root, the logo and favicon from `web/assets/`, the agent logos from `site/assets/agents/`, and the three light console screenshots for each language from `docs/screenshots/en/` and `docs/screenshots/zh-CN/`. It also writes `.nojekyll`, `robots.txt` and `sitemap.xml`.
 
 To run the browser tests, install Chromium once, then run them:
 
@@ -105,6 +120,8 @@ bun run test:site
 ```
 
 To use an installed Chromium instead, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, for example `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun run test:site`. Playwright starts and stops its own preview server.
+
+`bun test` runs the preview isolation test, `tests/preview-browser.test.ts`, with the same browser. It uses `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when that is set, and Playwright's own Chromium otherwise. Without either, the test is skipped, except in CI, where a missing browser fails the run.
 
 ### Deployment
 

@@ -163,6 +163,25 @@ export default {
   "err.preview_port_invalid": "Port must be an integer between 1 and 65535.",
   "err.preview_port_not_manual": "That port is not on the manual preview list.",
   "err.preview_unauthorized": "Sign in to open a box port preview.",
+  "err.preview_grant_required":
+    "Open this preview from the MiniBox console. Its link has been used, has expired, or the box was renamed or removed.",
+  "err.preview_host_unknown": "No box port is served at this address.",
+  "err.preview_subdomain_off":
+    "Subdomain previews are off. Set PREVIEW_BASE_DOMAIN and restart MiniBox to turn them on.",
+  "err.preview_check_console_in_base":
+    "The console is at {host}, which is inside the preview domain {base}. Serve the console from a domain outside it.",
+  "err.preview_check_console_ok": "The console is outside the preview domain.",
+  "err.preview_check_same_site":
+    "The console and {base} are the same site, so a box page could reach the console's site. Use a preview domain that is not under the console's domain, such as minibox-preview.net.",
+  "err.preview_check_same_site_ok": "The console and the preview domain are different sites.",
+  "err.preview_check_dns":
+    "Nothing resolves {host}. Add a wildcard DNS record for *.{base} that points at MiniBox or at the tunnel that reaches it.",
+  "err.preview_check_dns_ok": "Names under the preview domain resolve.",
+  "err.preview_check_https":
+    "Could not reach {host} over HTTPS: {detail}. Route *.{base} to MiniBox, with a certificate that covers it.",
+  "err.preview_check_other_server":
+    "{host} answers, but not from MiniBox. Route the wildcard for {base} to MiniBox, not to another server.",
+  "err.preview_check_ok": "Preview names reach MiniBox over HTTPS.",
   "err.operation_forbidden": "This credential may not run {op}.",
   "err.run_invalid":
     "X-Minibox-Run must be 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
@@ -1727,6 +1746,12 @@ export default {
   "st.tokenHosts": "Hosts",
   "st.tokenHostsLocal": "This host (local)",
   "st.tokenHostsAll": "Every host",
+  "st.preview": "Port previews",
+  "st.previewHelp":
+    "Each preview runs on its own address under the preview domain. The checks run from MiniBox's own host each time this page opens.",
+  "st.previewBase": "Preview domain",
+  "st.previewPathHelp":
+    "Previews run under /box/<name>/<port>/ on this address. Set PREVIEW_BASE_DOMAIN to give each preview its own address, which is recommended when the console is reachable from the internet.",
   "st.hosts": "Hosts",
   "st.hostsHelp":
     "Machines that run boxes. Add a Docker engine over its socket, mutual TLS or SSH. Credentials are stored on this control plane and are never shown again.",
@@ -2003,7 +2028,7 @@ export default {
   "bd.toolsTitle": "Tools",
   "bd.portsTitle": "Ports",
   "bd.portsHelp":
-    "Open a path-mode preview of a service inside this box. MiniBox proxies /box/<name>/<port>/ to the container IP — nothing is published on the host. Sign-in is required. Share links are not available yet.",
+    "Open a preview of a service inside this box. MiniBox proxies it to the container IP, so nothing is published on the host. Sign-in is required. With PREVIEW_BASE_DOMAIN set, the preview runs on its own address; otherwise it runs under /box/<name>/<port>/. Share links are not available yet.",
   "bd.portsLoading": "Scanning listening ports…",
   "bd.portsLoadFailed": "Could not list ports",
   "bd.portsEmpty": "No listening ports yet",
@@ -2011,6 +2036,7 @@ export default {
   "bd.portsColPort": "Port",
   "bd.portsColSource": "Source",
   "bd.portsColUrl": "Preview",
+  "bd.portsOwnAddress": "Preview on its own address",
   "bd.portsListening": "Listening",
   "bd.portsManual": "Manual",
   "bd.portsOpen": "Open",

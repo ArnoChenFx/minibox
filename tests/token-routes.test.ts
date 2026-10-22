@@ -39,6 +39,7 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/notify/channels",
   "GET /api/notify/deliveries",
   "GET /api/pools",
+  "GET /api/preview/setup",
   "GET /api/secrets",
   "GET /api/system",
   "GET /api/tokens",

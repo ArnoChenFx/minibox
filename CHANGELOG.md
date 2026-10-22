@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### 亮点
+- **声明式模板**：从 Dockerfile、Git 代码仓库、构建上下文压缩包或 `devcontainer.json`（支持子集）构建模板，创建 Box 时可把代码仓库克隆到 `/workspace`。
+- **启动命令**：Box 每次启动时在 `minibox-init` tmux 会话中运行一条命令，不阻塞启动。
+- **事件通知**：把内存耗尽、命令失败、检查点失败、宿主机离线等事件发送到 Webhook、ntfy 主题或 Telegram 聊天。
+
 ### 新增
 - 声明式模板与镜像拉取：可从粘贴的 Dockerfile、Git 代码仓库（可选分支与子目录）、构建上下文压缩包 URL 或仓库中的 `devcontainer.json` 构建模板（`POST /api/templates`，任务），构建失败不留下模板；`POST /api/templates/:ref/rebuild` 按同一来源重新构建，成功后才替换镜像；`POST /api/images/pull` 按需拉取镜像；`POST /api/boxes` 的 `repo` 可在首次创建时把代码仓库克隆到 `/workspace`，私有仓库使用密钥。构建、重新构建与拉取仅限所有者（Refs #15）
 - 启动命令：每个 Box 可设置一条启动命令，每次容器启动后以 Box 用户在 `/workspace` 中用 `bash -lc` 运行，运行在名为 `minibox-init` 的 tmux 会话中。创建、启动、唤醒、重启、重建与检查点恢复时都会运行。命令保存在 Box 规格中，无需重建，Box 停止或休眠时也可修改，改动在下次启动时生效；运行中的 Box 可以即时运行（`PUT` 的 `applyNow`，或 `POST /api/boxes/:id/startup-command/run`）。命令最长 4096 字节，按输入原样保存，不能含控制字符（制表符与换行除外）。接口为 `GET`、`PUT`（需要 `If-Match`，请求体 `{ command, applyNow }`）与 `DELETE /api/boxes/:id/startup-command`，`POST /api/boxes` 与 `POST /api/snapshots/:ref/boxes` 接受 `startupCommand`。MCP 工具 `get_startup_command`、`set_startup_command`、`delete_startup_command` 与 `run_startup_command` 位于 `core` 工具集。命令行为 `minibox box create --startup-command` 与 `minibox box startup-command get|set|rm|run`。读取需要 `secret:use`，设置、删除与运行还需要 `exec`；命令文本不进入审计、活动、事件或 SSE，只显示已更改。`minibox-init` 会话只有有人 attach 时才算活动，手动运行与 `applyNow` 计入活动。模板不携带启动命令，从模板、快照或检查点创建的 Box 不继承源 Box 的命令。
@@ -11,9 +16,12 @@
 - Box 的 TTL 将在 5 分钟内结束，或因空闲将在 5 分钟内休眠时，记录 `box.ttl_soon` 与 `box.idle_soon` 事件。
 - 环境变量 `NOTIFY_ALLOW_PRIVATE`（默认 `false`），允许通知渠道发送到回环、私有网络及其他非公网地址。
 - 卷用量监控、告警与上限（[#119](https://github.com/ArnoChenFx/minibox/issues/119)）：后台按 `VOLUME_USAGE_INTERVAL_SEC`（默认 600 秒，范围 60 到 86400）采样每个卷的用量。本地卷与路径卷用 `du` 统计自身目录树，NFS 卷用 `df` 统计共享根目录，不遍历目录。每次采样有各自的截止时间（目录树 120 秒，NFS 共享 30 秒），一个卡住的挂载只影响它自己。每个卷可设置软上限与硬上限（`PUT /api/volumes/:id/limits` 与 MCP 工具 `set_volume_limits`，仅所有者，默认无上限）：超过软上限记录 `volume.usage_high` 事件，超过硬上限按动作处理，动作为 `warn`（默认，仅警告）或 `stop`（停止挂载该卷的运行中 Box，原因为 `volume_limit`），并发送通知。NFS 卷不支持上限，应在 NAS 导出上设置配额。宿主机剩余空间低于 `HOST_DISK_MIN_FREE_PERCENT`（默认 10%，设为 0 关闭）时记录 `host.disk_low` 并发送通知，此时创建卷（包括新建 Box 的默认卷）与创建检查点都返回 `507`（`insufficient_storage`），定时检查点记为 `disk` 跳过。卷用量超过硬上限、动作为 `stop` 时，创建、启动、重启或重建挂载该卷的 Box，以及把该卷挂到 Box 上，都返回 `409`（`volume_over_limit`）。控制台卷页面显示用量条与趋势线，超过上限的行高亮，Box 详情页显示卷用量。软上限是尽力而为，不是配额；文件系统配额为后续工作。
+- 端口预览子域名隔离（[#122](https://github.com/ArnoChenFx/minibox/issues/122)）：设置 `PREVIEW_BASE_DOMAIN` 后，每个端口预览运行在 `<端口>-<box>.<base>` 上，拥有自己的源，无法读取控制台的 cookie、存储或 API。打开预览时控制台签发一次性、60 秒有效的票据，预览域名将其兑换为只对该预览有效的授权 cookie（`__Host-minibox_preview`，`HttpOnly; Secure; SameSite=Lax`，最长 8 小时）。登录结束、Box 重命名或删除后该预览不能再打开，重启 MiniBox 会使所有授权失效。写入与 WebSocket 只接受来自该预览自身的请求。预览域名之下只接受 `<端口>-<box>` 形式的主机名，其余返回 `404`。子域名模式下预览的沙箱允许同源，应用可以使用自己的 localStorage 与 cookie。设置页的「端口预览」卡片检查通配符 DNS、HTTPS 与域名划分。未设置时仍为默认的路径预览 `/box/<名称>/<端口>/`，其隔离依赖浏览器。见 [子域名预览](docs/zh-CN/admin/preview-subdomains.md)。
 
 ### 文档
 - 新增通知指南（`docs/user-guide/notifications.md`，并提供 `docs/zh-CN/` 中文版本），并在设置、配置、API、MCP、数据目录、备份与安全文档中补充通知相关内容。
+- README、项目主页与文档的截图换成中英文、浅色与深色版本，由新脚本 `bun run screenshots` 在隔离的实例中生成（[#125](https://github.com/ArnoChenFx/minibox/issues/125)）。
+- 升级文档新增 1.0 之前的兼容性说明，并汇总 0.4 以来需要手动处理的升级步骤。
 
 ## [0.4.1] - 2026-10-23
 
