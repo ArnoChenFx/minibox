@@ -52,6 +52,11 @@ export function hostsPath(dataDir: string): string {
   return join(dataDir, "hosts.json");
 }
 
+/** Paired host agents: ids, public keys and revocation, never a private key. Mode 600. */
+export function agentsPath(dataDir: string): string {
+  return join(dataDir, "agents.json");
+}
+
 /**
  * Replace `path` with `contents` so a reader sees either the old file or the new one, never a partial write.
  * The new file is flushed before the rename, and the temporary file is removed if any step fails. `mode` is applied

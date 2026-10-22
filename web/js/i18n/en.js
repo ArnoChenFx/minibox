@@ -301,6 +301,25 @@ export default {
     "The SSH host key {presented} is not the key you confirmed ({expected}). No credentials were sent to the host.",
   "err.host_unreachable": "The host could not be reached: {detail}",
   "err.host_unsupported": "{feature} is not supported on remote hosts yet.",
+  "err.host_endpoint_agent":
+    "Agent hosts are paired with a code, not added by endpoint. Create a pairing code, then run the agent on the host.",
+  "err.host_not_agent": "Host “{host}” is not an agent host.",
+  "err.agent_pairing_unknown": "The pairing code is not valid. Create a new one under Settings, Hosts.",
+  "err.agent_pairing_used": "This pairing code has already been used. Create a new one under Settings, Hosts.",
+  "err.agent_pairing_expired": "This pairing code has expired. Create a new one under Settings, Hosts.",
+  "err.agent_pairing_limit":
+    "At most {max} pairing codes can wait at once. Pair an agent or let a code expire, then try again.",
+  "err.agent_pairing_request_invalid":
+    "The pairing request is not valid. Run the agent image again with the current MiniBox version.",
+  "err.agent_key_invalid": "The agent's public key must be an Ed25519 key in PEM form.",
+  "err.agent_protocol_mismatch":
+    "This agent speaks protocol {agent}, and this MiniBox speaks protocol {server}. Update the agent image, then pair again.",
+  "err.agent_refused_auth": "The agent could not prove its identity. Pair it again under Settings, Hosts.",
+  "err.agent_refused_revoked": "This agent was revoked. Remove its host, then pair the agent again.",
+  "err.agent_refused_protocol": "This MiniBox speaks agent protocol {protocol}. Update the agent image.",
+  "err.runtime_unsupported": "This host cannot run that operation: {detail}",
+  "err.move_agent_unsupported":
+    "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
   "err.preview_remote_unsupported": "Port preview is not supported on remote hosts yet.",
   "err.box_moving": "This box is moving to another host. Try again when the move finishes.",
   "err.box_changing": "This box is being rebuilt or updated. Try the move again when that finishes.",

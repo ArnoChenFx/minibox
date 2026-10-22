@@ -179,6 +179,9 @@ export class HostSampler {
   private pendingRound: Promise<void> | null = null;
   /** Ends the sample loop's current wait early, so it reads the cadence and the expedite flag again. */
   private wakeLoop: (() => void) | null = null;
+  /** Ends the reconnect backoff wait early. See `reconnect`. */
+  private wakeRetry: (() => void) | null = null;
+  private retryAsap = false;
   /** Counts the changes the cache takes in, so a listing taken before one of them is not applied over it. */
   private changes = 0;
   /** True while a re-list's listing is in flight, so that one listing at a time runs. */
@@ -414,8 +417,26 @@ export class HostSampler {
       );
       this.failures += 1;
       log.warn("sampler.link_down", { host: this.currentHost().host.id, error: reason, retryInMs: delay });
-      await sleep(delay, signal);
+      await this.backoff(delay, signal);
     }
+  }
+
+  /** Ends the backoff wait now, so the link is tried at once. Called when a host's agent has connected again. */
+  reconnect(): void {
+    this.retryAsap = true;
+    this.wakeRetry?.();
+  }
+
+  private backoff(ms: number, signal: AbortSignal): Promise<void> {
+    if (this.retryAsap) {
+      this.retryAsap = false;
+      return Promise.resolve();
+    }
+    const wait = new AbortController();
+    this.wakeRetry = () => wait.abort();
+    return sleep(ms, AbortSignal.any([signal, wait.signal])).finally(() => {
+      this.wakeRetry = null;
+    });
   }
 
   /** One subscription and the listing that follows it. Returns or throws when the link is lost. */
