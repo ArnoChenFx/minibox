@@ -83,6 +83,7 @@ jobs:
             ["assets/agents/claude-code.svg", "image/svg+xml"],
             ["assets/agents/codex.svg", "image/svg+xml"],
             ["assets/agents/opencode.svg", "image/svg+xml"],
+            ["assets/agents/pi.svg", "image/svg+xml"],
             ["assets/screenshots/overview-light.png", "image/png"],
             ["assets/screenshots/boxes-light.png", "image/png"],
             ["assets/screenshots/terminal-light.png", "image/png"],

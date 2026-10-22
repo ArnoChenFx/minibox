@@ -1484,6 +1484,9 @@ h3 {
     width: calc(50% - 10px);
     font-size: 11px;
   }
+  .agent-strip > .agent-name:last-child {
+    width: 100%;
+  }
   .agent-name .icon {
     width: 15px;
     height: 15px;
