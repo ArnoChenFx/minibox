@@ -31,7 +31,10 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * here, and a name that is not a preview is refused.
  */
 export function isPreviewHostRequest(url: URL, base: string): boolean {
-  return url.hostname === base || inPreviewNamespace(url.hostname, base);
+  // A trailing dot names the same host in DNS. It is matched here, so such a name is refused rather than served the
+  // console, and the exact-name checks below refuse it.
+  const hostname = url.hostname.endsWith(".") ? url.hostname.slice(0, -1) : url.hostname;
+  return hostname === base || inPreviewNamespace(hostname, base);
 }
 
 /**
@@ -96,7 +99,8 @@ function exchangeTicket(url: URL, parsed: PreviewHost, deps: PreviewHostDeps): R
   return new Response(null, {
     status: 302,
     headers: {
-      location: `${url.pathname}${url.search}`,
+      // Leading slashes are collapsed, so a path such as `//evil.example` cannot become a protocol-relative redirect.
+      location: `/${url.pathname.replace(/^\/+/, "")}${url.search}`,
       "set-cookie": previewCookie(token),
       "cache-control": "no-store",
     },

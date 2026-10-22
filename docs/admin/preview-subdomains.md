@@ -117,7 +117,7 @@ minibox.example.com {
 - The console's sign-in cookie is never sent to a preview host. A grant is not the sign-in, and it opens only the preview it was issued for.
 - A ticket works once, and only for the box and port it was issued for.
 - A write or a WebSocket from a preview is refused unless its `Origin` is that preview's own address. This stops one preview from changing a sibling. A `GET` from a sibling is not blocked, so apps must not change state on `GET`.
-- The box's cookies stay on its own preview host, because MiniBox drops their `Domain` attribute.
+- Cookies a box sets in its responses stay on its own preview host, because MiniBox drops their `Domain` attribute. A script on the page can still set a cookie for the whole preview domain, so do not trust cookies across previews.
 - A name under the base domain that is not a preview, including the domain itself, gets a `404`.
 - A subdomain preview may use its own storage and cookies. Run only apps you trust in boxes, as before.
 

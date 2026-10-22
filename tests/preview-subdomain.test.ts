@@ -637,6 +637,34 @@ describe("subdomain preview routing", () => {
   });
 });
 
+describe("subdomain preview host edge cases", () => {
+  test("a preview name with a trailing dot is refused, and never served the console", async () => {
+    const on = await bed();
+    try {
+      for (const hostname of [`5173-demo.${BASE}.`, `${BASE}.`]) {
+        const res = await previewFetch(on, hostname, "/login", { headers: { cookie: on.cookie } });
+        expect(res.status).toBe(404);
+        expect(res.headers.get("x-minibox-preview")).toBe("1");
+      }
+    } finally {
+      on.stop();
+    }
+  });
+
+  test("spending a ticket on a path with leading slashes redirects on the same host", async () => {
+    const on = await bed();
+    try {
+      const box = await startedBox(on, "demo");
+      const { hostname, ticket } = await launch(on, box, 5173);
+      const res = await previewFetch(on, hostname, `//evil.example/x?${TICKET_PARAM}=${ticket}`);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("/evil.example/x");
+    } finally {
+      on.stop();
+    }
+  });
+});
+
 describe("preview self-check endpoint", () => {
   test("the owner gets each check, and a wildcard that does not resolve is reported", async () => {
     const on = await bed(BASE, { resolves: async () => false, get: WILDCARD_WORKS.get });

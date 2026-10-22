@@ -703,7 +703,7 @@ const TAB_RENDER = {
           <button class="btn btn-sm" data-action="port-refresh">${icon("refresh")}${t("bd.portsRefresh")}</button>
           <button class="btn btn-sm btn-primary" data-action="port-add">${icon("plus")}${t("bd.portsAdd")}</button>
         </div></div>
-        <div class="card-body"><p class="help">${t("bd.portsHelp")}</p></div>
+        <div class="card-body"><p class="help">${esc(t("bd.portsHelp"))}</p></div>
         ${body}</div>`;
     };
     root.addEventListener("click", (event) => {

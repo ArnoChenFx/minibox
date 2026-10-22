@@ -82,7 +82,7 @@ In subdomain mode:
 - A grant is not the sign-in. The console's `minibox_session` cookie is never sent to a box. A grant stops opening its preview when its sign-in ends, when its box is renamed or deleted, and when MiniBox restarts, because grants are kept in memory and not written to `DATA_DIR`. A WebSocket closes when its sign-in or grant ends, and when its connection to the box ends, such as when the box stops or is deleted.
 - Only names that are `<port>-<box>.<PREVIEW_BASE_DOMAIN>` are served. The base domain itself and any other name under it get a `404`. Nothing under the base domain reaches the console.
 - A write or a WebSocket on a preview must come from that preview's own origin. Previews under one base domain are same-site with each other, so this check stops one box's page from changing another box's preview. A page can still send a `GET` to a sibling preview with that preview's grant cookie. Its response is readable only if the sibling allows it. So apps must not change state on `GET`.
-- A box receives only the cookies it set itself. A cookie the box sets on its preview host loses its `Domain` attribute, so it stays on that host.
+- A box receives only the cookies it set itself. A cookie the box sets in a response loses its `Domain` attribute, so it stays on that host. A script on the page can still set a cookie for the whole preview domain.
 - The preview sandbox keeps `allow-same-origin`, so the app can use its own storage and cookies. The app's origin is still its own, separate from the console's.
 - The preview self-check on **Settings** warns when the preview domain shares its last two labels with the console, and reports when a wildcard does not reach MiniBox.
 

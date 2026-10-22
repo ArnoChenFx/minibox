@@ -518,7 +518,7 @@ async function loadPreview(view) {
     return;
   }
   if (setup.mode !== "subdomain") {
-    card.innerHTML = `<div class="card-head"><div><h3>${t("st.preview")}</h3><p class="help">${t("st.previewPathHelp")}</p></div>${icon("link")}</div>`;
+    card.innerHTML = `<div class="card-head"><div><h3>${t("st.preview")}</h3><p class="help">${esc(t("st.previewPathHelp"))}</p></div>${icon("link")}</div>`;
     return;
   }
   const checks = setup.checks
@@ -529,7 +529,7 @@ async function loadPreview(view) {
     })
     .join("");
   card.innerHTML = `
-    <div class="card-head"><div><h3>${t("st.preview")}</h3><p class="help">${t("st.previewHelp")}</p></div>${icon("link")}</div>
+    <div class="card-head"><div><h3>${t("st.preview")}</h3><p class="help">${esc(t("st.previewHelp"))}</p></div>${icon("link")}</div>
     <div class="card-body stack">
       <dl class="kv"><dt>${t("st.previewBase")}</dt><dd class="mono">${esc(setup.baseDomain)}</dd></dl>
       ${checks}
