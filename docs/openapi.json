@@ -53,6 +53,9 @@
     },
     {
       "name": "hosts"
+    },
+    {
+      "name": "notify"
     }
   ],
   "paths": {
@@ -29840,6 +29843,1099 @@
         "x-kind": "destructive",
         "x-scope": "host:manage",
         "x-async": false
+      }
+    },
+    "/api/notify/channels": {
+      "get": {
+        "operationId": "notify.channel.list",
+        "tags": [
+          "notify"
+        ],
+        "summary": "List notification channels",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "webhook",
+                              "ntfy",
+                              "telegram"
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "events": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "box.oom",
+                                "exec.failed",
+                                "checkpoint.failed",
+                                "box.ttl_soon",
+                                "box.idle_soon",
+                                "session.takeover",
+                                "host.offline"
+                              ]
+                            },
+                            "description": "The notices this channel is sent."
+                          },
+                          "boxes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Box names or ids the channel is limited to. Empty means every box."
+                          },
+                          "url": {
+                            "description": "The webhook URL with its path and query masked, such as https://hooks.example.com/…, because a hook URL can carry a token. The full URL is never returned. Null for the other types.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "server": {
+                            "description": "The ntfy server. Null for the other types.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "topic": {
+                            "description": "The ntfy topic. Null for the other types.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "chatId": {
+                            "description": "The Telegram chat id or channel. Null for the other types.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "hasSecret": {
+                            "type": "boolean",
+                            "description": "Whether a secret is stored: the webhook signing key, the ntfy access token or the Telegram bot token. The value is never returned."
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "type",
+                          "name",
+                          "enabled",
+                          "events",
+                          "boxes",
+                          "url",
+                          "server",
+                          "topic",
+                          "chatId",
+                          "hasSecret",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "channels"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "notify:manage",
+        "x-async": false,
+        "x-cli": "notify channel ls",
+        "x-mcp": {
+          "name": "list_notify_channels",
+          "toolset": "meta"
+        }
+      }
+    },
+    "/api/notify/channels/{id}": {
+      "put": {
+        "operationId": "notify.channel.set",
+        "tags": [
+          "notify"
+        ],
+        "summary": "Create or change a notification channel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Channel id: lowercase letters, digits and hyphens, starting with a letter."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "webhook",
+                      "ntfy",
+                      "telegram"
+                    ],
+                    "description": "webhook posts JSON, ntfy sends to a topic, telegram sends through a bot to a chat."
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "Name shown in the list."
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Whether the channel sends. A disabled channel keeps its settings. Defaults to true."
+                  },
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "box.oom",
+                        "exec.failed",
+                        "checkpoint.failed",
+                        "box.ttl_soon",
+                        "box.idle_soon",
+                        "session.takeover",
+                        "host.offline"
+                      ]
+                    },
+                    "description": "The notices to send, at least one. Each is a kind such as box.oom or host.offline."
+                  },
+                  "boxes": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "description": "Box names or ids to limit the channel to. Omitted or empty means every box. Host notices are never limited by it."
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "description": "Webhook URL, http or https, without a user name or password. Used by webhook channels. Stored as a secret and never returned in full; omitted on a change, the stored URL is kept."
+                  },
+                  "server": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "description": "ntfy server, http or https. Omitted, https://ntfy.sh is used. Used by ntfy channels."
+                  },
+                  "topic": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                    "description": "ntfy topic: letters, digits, underscores and hyphens. Used by ntfy channels."
+                  },
+                  "chatId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "Telegram chat id, such as -1001234567890, or a channel name such as @alerts. Used by telegram channels."
+                  },
+                  "secret": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 512,
+                    "description": "The channel's secret: a webhook signing key, an ntfy access token or a Telegram bot token. Omitted keeps the stored value, null clears it. Never returned."
+                  }
+                },
+                "required": [
+                  "type",
+                  "name",
+                  "events"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channel": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "webhook",
+                            "ntfy",
+                            "telegram"
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "box.oom",
+                              "exec.failed",
+                              "checkpoint.failed",
+                              "box.ttl_soon",
+                              "box.idle_soon",
+                              "session.takeover",
+                              "host.offline"
+                            ]
+                          },
+                          "description": "The notices this channel is sent."
+                        },
+                        "boxes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Box names or ids the channel is limited to. Empty means every box."
+                        },
+                        "url": {
+                          "description": "The webhook URL with its path and query masked, such as https://hooks.example.com/…, because a hook URL can carry a token. The full URL is never returned. Null for the other types.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "server": {
+                          "description": "The ntfy server. Null for the other types.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "topic": {
+                          "description": "The ntfy topic. Null for the other types.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "chatId": {
+                          "description": "The Telegram chat id or channel. Null for the other types.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasSecret": {
+                          "type": "boolean",
+                          "description": "Whether a secret is stored: the webhook signing key, the ntfy access token or the Telegram bot token. The value is never returned."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "type",
+                        "name",
+                        "enabled",
+                        "events",
+                        "boxes",
+                        "url",
+                        "server",
+                        "topic",
+                        "chatId",
+                        "hasSecret",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "created": {
+                      "type": "boolean",
+                      "description": "True when the channel is new, false when its settings were replaced."
+                    },
+                    "valueChange": {
+                      "type": "string",
+                      "enum": [
+                        "set",
+                        "cleared",
+                        "kept"
+                      ],
+                      "description": "What happened to the stored secret: set to a new value, cleared, or kept as it was."
+                    }
+                  },
+                  "required": [
+                    "channel",
+                    "created",
+                    "valueChange"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "notify:manage",
+        "x-async": false,
+        "x-cli": "notify channel set",
+        "x-mcp": {
+          "name": "set_notify_channel",
+          "toolset": "meta"
+        }
+      },
+      "delete": {
+        "operationId": "notify.channel.delete",
+        "tags": [
+          "notify"
+        ],
+        "summary": "Delete a notification channel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Channel id: lowercase letters, digits and hyphens, starting with a letter."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "notify:manage",
+        "x-async": false,
+        "x-cli": "notify channel rm",
+        "x-mcp": {
+          "name": "delete_notify_channel",
+          "toolset": "meta"
+        }
+      }
+    },
+    "/api/notify/channels/{id}/test": {
+      "post": {
+        "operationId": "notify.channel.test",
+        "tags": [
+          "notify"
+        ],
+        "summary": "Send a test notification",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Channel id: lowercase letters, digits and hyphens, starting with a letter."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The HTTP status the channel answered with, if it answered."
+                    },
+                    "attempts": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "status",
+                    "attempts",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "notify:manage",
+        "x-async": false,
+        "x-cli": "notify channel test",
+        "x-mcp": {
+          "name": "test_notify_channel",
+          "toolset": "meta"
+        }
+      }
+    },
+    "/api/notify/deliveries": {
+      "get": {
+        "operationId": "notify.delivery.list",
+        "tags": [
+          "notify"
+        ],
+        "summary": "List recent notification deliveries",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Deliveries to return, newest first, between 1 and 200. Defaults to 50."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "The delivery id. A webhook receiver gets it as the x-minibox-delivery header."
+                          },
+                          "ts": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "When the delivery finished, as epoch milliseconds."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ok",
+                              "error"
+                            ]
+                          },
+                          "channel": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "type": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "notice": {
+                            "description": "The notice kind that was sent, such as box.oom.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "title": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "attempts": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "httpStatus": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "description": "Why the delivery failed, such as timeout or http_500.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "ts",
+                          "status",
+                          "channel",
+                          "type",
+                          "notice",
+                          "title",
+                          "attempts",
+                          "httpStatus",
+                          "error"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "deliveries"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "notify:manage",
+        "x-async": false,
+        "x-cli": "notify deliveries",
+        "x-mcp": {
+          "name": "list_notify_deliveries",
+          "toolset": "meta"
+        }
       }
     }
   },

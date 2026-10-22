@@ -59,6 +59,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     checkpointPackageMaxMb: 2048,
     fileUploadMaxMb: 1024,
     hostOvercommit: 1,
+    notifyAllowPrivate: false,
     ...overrides,
   };
 }
@@ -67,7 +68,7 @@ export function createTestApp(
   overrides: Partial<Config> = {},
   runtime = new FakeRuntime(),
   hooks: Partial<ExecutorHooks> = {},
-  deps: Pick<AppDeps, "cliBuild"> = {},
+  deps: Pick<AppDeps, "cliBuild" | "notify"> = {},
 ): { app: App; runtime: FakeRuntime; checkpoints: FakeCheckpointEngine } {
   const cfg = testConfig(overrides);
   if (overrides.dataDir === undefined) cfg.dataDir = mkdtempSync(join(tmpdir(), "minibox-test-"));

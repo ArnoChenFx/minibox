@@ -10,6 +10,7 @@ Open **Settings** in the sidebar to manage the console and the server's access. 
 | **Signed-in sessions** | See the browsers that are signed in, and sign them out. See [Access, sessions and tokens](access-and-tokens.md). |
 | **Agent API tokens** | Create, read and revoke tokens for agents and scripts. See [Access, sessions and tokens](access-and-tokens.md#agent-api-tokens). |
 | **Secrets** | Add, replace and delete host secrets. See [Environment variables and secrets](environment-and-secrets.md). |
+| **Notifications** | Add, change, pause and delete notification channels, send a test notice, and see recent deliveries. Owner only. See [Notifications](notifications.md). |
 
 The **About** page in the sidebar shows the version of MiniBox that is running, and links to the documentation, the changelog and the license.
 

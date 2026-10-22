@@ -31,7 +31,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | Toolset | What it is for |
 |---|---|
 | `core` | Boxes, commands and files in volumes. On by default. |
-| `meta` | Hosts. On by default. |
+| `meta` | Hosts and notification channels. On by default. |
 | `session` | Terminal sessions in boxes |
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
@@ -77,6 +77,11 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `add_host` | `POST /api/hosts` |
 | `test_host` | `POST /api/hosts/test` |
 | `remove_host` | `DELETE /api/hosts/{id}` |
+| `list_notify_channels` | `GET /api/notify/channels`. Owner only |
+| `set_notify_channel` | `PUT /api/notify/channels/{id}`. Owner only |
+| `delete_notify_channel` | `DELETE /api/notify/channels/{id}`. Owner only |
+| `test_notify_channel` | `POST /api/notify/channels/{id}/test`. Owner only |
+| `list_notify_deliveries` | `GET /api/notify/deliveries`. Owner only |
 
 ### rebuild
 
@@ -193,3 +198,7 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 - `devcontainer`, with `url`, and optional `branch`, `path` and `secretRef`. It reads `image`, `build` and `containerEnv` from the `devcontainer.json` file, and refuses any other setting, including lifecycle commands.
 
 `rebuild_template` takes the template's `ref`, and `pull_image` takes an image `ref`, such as `node:24-bookworm-slim`. Building, rebuilding and pulling are owner only. Each returns a task, and its log shows the build or the layers. See [Templates](../user-guide/templates.md).
+
+## Notification tools
+
+`set_notify_channel` takes the fields of `PUT /api/notify/channels/{id}`: `id`, `name`, `type` and `events`, and optionally `boxes`, `enabled`, `url`, `server`, `topic`, `chatId` and `secret`. A secret is never returned. `list_notify_channels` shows only whether one is stored, as `hasSecret`. Omit `secret` to keep the stored one, or send `null` to clear it. The tools are for the owner only, and a token does not see them in `tools/list`. See [Notifications](../user-guide/notifications.md).

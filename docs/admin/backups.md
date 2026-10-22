@@ -6,7 +6,7 @@ A complete backup of MiniBox has three parts: the data directory, the Docker vol
 
 | What | Where it lives | Why it matters |
 |---|---|---|
-| The data directory | `DATA_DIR` (`/data` in the `minibox-data` volume in the release image) | Box settings, tokens, sessions, host and pool settings, secrets, the access key and the SSH host key |
+| The data directory | `DATA_DIR` (`/data` in the `minibox-data` volume in the release image) | Box settings, tokens, sessions, host, pool and notification settings, secrets, the access key and the SSH host key |
 | Box volumes | Docker volumes named `vol_…`, and `minibox-ws-<name>` for older boxes | Your work in `/workspace`, home folders and other data |
 | Checkpoint repository | Docker volume `minibox-checkpoints-local` (or `minibox-checkpoints-<host>` on another host) | The data of your checkpoints |
 | Checkpoint key | `DATA_DIR/secrets/checkpoint-repo.key` | Without this key, the checkpoints cannot be read |

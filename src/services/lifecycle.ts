@@ -2,7 +2,7 @@ import type { Config } from "../config";
 import type { HostCtx, HostRegistry } from "../host/registry";
 import { log } from "../lib/logger";
 import { OWNER } from "../operations/types";
-import { ttlExpired } from "../specs/lifetime";
+import { ttlEndsAt, ttlExpired } from "../specs/lifetime";
 import type { BoxSpec } from "../specs/types";
 import type { TaskManager } from "../tasks/manager";
 
@@ -11,6 +11,9 @@ import type { ActivityPulse } from "./activity-pulse";
 import { type Box, sleepBox } from "./boxes";
 import type { ExecManager } from "./exec";
 import type { RecordNote, TerminalService } from "./terminals";
+
+/** How long before a TTL end or an idle sleep the warning event is written. */
+export const WARN_AHEAD_MS = 5 * 60_000;
 
 /** The SSH gateway's open connections. An open one keeps its box awake, as an attached terminal does. */
 export interface SshConnections {
@@ -54,6 +57,9 @@ export class LifecycleWatcher {
   private readonly watchedSince: number;
   /** Boxes whose latest pass saw a tmux client attached. The pass that finds it gone restarts their idle window. */
   private readonly clientSeen = new Set<string>();
+  /** The deadline each box was last warned about, so one TTL end or one idle sleep warns once. */
+  private readonly warnedTtl = new Map<string, number>();
+  private readonly warnedIdle = new Map<string, number>();
 
   constructor(private readonly options: LifecycleOptions) {
     this.everyMs = options.everyMs ?? options.cfg.lifecycleIntervalMs;
@@ -86,6 +92,8 @@ export class LifecycleWatcher {
         await this.pass(host, report);
       }
       for (const boxId of this.clientSeen) if (!known.has(boxId)) this.clientSeen.delete(boxId);
+      for (const boxId of this.warnedTtl.keys()) if (!known.has(boxId)) this.warnedTtl.delete(boxId);
+      for (const boxId of this.warnedIdle.keys()) if (!known.has(boxId)) this.warnedIdle.delete(boxId);
     } finally {
       this.ticking = false;
     }
@@ -96,6 +104,7 @@ export class LifecycleWatcher {
     for (const spec of host.specs.list()) {
       if (spec.hostId !== host.host.id) continue;
       try {
+        this.warnTtlSoon(host, spec);
         if (await this.expireTtl(host, spec, report)) continue;
         await this.maybeSleep(host, spec, report);
       } catch (e) {
@@ -125,6 +134,41 @@ export class LifecycleWatcher {
     return true;
   }
 
+  /** Warns that a running box's TTL ends within the warning window. It stops at the end whether or not it is busy. */
+  private warnTtlSoon(host: HostCtx, spec: BoxSpec): void {
+    const ends = ttlEndsAt(spec);
+    if (ends === null || spec.lifecycle.desired !== "running") return;
+    const left = ends - this.now();
+    if (left <= 0 || left > WARN_AHEAD_MS || this.warnedTtl.get(spec.id) === ends) return;
+    this.warnedTtl.set(spec.id, ends);
+    this.warn(host, spec, "box.ttl_soon", `Box TTL ends soon: ${spec.name}`, ends);
+  }
+
+  /** Warns that a box is about to sleep for being idle. Called only for a box that is quiet from the watcher's view. */
+  private warnIdleSoon(host: HostCtx, spec: BoxSpec, quietAt: number): void {
+    const left = quietAt - this.now();
+    if (left <= 0 || left > WARN_AHEAD_MS || this.warnedIdle.get(spec.id) === quietAt) return;
+    this.warnedIdle.set(spec.id, quietAt);
+    this.warn(host, spec, "box.idle_soon", `Box will sleep when idle: ${spec.name}`, quietAt);
+  }
+
+  private warn(
+    host: HostCtx,
+    spec: BoxSpec,
+    op: "box.ttl_soon" | "box.idle_soon",
+    summary: string,
+    deadline: number,
+  ): void {
+    this.options.record(host.host.id, "system", OWNER, {
+      op,
+      kind: "write",
+      status: "ok",
+      summary,
+      target: { kind: "box", id: spec.containerId, name: spec.name },
+      detail: { boxId: spec.id, deadline: new Date(deadline).toISOString() },
+    });
+  }
+
   private async maybeSleep(host: HostCtx, spec: BoxSpec, report: LifecycleReport): Promise<void> {
     if (spec.lifecycle.desired !== "running") return;
     const idleSec = effectiveIdleSec(spec, this.options.cfg);
@@ -134,7 +178,12 @@ export class LifecycleWatcher {
     if (!info?.running) return;
     if (this.busy(info.id, spec.id)) return;
     if (await this.terminalOpen(host, info.id, spec.id)) return;
-    if (!this.quietFor(spec.id, spec.createdAt, idleSec)) return;
+    const quietAt = this.quietAt(spec.id, spec.createdAt, idleSec);
+    if (!Number.isFinite(quietAt)) return;
+    if (this.now() < quietAt) {
+      this.warnIdleSoon(host, spec, quietAt);
+      return;
+    }
 
     await host.sampler.sampleSoon();
     const cpu = host.sampler.statsOf(spec.id)?.cpuPercent;
@@ -195,8 +244,14 @@ export class LifecycleWatcher {
 
   /** The last heartbeat is at least `idleSec` old. With none, the box counts from when watching began or from creation. */
   private quietFor(boxId: string, createdAt: string, idleSec: number): boolean {
+    const at = this.quietAt(boxId, createdAt, idleSec);
+    return Number.isFinite(at) && this.now() >= at;
+  }
+
+  /** The moment the box counts as quiet: its last heartbeat plus the idle timeout. NaN when the creation time is unreadable. */
+  private quietAt(boxId: string, createdAt: string, idleSec: number): number {
     const last = this.options.pulse.lastAt(boxId) ?? Math.max(Date.parse(createdAt), this.watchedSince);
-    return Number.isFinite(last) && this.now() - last >= idleSec * 1000;
+    return last + idleSec * 1000;
   }
 }
 
