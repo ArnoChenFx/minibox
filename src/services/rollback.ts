@@ -76,6 +76,16 @@ function itemOf(host: HostCtx, volume: { volumeId: string; name: string; path: s
   };
 }
 
+function mountedByAnyBox(host: HostCtx, engineName: string): boolean {
+  return host.specs
+    .list()
+    .some((spec) => spec.hostId === host.host.id && spec.mounts.some((mount) => mount.volume === engineName));
+}
+
+function mountsAt(spec: BoxSpec, volume: { engineName: string; path: string }): boolean {
+  return spec.mounts.some((mount) => mount.volume === volume.engineName && mount.path === volume.path);
+}
+
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -110,7 +120,11 @@ export async function confirmRollback(
     const removed: { id: string; name: string }[] = [];
     let left = pending.replaced;
     for (const volume of pending.replaced) {
-      if (host.volumes.read(volume.volumeId)) {
+      if (mountedByAnyBox(host, volume.engineName)) {
+        // A rebuild since the rollback, or an undo a crash cut short, mounts it again. It is in use, so it stays.
+        progress?.log?.(`Keeping ${volume.name}: a box mounts it.\n`);
+        log.warn("checkpoint.rollback_confirm_kept", { box: box.name, volume: volume.name });
+      } else if (host.volumes.read(volume.volumeId)) {
         progress?.log?.(`Deleting ${volume.name}…\n`);
         await deleteVolume(host, volume.volumeId);
         removed.push({ id: volume.volumeId, name: volume.name });
@@ -213,4 +227,42 @@ export async function undoRollback(
     log.info("checkpoint.rollback_undone", { box: box.name });
     return rebuilt;
   });
+}
+
+/**
+ * Startup repair of rollback records a crash left behind. A record whose box is gone is dropped (its volumes went, or
+ * stayed, with the box). A record whose box mounts every replaced volume again and none of the restored ones is an undo
+ * cut short after its rebuild: the record is dropped and the restored volumes, which nothing mounts, are deleted, as the
+ * undo would have done. Any other record is left as it is, for its confirm or undo. Returns the box ids settled.
+ */
+export async function settlePendingRollbacks(host: HostCtx): Promise<string[]> {
+  const settled: string[] = [];
+  for (const pending of host.checkpoints.pendingRollbacks()) {
+    if (pending.hostId !== host.host.id) continue;
+    const spec = host.specs.read(pending.boxId);
+    if (!spec) {
+      host.checkpoints.removePendingRollback(pending.boxId);
+      settled.push(pending.boxId);
+      continue;
+    }
+    const undone = pending.replaced.every((volume) => mountsAt(spec, volume));
+    const restoredMounted = pending.restored.some((volume) => mountsAt(spec, volume));
+    if (!undone || restoredMounted) continue;
+    host.checkpoints.removePendingRollback(pending.boxId);
+    settled.push(pending.boxId);
+    for (const volume of pending.restored) {
+      if (!host.volumes.read(volume.volumeId) || mountedByAnyBox(host, volume.engineName)) continue;
+      try {
+        await deleteVolume(host, volume.volumeId);
+      } catch (e) {
+        log.warn("checkpoint.rollback_undo_cleanup_failed", {
+          box: pending.boxName,
+          volume: volume.name,
+          error: errorText(e),
+        });
+      }
+    }
+    log.info("checkpoint.rollback_undo_finished", { box: pending.boxName });
+  }
+  return settled;
 }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
+import { HELPER_SECRETS_LABEL } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { takeCheckpoint } from "../src/services/checkpoints";
 import { reconcileHost } from "../src/services/reconcile";
@@ -88,6 +89,39 @@ describe("startup after a checkpoint a crash cut short", () => {
     expect(report.unpaused).toEqual([box.boxId]);
     expect(report.stopped).toEqual([box.boxId]);
     expect((await boxes.getBox(host, box.boxId)).running).toBe(false);
+  });
+});
+
+describe("startup does not wake a box that was put to sleep on purpose", () => {
+  for (const reason of ["idle", "ttl"] as const) {
+    test(`a box slept for ${reason} stays stopped`, async () => {
+      const box = await runningBox(`slept-${reason}`);
+      expect(await boxes.sleepBox(host, box.boxId, reason)).toBe(true);
+
+      const report = await reconcileHost(host);
+
+      expect(report.started).not.toContain(box.boxId);
+      expect(await boxes.getBox(host, box.boxId)).toMatchObject({
+        running: false,
+        desired: "stopped",
+        stopReason: reason,
+      });
+    });
+  }
+});
+
+describe("startup removes helper secret volumes a crash left behind", () => {
+  test("only this instance's staged secret volumes are removed", async () => {
+    await runtime.createVolume("mbhsecstale", { [host.keys.internal]: "true", [HELPER_SECRETS_LABEL]: "true" });
+    await runtime.createVolume("mbhsecother", { "other.internal": "true", [HELPER_SECRETS_LABEL]: "true" });
+    await runtime.createVolume("plain-internal", { [host.keys.internal]: "true" });
+
+    const report = await reconcileHost(host);
+
+    expect(report.secretsRemoved).toEqual(["mbhsecstale"]);
+    expect(runtime.volumes.has("mbhsecstale")).toBe(false);
+    expect(runtime.volumes.has("mbhsecother")).toBe(true);
+    expect(runtime.volumes.has("plain-internal")).toBe(true);
   });
 });
 

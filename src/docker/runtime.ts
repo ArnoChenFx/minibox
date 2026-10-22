@@ -18,6 +18,7 @@ import {
   type CreateContainerSpec,
   type DiskUsage,
   HELPER_SECRETS_DIR,
+  HELPER_SECRETS_LABEL,
   type HelperSpec,
   isRuntimeError,
   type Mount,
@@ -562,7 +563,7 @@ async function runHelper(docker: Docker, spec: HelperSpec): Promise<{ exitCode: 
  */
 async function stageSecrets(docker: Docker, spec: HelperSpec): Promise<string> {
   const volume = `mbhsec${randomBytes(6).toString("hex")}`;
-  await call(() => docker.createVolume({ Name: volume }));
+  await call(() => docker.createVolume({ Name: volume, Labels: { ...spec.labels, [HELPER_SECRETS_LABEL]: "true" } }));
   try {
     const stage = await call(() =>
       docker.createContainer({

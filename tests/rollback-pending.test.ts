@@ -17,6 +17,8 @@ import {
   takeCheckpoint,
   type TakeCheckpointInput,
 } from "../src/services/checkpoints";
+import { rebuildBox } from "../src/services/rebuild";
+import { reconcileHost } from "../src/services/reconcile";
 import { confirmRollback, pendingRollbackView, undoRollback } from "../src/services/rollback";
 import { deleteVolume } from "../src/services/volumes";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
@@ -337,6 +339,71 @@ describe("a rollback that waits for its confirm or undo", () => {
     expect(runtime.volumes.has(original)).toBe(false);
     expect(runtime.volumes.has(originalHome)).toBe(false);
     expect(host.checkpoints.pendingRollback(box.boxId)).toBeNull();
+  });
+});
+
+/** What an undo does up to its rebuild, without the steps after it: as if the server stopped right there. */
+async function undoCutShortAfterRebuild(boxId: string): Promise<void> {
+  const spec = host.specs.read(boxId);
+  const pending = host.checkpoints.pendingRollback(boxId);
+  if (!spec || !pending) throw new Error("no rollback waits");
+  const mounts = spec.mounts.map((mount) => {
+    const back = pending.replaced.find((item) => item.path === mount.path);
+    return back ? { ...mount, volume: back.engineName } : mount;
+  });
+  await rebuildBox(host, boxId, spec.revision, { mounts }, true);
+}
+
+describe("rollback records a crash left behind", () => {
+  test("a confirm keeps a replaced volume a box mounts again, and still clears the record", async () => {
+    const { box, original, originalHome } = await rolledBack("alpha");
+    await undoCutShortAfterRebuild(box.boxId);
+
+    const done = await confirmRollback(host, box.boxId);
+
+    expect(done.removed).toEqual([]);
+    expect(runtime.volumes.has(original)).toBe(true);
+    expect(runtime.volumes.has(originalHome)).toBe(true);
+    expect(engineAt(box.boxId, "/workspace")).toBe(original);
+    expect(host.checkpoints.pendingRollback(box.boxId)).toBeNull();
+  });
+
+  test("startup finishes an undo cut short after its rebuild: the record goes and the restored volumes are deleted", async () => {
+    const { box, original, restored, pending } = await rolledBack("alpha");
+    await undoCutShortAfterRebuild(box.boxId);
+
+    const report = await reconcileHost(host);
+
+    expect(report.rollbacksSettled).toEqual([box.boxId]);
+    expect(host.checkpoints.pendingRollback(box.boxId)).toBeNull();
+    expect(engineAt(box.boxId, "/workspace")).toBe(original);
+    expect(runtime.volumes.has(original)).toBe(true);
+    expect(runtime.volumes.has(restored)).toBe(false);
+    for (const volume of pending.restored) expect(host.volumes.read(volume.volumeId)).toBeNull();
+  });
+
+  test("startup leaves a rollback that still waits as it is", async () => {
+    const { box, original, restored } = await rolledBack("alpha");
+
+    const report = await reconcileHost(host);
+
+    expect(report.rollbacksSettled).toEqual([]);
+    expect(host.checkpoints.pendingRollback(box.boxId)).not.toBeNull();
+    expect(runtime.volumes.has(original)).toBe(true);
+    expect(runtime.volumes.has(restored)).toBe(true);
+  });
+
+  test("startup drops the record of a box that is gone, and deletes no volume", async () => {
+    const { box, pending } = await rolledBack("alpha");
+    const kept = host.checkpoints.pendingRollback(box.boxId);
+    await boxes.deleteBox(host, box.boxId, false);
+    if (kept) host.checkpoints.writePendingRollback(kept);
+
+    const report = await reconcileHost(host);
+
+    expect(report.rollbacksSettled).toEqual([box.boxId]);
+    expect(host.checkpoints.pendingRollback(box.boxId)).toBeNull();
+    for (const volume of pending.replaced) expect(runtime.volumes.has(volume.engineName)).toBe(true);
   });
 });
 

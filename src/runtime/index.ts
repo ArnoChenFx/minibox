@@ -151,6 +151,12 @@ export interface HelperResult {
 /** Where a helper finds its `HelperSpec.secrets`, read-only. */
 export const HELPER_SECRETS_DIR = "/run/secrets";
 
+/**
+ * Marks the volume that stages a helper's secrets for one run. The volume also carries the helper's own labels, so a
+ * startup sweep can find the ones a crash left behind on this instance's prefix and remove them.
+ */
+export const HELPER_SECRETS_LABEL = "minibox.helper-secrets";
+
 /** A file-sized secret for one helper run. `name` is a plain file name, not a path. */
 export interface HelperSecret {
   name: string;

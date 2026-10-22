@@ -43,7 +43,7 @@
 - `inspectVolume` 与 `listVolumes` 返回驱动名和驱动选项；引擎没有报告选项时 `options` 缺省。
 - 挂载的 `mode: "ro"` 会写成绑定串末尾的 `:ro`。`kind: "bind"` 表示宿主机路径，缺省表示命名卷。
 - `runHelper` 把短生命周期容器跑到结束，返回时容器已被删除。容器不接入网络（`NetworkMode: none`），根文件系统只读，`/tmp` 是 tmpfs，默认 16 MiB，`tmpfsBytes` 可以按字节指定大小，丢掉全部能力，只加上调用方在 `capAdd` 里列出的能力，禁止提权，内存默认 256 MiB，进程数默认 64；`memoryBytes`、`pidsLimit` 与 `timeoutSec` 按调用指定，超时未指定时为 30 秒。容器带 `AutoRemove`，引擎在它退出后删除。超时会杀掉容器并返回退出码 124。日志去掉流帧头。镜像是基础模板。各用途只请求所需的权限：卷 chown（`0:0`，`CHOWN`）、NFS 与路径池的子目录（`0:0`，`CHOWN`、`DAC_OVERRIDE`）、删除空目录（`0:0`，`DAC_OVERRIDE`）、测量（`0:0`，`DAC_READ_SEARCH`）、池探测（`1000:1000`，无能力）。
-- `runHelper` 的 `secrets` 把小型密钥以 `/run/secrets/<名字>` 只读地交给辅助容器，密钥不进入 `env` 也不进入容器配置，因为 `docker inspect` 会显示它们。适配器先把密钥写进一个只存在于本次运行的卷：用创建但不启动的容器、以 Docker 归档接口写入（只读根文件系统的容器不接受 `docker cp`），再以只读方式挂到辅助容器，运行结束后删除该卷，无论成功与否。检查点仓库的密码就是这样传给 restic 的（`RESTIC_PASSWORD_FILE`）。
+- `runHelper` 的 `secrets` 把小型密钥以 `/run/secrets/<名字>` 只读地交给辅助容器，密钥不进入 `env` 也不进入容器配置，因为 `docker inspect` 会显示它们。适配器先把密钥写进一个只存在于本次运行的卷：用创建但不启动的容器、以 Docker 归档接口写入（只读根文件系统的容器不接受 `docker cp`），再以只读方式挂到辅助容器，运行结束后删除该卷，无论成功与否。该卷带辅助容器自己的标签和 `minibox.helper-secrets=true`，进程若在删除前崩溃，下次启动的对帐会删除本实例（同一内部标签）残留的这类卷。检查点仓库的密码就是这样传给 restic 的（`RESTIC_PASSWORD_FILE`）。
 - 辅助容器的命名卷挂载带 `NoCopy`。没有它，Docker 会把镜像里挂载点的目录复制进空卷，并覆盖卷根的属主和权限：基础模板的 `/mnt` 是 `root:root 755`，已 chown 为 `1000:1000` 的空卷挂到 `/mnt` 上就会变回 root。箱子容器的挂载不带 `NoCopy`，首次使用时仍从镜像复制初始内容。
 - `diskUsage(path)` 返回该路径所在文件系统的总字节和空闲字节。Docker 适配器用 `statfs`。路径不存在时为 `not_found`。
 - `statPath(id, path)` 用 `HEAD /containers/{id}/archive` 读取 `path` 的元数据（类型、大小、mode、引擎解析后的链接目标），不传输归档内容，所以对任意大小的目录开销相同；最后一级符号链接不跟随，容器可以是已创建但未启动的。`path` 不存在时返回 `not_found`。
