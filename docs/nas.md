@@ -201,10 +201,10 @@ You do not need `addr=`: MiniBox adds `addr=<server>` itself. MiniBox's reachabi
 Tested by stopping the NFS server, and separately by dropping its traffic in the firewall to imitate a NAS that is powered off:
 
 - The probe reports `unreachable` with the mount error (`input/output error` when the server refuses, `connection timed out` when nothing answers). The box list and the box page mark affected boxes as Storage unreachable.
-- Creating, starting and restarting a box on that pool returns `503` with code `docker_unavailable` and message key `storage_unreachable`, within a few seconds. Nothing is created: no container, no volume record, and no data under `/var/lib/docker/volumes/<volume>/_data` on the local disk.
+- Creating, starting and restarting a box on that pool returns `503` with code `docker_unavailable` and message key `storage_unreachable`, within about 5 seconds. Nothing is created: no container, no volume record, and no data under `/var/lib/docker/volumes/<volume>/_data` on the local disk.
 - Stopping a box still works.
-- A **running** box with a `hard` mount freezes any process that touches `/workspace` or `/home/dev` until the server is back, including MiniBox `exec` calls and terminals. An `exec` with `timeoutSec` does not return before the server is back, see [known issues](#known-issues).
-- With several NFS pools on an unreachable server, a probe of the pools page takes a few seconds per pool, and the first probe after a blackhole took over a minute.
+- A **running** box with a `hard` mount freezes any process that touches `/workspace` or `/home/dev` until the server is back, including MiniBox `exec` calls and terminals. A foreground `exec` with `timeoutSec` still returns, at most 2 seconds after its timeout fires, see [known issues](#known-issues).
+- The pools are probed side by side. A pool whose probe has not finished within 5 seconds is reported `unreachable` with `no answer within 5 s`, so the pools page answers within about 5 seconds however many NFS servers are gone. The probe keeps running, and its result replaces the one shown when it ends.
 - When the server comes back, frozen processes continue, the next probe reports `reachable`, and stopped boxes start again. Nothing needs remounting.
 
 Before NAS maintenance (reboot, firmware update), stop the boxes on its pools.
@@ -223,7 +223,8 @@ All messages below were seen in the tests.
 |---|---|---|
 | Pool `unreachable` | `… failed to mount local volume: … protocol not supported` | No `nfsvers=` in options, or `nfsvers=3` on a client kernel without NFSv3. Add `nfsvers=4.1` |
 | Pool `unreachable` | `… input/output error` | The server is down, or nothing listens on TCP 2049. Start the NFS service, check the firewall |
-| Pool `unreachable` | `… connection timed out` | Wrong server address, or the network or firewall drops the traffic |
+| Pool `unreachable` | `… connection timed out` | Wrong server address, or the network or firewall drops the traffic. In the test, a server whose traffic was dropped failed in about 2 seconds with this message |
+| Pool `unreachable` | `no answer within 5 s` | The probe had not finished after 5 seconds, for example because the server is frozen (tested with a frozen NFS server). The pool is reported unreachable at that point, and the probe keeps running. When the server answers, the probe finishes and the pool reports `reachable`. A `GET /api/pools?refresh=true` sent meanwhile joins the same probe, so it returns the same message after 5 seconds |
 | Pool `unreachable` | `… no such file or directory` | The export path does not exist, or this client is not allowed. NFSv4 hides exports the client may not use, so a client restriction can look like a wrong path. Linux `nfsd` may say `access denied by server` instead |
 | Box create fails with `502` and code `bad_gateway` | `Storage pool nas denied permission to create the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` (`storage_permission_denied`) | The squashed uid cannot write the export root. Use `all_squash,anonuid=1000,anongid=1000` (or `root_squash,anonuid=1000,anongid=1000`) and make the export directory 1000:1000. The response's `hint` names these options and links this guide |
 | Box create fails with `502` and code `bad_gateway` | `Uid 1000, the box user, cannot write the new volume directory <server>:<export>/vol_…, so the volume was not created: … Permission denied` (`storage_unwritable`). The server log has `volume.chown_skipped` | `root_squash` to `nobody`: the new directory belongs to `nobody` (65534, or 4294967294 on Ganesha) and the squashed root cannot chown it. Change the export to `all_squash,anonuid=1000,anongid=1000` (or `root_squash,anonuid=1000,anongid=1000`). A volume directory that already exists and belongs to `nobody` can be fixed on the server with `chown -R 1000:1000 <export>/vol_…` |
@@ -236,8 +237,9 @@ All messages below were seen in the tests.
 
 Found while testing this guide:
 
-- An `exec` (and the timeout of a foreground `exec`) cannot finish while a `hard` mount is frozen: the kill MiniBox runs inside the box starts in the box's working directory `/workspace` and blocks with it. The call returns once the server is back.
-- Pools are probed one after another, so the pools page slows down with several unreachable NFS pools.
+- A foreground `exec` with `timeoutSec` returns at most 2 seconds after its timeout fires, even while a `hard` mount is frozen. If the stop has not finished by then, the call returns `status: running` with `timedOut: true`, and MiniBox keeps trying to stop the process in the background, waiting 1, 2 and 4 seconds and so on, up to 30, between attempts. The exec is recorded as `killed` once a stop succeeds. In the test, a `cat` blocked on a frozen hard mount was stopped and recorded as `killed` 3.2 seconds into a 3-second `timeoutSec`, and an `exec` in `/workspace` on the frozen mount returned `status: running` after 5 seconds and was recorded as `killed` once the server came back.
+- `timeoutSec` does not bound the engine's own start of an exec. The timeout starts once the engine has started the process, so a start that blocks is waited for, not cut short. In the tests the start returned at once, including for an `exec` in `/workspace` on a frozen mount.
+- While a server does not answer, MiniBox keeps one probe waiting for that pool's mount. Later probes of the pool share it instead of starting another.
 
 ## Path pools
 
