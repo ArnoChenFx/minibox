@@ -65,7 +65,7 @@ let scratch = "";
 let repoRoot = "";
 let work = "";
 let gitBase = "";
-let gitServer: { port: number; stop(closeActiveConnections?: boolean): void } | undefined;
+let gitServer: ReturnType<typeof Bun.serve> | undefined;
 let restoreLogs: () => void = () => {};
 let app: App;
 let host: HostCtx;
