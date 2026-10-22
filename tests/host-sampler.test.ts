@@ -19,6 +19,7 @@ let restoreLogs: () => void;
 let boxFrames: BoxFrame[];
 let linkFrames: LinkFrame[];
 let sampleFrames: SampleFrame[];
+let fakeClock = false;
 
 beforeEach(() => {
   restoreLogs = silenceLogs();
@@ -39,8 +40,6 @@ afterEach(() => {
   fakeClock = false;
   jest.useRealTimers();
 });
-
-let fakeClock = false;
 
 /**
  * For the tests whose outcome depends on how long a timer runs: the cadence, the lease, the stale age and the re-list.
