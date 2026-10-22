@@ -33,7 +33,9 @@ const framesOf = (socket: FakeSocket, type: string) => socket.sent.filter((frame
 const nonceOf = (socket: FakeSocket) => String(framesOf(socket, "challenge")[0]?.nonce);
 
 const dirs: string[] = [];
+const hubs: AgentHub[] = [];
 afterEach(() => {
+  for (const hub of hubs.splice(0)) hub.close();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -42,6 +44,7 @@ function setup() {
   dirs.push(dataDir);
   const store = new AgentStore(dataDir);
   const hub = new AgentHub({ store, pairing: new PairingBook(), serverVersion: "0.4.0-test" });
+  hubs.push(hub);
   const pair = generateKeyPairSync("ed25519");
   const publicKeyPem = pair.publicKey.export({ type: "spki", format: "pem" }).toString();
   const enroll = () =>

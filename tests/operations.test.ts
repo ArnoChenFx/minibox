@@ -330,13 +330,19 @@ function opNamed(name: string): Operation {
   return operation;
 }
 
-/** One `test.each` row per registered operation. Each row builds its own app, so a row is fast and times out alone. */
+/** One `test.each` row per registered operation, so each row builds its own app and a slow row fails by itself. */
 function registeredNames(): [string][] {
   return OPERATIONS.map((operation) => [operation.name]);
 }
 
+const appsMade: App[] = [];
+afterEach(() => {
+  for (const app of appsMade.splice(0)) for (const host of app.hosts.list()) host.sampler.stop();
+});
+
 function appWith(hooks: Partial<ExecutorHooks> = {}) {
   const { app, runtime } = createTestApp({ labelPrefix: "mbtest" }, undefined, hooks);
+  appsMade.push(app);
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   runtime.seedImage(SNAPSHOT_REF, { [keys.snapshot]: "true" });
