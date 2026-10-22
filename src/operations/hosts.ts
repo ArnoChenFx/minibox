@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { endpointLabel, parseEndpoint } from "../host/endpoint";
 import type { HostManager, HostView } from "../host/manager";
 import { defineOperation } from "./define";
 import type { OperationContext } from "./types";
@@ -81,9 +82,21 @@ function hostDetail(input: z.output<typeof hostFieldsInput>) {
   return {
     id: input.id,
     name: input.name ?? null,
-    endpoint: input.endpoint,
+    endpoint: auditedEndpoint(input.endpoint),
     hostKeyFingerprint: input.hostKeyFingerprint ?? null,
   };
+}
+
+/**
+ * The endpoint as the audit records it. A valid endpoint is written in its credential-free form. One that does not parse,
+ * such as a URL with a password, which is refused, is recorded without whatever came before an `@`.
+ */
+function auditedEndpoint(raw: string): string {
+  try {
+    return endpointLabel(parseEndpoint(raw));
+  } catch {
+    return raw.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, "$1***@").slice(0, 512);
+  }
 }
 
 function hostsOf(ctx: OperationContext): HostManager {

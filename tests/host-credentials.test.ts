@@ -132,6 +132,7 @@ describe("credentials never leave the control plane", () => {
     const res = await post("/api/hosts", { id: "pw", endpoint: "tcp://user:hunter2-secret@127.0.0.1:1" });
     expect(res.status).toBe(400);
     expect(await res.text()).not.toContain("hunter2-secret");
+    expect(JSON.stringify(audits)).not.toContain("hunter2-secret");
   });
 
   test("the audit trail records the host and its endpoint, never the certificates", async () => {
