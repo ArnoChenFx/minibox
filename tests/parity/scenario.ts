@@ -811,6 +811,53 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("list hosts with an agent", "GET", "/api/hosts");
     await post("revoke the agent host", "/api/hosts/edge/revoke", {});
     await send("remove the revoked agent host", "DELETE", "/api/hosts/edge");
+    const filesRes = await post("create the files volume", "/api/volumes", { name: "files", confirm: true });
+    const filesId = String((filesRes.json?.volume as { id?: string } | undefined)?.id ?? "");
+    const OCTET = "application/octet-stream";
+    const streamPath = `/api/volumes/${filesId}/files/stream`;
+    await send("stream a file up without an octet-stream type", "PUT", `${streamPath}?path=notes/todo.txt`, {
+      body: "one\n",
+      contentType: "text/plain",
+    });
+    await send("stream a file up", "PUT", `${streamPath}?path=notes/todo.txt`, { body: "one\n", contentType: OCTET });
+    await send("stream a file over an existing one without overwrite", "PUT", `${streamPath}?path=notes/todo.txt`, {
+      body: "two\n",
+      contentType: OCTET,
+    });
+    await send(
+      "stream a file over an existing one with overwrite",
+      "PUT",
+      `${streamPath}?path=notes/todo.txt&overwrite=true`,
+      {
+        body: "two\n",
+        contentType: OCTET,
+      },
+    );
+    await send("stream a file back", "GET", `${streamPath}?path=notes/todo.txt`);
+    await send("stream a missing file back", "GET", `${streamPath}?path=notes/nope.txt`);
+    await send("create a folder with its parents", "POST", `/api/volumes/${filesId}/files/directory`, {
+      body: JSON.stringify({ path: "made/deep" }),
+      contentType: JSON_TYPE,
+    });
+    await send("stream a file into a folder", "PUT", `${streamPath}?path=made/other.txt`, {
+      body: "other\n",
+      contentType: OCTET,
+    });
+    await send("move a file onto an existing one", "POST", `/api/volumes/${filesId}/files/move`, {
+      body: JSON.stringify({ from: "made/other.txt", to: "notes/todo.txt" }),
+      contentType: JSON_TYPE,
+    });
+    await send("move a file", "POST", `/api/volumes/${filesId}/files/move`, {
+      body: JSON.stringify({ from: "notes/todo.txt", to: "made/deep/moved.txt" }),
+      contentType: JSON_TYPE,
+    });
+    await send("move a path onto itself", "POST", `/api/volumes/${filesId}/files/move`, {
+      body: JSON.stringify({ from: "made", to: "made" }),
+      contentType: JSON_TYPE,
+    });
+    await send("delete a file without confirm", "DELETE", `/api/volumes/${filesId}/files?path=made/deep/moved.txt`);
+    await send("delete a file", "DELETE", `/api/volumes/${filesId}/files?path=made/deep/moved.txt&confirm=true`);
+    await send("delete the volume root", "DELETE", `/api/volumes/${filesId}/files?path=/&confirm=true`);
   } finally {
     server.stop(true);
     app.throttle.stop();

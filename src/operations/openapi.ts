@@ -24,6 +24,12 @@ const ERROR_RESPONSES: Record<string, string> = {
   "503": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
 };
 
+const RAW_ERROR_RESPONSES: Record<string, string> = {
+  "411": "A raw upload did not declare its length in Content-Length.",
+  "413": "The upload is larger than FILE_UPLOAD_MAX_MB, or the request body is larger than the server accepts.",
+  "415": "The request does not declare application/octet-stream.",
+};
+
 /** The OpenAPI operationId: the operation name, plus the fixed value that tells the bindings of one operation apart. */
 export function operationIdOf(op: Pick<Operation, "name">, binding: RestBinding): string {
   return [op.name, ...Object.values(binding.fixed ?? {})].join(".");
@@ -82,8 +88,18 @@ function parameters(op: Operation, binding: RestBinding): JsonSchema[] {
   ];
 }
 
+const OCTET_STREAM = "application/octet-stream";
+const BINARY: JsonSchema = { type: "string", format: "binary" };
+
 /** The body holds the input keys that the path, the query and the fixed values do not supply. */
 function requestBody(op: Operation, binding: RestBinding): JsonSchema | undefined {
+  if (binding.raw) {
+    return {
+      required: true,
+      description: "The file's bytes. Send Content-Length; the upload is streamed, not buffered.",
+      content: { [OCTET_STREAM]: { schema: BINARY } },
+    };
+  }
   if (!binding.body) return undefined;
   const supplied = new Set([...pathParams(binding), ...(binding.query ?? []), ...Object.keys(binding.fixed ?? {})]);
   if (binding.ifMatch) supplied.add("expectedRevision");
@@ -100,6 +116,10 @@ function errorResponses(op: Operation, binding: RestBinding): Record<string, Jso
   if (pathParams(binding).length > 0) codes.add("404");
   if (op.conflicts) codes.add("409");
   if (binding.method !== "GET") codes.add("415");
+  if (binding.raw) {
+    codes.add("411");
+    codes.add("413");
+  }
   if (op.precondition) codes.add("422");
   if (binding.ifMatch) {
     codes.add("412");
@@ -109,7 +129,7 @@ function errorResponses(op: Operation, binding: RestBinding): Record<string, Jso
     [...codes].map((code) => [
       code,
       {
-        description: ERROR_RESPONSES[code],
+        description: (binding.raw && RAW_ERROR_RESPONSES[code]) || ERROR_RESPONSES[code],
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
     ]),
@@ -127,12 +147,22 @@ function operationObject(op: Operation, binding: RestBinding): JsonSchema {
     parameters: parameters(op, binding),
     ...(body ? { requestBody: body } : {}),
     responses: {
-      [status]: {
-        description: accepted ? "Accepted. The result is stored on the task." : status === "201" ? "Created." : "OK.",
-        content: {
-          "application/json": { schema: toJsonSchema(accepted ? TaskAcceptedSchema : op.output, "output") },
-        },
-      },
+      [status]: binding.stream
+        ? {
+            description:
+              "A file's bytes as application/octet-stream, or a folder as a gzip tar (application/gzip). Content-Disposition names the download.",
+            content: { [OCTET_STREAM]: { schema: BINARY }, "application/gzip": { schema: BINARY } },
+          }
+        : {
+            description: accepted
+              ? "Accepted. The result is stored on the task."
+              : status === "201"
+                ? "Created."
+                : "OK.",
+            content: {
+              "application/json": { schema: toJsonSchema(accepted ? TaskAcceptedSchema : op.output, "output") },
+            },
+          },
       ...errorResponses(op, binding),
     },
     "x-kind": op.kind,

@@ -168,6 +168,7 @@ describe("MCP", () => {
         "write_file",
         "list_files",
         "copy_files",
+        "upload_files",
       ]);
       expect(tools).not.toContain("rebuild_box");
       expect(tools).not.toContain("get_activity");

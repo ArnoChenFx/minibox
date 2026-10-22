@@ -8,6 +8,8 @@ import { ActivityLog } from "../src/activity";
 import { generateKeyPairPem } from "../src/agent/identity";
 import { AGENT_PROTOCOL } from "../src/agent/protocol";
 import type { App } from "../src/app";
+import type { RawBody } from "../src/lib/body";
+import { isByteStream } from "../src/lib/body";
 import { AppError } from "../src/lib/errors";
 import { setLogLevel } from "../src/lib/logger";
 import { defineOperation } from "../src/operations/define";
@@ -74,6 +76,11 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
     content: Buffer.from("not-a-real-tar").toString("base64"),
     encoding: "base64" as const,
   }),
+  "files.stream.upload": () => ({ id: "workspace", path: "streamed.txt" }),
+  "files.stream.download": () => ({ id: "workspace", path: "hello.txt" }),
+  "files.mkdir": () => ({ id: "workspace", path: "made" }),
+  "files.move": () => ({ id: "workspace", from: "hello.txt", to: "moved.txt" }),
+  "files.delete": () => ({ id: "workspace", path: "hello.txt", confirm: true }),
   "volume.list": () => ({}),
   "volume.get": () => ({ id: "alpha-workspace" }),
   "volume.create": () => ({ name: "extra", confirm: true }),
@@ -229,6 +236,10 @@ async function pairAgentHost(app: App, id: string): Promise<void> {
   });
 }
 
+function rawBodyOf(bytes: Buffer): RawBody {
+  return { stream: new Response(bytes).body, length: bytes.length };
+}
+
 /** A real id for operations that cannot succeed against the placeholder in `SAMPLES`. */
 async function preparedInput(
   app: App,
@@ -236,7 +247,7 @@ async function preparedInput(
   runtime: FakeRuntime,
   operation: Operation,
   boxId: string,
-): Promise<{ input: unknown; release?: () => void }> {
+): Promise<{ input: unknown; release?: () => void; body?: RawBody }> {
   if (operation.name === "task.get") {
     const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
     await app.tasks.drain();
@@ -299,7 +310,8 @@ async function preparedInput(
     const sample = SAMPLES[operation.name];
     if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
     const input = sample(boxId, app) as Record<string, unknown>;
-    return { input: { ...input, id: volumeId } };
+    const body = operation.name === "files.stream.upload" ? rawBodyOf(Buffer.from("streamed\n")) : undefined;
+    return { input: { ...input, id: volumeId }, body };
   }
   if (operation.name === "host.remove" || operation.name === "box.move") {
     await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });
@@ -548,7 +560,12 @@ describe("executor", () => {
       const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
       events.length = 0;
       try {
-        await app.operations.run(operation.name, ctx, prepared.input);
+        const result = await app.operations.run(
+          operation.name,
+          prepared.body ? { ...ctx, body: prepared.body } : ctx,
+          prepared.input,
+        );
+        if (isByteStream(result)) await result.body.cancel();
         prepared.release?.();
         await app.tasks.drain();
         const mine = events.filter((event) => event.op === operation.name);
@@ -730,7 +747,12 @@ describe("event log", () => {
       const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
       const before = app.events.head();
       try {
-        await app.operations.run(operation.name, ctx, prepared.input);
+        const result = await app.operations.run(
+          operation.name,
+          prepared.body ? { ...ctx, body: prepared.body } : ctx,
+          prepared.input,
+        );
+        if (isByteStream(result)) await result.body.cancel();
         prepared.release?.();
         await app.tasks.drain();
         const rows = app.events.after(before, {}, 20).filter((event) => event.op === operation.name);
@@ -894,6 +916,7 @@ describe("projections", () => {
       "write_file",
       "list_files",
       "copy_files",
+      "upload_files",
       "list_hosts",
       "get_host_usage",
       "add_host",

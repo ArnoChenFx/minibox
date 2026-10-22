@@ -446,6 +446,20 @@ export const MESSAGES = {
   file_copy_invalid: "from and to must be different paths inside the volume.",
   file_copy_into_self: "Cannot copy a path into itself or a subdirectory of itself.",
   file_copy_failed: "Could not copy files: {detail}",
+  file_upload_type: "A file is uploaded as application/octet-stream.",
+  file_upload_length: "The upload must declare its length in Content-Length.",
+  file_upload_too_large:
+    "The file is larger than the upload limit of {limit} MB. Raise FILE_UPLOAD_MAX_MB to allow it.",
+  file_upload_mismatch: "The upload did not match the {length} bytes its Content-Length declared.",
+  file_upload_failed: "Could not upload the file: {detail}",
+  file_exists: "{path} already exists. Send overwrite=true to replace it.",
+  file_target_is_directory: "{path} is a directory, so a file cannot replace it.",
+  file_parent_not_directory: "{path} is not a directory, so nothing can be created inside it.",
+  file_root_protected: "The volume root cannot be moved or deleted.",
+  file_move_invalid: "from and to must be different paths inside the volume.",
+  file_move_into_self: "Cannot move a path into itself or a subdirectory of itself.",
+  file_move_failed: "Could not move the file: {detail}",
+  file_delete_failed: "Could not delete the file: {detail}",
   mcp_not_sse_hint: "Post JSON-RPC to /mcp. DELETE /mcp closes a session.",
 } as const;
 export type MessageKey = keyof typeof MESSAGES;

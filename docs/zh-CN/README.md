@@ -18,6 +18,7 @@
 - [工具与自定义工具](user-guide/tools.md)：在 Box 中安装 Agent CLI 与运行时。
 - [环境变量与密钥](user-guide/environment-and-secrets.md)：设置变量并使用密钥。
 - [卷与存储](user-guide/volumes-and-storage.md)：卷、存储池与挂载。
+- [文件](user-guide/files.md)：浏览、上传与下载 Box 卷中的文件。
 - [NFS 与 NAS 存储](user-guide/nfs.md)：将 Box 数据放在网络文件服务器上。
 - [终端与会话](user-guide/terminal-and-sessions.md)：浏览器终端、tmux 会话与接管。
 - [SSH 访问与 CLI](user-guide/ssh-and-cli.md)：使用 `ssh`、`scp` 与 `sftp`，安装 CLI（含 Windows）。

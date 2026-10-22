@@ -64,4 +64,4 @@ minibox files read my-volume notes.txt
 minibox files write my-volume notes.txt --content "hello"
 ```
 
-全部 `minibox files` 命令见 [CLI 参考（英文）](../../reference/cli.md)。
+全部 `minibox files` 命令见 [CLI 参考（英文）](../../reference/cli.md)。要在 Box 页面上浏览、上传与下载文件，参见[文件](files.md)。

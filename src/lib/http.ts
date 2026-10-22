@@ -1,3 +1,4 @@
+import type { ByteStream } from "./body";
 import { AppError, toAppError } from "./errors";
 import { msg } from "./messages";
 
@@ -38,6 +39,24 @@ export function json(data: unknown, status = 200, headers: Record<string, string
       ...headers,
     },
   });
+}
+
+/** The path of a volume file that is uploaded or downloaded as one raw body. Its body is not JSON, so it is exempt. */
+export const FILE_STREAM_PATH = /^\/api\/volumes\/[^/]+\/files\/stream$/;
+
+function contentDisposition(filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+export function byteResponse(file: ByteStream): Response {
+  const headers: Record<string, string> = {
+    "content-type": file.contentType,
+    "content-disposition": contentDisposition(file.filename),
+    "cache-control": "no-store",
+  };
+  if (file.length !== null) headers["content-length"] = String(file.length);
+  return new Response(file.body, { headers });
 }
 
 /** The error object of every error answer, REST and the terminal socket alike, so a client reads one shape. */
@@ -96,11 +115,12 @@ export function payloadTooLarge(limit: number): AppError {
 }
 
 /**
- * The server's body limit is sized for checkpoint packages, which only `POST /api/packages` accepts. Every other request
- * keeps the old ceiling: one that declares a larger body is refused before any route runs.
+ * The server's body limit is sized for checkpoint packages and volume file uploads, which are the only bodies this large.
+ * Every other request keeps the old ceiling: one that declares a larger body is refused before any route runs.
  */
 export function assertBodyAllowed(req: Request, pathname: string): void {
   if (req.method === "POST" && pathname === "/api/packages") return;
+  if (req.method === "PUT" && FILE_STREAM_PATH.test(pathname)) return;
   const declared = Number(req.headers.get("content-length") ?? 0);
   if (declared > JSON_BODY_MAX_BYTES) throw payloadTooLarge(JSON_BODY_MAX_BYTES);
 }

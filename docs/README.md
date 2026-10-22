@@ -18,6 +18,7 @@ For people who use MiniBox every day.
 - [Tools and custom tools](user-guide/tools.md): install agent CLIs and runtimes into a box.
 - [Environment variables and secrets](user-guide/environment-and-secrets.md): set variables and use host secrets.
 - [Volumes and storage](user-guide/volumes-and-storage.md): volumes, storage pools and mounts.
+- [Files](user-guide/files.md): browse, upload and download the files in a box's volumes.
 - [NFS and NAS storage](user-guide/nfs.md): keep box data on a network file server.
 - [Terminals and sessions](user-guide/terminal-and-sessions.md): browser terminals, tmux sessions and takeover.
 - [SSH access and the CLI](user-guide/ssh-and-cli.md): use `ssh`, `scp` and `sftp`, and install the CLI, including on Windows.
