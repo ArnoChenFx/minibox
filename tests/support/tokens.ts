@@ -86,7 +86,10 @@ export interface Body {
   };
   deletedBoxes?: string[];
   failedBoxes?: { id: string; name: string; hostId: string; message: string }[];
-  tools?: { name: string; description: string }[];
+  tools?: { name: string; description: string; stop?: string | null }[];
+  tool?: { id: string; name: string; overridesBuiltin: boolean; stop?: string | null };
+  id?: string;
+  restoredBuiltin?: boolean;
   isError?: boolean;
   error?: { code: string; key?: string; details?: { field?: string; taskId?: string; preview?: RollbackPreviewBody } };
 }

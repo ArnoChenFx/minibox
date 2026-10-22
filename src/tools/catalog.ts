@@ -6,8 +6,12 @@ import { badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { isToolCategory, TOOL_CATEGORIES, type CatalogEntry } from "./types";
 
-const ID = /^[a-z][a-z0-9-]{0,62}$/;
+/** A catalog id: a lowercase name that is safe in a file name, a URL path and a shell word. */
+export const TOOL_ID_RE = /^[a-z][a-z0-9-]{0,62}$/;
 const SOURCES = new Set(["npm", "pip", "script"]);
+
+/** The built-in entries that ship with MiniBox. */
+export const BUNDLED_CATALOG_DIR = join(ROOT, "catalog");
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -25,7 +29,7 @@ function requireString(obj: Record<string, unknown>, key: string, file: string):
 export function parseCatalogEntry(raw: unknown, file: string): CatalogEntry {
   if (!isObject(raw)) throw badRequest(msg("tool_catalog_invalid", { file, detail: "root must be an object" }));
   const id = requireString(raw, "id", file);
-  if (!ID.test(id)) throw badRequest(msg("tool_catalog_invalid", { file, detail: `invalid id ${id}` }));
+  if (!TOOL_ID_RE.test(id)) throw badRequest(msg("tool_catalog_invalid", { file, detail: `invalid id ${id}` }));
   // Custom tools.d entries written before categories existed have no category; they were coding-agent CLIs, so they join
   // the agents group instead of breaking the whole catalog.
   const category = raw.category === undefined ? "agents" : requireString(raw, "category", file);
@@ -68,7 +72,8 @@ export function parseCatalogEntry(raw: unknown, file: string): CatalogEntry {
   };
 }
 
-function readDirEntries(dir: string): CatalogEntry[] {
+/** The entries of one directory in file-name order. A missing directory is empty. A broken file throws. */
+export function readDirEntries(dir: string): CatalogEntry[] {
   if (!existsSync(dir)) return [];
   const out: CatalogEntry[] = [];
   for (const name of readdirSync(dir).toSorted()) {
@@ -89,7 +94,7 @@ function readDirEntries(dir: string): CatalogEntry[] {
  * Built-in entries from the repo `catalog/` directory, overridden by `DATA_DIR/tools.d/*.json` with the same id.
  * Custom ids are appended. The first load failure for a custom file is a 400 so operators see the bad file.
  */
-export function loadCatalog(dataDir: string, bundledDir = join(ROOT, "catalog")): CatalogEntry[] {
+export function loadCatalog(dataDir: string, bundledDir = BUNDLED_CATALOG_DIR): CatalogEntry[] {
   const byId = new Map<string, CatalogEntry>();
   for (const entry of readDirEntries(bundledDir)) byId.set(entry.id, entry);
   for (const entry of readDirEntries(join(dataDir, "tools.d"))) byId.set(entry.id, entry);

@@ -831,6 +831,8 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 - Tailscale 以用户态网络运行：二进制装在工具卷，`minibox-tailscale up` 通过 `setsid` 双重 fork 启动 `tailscaled`，使它不随执行 `up` 的 exec 结束。状态在家目录卷的 `~/.local/state/tailscale` 中，卸载后保留。`tailscaled` 不需要 root，也不需要 `/dev/net/tun`。netstack 把发往本节点 tailnet IP 的入站 TCP/UDP 转发到 `127.0.0.1`；出站只能经 `localhost:1055` 的 SOCKS5/HTTP 代理，没有 ICMP。守护进程不随 Box 启动或唤醒自动拉起，tailnet 流量也不会唤醒休眠中的 Box。
 - 检测：镜像或家目录里已有的工具显示为已安装并带版本，但不计为受管；只有 tools 卷上的入口点才受管。升级与卸载只作用于受管工具，其它情况返回 `tool_unmanaged`。已检测到的工具不会被重复安装。
 - 清单放仓库 `catalog/*.json`，并允许在 `DATA_DIR/tools.d/` 放自定义条目。
+- 自定义条目由所有者管理：`tool.custom.list`、`tool.custom.put` 与 `tool.custom.delete` 是三个 `defineOperation`，REST、CLI、MCP 与控制台共用一份定义。写入前用 `parseCatalogEntry`（与加载器相同的规则）校验，只有通过校验的内容才会写入；文件经临时文件加重命名原子写入，权限 0644，目录不存在时创建。可选的 `stop` 命令与内置条目相同：卸载前在运行中的 Box 内以 `dev` 执行，失败则不卸载。覆盖内置 id 必须显式传 `overrideBuiltin`，控制台在这种情况下给出警告。删除只移除 `tools.d` 中的文件，不卸载共享卷上的工具；没有 `tools.d` 覆盖的内置 id 不能删除。`tool:custom` 不是令牌可以持有的 scope，只有所有者（访问密钥或登录会话）能调用，令牌一律以 `operation_forbidden` 拒绝。`tools.d` 中无法读取的文件使整个目录加载失败（与加载器一致，错误信息给出文件路径）；删除按文件名 `<id>.json` 进行，即使其 JSON 已损坏。
+- 控制台：Box 的「工具」页在所有者会话中显示「自定义工具」按钮，自定义条目带「自定义」标记，并可编辑或删除。页面通过 `GET /api/tools/custom` 探测权限，请求失败（例如 403，或目录中有无法读取的文件）时不显示这些控制。表单里的提示只是便利，服务端的校验为准。
 - 长耗时安装使用异步任务与进度流；兼容代理配置。
 - API Key：短期用环境变量输入，密钥单独存储；长期方向是宿主机侧密钥注入，避免把密钥写进 Box。
 
