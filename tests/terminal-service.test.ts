@@ -11,11 +11,11 @@ import { type Box, getBox, stopBox } from "../src/services/boxes";
 import {
   ATTACHES_PER_SESSION_MAX,
   type Attachment,
-  collectText,
   SESSIONS_PER_BOX_MAX,
   TerminalService,
   VIEWER_ATTACHES_MAX,
 } from "../src/services/terminals";
+import { collectText } from "../src/services/tmux-exec";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import type { FakeExec } from "./support/fake-runtime";
 
