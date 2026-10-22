@@ -1129,6 +1129,7 @@ export default {
   "st.hostTrustTitle": "信任此主机密钥？",
   "st.hostTrustMessage": "SSH 主机密钥为 {fingerprint}。仅当它与机器上的密钥一致时才添加该宿主机。",
   "st.hostTrust": "信任并添加",
+  "st.hostTrustTest": "信任并测试",
   "st.hostColName": "宿主机",
   "st.hostColEndpoint": "端点",
   "st.hostColStatus": "状态",

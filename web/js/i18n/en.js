@@ -1201,6 +1201,7 @@ export default {
   "st.hostTrustTitle": "Trust this host key?",
   "st.hostTrustMessage": "The SSH host key is {fingerprint}. Add the host only if it matches the key on the machine.",
   "st.hostTrust": "Trust and add",
+  "st.hostTrustTest": "Trust and test",
   "st.hostColName": "Host",
   "st.hostColEndpoint": "Endpoint",
   "st.hostColStatus": "Status",

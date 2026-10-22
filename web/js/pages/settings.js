@@ -127,12 +127,12 @@ function addHost(view) {
     wide: true,
     body: `
       <form id="stHostForm" class="stack" autocomplete="off">
-        <div class="grid grid-2">
-          <label class="field">${t("st.hostId")}<input class="input mono" name="id" required pattern="[a-z][a-z0-9-]{0,31}" placeholder="lab" /><span class="help">${t("st.hostIdHelp")}</span></label>
+        <div class="grid grid-2 form-grid">
+          <label class="field">${t("st.hostId")}<input class="input mono" name="id" required pattern="[a-z][a-z0-9\\-]{0,31}" placeholder="lab" /><span class="help">${t("st.hostIdHelp")}</span></label>
           <label class="field">${t("st.hostName")}<input class="input" name="name" maxlength="64" placeholder="Lab" /></label>
         </div>
         <label class="field">${t("st.hostEndpoint")}<input class="input mono" name="endpoint" required placeholder="unix:///var/run/docker.sock" /><span class="help">${t("st.hostEndpointHelp")}</span></label>
-        <div class="stack" data-cred="tcp" hidden>
+        <div data-cred="tcp" hidden>
           <label class="field">${t("st.hostCa")}<textarea class="textarea mono" name="ca" rows="3" spellcheck="false"></textarea></label>
           <label class="field">${t("st.hostCert")}<textarea class="textarea mono" name="cert" rows="3" spellcheck="false"></textarea></label>
           <label class="field">${t("st.hostKey")}<textarea class="textarea mono" name="key" rows="3" spellcheck="false"></textarea><span class="help">${t("st.hostCredHelp")}</span></label>
@@ -153,10 +153,17 @@ function addHost(view) {
     fingerprint = "";
     result.innerHTML = "";
   });
-  root.querySelector("#stHostTest").addEventListener("click", async (e) => {
-    const res = await withBusyHost(e.currentTarget, () => testHost(form, result));
-    fingerprint = res?.hostKeyFingerprint ?? "";
-  });
+  root.querySelector("#stHostTest").addEventListener("click", (e) =>
+    withBusyHost(e.currentTarget, async () => {
+      let res = await testHost(form, result, fingerprint);
+      const presented = res?.error?.key === "host_key_unconfirmed" ? res.hostKeyFingerprint : null;
+      if (!presented) return;
+      // The operator confirms the key here, once; only then does the test log in and reach the engine.
+      if (!(await trustHostKey(presented, t("st.hostTrustTest")))) return;
+      fingerprint = presented;
+      res = await testHost(form, result, fingerprint);
+    }),
+  );
   root
     .querySelector("#stHostSave")
     .addEventListener("click", (e) =>
@@ -173,11 +180,21 @@ async function withBusyHost(btn, fn) {
   }
 }
 
-async function testHost(form, result) {
+function trustHostKey(fingerprint, confirmText = t("st.hostTrust")) {
+  return confirmDialog({
+    title: t("st.hostTrustTitle"),
+    message: esc(t("st.hostTrustMessage", { fingerprint })),
+    confirmText,
+  });
+}
+
+async function testHost(form, result, fingerprint) {
   result.innerHTML = `<div class="callout">${icon("refresh")}<span>${t("st.hostTesting")}</span></div>`;
+  const body = hostBody(form);
+  if (fingerprint && schemeOf(body.endpoint ?? "") === "ssh") body.hostKeyFingerprint = fingerprint;
   let res;
   try {
-    res = await api("/api/hosts/test", { method: "POST", body: hostBody(form) });
+    res = await api("/api/hosts/test", { method: "POST", body });
   } catch (e) {
     result.innerHTML = `<div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div>`;
     return null;
@@ -190,7 +207,7 @@ async function testHost(form, result) {
     parts.push(
       `<div class="callout">${icon("check")}<span>${esc(t("st.hostTestOk", { version: res.dockerVersion ?? "—", ms: res.latencyMs ?? "—" }))}${cap ? ` · ${esc(cap)}` : ""}</span></div>`,
     );
-  } else {
+  } else if (res.error?.key !== "host_key_unconfirmed") {
     parts.push(`<div class="callout danger">${icon("alert")}<span>${esc(errorText(res.error ?? {}))}</span></div>`);
   }
   if (res.hostKeyFingerprint) {
@@ -214,12 +231,7 @@ async function saveHost(view, form, close, confirmedFingerprint) {
       toastError(t("st.hostAddFailed"), e);
       return;
     }
-    const ok = await confirmDialog({
-      title: t("st.hostTrustTitle"),
-      message: esc(t("st.hostTrustMessage", { fingerprint: presented })),
-      confirmText: t("st.hostTrust"),
-    });
-    if (!ok) return;
+    if (!(await trustHostKey(presented))) return;
     try {
       await api("/api/hosts", { method: "POST", body: { ...body, hostKeyFingerprint: presented } });
     } catch (again) {
