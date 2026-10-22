@@ -4,7 +4,7 @@
 
 This guide covers a setup where a NAS or a Linux storage server holds the box data and another machine runs MiniBox and Docker. MiniBox mounts NFS exports through Docker's `local` volume driver, so the NFS client is the Docker host's kernel. MiniBox itself never mounts anything. Tracking issue: [#30](https://github.com/ArnoChenFx/minibox/issues/30).
 
-Every step marked **tested** was run against a real NFS server: NFS-Ganesha 6 (userspace, VFS backend) on Debian 13, mounted by a Linux 6.12 client through Docker 26. The mount options, ownership results and error messages in this guide come from those runs. The NAS vendor sections are general guidance: menu names differ between models and firmware versions, so check them against your device.
+Every step marked **tested** was run against a real NFS server. The steps from the original guide ran on NFS-Ganesha 6 (userspace, VFS backend) on Debian 13, mounted by a Linux 6.12 client through Docker 26. The storage fixes were measured on NFS-Ganesha 4.3 on Ubuntu 24.04 with a Linux 6.12 kernel and Docker 29.1.3, and their timings and messages come from those runs. The mount options, ownership results and error messages in this guide come from these two sets of runs. The NAS vendor sections are general guidance: menu names differ between models and firmware versions, so check them against your device.
 
 ## When to use NFS
 

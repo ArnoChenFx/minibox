@@ -4,7 +4,7 @@
 
 本文针对这样的部署：NAS 或一台 Linux 存储服务器存放 Box 的数据，另一台机器运行 MiniBox 和 Docker。MiniBox 通过 Docker 的 `local` 卷驱动挂载 NFS 导出目录，真正的 NFS 客户端是 Docker 宿主机的内核，MiniBox 自己不挂载任何东西。跟踪 issue：[#30](https://github.com/ArnoChenFx/minibox/issues/30)。
 
-标注**已测试**的步骤都在真实的 NFS 服务器上跑过：Debian 13 上的 NFS-Ganesha 6（用户态，VFS 后端），客户端是 Linux 6.12 内核，经 Docker 26 挂载。文中的挂载选项、文件属主结果和报错信息都来自这些测试。各家 NAS 的小节只是通用指引：不同型号和固件版本的菜单名称不一样，请以自己设备上的为准。
+标注**已测试**的步骤都在真实的 NFS 服务器上跑过。原指南的步骤跑在 Debian 13 上的 NFS-Ganesha 6（用户态，VFS 后端）上，客户端是 Linux 6.12 内核，经 Docker 26 挂载；存储修复的耗时和报错信息则是在 Ubuntu 24.04 上的 NFS-Ganesha 4.3、Linux 6.12 内核和 Docker 29.1.3 上重新测得的。文中的挂载选项、文件属主结果和报错信息都来自这两组测试。各家 NAS 的小节只是通用指引：不同型号和固件版本的菜单名称不一样，请以自己设备上的为准。
 
 ## 什么时候用 NFS
 
