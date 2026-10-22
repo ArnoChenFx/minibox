@@ -237,6 +237,7 @@ export class Executor {
     const begun = tasks.begin({
       op: operation.name,
       summary: summaryOf(operation, target),
+      subject: operation.subject?.(input, resolved),
       hostId: ctx.host.host.id,
       target,
       principal: ctx.principal,

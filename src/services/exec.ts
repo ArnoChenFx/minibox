@@ -128,6 +128,13 @@ const KILL_SETTLE_MS = 3000;
 /** A timeout whose stop fails is tried again after 1 s, then 2 s, 4 s and so on, but not after more than this. */
 const EXPIRE_RETRY_MS = 1000;
 const EXPIRE_RETRY_MAX_MS = 30_000;
+/**
+ * How long a foreground call waits for the stop of its timeout. A stop still running after this returns the exec as
+ * running with timedOut set, and the stop carries on in the background.
+ */
+const STOP_GRACE_MS = 2000;
+/** Exit codes from 128 up are a process ended by a signal, as a kill ends it (137 for SIGKILL). */
+const SIGNAL_EXIT_MIN = 128;
 
 /** Resolves when `done` does or after `ms`, and never leaves the timer running. */
 function settleWithin(done: Promise<void>, ms: number): Promise<void> {
@@ -466,13 +473,16 @@ export class ExecManager implements ExecService {
 
   /**
    * Called on a timeout and again after each failed attempt. A failed stop leaves the exec running and releases a
-   * foreground caller. The next attempt waits twice as long as the last, so an exec that cannot be stopped yet (its
+   * foreground caller. A stop that is still running after STOP_GRACE_MS releases it too, so a stop that hangs does not
+   * hold the request. The next attempt waits twice as long as the last, so an exec that cannot be stopped yet (its
    * box is paused, or a process is briefly unkillable) is stopped as soon as it can be.
    */
   private async expire(live: LiveExec, attempt: number): Promise<void> {
     live.timer = null;
     if (live.settled || live.killed) return;
     live.timedOut = true;
+    const grace = setTimeout(() => live.release(), STOP_GRACE_MS);
+    unref(grace);
     try {
       await this.stop(live, "timeout");
     } catch {
@@ -481,6 +491,8 @@ export class ExecManager implements ExecService {
       const delay = Math.min(EXPIRE_RETRY_MS * 2 ** attempt, EXPIRE_RETRY_MAX_MS);
       live.timer = setTimeout(() => void this.expire(live, attempt + 1), delay);
       unref(live.timer);
+    } finally {
+      clearTimeout(grace);
     }
   }
 
@@ -513,6 +525,8 @@ export class ExecManager implements ExecService {
       });
       throw err;
     }
+    // A stop that finds the exec already recorded as exited leaves that record alone.
+    if (live.settled && !live.killed) return;
     live.killed = true;
     if (live.timer) {
       clearTimeout(live.timer);
@@ -530,6 +544,9 @@ export class ExecManager implements ExecService {
     }
     live.settled = true;
     live.endedAt = Date.now();
+    // An exec that ends while a stop is running ended by the kill when it reports no exit code or a signal (128 and
+    // up). A normal exit code means the command finished on its own, so it is recorded as exited with that code.
+    if (live.stopping && (live.exitCode === null || live.exitCode >= SIGNAL_EXIT_MIN)) live.killed = true;
     if (live.killed && live.exitCode === null) live.exitCode = 137;
     const durationMs = live.endedAt - live.startedAt;
     const state: Exclude<ExecState, "running"> = live.killed ? "killed" : "exited";

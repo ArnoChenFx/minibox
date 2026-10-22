@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 
 import { Client } from "ssh2";
 
-import { runCli } from "../src/cli";
+import { isNewerVersion, runCli } from "../src/cli";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
@@ -26,6 +26,10 @@ interface Io {
 }
 
 async function* noBytes(): AsyncGenerator<Uint8Array> {}
+
+async function* bytesOf(text: string): AsyncGenerator<Uint8Array> {
+  yield new TextEncoder().encode(text);
+}
 
 function io(stdin: AsyncIterable<Uint8Array> = noBytes()): Io {
   const sink: Io = {
@@ -109,16 +113,107 @@ describe("CLI", () => {
   });
   afterEach(() => restoreLogs());
 
-  test("help and unknown commands exit 2 without a server", async () => {
+  test("help exits 0 on stdout, while a bare command or an unknown one exits 2 on stderr", async () => {
     const help = io();
-    expect(await runCli(["--help"], {}, help, lines([]))).toBe(2);
-    expect(help.err).toContain("minibox exec");
-    expect(help.err).toContain("minibox box ls");
+    expect(await runCli(["--help"], {}, help, lines([]))).toBe(0);
+    expect(help.out).toContain("minibox exec");
+    expect(help.out).toContain("minibox box ls");
+    expect(help.err).toBe("");
+    const bare = io();
+    expect(await runCli([], {}, bare, lines([]))).toBe(2);
+    expect(bare.err).toContain("minibox exec");
+    expect(bare.out).toBe("");
     const missing = io();
     expect(await runCli(["box", "ls"], {}, missing, lines([]))).toBe(2);
     expect(missing.err).toContain("MINIBOX_ACCESS_KEY");
     const unknown = io();
     expect(await runCli(["nope"], { MINIBOX_ACCESS_KEY: "x" }, unknown, lines([]))).toBe(2);
+  });
+
+  test("--version reports the build it came from, and dev when it runs from source", async () => {
+    const fromSource = io();
+    expect(await runCli(["--version"], {}, fromSource, lines([]))).toBe(0);
+    expect(fromSource.out).toBe("minibox dev\n");
+    for (const flag of ["version", "-v"]) {
+      const built = io();
+      expect(await runCli([flag], {}, built, lines([]), "0.3.0-62-gef442f5")).toBe(0);
+      expect(built.out).toBe("minibox 0.3.0-62-gef442f5\n");
+      expect(built.err).toBe("");
+    }
+  });
+
+  test("every command takes --help, which exits 0 before it needs a key or reaches the server", async () => {
+    const sink = io();
+    expect(await runCli(["ssh-config", "--help"], { MINIBOX_URL: "http://127.0.0.1:9" }, sink, lines([]))).toBe(0);
+    expect(sink.out).toContain("minibox ssh-config [--append]");
+    expect(sink.err).toBe("");
+  });
+
+  test("--help after -- is the box command's argument, not the CLI's", async () => {
+    const env = serve();
+    try {
+      await env.app.operations.run("box.create", env.ctx, { name: "alpha", cpus: 1, memoryMb: 256 });
+      env.runtime.execScript = { stdout: "npm usage\n", stderr: "", code: 0 };
+      const ran = io();
+      expect(await runCli(["exec", "alpha", "--", "npm", "--help"], env.env, ran, lines([]))).toBe(0);
+      expect(ran.out).toBe("npm usage\n");
+      expect(env.runtime.execs.at(-1)?.spec.cmd).toEqual(["npm", "--help"]);
+      const asked = io();
+      expect(await runCli(["exec", "alpha", "--help"], env.env, asked, lines([]))).toBe(0);
+      expect(asked.out).toContain("minibox exec");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("isNewerVersion compares release and git-describe builds, and never guesses about a dev build", () => {
+    expect(isNewerVersion("0.4.0", "0.3.0")).toBe(true);
+    expect(isNewerVersion("0.10.0", "0.9.0")).toBe(true);
+    expect(isNewerVersion("0.3.0", "0.3.0")).toBe(false);
+    expect(isNewerVersion("0.3.0", "0.4.0")).toBe(false);
+    expect(isNewerVersion("0.3.0-62-gef442f5", "0.3.0")).toBe(true);
+    expect(isNewerVersion("0.3.0", "0.3.0-62-gef442f5")).toBe(false);
+    expect(isNewerVersion("0.3.0-62-gef442f5-dirty", "0.3.0-61-gabc1234")).toBe(true);
+    expect(isNewerVersion("0.3.1", "0.3.0-62-gef442f5")).toBe(true);
+    expect(isNewerVersion("0.4.0", "dev")).toBe(false);
+    expect(isNewerVersion("dev", "0.3.0")).toBe(false);
+  });
+
+  test("the SSH probe names the server's version, and ssh-proxy warns once when the server is newer", async () => {
+    const env = serve();
+    try {
+      await env.app.operations.run("box.create", env.ctx, { name: "alpha", cpus: 1, memoryMb: 256 });
+      const ops = mint(env.app, { name: "ops", scopes: ["box:ssh"], boxes: { type: "all" } });
+      const probe = await fetch(`${env.env.MINIBOX_URL}/api/ssh/alpha`, {
+        headers: { authorization: `Bearer ${ops.secret}` },
+      });
+      expect(probe.status).toBe(204);
+      expect(probe.headers.get("x-minibox-version")).toBe("0.0.0-test");
+
+      env.app.version = "0.4.0";
+      const newer = io();
+      await runCli(
+        ["ssh-proxy", "alpha.minibox"],
+        { ...env.env, MINIBOX_ACCESS_KEY: ops.secret },
+        newer,
+        lines([]),
+        "0.3.0",
+      );
+      expect(newer.err.match(/newer than this CLI \(0\.3\.0\)/g)).toHaveLength(1);
+      expect(newer.err).toContain(`Update it with: curl -fsSL ${env.env.MINIBOX_URL}/cli/install.sh | sh`);
+
+      const same = io();
+      await runCli(
+        ["ssh-proxy", "alpha.minibox"],
+        { ...env.env, MINIBOX_ACCESS_KEY: ops.secret },
+        same,
+        lines([]),
+        "0.4.0",
+      );
+      expect(same.err).not.toContain("newer than this CLI");
+    } finally {
+      env.stop();
+    }
   });
 
   test("box ls and exec print the server's answer and keep the command's exit code", async () => {
@@ -274,6 +369,97 @@ describe("CLI", () => {
       expect(sink.err.length).toBeGreaterThan(0);
     }
   });
+
+  test("tool custom put, list and delete manage tools.d, and a refused entry writes nothing", async () => {
+    const env = serve();
+    try {
+      const entry = {
+        name: "Sample tool",
+        description: "A sample entry.",
+        source: "npm",
+        package: "sample-tool",
+        bin: "sample-tool",
+        install: "npm install -g --prefix {{prefix}} {{package_spec}}",
+        upgrade: "npm install -g --prefix {{prefix}} {{package_spec}}",
+        uninstall: "npm uninstall -g --prefix {{prefix}} {{package}}",
+        detect: "command -v sample-tool >/dev/null && sample-tool --version 2>/dev/null",
+      };
+      const file = join(mkdtempSync(join(tmpdir(), "mb-cli-tool-")), "sample.json");
+      writeFileSync(file, JSON.stringify(entry));
+      const toolsDir = join(env.app.cfg.dataDir, "tools.d");
+
+      const saved = io();
+      expect(await runCli(["tool", "custom", "put", "sample-tool", "--file", file], env.env, saved, lines([]))).toBe(0);
+      expect(saved.out).toBe("sample-tool\n");
+      expect(JSON.parse(readFileSync(join(toolsDir, "sample-tool.json"), "utf8"))).toMatchObject({
+        id: "sample-tool",
+        category: "agents",
+        needsRoot: false,
+      });
+
+      const piped = io(bytesOf(JSON.stringify({ ...entry, name: "Piped" })));
+      expect(await runCli(["tool", "custom", "put", "sample-tool", "--stdin"], env.env, piped, lines([]))).toBe(0);
+      const listed = io();
+      expect(await runCli(["tool", "custom", "list"], env.env, listed, lines([]))).toBe(0);
+      expect(listed.out).toContain("sample-tool  Piped  npm  sample-tool  sample-tool  false");
+
+      const refused = io(bytesOf(JSON.stringify(entry)));
+      expect(await runCli(["tool", "custom", "put", "uv", "--stdin"], env.env, refused, lines([]))).toBe(1);
+      expect(refused.err).toContain("built-in tool");
+      expect(existsSync(join(toolsDir, "uv.json"))).toBe(false);
+
+      const replaced = io(bytesOf(JSON.stringify(entry)));
+      expect(
+        await runCli(
+          ["tool", "custom", "put", "uv", "--stdin", "--override-builtin", "--json"],
+          env.env,
+          replaced,
+          lines([]),
+        ),
+      ).toBe(0);
+      expect(JSON.parse(replaced.out)).toMatchObject({ tool: { id: "uv", overridesBuiltin: true } });
+
+      const removed = io();
+      expect(await runCli(["tool", "custom", "delete", "uv", "--json"], env.env, removed, lines([]))).toBe(0);
+      expect(JSON.parse(removed.out)).toEqual({ id: "uv", restoredBuiltin: true });
+
+      const deleted = io();
+      expect(await runCli(["tool", "custom", "delete", "sample-tool"], env.env, deleted, lines([]))).toBe(0);
+      expect(deleted.out).toBe("sample-tool\n");
+      const gone = io();
+      expect(await runCli(["tool", "custom", "delete", "sample-tool"], env.env, gone, lines([]))).toBe(1);
+      expect(gone.err).toContain("No custom tool");
+      const empty = io();
+      expect(await runCli(["tool", "custom", "list"], env.env, empty, lines([]))).toBe(0);
+      expect(empty.out).toBe("ID  NAME  SOURCE  PACKAGE  BIN  REPLACES BUILT-IN\n");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("tool custom usage errors exit 2 without calling the server", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    const cases: string[][] = [
+      ["tool"],
+      ["tool", "install", "claude-code"],
+      ["tool", "custom"],
+      ["tool", "custom", "frobnicate"],
+      ["tool", "custom", "list", "extra"],
+      ["tool", "custom", "put", "sample-tool"],
+      ["tool", "custom", "put", "--stdin"],
+      ["tool", "custom", "put", "sample-tool", "--stdin", "--file", "entry.json"],
+      ["tool", "custom", "put", "sample-tool", "--file"],
+      ["tool", "custom", "put", "--file", "entry.json"],
+      ["tool", "custom", "delete"],
+      ["tool", "custom", "delete", "sample-tool", "--stdin"],
+      ["tool", "custom", "delete", "sample-tool", "--color", "red"],
+    ];
+    for (const argv of cases) {
+      const sink = io(bytesOf("{}"));
+      expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
+      expect(sink.err.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("CLI SSH commands", () => {
@@ -358,6 +544,48 @@ describe("CLI SSH commands", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
       env.stop();
+    }
+  });
+
+  test("ssh-config --url and --token save the server and key without exported variables, and override them", async () => {
+    const env = serve();
+    const home = mkdtempSync(join(tmpdir(), "minibox-home-"));
+    try {
+      const saved = io();
+      const flags = ["ssh-config", "--append", "--url", `${env.env.MINIBOX_URL}/`, "--token", TEST_KEY];
+      expect(await runCli(flags, { HOME: home }, saved, lines([]))).toBe(0);
+      expect(saved.out).toContain(`Pinned ${env.app.ssh.hostKeyView().fingerprint}`);
+      expect(JSON.parse(readFileSync(join(home, ".config", "minibox", "ssh-credentials.json"), "utf8"))).toEqual({
+        url: env.env.MINIBOX_URL,
+        key: TEST_KEY,
+      });
+
+      const overridden = io();
+      const stale = { HOME: home, MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: "stale" };
+      expect(
+        await runCli(["ssh-config", "--url", env.env.MINIBOX_URL, "--token", TEST_KEY], stale, overridden, lines([])),
+      ).toBe(0);
+      expect(overridden.out).toContain(`*.minibox ${env.app.ssh.hostKeyView().publicKey}`);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      env.stop();
+    }
+  });
+
+  test("ssh-config --url needs an http or https address, and each flag needs its value", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    for (const [argv, message] of [
+      [["ssh-config", "--url", "minibox.example"], "--url needs an http:// or https:// address, not minibox.example"],
+      [
+        ["ssh-config", "--url", "ftp://minibox.example"],
+        "--url needs an http:// or https:// address, not ftp://minibox.example",
+      ],
+      [["ssh-config", "--url"], "--url needs a value"],
+      [["ssh-config", "--token", "--append"], "--token needs a value"],
+    ] as const) {
+      const sink = io();
+      expect(await runCli([...argv], env, sink, lines([]))).toBe(2);
+      expect(sink.err).toContain(message);
     }
   });
 

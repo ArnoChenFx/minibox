@@ -4,7 +4,7 @@
 
 This guide covers a setup where a NAS or a Linux storage server holds the box data and another machine runs MiniBox and Docker. MiniBox mounts NFS exports through Docker's `local` volume driver, so the NFS client is the Docker host's kernel. MiniBox itself never mounts anything. Tracking issue: [#30](https://github.com/ArnoChenFx/minibox/issues/30).
 
-Every step marked **tested** was run against a real NFS server: NFS-Ganesha 6 (userspace, VFS backend) on Debian 13, mounted by a Linux 6.12 client through Docker 26. The mount options, ownership results and error messages in this guide come from those runs. The NAS vendor sections are general guidance: menu names differ between models and firmware versions, so check them against your device.
+Every step marked **tested** was run against a real NFS server. The steps from the original guide ran on NFS-Ganesha 6 (userspace, VFS backend) on Debian 13, mounted by a Linux 6.12 client through Docker 26. The storage fixes were measured on NFS-Ganesha 4.3 on Ubuntu 24.04 with a Linux 6.12 kernel and Docker 29.1.3, and their timings and messages come from those runs. The mount options, ownership results and error messages in this guide come from these two sets of runs. The NAS vendor sections are general guidance: menu names differ between models and firmware versions, so check them against your device.
 
 ## When to use NFS
 
@@ -40,18 +40,19 @@ Boxes run as `dev`, uid **1000**, gid **1000**. Every file a box writes must end
 When MiniBox creates a volume on an NFS pool, a short-lived helper container runs as root on the compute machine and does this in the export:
 
 1. `mkdir -p <export>/<volume id>` (for example `vol_hakder7qn0`);
-2. `chown -R 1000:1000` on that directory. If chown fails, the helper prints `MINIBOX_CHOWN_SKIPPED`, MiniBox logs `volume.chown_skipped` and **the volume is still created**.
+2. `chown -R 1000:1000` on that directory. If chown fails, the helper prints `MINIBOX_CHOWN_SKIPPED` and MiniBox logs `volume.chown_skipped`.
+3. A check that uid 1000 can write the directory: a helper running as 1000:1000 creates and removes an empty file there. If the check fails, the volume is **not created**. MiniBox removes the new directory and the create returns `502` with code `bad_gateway` and message key `storage_unwritable`.
 
 How the server maps the helper's root decides whether this works. Tested with each squash mode:
 
 | Server export | Export directory owner | Result |
 |---|---|---|
 | `all_squash,anonuid=1000,anongid=1000` | 1000:1000 | **Works. Recommended.** Every file is 1000:1000 on the server, whoever writes it. A `chown` inside the box succeeds but changes nothing |
-| `all_squash,anonuid=1000,anongid=1000` | root, mode 755 | Volume create fails: `mkdir: cannot create directory '/mnt/vol_…': Permission denied` (`volume_prepare_failed`) |
+| `all_squash,anonuid=1000,anongid=1000` | root, mode 755 | Volume create fails with `502`, code `bad_gateway` and message key `storage_permission_denied`: `mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
 | `root_squash,anonuid=1000,anongid=1000` | 1000:1000 | Works. Root maps to 1000, `dev` stays 1000. Root inside the box also writes as 1000 |
 | `no_root_squash` | any | Works. The helper's chown succeeds. Root inside a box is real root on the export, so use it only on a dedicated export |
-| `root_squash` (anon uid is `nobody`) | 1000:1000, mode 755 | Volume create fails with `Permission denied` |
-| `root_squash` (anon uid is `nobody`) | mode 777 | Volume create **succeeds**, but the directory belongs to `nobody`, chown is skipped (`volume.chown_skipped`), and `dev` gets `Permission denied` on every write. Avoid |
+| `root_squash` (anon uid is `nobody`) | 1000:1000, mode 755 | Volume create fails with `Permission denied` (`storage_permission_denied`) |
+| `root_squash` (anon uid is `nobody`) | mode 777 | Volume create fails with `storage_unwritable` (`bad_gateway`). The directory belongs to `nobody` and chown is skipped, so `dev` cannot write it. MiniBox removes the directory and creates no volume. Use `root_squash,anonuid=1000,anongid=1000` instead |
 
 So: map everything to uid 1000, and make the export directory itself owned by 1000:1000.
 
@@ -200,10 +201,10 @@ You do not need `addr=`: MiniBox adds `addr=<server>` itself. MiniBox's reachabi
 Tested by stopping the NFS server, and separately by dropping its traffic in the firewall to imitate a NAS that is powered off:
 
 - The probe reports `unreachable` with the mount error (`input/output error` when the server refuses, `connection timed out` when nothing answers). The box list and the box page mark affected boxes as Storage unreachable.
-- Creating, starting and restarting a box on that pool returns `503` with code `docker_unavailable` and message key `storage_unreachable`, within a few seconds. Nothing is created: no container, no volume record, and no data under `/var/lib/docker/volumes/<volume>/_data` on the local disk.
+- Creating, starting and restarting a box on that pool returns `503` with code `docker_unavailable` and message key `storage_unreachable`, within about 5 seconds. Nothing is created: no container, no volume record, and no data under `/var/lib/docker/volumes/<volume>/_data` on the local disk.
 - Stopping a box still works.
-- A **running** box with a `hard` mount freezes any process that touches `/workspace` or `/home/dev` until the server is back, including MiniBox `exec` calls and terminals. An `exec` with `timeoutSec` does not return before the server is back, see [known issues](#known-issues).
-- With several NFS pools on an unreachable server, a probe of the pools page takes a few seconds per pool, and the first probe after a blackhole took over a minute.
+- A **running** box with a `hard` mount freezes any process that touches `/workspace` or `/home/dev` until the server is back, including MiniBox `exec` calls and terminals. A foreground `exec` with `timeoutSec` still returns, at most 2 seconds after its timeout fires, see [known issues](#known-issues).
+- The pools are probed side by side. A pool whose probe has not finished within 5 seconds is reported `unreachable` with `no answer within 5 s`, so the pools page answers within about 5 seconds however many NFS servers are gone. The probe keeps running, and its result replaces the one shown when it ends.
 - When the server comes back, frozen processes continue, the next probe reports `reachable`, and stopped boxes start again. Nothing needs remounting.
 
 Before NAS maintenance (reboot, firmware update), stop the boxes on its pools.
@@ -222,10 +223,11 @@ All messages below were seen in the tests.
 |---|---|---|
 | Pool `unreachable` | `… failed to mount local volume: … protocol not supported` | No `nfsvers=` in options, or `nfsvers=3` on a client kernel without NFSv3. Add `nfsvers=4.1` |
 | Pool `unreachable` | `… input/output error` | The server is down, or nothing listens on TCP 2049. Start the NFS service, check the firewall |
-| Pool `unreachable` | `… connection timed out` | Wrong server address, or the network or firewall drops the traffic |
+| Pool `unreachable` | `… connection timed out` | Wrong server address, or the network or firewall drops the traffic. In the test, a server whose traffic was dropped failed in about 2 seconds with this message |
+| Pool `unreachable` | `no answer within 5 s` | The probe had not finished after 5 seconds, for example because the server is frozen (tested with a frozen NFS server). The pool is reported unreachable at that point, and the probe keeps running. When the server answers, the probe finishes and the pool reports `reachable`. A `GET /api/pools?refresh=true` sent meanwhile joins the same probe, so it returns the same message after 5 seconds |
 | Pool `unreachable` | `… no such file or directory` | The export path does not exist, or this client is not allowed. NFSv4 hides exports the client may not use, so a client restriction can look like a wrong path. Linux `nfsd` may say `access denied by server` instead |
-| Box create fails | `Could not prepare the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` | The squashed uid cannot write the export root. `chown 1000:1000` the export directory and use `all_squash,anonuid=1000,anongid=1000` |
-| Box starts, but `dev` cannot write `/workspace`, and the server log has `volume.chown_skipped` | `Permission denied` inside the box; on the server the `vol_…` directory belongs to `nobody` (shown as 65534, or 4294967294 on Ganesha) | `root_squash` to `nobody`. Change the export to `all_squash,anonuid=1000,anongid=1000`, then on the server `chown -R 1000:1000 <export>/vol_…` |
+| Box create fails with `502` and code `bad_gateway` | `Storage pool nas denied permission to create the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` (`storage_permission_denied`) | The squashed uid cannot write the export root. Use `all_squash,anonuid=1000,anongid=1000` (or `root_squash,anonuid=1000,anongid=1000`) and make the export directory 1000:1000. The response's `hint` names these options and links this guide |
+| Box create fails with `502` and code `bad_gateway` | `Uid 1000, the box user, cannot write the new volume directory <server>:<export>/vol_…, so the volume was not created: … Permission denied` (`storage_unwritable`). The server log has `volume.chown_skipped` | `root_squash` to `nobody`: the new directory belongs to `nobody` (65534, or 4294967294 on Ganesha) and the squashed root cannot chown it. Change the export to `all_squash,anonuid=1000,anongid=1000` (or `root_squash,anonuid=1000,anongid=1000`). A volume directory that already exists and belongs to `nobody` can be fixed on the server with `chown -R 1000:1000 <export>/vol_…` |
 | `chown` in the box "succeeds" but nothing changes | — | Expected with `all_squash`: every file belongs to the anon uid |
 | `Stale file handle` inside the box; then `start` fails with `lstat …/_data: stale NFS file handle` | | The volume's directory was deleted or replaced on the server while mounted (for example restored from a snapshot into a new folder). Stop the box and put the data back in place. In the test, start kept failing until the client's cache was dropped (`sync; echo 2 \| sudo tee /proc/sys/vm/drop_caches` on the compute machine) |
 | Commands in the box hang | — | `hard` mount and the server is unreachable. Bring the server back; the processes continue. Stop the box if you need it gone sooner |
@@ -235,10 +237,9 @@ All messages below were seen in the tests.
 
 Found while testing this guide:
 
-- An `exec` (and the timeout of a foreground `exec`) cannot finish while a `hard` mount is frozen: the kill MiniBox runs inside the box starts in the box's working directory `/workspace` and blocks with it. The call returns once the server is back.
-- With `root_squash` mapped to `nobody`, creating a volume succeeds although `dev` cannot write it; the only signal is the `volume.chown_skipped` log line.
-- A permission error on the export is reported as `400 validation_failed` rather than a storage error.
-- Pools are probed one after another, so the pools page slows down with several unreachable NFS pools.
+- A foreground `exec` with `timeoutSec` returns at most 2 seconds after its timeout fires, even while a `hard` mount is frozen. If the stop has not finished by then, the call returns `status: running` with `timedOut: true`, and MiniBox keeps trying to stop the process in the background, waiting 1, 2 and 4 seconds and so on, up to 30, between attempts. The exec is recorded as `killed` once a stop ends it. If the command finishes on its own first, it is recorded as `exited` with its own exit code, still with `timedOut: true`. In the test, a `cat` blocked on a frozen hard mount was stopped and recorded as `killed` 3.2 seconds into a 3-second `timeoutSec`. An `exec` in `/workspace` on the frozen mount returned `status: running` after 5 seconds. Once the server came back it was recorded as `killed` in one run; in another, its `touch` finished first and it was recorded as `exited` with code 0.
+- `timeoutSec` does not bound the engine's own start of an exec. The timeout starts once the engine has started the process, so a start that blocks is waited for, not cut short. In the tests the start returned at once, including for an `exec` in `/workspace` on a frozen mount.
+- While a server does not answer, MiniBox keeps one probe waiting for that pool's mount. Later probes of the pool share it instead of starting another.
 
 ## Path pools
 

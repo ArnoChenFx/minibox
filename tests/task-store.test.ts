@@ -94,6 +94,50 @@ function versionOf(path: string): number | undefined {
   }
 }
 
+describe("TaskStore subject", () => {
+  let dir: string;
+  let store: TaskStore | undefined;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "minibox-task-subject-"));
+  });
+
+  afterEach(() => {
+    store?.close();
+    store = undefined;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a subject is returned with the task, and a task without one has none", () => {
+    store = new TaskStore(join(dir, "tasks.db"));
+    const named = ulid();
+    const plain = ulid();
+    store.insert(named, { ...template, op: "tool.install", summary: "Install", subject: "codex" });
+    store.insert(plain, { ...template, exclusiveKey: undefined });
+
+    expect(store.get(named, { output: false })?.subject).toBe("codex");
+    expect(store.get(plain, { output: false })?.subject).toBeUndefined();
+    expect(store.list({ limit: 10 }).find((task) => task.id === named)?.subject).toBe("codex");
+  });
+
+  test("a database from before the subject column reads its old tasks without one, and new tasks keep theirs", () => {
+    const path = join(dir, "tasks.db");
+    const old = new Database(path, { create: true });
+    old.exec(SCHEMA_V1);
+    old.run("PRAGMA user_version = 1");
+    const before = ulid();
+    insertV1(old, before, "succeeded");
+    old.close();
+
+    store = new TaskStore(path);
+    expect(versionOf(path)).toBe(3);
+    expect(store.get(before, { output: false })?.subject).toBeUndefined();
+    const after = ulid();
+    store.insert(after, { ...template, exclusiveKey: undefined, subject: "base" });
+    expect(store.get(after, { output: false })?.subject).toBe("base");
+  });
+});
+
 describe("TaskStore exclusive keys", () => {
   let dir: string;
   let store: TaskStore | undefined;
@@ -124,7 +168,7 @@ describe("TaskStore exclusive keys", () => {
     old.close();
 
     const s = open(path);
-    expect(versionOf(path)).toBe(2);
+    expect(versionOf(path)).toBe(3);
     expect(s.insert(ulid(), template)).toEqual({ ok: false, existingId: running });
     expect(s.interruptRunning(interrupted)).toBe(1);
     expect(s.insert(ulid(), template)).toEqual({ ok: true });

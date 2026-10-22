@@ -65,6 +65,9 @@ const MIGRATIONS: readonly string[] = [
   CREATE UNIQUE INDEX tasks_one_running ON tasks (exclusive_key)
     WHERE holds_lock = 1 AND exclusive_key IS NOT NULL;
   `,
+  `
+  ALTER TABLE tasks ADD COLUMN subject TEXT;
+  `,
 ];
 
 interface TaskRow {
@@ -73,6 +76,7 @@ interface TaskRow {
   status: TaskStatus;
   host_id: string;
   summary: string;
+  subject: string | null;
   target_kind: string | null;
   target_id: string | null;
   target_name: string | null;
@@ -177,16 +181,17 @@ export class TaskStore {
     try {
       this.db
         .query(
-          `INSERT INTO tasks (id, op, status, host_id, summary, target_kind, target_id, target_name,
+          `INSERT INTO tasks (id, op, status, host_id, summary, subject, target_kind, target_id, target_name,
             principal_type, principal_id, principal_name, source, run, parent_id, exclusive_key, holds_lock,
             created_at, updated_at)
-           VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+           VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         )
         .run(
           id,
           task.op,
           task.hostId,
           task.summary,
+          task.subject ?? null,
           task.target?.kind ?? null,
           task.target?.id ?? null,
           task.target?.name ?? null,
@@ -381,6 +386,7 @@ export class TaskStore {
       op: row.op,
       status: row.status,
       summary: row.summary,
+      subject: row.subject ?? undefined,
       hostId: row.host_id,
       principalId: row.principal_id,
       target,

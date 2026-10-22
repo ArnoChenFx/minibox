@@ -279,6 +279,8 @@ docker run -d --name minibox --restart unless-stopped \
 
 创建 Box 时可勾选 Agent CLI 与其他工具。列表按 AI 编程助手、语言与运行时、终端与开发工具、网络四组展示，上方的搜索框可按名称、说明或分组过滤。Box 详情的「工具」页使用同样的分组与搜索，安装 / 升级 / 卸载也在那里完成。目录包括 Claude Code、Codex、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust、Zig 与 Tailscale，每一项都从其官方来源安装（见仓库 `catalog/*.json`），`DATA_DIR/tools.d/*.json` 可追加或覆盖条目。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成，从不以 root 运行。镜像或家目录里已有的工具显示为已安装并附版本，MiniBox 不会重复安装；升级与卸载只作用于 MiniBox 自己装在 tools 卷上的工具，卸载前会先停止该工具在 Box 内运行的守护进程。Tailscale 以 `dev` 用户安装，无需 root，并以用户态网络模式运行：在 Box 内执行 `minibox-tailscale up` 启动守护进程并打印登录链接。Box 里不会出现 tailnet 网卡。发往 Box tailnet IP 的入站 TCP 与 UDP 会被转发到 Box 内的 `127.0.0.1`，所以监听 localhost 或 `0.0.0.0`（IPv4）的程序可以从 tailnet 访问（受 tailnet ACL 约束）；只绑定 localhost 的服务也会因此暴露给 tailnet。出站访问 tailnet 主机必须经 `localhost:1055` 的 SOCKS5 或 HTTP 代理：设置 `ALL_PROXY=socks5h://localhost:1055`（`h` 表示由代理解析 MagicDNS 名称），HTTP 客户端也可用 `HTTP_PROXY`/`HTTPS_PROXY=http://localhost:1055`。没有 ICMP，`ping` tailnet 主机会失败，请用 `minibox-tailscale ping`。Box 重启或从空闲休眠唤醒后，守护进程不会自动启动，tailnet 流量也不会唤醒休眠中的 Box：重新执行 `minibox-tailscale up` 即可，已保存的登录会沿用。卸载只停止当前 Box 里的守护进程，同一主机上其他 Box 的守护进程会继续运行，直到它们停止。卸载后，Tailscale 的登录状态仍保留在家目录卷中。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
 
+**自定义工具**只由所有者管理。在 Box 的「工具」页点**自定义工具**可新增条目，**编辑**与**删除**可修改或移除自定义条目。每个条目是一个文件 `DATA_DIR/tools.d/<id>.json`，格式与 `catalog/*.json` 相同，加载器把它与内置目录合并。表单在写入前先用加载器自己的规则校验，因此无效的条目不会被保存。若有人手动把 `tools.d` 中的文件改成加载器无法读取的内容，所有 Box 的目录都会加载失败，错误信息会给出该文件的路径，直到修好或删除该文件为止。`DELETE /api/tools/custom/<id>` 可以删除名为 `<id>.json` 的文件，即使它的 JSON 已损坏。与内置工具同名的 id 需要勾选**替换内置条目**（`overrideBuiltin`），删除该条目后内置条目恢复。删除只移除文件：已装在共享 tools 卷上的工具保持安装。API：`GET /api/tools/custom`、`PUT /api/tools/custom/:id` 与 `DELETE /api/tools/custom/:id`。CLI：`minibox tool custom list`、`minibox tool custom put <id> (--file FILE | --stdin) [--override-builtin]` 与 `minibox tool custom delete <id>`。MCP 工具集 `tools` 提供 `list_custom_tools`、`put_custom_tool` 与 `delete_custom_tool`。以上操作都只限所有者，Agent 令牌（包括 admin 预设的令牌）一律拒绝。表单中的命令有安装、升级、卸载、检测，以及可选的停止命令：停止命令在卸载前于运行中的 Box 内以 `dev` 用户执行，先停掉工具启动的守护进程，再删除其二进制。安装、升级与卸载在 tools 卷的 helper 中运行，检测在各 Box 的镜像中以只读卷运行，与内置条目相同。每条命令最多 16000 个字符。
+
 ## 空闲休眠
 
 Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。
@@ -316,9 +318,12 @@ Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https:/
 
 ## SSH 访问
 
-`ssh`、`scp`、`sftp` 与 `ssh -L` 通过 MiniBox 连接 Box：经由服务器自身地址上的 WebSocket，不发布宿主机端口。在运行 `ssh` 的机器上，用 `bun run build:cli` 构建 CLI，并把 `dist/minibox` 放进 `PATH`。
+`ssh`、`scp`、`sftp` 与 `ssh -L` 通过 MiniBox 连接 Box：经由服务器自身地址上的 WebSocket，不发布宿主机端口。服务器同时分发自己的 CLI，因此运行 `ssh` 的机器无需源码目录：先从服务器安装 CLI。
 
 ```sh
+# 只需一次：把 minibox 安装到 ~/.local/bin（macOS 或 Linux；Windows 在 PowerShell 中运行：irm https://minibox.example.com/cli/install.ps1 | iex）
+curl -fsSL https://minibox.example.com/cli/install.sh | sh
+
 # 只需一次：访问密钥，或带 box:ssh 的 Agent 令牌
 MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
 ssh mybox.minibox
@@ -327,7 +332,9 @@ sftp mybox.minibox
 ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 ```
 
-`ssh-config --append` 在 `~/.ssh/config` 顶部写入 `Host *.minibox` 配置块，把服务器主机密钥固定在 `~/.ssh/minibox_known_hosts`，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600）。`ProxyCommand`（`minibox ssh-proxy %h`）在没有设置 `MINIBOX_ACCESS_KEY` 时读取该文件，因此从任何 shell 或 IDE 的 Remote-SSH 启动 ssh 都能使用。已导出的 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY` 仍然优先。
+安装脚本会识别系统与 CPU，从服务器下载 `minibox-<os>-<arch>`，按 `/cli/checksums.txt` 校验后安装到 `~/.local/bin`（或 `MINIBOX_INSTALL_DIR`）。它不需要 sudo；该目录不在 `PATH` 中时会打印一行 `PATH` 设置。服务器在该版本的首次请求时用 `bun build --compile` 构建各个二进制，并保存在 `DATA_DIR/cli` 下。与服务器不同的平台还需要该平台的 Bun 运行时，约 90 MB，每台服务器只从 npm 下载一次；无法访问 npm 的服务器会返回 `503` 与原因。此时请为 MiniBox 设置 `HTTPS_PROXY`。若想自行构建，可在源码目录运行 `bun run build:cli`，并把 `dist/minibox` 放进 `PATH`。
+
+`ssh-config --append` 在 `~/.ssh/config` 顶部写入 `Host *.minibox` 配置块，把服务器主机密钥固定在 `~/.ssh/minibox_known_hosts`，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（macOS 与 Linux 上权限为 600）。`ProxyCommand`（`minibox ssh-proxy %h`）在没有设置 `MINIBOX_ACCESS_KEY` 时读取该文件，因此从任何 shell 或 IDE 的 Remote-SSH 启动 ssh 都能使用。已导出的 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY` 仍然优先。`--url URL` 与 `--token KEY` 只对本次命令生效，`--append` 会保存它们解析出的值；`--token` 会把密钥留在 shell 历史中，因此建议改用环境变量。
 
 - 登录用户为 `dev` 或 Box id，`root` 与其他名字会被拒绝。访问密钥或令牌在 WebSocket 握手时校验，Box 内不需要任何密钥或密码。浏览器会话不能建立 SSH 连接。
 - 令牌需要 `box:ssh` 范围，且只能访问其 Box 选择器允许的 Box。`operator` 与 `admin` 预设包含该范围，`sandboxed-agent` 不包含。它与 `exec` 一样能在 Box 内执行命令、读写全部挂载，因此应同样谨慎地授予。`-L` 另需 `port:expose`。
@@ -335,6 +342,21 @@ ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 - 已停止或休眠的 Box 会在连接时启动。打开的连接会让 Box 保持运行，连接上的输入计为活动。停止 Box（手动、空闲或 TTL）、删除或重建 Box 会断开它的 SSH 连接；TTL 已过的 Box 拒绝新连接，返回 `409 box_ttl_expired`。上限：每个 Box 8 个连接，全局 64 个，每个连接 16 个通道。超过 Box 或全局上限时，握手返回 `429`。
 - `sftp` 与 `-L` 需要 `openssh-sftp-server` 和 `socat`，[基础模板](#基础模板)已包含它们。旧 Box 可在标准档位下执行 `sudo apt-get install -y openssh-sftp-server socat` 补装，或重新创建。
 - 主机密钥位于 `DATA_DIR/ssh_host_ed25519_key`，首次启动时生成。删除后需重新运行 `minibox ssh-config --append`，让客户端固定新密钥。连接、通道、被拒绝的转发与断开都会写入审计日志。
+
+### Windows 上的 SSH
+
+请在普通的 PowerShell 窗口中运行，不要以管理员身份运行。Windows 版 OpenSSH 要求 `%USERPROFILE%\.ssh` 中的文件属于你的账户；Windows 上 `ssh-config --append` 会打印这条提醒。
+
+```powershell
+irm https://minibox.example.com/cli/install.ps1 | iex
+$env:MINIBOX_URL="https://minibox.example.com"; $env:MINIBOX_ACCESS_KEY="..."; minibox ssh-config --append
+ssh mybox.minibox
+```
+
+- 安装程序把 `minibox.exe` 放在 `%USERPROFILE%\.local\bin`（或 `MINIBOX_INSTALL_DIR`），把该目录加入用户的 PATH，并把旧的 `minibox.exe` 移为 `minibox.exe.old`。之后请打开新的终端，`minibox` 与 `ssh` 才能被找到。若正在运行的 `minibox.exe` 无法移动，安装程序会停止并给出提示，已安装的文件保持不变。若新文件无法运行，安装程序会把旧文件放回原处。
+- `ssh` 需要「OpenSSH 客户端」可选功能（设置 → 系统 → 可选功能）。缺少时安装程序会打印提示。
+- `ssh-config` 会写入 `%USERPROFILE%\.ssh\config`、`%USERPROFILE%\.ssh\minibox_known_hosts` 与 `%USERPROFILE%\.config\minibox\ssh-credentials.json`。Windows 没有 600 权限，这些文件的权限继承自 `%USERPROFILE%\.ssh`，并属于你的账户。若 ssh 提示所有者或权限有问题，请用 `icacls "%USERPROFILE%\.ssh\config"` 检查所有者与访问规则：所有者应为你本人，其他账户不应有写入权限。
+- `ProxyCommand` 用完整路径指向 CLI，例如 `"C:/Users/you/.local/bin/minibox.exe" ssh-proxy %h`，因为 Windows 版 OpenSSH 不经过 shell 启动它，该进程也未必能找到 PATH 中的命令。移动 `minibox.exe` 之后，请重新运行 `minibox ssh-config --append`。
 
 ## 配置
 
@@ -396,7 +418,7 @@ ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 
 - 已有的 Box 继续以旧模板的 root 用户运行，不会改名，也不会重建。
 - 从旧快照或旧模板创建的 Box，沿用该镜像的用户；在本次改动之前制作的镜像，用户是 root。
-- 新建的**本地**卷会由基础模板镜像拉起的短生命周期辅助容器（以 root 运行）执行 `chown -R 1000:1000`。如果该镜像不存在，则跳过 chown，并记录 `volume.chown_skipped`。NFS 与 path 卷必须先建好子目录；那里的 chown 是尽力而为，因为 `root_squash` 经常会拦住它（同一条日志，辅助容器会打印 `MINIBOX_CHOWN_SKIPPED`）。
+- 新建的**本地**卷会由基础模板镜像拉起的短生命周期辅助容器（以 root 运行）执行 `chown -R 1000:1000`。如果该镜像不存在，则跳过 chown，并记录 `volume.chown_skipped`。NFS 与 path 卷必须先建好子目录；那里的 chown 是尽力而为，因为 `root_squash` 经常会拦住它（同一条日志，辅助容器会打印 `MINIBOX_CHOWN_SKIPPED`）。随后 MiniBox 检查 uid 1000 能否写入新目录。不能写入时创建失败，返回 `bad_gateway`（`storage_unwritable`），删除该目录，不创建卷。见 [NAS / NFS 指南](docs/nas-zh.md#属主最关键的一点)。
 - 已有的 `minibox-ws-*` 卷在启动时会被识别，那时**不会**自动 chown。创建或重建到给出属主的模板（即带 `minibox.template.uid` 与 `minibox.template.gid` 标签的模板，基础模板会设置这两个标签）时，MiniBox 会在启动前把可写 `/workspace` 的根目录改为该属主，因此旧 Box 留下的 root 属主卷对 `dev` 变为可写。只改根目录，卷内已有文件的属主不变。只是被识别的卷，或模板不带这两个标签的 Box，保持原样。如果它的 `/workspace` 仍是 root 属主，对那一只卷执行一次即可，Box 运行时：
 
   ```bash
@@ -467,7 +489,7 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 | `nfs` | 带 NFS 选项的 Docker 本地卷（`type=nfs`，`o=addr=<服务器>,<选项>`，`device=:<导出路径>/<卷 id>`）。辅助容器在导出根目录下创建子目录。**数据**卷使用你设置的选项，通常是 `hard`。**探测**挂载是 `soft,timeo=10,retrans=1`（不会把你的 `hard`/`soft` 抄到探测上），这样服务器无响应时探测不会挂起。NFS 应在可信网络内使用。服务器设置、squash 与 uid 映射、挂载选项和故障排查见 [NAS / NFS 指南](docs/nas-zh.md) |
 | `path` | 通过 Docker 卷绑定 `<根目录>/<卷 id>`（`type=none`，`o=bind`）。任何写入之前，辅助容器以只读方式绑定 `root`，并检查标记文件是否存在（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在就是**存储不可达**；MiniBox 不会创建标记，也不会往本地盘里写 |
 
-`GET /api/pools` 探测可达性，并缓存 15 秒。`?refresh=true` 会重新探测。列出 Box 不会探测 NFS，因此在有东西探测之前，Box 的 `storage.status` 保持 `unknown`。Box 列表和详情只把 `unreachable` 标出来；`ok` 和 `unknown` 不单独提示。当非本地池不是 `reachable`（包括缺少基础模板镜像），或本地引擎探测本身失败时，启动、重启或创建 Box 返回 `503` `docker_unavailable`（消息键 `storage_unreachable`）。协调器记录 `reconcile.start_failed` 后继续，因此一只不可达的池不会让进程退出。剩余空间低于 5 GiB 或低于 10% 时 `lowSpace` 为 true。没有每卷配额。
+`GET /api/pools` 探测可达性，并缓存 15 秒。各个池并发探测；5 秒内没有完成探测的池报告 `unreachable`（`no answer within 5 s`），探测本身继续在后台运行。`?refresh=true` 会重新探测，若该池的探测仍在进行，则加入它。列出 Box 不会探测 NFS，因此在有东西探测之前，Box 的 `storage.status` 保持 `unknown`。Box 列表和详情只把 `unreachable` 标出来；`ok` 和 `unknown` 不单独提示。当非本地池不是 `reachable`（包括缺少基础模板镜像），或本地引擎探测本身失败时，启动、重启或创建 Box 返回 `503` `docker_unavailable`（消息键 `storage_unreachable`）。协调器记录 `reconcile.start_failed` 后继续，因此一只不可达的池不会让进程退出。剩余空间低于 5 GiB 或低于 10% 时 `lowSpace` 为 true。没有每卷配额。
 
 挂载卷需要对该卷的 `volume:attach`。读写挂载还需要 `volume:write`；创建卷也需要 `volume:write`，新建 Box 为自己创建的工作区、主目录和缓存同样如此。修改存储池列表需要 `pool:admin`，`volume:write` 不能代替它。每项检查都是对鉴权钩子的一次单独调用，有卷时资源是这只卷。Agent 令牌按卷的记录检查：令牌只能挂载其授权范围内的卷，池根卷对任何主体（包括所有者）都拒绝（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）。`pool:admin` 不是令牌可以持有的 scope，修改存储池只属于所有者。能力标志（`shareable`、`snapshots`、`quota`、`clone`、`crossHost`）由后端计算：每个池都可共享，只有 NFS 的 `crossHost` 为 true，其余为 false。
 
@@ -557,7 +579,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 { "error": { "code": "validation_failed", "message": "CPU 核数须在 0.1 到 64 之间。", "hint": "…", "retryable": false, "details": { "field": "cpus" } } }
 ```
 
-`retryable` 总会出现。408、429 和 5xx 默认为 true，除非处理程序另行指定。`hint` 在有下一步可做时出现，并带 `hintKey` 供界面翻译。常见错误码：`validation_failed`（400）、`unauthorized`（401）、`forbidden`（403）、`not_found`（404）、`method_not_allowed`（405）、`conflict`（409）、`confirmation_required`（409）、`precondition_failed`（412）、`unsupported_media_type`（415）、`insufficient_capacity`（422）、`precondition_required`（428）、`too_many_requests`（429）、`docker_error`（502）、`docker_unavailable`（503）。错误消息为英文，并带有 `key` 供界面翻译。
+`retryable` 总会出现。408、429 和 5xx 默认为 true，除非处理程序另行指定。`hint` 在有下一步可做时出现，并带 `hintKey` 供界面翻译。常见错误码：`validation_failed`（400）、`unauthorized`（401）、`forbidden`（403）、`not_found`（404）、`method_not_allowed`（405）、`conflict`（409）、`confirmation_required`（409）、`precondition_failed`（412）、`unsupported_media_type`（415）、`insufficient_capacity`（422）、`precondition_required`（428）、`too_many_requests`（429）、`docker_error`（502）、`bad_gateway`（502，存储服务器或上游拒绝了请求）、`docker_unavailable`（503）。错误消息为英文，并带有 `key` 供界面翻译。
 
 ### 认证与系统
 
@@ -593,7 +615,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 | `POST` | `/api/boxes/:id/exec` | 在 Box 里运行命令。请求体 `{ "argv"?, "cmd"?, "cwd"?, "env"?, "timeoutSec"?, "stdin"?, "user"?, "background"? }`。`argv`（不经 shell）与 `cmd`（`/bin/sh -c`）只能提供一个。默认用户 `dev`，目录 `/workspace`，超时 30 秒；前台调用最长 55 秒，`background: true` 最长 3600 秒。已停止的 Box 会先启动，这会改变它的版本号。结果包含 `status`（`running`、`exited` 或 `killed`）、`exitCode`、`stdout`、`stderr`、`truncated`、`durationMs`、`timedOut` 与 `woke`。非零退出码是程序自己的状态。内联输出保留每个流头尾各约 16 KiB；`outputRef` 指向保存的窗口。「严格」档位下用户只能是 `dev` 或 `1000`；其他档位可以用 `root`，这类执行在审计中标记为 `privileged`。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep` |
 | `GET` | `/api/execs/:execId?waitMs=` | 读取一次 exec。`waitMs` 在命令仍在运行时最长等待 25000 毫秒。`status` 为 `running`、`exited` 或 `killed` |
 | `GET` | `/api/execs/:execId/output` | 已保存的 stdout 与 stderr（每个流头尾各约 64 KiB）。内存记录消失后，在保留期内仍可读取 |
-| `POST` | `/api/execs/:execId/kill` | 在 Box 内结束正在运行的 exec 及其进程树：标准与宽松档位以 `root` 执行，严格档位以 exec 的用户执行。已经退出的 exec 返回 `409`。如果仍有进程存活，或 exec 没有结束，返回 `502`，exec 保持 `running`，可以再次调用重试 |
+| `POST` | `/api/execs/:execId/kill` | 在 Box 内结束正在运行的 exec 及其进程树：标准与宽松档位以 `root` 执行，严格档位以 exec 的用户执行。已经退出的 exec 返回 `409`。终止从 `/` 启动，而不是从 exec 的目录启动，因此那里挂起的卷不会阻塞它。如果仍有进程存活、exec 没有结束，或终止在 5 秒内未能启动，返回 `502`，exec 保持 `running`，可以再次调用重试 |
 
 `:id` 可以是容器 ID、容器名（`minibox-<名称>`，挂载变更后为 `minibox-<box id>`）、稳定 ID（`bx_…`）或 Box 名称。会改动 Box 的请求必须带 `If-Match`，值为当前版本号（纯数字、带引号的实体标签，或弱标签）。缺少该头返回 `428 precondition_required`；版本过期返回 `412 precondition_failed`。限制：CPU 0.1–64 核，内存 128–262144 MB，进程数 1–1000000，且单个 Box 不能超过宿主机的核数或总内存。名称须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`。
 
@@ -636,7 +658,18 @@ sudo touch /mnt/minibox/.minibox-mounted
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/ssh/host-key` | 网关的主机密钥：`algorithm`（`ssh-ed25519`）、`fingerprint` 与 `publicKey`。令牌需要 `box:ssh` |
-| `GET` | `/api/ssh/:box` | 带 `Upgrade: websocket` 时，把一条 SSH 连接接到该 Box（按名称或 id）。不带时执行同样的检查：通过返回 `204`，拒绝则返回 JSON 错误。仅接受 Bearer 凭据 |
+| `GET` | `/api/ssh/:box` | 带 `Upgrade: websocket` 时，把一条 SSH 连接接到该 Box（按名称或 id）。不带时执行同样的检查：通过返回 `204`（并带 `x-minibox-version`，即本服务器版本），拒绝则返回 JSON 错误。仅接受 Bearer 凭据 |
+
+### CLI 下载
+
+公开且只读：不需要密钥，二进制文件不含任何机密。每个客户端对这些路由每分钟最多 120 次请求，超过后返回 `429` 与 `retry-after`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/cli/install.sh` | 适用于 macOS 与 Linux 的安装脚本，已写入本服务器的地址。它会校验二进制，且不需要 sudo |
+| `GET` | `/cli/install.ps1` | 适用于 Windows PowerShell 的安装脚本，步骤相同 |
+| `GET` | `/cli/checksums.txt` | 已构建二进制的 `sha256sum` 行，安装脚本据此校验 |
+| `GET` | `/cli/minibox-<os>-<arch>` | 一个 CLI 二进制，以附件形式返回：`minibox-linux-x64`、`minibox-linux-arm64`、`minibox-darwin-x64`、`minibox-darwin-arm64` 或 `minibox-windows-x64.exe`。该版本的首次请求时构建，并缓存在 `DATA_DIR/cli` 下。不在此列表中的名称返回 `404`。构建失败返回 `503` 与原因及替代方法 |
 
 ### 快照与模板
 
@@ -743,11 +776,11 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 # { "mcpServers": { "minibox": { "url": "http://127.0.0.1:3920/mcp",
 #   "headers": { "Authorization": "Bearer mbx_…" } } } }
 
-# 或使用 CLI（bun run build:cli 生成 dist/minibox）：
-MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
+# 或使用 CLI（经服务器安装，见 SSH 访问）：
+MINIBOX_ACCESS_KEY=$KEY minibox exec agent-dev -- npm test
 ```
 
-前台 exec 的 `timeoutSec` 最长 55 秒，因为服务器会在 60 秒后关闭空闲连接。更长的命令使用 `background: true`（`timeoutSec` 最长 3600），或 `minibox exec --background --timeout SEC`，并用 `GET /api/execs/:execId`（`waitMs` 最长 25000）或 `exec_get` 读取结果。每个 Box 最多同时运行 8 个后台 exec，整个 MiniBox 最多 64 个；超过任一上限的调用返回 `429`，且不会启动已停止的 Box。超时会杀掉进程树，CLI 以 124 退出。如果停止失败，exec 保持 `status: running`，停止会按递增的间隔（1 秒、2 秒、4 秒，最长 30 秒）再次尝试，也可以随时通过 `POST /api/execs/:execId/kill` 重试。把密钥放在 `env` 里，不要放在 `cmd` 或 `argv` 中：审计日志会记录命令与 argv（脱敏规则见[事件](#事件)），而 `env` 只记录变量名。
+前台 exec 的 `timeoutSec` 最长 55 秒，因为服务器会在 60 秒后关闭空闲连接。更长的命令使用 `background: true`（`timeoutSec` 最长 3600），或 `minibox exec --background --timeout SEC`，并用 `GET /api/execs/:execId`（`waitMs` 最长 25000）或 `exec_get` 读取结果。每个 Box 最多同时运行 8 个后台 exec，整个 MiniBox 最多 64 个；超过任一上限的调用返回 `429`，且不会启动已停止的 Box。超时会杀掉进程树，CLI 以 124 退出。前台调用对停止最多等待 2 秒：仍未结束时，调用返回 `status: running` 与 `timedOut: true`，停止在后台继续。如果停止失败，exec 同样保持 `status: running`，停止会按递增的间隔（1 秒、2 秒、4 秒，最长 30 秒）再次尝试，也可以随时通过 `POST /api/execs/:execId/kill` 重试。把密钥放在 `env` 里，不要放在 `cmd` 或 `argv` 中：审计日志会记录命令与 argv（脱敏规则见[事件](#事件)），而 `env` 只记录变量名。
 
 `exec` 可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。挂载卷需要该卷的 `volume:attach`，读写挂载或新建卷还需要 `volume:write`。修改存储池需要 `pool:admin`。所有者密钥拥有全部范围；Agent 令牌只拥有创建时授予的范围（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）。
 
@@ -759,7 +792,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
 
-用 `bun run build:cli` 编译 CLI（`bun build --compile`，输出 `dist/minibox`，不提交）。它访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。
+用 [SSH 访问](#ssh-访问) 中的一行安装脚本从服务器安装 CLI，或在源码目录用 `bun run build:cli` 编译（`bun build --compile`，输出 `dist/minibox`，不提交）。`minibox --version` 输出构建该二进制所用的版本，`minibox <命令> --help` 输出帮助并以 0 退出。CLI 访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。`ssh-proxy` 发现服务器比 CLI 新时，会打印一行如何更新的提示。
 
 ```bash
 minibox box ls

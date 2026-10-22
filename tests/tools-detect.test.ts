@@ -12,6 +12,18 @@ import type { FakeRuntime } from "./support/fake-runtime";
 
 type Found = Record<string, { managed: boolean; version?: string }>;
 
+const CUSTOM_TOOL = {
+  name: "Sample tool",
+  description: "A sample entry.",
+  source: "npm",
+  package: "sample-tool",
+  bin: "sample-tool",
+  install: "npm install -g --prefix {{prefix}} {{package_spec}}",
+  upgrade: "npm install -g --prefix {{prefix}} {{package_spec}}",
+  uninstall: "npm uninstall -g --prefix {{prefix}} {{package}}",
+  detect: "command -v sample-tool >/dev/null && sample-tool --version 2>/dev/null",
+};
+
 let app: App;
 let runtime: FakeRuntime;
 let server: ReturnType<typeof startServer> | undefined;
@@ -189,6 +201,18 @@ async function installCodex(boxId: string): Promise<string> {
 }
 
 describe("the tools writer", () => {
+  test("a tool task names the tool it installs, so the task list can tell two installs apart", async () => {
+    const boxId = await createBox("alpha");
+    answerDetection({});
+    const started = await call("POST", `/api/boxes/${boxId}/tools/install`, { tool: "codex", version: "latest" });
+    expect(started.status).toBe(202);
+    expect(await waitTask(String(started.json.taskId))).toMatchObject({
+      op: "tool.install",
+      subject: "codex",
+      target: { kind: "box", name: "alpha" },
+    });
+  });
+
   test("a local tools volume is handed to uid 1000 by a root helper just before the writer runs", async () => {
     const boxId = await createBox("alpha");
     answerDetection({});
@@ -294,6 +318,50 @@ describe("reconcile and changes to installed tools", () => {
     expect(writerCalls()).toHaveLength(1);
   });
 
+  test("a custom entry saved through the API is detected, recorded on a box and installed by reconcile", async () => {
+    expect((await call("PUT", "/api/tools/custom/sample-tool", CUSTOM_TOOL)).status).toBe(200);
+    answerDetection({ "sample-tool": { managed: false, version: "1.2.3" } });
+    expect(toolRow((await call("GET", "/api/tools")).json, "sample-tool")).toMatchObject({
+      source: "npm",
+      installed: true,
+      installedVersion: "1.2.3",
+      managed: false,
+      desiredVersion: null,
+    });
+
+    const boxId = await createBox("alpha", { tools: ["sample-tool"] });
+    answerDetection({});
+    const started = await call("POST", `/api/boxes/${boxId}/tools/reconcile`);
+    expect(started.status).toBe(202);
+    const task = await waitTask(String(started.json.taskId));
+    expect(task.status).toBe("succeeded");
+    expect(task.result).toEqual({ installed: ["sample-tool"], skipped: [], failed: [] });
+    const writes = writerCalls().map((spec) => spec.cmd.join(" "));
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain("npm install -g --prefix /opt/minibox/tools sample-tool@latest");
+  });
+
+  test("an installed custom entry is uninstalled with its saved command, and deleting the entry leaves the volume alone", async () => {
+    await call("PUT", "/api/tools/custom/sample-tool", CUSTOM_TOOL);
+    const boxId = await createBox("alpha", { tools: ["sample-tool"] });
+    answerDetection({ "sample-tool": { managed: true, version: "1.2.3" } });
+
+    const started = await call("POST", `/api/boxes/${boxId}/tools/uninstall`, { tool: "sample-tool" });
+    expect(started.status).toBe(202);
+    expect((await waitTask(String(started.json.taskId))).status).toBe("succeeded");
+    expect(writerCalls().map((spec) => spec.cmd.join(" "))).toEqual([
+      "sh -c npm uninstall -g --prefix /opt/minibox/tools sample-tool",
+    ]);
+
+    const writesBefore = writerCalls().length;
+    expect((await call("DELETE", "/api/tools/custom/sample-tool")).json).toEqual({
+      id: "sample-tool",
+      restoredBuiltin: false,
+    });
+    expect(toolRow((await call("GET", "/api/tools")).json, "sample-tool")).toBeUndefined();
+    expect(writerCalls()).toHaveLength(writesBefore);
+  });
+
   test("a root-only tool cannot be recorded on a box or installed", async () => {
     const dir = join(app.cfg.dataDir, "tools.d");
     mkdirSync(dir, { recursive: true });
@@ -359,6 +427,17 @@ describe("stopping a tool before its uninstall", () => {
       return [];
     });
     expect(phases).toEqual(["stop", "writer"]);
+  });
+
+  test("a stop command saved through the API runs before the writer, the same as one written by hand", async () => {
+    const { id: _id, ...body } = DAEMON_TOOL;
+    expect((await call("PUT", "/api/tools/custom/daemon-api", { ...body, bin: "daemon-tool" })).status).toBe(200);
+    const boxId = await createBox("alpha", { tools: ["daemon-api"] });
+    answerDetection({ "daemon-api": { managed: true, version: "1.0.0" } });
+
+    const started = await call("POST", `/api/boxes/${boxId}/tools/uninstall`, { tool: "daemon-api" });
+    expect((await waitTask(String(started.json.taskId))).status).toBe("succeeded");
+    expect(stopRuns()).toBe(1);
   });
 
   test("a failed stop keeps the tool on the box, and the writer does not run", async () => {

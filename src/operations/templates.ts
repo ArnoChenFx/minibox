@@ -94,6 +94,7 @@ export const templateBuild = defineOperation({
   cli: "template build",
   resolve: async ({ host }) => ({ ref: host.baseTemplateTag }),
   exclusive: ({ host }) => `template.build:${host.host.id}`,
+  subject: () => "base",
   activity: { action: () => "template.build", target: (_input, base) => base.ref },
   audit: { target: (_input, base) => base && { kind: "template", name: base.ref } },
   run: async ({ host, task }) => {
