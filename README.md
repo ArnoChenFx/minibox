@@ -458,12 +458,14 @@ Changing mounts rebuilds the container. The new container is named `<prefix>-<bo
 
 ### Pools
 
+To put boxes on a NAS, follow the [NAS / NFS guide](docs/nas.md): export settings for Linux, Synology, QNAP, TrueNAS and Unraid, the Add NFS fields, and what happens when the server is down.
+
 `pools.json` holds the pool list. There is always a `local` pool, and its backend stays `local`. Exactly one pool is the default. A role set to `null` uses the rule: cache on the local pool, everything else on the default. Saving pools does not rewrite volumes that already exist. A pool that still has volumes cannot be removed or change backend (`409`, key `pool_in_use`).
 
 | Backend | What MiniBox does |
 |---|---|
 | `local` | A Docker local volume on this host. Do not move Docker's data-root onto network storage. `DATA_DIR` stays on the machine that runs MiniBox |
-| `nfs` | A Docker local volume with NFS options (`type=nfs`, `o=addr=<server>,<options>`, `device=:<export>/<volume id>`). A helper container creates the subdirectory on the export. **Data** volumes use the options you set, often `hard`. The **probe** mount is `soft,timeo=10,retrans=1` (your `hard`/`soft` is not copied onto it) so a dead server cannot hang the probe. Use NFS on a trusted network. A longer NAS guide is [#30](https://github.com/ArnoChenFx/minibox/issues/30) |
+| `nfs` | A Docker local volume with NFS options (`type=nfs`, `o=addr=<server>,<options>`, `device=:<export>/<volume id>`). A helper container creates the subdirectory on the export. **Data** volumes use the options you set, often `hard`. The **probe** mount is `soft,timeo=10,retrans=1` (your `hard`/`soft` is not copied onto it) so a dead server cannot hang the probe. Use NFS on a trusted network. Server setup, squash and uid mapping, mount options and troubleshooting: [NAS / NFS guide](docs/nas.md) |
 | `path` | A bind of `<root>/<volume id>` through a Docker volume (`type=none`, `o=bind`). Before any write, a helper bind-mounts `root` read-only and checks that the marker file exists (default `.minibox-mounted`, a single file name). A missing marker is **storage unreachable**; MiniBox does not create the marker and does not write the local disk |
 
 `GET /api/pools` probes reachability and caches the result for 15 seconds. `?refresh=true` probes again. Listing boxes does not probe NFS, so a box's `storage.status` stays `unknown` until something probes. `unreachable` is what the box list and the box page call out; `ok` and `unknown` do not. Starting, restarting or creating a box returns `503` `docker_unavailable` (message key `storage_unreachable`) when a non-local pool is not `reachable`, including when the base template image is missing, and when the local engine probe itself fails. The reconciler logs `reconcile.start_failed` and continues, so one unreachable pool does not stop the process. Free space under 5 GiB or under 10% is `lowSpace`. There is no per-volume quota.
@@ -929,7 +931,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 - [x] [#9](https://github.com/ArnoChenFx/minibox/issues/9) Exec and file API for agents, with an MCP server and CLI. Exec, MCP, CLI and the volume file API (helper + archive) are in place
 - [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux sessions with human takeover
 - [x] [#17](https://github.com/ArnoChenFx/minibox/issues/17) Stream box state and resource usage over SSE instead of polling
-- [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS setup guide
+- [x] [#30](https://github.com/ArnoChenFx/minibox/issues/30) [NAS / NFS setup guide](docs/nas.md)
 
 ### M3 · Core value
 
