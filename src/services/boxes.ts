@@ -114,7 +114,7 @@ export interface Box {
   mounts: BoxMountView[];
   /** Plain values and secret references. A secret reference is stored and not injected. */
   env: BoxEnv[];
-  /** Desired Agent CLIs from the spec (`id` + `version`). */
+  /** Desired tools from the spec (`id` + `version`). */
   tools: { id: string; version: string }[];
   /** `unreachable` when a pool backing a mount could not be probed. The engine state stays in `state`. */
   storage: {

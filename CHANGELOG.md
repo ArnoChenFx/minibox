@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 变更
+- 工具目录已不只包含 Agent CLI：控制台、API 说明、MCP 说明与 README 中的「Agent CLI 工具」统一改称「工具」（Tools），接口与 id 不变（#8）。
+
 ### 升级必读（经隧道或反向代理访问的部署）
 - 通过隧道或反向代理访问 MiniBox 的部署，升级后请先检查以下设置：
   - **OpenTunnel 或其他保留 `Host` / `Origin`、不添加 `X-Forwarded-*` 头的隧道：保持 `TRUST_PROXY` 关闭。** 所有请求都从 `127.0.0.1` 到达，访问者共享同一个登录限流计数，但正确的密钥总能登录。`ALLOWED_ORIGINS` 可选（`Host` 已与公网地址一致，设置也无害）。登录 Cookie 会因浏览器的 `https://` Origin 自动带上 `Secure`（#1 #3）。

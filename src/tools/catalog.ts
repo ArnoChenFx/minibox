@@ -26,7 +26,7 @@ export function parseCatalogEntry(raw: unknown, file: string): CatalogEntry {
   if (!isObject(raw)) throw badRequest(msg("tool_catalog_invalid", { file, detail: "root must be an object" }));
   const id = requireString(raw, "id", file);
   if (!ID.test(id)) throw badRequest(msg("tool_catalog_invalid", { file, detail: `invalid id ${id}` }));
-  // Custom tools.d entries written before categories existed have no category; they were Agent CLIs, so they join
+  // Custom tools.d entries written before categories existed have no category; they were coding-agent CLIs, so they join
   // the agents group instead of breaking the whole catalog.
   const category = raw.category === undefined ? "agents" : requireString(raw, "category", file);
   if (!isToolCategory(category)) {

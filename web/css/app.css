@@ -2265,7 +2265,7 @@ textarea.token-lines {
   color: var(--text-3);
 }
 
-/* The Agent CLI picker, shared by the create dialog and the running box's tools panel. */
+/* The tool picker, shared by the create dialog and the running box's tools panel. */
 .tool-picker-head {
   display: flex;
   flex-wrap: wrap;

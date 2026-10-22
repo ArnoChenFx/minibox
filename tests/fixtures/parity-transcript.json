@@ -1205,7 +1205,7 @@
     "path": "/api/tasks/<ulid>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"id\":\"<ulid>\",\"op\":\"tool.install\",\"status\":\"succeeded\",\"summary\":\"Install an Agent CLI into the shared tools volume: toolsbox\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"toolsbox\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"id\":\"claude-code\",\"version\":\"latest\",\"installedVersion\":\"1.0.0\"},\"output\":\"install claude-code@latest\\n$ npm install -g --prefix /opt/minibox/tools @anthropic-ai/claude-code@latest\\nUsing tools volume <volumeId> (read-write)\\nok\\n\",\"truncated\":false,\"logSeq\":4}"
+    "body": "{\"id\":\"<ulid>\",\"op\":\"tool.install\",\"status\":\"succeeded\",\"summary\":\"Install a tool into the shared tools volume: toolsbox\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"toolsbox\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"id\":\"claude-code\",\"version\":\"latest\",\"installedVersion\":\"1.0.0\"},\"output\":\"install claude-code@latest\\n$ npm install -g --prefix /opt/minibox/tools @anthropic-ai/claude-code@latest\\nUsing tools volume <volumeId> (read-write)\\nok\\n\",\"truncated\":false,\"logSeq\":4}"
   },
   {
     "step": "upgrade claude-code",
