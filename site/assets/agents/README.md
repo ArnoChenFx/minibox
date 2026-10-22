@@ -5,7 +5,7 @@ Vendored from [Lobe Icons](https://github.com/lobehub/lobe-icons/tree/ab8cbcc6ce
 | Local file | Upstream SVG | Product |
 | --- | --- | --- |
 | claude-code.svg | claudecode-color.svg | [Claude Code](https://code.claude.com) |
-| codex.svg | codex.svg | [OpenAI Codex](https://openai.com/codex) |
+| codex.svg | codex-color.svg | [OpenAI Codex](https://openai.com/codex) |
 | opencode.svg | opencode.svg | [OpenCode](https://opencode.ai) |
 | pi.svg | pi.svg | [Pi coding agent](https://pi.dev) |
 
