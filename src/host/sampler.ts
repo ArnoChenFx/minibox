@@ -801,15 +801,19 @@ export class HostSampler {
     this.wakeLoop?.();
   }
 
+  /**
+   * Keeps the cache to this host's specs. A spec written for another host, such as one a move handed over, leaves the
+   * cache here, so this host stops showing the box it no longer runs.
+   */
   private onSpec(change: SpecChange): void {
     if (!this.started) return;
-    if (change.kind === "write") {
-      if (change.spec.hostId !== this.currentHost().host.id) return;
-      this.specs.set(change.spec.id, change.spec);
+    const id = change.kind === "write" ? change.spec.id : change.id;
+    if (change.kind === "write" && change.spec.hostId === this.currentHost().host.id) {
+      this.specs.set(id, change.spec);
     } else {
-      if (!this.specs.delete(change.id)) return;
-      this.rings.delete(change.id);
-      this.logs.close(change.id);
+      if (!this.specs.delete(id)) return;
+      this.rings.delete(id);
+      this.logs.close(id);
     }
     this.reconcile();
   }

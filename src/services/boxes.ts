@@ -205,13 +205,15 @@ export async function getBox(host: HostCtx, ref: string): Promise<Box> {
     asMissing(e);
   }
   if (!parseBoxLabels(info.labels, host.keys).isBox) throw notFound(msg("box_not_found"));
+  let claimed: Awaited<ReturnType<typeof ensureSpec>>;
   try {
-    const { spec } = await ensureSpec(host, info);
-    return projectBox(host, spec, info);
+    claimed = await ensureSpec(host, info);
   } catch (e) {
     if (e instanceof ClaimError) throw conflict(msg("box_claim_failed", { detail: e.message }));
     throw e;
   }
+  if (!claimed) throw notFound(msg("box_not_found"));
+  return projectBox(host, claimed.spec, info);
 }
 
 /**
@@ -271,9 +273,9 @@ export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {
   const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
   const boxes: Box[] = [];
   for (const info of infos) {
-    let spec: BoxSpec;
+    let claimed: Awaited<ReturnType<typeof ensureSpec>>;
     try {
-      spec = (await ensureSpec(host, info)).spec;
+      claimed = await ensureSpec(host, info);
     } catch (e) {
       if (e instanceof ClaimError) {
         log.warn("box.claim_skipped", { container: info.name, host: host.host.id, error: e.message });
@@ -281,9 +283,10 @@ export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {
       }
       throw e;
     }
-    const box = projectBox(host, spec, info);
+    if (!claimed) continue;
+    const box = projectBox(host, claimed.spec, info);
     if (opts.withStats) {
-      box.stats = box.running ? await listedStats(host, spec.id, info.id) : null;
+      box.stats = box.running ? await listedStats(host, claimed.spec.id, info.id) : null;
     }
     boxes.push(box);
   }
