@@ -20,6 +20,7 @@ import {
   REASON_KEYS,
   rowActions,
   SKIP_REASON_KEYS,
+  browserTimezone,
   scheduleBody,
   usedPercent,
 } from "../web/js/lib/checkpoint-state.js";
@@ -163,7 +164,11 @@ describe("passphrase and schedule rules", () => {
     for (const hours of ["0", "721", "2.5", "", "abc"]) {
       expect(scheduleBody("interval", { hours })).toBeNull();
     }
-    expect(scheduleBody("daily", { at: "02:30" })).toEqual({ at: "02:30" });
+    expect(scheduleBody("daily", { at: "02:30", timezone: "Asia/Shanghai" })).toEqual({
+      at: "02:30",
+      timezone: "Asia/Shanghai",
+    });
+    expect(scheduleBody("daily", { at: "02:30" })).toEqual({ at: "02:30", timezone: browserTimezone() });
     for (const at of ["24:00", "2:30", "12:60", ""]) {
       expect(scheduleBody("daily", { at })).toBeNull();
     }
@@ -369,6 +374,7 @@ const fixtures = {
     mode: "daily",
     everyHours: null,
     at: "02:30",
+    timezone: "Asia/Shanghai",
     createdBy: "owner",
     createdAt: at(0),
     updatedAt: at(0),
@@ -406,6 +412,9 @@ const markup = runConsole<Markup>(
     scheduleOff: component.scheduleHtml(null),
     scheduleOn: component.scheduleHtml(fixtures.schedule),
     scheduleDaily: component.scheduleHtml(fixtures.dailySchedule),
+    scheduleLegacy: component.scheduleHtml({ ...fixtures.dailySchedule, timezone: undefined }),
+    scheduleFormHere: component.scheduleFormHtml(fixtures.dailySchedule, "Asia/Shanghai"),
+    scheduleFormMoved: component.scheduleFormHtml(fixtures.dailySchedule, "Europe/Berlin"),
     cardScheduled: component.checkpointCardHtml({ rows: [], pending: null, usage: null, schedule: fixtures.schedule }),
   };`,
 );
@@ -614,9 +623,22 @@ describe("checkpoint schedule", () => {
 
   test("a daily schedule names its time, and a failed run shows its error escaped", () => {
     const html = markup.scheduleDaily ?? "";
-    expect(html).toContain("Every day at 02:30");
+    expect(html).toContain("Every day at 02:30 (Asia/Shanghai)");
     expect(html).toContain("&lt;b&gt;boom&lt;/b&gt;");
     expect(html).not.toContain("<b>boom</b>");
+  });
+
+  test("a daily schedule saved before time zones says it runs in UTC", () => {
+    expect(markup.scheduleLegacy ?? "").toContain("Every day at 02:30 (UTC)");
+  });
+
+  test("the form names the browser's zone, and says so when saving moves a schedule to it", () => {
+    const here = markup.scheduleFormHere ?? "";
+    expect(here).toContain("HH:MM in your time zone, Asia/Shanghai");
+    expect(here).not.toContain("Saving it here");
+    const moved = markup.scheduleFormMoved ?? "";
+    expect(moved).toContain("HH:MM in your time zone, Europe/Berlin");
+    expect(moved).toContain("This schedule runs in Asia/Shanghai. Saving it here sets it to Europe/Berlin.");
   });
 
   test("the form offers both ways of setting a rule, and shows the hours field first", () => {
@@ -639,8 +661,12 @@ describe("the Chinese console", () => {
       `return {
       legacy: component.checkpointRowHtml(fixtures.legacy, {}),
       usage: component.usageHtml(fixtures.exceeded),
+      daily: component.scheduleHtml(fixtures.dailySchedule),
+      form: component.scheduleFormHtml(fixtures.dailySchedule, "Asia/Shanghai"),
     };`,
     );
+    expect(rendered.daily).toContain("每天 02:30（Asia/Shanghai）");
+    expect(rendered.form).toContain("你所在时区（Asia/Shanghai）的 HH:MM");
     expect(rendered.legacy).toContain(zh["ck.rollback"] ?? "\u0000");
     expect(rendered.legacy).toContain(escaped(zh["ck.reasonLegacy"] ?? ""));
     expect(rendered.usage).toContain(zh["ck.repository"] ?? "\u0000");

@@ -22407,6 +22407,12 @@
                                 "null"
                               ]
                             },
+                            "timezone": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
                             "createdBy": {
                               "type": [
                                 "string",
@@ -22479,6 +22485,7 @@
                             "mode",
                             "everyHours",
                             "at",
+                            "timezone",
                             "createdBy",
                             "createdAt",
                             "updatedAt",
@@ -22626,7 +22633,12 @@
                   "at": {
                     "type": "string",
                     "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
-                    "description": "Take a checkpoint once a day at this time, HH:MM on the server's clock, such as 02:30. Send either this or everyHours."
+                    "description": "Take a checkpoint once a day at this time, HH:MM in timezone, such as 02:30. Send either this or everyHours."
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "IANA time zone of the daily time, such as Asia/Shanghai. Defaults to UTC. An every-hours schedule has no zone, so it is not stored for one."
                   }
                 }
               }
@@ -22675,6 +22687,12 @@
                           ]
                         },
                         "at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "timezone": {
                           "type": [
                             "string",
                             "null"
@@ -22752,6 +22770,7 @@
                         "mode",
                         "everyHours",
                         "at",
+                        "timezone",
                         "createdBy",
                         "createdAt",
                         "updatedAt",

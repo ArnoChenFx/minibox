@@ -98,18 +98,18 @@ A box can take checkpoints on a schedule: every few hours, or once a day at a ti
 
 To set a schedule, open the box's **Checkpoints** tab, and in **Schedule** click **Set a schedule**:
 
-1. Under **When**, choose **Every few hours** and type the **Hours**, from 1 to 720. Or choose **Once a day** and type a **Time**, such as `02:30`. The time is on the server's clock.
+1. Under **When**, choose **Every few hours** and type the **Hours**, from 1 to 720. Or choose **Once a day** and type a **Time**, such as `02:30`. The time is in your browser's time zone, which the dialog names.
 2. Click **Save schedule**.
 
-The tab then shows the schedule with its **Next run** and **Last run**. The last run says whether a checkpoint was taken, or why the run was skipped or failed. **Change schedule** edits the schedule, and **Turn off** removes it. Turning a schedule off keeps the checkpoints it already took.
+The tab then shows the schedule, such as `Every day at 03:00 (Asia/Shanghai)`, with its **Next run** and **Last run** in your local time. The last run says whether a checkpoint was taken, or why the run was skipped or failed. **Change schedule** edits the schedule, and **Turn off** removes it. Turning a schedule off keeps the checkpoints it already took.
 
 A scheduled checkpoint is taken while the box keeps running, like a **Live** checkpoint. It is not pinned, and it counts as automatic, so the retention policy keeps or removes it in the same way as the checkpoints MiniBox takes before a rollback.
 
 MiniBox never wakes or starts a box for a schedule. A stopped or sleeping box is skipped, and a scheduled checkpoint does not count as activity, so it never keeps an idle box from sleeping. A box moved to another host keeps its schedule, and the next run is taken on the new host. A run is also skipped while the checkpoint repository is at its limit, until space is freed. If the box has been deleted, its schedule is removed. A failed run records its error. While a host is offline, its schedules wait for it to come back.
 
-Schedules are checked every minute, and they are kept on the instance, so they survive a restart. A run that fell due while the server was down happens once after the server starts, within about a minute. An every-hours schedule keeps to its original times, so a late run does not move the later ones. A daily schedule runs at its next time.
+Schedules are checked every minute, and they are kept on the instance, so they survive a restart. A run that fell due while the server was down happens once after the server starts, within about a minute. An every-hours schedule keeps to its original times, so a late run does not move the later ones. A daily schedule runs at its next time, and keeps to the clock of its zone when daylight saving time starts or ends. A time the clocks skip runs an hour later, and a time that happens twice runs once.
 
-Over the REST API, `PUT /api/boxes/{id}/checkpoint-schedule` sets a schedule and `DELETE` on the same path removes it. The MCP storage toolset does the same for the owner.
+Over the REST API, `PUT /api/boxes/{id}/checkpoint-schedule` sets a schedule and `DELETE` on the same path removes it. A daily time takes `timezone`, an IANA name such as `Asia/Shanghai`; without it the time is UTC. The MCP storage toolset does the same for the owner.
 
 ## How long checkpoints are kept
 

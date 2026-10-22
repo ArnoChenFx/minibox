@@ -27,7 +27,7 @@ export const SKIP_REASON_KEYS = Object.freeze({
 export const PASSPHRASE_MIN = 12;
 export const PASSPHRASE_MAX = 1024;
 
-/** The limits of an every-N-hours schedule. A daily time is `HH:MM` on the server's clock. */
+/** The limits of an every-N-hours schedule. A daily time is `HH:MM` in the schedule's time zone. */
 export const SCHEDULE_HOURS = Object.freeze({ min: 1, max: 720 });
 const SCHEDULE_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -87,12 +87,24 @@ export function passphraseOk(value) {
   return value === value.trim() && !/[\r\n\0]/.test(value);
 }
 
+/** The zone a daily schedule runs in. One saved before zones has none, and runs in UTC. */
+export const scheduleZone = (schedule) => schedule?.timezone ?? "UTC";
+
+/** The browser's IANA time zone, such as `Asia/Shanghai`, or UTC when the browser does not say. */
+export function browserTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 /**
- * The request body a schedule form sends for its mode: `everyHours` for an interval, `at` for a daily time. Null when the
- * form does not describe a rule the server accepts.
+ * The request body a schedule form sends for its mode: `everyHours` for an interval, `at` with its time zone for a daily
+ * time. Null when the form does not describe a rule the server accepts.
  */
-export function scheduleBody(mode, { hours, at }) {
-  if (mode === "daily") return SCHEDULE_TIME.test(at ?? "") ? { at } : null;
+export function scheduleBody(mode, { hours, at, timezone = browserTimezone() }) {
+  if (mode === "daily") return SCHEDULE_TIME.test(at ?? "") ? { at, timezone } : null;
   const every = Number(hours);
   const inRange = Number.isInteger(every) && every >= SCHEDULE_HOURS.min && every <= SCHEDULE_HOURS.max;
   return inRange ? { everyHours: every } : null;

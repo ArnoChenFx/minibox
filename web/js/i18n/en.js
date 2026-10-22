@@ -235,6 +235,7 @@ export default {
   "err.package_not_found": "Package {id} was not found. Packages are kept for a day, so it may have expired.",
   "err.package_upload_type": "A package is uploaded as application/octet-stream.",
   "err.payload_too_large": "The request body is larger than the limit of {limit} MB.",
+  "err.schedule_timezone_invalid": "The time zone must be an IANA name such as Asia/Shanghai or UTC.",
   "err.schedule_rule_invalid":
     "A schedule runs every 1 to 720 hours, or once a day at a time such as 02:30. Send either everyHours or at, not both.",
   "err.rollback_pending":
@@ -1168,9 +1169,10 @@ export default {
   "ck.scheduleTurnOff": "Turn off",
   "ck.scheduleEvery": "Every {n} hours",
   "ck.scheduleEveryHour": "Every hour",
-  "ck.scheduleDaily": "Every day at {at}",
+  "ck.scheduleDaily": "Every day at {at} ({zone})",
   "ck.nextRun": "Next run",
   "ck.lastRun": "Last run",
+  "ck.localTime": " (your local time)",
   "ck.lastRunNone": "none yet",
   "ck.runOk": "{time}, checkpoint taken",
   "ck.runSkipped": "{time}, skipped: {reason}",
@@ -1178,7 +1180,7 @@ export default {
   "ck.scheduleNote":
     "A stopped or sleeping box is skipped, never woken. Scheduled checkpoints follow the retention policy and the repository limit.",
   "ck.scheduleTitle": "Checkpoint schedule",
-  "ck.scheduleDesc": "Takes a checkpoint of this box in the background, on the server's clock.",
+  "ck.scheduleDesc": "Takes a checkpoint of this box in the background.",
   "ck.scheduleWhen": "When",
   "ck.scheduleModeEvery": "Every few hours",
   "ck.scheduleModeEveryHint": "Runs every set number of hours, counted from when you save it.",
@@ -1187,7 +1189,8 @@ export default {
   "ck.scheduleHours": "Hours",
   "ck.scheduleHoursHelp": "A whole number from 1 to 720.",
   "ck.scheduleTime": "Time",
-  "ck.scheduleTimeHelp": "HH:MM on the server's clock, such as 02:30.",
+  "ck.scheduleTimeHelp": "HH:MM in your time zone, {zone}, such as 02:30.",
+  "ck.scheduleZoneChange": "This schedule runs in {from}. Saving it here sets it to {zone}.",
   "ck.scheduleHelp":
     "Scheduled checkpoints are automatic. The retention policy removes the oldest beyond its limit, and a full repository skips a run until space is freed.",
   "ck.scheduleInvalid": "Enter a whole number of hours from 1 to 720, or a time of day.",

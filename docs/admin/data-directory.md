@@ -12,7 +12,7 @@ The default location is `./data` in a source checkout, and `/data` in the releas
 | `ssh_host_ed25519_key` | `600` | The SSH gateway's host key, generated when the server starts. `minibox ssh-config` pins its public half. |
 | `boxes/` | `700` | One box spec per file, `<id>.json`, mode `600`. This is where box settings live. |
 | `checkpoints/` | `700` | One checkpoint record per file, `ck_….json`, mode `600`. The data itself is in the checkpoint repository volume. |
-| `checkpoints/schedules/` | `700` | One checkpoint schedule per box, `<box id>.json`, mode `600`. It holds the rule, the next run and the last run. A box without a file has no schedule. It survives a restart. |
+| `checkpoints/schedules/` | `700` | One checkpoint schedule per box, `<box id>.json`, mode `600`. It holds the rule with its time zone, the next run and the last run. A box without a file has no schedule. It survives a restart. |
 | `packages/` | `700` | Checkpoint packages, `<id>.mbckpt`, mode `600`, each with a `<id>.json` record beside it. A package is sealed with the passphrase it was exported with. The hourly sweep removes it once it is 24 hours old. |
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per command. |
 | `secrets/` | `700` | Host secrets in `env/<name>`, mode `600`, each created when you set a secret. Also `checkpoint-repo.key`, mode `600`, created when the checkpoint repository is first initialized. |

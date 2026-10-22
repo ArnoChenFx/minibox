@@ -6,8 +6,11 @@ import { join } from "node:path";
 import type { App } from "../src/app";
 import {
   type BoxSchedule,
+  BoxScheduleSchema,
+  canonicalTimezone,
   firstRunAt,
   isDue,
+  nextDailyAfter,
   nextRunAfterRun,
   ruleOf,
   SCHEDULE_HOURS_MAX,
@@ -31,6 +34,7 @@ const DAY = 24 * HOUR;
 const MB = 1024 * 1024;
 
 const iso = (date: Date): string => date.toISOString();
+const utc = (...parts: [number, number, number, number, number]) => new Date(Date.UTC(...parts));
 
 async function until(check: () => boolean): Promise<void> {
   for (let i = 0; i < 2000 && !check(); i++) await Bun.sleep(2);
@@ -40,13 +44,15 @@ async function until(check: () => boolean): Promise<void> {
 const pathOf = (boxId: string): string => `/api/boxes/${boxId}/checkpoint-schedule`;
 const bodyOf = (reply: Reply) => (reply.json as unknown as { schedule: BoxSchedule | null }).schedule;
 
-function rule(input: { everyHours?: number; at?: string }): ScheduleRule {
+type RuleInput = { everyHours?: number; at?: string; timezone?: string };
+
+function rule(input: RuleInput): ScheduleRule {
   const found = ruleOf(input);
   if (!found) throw new Error(`not a schedule rule: ${JSON.stringify(input)}`);
   return found;
 }
 
-function scheduleWith(input: { everyHours?: number; at?: string }, nextRunAt: Date): BoxSchedule {
+function scheduleWith(input: RuleInput, nextRunAt: Date): BoxSchedule {
   const found = rule(input);
   return {
     version: 1,
@@ -55,6 +61,7 @@ function scheduleWith(input: { everyHours?: number; at?: string }, nextRunAt: Da
     mode: found.mode,
     everyHours: found.everyHours,
     at: found.at,
+    timezone: found.timezone,
     createdBy: "owner",
     createdAt: iso(nextRunAt),
     updatedAt: iso(nextRunAt),
@@ -65,8 +72,8 @@ function scheduleWith(input: { everyHours?: number; at?: string }, nextRunAt: Da
 
 describe("schedule rules", () => {
   test("a rule is an interval of whole hours or a daily time, and never both or neither", () => {
-    expect(ruleOf({ everyHours: 6 })).toEqual({ mode: "interval", everyHours: 6, at: null });
-    expect(ruleOf({ at: "02:30" })).toEqual({ mode: "daily", everyHours: null, at: "02:30" });
+    expect(ruleOf({ everyHours: 6 })).toEqual({ mode: "interval", everyHours: 6, at: null, timezone: null });
+    expect(ruleOf({ at: "02:30" })).toEqual({ mode: "daily", everyHours: null, at: "02:30", timezone: "UTC" });
     expect(ruleOf({})).toBeNull();
     expect(ruleOf({ everyHours: 6, at: "02:30" })).toBeNull();
   });
@@ -88,11 +95,11 @@ describe("schedule rules", () => {
     expect(firstRunAt(rule({ everyHours: 6 }), from)).toEqual(new Date(2026, 9, 22, 16, 0));
   });
 
-  test("a daily time runs at its next occurrence, strictly after the moment it is set", () => {
-    const from = new Date(2026, 9, 22, 10, 0);
-    expect(firstRunAt(rule({ at: "02:30" }), from)).toEqual(new Date(2026, 9, 23, 2, 30));
-    expect(firstRunAt(rule({ at: "23:00" }), from)).toEqual(new Date(2026, 9, 22, 23, 0));
-    expect(firstRunAt(rule({ at: "10:00" }), from)).toEqual(new Date(2026, 9, 23, 10, 0));
+  test("a daily time runs at its next occurrence, strictly after the moment it is set, in UTC when no zone is named", () => {
+    const from = new Date(Date.UTC(2026, 9, 22, 10, 0));
+    expect(firstRunAt(rule({ at: "02:30" }), from)).toEqual(new Date(Date.UTC(2026, 9, 23, 2, 30)));
+    expect(firstRunAt(rule({ at: "23:00" }), from)).toEqual(new Date(Date.UTC(2026, 9, 22, 23, 0)));
+    expect(firstRunAt(rule({ at: "10:00" }), from)).toEqual(new Date(Date.UTC(2026, 9, 23, 10, 0)));
   });
 
   test("a late interval run stays on the grid of its first run", () => {
@@ -112,14 +119,83 @@ describe("schedule rules", () => {
   });
 
   test("a daily schedule's next run is the next occurrence of its time after the run", () => {
-    const schedule = scheduleWith({ at: "02:30" }, new Date(2026, 9, 22, 2, 30));
-    expect(nextRunAfterRun(schedule, new Date(2026, 9, 22, 2, 31))).toEqual(new Date(2026, 9, 23, 2, 30));
+    const schedule = scheduleWith({ at: "02:30" }, new Date(Date.UTC(2026, 9, 22, 2, 30)));
+    expect(nextRunAfterRun(schedule, new Date(Date.UTC(2026, 9, 22, 2, 31)))).toEqual(
+      new Date(Date.UTC(2026, 9, 23, 2, 30)),
+    );
   });
 
   test("a schedule is due once its next run has come", () => {
     const schedule = scheduleWith({ everyHours: 1 }, new Date(2026, 9, 22, 10, 0));
     expect(isDue(schedule, new Date(2026, 9, 22, 9, 59))).toBe(false);
     expect(isDue(schedule, new Date(2026, 9, 22, 10, 0))).toBe(true);
+  });
+});
+
+describe("schedule time zones", () => {
+  test("a zone is an IANA name, and is kept in its canonical spelling", () => {
+    expect(canonicalTimezone("Asia/Shanghai")).toBe("Asia/Shanghai");
+    expect(canonicalTimezone("America/New_York")).toBe("America/New_York");
+    expect(canonicalTimezone("utc")).toBe("UTC");
+    for (const name of ["Mars/Olympus", "", "Asia/Shanghai; rm -rf /", "x".repeat(65), 8, null]) {
+      expect(canonicalTimezone(name)).toBeNull();
+    }
+    expect(ruleOf({ at: "03:00", timezone: "asia/shanghai" })?.timezone).toBe("Asia/Shanghai");
+    expect(ruleOf({ at: "03:00", timezone: "Mars/Olympus" })).toBeNull();
+    expect(ruleOf({ everyHours: 6, timezone: "Asia/Shanghai" })?.timezone).toBeNull();
+  });
+
+  test("a daily time runs at that time on the zone's clock", () => {
+    const shanghai = rule({ at: "03:00", timezone: "Asia/Shanghai" });
+    // 21:30 in Shanghai on the 22nd is 13:30 UTC; 03:00 the next morning there is 19:00 UTC on the 22nd.
+    expect(firstRunAt(shanghai, utc(2026, 9, 22, 13, 30))).toEqual(utc(2026, 9, 22, 19, 0));
+    // Set at 02:00 Shanghai, the same morning's 03:00 is still ahead.
+    expect(firstRunAt(shanghai, utc(2026, 9, 21, 18, 0))).toEqual(utc(2026, 9, 21, 19, 0));
+    const kolkata = rule({ at: "00:15", timezone: "Asia/Kolkata" });
+    expect(firstRunAt(kolkata, utc(2026, 9, 22, 18, 0))).toEqual(utc(2026, 9, 22, 18, 45));
+    const auckland = rule({ at: "23:59", timezone: "Pacific/Auckland" });
+    expect(firstRunAt(auckland, utc(2026, 11, 31, 11, 0))).toEqual(utc(2026, 11, 31, 10, 59 + 24 * 60));
+  });
+
+  test("a daily time keeps to the zone's clock across a daylight saving change", () => {
+    // New York moves from EDT (UTC-4) to EST (UTC-5) on 1 November 2026.
+    const before = scheduleWith({ at: "03:00", timezone: "America/New_York" }, utc(2026, 9, 31, 7, 0));
+    expect(nextRunAfterRun(before, utc(2026, 9, 31, 7, 1))).toEqual(utc(2026, 10, 1, 8, 0));
+    // And back to EDT on 8 March 2026.
+    expect(nextDailyAfter("03:00", "America/New_York", utc(2026, 2, 7, 8, 1))).toEqual(utc(2026, 2, 8, 7, 0));
+    // London: BST ends on 25 October 2026.
+    expect(nextDailyAfter("09:00", "Europe/London", utc(2026, 9, 24, 8, 1))).toEqual(utc(2026, 9, 25, 9, 0));
+  });
+
+  test("a time the clocks skip runs an hour later, and a time that happens twice runs once, the first time", () => {
+    // 02:30 does not exist in New York on 8 March 2026: it runs at 03:30 EDT, 07:30 UTC.
+    expect(nextDailyAfter("02:30", "America/New_York", utc(2026, 2, 7, 12, 0))).toEqual(utc(2026, 2, 8, 7, 30));
+    expect(nextDailyAfter("02:30", "America/New_York", utc(2026, 2, 8, 7, 31))).toEqual(utc(2026, 2, 9, 6, 30));
+    // 01:30 happens twice on 1 November 2026: first at 05:30 UTC (EDT), again at 06:30 UTC (EST).
+    const first = nextDailyAfter("01:30", "America/New_York", utc(2026, 9, 31, 12, 0));
+    expect(first).toEqual(utc(2026, 10, 1, 5, 30));
+    const after = nextDailyAfter("01:30", "America/New_York", new Date(first.getTime() + MINUTE));
+    expect(after).toEqual(utc(2026, 10, 2, 6, 30));
+  });
+
+  test("a schedule saved before time zones reads back without one and runs in UTC", () => {
+    const saved = {
+      version: 1,
+      hostId: "local",
+      boxId: newBoxId(),
+      mode: "daily",
+      everyHours: null,
+      at: "03:00",
+      createdBy: "owner",
+      createdAt: iso(utc(2026, 9, 21, 0, 0)),
+      updatedAt: iso(utc(2026, 9, 21, 0, 0)),
+      nextRunAt: iso(utc(2026, 9, 22, 3, 0)),
+      lastRun: null,
+    };
+    const parsed = BoxScheduleSchema.parse(saved);
+    expect(parsed.timezone).toBeNull();
+    expect(nextRunAfterRun(parsed, utc(2026, 9, 22, 3, 1))).toEqual(utc(2026, 9, 23, 3, 0));
+    expect(BoxScheduleSchema.safeParse({ ...saved, timezone: "Mars/Olympus" }).success).toBe(false);
   });
 });
 
@@ -334,15 +410,19 @@ describe("checkpoint schedules over the scheduler", () => {
     expect(await scheduler.run()).toEqual([]);
   });
 
-  test("a daily time runs once at its time, and its next run is the following day", async () => {
+  test("a daily time runs once at its time in its zone, and its next run is the following day", async () => {
     const box = await makeBox("lambda");
-    await setSchedule(host, box.boxId, rule({ at: "09:00" }), "owner", clock);
-    clock = new Date(2026, 9, 23, 9, 0);
+    // 09:00 in Shanghai is 01:00 UTC, whatever zone the server runs in.
+    clock = new Date(Date.UTC(2026, 9, 22, 10, 0));
+    await setSchedule(host, box.boxId, rule({ at: "09:00", timezone: "Asia/Shanghai" }), "owner", clock);
+    clock = new Date(Date.UTC(2026, 9, 23, 0, 59));
+    expect(await scheduler.run()).toEqual([]);
+    advance(MINUTE);
 
     expect(await scheduler.run()).toEqual([box.boxId]);
     advance(MINUTE);
     expect(await scheduler.run()).toEqual([]);
-    expect((await scheduleOf(host, box.boxId))?.nextRunAt).toBe(iso(new Date(2026, 9, 24, 9, 0)));
+    expect((await scheduleOf(host, box.boxId))?.nextRunAt).toBe(iso(new Date(Date.UTC(2026, 9, 24, 1, 0))));
   });
 
   test("retention keeps the newest automatic checkpoints of a scheduled box, as it does for any automatic one", async () => {
@@ -436,7 +516,7 @@ describe("the schedule routes", () => {
   test("a daily time replaces an interval, and a rule that is neither or both is refused, leaving the schedule as it was", async () => {
     const boxId = await makeBox("beta");
     const daily = await call(harness.base, pathOf(boxId), { method: "PUT", body: { at: "02:30" } });
-    expect(bodyOf(daily)).toMatchObject({ mode: "daily", everyHours: null, at: "02:30" });
+    expect(bodyOf(daily)).toMatchObject({ mode: "daily", everyHours: null, at: "02:30", timezone: "UTC" });
 
     expect(refused(await call(harness.base, pathOf(boxId), { method: "PUT", body: {} }))).toEqual({
       status: 400,
@@ -448,6 +528,37 @@ describe("the schedule routes", () => {
     expect((await call(harness.base, pathOf(boxId), { method: "PUT", body: { everyHours: 0 } })).status).toBe(400);
 
     expect(bodyOf(await call(harness.base, pathOf(boxId)))).toMatchObject({ mode: "daily", at: "02:30" });
+  });
+
+  test("a daily time is set in the zone it names, and a zone that is not one is refused", async () => {
+    const boxId = await makeBox("zoned");
+    const before = Date.now();
+    const put = await call(harness.base, pathOf(boxId), {
+      method: "PUT",
+      body: { at: "03:00", timezone: "Asia/Shanghai" },
+    });
+    expect(put.status).toBe(200);
+    const saved = bodyOf(put);
+    expect(saved).toMatchObject({ mode: "daily", at: "03:00", timezone: "Asia/Shanghai" });
+    const next = Date.parse(saved?.nextRunAt ?? "");
+    expect(next).toBeGreaterThan(before);
+    expect(next - before).toBeLessThanOrEqual(DAY);
+    expect(new Date(next).getUTCHours()).toBe(19);
+    expect(new Date(next).getUTCMinutes()).toBe(0);
+    expect(bodyOf(await call(harness.base, pathOf(boxId)))).toMatchObject({ timezone: "Asia/Shanghai" });
+
+    expect(
+      refused(
+        await call(harness.base, pathOf(boxId), { method: "PUT", body: { at: "03:00", timezone: "Mars/Olympus" } }),
+      ),
+    ).toEqual({ status: 400, key: "schedule_timezone_invalid" });
+    expect(bodyOf(await call(harness.base, pathOf(boxId)))).toMatchObject({ timezone: "Asia/Shanghai" });
+
+    const interval = await call(harness.base, pathOf(boxId), {
+      method: "PUT",
+      body: { everyHours: 6, timezone: "Asia/Shanghai" },
+    });
+    expect(bodyOf(interval)).toMatchObject({ mode: "interval", timezone: null });
   });
 
   test("clearing removes the schedule, and clearing a box with none is not an error", async () => {
