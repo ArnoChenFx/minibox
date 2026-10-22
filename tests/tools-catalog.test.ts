@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -136,9 +136,9 @@ describe("bundled catalog", () => {
     ]);
   });
 
-  test("only the root-only installer is flagged needsRoot", () => {
-    expect(catalog.filter((entry) => entry.needsRoot).map((entry) => entry.id)).toEqual(["tailscale"]);
-    expect(errorKey(() => requireCatalogEntry(catalog, "tailscale"))).toBe("tool_needs_root");
+  test("no bundled tool needs root, so every one installs as the dev user", () => {
+    expect(catalog.filter((entry) => entry.needsRoot).map((entry) => entry.id)).toEqual([]);
+    expect(requireCatalogEntry(catalog, "tailscale").needsRoot).toBe(false);
     expect(errorKey(() => requireCatalogEntry(catalog, "no-such-tool"))).toBe("tool_unknown");
   });
 
@@ -166,7 +166,61 @@ describe("bundled catalog", () => {
   test("catalog summary carries the category and the root flag for the create dialog", () => {
     const summary = catalogSummary(emptyDataDir());
     expect(summary.find((item) => item.id === "claude-code")).toMatchObject({ category: "agents", needsRoot: false });
-    expect(summary.find((item) => item.id === "tailscale")).toMatchObject({ category: "networking", needsRoot: true });
+    expect(summary.find((item) => item.id === "tailscale")).toMatchObject({ category: "networking", needsRoot: false });
+  });
+});
+
+describe("tailscale catalog entry", () => {
+  const entry = requireCatalogEntry(loadCatalog(emptyDataDir()), "tailscale");
+
+  test("installs without root from the official tarball, checked against its published sha256 before extraction", () => {
+    expect(entry).toMatchObject({ source: "script", needsRoot: false, bin: "tailscale", category: "networking" });
+    expect(entry.install).toContain("base=https://pkgs.tailscale.com/stable\n");
+    expect(entry.install).toContain('curl -fsSL "$base/?mode=json"');
+    const checked = entry.install.indexOf("sha256sum -c");
+    expect(checked).toBeGreaterThan(-1);
+    expect(checked).toBeLessThan(entry.install.indexOf("tar -xzf"));
+    expect(entry.install).toContain("x86_64 | amd64) arch=amd64");
+    expect(entry.install).toContain("aarch64 | arm64) arch=arm64");
+    expect(entry.install).not.toMatch(/\b(apt|apt-get|dpkg|sudo|systemctl)\b/);
+  });
+
+  test("requires explains userspace networking, the proxy, and what does not work", () => {
+    expect(entry.requires).toContain("Userspace networking");
+    expect(entry.requires).toContain("inbound tailnet connections reach any program");
+    expect(entry.requires).toContain("localhost:1055");
+    expect(entry.requires).toContain("ALL_PROXY=socks5h://localhost:1055");
+    expect(entry.requires).toContain("UDP and ICMP are not supported");
+  });
+
+  test("upgrade re-runs the install, and uninstall removes both binaries and the wrapper", () => {
+    expect(entry.upgrade).toBe(entry.install);
+    for (const name of ["tailscale", "tailscaled", "minibox-tailscale"]) {
+      expect(entry.uninstall).toContain(`{{prefix}}/bin/${name}`);
+    }
+  });
+
+  test("stop runs the wrapper's stop command from the tools prefix, and detect stays a version probe", () => {
+    expect(renderCommand(entry.stop ?? "", entry, { version: "latest" })).toBe(
+      "/opt/minibox/tools/bin/minibox-tailscale stop",
+    );
+    expect(detectCommand(entry)).toBe("command -v tailscale >/dev/null && tailscale version 2>/dev/null");
+  });
+
+  test("the rendered install and uninstall parse as sh", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mb-tailscale-sh-"));
+    try {
+      for (const [name, template] of [
+        ["install", entry.install],
+        ["uninstall", entry.uninstall],
+      ] as const) {
+        const file = join(dir, `${name}.sh`);
+        writeFileSync(file, renderCommand(template, entry, { version: "latest", prefix: dir }));
+        expect({ name, exitCode: Bun.spawnSync(["sh", "-n", file]).exitCode }).toEqual({ name, exitCode: 0 });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -306,7 +360,9 @@ describe("desiredToolsOf", () => {
   });
 
   test("refuses a root-only tool when a box records it", () => {
-    const catalog = loadCatalog(emptyDataDir());
-    expect(errorKey(() => desiredToolsOf(["tailscale"], catalog))).toBe("tool_needs_root");
+    const rooted: CatalogEntry = { ...sample, id: "rooted", needsRoot: true };
+    const catalog = [...loadCatalog(emptyDataDir()), rooted];
+    expect(errorKey(() => desiredToolsOf(["rooted"], catalog))).toBe("tool_needs_root");
+    expect(errorKey(() => requireCatalogEntry(catalog, "rooted"))).toBe("tool_needs_root");
   });
 });

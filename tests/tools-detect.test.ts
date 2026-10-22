@@ -127,7 +127,7 @@ describe("installed detection", () => {
     expect(toolRow(listed.json, "zig")).toMatchObject({ installed: false, installedVersion: null, managed: false });
     expect(toolRow(listed.json, "tailscale")).toMatchObject({
       category: "networking",
-      needsRoot: true,
+      needsRoot: false,
       installed: false,
     });
   });
