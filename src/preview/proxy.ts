@@ -3,7 +3,7 @@ import type { HostCtx, HostRegistry } from "../host/registry";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { ActivityPulse } from "../services/activity-pulse";
-import { type Box, locateBox, wakeIfSleeping } from "../services/boxes";
+import { type Box, hostOfSpecRef, locateBox, wakeIfSleeping } from "../services/boxes";
 import { filterRequestHeaders, filterResponseHeaders } from "./headers";
 import { type PreviewTarget, parsePreviewPath } from "./path";
 
@@ -30,6 +30,10 @@ export interface PreviewDeps {
 export async function resolvePreview(hosts: HostRegistry, url: URL, deps: PreviewDeps): Promise<PreviewResolve> {
   const target = parsePreviewPath(url.pathname, url.search);
   if (!target) throw new AppError(404, "not_found", msg("preview_path_invalid"));
+  const named = hostOfSpecRef(hosts, target.ref);
+  if (named && named.host.transport !== "local") {
+    throw new AppError(501, "unsupported", msg("preview_remote_unsupported"));
+  }
   const { host, box: found } = await locateBox(hosts, target.ref);
   const release = deps.pulse.hold(found.boxId);
   try {

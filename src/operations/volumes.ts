@@ -22,6 +22,7 @@ import { refusal, specViews, volumeVisible } from "../tokens/model";
 import type { PoolDraft, RoleDraft } from "../volumes/pools";
 import { assertCanAdministerPools, assertCanAttach, assertCanWrite } from "./authz";
 import { defineOperation } from "./define";
+import { fromEveryHost, hostOfVolume } from "./routing";
 import { BoxSchema } from "./schemas";
 import { boxId, confirmFlag, expectedRevision, refreshFlag, storageConfirmFlag, volumeName } from "./validation";
 
@@ -133,10 +134,10 @@ const volumeList = defineOperation({
     toolset: "storage",
     name: "list_volumes",
     description:
-      "List volumes on this host, including mounts. Existing minibox-ws-* volumes are recognized as volumes.",
+      "List volumes on every host, including mounts. Existing minibox-ws-* volumes are recognized as volumes.",
   },
-  run: async ({ host, principal }) => {
-    const volumes = await listVolumes(host);
+  run: async ({ host, principal, allHosts }) => {
+    const volumes = await fromEveryHost(allHosts?.() ?? [host], listVolumes);
     if (principal.type === "owner") return { volumes };
     const boxes = specViews(host.specs.list());
     return {
@@ -166,6 +167,7 @@ const volumeGet = defineOperation({
     name: "get_volume",
     description: "Get one volume by id or name, including which boxes mount it.",
   },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
   run: async (_ctx, _input, volume) => ({ volume }),
@@ -228,6 +230,7 @@ const volumeDelete = defineOperation({
     description:
       "Delete a volume and its engine data. A volume that a box mounts is refused. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.delete", target: (_input, volume) => volume.name },
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
@@ -267,6 +270,7 @@ const volumeAttach = defineOperation({
     description:
       "Mount a volume into a box. Docker cannot add a mount in place, so the container is rebuilt and renamed to prefix-<box id>. Send expectedRevision and confirm true. Without confirm the call changes nothing and returns confirmation_required with the rebuild preview. A read-write mount also needs volume:write. warning is shared_rw when another box already mounts this volume read-write.",
   },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.attach", target: (_input, volume) => volume.name },
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
@@ -312,6 +316,7 @@ const volumeDetach = defineOperation({
     description:
       "Remove one mount of a volume from a box. The container is rebuilt and renamed to prefix-<box id>. Send expectedRevision and confirm true. Without confirm the call changes nothing and returns the rebuild preview.",
   },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.detach", target: (_input, volume) => volume.name },
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
@@ -349,6 +354,7 @@ const volumeUsage = defineOperation({
     name: "measure_volume",
     description: "Measure used bytes with a helper container and cache the result on the volume.",
   },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.usage", target: (_input, volume) => volume.name },
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },

@@ -32,7 +32,7 @@ import { validMountPath } from "../volumes/mounts";
 import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
 import type { VolumeRecord, VolumeRole } from "../volumes/types";
 import { assertMountAllowed, mountTarget } from "./attachments";
-import { projectBox } from "./box-view";
+import { projectBox, unreachableBox } from "./box-view";
 import { desiredToolsOf } from "./tools";
 import { alignVolumeRoot, type RecordNote, writableWorkspaceVolume } from "./volume-owner";
 
@@ -122,6 +122,8 @@ export interface Box {
     pools: { name: string; status: "reachable" | "unreachable" | "unknown" }[];
   };
   stats?: ContainerStats | null;
+  /** The host the box runs on. Present only when the control plane holds more than one host. */
+  hostId?: string;
 }
 
 export interface BoxMountView extends BoxMount {
@@ -216,6 +218,41 @@ export async function getBox(host: HostCtx, ref: string): Promise<Box> {
 export async function readBox(host: HostCtx, ref: string): Promise<Box> {
   const cached = host.sampler.ready() ? host.sampler.find(ref) : null;
   return cached ?? getBox(host, ref);
+}
+
+/**
+ * The boxes of every host, for the list endpoint. The request's own host is read as before, so its failure still fails
+ * the request. A remote host that is offline, slow or failing contributes its boxes as unreachable instead, so one host
+ * cannot hide the others. Every host is read at once.
+ */
+export async function listAllBoxes(
+  hosts: readonly HostCtx[],
+  opts: { withStats?: boolean; host?: string } = {},
+): Promise<Box[]> {
+  const selected = hosts.filter((host) => opts.host === undefined || host.host.id === opts.host);
+  const groups = await Promise.all(selected.map((host) => listOnHost(host, opts)));
+  return groups
+    .flat()
+    .toSorted((a, b) => a.name.localeCompare(b.name) || (a.hostId ?? "").localeCompare(b.hostId ?? ""));
+}
+
+async function listOnHost(host: HostCtx, opts: { withStats?: boolean }): Promise<Box[]> {
+  if (host.host.transport === "local") return listBoxes(host, opts);
+  if (host.host.status === "offline") return unreachableBoxesOf(host);
+  try {
+    return await untilAborted(listBoxes(host, opts), AbortSignal.timeout(host.readTimeoutMs));
+  } catch (e) {
+    log.warn("box.list_unreachable", { host: host.host.id, error: String(e) });
+    return unreachableBoxesOf(host);
+  }
+}
+
+/** The boxes a host's specs name, shown without a live read. Used while the host cannot be reached. */
+function unreachableBoxesOf(host: HostCtx): Box[] {
+  return host.specs
+    .list()
+    .filter((spec) => spec.hostId === host.host.id)
+    .map((spec) => unreachableBox(host, spec));
 }
 
 /**
@@ -683,6 +720,17 @@ export async function locateBox(hosts: HostRegistry, ref: string): Promise<{ hos
     }
   }
   throw notFound(msg("box_not_found"));
+}
+
+/**
+ * The host a box reference names by its spec, read from the spec store without touching any engine. Null when no spec
+ * covers the reference, so the caller decides where to look. The spec store is shared, so any host's view will do.
+ */
+export function hostOfSpecRef(hosts: HostRegistry, ref: string): HostCtx | null {
+  const { specs } = hosts.get();
+  const spec = specs.read(ref) ?? specs.findByName(ref) ?? specs.findByContainer(ref, ref);
+  if (!spec) return null;
+  return hosts.has(spec.hostId) ? hosts.get(spec.hostId) : null;
 }
 
 export interface DeleteBoxResult {

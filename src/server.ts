@@ -27,7 +27,7 @@ import { proxyHttp, resolvePreview } from "./preview/proxy";
 import { attachPreviewUpstream, type PreviewSocketData } from "./preview/ws";
 import { routes } from "./routes";
 import { matchRoute, routeAllows } from "./routes/router";
-import { type Box, locateBox, wakeIfSleeping } from "./services/boxes";
+import { type Box, hostOfSpecRef, locateBox, wakeIfSleeping } from "./services/boxes";
 import { reconcileHost } from "./services/reconcile";
 import { serveFile } from "./static";
 import { isSessionName } from "./tmux/format";
@@ -68,11 +68,12 @@ async function sshRequest(
 ): Promise<Response | undefined> {
   const caller = await callerOf(app, req, server);
   if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
+  const host = hostOfSpecRef(app.hosts, ref) ?? app.hosts.get();
   if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-    await app.ssh.probe(app.hosts.get(), ref, caller);
+    await app.ssh.probe(host, ref, caller);
     return new Response(null, { status: 204 });
   }
-  const lease = await app.ssh.enter(app.hosts.get(), ref, caller);
+  const lease = await app.ssh.enter(host, ref, caller);
   const data: SshSocketData = { kind: "ssh", lease };
   if (server.upgrade(req, { data })) return undefined;
   lease.release();
@@ -303,15 +304,15 @@ async function boot(): Promise<void> {
   warnIfWeakAccessKey(cfg);
   const version = resolveVersion();
   const app = createApp(cfg, version);
-  for (const host of app.hosts.list()) {
-    try {
-      const report = await reconcileHost(host);
-      log.info("box.reconciled", { host: host.host.id, ...report });
-    } catch (e) {
-      log.error("box.reconcile_failed", { host: host.host.id, error: String(e) });
-    }
+  const local = app.hosts.get();
+  try {
+    const report = await reconcileHost(local);
+    log.info("box.reconciled", { host: local.host.id, ...report });
+  } catch (e) {
+    log.error("box.reconcile_failed", { host: local.host.id, error: String(e) });
   }
-  for (const host of app.hosts.list()) host.sampler.start();
+  local.sampler.start();
+  app.hostAdmin.start();
   app.monitor.start();
   app.retention.start();
   app.checkpointSweep.start();
@@ -326,6 +327,7 @@ async function boot(): Promise<void> {
     stopping = true;
     log.info("server.stopping", { signal });
     app.monitor.stop();
+    app.hostAdmin.close();
     for (const host of app.hosts.list()) host.sampler.stop();
     app.retention.stop();
     app.checkpointSweep.stop();

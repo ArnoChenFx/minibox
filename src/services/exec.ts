@@ -73,6 +73,8 @@ export interface ExecOutputResult {
 export interface ExecTarget {
   readonly id: string;
   readonly name: string;
+  /** The host the exec runs on. Exec reads and kills go to that host's engine. */
+  readonly hostId: string;
 }
 
 export interface ExecService {
@@ -85,6 +87,8 @@ export interface ExecService {
 
 interface LiveExec {
   id: string;
+  /** The host the box runs on. */
+  hostId: string;
   /** Container id. The runtime and the run registry key on it. */
   boxId: string;
   /** Stable box id (`bx_…`). The activity heartbeat keys on it. */
@@ -206,7 +210,7 @@ export class ExecManager implements ExecService {
 
   lookup(execId: string): ExecTarget | undefined {
     const live = this.live.get(execId);
-    return live ? { id: live.boxId, name: live.boxName } : undefined;
+    return live ? { id: live.boxId, name: live.boxName, hostId: live.hostId } : undefined;
   }
 
   async run(host: HostCtx, box: Box, input: ExecRunInput, record?: (note: AuditNote) => void): Promise<ExecRunResult> {
@@ -242,7 +246,7 @@ export class ExecManager implements ExecService {
         tty: false,
       });
 
-      const live = this.create(current, session, input.background, woke, record);
+      const live = this.create(host.host.id, current, session, input.background, woke, record);
       this.attach(live);
       this.writeStdin(live, input.stdin);
       live.recorder?.({
@@ -365,6 +369,7 @@ export class ExecManager implements ExecService {
   }
 
   private create(
+    hostId: string,
     box: Box,
     session: LiveExec["session"],
     background: boolean,
@@ -381,6 +386,7 @@ export class ExecManager implements ExecService {
     });
     return {
       id: `ex_${ulid()}`,
+      hostId,
       boxId: box.id,
       stableId: box.boxId,
       boxName: box.name,

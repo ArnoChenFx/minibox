@@ -20,6 +20,7 @@ import {
 } from "../services/files";
 import { FILE_PATH_MAX } from "../services/files-path";
 import { defineOperation } from "./define";
+import { hostOfVolume } from "./routing";
 import { addFailure, field } from "./validation";
 
 const ENCODINGS = ["utf-8", "base64"] as const;
@@ -137,6 +138,7 @@ export const filesRead = defineOperation({
   rest: [{ method: "GET", path: "/api/volumes/:id/files/content", query: ["path", "encoding"] }],
   cli: "files read",
   mcp: { toolset: "core", name: "read_file", description: READ_DESCRIPTION },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => resolveVolume(host, input.id),
   audit: {
     target: (_input, volume) => volume && volumeTarget(volume),
@@ -173,6 +175,7 @@ export const filesWrite = defineOperation({
   rest: [{ method: "PUT", path: "/api/volumes/:id/files/content", body: true }],
   cli: "files write",
   mcp: { toolset: "core", name: "write_file", description: WRITE_DESCRIPTION },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => resolveVolume(host, input.id),
   activity: { action: () => "files.write", target: (input) => `${input.id}:${input.path}` },
   audit: {
@@ -223,6 +226,7 @@ export const filesList = defineOperation({
   rest: [{ method: "GET", path: "/api/volumes/:id/files", query: ["path", "maxDepth", "limit"] }],
   cli: "files ls",
   mcp: { toolset: "core", name: "list_files", description: LIST_DESCRIPTION },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => resolveVolume(host, input.id),
   audit: {
     target: (_input, volume) => volume && volumeTarget(volume),
@@ -258,6 +262,7 @@ export const filesCopy = defineOperation({
   rest: [{ method: "POST", path: "/api/volumes/:id/files/copy", body: true }],
   cli: "files cp",
   mcp: { toolset: "core", name: "copy_files", description: COPY_DESCRIPTION },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => resolveVolume(host, input.id),
   activity: { action: () => "files.copy", target: (input) => `${input.id}:${input.from}` },
   audit: {
@@ -291,6 +296,7 @@ export const filesDownload = defineOperation({
   }),
   rest: [{ method: "GET", path: "/api/volumes/:id/files/archive", query: ["path"] }],
   cli: "files download",
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => resolveVolume(host, input.id),
   audit: {
     target: (_input, volume) => volume && volumeTarget(volume),
@@ -334,6 +340,7 @@ export const filesUpload = defineOperation({
   }),
   rest: [{ method: "PUT", path: "/api/volumes/:id/files/archive", body: true }],
   cli: "files upload",
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => resolveVolume(host, input.id),
   activity: { action: () => "files.upload", target: (input) => `${input.id}:${input.path ?? "/"}` },
   audit: {

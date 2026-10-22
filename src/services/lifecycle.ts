@@ -82,6 +82,7 @@ export class LifecycleWatcher {
       const known = new Set<string>();
       for (const host of this.options.hosts.list()) {
         for (const spec of host.specs.list()) known.add(spec.id);
+        if (host.host.transport !== "local" && host.host.status !== "online") continue;
         await this.pass(host, report);
       }
       for (const boxId of this.clientSeen) if (!known.has(boxId)) this.clientSeen.delete(boxId);

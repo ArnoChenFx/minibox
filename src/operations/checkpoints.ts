@@ -40,6 +40,7 @@ import { assertCheckpointQuota, assertWithinQuota, underCheckpointQuota, underQu
 import { assertCanCreateDefaultMounts, assertCanWrite } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
+import { fromEveryHost, hostOfBox, hostOfCheckpoint } from "./routing";
 import { BoxSchema, CheckpointSchema, CheckpointUsageSchema, OkSchema, PendingRollbackSchema } from "./schemas";
 import {
   boxId,
@@ -112,8 +113,8 @@ export const checkpointList = defineOperation({
   output: z.object({ checkpoints: z.array(CheckpointSchema) }),
   rest: [{ method: "GET", path: "/api/checkpoints" }],
   cli: "checkpoint list",
-  run: async ({ host, principal }) => {
-    const checkpoints = await listCheckpoints(host);
+  run: async ({ host, principal, allHosts }) => {
+    const checkpoints = await fromEveryHost(allHosts?.() ?? [host], listCheckpoints);
     if (principal.type === "owner") return { checkpoints };
     const boxes = specViews(host.specs.list());
     return {
@@ -153,6 +154,7 @@ export const checkpointGet = defineOperation({
   output: z.object({ checkpoint: CheckpointSchema }),
   rest: [{ method: "GET", path: "/api/checkpoints/:id" }],
   cli: "checkpoint get",
+  hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
   run: async (_ctx, _input, checkpoint) => ({ checkpoint }),
 });
@@ -169,6 +171,7 @@ export const checkpointCreate = defineOperation({
   output: z.object({ checkpoint: CheckpointSchema }),
   rest: [{ method: "POST", path: "/api/boxes/:id/checkpoints", body: true, status: 202 }],
   cli: "checkpoint create",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async (ctx, input, box) => {
     assertTakeable(ctx.host, box, takeInput(input));
@@ -208,6 +211,7 @@ export const checkpointFork = defineOperation({
   rest: [{ method: "POST", path: "/api/checkpoints/:id/fork", body: true, status: 202 }],
   cli: "checkpoint fork",
   precondition: ({ host }, input) => assertCapacity(host, input),
+  hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
   beforeTask: async (ctx, input, checkpoint) => {
     assertForkable(checkpoint, input.copyHome);
@@ -256,6 +260,7 @@ export const checkpointUpdate = defineOperation({
   output: z.object({ checkpoint: CheckpointSchema }),
   rest: [{ method: "PATCH", path: "/api/checkpoints/:id", body: true, status: 202 }],
   cli: "checkpoint update",
+  hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
   beforeTask: async (_ctx, _input, checkpoint) => {
     if (checkpoint.legacy) throw conflict(msg("checkpoint_legacy_read_only", { id: checkpoint.id }));
@@ -280,6 +285,7 @@ export const checkpointDelete = defineOperation({
   output: OkSchema,
   rest: [{ method: "DELETE", path: "/api/checkpoints/:id", status: 202 }],
   cli: "checkpoint rm",
+  hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
   beforeTask: async ({ host }, _input, checkpoint) => {
     if (checkpoint.pinned) throw conflict(msg("checkpoint_pinned", { id: checkpoint.id }));
@@ -318,6 +324,7 @@ export const boxRollback = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/rollback", body: true, ifMatch: true, status: 202 }],
   cli: "box rollback",
   precondition: (ctx) => assertCanWrite(ctx),
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, input) => {
     const revision = requireRevision(input.expectedRevision);

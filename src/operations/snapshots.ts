@@ -8,6 +8,7 @@ import { underQuota } from "../tokens/quota";
 import { assertCanCreateDefaultMounts } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
+import { hostOfBox, localOnly } from "./routing";
 import { BoxSchema, ImageSchema, OkSchema, SnapshotSchema } from "./schemas";
 import {
   boxId,
@@ -32,6 +33,8 @@ export const snapshotCreate = defineOperation({
   output: z.object({ snapshot: SnapshotSchema }),
   rest: [{ method: "POST", path: "/api/boxes/:id/snapshots", body: true, status: 202 }],
   cli: "snapshot create",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
+  precondition: async ({ host }) => localOnly(host, "Snapshots"),
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }, _input, box) => `snapshot.create:${host.host.id}:${box.id}`,
   activity: { action: () => "snapshot.create", target: (_input, box) => box.name },

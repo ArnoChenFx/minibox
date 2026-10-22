@@ -17,7 +17,7 @@ const RECORDED: Readonly<Record<string, { readonly op: string; readonly summary:
  * when the engine replays it after a reconnect, so each change is recorded once.
  */
 export class ContainerWatch {
-  private readonly unsubscribes: (() => void)[] = [];
+  private readonly unsubscribes = new Map<string, () => void>();
 
   constructor(
     private readonly hosts: HostRegistry,
@@ -25,14 +25,25 @@ export class ContainerWatch {
   ) {}
 
   start(): void {
-    if (this.unsubscribes.length > 0) return;
-    for (const host of this.hosts.list()) {
-      this.unsubscribes.push(host.sampler.subscribeEvents((event) => this.observe(host, event)));
-    }
+    for (const host of this.hosts.list()) this.watch(host);
   }
 
   stop(): void {
-    for (const unsubscribe of this.unsubscribes.splice(0)) unsubscribe();
+    for (const hostId of this.unsubscribes.keys()) this.unwatch(hostId);
+  }
+
+  /** Starts recording a host's container events. A host already watched is not subscribed twice. */
+  watch(host: HostCtx): void {
+    if (this.unsubscribes.has(host.host.id)) return;
+    this.unsubscribes.set(
+      host.host.id,
+      host.sampler.subscribeEvents((event) => this.observe(host, event)),
+    );
+  }
+
+  unwatch(hostId: string): void {
+    this.unsubscribes.get(hostId)?.();
+    this.unsubscribes.delete(hostId);
   }
 
   private observe(host: HostCtx, event: RuntimeEvent): void {

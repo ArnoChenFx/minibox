@@ -8,6 +8,7 @@ import { READ_LINES_MAX, SESSIONS_PER_BOX_MAX, type TerminalService } from "../s
 import { isKeyName, isSessionName, SESSION_NAME_RE } from "../tmux/format";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
+import { hostOfBox } from "./routing";
 import { addFailure, boxId, field } from "./validation";
 
 const NAME_MAX = 32;
@@ -126,6 +127,7 @@ export const sessionList = defineOperation({
   output: z.object({ sessions: z.array(ListedSchema) }),
   rest: [{ method: "GET", path: "/api/boxes/:id/sessions" }],
   cli: "session ls",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, terminals }, _input, box) => {
@@ -156,6 +158,7 @@ export const sessionStart = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/sessions", body: true }],
   cli: "session start",
   mcp: { toolset: "session", name: "session_start", description: START_DESCRIPTION },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "session.start", target: (_input, box) => box.name },
   audit: {
@@ -194,6 +197,7 @@ export const sessionRead = defineOperation({
   rest: [{ method: "GET", path: "/api/boxes/:id/sessions/:name", query: ["lines", "since"] }],
   cli: "session read",
   mcp: { toolset: "session", name: "session_read", description: READ_DESCRIPTION },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, terminals }, input, box) => {
@@ -237,6 +241,7 @@ export const sessionSend = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/sessions/:name/input", body: true }],
   cli: "session send",
   mcp: { toolset: "session", name: "session_send", description: SEND_DESCRIPTION },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "session.send", target: (_input, box) => box.name },
   audit: {
@@ -266,6 +271,7 @@ export const sessionClose = defineOperation({
   output: z.object({ session: z.string(), status: z.literal("closed") }),
   rest: [{ method: "DELETE", path: "/api/boxes/:id/sessions/:name" }],
   cli: "session close",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "session.close", target: (_input, box) => box.name },
   audit: {

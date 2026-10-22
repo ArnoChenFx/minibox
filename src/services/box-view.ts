@@ -49,6 +49,7 @@ export function liveBox(box: Box): Box {
 /** Observed container fields stay on the box so drift is visible. Desired fields come from the spec. */
 export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): Box {
   return {
+    ...hostIdOf(host),
     id: info.id,
     boxId: spec.id,
     name: spec.name,
@@ -84,5 +85,52 @@ export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): B
     env: spec.env,
     tools: spec.tools,
     storage: storageOf(host, spec),
+  };
+}
+
+/** Names the host only when the control plane has more than one; a single-host install's payloads stay as they were. */
+function hostIdOf(host: HostCtx): { hostId?: string } {
+  return host.multiHost() ? { hostId: host.host.id } : {};
+}
+
+/**
+ * A box whose host cannot be reached. It keeps its place in the list with what the spec says, and nothing observed:
+ * the state is `unreachable`, and the usage and drift are empty.
+ */
+export function unreachableBox(host: HostCtx, spec: BoxSpec): Box {
+  return {
+    id: spec.containerId,
+    boxId: spec.id,
+    name: spec.name,
+    state: "unreachable",
+    status: "unreachable",
+    running: false,
+    image: spec.template.image,
+    template: spec.template.ref,
+    profile: spec.profile,
+    network: spec.network,
+    cpus: null,
+    memory: null,
+    pids: null,
+    createdAt: spec.createdAt,
+    startedAt: null,
+    volume: workspaceVolume(spec),
+    revision: spec.revision,
+    desired: spec.lifecycle.desired,
+    idleTimeoutSec: spec.lifecycle.idleTimeoutSec,
+    ttlSec: spec.lifecycle.ttlSec,
+    stopReason: spec.lifecycle.stopReason ?? null,
+    sleeping: false,
+    lastActivityAt: null,
+    labels: spec.labels,
+    createdBy: spec.createdBy,
+    containerName: spec.containerName,
+    drift: [],
+    recovery: spec.recovery,
+    mounts: mountViews(host, spec.mounts),
+    env: spec.env,
+    tools: spec.tools,
+    storage: { status: "unknown", pools: [] },
+    hostId: host.host.id,
   };
 }
