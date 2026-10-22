@@ -11,3 +11,11 @@ export const isUnreachable = (box) => box.state === "unreachable";
 
 /** Badge class for the status of a host, as /api/hosts reports it. */
 export const HOST_BADGE = { online: "badge-success", offline: "badge-danger", unknown: "" };
+
+/** What an agent host's connection says, as one word: revoked, upgrade, online or offline. Null for any other host. */
+export function agentState(agent) {
+  if (!agent) return null;
+  if (agent.revoked) return "revoked";
+  if (agent.upgradeRequired) return "upgrade";
+  return agent.connected ? "online" : "offline";
+}
