@@ -172,7 +172,7 @@ describe("schedule time zones", () => {
     // New York moves from EDT (UTC-4) to EST (UTC-5) on 1 November 2026.
     const before = scheduleWith({ at: "03:00", timezone: "America/New_York" }, utc(2026, 9, 31, 7, 0));
     expect(nextRunAfterRun(before, utc(2026, 9, 31, 7, 1))).toEqual(utc(2026, 10, 1, 8, 0));
-    // And back to EDT on 8 March 2026.
+    // And forward to EDT on 8 March 2026.
     expect(nextDailyAfter("03:00", "America/New_York", utc(2026, 2, 7, 8, 1))).toEqual(utc(2026, 2, 8, 7, 0));
     // London: BST ends on 25 October 2026.
     expect(nextDailyAfter("09:00", "Europe/London", utc(2026, 9, 24, 8, 1))).toEqual(utc(2026, 9, 25, 9, 0));
