@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { msg } from "../src/lib/messages";
 import {
   digestOf,
   encodeCommand,
@@ -120,9 +121,9 @@ describe("viewOf", () => {
   });
 
   test("a launch that failed with no session is 'failed', with the reason", () => {
-    expect(viewOf("npm run dev", null, "This box's image is too old")).toMatchObject({
+    expect(viewOf("npm run dev", null, msg("session_image_unsupported"))).toMatchObject({
       status: "failed",
-      error: "This box's image is too old",
+      error: { key: "session_image_unsupported" },
     });
   });
 

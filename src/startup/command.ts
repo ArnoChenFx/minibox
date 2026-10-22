@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import type { Msg } from "../lib/messages";
+
 /** The most a startup command may hold, in UTF-8 bytes. */
 export const STARTUP_COMMAND_MAX_BYTES = 4096;
 
@@ -142,7 +144,8 @@ export interface StartupView {
   /** True when the latest run used an earlier text of the command, so a run now would use the current one. */
   readonly stale: boolean;
   readonly log: string[];
-  readonly error: string | null;
+  /** Why MiniBox could not start the command, when no run is visible. */
+  readonly error: Msg | null;
 }
 
 const EMPTY_VIEW: StartupView = {
@@ -159,7 +162,7 @@ const EMPTY_VIEW: StartupView = {
  * The status a caller sees. `pane` is null when the init session does not exist. `failure` is the reason the last launch
  * could not start, if it could not, and it is reported only while no run is visible.
  */
-export function viewOf(command: string | null, pane: PaneState | null, failure: string | null = null): StartupView {
+export function viewOf(command: string | null, pane: PaneState | null, failure: Msg | null = null): StartupView {
   if (command === null) return EMPTY_VIEW;
   if (pane === null) {
     return failure === null
