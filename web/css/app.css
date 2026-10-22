@@ -375,6 +375,9 @@ button {
 .btn-block {
   width: 100%;
 }
+.btn[hidden] {
+  display: none;
+}
 .icon-btn {
   display: inline-grid;
   place-items: center;
@@ -803,6 +806,19 @@ table.table {
 .form-grid > .field + .field {
   margin-top: 0;
 }
+.form-grid > .field-wide {
+  grid-column: 1 / -1;
+}
+/* Commands are shell text: monospace, several lines, and the box grows to fit what is typed. */
+.textarea.command-input {
+  height: auto;
+  min-height: 64px;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
 .section-intro {
   display: flex;
   flex-direction: column;
@@ -1000,7 +1016,8 @@ table.table {
 .dropdown-option[aria-selected="true"] .dropdown-check {
   visibility: visible;
 }
-.input.invalid {
+.input.invalid,
+.textarea.invalid {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-soft);
 }
@@ -1739,6 +1756,10 @@ input[type="range"] {
   border-top: 1px solid var(--border);
   background: var(--bg-subtle);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.dialog-foot .error-text {
+  margin-right: auto;
+  align-self: center;
 }
 @keyframes fade {
   from {

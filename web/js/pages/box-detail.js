@@ -8,6 +8,7 @@ import {
   snapshotBox,
 } from "../components/box-actions.js";
 import { openCreateBox } from "../components/create-box.js";
+import { deleteCustomTool, openCustomToolDialog } from "../components/custom-tool-dialog.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
@@ -495,13 +496,22 @@ function toolActionCell(tool) {
   }
 }
 
-function toolRow(tool) {
+function customActionCell(tool) {
+  const id = esc(tool.id);
+  return `<button class="btn btn-sm btn-ghost" data-action="tool-custom-edit" data-tool="${id}">${esc(t("bd.customEdit"))}</button>
+        <button class="btn btn-sm btn-ghost" data-action="tool-custom-delete" data-tool="${id}">${esc(t("bd.customDelete"))}</button>`;
+}
+
+function toolRow(tool, isCustom) {
+  const badge = isCustom
+    ? ` <span class="badge badge-accent" title="${esc(t("bd.customBadgeHelp"))}">${esc(t("bd.customBadge"))}</span>`
+    : "";
   return `<tr>
-    <td><strong>${esc(tool.name)}</strong><div class="help">${esc(tool.description)}</div>${tool.requires ? `<div class="help">${esc(tool.requires)}</div>` : ""}</td>
+    <td><strong>${esc(tool.name)}</strong>${badge}<div class="help">${esc(tool.description)}</div>${tool.requires ? `<div class="help">${esc(tool.requires)}</div>` : ""}</td>
     <td class="mono">${esc(tool.id)}</td>
     <td>${tool.desiredVersion ? esc(tool.desiredVersion) : "—"}</td>
     <td>${toolInstalledCell(tool)}</td>
-    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool)}</div></td>
+    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool)}${isCustom ? customActionCell(tool) : ""}</div></td>
   </tr>`;
 }
 
@@ -695,11 +705,14 @@ const TAB_RENDER = {
     const collapsed = new Set();
     const pending = new Set();
     let tools = null;
+    /** The custom entries by id. Only an owner can list them, so for everyone else this stays empty. */
+    let custom = new Map();
     let query = "";
     root.innerHTML = `<div class="card">
       <div class="card-head with-tools"><h3>${t("bd.toolsTitle")}</h3>
         <div class="list-tools">
           ${searchBoxHtml({ id: "bdToolSearch", placeholder: t("tool.searchPlaceholder"), label: t("tool.search") })}
+          <button class="btn btn-sm" data-action="tool-custom-add" id="bdToolCustomAdd" hidden>${icon("plus")}${t("bd.customAdd")}</button>
           <button class="btn btn-sm" data-action="tool-reconcile">${icon("refresh")}${t("bd.toolsReconcile")}</button>
         </div></div>
       <div class="card-body"><p class="help">${t("bd.toolsHelp")}</p></div>
@@ -707,6 +720,7 @@ const TAB_RENDER = {
         <th>${t("bd.toolsColName")}</th><th>${t("bd.toolsColId")}</th><th>${t("bd.toolsColDesired")}</th><th>${t("bd.toolsColInstalled")}</th><th></th>
       </tr></thead><tbody id="bdToolRows"><tr><td colspan="${TOOL_COLUMNS}"><span class="spinner"></span> ${esc(t("bd.toolsLoading"))}</td></tr></tbody></table></div></div>`;
     const body = root.querySelector("#bdToolRows");
+    const addButton = root.querySelector("#bdToolCustomAdd");
 
     const drawRows = () => {
       if (!tools) return;
@@ -723,19 +737,32 @@ const TAB_RENDER = {
       body.innerHTML = groupTools(matches)
         .map((group) => {
           const isCollapsed = collapsed.has(group.id);
-          return toolGroupRow(group, isCollapsed) + (isCollapsed ? "" : group.rows.map(toolRow).join(""));
+          const rows = group.rows.map((tool) => toolRow(tool, custom.has(tool.id))).join("");
+          return toolGroupRow(group, isCollapsed) + (isCollapsed ? "" : rows);
         })
         .join("");
     };
     const load = async () => {
-      try {
-        tools = (await api(`/api/tools?id=${enc(box().id)}`)).tools;
-      } catch (e) {
-        body.innerHTML = `<tr><td colspan="${TOOL_COLUMNS}">${emptyState({ iconName: "alert", title: t("bd.toolsLoadFailed"), text: esc(e.message) })}</td></tr>`;
+      const [listed, entries] = await Promise.allSettled([
+        api(`/api/tools?id=${enc(box().id)}`),
+        api("/api/tools/custom"),
+      ]);
+      custom = new Map(entries.status === "fulfilled" ? entries.value.tools.map((entry) => [entry.id, entry]) : []);
+      addButton.hidden = entries.status !== "fulfilled";
+      if (listed.status === "rejected") {
+        body.innerHTML = `<tr><td colspan="${TOOL_COLUMNS}">${emptyState({ iconName: "alert", title: t("bd.toolsLoadFailed"), text: esc(listed.reason.message) })}</td></tr>`;
         return;
       }
+      tools = listed.value.tools;
       drawRows();
     };
+    const customDialog = (entry) =>
+      openCustomToolDialog({
+        entry,
+        catalogIds: new Set((tools ?? []).map((item) => item.id)),
+        customById: custom,
+        onSaved: () => void load(),
+      });
     const search = bindSearchBox(root.querySelector("#bdToolSearch"), (text) => {
       query = text;
       drawRows();
@@ -776,6 +803,11 @@ const TAB_RENDER = {
       if (btn.dataset.action === "tool-upgrade") void start(`/api/boxes/${enc(b.id)}/tools/upgrade`, tool);
       if (btn.dataset.action === "tool-uninstall") void start(`/api/boxes/${enc(b.id)}/tools/uninstall`, tool);
       if (btn.dataset.action === "tool-reconcile") void start(`/api/boxes/${enc(b.id)}/tools/reconcile`);
+      if (btn.dataset.action === "tool-custom-add") customDialog(null);
+      if (btn.dataset.action === "tool-custom-edit" && custom.has(tool)) customDialog(custom.get(tool));
+      if (btn.dataset.action === "tool-custom-delete" && custom.has(tool)) {
+        void deleteCustomTool(custom.get(tool), { onDeleted: () => void load() });
+      }
     });
     void load();
     return () => offTask();
