@@ -7,6 +7,9 @@
 ### 变更
 - 工具目录已不只包含 Agent CLI：控制台、API 说明、MCP 说明与 README 中的「Agent CLI 工具」统一改称「工具」（Tools），接口与 id 不变（#8）。
 
+### 文档
+- 新增 NAS / NFS 部署指南（[`docs/nas.md`](docs/nas.md)、[`docs/nas-zh.md`](docs/nas-zh.md)）：Linux `/etc/exports` 与群晖、威联通、TrueNAS SCALE、Unraid 的导出设置，squash 与 uid 1000 的映射，「添加 NFS」各字段与等价的 API，推荐挂载选项，服务器不可用时的行为，以及根据实测整理的故障排查表。步骤已在 NFS-Ganesha 上经 Docker 实际验证；README 的存储池一节加了入口（#30）。
+
 ### 升级必读（经隧道或反向代理访问的部署）
 - 通过隧道或反向代理访问 MiniBox 的部署，升级后请先检查以下设置：
   - **OpenTunnel 或其他保留 `Host` / `Origin`、不添加 `X-Forwarded-*` 头的隧道：保持 `TRUST_PROXY` 关闭。** 所有请求都从 `127.0.0.1` 到达，访问者共享同一个登录限流计数，但正确的密钥总能登录。`ALLOWED_ORIGINS` 可选（`Host` 已与公网地址一致，设置也无害）。登录 Cookie 会因浏览器的 `https://` Origin 自动带上 `Secure`（#1 #3）。
@@ -103,7 +106,9 @@
 - 新增配置 `STREAM_MAX_CONNECTIONS`（默认 `256`）：同时打开的事件流、任务流与日志流上限，三者共用。超出时新连接返回 `429`，错误码为 `too_many_requests`，`key` 为 `stream_limit`，响应体给出上限。控制台按退避间隔重试，连接结束时名额即释放。README、README-zh 与 `.env.example` 均有说明（#17）。
 - SSH 访问：`ssh`、`scp`、`sftp` 与 `ssh -L` 经由 MiniBox 进入 Box，不发布宿主机端口。`GET /api/ssh/:box` 以 WebSocket 承载一条 SSH 连接，用户为 `dev` 或 Box id，其他用户名（包括 `root`）一律拒绝。访问密钥或令牌在握手时鉴权；令牌需要新增的 `box:ssh` 范围，默认拒绝，`operator` 与 `admin` 预设包含它，`sandboxed-agent` 不包含。与 `exec` 一样，它能在 Box 内执行命令并读写全部挂载。`-L` 只转发到 Box 内的回环地址，并需要 `port:expose`；`-R`、Unix 套接字转发、X11 与 agent 转发被拒绝并审计。停止或休眠的 Box 在连接时启动，打开的 SSH 连接让 Box 保持运行；停止（手动、空闲或 TTL）、删除或重建 Box 会断开它的 SSH 连接，TTL 已过的 Box 拒绝连接（`409 box_ttl_expired`）。连接、通道与断开都写入审计日志。每个 Box 最多 8 个连接，全局 64 个，每个连接 16 个通道。新增 `GET /api/ssh/host-key`，主机密钥保存在 `DATA_DIR/ssh_host_ed25519_key`。CLI 新增 `minibox ssh-proxy <box>` 与 `minibox ssh-config [--append]`，后者写入 `~/.ssh/config`、固定主机密钥，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600），ProxyCommand 无需导出环境变量。Box 详情页新增「SSH」按钮与对话框（中英文）。
 - CLI 随服务器分发（Refs #85）：`GET /cli/install.sh`（macOS 与 Linux）与 `GET /cli/install.ps1`（Windows）把 `minibox` 安装到 `~/.local/bin`（或 `MINIBOX_INSTALL_DIR`），不需要 sudo，并按 `GET /cli/checksums.txt` 校验；`GET /cli/minibox-<os>-<arch>` 提供 `linux-x64`、`linux-arm64`、`darwin-x64`、`darwin-arm64` 与 `windows-x64.exe` 五个二进制。这些路由公开只读，每个客户端每分钟最多 120 次请求。二进制在该版本的首次请求时由 `bun build --compile` 构建，缓存于 `DATA_DIR/cli`；与服务器不同的平台需要的 Bun 运行时（约 90 MB）从 npm 下载一次，无法访问 npm 时返回 `503` 与原因及替代方法（`HTTPS_PROXY`，或在源码目录执行 `bun run build:cli`）。`minibox --version` 输出构建该二进制所用的版本。`minibox <命令> --help` 把帮助输出到标准输出并以 0 退出；此前 `--help` 以 2 退出并输出到标准错误，无参数仍以 2 退出。`ssh-proxy` 发现服务器比 CLI 新时输出一行升级提示，`GET /api/ssh/:box` 的探测响应带 `x-minibox-version`。Box 页面的 SSH 对话框（中英文）第一步改为安装命令，并填入当前地址。
-- Agent CLI 工具（#8）：创建 Box 时可勾选，运行中的 Box 可在「工具」页安装、升级与卸载。目录按四组展示（AI 编程助手、语言与运行时、终端与开发工具、网络），创建对话框与「工具」页都带搜索框，可按名称、说明或分组过滤。目录内容见 `catalog/*.json`，每一项都从其官方来源安装；Tailscale 需要 root，只列出，MiniBox 拒绝安装与卸载。镜像或家目录里已有的工具显示为已安装并附版本，不会重复安装；升级与卸载只作用于 MiniBox 装在 tools 卷上的工具。
+- Agent CLI 工具（#8）：创建 Box 时可勾选，运行中的 Box 可在「工具」页安装、升级与卸载。目录按四组展示（AI 编程助手、语言与运行时、终端与开发工具、网络），创建对话框与「工具」页都带搜索框，可按名称、说明或分组过滤。目录内容见 `catalog/*.json`，每一项都从其官方来源安装。镜像或家目录里已有的工具显示为已安装并附版本，不会重复安装；升级与卸载只作用于 MiniBox 装在 tools 卷上的工具。
+- Tailscale 无需 root：目录条目以 `dev` 用户从官方静态包安装，并核对发布的 sha256，任一步失败即中止。`minibox-tailscale up` 以用户态网络模式（`--tun=userspace-networking`）在后台启动 `tailscaled`，状态保存在家目录的 `~/.local/state/tailscale`，然后打印登录链接。守护进程在 `localhost:1055` 提供 SOCKS5 与 HTTP 代理，访问 tailnet 主机的出站连接需经它（`ALL_PROXY=socks5h://localhost:1055`）。发往 Box tailnet IP 的入站 TCP 与 UDP 被转发到 Box 内的 `127.0.0.1`。没有 ICMP。Box 重启或唤醒后需重新执行 `minibox-tailscale up`。
+- 卸载前先停止守护进程：目录条目可声明 `stop` 命令，卸载时以 `dev` 在运行中的 Box 内执行。停止失败则工具保持已安装。
 
 ### 变更
 - Box 的列表、详情、统计与主机指标改为读取每台主机的缓存。缓存由 Docker 容器事件保持最新，列表不再对每个容器调用 `inspect` 或 `docker stats`：Docker 调用次数与 Box 数量无关，也不随打开的标签页数增加。`HostMonitor` 不再每个间隔列出 Box，Box 汇总取自采样器。采样器未就绪时（启动之后、列出完成之前，或与引擎断开期间），读取退回引擎（#17）。

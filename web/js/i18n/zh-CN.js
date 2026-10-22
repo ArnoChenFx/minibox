@@ -1195,6 +1195,7 @@ export default {
   "err.tool_needs_root": "工具 “{id}” 需要 root，MiniBox 不会以 root 安装工具。",
   "err.tool_volume_missing": "本机尚无共享 tools 卷。请先用默认挂载创建 Box。",
   "err.tool_install_failed": "安装 “{id}” 失败：{detail}",
+  "err.tool_stop_failed": "无法在 Box 中停止 “{id}”，因此未卸载：{detail}",
   "err.tool_install_timeout": "安装 “{id}” 超时。",
   "err.tool_detect_failed": "无法检查此 Box 中已安装的工具：{detail}",
   "err.tool_reconcile_failed": "无法安装所请求的工具：{detail}。",

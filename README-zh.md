@@ -278,7 +278,7 @@ docker run -d --name minibox --restart unless-stopped \
 
 ## 工具
 
-创建 Box 时可勾选 Agent CLI 与其他工具。列表按 AI 编程助手、语言与运行时、终端与开发工具、网络四组展示，上方的搜索框可按名称、说明或分组过滤。Box 详情的「工具」页使用同样的分组与搜索，安装 / 升级 / 卸载也在那里完成。目录包括 Claude Code、Codex、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust、Zig 与 Tailscale，每一项都从其官方来源安装（见仓库 `catalog/*.json`），`DATA_DIR/tools.d/*.json` 可追加或覆盖条目。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成，从不以 root 运行。镜像或家目录里已有的工具显示为已安装并附版本，MiniBox 不会重复安装；升级与卸载只作用于 MiniBox 自己装在 tools 卷上的工具。Tailscale 需要 root，MiniBox 只列出它，拒绝安装或卸载。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
+创建 Box 时可勾选 Agent CLI 与其他工具。列表按 AI 编程助手、语言与运行时、终端与开发工具、网络四组展示，上方的搜索框可按名称、说明或分组过滤。Box 详情的「工具」页使用同样的分组与搜索，安装 / 升级 / 卸载也在那里完成。目录包括 Claude Code、Codex、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust、Zig 与 Tailscale，每一项都从其官方来源安装（见仓库 `catalog/*.json`），`DATA_DIR/tools.d/*.json` 可追加或覆盖条目。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成，从不以 root 运行。镜像或家目录里已有的工具显示为已安装并附版本，MiniBox 不会重复安装；升级与卸载只作用于 MiniBox 自己装在 tools 卷上的工具，卸载前会先停止该工具在 Box 内运行的守护进程。Tailscale 以 `dev` 用户安装，无需 root，并以用户态网络模式运行：在 Box 内执行 `minibox-tailscale up` 启动守护进程并打印登录链接。Box 里不会出现 tailnet 网卡。发往 Box tailnet IP 的入站 TCP 与 UDP 会被转发到 Box 内的 `127.0.0.1`，所以监听 localhost 或 `0.0.0.0`（IPv4）的程序可以从 tailnet 访问（受 tailnet ACL 约束）；只绑定 localhost 的服务也会因此暴露给 tailnet。出站访问 tailnet 主机必须经 `localhost:1055` 的 SOCKS5 或 HTTP 代理：设置 `ALL_PROXY=socks5h://localhost:1055`（`h` 表示由代理解析 MagicDNS 名称），HTTP 客户端也可用 `HTTP_PROXY`/`HTTPS_PROXY=http://localhost:1055`。没有 ICMP，`ping` tailnet 主机会失败，请用 `minibox-tailscale ping`。Box 重启或从空闲休眠唤醒后，守护进程不会自动启动，tailnet 流量也不会唤醒休眠中的 Box：重新执行 `minibox-tailscale up` 即可，已保存的登录会沿用。卸载只停止当前 Box 里的守护进程，同一主机上其他 Box 的守护进程会继续运行，直到它们停止。卸载后，Tailscale 的登录状态仍保留在家目录卷中。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
 
 ## 空闲休眠
 
@@ -463,12 +463,14 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 ### 存储池
 
+要把 Box 放到 NAS 上，请看 [NAS / NFS 指南](docs/nas-zh.md)：Linux、群晖、威联通、TrueNAS 和 Unraid 的导出设置，「添加 NFS」各字段的填法，以及服务器宕机时会发生什么。
+
 `pools.json` 保存池列表。始终有一只名为 `local` 的池，其后端保持 `local`。恰好一只池是默认池。角色设为 `null` 时使用规则：缓存放本地池，其余放默认池。保存池配置不会改写已经存在的卷。仍有卷的池不能删除，也不能更换后端（`409`，键 `pool_in_use`）。
 
 | 后端 | MiniBox 的行为 |
 |---|---|
 | `local` | 本机上的 Docker 本地卷。不要把 Docker 的 data-root 挪到网络存储上。`DATA_DIR` 留在运行 MiniBox 的机器上 |
-| `nfs` | 带 NFS 选项的 Docker 本地卷（`type=nfs`，`o=addr=<服务器>,<选项>`，`device=:<导出路径>/<卷 id>`）。辅助容器在导出根目录下创建子目录。**数据**卷使用你设置的选项，通常是 `hard`。**探测**挂载是 `soft,timeo=10,retrans=1`（不会把你的 `hard`/`soft` 抄到探测上），这样服务器无响应时探测不会挂起。NFS 应在可信网络内使用。更长的 NAS 说明是 [#30](https://github.com/ArnoChenFx/minibox/issues/30) |
+| `nfs` | 带 NFS 选项的 Docker 本地卷（`type=nfs`，`o=addr=<服务器>,<选项>`，`device=:<导出路径>/<卷 id>`）。辅助容器在导出根目录下创建子目录。**数据**卷使用你设置的选项，通常是 `hard`。**探测**挂载是 `soft,timeo=10,retrans=1`（不会把你的 `hard`/`soft` 抄到探测上），这样服务器无响应时探测不会挂起。NFS 应在可信网络内使用。服务器设置、squash 与 uid 映射、挂载选项和故障排查见 [NAS / NFS 指南](docs/nas-zh.md) |
 | `path` | 通过 Docker 卷绑定 `<根目录>/<卷 id>`（`type=none`，`o=bind`）。任何写入之前，辅助容器以只读方式绑定 `root`，并检查标记文件是否存在（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在就是**存储不可达**；MiniBox 不会创建标记，也不会往本地盘里写 |
 
 `GET /api/pools` 探测可达性，并缓存 15 秒。`?refresh=true` 会重新探测。列出 Box 不会探测 NFS，因此在有东西探测之前，Box 的 `storage.status` 保持 `unknown`。Box 列表和详情只把 `unreachable` 标出来；`ok` 和 `unknown` 不单独提示。当非本地池不是 `reachable`（包括缺少基础模板镜像），或本地引擎探测本身失败时，启动、重启或创建 Box 返回 `503` `docker_unavailable`（消息键 `storage_unreachable`）。协调器记录 `reconcile.start_failed` 后继续，因此一只不可达的池不会让进程退出。剩余空间低于 5 GiB 或低于 10% 时 `lowSpace` 为 true。没有每卷配额。
@@ -948,7 +950,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 - [x] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI。exec、MCP 与 CLI 已落地；文件 API 已实现；Volume（#24）之后
 - [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
 - [x] [#17](https://github.com/ArnoChenFx/minibox/issues/17) 通过 SSE 推送 Box 状态与资源占用，取代轮询
-- [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS 部署指南
+- [x] [#30](https://github.com/ArnoChenFx/minibox/issues/30) [NAS / NFS 部署指南](docs/nas-zh.md)
 
 ### M3 · 核心价值
 
