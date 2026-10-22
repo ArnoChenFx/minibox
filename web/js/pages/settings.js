@@ -621,7 +621,7 @@ async function loadSecrets(view) {
       <div><h3>${t("st.secrets")}</h3><p class="help">${t("st.secretsHelp")}</p></div>
       <button class="btn btn-sm btn-primary" id="stSecretAdd">${icon("plus")}${t("st.secretAdd")}</button>
     </div>
-    <div class="card-body"><p class="help">${t("st.secretsNote")}</p></div>
+    <div class="card-note"><p class="help">${t("st.secretsNote")}</p></div>
     <div class="table-wrap"><table class="table">
       <thead><tr><th>${t("label.name")}</th><th class="hide-sm">${t("st.secretUpdated")}</th><th>${t("st.secretUsedBy")}</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
@@ -640,12 +640,12 @@ function secretRow(secret) {
     ? secret.boxes.map((name) => `<span class="badge mono">${esc(name)}</span>`).join(" ")
     : `<span class="subtle">${t("st.secretUnused")}</span>`;
   return `<tr>
-    <td class="mono"><strong>${esc(secret.name)}</strong></td>
+    <td class="nowrap"><strong>${esc(secret.name)}</strong></td>
     <td class="hide-sm subtle nowrap" title="${esc(dateTime(secret.updatedAt))}">${esc(relTime(secret.updatedAt))}</td>
     <td>${used}</td>
     <td class="nowrap"><div class="actions">
-      <button class="btn btn-sm" data-secret-replace="${esc(secret.name)}">${icon("key")}${t("st.secretReplace")}</button>
-      <button class="btn btn-sm btn-danger" data-secret-delete="${esc(secret.name)}">${icon("trash")}${t("st.secretDelete")}</button>
+      <button class="btn btn-sm" data-secret-replace="${esc(secret.name)}" title="${esc(t("st.secretReplace"))}" aria-label="${esc(t("st.secretReplace"))}">${icon("key")}<span class="hide-sm">${t("st.secretReplace")}</span></button>
+      <button class="btn btn-sm btn-danger" data-secret-delete="${esc(secret.name)}" title="${esc(t("st.secretDelete"))}" aria-label="${esc(t("st.secretDelete"))}">${icon("trash")}<span class="hide-sm">${t("st.secretDelete")}</span></button>
     </div></td>
   </tr>`;
 }

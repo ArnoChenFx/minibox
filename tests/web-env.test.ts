@@ -143,12 +143,16 @@ describe("env row markup", () => {
     expect(html).toContain('<input class="input mono" data-env-value type="password" value="dev"');
     expect(html).toContain('<div class="env-field" data-env-field="secret" hidden>');
     expect(html).toContain('<option value="value" selected>');
-    expect(html).toContain('<button type="button" class="icon-btn" data-env-reveal aria-pressed="false"');
+    expect(html).toContain('<button type="button" class="icon-btn env-reveal" data-env-reveal aria-pressed="false"');
+    // The reveal button is inside the value field, so the field keeps the width of the secret chooser.
+    expect(html).toMatch(
+      /<div class="env-field env-field-reveal" data-env-field="value">\s*<input[^>]*>\s*<button[^>]*data-env-reveal/,
+    );
   });
 
   test("a secret row shows the chooser with the chosen name, and hides the value field", () => {
     const html = rowMarkup({ name: "TOKEN", kind: "secret", value: "", secretRef: "gh-token" }, ["gh-token", "npm"]);
-    expect(html).toContain('<div class="env-field" data-env-field="value" hidden>');
+    expect(html).toContain('<div class="env-field env-field-reveal" data-env-field="value" hidden>');
     expect(html).toContain('<div class="env-field" data-env-field="secret">');
     expect(html).toContain('<option value="gh-token" selected>gh-token</option>');
     expect(html).toContain('<option value="npm">npm</option>');
