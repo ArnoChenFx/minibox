@@ -13,13 +13,23 @@ import { checkpointId, checkpointTarget } from "./checkpoints";
 import { defineOperation } from "./define";
 import { hostById, hostOfBox, hostOfCheckpoint } from "./routing";
 import { CheckpointPackageSchema, CheckpointScheduleSchema, CheckpointSchema, OkSchema } from "./schemas";
-import { addFailure, boxId, hostId, packageRef, passphrase, scheduleAt, scheduleEveryHours } from "./validation";
+import {
+  addFailure,
+  boxId,
+  hostId,
+  packageRef,
+  passphrase,
+  scheduleAt,
+  scheduleEveryHours,
+  scheduleTimezone,
+} from "./validation";
 
 const scheduleInput = z
   .object({
     id: boxId(),
     everyHours: scheduleEveryHours(),
     at: scheduleAt(),
+    timezone: scheduleTimezone(),
   })
   .superRefine((input, ctx) => {
     if (!ruleOf(input)) addFailure(ctx, { message: msg("schedule_rule_invalid") });
@@ -141,14 +151,19 @@ export const checkpointScheduleSet = defineOperation({
     toolset: "storage",
     name: "set_checkpoint_schedule",
     description:
-      "Set a box's checkpoint schedule. Send everyHours (1 to 720) or at (HH:MM on the server's clock), not both. A scheduled checkpoint is taken in the background and follows the retention policy and the repository limit. A stopped or sleeping box is skipped and never woken. Replaces any schedule the box has. Owner only.",
+      "Set a box's checkpoint schedule. Send everyHours (1 to 720) or at (HH:MM), not both. With at, send timezone, an IANA zone such as Asia/Shanghai; without it the time is UTC. A scheduled checkpoint is taken in the background and follows the retention policy and the repository limit. A stopped or sleeping box is skipped and never woken. Replaces any schedule the box has. Owner only.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "checkpoint.schedule", target: (_input, box) => box.name },
   audit: {
     target: (_input, box) => box && boxTarget(box),
-    detail: (input, box) => ({ boxId: box?.boxId ?? null, everyHours: input.everyHours ?? null, at: input.at ?? null }),
+    detail: (input, box) => ({
+      boxId: box?.boxId ?? null,
+      everyHours: input.everyHours ?? null,
+      at: input.at ?? null,
+      timezone: input.at ? (input.timezone ?? null) : null,
+    }),
   },
   run: async ({ host, principal }, input, box) => {
     const rule = ruleOf(input);

@@ -181,6 +181,8 @@ export const CheckpointScheduleSchema = z.object({
   mode: z.enum(["interval", "daily"]),
   everyHours: z.number().int().nullable(),
   at: z.string().nullable(),
+  /** IANA zone of the daily time. Null for an interval, and for a daily schedule saved before zones, which runs in UTC. */
+  timezone: z.string().nullable(),
   createdBy: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),

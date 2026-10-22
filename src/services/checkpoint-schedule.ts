@@ -183,7 +183,7 @@ export async function scheduleOf(host: HostCtx, boxRef: string): Promise<BoxSche
 }
 
 /**
- * Sets a box's schedule. The first run is one interval, or the next daily time, after `now`. Setting a rule again
+ * Sets a box's schedule. The first run is one interval, or the next daily time in the rule's zone, after `now`. Setting a rule again
  * replaces the rule and its next run, and keeps the last run and the creation time.
  */
 export async function setSchedule(
@@ -204,6 +204,7 @@ export async function setSchedule(
       mode: rule.mode,
       everyHours: rule.everyHours,
       at: rule.at,
+      timezone: rule.timezone,
       createdBy,
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,

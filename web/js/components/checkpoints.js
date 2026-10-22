@@ -1,5 +1,6 @@
 import { api, enc } from "../lib/api.js";
 import {
+  browserTimezone,
   contentsOf,
   HOLD_MODES,
   kindsOf,
@@ -9,6 +10,7 @@ import {
   SCHEDULE_HOURS,
   SKIP_REASON_KEYS,
   scheduleBody,
+  scheduleZone,
   usedPercent,
 } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
@@ -307,7 +309,7 @@ export function importCheckpoint() {
 
 /** The rule in words, as the card and the dialog say it. */
 function ruleText(schedule) {
-  if (schedule.mode === "daily") return t("ck.scheduleDaily", { at: schedule.at });
+  if (schedule.mode === "daily") return t("ck.scheduleDaily", { at: schedule.at, zone: scheduleZone(schedule) });
   return schedule.everyHours === 1 ? t("ck.scheduleEveryHour") : t("ck.scheduleEvery", { n: schedule.everyHours });
 }
 
@@ -335,7 +337,7 @@ export function scheduleHtml(schedule) {
   }
   return `<div class="ck-schedule">
     <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge badge-accent">${esc(ruleText(schedule))}</span></div>
-    <div class="help">${esc(t("ck.nextRun"))}: ${esc(dateTime(schedule.nextRunAt))}</div>
+    <div class="help">${esc(t("ck.nextRun"))}: ${esc(dateTime(schedule.nextRunAt))} <span class="subtle">${esc(t("ck.localTime"))}</span></div>
     <div class="help">${esc(t("ck.lastRun"))}: ${esc(lastRunText(schedule.lastRun))}</div>
     <div class="help">${esc(t("ck.scheduleNote"))}</div>
     <div class="ck-schedule-actions">
@@ -345,8 +347,11 @@ export function scheduleHtml(schedule) {
   </div>`;
 }
 
-export function scheduleFormHtml(schedule) {
+export function scheduleFormHtml(schedule, zone = browserTimezone()) {
   const mode = schedule?.mode ?? "interval";
+  const saved = schedule?.mode === "daily" ? scheduleZone(schedule) : zone;
+  const moved =
+    saved !== zone ? `<div class="help">${esc(t("ck.scheduleZoneChange", { from: saved, zone }))}</div>` : "";
   const modeButton = (value, title, hint) =>
     `<button type="button" class="seg" data-mode="${value}" aria-pressed="${value === mode}"><strong>${esc(title)}</strong><span>${esc(hint)}</span></button>`;
   return `<div class="field"><span class="label">${esc(t("ck.scheduleWhen"))}</span>
@@ -356,7 +361,7 @@ export function scheduleFormHtml(schedule) {
       <div class="help">${esc(t("ck.scheduleHoursHelp"))}</div></div>
     <div class="field${mode === "interval" ? " hidden" : ""}" data-field="daily"><label class="label" for="ckAt">${esc(t("ck.scheduleTime"))}</label>
       <input class="input mono" id="ckAt" type="text" inputmode="numeric" maxlength="5" placeholder="02:30" autocomplete="off" spellcheck="false" value="${esc(schedule?.at ?? "02:00")}" />
-      <div class="help">${esc(t("ck.scheduleTimeHelp"))}</div></div>
+      <div class="help">${esc(t("ck.scheduleTimeHelp", { zone }))}</div>${moved}</div>
     <div class="error-text" id="ckScheduleErr"></div>
     ${callout("info", t("ck.scheduleHelp"))}`;
 }
