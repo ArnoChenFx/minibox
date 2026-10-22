@@ -39,18 +39,20 @@ const translationsZh = {
     controlLink: "了解会话与接管",
     you: "你",
     interfacesTitle: "说 Agent 听得懂的语言。",
-    interfacesDescription: "MCP、CLI 与 REST API 共用同一组操作。运行命令、管理文件，接入你已经在用的客户端。",
+    interfacesDescription:
+      "MCP、CLI 与 REST API 共用同一组操作。CLI 直接从你的服务器下载，支持 macOS、Linux 和 Windows，用 minibox ssh-config 即可直接 ssh 进 Box。",
     tokensTitle: "主密钥归你，权限按需分配。",
-    tokensDescription: "给每个 Agent 独立的令牌，只开放需要的 Box 和操作。设置配额，在任务完成后撤销权限。",
+    tokensDescription:
+      "给每个 Agent 独立的令牌，只开放需要的 Box 和操作。设置配额，在任务完成后撤销权限。密钥按名称注入 Box，未经你允许，Agent 令牌无法使用。",
     tokensLink: "连接你的 Agent",
     lifecycleTitle: "少一些日常打理。",
     lifecycleDescription:
-      "空闲 Box 自动休眠、按需唤醒。配合 CPU 与内存配额、TTL、系统快照和检查点，让工作空间井井有条。",
+      "空闲 Box 自动休眠、按需唤醒。设置 CPU 与内存配额和 TTL，用检查点保存数据，把配好的环境存为模板。",
     lifecycleLink: "了解生命周期",
     workflowTitle: "一个 Box，一个 Agent，开工。",
     workflowLink: "阅读 Agent 接入指南",
     step1Title: "先腾出一点空间。",
-    step1Description: "选择模板、给 Box 起名、选好工具。",
+    step1Description: "选择模板、给 Box 起名、选好工具，再设好环境变量。",
     ready: "已就绪",
     step2Title: "带上你的 Agent。",
     step2Description: "创建受限令牌，通过 MCP、CLI 或 REST API 接入。",
@@ -69,13 +71,13 @@ const translationsZh = {
     faqTitle: "开始之前，聊几句。",
     faq1Question: "MiniBox 是托管云服务吗？",
     faq1Answer:
-      "MiniBox 运行在你自己的机器上，以 MIT 协议开源。无需 MiniBox 账号，也没有平台订阅费。你需要提供自己的硬件，以及 Agent 使用付费 AI 服务时所需的凭据。",
+      "MiniBox 运行在你自己的机器上，也可以把 Box 放到你通过 TLS 或 SSH 接入的其他 Docker 主机上。项目以 MIT 协议开源。无需 MiniBox 账号，也没有平台订阅费。你需要提供自己的硬件，以及 Agent 使用付费 AI 服务时所需的凭据。",
     faq2Question: "可以在 Box 里运行不可信代码吗？",
     faq2Answer:
       "Box 使用 Docker 容器隔离，与宿主机共享内核。它适合运行你自己的 Agent，不能当作不可信第三方代码的安全边界。如果工作负载需要，请使用更强的隔离方案。",
     faq3Question: "删除 Box 后，文件会怎样？",
     faq3Answer:
-      "工作区与 home 的数据保存在独立于容器可写层的卷里。删除 Box 时，可以选择保留哪些归属卷。系统快照不包含挂载卷；检查点可以保存工作区和 home 的数据。",
+      "工作区与 home 的数据保存在独立于容器可写层的卷里。删除 Box 时，可以选择保留哪些归属卷。检查点保存工作区和 home 的数据；模板只保存 Box 的系统环境，从不包含卷。",
     faq4Question: "能连接我正在使用的 AI Agent 吗？",
     faq4Answer:
       "支持 Streamable HTTP MCP 的客户端都可以连接 MiniBox，也可以通过 CLI 和 REST API 接入。工具目录支持在 Box 里安装已适配的 Agent CLI。请给 Agent 分配受限令牌，而不是所有者主密钥。",

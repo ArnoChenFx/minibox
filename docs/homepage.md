@@ -8,7 +8,7 @@ The visual direction uses MiniBox's existing purple cube mark, a warm light back
 
 The page introduces the product, shows the console, explains the main capabilities, walks through connecting an agent, and provides the documented release-container startup commands. English is the default. The language button switches to Chinese, remembers the choice when storage is available, and updates the URL to `?lang=zh` for sharing. An explicit `?lang=en` overrides a remembered preference.
 
-The agent strip uses the Claude Code, Codex, OpenCode and Pi Agent brand icons vendored under `site/assets/agents/`, with pinned upstream provenance and the MIT license included there. It has no external icon requests. The homepage does not include a roadmap section or navigation entry.
+The agent strip uses the Claude Code, Codex, OpenCode and Pi coding agent brand icons vendored under `site/assets/agents/`, with pinned upstream provenance and the MIT license included there. It has no external icon requests. The homepage does not include a roadmap section or navigation entry.
 
 Content is based on the README, `docs/design.md`, `docs/agents.md`, and the repository's issues. The design document and tracking checklists can lag implementation, so the page distinguishes implemented capabilities from unfinished work:
 
@@ -52,9 +52,9 @@ Use `bun run check` for the repository's existing checks as well. In environment
 
 ## GitHub Pages deployment
 
-The `Project homepage` workflow tests homepage changes on pull requests and relevant pushes. A push to `main` or the dedicated `website` publication branch allows a successful test job to build and publish **only `dist/site/`** using the official `configure-pages`, `upload-pages-artifact`, and `deploy-pages` actions. The `website` branch supports publishing a reviewed feature commit without merging its PR. The deploy action waits for GitHub's deployment result. Pull request events never publish. Deployment uses the repository's `GITHUB_TOKEN` with Pages and OIDC permissions; it does not require a personal access token or contents write permission. Actions are pinned to commit SHAs, following the repository's existing policy.
+The `Project homepage` workflow tests homepage changes on pull requests and relevant pushes. Pages publishes from `main` only: a push to `main` that touches the homepage, or a manual run of the workflow on `main`, lets a successful test job build and publish **only `dist/site/`** using the official `configure-pages`, `upload-pages-artifact`, and `deploy-pages` actions. Deploys share one concurrency group, `pages`, and a deploy in progress is never cancelled. The deploy action waits for GitHub's deployment result. Pull request events never publish. Deployment uses the repository's `GITHUB_TOKEN` with Pages and OIDC permissions; it does not require a personal access token or contents write permission. Actions are pinned to commit SHAs, following the repository's existing policy.
 
-The repository is configured under **Settings → Pages → Build and deployment** with **Source: GitHub Actions**. Keep this setting and any existing custom domain. The `github-pages` environment permits `main` and `website`. To publish before merging, push the intended tested commit to `website` without force; after merge, homepage changes on `main` publish automatically. If deployment protection rules change, the selected branch must satisfy those rules.
+The repository is configured under **Settings → Pages → Build and deployment** with **Source: GitHub Actions**. Keep this setting and any existing custom domain. The `github-pages` environment permits `main`. Homepage changes publish when they are merged to `main`; to publish again without a change, run the workflow on `main` from the Actions tab. If deployment protection rules change, the selected branch must satisfy those rules.
 
 To verify a release, check GitHub's Pages deployment/build status, request the public URL, and confirm that the logo, stylesheet, JavaScript and all three gallery images load under `/minibox/`. A successful local build or branch push alone does not establish a successful public deployment.
 
