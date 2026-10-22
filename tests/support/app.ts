@@ -59,6 +59,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     checkpointPackageMaxMb: 2048,
     fileUploadMaxMb: 1024,
     hostOvercommit: 1,
+    previewBaseDomain: null,
     ...overrides,
   };
 }

@@ -379,6 +379,26 @@ describe("permissions", () => {
   });
 });
 
+describe("PREVIEW_BASE_DOMAIN", () => {
+  beforeEach(() => setLogLevel("error"));
+  afterEach(() => setLogLevel("info"));
+
+  test("is off when unset or blank, which keeps path previews", () => {
+    expect(load({ ACCESS_KEY: KEY }).previewBaseDomain).toBeNull();
+    expect(load({ ACCESS_KEY: KEY, PREVIEW_BASE_DOMAIN: "  " }).previewBaseDomain).toBeNull();
+  });
+  test("is read as a lower-case domain", () => {
+    expect(load({ ACCESS_KEY: KEY, PREVIEW_BASE_DOMAIN: " Minibox-Preview.NET " }).previewBaseDomain).toBe(
+      "minibox-preview.net",
+    );
+  });
+  test("refuses startup when it is not a domain", () => {
+    expect(() => load({ ACCESS_KEY: KEY, PREVIEW_BASE_DOMAIN: "https://minibox-preview.net" })).toThrow(
+      /PREVIEW_BASE_DOMAIN: .* must be a domain name/,
+    );
+  });
+});
+
 describe("unusable DATA_DIR", () => {
   beforeEach(() => setLogLevel("error"));
   afterEach(() => setLogLevel("info"));
