@@ -18,7 +18,7 @@ Read the [changelog](../../CHANGELOG.md) before you upgrade. It lists what chang
    docker pull ghcr.io/arnochenfx/minibox:latest
    ```
 
-   To pin a version, use its tag, such as `ghcr.io/arnochenfx/minibox:0.4.0`.
+   To pin a version, use its tag, such as `ghcr.io/arnochenfx/minibox:0.4.1`.
 
 2. If you set `ACCESS_KEY` only in the container environment and not in the `minibox-data` volume, copy it before you remove the container. When the key lives in the volume, skip this step:
 
