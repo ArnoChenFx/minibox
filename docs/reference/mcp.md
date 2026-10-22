@@ -64,6 +64,9 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `set_startup_command` | `PUT /api/boxes/{id}/startup-command` |
 | `delete_startup_command` | `DELETE /api/boxes/{id}/startup-command` |
 | `run_startup_command` | `POST /api/boxes/{id}/startup-command/run` |
+| `upload_files` | `PUT /api/volumes/{id}/files/archive` |
+
+`upload_files` takes a base64 tar of at most 2 MiB encoded. A larger file goes through `PUT /api/volumes/{id}/files/stream` or `minibox upload`, which stream the body rather than send it as a JSON argument.
 
 ### meta
 

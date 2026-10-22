@@ -9,6 +9,7 @@ export type ErrorCode =
   | "not_found"
   | "method_not_allowed"
   | "unsupported_media_type"
+  | "length_required"
   | "payload_too_large"
   | "too_many_requests"
   | "conflict"

@@ -957,7 +957,7 @@
     "path": "/api/volumes/<volumeId>/files?path=/&maxDepth=2",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"volume\":\"spare\",\"path\":\"/\",\"entries\":[{\"path\":\"/\",\"type\":\"dir\",\"size\":null},{\"path\":\"hello.txt\",\"type\":\"file\",\"size\":3}],\"truncated\":false}"
+    "body": "{\"volume\":\"spare\",\"path\":\"/\",\"entries\":[{\"path\":\"/\",\"type\":\"dir\",\"size\":null,\"mtime\":\"<time>\"},{\"path\":\"hello.txt\",\"type\":\"file\",\"size\":3,\"mtime\":\"<time>\"}],\"truncated\":false}"
   },
   {
     "step": "copy the file on spare",
@@ -2454,5 +2454,125 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"name\":\"startbox\",\"volumeDeleted\":false}"
+  },
+  {
+    "step": "create the files volume",
+    "method": "POST",
+    "path": "/api/volumes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":{\"id\":\"<volumeId>\",\"name\":\"files\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":null,\"ownership\":\"independent\",\"ownerBoxId\":null,\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0}}"
+  },
+  {
+    "step": "stream a file up without an octet-stream type",
+    "method": "PUT",
+    "path": "/api/volumes/<volumeId>/files/stream?path=notes/todo.txt",
+    "status": 415,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"unsupported_media_type\",\"message\":\"A file is uploaded as application/octet-stream.\",\"retryable\":false,\"key\":\"file_upload_type\"}}"
+  },
+  {
+    "step": "stream a file up",
+    "method": "PUT",
+    "path": "/api/volumes/<volumeId>/files/stream?path=notes/todo.txt",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":\"files\",\"path\":\"notes/todo.txt\",\"bytesWritten\":4,\"overwritten\":false}"
+  },
+  {
+    "step": "stream a file over an existing one without overwrite",
+    "method": "PUT",
+    "path": "/api/volumes/<volumeId>/files/stream?path=notes/todo.txt",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"notes/todo.txt already exists. Send overwrite=true to replace it.\",\"retryable\":false,\"key\":\"file_exists\",\"params\":{\"path\":\"notes/todo.txt\"}}}"
+  },
+  {
+    "step": "stream a file over an existing one with overwrite",
+    "method": "PUT",
+    "path": "/api/volumes/<volumeId>/files/stream?path=notes/todo.txt&overwrite=true",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":\"files\",\"path\":\"notes/todo.txt\",\"bytesWritten\":4,\"overwritten\":true}"
+  },
+  {
+    "step": "stream a file back",
+    "method": "GET",
+    "path": "/api/volumes/<volumeId>/files/stream?path=notes/todo.txt",
+    "status": 200,
+    "contentType": "application/octet-stream",
+    "body": "two\n"
+  },
+  {
+    "step": "stream a missing file back",
+    "method": "GET",
+    "path": "/api/volumes/<volumeId>/files/stream?path=notes/nope.txt",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"File or directory notes/nope.txt was not found on the volume.\",\"retryable\":false,\"key\":\"file_not_found\",\"params\":{\"path\":\"notes/nope.txt\"}}}"
+  },
+  {
+    "step": "create a folder with its parents",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/files/directory",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":\"files\",\"path\":\"made/deep\",\"created\":true}"
+  },
+  {
+    "step": "stream a file into a folder",
+    "method": "PUT",
+    "path": "/api/volumes/<volumeId>/files/stream?path=made/other.txt",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":\"files\",\"path\":\"made/other.txt\",\"bytesWritten\":6,\"overwritten\":false}"
+  },
+  {
+    "step": "move a file onto an existing one",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/files/move",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"notes/todo.txt already exists. Send overwrite=true to replace it.\",\"retryable\":false,\"key\":\"file_exists\",\"params\":{\"path\":\"notes/todo.txt\"}}}"
+  },
+  {
+    "step": "move a file",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/files/move",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":\"files\",\"from\":\"notes/todo.txt\",\"to\":\"made/deep/moved.txt\"}"
+  },
+  {
+    "step": "move a path onto itself",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/files/move",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"from and to must be different paths inside the volume.\",\"retryable\":false,\"key\":\"file_move_invalid\",\"details\":{\"field\":\"to\"}}}"
+  },
+  {
+    "step": "delete a file without confirm",
+    "method": "DELETE",
+    "path": "/api/volumes/<volumeId>/files?path=made/deep/moved.txt",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.\",\"retryable\":false,\"key\":\"storage_confirm_required\",\"details\":{\"preview\":{\"action\":\"delete_file\",\"volume\":\"files\",\"path\":\"made/deep/moved.txt\",\"type\":\"file\",\"size\":4}}}}"
+  },
+  {
+    "step": "delete a file",
+    "method": "DELETE",
+    "path": "/api/volumes/<volumeId>/files?path=made/deep/moved.txt&confirm=true",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":\"files\",\"path\":\"made/deep/moved.txt\"}"
+  },
+  {
+    "step": "delete the volume root",
+    "method": "DELETE",
+    "path": "/api/volumes/<volumeId>/files?path=/&confirm=true",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The volume root cannot be moved or deleted.\",\"retryable\":false,\"key\":\"file_root_protected\",\"details\":{\"field\":\"path\"}}}"
   }
 ]

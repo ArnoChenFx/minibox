@@ -89,7 +89,12 @@ export interface FakeFsEntry {
   mode?: number;
   uid?: number;
   gid?: number;
+  /** Modification time in seconds since the epoch. Entries written without one read as FAKE_MTIME. */
+  mtime?: number;
 }
+
+/** The mtime of an entry the fake wrote without a header time, so listings are stable. */
+const FAKE_MTIME = 1_700_000_000;
 
 export interface FakeNetwork {
   id: string;
@@ -1495,6 +1500,14 @@ function seal(block: Buffer): Buffer {
   return block;
 }
 function tarHeader(name: string, type: string, size: number, uid: number, gid: number, link = ""): Buffer {
+  if (Buffer.byteLength(name) > 100) {
+    const longName = Buffer.from(`${name}\0`);
+    return Buffer.concat([
+      tarHeader("././@LongLink", "L", longName.length, 0, 0),
+      tarPad(longName),
+      tarHeader(Buffer.from(name).subarray(0, 100).toString("utf8"), type, size, uid, gid, link),
+    ]);
+  }
   const block = Buffer.alloc(BLOCK);
   block.write(name.slice(0, 100), 0, 100, "utf8");
   block.write(octal(type === "5" ? 0o755 : 0o644, 8), 100, "ascii");
@@ -1590,15 +1603,72 @@ function applyTarToVolume(files: Map<string, FakeFsEntry>, destRelative: string,
         if (!files.has(built)) files.set(built, { type: "dir", mode: 0o755, uid, gid });
       }
     }
+    const mtimeText = (block.subarray(136, 148).toString("ascii").split("\0")[0] ?? "").trim();
+    const mtime = /^[0-7]+$/.test(mtimeText) ? Number.parseInt(mtimeText, 8) : undefined;
     if (typeFlag === "5" || nameField.endsWith("/")) {
-      files.set(full, { type: "dir", mode: 0o755, uid, gid });
+      files.set(full, { type: "dir", mode: 0o755, uid, gid, mtime });
     } else if (typeFlag === "2") {
-      files.set(full, { type: "symlink", target: linkField, uid, gid });
+      files.set(full, { type: "symlink", target: linkField, uid, gid, mtime });
     } else {
-      files.set(full, { type: "file", content: data, mode: 0o644, uid, gid });
+      files.set(full, { type: "file", content: data, mode: 0o644, uid, gid, mtime });
     }
   }
   if (!files.has("")) files.set("", { type: "dir", mode: 0o755, uid: 1000, gid: 1000 });
+}
+
+/**
+ * `mv -T [-f|-n] -- SRC DST` and `rm (-f|-rf) -- PATH` on a mounted volume, as coreutils 9.1 runs them: `mv -n` over an
+ * existing destination leaves the source in place and exits 0, which the service has to notice.
+ */
+function mutateVolume(files: Map<string, FakeFsEntry>, root: string, cmd: string[]): HelperResult {
+  const operands = cmd.slice(cmd.indexOf("--") + 1);
+  const relative = (abs: string | undefined): string | null => {
+    if (abs === undefined) return null;
+    if (abs === root) return "";
+    return abs.startsWith(`${root}/`) ? abs.slice(root.length + 1) : null;
+  };
+  const subtree = (key: string): string[] => [...files.keys()].filter((k) => k === key || k.startsWith(`${key}/`));
+
+  if (cmd[0] === "rm") {
+    const target = relative(operands[0]);
+    if (target === null || target === "") return { exitCode: 1, logs: "rm: refusing to remove the volume root\n" };
+    const entry = files.get(target);
+    if (!entry) return { exitCode: 0, logs: "" };
+    if (entry.type === "dir" && !cmd.includes("-rf") && !cmd.includes("-r")) {
+      return { exitCode: 1, logs: `rm: cannot remove '${operands[0]}': Is a directory\n` };
+    }
+    for (const key of subtree(target)) files.delete(key);
+    return { exitCode: 0, logs: "" };
+  }
+
+  const from = relative(operands[0]);
+  const to = relative(operands[1]);
+  if (from === null || to === null || from === "" || to === "") {
+    return { exitCode: 1, logs: "mv: cannot move the volume root\n" };
+  }
+  if (!files.has(from)) return { exitCode: 1, logs: `mv: cannot stat '${operands[0]}': No such file or directory\n` };
+  const parent = to.includes("/") ? to.slice(0, to.lastIndexOf("/")) : "";
+  if (!files.has(parent))
+    return { exitCode: 1, logs: `mv: cannot move to '${operands[1]}': No such file or directory\n` };
+  if (to === from || to.startsWith(`${from}/`))
+    return { exitCode: 1, logs: "mv: cannot move a directory into itself\n" };
+  if (files.has(to)) {
+    if (cmd.includes("-n")) return { exitCode: 0, logs: "" };
+    const target = files.get(to);
+    if (target?.type === "dir" && files.get(from)?.type !== "dir") {
+      return { exitCode: 1, logs: `mv: cannot overwrite directory '${operands[1]}' with non-directory\n` };
+    }
+    if (target?.type === "dir" && subtree(to).length > 1) {
+      return { exitCode: 1, logs: `mv: cannot move '${operands[0]}' to '${operands[1]}': Directory not empty\n` };
+    }
+    for (const key of subtree(to)) files.delete(key);
+  }
+  const moved = subtree(from).map((key) => [key, files.get(key)] as const);
+  for (const [key] of moved) files.delete(key);
+  for (const [key, entry] of moved) {
+    if (entry) files.set(key === from ? to : `${to}/${key.slice(from.length + 1)}`, entry);
+  }
+  return { exitCode: 0, logs: "" };
 }
 
 function volumeAwareHelper(rt: FakeRuntime, spec: HelperSpec): HelperResult {
@@ -1630,11 +1700,14 @@ function volumeAwareHelper(rt: FakeRuntime, spec: HelperSpec): HelperResult {
       if (name === "" && relRoot !== "") continue;
       const kind = entry.type === "file" ? "f" : entry.type === "dir" ? "d" : entry.type === "symlink" ? "l" : "o";
       const size = entry.type === "file" ? String(entry.content?.length ?? 0) : "0";
+      const mtime = `${entry.mtime ?? FAKE_MTIME}.0000000000`;
       const full = name === "" ? root : `${root}/${name}`;
-      lines.push(`${kind}\t${size}\t${full}`);
+      lines.push(`${kind}\t${size}\t${mtime}\t${full}\0`);
     }
-    return { exitCode: 0, logs: `${lines.join("\n")}\n` };
+    return { exitCode: 0, logs: lines.join("") };
   }
+
+  if (cmd0 === "mv" || cmd0 === "rm") return mutateVolume(files, root, spec.cmd);
 
   if (cmd0 === "sh" && spec.cmd.includes("minibox-cp")) {
     // sh -c '...' minibox-cp fromAbs toAbs — follow intermediate symlinks like the Engine.

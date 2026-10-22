@@ -79,6 +79,12 @@ export function registryProblems(operations: readonly Operation[]): string[] {
       if (binding.body && (binding.method === "GET" || binding.method === "DELETE")) {
         problems.push(`${op.name} reads a body on ${binding.method}`);
       }
+      if (binding.raw && binding.body) problems.push(`${op.name} binds both a JSON body and a raw body`);
+      if (binding.raw && (binding.method === "GET" || binding.method === "DELETE")) {
+        problems.push(`${op.name} reads a raw body on ${binding.method}`);
+      }
+      if (binding.stream && binding.method !== "GET")
+        problems.push(`${op.name} streams a response on ${binding.method}`);
       if ((op.kind === "read") !== (binding.method === "GET")) {
         problems.push(`${op.name} is ${op.kind} but binds ${binding.method}`);
       }

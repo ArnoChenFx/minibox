@@ -529,6 +529,11 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["files.copy", volumeFileWriteRule],
   ["files.download", volumeRule],
   ["files.upload", volumeFileWriteRule],
+  ["files.stream.upload", volumeFileWriteRule],
+  ["files.stream.download", volumeRule],
+  ["files.mkdir", volumeFileWriteRule],
+  ["files.move", volumeFileWriteRule],
+  ["files.delete", volumeFileWriteRule],
   ["events.list", noAccess],
   ["tool.catalog", noAccess],
   [

@@ -147,10 +147,11 @@ export function startServer(app: App): Server<SocketData> {
   return Bun.serve<SocketData>({
     hostname: app.cfg.host,
     port: app.cfg.port,
-    // Bun refuses a larger body before any route runs. Packages are the only body this large: every other route keeps the
-    // 128 MiB ceiling (assertBodyAllowed, readBodyText, and the preview proxy's limitedBody). The slack keeps a package a
-    // little over its limit on the package check, which answers with its JSON error, not Bun's plain one.
-    maxRequestBodySize: app.cfg.checkpointPackageMaxMb * MB + PACKAGE_BODY_SLACK_BYTES,
+    // Bun refuses a larger body before any route runs. Packages and volume files are the only bodies this large: every
+    // other route keeps the 128 MiB ceiling (assertBodyAllowed, readBodyText, and the preview proxy's limitedBody). The
+    // slack keeps a body a little over its limit on its own check, which answers with its JSON error, not Bun's plain one.
+    maxRequestBodySize:
+      Math.max(app.cfg.checkpointPackageMaxMb, app.cfg.fileUploadMaxMb) * MB + PACKAGE_BODY_SLACK_BYTES,
     // Bun's idle timer is a hard cap measured from the start of the request, in 4-second steps, and writes do not
     // extend it. A handler that stays silent for longer than this is reset. Long work returns 202 and keeps running;
     // progress streams call server.timeout(req, 0), which disables the cap (tests/long-work-routes.test.ts).

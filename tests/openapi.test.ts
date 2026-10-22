@@ -59,6 +59,12 @@ describe("OpenAPI document", () => {
     expect(documented.toSorted()).toEqual(expected.toSorted());
   });
 
+  test("a raw upload documents the 411, 413 and 415 answers its framing can give", () => {
+    const upload = documentOf(RENDERED).paths["/api/volumes/{id}/files/stream"]?.put;
+    expect(Object.keys(upload?.responses ?? {})).toEqual(expect.arrayContaining(["411", "413", "415"]));
+    expect(upload?.responses["413"]).toMatchObject({ description: expect.stringContaining("FILE_UPLOAD_MAX_MB") });
+  });
+
   test("each binding carries the operationId the registry derives for it", () => {
     const ids = Object.values(documentOf(RENDERED).paths).flatMap((item) =>
       Object.values(item).map((operation) => operation.operationId),
@@ -103,9 +109,14 @@ describe("OpenAPI document", () => {
       "exec.output",
       "exec.run",
       "files.copy",
+      "files.delete",
       "files.download",
       "files.list",
+      "files.mkdir",
+      "files.move",
       "files.read",
+      "files.stream.download",
+      "files.stream.upload",
       "files.upload",
       "files.write",
       "host.add",
@@ -207,8 +218,20 @@ describe("recorded HTTP transcript", () => {
     }
   });
 
+  test("each stream success is the raw bytes its binding declares, not JSON", () => {
+    const streamed = matched.filter(({ binding, exchange }) => binding.stream && exchange.status < 400);
+    expect(streamed.length).toBeGreaterThan(0);
+    for (const { exchange } of streamed) {
+      expect({ step: exchange.step, contentType: exchange.contentType?.split(";")[0] }).toEqual({
+        step: exchange.step,
+        contentType: expect.stringMatching(/^application\/(octet-stream|gzip)$/),
+      });
+    }
+  });
+
   test("each body is JSON that matches the output schema, or the error schema for 4xx and 5xx", () => {
-    for (const { exchange, operation } of matched) {
+    for (const { exchange, operation, binding } of matched) {
+      if (binding.stream && exchange.status < 400) continue;
       expect({ step: exchange.step, contentType: exchange.contentType?.split(";")[0] }).toEqual({
         step: exchange.step,
         contentType: "application/json",

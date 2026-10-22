@@ -45,7 +45,7 @@ bun run check
 | `bun run build:template` and `bun run check:template` | Docker | The base template: its user, tools, mount points and each security profile. |
 | `bun run test:site` | Chromium | Browser tests for the homepage. |
 
-`bun run test:docker` runs seven test files, one process each. Every run uses its own label prefix, which starts with `mbit`, and removes the containers, images, volumes and networks it created, even when a test fails. `DOCKER_SOCKET` selects another Docker socket. `MINIBOX_TEST_IMAGE` replaces the default test image, `alpine:3.20`.
+`bun run test:docker` runs nine test files, one process each. Every run uses its own label prefix, which starts with `mbit`, and removes the containers, images, volumes and networks it created, even when a test fails. `DOCKER_SOCKET` selects another Docker socket. `MINIBOX_TEST_IMAGE` replaces the default test image, `alpine:3.20`.
 
 To run one real-engine test file by itself, set `MINIBOX_TEST_DOCKER=1` and a `MINIBOX_TEST_PREFIX` that matches `mbit` followed by 3 to 40 lowercase letters, digits or hyphens:
 

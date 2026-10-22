@@ -15,6 +15,8 @@ export interface FirstEntry {
   linkname: string;
   /** The first `min(size, maxData)` bytes of the body. Empty for anything but a regular file. */
   data: Buffer;
+  /** Offset of the body's first byte in the bytes that were parsed, for a reader that goes on from there. */
+  bodyAt: number;
 }
 
 /**
@@ -68,6 +70,7 @@ export function firstEntry(bytes: Buffer, maxData = 0): FirstEntry | null {
       size,
       linkname: pax("linkpath") ?? longLink ?? cString(header.subarray(157, 257)),
       data: Buffer.from(bytes.subarray(body, body + want)),
+      bodyAt: body,
     };
   }
 }

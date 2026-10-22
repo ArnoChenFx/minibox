@@ -44,7 +44,7 @@ The scope check comes first. The token's box, volume and host grants, its quotas
 
 ## Requests
 
-- Send JSON bodies, and set `Content-Type: application/json` on every write. A write with another content type gets `415`. A write with neither a body nor a `Content-Type` is accepted. The one exception is the package upload, `POST /api/packages`, which takes the raw bytes of a `.mbckpt` file as `application/octet-stream`.
+- Send JSON bodies, and set `Content-Type: application/json` on every write. A write with another content type gets `415`. A write with neither a body nor a `Content-Type` is accepted. The exceptions are the package upload, `POST /api/packages`, which takes the raw bytes of a `.mbckpt` file, and the volume file upload, `PUT /api/volumes/{id}/files/stream`, which takes the raw bytes of one file. Both take `application/octet-stream` and need a `Content-Length` header, which gets `411` when it is missing.
 - Cross-site browser requests that upgrade a WebSocket, change state through the API, or read the event or box log streams are refused with `403`. See [Security](../admin/security.md).
 - A request may send an `X-Minibox-Run` header that names the client session it belongs to. The audit events of one session share this value. It takes 1 to 64 letters, digits, dots, colons, underscores or hyphens, and starts with a letter or digit. Any other value gets `400`.
 - Some writes need the box's current revision. Send it in the `If-Match` header. A missing header gets `428`, a stale revision gets `412`, and a malformed value gets `400`. The box's `revision` field shows the current value.
@@ -167,6 +167,11 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/volumes/{id}/files/copy` | Copy files within a volume |
 | `GET` | `/api/volumes/{id}/files/archive` | Download a volume path as tar |
 | `PUT` | `/api/volumes/{id}/files/archive` | Upload a tar onto a volume path |
+| `GET` | `/api/volumes/{id}/files/stream` | Download a file, or a folder as a gzip tar named `<name>.tar.gz` |
+| `PUT` | `/api/volumes/{id}/files/stream` | Upload one file as a raw `application/octet-stream` body. Query: `path`, and `overwrite` (default `false`, which answers `409` for an existing file). Answers `413` above `FILE_UPLOAD_MAX_MB` |
+| `POST` | `/api/volumes/{id}/files/directory` | Create a folder, with any missing parents |
+| `POST` | `/api/volumes/{id}/files/move` | Move or rename a path. The target must be free |
+| `DELETE` | `/api/volumes/{id}/files` | Delete a file or folder. Without `confirm=true` the answer is `409` with a preview of the removal. The root of a volume cannot be deleted |
 
 ### volumes
 
