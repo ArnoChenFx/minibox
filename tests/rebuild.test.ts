@@ -225,7 +225,7 @@ describe("rebuild swap", () => {
         template: "other:1",
         mounts: [{ volume: "extra", path: "/data", mode: "ro" }],
         env: [
-          { name: "FOO", value: "bar" },
+          { name: "FOO", value: "marker-value" },
           { name: "TOKEN", secretRef: "vault" },
         ],
       },
@@ -242,16 +242,16 @@ describe("rebuild swap", () => {
       { volume: extra.engineName, path: "/data", mode: "ro" },
     ]);
     expect(rebuilt.env).toEqual([
-      { name: "FOO", value: "bar" },
+      { name: "FOO", value: "marker-value" },
       { name: "TOKEN", secretRef: "vault" },
     ]);
     expect(rebuilt.drift).toEqual([]);
     expect(runtime.volumes.has(box.volume)).toBe(true);
     expect(runtime.volumes.has(extra.engineName)).toBe(true);
     const container = runtime.containers.get(rebuilt.id);
-    expect(container?.spec.env).toEqual(["FOO=bar"]);
+    expect(container?.spec.env).toEqual(["FOO=marker-value"]);
     expect(container?.spec.mounts).toEqual([{ source: extra.engineName, target: "/data", mode: "ro" }]);
-    expect(JSON.stringify(container?.labels)).not.toContain("bar");
+    expect(JSON.stringify(container?.labels)).not.toContain("marker-value");
     expect(JSON.stringify(container?.labels)).not.toContain("vault");
   });
 
