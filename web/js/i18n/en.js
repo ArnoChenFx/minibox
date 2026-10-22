@@ -607,6 +607,26 @@ export default {
     "A startup command runs in the box and may hold secrets. This credential may not set, remove or run one. It needs the exec and secret:use scopes, or the admin preset.",
   "err.startup_session_forbidden":
     "The minibox-init session shows a box's startup command output. This credential may not use it. It needs the exec and secret:use scopes, or the admin preset.",
+  "err.notify_channel_id_invalid":
+    "A channel id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.",
+  "err.notify_channel_not_found": "Notification channel {channel} was not found.",
+  "err.notify_channel_limit": "At most {max} notification channels can exist. Delete one, then add another.",
+  "err.notify_type_invalid": "Channel type must be webhook, ntfy or telegram.",
+  "err.notify_name_invalid": "A channel name is 1 to 64 characters, with no line breaks or control characters.",
+  "err.notify_events_invalid": "Choose at least one notice, and each notice at most once.",
+  "err.notify_boxes_invalid":
+    "Boxes are box names or ids: at most {max}, each 1 to 128 characters. Leave the list empty to notify for every box.",
+  "err.notify_url_invalid":
+    "The webhook URL must be an http or https address with no user name or password, at most 2048 characters.",
+  "err.notify_url_required": "A webhook channel needs a URL.",
+  "err.notify_server_invalid": "The ntfy server must be an http or https address with no user name or password.",
+  "err.notify_topic_invalid": "The ntfy topic is 1 to 64 letters, digits, underscores or hyphens.",
+  "err.notify_topic_required": "An ntfy channel needs a topic.",
+  "err.notify_chat_invalid":
+    "The Telegram chat must be a chat id such as -1001234567890, or a channel such as @alerts.",
+  "err.notify_chat_required": "A Telegram channel needs a chat id.",
+  "err.notify_secret_invalid": "A secret is 8 to 512 characters, with no line breaks or control characters.",
+  "err.notify_secret_required": "A Telegram channel needs its bot token as the secret.",
   "ui.nameRequired": "Please enter a {what}.",
   "ui.nameInvalid":
     "{what} may only contain letters, digits, dots, underscores and hyphens, and must start with a letter or digit.",

@@ -44,6 +44,14 @@ const CUSTOM_TOOL = {
   detect: "command -v sample-tool >/dev/null && sample-tool --version 2>/dev/null",
 };
 const CUSTOM_TOOL_FILE = { ...CUSTOM_TOOL, category: "agents", needsRoot: false, estimatedMb: 50 };
+const NOTIFY_CHANNEL = {
+  id: "alerts",
+  type: "webhook" as const,
+  name: "Alerts",
+  events: ["box.oom"],
+  url: "http://127.0.0.1:9/hook",
+  secret: "signing-key-1",
+};
 
 /** One valid input for each operation, given the id of a box that exists; see `withBox`. */
 const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
@@ -172,6 +180,11 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "host.remove": () => ({ id: "lab" }),
   "host.pairing.create": () => ({ id: "edge" }),
   "host.revoke": () => ({ id: "edge" }),
+  "notify.channel.list": () => ({}),
+  "notify.channel.set": () => ({ ...NOTIFY_CHANNEL }),
+  "notify.channel.delete": () => ({ id: NOTIFY_CHANNEL.id }),
+  "notify.channel.test": () => ({ id: NOTIFY_CHANNEL.id }),
+  "notify.delivery.list": () => ({}),
 };
 
 /** Operations that act on a checkpoint which must already exist, so `preparedInput` takes one first. */
@@ -281,6 +294,9 @@ async function preparedInput(
   }
   if (operation.name === "secret.delete") {
     await app.operations.run("secret.set", ctx, { name: "vault", value: "s3cret-value" });
+  }
+  if (operation.name === "notify.channel.test" || operation.name === "notify.channel.delete") {
+    await app.operations.run("notify.channel.set", ctx, { ...NOTIFY_CHANNEL });
   }
   if (operation.name === "checkpoint.import") {
     const id = await packageOfCheckpoint(app, ctx, boxId);
@@ -940,6 +956,11 @@ describe("projections", () => {
       "add_host",
       "test_host",
       "remove_host",
+      "list_notify_channels",
+      "set_notify_channel",
+      "delete_notify_channel",
+      "test_notify_channel",
+      "list_notify_deliveries",
     ]);
     expect(
       mcpTools(OPERATIONS, ["storage"])

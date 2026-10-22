@@ -59,7 +59,7 @@ function checkCursor(value: unknown): Checked<number | undefined> {
   return seq === undefined ? reject(msg("event_cursor_invalid"), "cursor") : accept(seq);
 }
 
-function checkLimit(value: unknown): Checked<number> {
+export function checkLimit(value: unknown): Checked<number> {
   if (absent(value)) return accept(EVENT_LIMIT.default);
   const n = typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
   if (!Number.isInteger(n) || n < 1 || n > EVENT_LIMIT.max) {

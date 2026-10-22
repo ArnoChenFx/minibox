@@ -2758,5 +2758,85 @@
     "status": 400,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"retryable\":false,\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"ref\"}}}"
+  },
+  {
+    "step": "list notification channels when there are none",
+    "method": "GET",
+    "path": "/api/notify/channels",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"channels\":[]}"
+  },
+  {
+    "step": "create a webhook channel with a signing key",
+    "method": "PUT",
+    "path": "/api/notify/channels/alerts",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"channel\":{\"id\":\"alerts\",\"type\":\"webhook\",\"name\":\"Alerts\",\"enabled\":true,\"events\":[\"box.oom\"],\"boxes\":[],\"url\":\"http://127.0.0.1:9/hook\",\"server\":null,\"topic\":null,\"chatId\":null,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"hasSecret\":true},\"created\":true,\"valueChange\":\"set\"}"
+  },
+  {
+    "step": "create a webhook channel with a URL that is not http",
+    "method": "PUT",
+    "path": "/api/notify/channels/bad",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The webhook URL must be an http or https address with no user name or password, at most 2048 characters.\",\"retryable\":false,\"key\":\"notify_url_invalid\",\"details\":{\"field\":\"url\"}}}"
+  },
+  {
+    "step": "create a telegram channel without a bot token",
+    "method": "PUT",
+    "path": "/api/notify/channels/chat",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A Telegram channel needs its bot token as the secret.\",\"retryable\":false,\"key\":\"notify_secret_required\",\"details\":{\"field\":\"secret\"}}}"
+  },
+  {
+    "step": "list notification channels",
+    "method": "GET",
+    "path": "/api/notify/channels",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"channels\":[{\"id\":\"alerts\",\"type\":\"webhook\",\"name\":\"Alerts\",\"enabled\":true,\"events\":[\"box.oom\"],\"boxes\":[],\"url\":\"http://127.0.0.1:9/hook\",\"server\":null,\"topic\":null,\"chatId\":null,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"hasSecret\":true}]}"
+  },
+  {
+    "step": "send a test notice to a channel on a private address",
+    "method": "POST",
+    "path": "/api/notify/channels/alerts/test",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":false,\"status\":null,\"attempts\":1,\"error\":\"blocked_address\"}"
+  },
+  {
+    "step": "list notification deliveries",
+    "method": "GET",
+    "path": "/api/notify/deliveries?limit=10",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"deliveries\":[{\"id\":\"<ulid>\",\"ts\":0,\"status\":\"error\",\"channel\":\"alerts\",\"type\":\"webhook\",\"notice\":\"notify.test\",\"title\":\"MiniBox test notification\",\"attempts\":1,\"httpStatus\":null,\"error\":\"blocked_address\"}]}"
+  },
+  {
+    "step": "list notification deliveries with a zero limit",
+    "method": "GET",
+    "path": "/api/notify/deliveries?limit=0",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"limit must be an integer between 1 and 200.\",\"retryable\":false,\"key\":\"event_limit_range\",\"params\":{\"max\":200},\"details\":{\"field\":\"limit\"}}}"
+  },
+  {
+    "step": "delete the webhook channel",
+    "method": "DELETE",
+    "path": "/api/notify/channels/alerts",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"alerts\"}"
+  },
+  {
+    "step": "delete the webhook channel again",
+    "method": "DELETE",
+    "path": "/api/notify/channels/alerts",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Notification channel alerts was not found.\",\"retryable\":false,\"key\":\"notify_channel_not_found\",\"params\":{\"channel\":\"alerts\"}}}"
   }
 ]
