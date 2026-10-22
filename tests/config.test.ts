@@ -306,6 +306,15 @@ describe("checkpoint retention and capacity", () => {
   test.each(["0", "-3", "1.5", "many"])("CHECKPOINT_KEEP_LAST=%s falls back to the default", (value) => {
     expect(load({ ACCESS_KEY: KEY, CHECKPOINT_KEEP_LAST: value })).toMatchObject({ checkpointKeepLast: 20 });
   });
+  test("a recycle bin keeps deleted boxes and volumes for 7 days by default", () => {
+    expect(load({ ACCESS_KEY: KEY })).toMatchObject({ trashRetentionDays: 7 });
+  });
+  test("TRASH_RETENTION_DAYS sets the retention, and a value outside 1 to 365 falls back to 7", () => {
+    expect(load({ ACCESS_KEY: KEY, TRASH_RETENTION_DAYS: "30" })).toMatchObject({ trashRetentionDays: 30 });
+    for (const value of ["0", "366", "-2", "soon"]) {
+      expect(load({ ACCESS_KEY: KEY, TRASH_RETENTION_DAYS: value })).toMatchObject({ trashRetentionDays: 7 });
+    }
+  });
 });
 
 describe("host overcommit", () => {
