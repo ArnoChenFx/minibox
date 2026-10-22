@@ -210,6 +210,22 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
   );
 
   test(
+    "a command on the second host runs through the tunnel and returns all of its output and its exit code",
+    async () => {
+      const { boxes } = (await (await api("/api/boxes")).json()) as { boxes: BoxJson[] };
+      const id = boxes.find((box) => box.name === "lab-box")?.id ?? "";
+      const res = await post(`/api/boxes/${id}/exec`, {
+        cmd: "echo remote-$((40 + 2)); echo to-stderr >&2; exit 3",
+        user: "root",
+        cwd: "/",
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ exitCode: 3, stdout: "remote-42\n", stderr: "to-stderr\n" });
+    },
+    LONG,
+  );
+
+  test(
     "deleting a box on the second host removes the volumes it owns, though the local host's cache sees the same engine",
     async () => {
       const made = await post("/api/boxes", {
