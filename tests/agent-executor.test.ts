@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { AgentExecutor, type AgentSink } from "../src/agent/executor";
+import { AGENT_ALLOWED_CAPS, AgentExecutor, type AgentSink } from "../src/agent/executor";
 import type { AgentErrorInfo, ExecExit } from "../src/agent/protocol";
+import { STANDARD_CAPS } from "../src/box-profile";
 import { RuntimeError } from "../src/runtime";
 import { FakeRuntime } from "./support/fake-runtime";
 
@@ -101,6 +102,32 @@ describe("requests the agent runs", () => {
     await executor.request("r7", "createContainer", { spec });
     expect(responseTo(frames, "r7")).toMatchObject({ ok: false, error: { kind: "invalid" } });
     expect(runtime.ops()).toEqual([]);
+  });
+
+  test("a capability outside Docker's default set is refused, so a console cannot widen a container", async () => {
+    const { executor, frames, runtime } = setup();
+    for (const [id, cap] of [
+      ["rc1", "SYS_ADMIN"],
+      ["rc2", "SYS_MODULE"],
+      ["rc3", "DAC_READ_SEARCH"],
+      ["rc4", "ALL"],
+    ] as const) {
+      const spec = { image: "alpine:3.20", hardening: { capDrop: ["ALL"], capAdd: ["CHOWN", cap] } };
+      await executor.request(id, "createContainer", { spec });
+      expect(responseTo(frames, id)).toMatchObject({ ok: false, error: { kind: "invalid" } });
+    }
+    expect(runtime.ops()).toEqual([]);
+  });
+
+  test("the standard profile's capabilities are accepted", async () => {
+    const { executor, frames, runtime } = setup();
+    runtime.seedImage("alpine:3.20");
+    const capAdd = [...STANDARD_CAPS];
+    expect(capAdd.every((cap) => (AGENT_ALLOWED_CAPS as readonly string[]).includes(cap))).toBe(true);
+    const spec = { image: "alpine:3.20", hardening: { capDrop: ["ALL"], capAdd } };
+    await executor.request("rc5", "createContainer", { spec });
+    expect(responseTo(frames, "rc5")).toMatchObject({ ok: true });
+    expect(runtime.ops()).toContain("createContainer");
   });
 
   test("a container on the host network is refused", async () => {

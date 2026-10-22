@@ -42,17 +42,39 @@ const MountSchema = z
   })
   .strict();
 
+/**
+ * The capabilities a container on an agent host may be given: Docker's default set, which is what the `relaxed` profile
+ * keeps and a superset of what `standard` adds back. Anything else (SYS_ADMIN, SYS_MODULE, SYS_PTRACE, NET_ADMIN,
+ * DAC_READ_SEARCH and the rest) would let a container reach past it to the host, so a console cannot ask for it.
+ */
+export const AGENT_ALLOWED_CAPS = [
+  "AUDIT_WRITE",
+  "CHOWN",
+  "DAC_OVERRIDE",
+  "FOWNER",
+  "FSETID",
+  "KILL",
+  "MKNOD",
+  "NET_BIND_SERVICE",
+  "NET_RAW",
+  "SETFCAP",
+  "SETGID",
+  "SETPCAP",
+  "SETUID",
+  "SYS_CHROOT",
+] as const;
+
 const HardeningSchema = z
   .object({
     capDrop: z.array(z.string().max(64)).max(64).optional(),
-    capAdd: z.array(z.string().max(64)).max(64).optional(),
+    capAdd: z.array(z.enum(AGENT_ALLOWED_CAPS)).max(64).optional(),
     noNewPrivileges: z.boolean().optional(),
     pidsLimit: z.number().int().positive().optional(),
     ulimits: z
       .array(z.object({ name: z.string().max(64), soft: z.number().int(), hard: z.number().int() }).strict())
       .max(32)
       .optional(),
-    runtime: z.string().max(128).optional(),
+    runtime: NAME.optional(),
   })
   .strict();
 

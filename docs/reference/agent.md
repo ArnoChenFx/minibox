@@ -84,7 +84,7 @@ An agent runs only the operations listed here, against its own Docker engine. A 
 - **Networks:** ensure a bridge network, and reattach a container to one.
 - **Events:** follow the container logs and the Docker event stream.
 
-Create requests are checked against a strict schema. Bind mounts are refused, so volumes are named only. The host network is refused. Any option outside the schema is refused.
+Create requests are checked against a strict schema. Bind mounts are refused, so volumes are named only. The host network is refused. Added capabilities are limited to Docker's default set, so a container cannot be given `SYS_ADMIN`, `SYS_MODULE` or any other capability beyond it, and there is no privileged mode or device access. Any option outside the schema is refused.
 
 These operations are refused with an `unsupported` error and never run: commit a container, put or get an archive, stat a path, remove, save, load or build an image, run a helper container, and read disk usage.
 
