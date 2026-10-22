@@ -22,9 +22,9 @@ Every box runs as the user `dev`, user ID 1000. Inside a box, `sudo` works witho
 
 5. If MiniBox has more than one host, choose the **Host** where the box runs. See [Hosts](hosts.md).
 6. To change the security profile, open **Advanced** and choose a profile. The default is `standard`.
-7. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. See [Volumes and storage](volumes-and-storage.md).
-8. To set environment variables, open **Environment variables**. See [Environment variables and secrets](environment-and-secrets.md).
-9. To install agent CLIs or other tools with the box, tick them under **Tools**. See [Tools](tools.md).
+7. To install agent CLIs or other tools with the box, tick them under **Tools**. See [Tools](tools.md).
+8. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. See [Volumes and storage](volumes-and-storage.md).
+9. To set environment variables, open **Environment variables**. See [Environment variables and secrets](environment-and-secrets.md).
 10. Click **Create and start**.
 
 The box is listed with its status. Open it to see its details.

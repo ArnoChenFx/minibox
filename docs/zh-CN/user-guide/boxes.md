@@ -22,9 +22,9 @@ Box 是一个隔离的 Docker 容器，拥有独立的文件和进程。你的�
 
 5. 若 MiniBox 有多台宿主机，选择 Box 运行的**宿主机**。见 [宿主机](hosts.md)。
 6. 要更改安全档位，打开**高级**并选择档位。默认为 `standard`。
-7. 打开**卷：默认**，然后选择**默认**以挂载 workspace、home、cache 和 tools 卷，或选择**自定义**自行挑选卷。见 [卷与存储](volumes-and-storage.md)。
-8. 要设置环境变量，打开**环境变量**。见 [环境变量与密钥](environment-and-secrets.md)。
-9. 要在 Box 中安装 Agent CLI 或其他工具，在**工具**下勾选。见 [工具](tools.md)。
+7. 要在 Box 中安装 Agent CLI 或其他工具，在**工具**下勾选。见 [工具](tools.md)。
+8. 打开**卷：默认**，然后选择**默认**以挂载 workspace、home、cache 和 tools 卷，或选择**自定义**自行挑选卷。见 [卷与存储](volumes-and-storage.md)。
+9. 要设置环境变量，打开**环境变量**。见 [环境变量与密钥](environment-and-secrets.md)。
 10. 点击**创建并启动**。
 
 Box 会出现在列表中并显示状态。打开它可查看详情。
