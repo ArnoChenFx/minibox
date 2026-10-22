@@ -15,6 +15,7 @@
 - 事件通知（[#117](https://github.com/ArnoChenFx/minibox/issues/117)）：可以把事件发送到通用 Webhook（JSON POST，可选 HMAC-SHA256 签名）、ntfy 主题或 Telegram 聊天。在「设置 → 通知」中添加渠道，并用「发送测试」检查连通性。通知包括 Box 内存耗尽、命令失败、检查点失败（含定时检查点）、Box 的 TTL 或空闲休眠即将发生、终端会话被接管，以及宿主机离线。发送不阻塞触发它的操作：每次尝试 10 秒超时，最多 3 次，只重试超时、网络与 DNS 失败以及 HTTP 429 与 5xx；同一渠道 5 分钟内不重复发送同一通知；每次尝试都记入事件日志，并显示在「最近的发送记录」中。渠道密钥与 Webhook 地址保存在 `DATA_DIR/secrets/notify`：密钥不会返回，Webhook 地址只显示打码后的来源部分，二者都不会出现在事件、审计或日志中。默认拒绝非公网地址（`198.18.0.0/15` 除外，以兼容 Clash 等 fake-IP 模式的 DNS 代理），需设置 `NOTIFY_ALLOW_PRIVATE=true` 才能发送到内网。只有所有者可以管理渠道；REST、OpenAPI 与 MCP（`meta` 工具集）提供对应接口，命令行暂无通知命令。
 - Box 的 TTL 将在 5 分钟内结束，或因空闲将在 5 分钟内休眠时，记录 `box.ttl_soon` 与 `box.idle_soon` 事件。
 - 环境变量 `NOTIFY_ALLOW_PRIVATE`（默认 `false`），允许通知渠道发送到回环、私有网络及其他非公网地址。
+- 端口预览子域名隔离（[#122](https://github.com/ArnoChenFx/minibox/issues/122)）：设置 `PREVIEW_BASE_DOMAIN` 后，每个端口预览运行在 `<端口>-<box>.<base>` 上，拥有自己的源，无法读取控制台的 cookie、存储或 API。打开预览时控制台签发一次性、60 秒有效的票据，预览域名将其兑换为只对该预览有效的授权 cookie（`__Host-minibox_preview`，`HttpOnly; Secure; SameSite=Lax`，最长 8 小时）。登录结束、Box 重命名或删除后该预览不能再打开，重启 MiniBox 会使所有授权失效。写入与 WebSocket 只接受来自该预览自身的请求。预览域名之下只接受 `<端口>-<box>` 形式的主机名，其余返回 `404`。子域名模式下预览的沙箱允许同源，应用可以使用自己的 localStorage 与 cookie。设置页的「端口预览」卡片检查通配符 DNS、HTTPS 与域名划分。未设置时仍为默认的路径预览 `/box/<名称>/<端口>/`，其隔离依赖浏览器。见 [子域名预览](docs/zh-CN/admin/preview-subdomains.md)。
 
 ### 文档
 - 新增通知指南（`docs/user-guide/notifications.md`，并提供 `docs/zh-CN/` 中文版本），并在设置、配置、API、MCP、数据目录、备份与安全文档中补充通知相关内容。

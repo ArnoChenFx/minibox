@@ -69,6 +69,25 @@ Building a template, rebuilding one and pulling an image are for the owner only.
 - **Content Security Policy.** Scripts load only from MiniBox itself. Pages have no inline scripts, and MiniBox cannot be framed (`frame-ancestors 'none'`).
 - **HTTPS.** Requests that arrive over HTTPS get `Strict-Transport-Security` for one year.
 
+## Port previews
+
+A port preview shows a web app from a box in the browser. MiniBox serves previews in one of two modes.
+
+- **Path mode** is the default. It serves a preview at `/box/<name>/<port>/`, on the console's own address. Its isolation relies on browser behaviour, not on a separate origin. The preview runs in a sandbox without `allow-same-origin`, so it has an opaque origin, and the console's sign-in cookie is `HttpOnly` and `SameSite=Strict`, so browsers send no sign-in with the preview's requests to the console. This needs no DNS or certificate, and it suits one trusted user.
+- **Subdomain mode** serves each preview on its own origin, `<port>-<box>.<PREVIEW_BASE_DOMAIN>`, once `PREVIEW_BASE_DOMAIN` is set. It needs a wildcard DNS record and certificate. Choose it when the console is reachable from the internet, or when a box runs code you do not fully trust. While it is set, `/box/` addresses return `404`, so the weaker shared-origin preview is not offered beside it. See [Subdomain previews](preview-subdomains.md).
+
+In subdomain mode:
+
+- Opening a preview from the console mints a one-time ticket, valid for 60 seconds. The preview host spends the ticket and sets the grant cookie `__Host-minibox_preview`. The cookie is `HttpOnly`, `Secure` and `SameSite=Lax`, has no `Domain`, and so reaches only its own preview host. A grant opens one preview, for the box and port it was issued for, and it lasts up to 8 hours.
+- A grant is not the sign-in. The console's `minibox_session` cookie is never sent to a box. A grant stops opening its preview when its sign-in ends, when its box is renamed or deleted, and when MiniBox restarts, because grants are kept in memory and not written to `DATA_DIR`. A WebSocket closes when its sign-in or grant ends, and when its connection to the box ends, such as when the box stops or is deleted.
+- Only names that are `<port>-<box>.<PREVIEW_BASE_DOMAIN>` are served. The base domain itself and any other name under it get a `404`. Nothing under the base domain reaches the console.
+- A write or a WebSocket on a preview must come from that preview's own origin. Previews under one base domain are same-site with each other, so this check stops one box's page from changing another box's preview. A page can still send a `GET` to a sibling preview with that preview's grant cookie. Its response is readable only if the sibling allows it. So apps must not change state on `GET`.
+- A box receives only the cookies it set itself. A cookie the box sets in a response loses its `Domain` attribute, so it stays on that host. A script on the page can still set a cookie for the whole preview domain.
+- The preview sandbox keeps `allow-same-origin`, so the app can use its own storage and cookies. The app's origin is still its own, separate from the console's.
+- The preview self-check on **Settings** warns when the preview domain shares its last two labels with the console, and reports when a wildcard does not reach MiniBox.
+
+Keep the preview domain under your control. Point its wildcard record only at MiniBox.
+
 ## Network exposure
 
 - **Bind to `127.0.0.1`**, which is the default. Do not set `HOST=0.0.0.0` on a machine with a public address.

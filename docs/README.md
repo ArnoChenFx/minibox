@@ -35,6 +35,7 @@ For the person who installs and runs MiniBox.
 - [Install](admin/install.md): run the release image or run from source.
 - [Data directory](admin/data-directory.md): what MiniBox stores and where.
 - [Remote access and TLS](admin/remote-access.md): reach MiniBox from other machines.
+- [Subdomain previews](admin/preview-subdomains.md): give each port preview its own address, under a wildcard domain.
 - [Upgrades](admin/upgrades.md): move to a newer release.
 - [Backups](admin/backups.md): what to back up and how to restore it.
 - [Security](admin/security.md): the trust model and the security settings.

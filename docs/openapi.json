@@ -8482,7 +8482,7 @@
         "tags": [
           "ports"
         ],
-        "summary": "Remember a port for path-mode preview",
+        "summary": "Remember a port for preview",
         "parameters": [
           {
             "name": "id",

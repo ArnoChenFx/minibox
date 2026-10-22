@@ -22,10 +22,13 @@ export function mountPorts(root, { box }) {
           p.source === "manual"
             ? `<button class="btn btn-sm" data-action="port-remove" data-port="${p.port}">${t("bd.portsRemove")}</button>`
             : "";
+        const address = p.url.startsWith("/box/")
+          ? `<span class="mono">${esc(p.url)}</span>`
+          : esc(t("bd.portsOwnAddress"));
         return `<tr>
             <td class="mono">${p.port}</td>
             <td>${esc(source)}</td>
-            <td class="mono"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a></td>
+            <td><a href="${esc(p.url)}" target="_blank" rel="noopener">${address}</a></td>
             <td class="actions">
               <a class="btn btn-sm btn-primary" href="${esc(p.url)}" target="_blank" rel="noopener">${icon("externalLink")}${t("bd.portsOpen")}</a>
               ${remove}
@@ -47,7 +50,7 @@ export function mountPorts(root, { box }) {
           <button class="btn btn-sm" data-action="port-refresh">${icon("refresh")}${t("bd.portsRefresh")}</button>
           <button class="btn btn-sm btn-primary" data-action="port-add">${icon("plus")}${t("bd.portsAdd")}</button>
         </div></div>
-        <div class="card-body"><p class="help">${t("bd.portsHelp")}</p></div>
+        <div class="card-body"><p class="help">${esc(t("bd.portsHelp"))}</p></div>
         ${body}</div>`;
   };
   root.addEventListener("click", (event) => {
