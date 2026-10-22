@@ -27,13 +27,19 @@ export class ApiError extends Error {
   }
 }
 
-/** JSON fetch wrapper. Redirects to /login on 401. Throws ApiError with the server's `{error:{code,message}}`. */
+/**
+ * JSON fetch wrapper. Redirects to /login on 401. Throws ApiError with the server's `{error:{code,message}}`. A Blob
+ * body is sent as it is, as an octet stream, which is how a checkpoint package is uploaded.
+ */
 export async function api(path, { method = "GET", body, signal, headers } = {}) {
   let res;
   try {
     const init = { method, signal, credentials: "same-origin" };
     const hdrs = new Headers(headers);
-    if (body !== undefined) {
+    if (body instanceof Blob) {
+      if (!hdrs.has("content-type")) hdrs.set("content-type", "application/octet-stream");
+      init.body = body;
+    } else if (body !== undefined) {
       if (!hdrs.has("content-type")) hdrs.set("content-type", "application/json");
       init.body = JSON.stringify(body);
     }

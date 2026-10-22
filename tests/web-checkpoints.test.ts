@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { SKIP_REASONS } from "../src/checkpoints/schedule";
 import { ROOT } from "../src/config";
+import { checkpointPackageOperations } from "../src/operations/checkpoint-packages";
 import { checkpointOperations } from "../src/operations/checkpoints";
 import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
@@ -14,8 +16,11 @@ import {
   KINDS,
   kindsOf,
   newestFirst,
+  passphraseOk,
   REASON_KEYS,
   rowActions,
+  SKIP_REASON_KEYS,
+  scheduleBody,
   usedPercent,
 } from "../web/js/lib/checkpoint-state.js";
 
@@ -48,7 +53,7 @@ function row(overrides: Partial<CheckpointRow> = {}): CheckpointRow {
 describe("checkpoint rules", () => {
   test("an ordinary checkpoint with owned data allows every action", () => {
     const actions = Object.values(rowActions(row()));
-    expect(actions.map((action) => action.allowed)).toEqual([true, true, true, true]);
+    expect(actions.map((action) => action.allowed)).toEqual([true, true, true, true, true]);
   });
 
   test("a legacy snapshot is read-only: it can be forked or deleted, and nothing else", () => {
@@ -57,6 +62,7 @@ describe("checkpoint rules", () => {
     expect(actions.delete.allowed).toBe(true);
     expect(actions.rollback).toEqual({ allowed: false, reason: "ck.reasonLegacy" });
     expect(actions.pin).toEqual({ allowed: false, reason: "ck.reasonLegacy" });
+    expect(actions.export).toEqual({ allowed: false, reason: "ck.reasonLegacy" });
   });
 
   test("a checkpoint with no owned volume data cannot be rolled back", () => {
@@ -74,6 +80,16 @@ describe("checkpoint rules", () => {
       allowed: false,
       reason: "ck.reasonHeld",
     });
+  });
+
+  test("a checkpoint with volume data can be exported, even while a rollback waits, but one with none cannot", () => {
+    expect(rowActions(row(), { pending: true }).export.allowed).toBe(true);
+    expect(rowActions(row({ data: [] })).export).toEqual({ allowed: false, reason: "ck.reasonEmpty" });
+  });
+
+  test("a checkpoint with a system layer cannot be exported, because a package does not carry the image", () => {
+    const withSystem = row({ system: { image: "minibox-checkpoint:ck_x", imageId: "sha256:x" } });
+    expect(rowActions(withSystem).export).toEqual({ allowed: false, reason: "ck.reasonSystem" });
   });
 
   test("a pinned checkpoint cannot be deleted until it is unpinned, and can still be unpinned", () => {
@@ -126,6 +142,38 @@ describe("checkpoint rules", () => {
     expect(usedPercent({ bytes: 2, limitBytes: 3 })).toBe(67);
     expect(usedPercent({ bytes: 5, limitBytes: null })).toBeNull();
     expect(usedPercent({ bytes: 5, limitBytes: 0 })).toBeNull();
+  });
+});
+
+describe("passphrase and schedule rules", () => {
+  test("a passphrase is 12 to 1024 characters, counted as the server counts them, with no edge spaces or line breaks", () => {
+    expect(passphraseOk("x".repeat(11))).toBe(false);
+    expect(passphraseOk("x".repeat(12))).toBe(true);
+    expect(passphraseOk("x".repeat(1024))).toBe(true);
+    expect(passphraseOk("x".repeat(1025))).toBe(false);
+    expect(passphraseOk(` ${"x".repeat(12)}`)).toBe(false);
+    expect(passphraseOk(`${"x".repeat(12)}\n`)).toBe(false);
+    expect(passphraseOk("🔑".repeat(12))).toBe(true);
+    expect(passphraseOk("🔑".repeat(11))).toBe(false);
+  });
+
+  test("a schedule is a whole number of hours from 1 to 720, or a time of day, and nothing else", () => {
+    expect(scheduleBody("interval", { hours: "6" })).toEqual({ everyHours: 6 });
+    expect(scheduleBody("interval", { hours: 720 })).toEqual({ everyHours: 720 });
+    for (const hours of ["0", "721", "2.5", "", "abc"]) {
+      expect(scheduleBody("interval", { hours })).toBeNull();
+    }
+    expect(scheduleBody("daily", { at: "02:30" })).toEqual({ at: "02:30" });
+    for (const at of ["24:00", "2:30", "12:60", ""]) {
+      expect(scheduleBody("daily", { at })).toBeNull();
+    }
+  });
+
+  test("every reason a scheduled run can be skipped for is translated in both languages", () => {
+    expect(Object.keys(SKIP_REASON_KEYS).toSorted()).toEqual([...SKIP_REASONS].toSorted());
+    for (const key of Object.values(SKIP_REASON_KEYS)) {
+      expect([key, key in en && key in zh]).toEqual([key, true]);
+    }
   });
 });
 
@@ -301,6 +349,36 @@ const fixtures = {
   exceeded: usage(2000, 2000, "exceeded", 7),
   warning: usage(1800, 2000, "warning"),
   unlimited: usage(1024, null, "unlimited"),
+  schedule: {
+    version: 1,
+    hostId: "host_1",
+    boxId: "bx_alpha",
+    mode: "interval",
+    everyHours: 6,
+    at: null,
+    createdBy: "owner",
+    createdAt: at(0),
+    updatedAt: at(0),
+    nextRunAt: at(60),
+    lastRun: { at: at(0), status: "skipped", reason: "sleeping", checkpointId: null, error: null },
+  },
+  dailySchedule: {
+    version: 1,
+    hostId: "host_1",
+    boxId: "bx_alpha",
+    mode: "daily",
+    everyHours: null,
+    at: "02:30",
+    createdBy: "owner",
+    createdAt: at(0),
+    updatedAt: at(0),
+    nextRunAt: at(90),
+    lastRun: { at: at(0), status: "failed", reason: null, checkpointId: null, error: "<b>boom</b>" },
+  },
+  hosts: [
+    { id: "local", name: "Local" },
+    { id: "host_b", name: "Host B" },
+  ],
 };
 
 const markup = runConsole<Markup>(
@@ -321,6 +399,14 @@ const markup = runConsole<Markup>(
     unlimited: component.usageHtml(fixtures.unlimited),
     pending: component.pendingHtml(fixtures.pendingRollback),
     take: component.takeFormHtml(fixtures.box),
+    exportForm: component.exportFormHtml(),
+    importMulti: component.importFormHtml({ hosts: fixtures.hosts, host: "host_b" }),
+    importSingle: component.importFormHtml({ hosts: [], host: "local" }),
+    scheduleForm: component.scheduleFormHtml(null),
+    scheduleOff: component.scheduleHtml(null),
+    scheduleOn: component.scheduleHtml(fixtures.schedule),
+    scheduleDaily: component.scheduleHtml(fixtures.dailySchedule),
+    cardScheduled: component.checkpointCardHtml({ rows: [], pending: null, usage: null, schedule: fixtures.schedule }),
   };`,
 );
 
@@ -472,6 +558,73 @@ describe("repository usage and the take form", () => {
   });
 });
 
+describe("export and import controls", () => {
+  test("an ordinary checkpoint offers export, and a legacy snapshot shows why it cannot be exported", () => {
+    expect(isDisabled(buttonFor(markup.manual ?? "", "ck-export", "ck_manual"))).toBe(false);
+    const legacyExport = buttonFor(markup.legacy ?? "", "ck-export", "img_1");
+    expect(isDisabled(legacyExport)).toBe(true);
+    expect(titleOf(legacyExport)).toBe(escaped(en["ck.reasonLegacy"] ?? ""));
+  });
+
+  test("the passphrase fields are password fields, and the export asks for the passphrase twice", () => {
+    const html = markup.exportForm ?? "";
+    expect(html.match(/type="password"/g)?.length).toBe(2);
+    expect(html).toContain(escaped(en["ck.passphraseHelp"] ?? ""));
+    expect(html).toContain(escaped(en["ck.exportHow"] ?? ""));
+  });
+
+  test("the card offers import beside create, and the file input takes only packages", () => {
+    expect(markup.card).toContain('data-action="ck-import"');
+    expect(markup.card).toContain('data-action="ck-take"');
+    expect(markup.importMulti).toContain('accept=".mbckpt"');
+  });
+
+  test("the host of an import is chosen only where there is more than one host, and defaults to the host given", () => {
+    expect(markup.importMulti).toContain('id="ckImportHost"');
+    expect(markup.importMulti).toContain('<option value="host_b" selected>Host B</option>');
+    expect(markup.importSingle).not.toContain("ckImportHost");
+  });
+
+  test("the card hides the schedule line when the schedule could not be read", () => {
+    expect(markup.empty).not.toContain("ck-schedule");
+    expect(markup.cardScheduled).toContain('data-action="ck-schedule-off"');
+  });
+});
+
+describe("checkpoint schedule", () => {
+  test("a box with no schedule says it is off, and offers to set one", () => {
+    const html = markup.scheduleOff ?? "";
+    expect(html).toContain(escaped(en["ck.scheduleOff"] ?? ""));
+    expect(html).toContain('data-action="ck-schedule"');
+    expect(html).not.toContain("ck-schedule-off");
+  });
+
+  test("an every-N-hours schedule names its rule, its next and last run, and can be changed or turned off", () => {
+    const html = markup.scheduleOn ?? "";
+    expect(html).toContain("Every 6 hours");
+    expect(html).toContain(`${escaped(en["ck.lastRun"] ?? "")}: `);
+    expect(html).toContain(escaped(en["ck.skip.sleeping"] ?? ""));
+    expect(html).toContain('data-action="ck-schedule"');
+    expect(html).toContain('data-action="ck-schedule-off"');
+  });
+
+  test("a daily schedule names its time, and a failed run shows its error escaped", () => {
+    const html = markup.scheduleDaily ?? "";
+    expect(html).toContain("Every day at 02:30");
+    expect(html).toContain("&lt;b&gt;boom&lt;/b&gt;");
+    expect(html).not.toContain("<b>boom</b>");
+  });
+
+  test("the form offers both ways of setting a rule, and shows the hours field first", () => {
+    const html = markup.scheduleForm ?? "";
+    expect(html).toContain('data-mode="interval" aria-pressed="true"');
+    expect(html).toContain('data-mode="daily" aria-pressed="false"');
+    expect(html).toContain('data-field="interval"');
+    expect(html).toContain('type="time"');
+    expect(html).toMatch(/<div class="field hidden" data-field="daily">/);
+  });
+});
+
 describe("the Chinese console", () => {
   test("renders the same rules in Chinese", () => {
     const rendered = runConsole<Markup>(
@@ -491,6 +644,7 @@ describe("the Chinese console", () => {
 const LIST = "/api/checkpoints";
 const ROLLBACK = "/api/boxes/bx_alpha/rollback";
 const USAGE = "/api/checkpoints/usage";
+const SCHEDULE = "/api/boxes/bx_alpha/checkpoint-schedule";
 const ok = (body: unknown) => ({ status: 200, body });
 const failure = (status: number, code: string) => ({ status, body: { error: { code, message: code } } });
 
@@ -501,6 +655,7 @@ describe("checkpoints of one box", () => {
     clicked: string[];
     denied: string;
     failed: string;
+    scheduled: string;
   }>(
     "en",
     {
@@ -515,6 +670,12 @@ describe("checkpoints of one box", () => {
           [LIST]: ok({ checkpoints: [older, other, newer, safety] }),
           [ROLLBACK]: ok({ rollback: pendingRollback }),
           [USAGE]: ok(usage(1800, 2000, "warning")),
+        },
+        scheduled: {
+          [LIST]: ok({ checkpoints: [older, newer] }),
+          [ROLLBACK]: ok({ rollback: null }),
+          [USAGE]: ok(usage(1800, 2000, "warning")),
+          [SCHEDULE]: ok({ schedule: fixtures.schedule }),
         },
         usageDenied: {
           [LIST]: ok({ checkpoints: [older, newer] }),
@@ -557,7 +718,16 @@ describe("checkpoints of one box", () => {
     denied.dispose();
     const failed = await mount("listFails");
     failed.dispose();
-    return { normal: normal.html, pending: pending.html, clicked, denied: denied.html, failed: failed.html };`,
+    const scheduled = await mount("scheduled");
+    scheduled.dispose();
+    return {
+      normal: normal.html,
+      pending: pending.html,
+      clicked,
+      denied: denied.html,
+      failed: failed.html,
+      scheduled: scheduled.html,
+    };`,
   );
 
   test("the tab lists only this box's checkpoints, newest first, with the repository line", () => {
@@ -591,6 +761,12 @@ describe("checkpoints of one box", () => {
   test("a failed list read says so", () => {
     expect(mounted.failed).toContain(escaped(en["ck.loadFailed"] ?? ""));
   });
+
+  test("a box with a schedule shows its next and last run, and the schedule line is absent without a read", () => {
+    expect(mounted.scheduled).toContain('data-action="ck-schedule-off"');
+    expect(mounted.scheduled).toContain(escaped(en["ck.skip.sleeping"] ?? ""));
+    expect(mounted.normal).not.toContain("ck-schedule");
+  });
 });
 
 function quotedKeys(path: string): string[] {
@@ -603,6 +779,7 @@ describe("checkpoint translations", () => {
     ...HOLD_MODES.flatMap((mode) => [`ck.hold.${mode}`, `ck.holdHint.${mode}`]),
     ...KINDS.map((kind) => `ck.kind.${kind}`),
     ...REASON_KEYS,
+    ...Object.values(SKIP_REASON_KEYS),
     ...statuses.map((status) => `task.status.${status}`),
     "vol.roleWorkspace",
     "vol.roleHome",
@@ -613,8 +790,9 @@ describe("checkpoint translations", () => {
   });
 
   test("every async checkpoint operation has a task label in both languages", () => {
-    const keys = checkpointOperations.filter((op) => op.async).map((op) => `task.op.${op.name}`);
-    expect(keys.length).toBeGreaterThan(0);
+    const operations = [...checkpointOperations, ...checkpointPackageOperations];
+    const keys = operations.filter((op) => op.async).map((op) => `task.op.${op.name}`);
+    expect(keys).toEqual(expect.arrayContaining(["task.op.checkpoint.export", "task.op.checkpoint.import"]));
     expect(keys.filter((key) => !(key in en) || !(key in zh))).toEqual([]);
   });
 
