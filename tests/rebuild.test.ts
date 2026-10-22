@@ -614,6 +614,7 @@ describe("rebuild over HTTP", () => {
 
   test("an env value is not stored on the audit event", async () => {
     const box = await newBox("alpha");
+    host.secrets.set("vault", "supersecret-value", new Date().toISOString());
     const before = app.events.head();
     await app.operations.run(
       "box.rebuild",
@@ -628,13 +629,17 @@ describe("rebuild over HTTP", () => {
         id: box.id,
         confirm: true,
         expectedRevision: "1",
-        env: [{ name: "TOKEN", value: "supersecret", secretRef: "vault" }],
+        env: [
+          { name: "TOKEN", secretRef: "vault" },
+          { name: "PLAIN", value: "plainvalue-xyz" },
+        ],
       },
     );
     const [event] = app.events.after(before, {}, 10);
-    expect(event?.detail).toMatchObject({ env: ["TOKEN"], confirm: true });
-    expect(JSON.stringify(event)).not.toContain("supersecret");
+    expect(event?.detail).toMatchObject({ env: ["TOKEN", "PLAIN"], confirm: true });
+    expect(JSON.stringify(event)).not.toContain("supersecret-value");
     expect(JSON.stringify(event)).not.toContain("vault");
+    expect(JSON.stringify(event)).not.toContain("plainvalue-xyz");
   });
 });
 

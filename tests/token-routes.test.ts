@@ -22,11 +22,13 @@ const SUBJECTS: readonly { name: string; input: TokenCreateInput }[] = [
 /** The owner-only routes, written out. A new route that no token may reach must be added here on purpose. */
 const OWNER_ONLY_ROUTES = [
   "DELETE /api/auth/sessions/:id",
+  "DELETE /api/secrets/:id",
   "DELETE /api/tokens/:id",
   "GET /api/activity",
   "GET /api/auth/sessions",
   "GET /api/host/metrics",
   "GET /api/pools",
+  "GET /api/secrets",
   "GET /api/system",
   "GET /api/tokens",
   "POST /api/auth/sessions/revoke-others",
@@ -34,6 +36,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/tasks/:id/cancel",
   "POST /api/tokens",
   "PUT /api/pools",
+  "PUT /api/secrets/:id",
 ];
 
 /** The path a route was compiled from, read back from its pattern: `/api/boxes/:id`. */
@@ -170,6 +173,9 @@ describe("fail-closed authorization", () => {
     expect(ownerOperations).toEqual([
       "pool.list",
       "pool.replace",
+      "secret.delete",
+      "secret.list",
+      "secret.set",
       "task.cancel",
       "template.build",
       "token.create",

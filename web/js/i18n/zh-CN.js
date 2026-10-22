@@ -88,7 +88,16 @@ export default {
   "err.box_update_empty":
     "请至少提供 name、cpus、memoryMb、pids、labels、idleTimeoutSec、ttlSec、template、mounts、env、network 或 profile 其中一项。",
   "err.mount_invalid": "每个挂载都需要卷名、绝对路径，以及 rw 或 ro 模式。最多 {max} 个挂载，且路径不能重复。",
-  "err.env_invalid": "每个环境变量都需要名称，以及值或 secretRef。最多 {max} 项，且名称不能重复。",
+  "err.env_invalid":
+    "每个环境变量都需要名称，以及值或 secretRef 二者之一，不能同时提供。最多 {max} 项，且名称不能重复。",
+  "err.env_secret_missing": "环境变量 {env} 引用的密钥 {name} 尚未设置。",
+  "err.env_secret_missing_hint": "请先在设置的「密钥」中设置该密钥，或删除这个环境变量，然后重试。",
+  "err.secret_name_invalid": "密钥名称以字母或数字开头，只能包含字母、数字、点、下划线和连字符，且最多 128 个字符。",
+  "err.secret_value_invalid": "密钥值长度须为 1 到 {max} 个字符，且不能包含换行或制表符等控制字符。",
+  "err.secret_not_found": "未找到密钥 {name}。",
+  "err.secret_in_use":
+    "密钥 {name} 正被 {boxes} 使用。在重新设置该密钥之前，这些 Box 无法重建或启动。发送 force 参数即可仍然删除。",
+  "err.secret_reference_forbidden": "此令牌不能把密钥放入 Box。请授予 secret:use 范围，或使用 admin 预设。",
   "err.network_invalid": "网络名必须以字母或数字开头，且只能包含字母、数字、点、下划线和连字符。",
   "err.rebuild_empty": "这次请求没有改变模板、挂载、环境变量、网络或安全档位。",
   "err.rebuild_confirm_required":

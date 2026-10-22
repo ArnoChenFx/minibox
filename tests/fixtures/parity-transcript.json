@@ -1654,5 +1654,61 @@
     "status": 404,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Checkpoint ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"checkpoint_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "list secrets with none",
+    "method": "GET",
+    "path": "/api/secrets",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secrets\":[]}"
+  },
+  {
+    "step": "set a secret",
+    "method": "PUT",
+    "path": "/api/secrets/vault",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secret\":{\"name\":\"vault\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"boxes\":[]},\"created\":true}"
+  },
+  {
+    "step": "set a secret with an empty value",
+    "method": "PUT",
+    "path": "/api/secrets/vault",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A secret value is between 1 and 8192 characters and holds no control characters, such as line breaks or tabs.\",\"retryable\":false,\"key\":\"secret_value_invalid\",\"params\":{\"max\":8192},\"details\":{\"field\":\"value\"}}}"
+  },
+  {
+    "step": "set a secret with a bad name",
+    "method": "PUT",
+    "path": "/api/secrets/-bad",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A secret name starts with a letter or digit, holds only letters, digits, dots, underscores and hyphens, and is at most 128 characters.\",\"retryable\":false,\"key\":\"secret_name_invalid\",\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "list secrets",
+    "method": "GET",
+    "path": "/api/secrets",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secrets\":[{\"name\":\"vault\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"boxes\":[]}]}"
+  },
+  {
+    "step": "delete a secret no box uses",
+    "method": "DELETE",
+    "path": "/api/secrets/vault",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"vault\",\"boxes\":[]}"
+  },
+  {
+    "step": "delete a missing secret",
+    "method": "DELETE",
+    "path": "/api/secrets/vault",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Secret vault was not found.\",\"retryable\":false,\"key\":\"secret_not_found\",\"params\":{\"name\":\"vault\"}}}"
   }
 ]

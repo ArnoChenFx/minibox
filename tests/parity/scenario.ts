@@ -598,6 +598,13 @@ async function recordScenario(): Promise<Exchange[]> {
     });
     await waitTask(base, (await send("delete the checkpoint", "DELETE", `/api/checkpoints/${ckId}`)).json);
     await send("read the deleted checkpoint", "GET", `/api/checkpoints/${ckId}`);
+    await send("list secrets with none", "GET", "/api/secrets");
+    await raw("set a secret", "PUT", "/api/secrets/vault", JSON.stringify({ value: "parity-value" }));
+    await raw("set a secret with an empty value", "PUT", "/api/secrets/vault", JSON.stringify({ value: "" }));
+    await raw("set a secret with a bad name", "PUT", "/api/secrets/-bad", JSON.stringify({ value: "x" }));
+    await send("list secrets", "GET", "/api/secrets");
+    await send("delete a secret no box uses", "DELETE", "/api/secrets/vault");
+    await send("delete a missing secret", "DELETE", "/api/secrets/vault");
   } finally {
     server.stop(true);
     app.throttle.stop();

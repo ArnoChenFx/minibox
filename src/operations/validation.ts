@@ -11,6 +11,7 @@ import {
   checkName,
   DESCRIPTION_MAX,
   type Failure,
+  IDENT_RE,
   LIMITS,
   NAME_RE,
   reject,
@@ -393,8 +394,8 @@ export const userLabels = () =>
 
 const MOUNT_MAX = 16;
 const ENV_MAX = 64;
-const ENV_VALUE_MAX = 8192;
-const IDENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+/** Also the longest secret value: a secret is injected through the same env entry a plain value would be. */
+export const ENV_VALUE_MAX = 8192;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
 function checkMounts(value: unknown): Checked<BoxMount[] | undefined> {
@@ -430,34 +431,101 @@ function checkMounts(value: unknown): Checked<BoxMount[] | undefined> {
 
 function checkEnv(value: unknown): Checked<BoxEnv[] | undefined> {
   if (value === undefined) return accept(undefined);
-  if (!Array.isArray(value) || value.length > ENV_MAX) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+  const invalid = () => reject(msg("env_invalid", { max: ENV_MAX }), "env");
+  if (!Array.isArray(value) || value.length > ENV_MAX) return invalid();
   const env: BoxEnv[] = [];
   const names = new Set<string>();
   for (const item of value) {
-    if (typeof item !== "object" || item === null) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    if (typeof item !== "object" || item === null) return invalid();
     const entry = item as Partial<BoxEnv>;
-    if (typeof entry.name !== "string" || !ENV_NAME_RE.test(entry.name) || names.has(entry.name)) {
-      return reject(msg("env_invalid", { max: ENV_MAX }), "env");
-    }
-    const value = entry.value;
-    const secretRef = entry.secretRef;
-    const hasValue = typeof value === "string";
-    const hasRef = typeof secretRef === "string";
-    if (hasValue && (value.length > ENV_VALUE_MAX || /\p{Cc}/u.test(value))) {
-      return reject(msg("env_invalid", { max: ENV_MAX }), "env");
-    }
-    if (hasRef && !IDENT_RE.test(secretRef)) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
-    if (!hasValue && !hasRef) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
-    if (entry.value !== undefined && !hasValue) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
-    if (entry.secretRef !== undefined && !hasRef) return reject(msg("env_invalid", { max: ENV_MAX }), "env");
+    if (typeof entry.name !== "string" || !ENV_NAME_RE.test(entry.name) || names.has(entry.name)) return invalid();
+    if ((entry.value === undefined) === (entry.secretRef === undefined)) return invalid();
     const next: BoxEnv = { name: entry.name };
-    if (hasValue) next.value = value;
-    if (hasRef) next.secretRef = secretRef;
+    if (entry.value !== undefined) {
+      if (typeof entry.value !== "string" || entry.value.length > ENV_VALUE_MAX || /\p{Cc}/u.test(entry.value)) {
+        return invalid();
+      }
+      next.value = entry.value;
+    } else {
+      if (typeof entry.secretRef !== "string" || !IDENT_RE.test(entry.secretRef)) return invalid();
+      next.secretRef = entry.secretRef;
+    }
     names.add(entry.name);
     env.push(next);
   }
   return accept(env);
 }
+
+const ENV_ITEM_META: Meta = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    name: { type: "string", pattern: ENV_NAME_RE.source, maxLength: 128 },
+    value: { type: "string", maxLength: ENV_VALUE_MAX },
+    secretRef: { type: "string", pattern: IDENT_RE.source, maxLength: 128 },
+  },
+};
+
+const ENV_HELP_CREATE =
+  "Environment variables of the new box. Each entry is { name, value } for a plain value or { name, secretRef } for a secret set with secret.set. Give one or the other. A secret's value goes into the container when it is created and is never returned. A secret that is not set is refused with 400.";
+const ENV_HELP_CHANGE =
+  "Environment entries that replace the box's env list. Each entry is { name, value } for a plain value or { name, secretRef } for a secret set with secret.set. Give one or the other. Omitted, the current env stays. A secret's value goes into the new container when the box is rebuilt, so a changed secret takes effect on the next rebuild. A secret that is not set is refused with 400. Values are not written to container labels.";
+
+/** The env list of a create (`create`) or of a rebuild or update (`change`). Both check each entry the same way. */
+export const boxEnv = (mode: "create" | "change") =>
+  field(checkEnv, {
+    type: "array",
+    maxItems: ENV_MAX,
+    items: ENV_ITEM_META,
+    description: mode === "create" ? ENV_HELP_CREATE : ENV_HELP_CHANGE,
+  }).optional();
+
+const SECRET_NAME_META: Meta = {
+  type: "string",
+  minLength: 1,
+  maxLength: 128,
+  pattern: IDENT_RE.source,
+  description: "Secret name: letters, digits, dots, underscores and hyphens, starting with a letter or digit.",
+};
+
+function checkSecretName(value: unknown): Checked<string> {
+  if (typeof value !== "string" || !IDENT_RE.test(value)) return reject(msg("secret_name_invalid"), "name");
+  return accept(value);
+}
+
+export const secretName = () => field(checkSecretName, SECRET_NAME_META);
+
+function checkSecretValue(value: unknown): Checked<string> {
+  if (typeof value !== "string" || value.length === 0 || value.length > ENV_VALUE_MAX || /\p{Cc}/u.test(value)) {
+    return reject(msg("secret_value_invalid", { max: ENV_VALUE_MAX }), "value");
+  }
+  return accept(value);
+}
+
+export const secretValue = () =>
+  field(checkSecretValue, {
+    type: "string",
+    minLength: 1,
+    maxLength: ENV_VALUE_MAX,
+    description:
+      "The value to store. It is written to the secret store and is never returned. A box that uses the secret gets the new value when it is next rebuilt.",
+  });
+
+function checkForce(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null || value === "") return accept(false);
+  if (value === true || value === "true" || value === "1") return accept(true);
+  if (value === false || value === "false" || value === "0") return accept(false);
+  return reject(msg("not_boolean", { field: "force" }), "force");
+}
+
+export const forceFlag = () =>
+  field(checkForce, {
+    type: "boolean",
+    description: withDefault(
+      "Delete the secret even when boxes still refer to it. Those boxes cannot be rebuilt or started until the secret is set again.",
+      false,
+    ),
+  }).default(false);
 
 function checkNetwork(value: unknown): Checked<string | undefined> {
   if (value === undefined || value === null || value === "") return accept(undefined);
@@ -480,13 +548,7 @@ export const rebuildMounts = () =>
       "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A recorded volume can be mounted by several boxes unless another box owns it. A new or changed mount needs volume:attach on its volume, and a read-write one also needs volume:write. A name that does not exist yet creates a standalone volume, which needs volume:write. Refused: minibox-data, volumes without the MiniBox label, internal helper volumes, pool roots, volumes another box owns, and names that start with the label prefix followed by -ws- or -pool-.",
   }).optional();
 
-export const rebuildEnv = () =>
-  field(checkEnv, {
-    type: "array",
-    maxItems: ENV_MAX,
-    description:
-      "Environment entries that replace the box's env list. Each entry is { name, value? , secretRef? } and needs a value or a secretRef. secretRef is stored and not injected yet. Omitted, the current env stays. Values are not written to container labels.",
-  }).optional();
+export const rebuildEnv = () => boxEnv("change");
 
 export const rebuildNetwork = () =>
   field(checkNetwork, {
