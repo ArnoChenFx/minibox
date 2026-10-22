@@ -26312,9 +26312,10 @@
                               "local",
                               "unix",
                               "tcp",
-                              "ssh"
+                              "ssh",
+                              "agent"
                             ],
-                            "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, and ssh tunnels to the socket."
+                            "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, ssh tunnels to the socket, and agent is a MiniBox agent that dials in."
                           },
                           "endpoint": {
                             "type": "string",
@@ -26390,6 +26391,49 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "agent": {
+                            "description": "The agent connection. Present on an agent host only.",
+                            "type": "object",
+                            "properties": {
+                              "connected": {
+                                "type": "boolean",
+                                "description": "Whether the agent is connected to this control plane now."
+                              },
+                              "version": {
+                                "type": "string",
+                                "description": "The agent's version, as it last said hello."
+                              },
+                              "protocol": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "description": "The agent protocol the agent speaks."
+                              },
+                              "lastSeenAt": {
+                                "description": "When the agent last sent a frame, as ISO time.",
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "upgradeRequired": {
+                                "type": "boolean",
+                                "description": "The agent speaks another protocol than this control plane, so it is refused until it is upgraded."
+                              },
+                              "revoked": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "connected",
+                              "version",
+                              "protocol",
+                              "lastSeenAt",
+                              "upgradeRequired",
+                              "revoked"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -26584,9 +26628,10 @@
                             "local",
                             "unix",
                             "tcp",
-                            "ssh"
+                            "ssh",
+                            "agent"
                           ],
-                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, and ssh tunnels to the socket."
+                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, ssh tunnels to the socket, and agent is a MiniBox agent that dials in."
                         },
                         "endpoint": {
                           "type": "string",
@@ -26662,6 +26707,49 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "agent": {
+                          "description": "The agent connection. Present on an agent host only.",
+                          "type": "object",
+                          "properties": {
+                            "connected": {
+                              "type": "boolean",
+                              "description": "Whether the agent is connected to this control plane now."
+                            },
+                            "version": {
+                              "type": "string",
+                              "description": "The agent's version, as it last said hello."
+                            },
+                            "protocol": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "The agent protocol the agent speaks."
+                            },
+                            "lastSeenAt": {
+                              "description": "When the agent last sent a frame, as ISO time.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "upgradeRequired": {
+                              "type": "boolean",
+                              "description": "The agent speaks another protocol than this control plane, so it is refused until it is upgraded."
+                            },
+                            "revoked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "connected",
+                            "version",
+                            "protocol",
+                            "lastSeenAt",
+                            "upgradeRequired",
+                            "revoked"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -27323,9 +27411,10 @@
                             "local",
                             "unix",
                             "tcp",
-                            "ssh"
+                            "ssh",
+                            "agent"
                           ],
-                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, and ssh tunnels to the socket."
+                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, ssh tunnels to the socket, and agent is a MiniBox agent that dials in."
                         },
                         "endpoint": {
                           "type": "string",
@@ -27401,6 +27490,49 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "agent": {
+                          "description": "The agent connection. Present on an agent host only.",
+                          "type": "object",
+                          "properties": {
+                            "connected": {
+                              "type": "boolean",
+                              "description": "Whether the agent is connected to this control plane now."
+                            },
+                            "version": {
+                              "type": "string",
+                              "description": "The agent's version, as it last said hello."
+                            },
+                            "protocol": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "The agent protocol the agent speaks."
+                            },
+                            "lastSeenAt": {
+                              "description": "When the agent last sent a frame, as ISO time.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "upgradeRequired": {
+                              "type": "boolean",
+                              "description": "The agent speaks another protocol than this control plane, so it is refused until it is upgraded."
+                            },
+                            "revoked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "connected",
+                            "version",
+                            "protocol",
+                            "lastSeenAt",
+                            "upgradeRequired",
+                            "revoked"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -27526,6 +27658,463 @@
           "name": "remove_host",
           "toolset": "meta"
         }
+      }
+    },
+    "/api/hosts/pairing": {
+      "post": {
+        "operationId": "host.pairing.create",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Create a pairing code for an agent host",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "description": "Host id the agent joins as: lowercase letters, digits and hyphens. Same rules as host.add."
+                  },
+                  "name": {
+                    "description": "Name shown in the UI. Defaults to the id.",
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "One-time code the agent pairs with. It works once and expires."
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "description": "When the code stops working, as ISO time."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "code",
+                    "expiresAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "host:manage",
+        "x-async": false
+      }
+    },
+    "/api/hosts/{id}/revoke": {
+      "post": {
+        "operationId": "host.revoke",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Revoke an agent host",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "Id of an agent host. Other hosts are refused."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Host id, such as local or lab. A box names its host in box.host."
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "transport": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "unix",
+                            "tcp",
+                            "ssh",
+                            "agent"
+                          ],
+                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, ssh tunnels to the socket, and agent is a MiniBox agent that dials in."
+                        },
+                        "endpoint": {
+                          "type": "string",
+                          "description": "The endpoint, without any credential."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "online",
+                            "offline",
+                            "unknown"
+                          ]
+                        },
+                        "latencyMs": {
+                          "description": "Round trip of the last successful ping, in milliseconds.",
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "capacity": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "cpus": {
+                                  "description": "CPUs boxes on this host may take. Null when the engine does not say.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "memoryBytes": {
+                                  "description": "Memory boxes on this host may take, in bytes.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "cpus",
+                                "memoryBytes"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "dockerVersion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error": {
+                          "description": "The last failed check, as text. Null once a check succeeds.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "boxes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Boxes whose spec names this host."
+                        },
+                        "createdAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agent": {
+                          "description": "The agent connection. Present on an agent host only.",
+                          "type": "object",
+                          "properties": {
+                            "connected": {
+                              "type": "boolean",
+                              "description": "Whether the agent is connected to this control plane now."
+                            },
+                            "version": {
+                              "type": "string",
+                              "description": "The agent's version, as it last said hello."
+                            },
+                            "protocol": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "The agent protocol the agent speaks."
+                            },
+                            "lastSeenAt": {
+                              "description": "When the agent last sent a frame, as ISO time.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "upgradeRequired": {
+                              "type": "boolean",
+                              "description": "The agent speaks another protocol than this control plane, so it is refused until it is upgraded."
+                            },
+                            "revoked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "connected",
+                            "version",
+                            "protocol",
+                            "lastSeenAt",
+                            "upgradeRequired",
+                            "revoked"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "endpoint",
+                        "status",
+                        "latencyMs",
+                        "capacity",
+                        "dockerVersion",
+                        "error",
+                        "boxes",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "host"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "host:manage",
+        "x-async": false
       }
     }
   },

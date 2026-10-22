@@ -86,6 +86,8 @@ function fromRuntimeError(e: RuntimeError): AppError {
       return new AppError(503, "docker_unavailable", msg("docker_unavailable"));
     case "engine":
       return new AppError(502, "docker_error", msg("docker_error", { detail: e.detail }));
+    case "unsupported":
+      return new AppError(501, "unsupported", msg("runtime_unsupported", { detail: e.detail }));
   }
 }
 

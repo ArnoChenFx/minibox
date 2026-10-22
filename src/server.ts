@@ -1,5 +1,6 @@
 import type { Server } from "bun";
 
+import { AGENT_CONNECT_PATH } from "./agent/protocol";
 import { type App, createApp } from "./app";
 import {
   type Caller,
@@ -34,6 +35,7 @@ import { serveFile } from "./static";
 import { isSessionName } from "./tmux/format";
 import { boxVisible, scopeAllowed, viewOfBox } from "./tokens/model";
 import { resolveVersion } from "./version";
+import type { AgentSocketData } from "./ws/agent";
 import { type SocketData, socketHandlers } from "./ws/socket";
 import type { SshSocketData } from "./ws/ssh";
 import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData } from "./ws/terminal";
@@ -139,6 +141,7 @@ export function startServer(app: App): Server<SocketData> {
     terminals: app.terminals,
     pulse: app.pulse,
     ssh: app.ssh,
+    agents: app.agents,
   });
   const warnIgnoredProxyHeaders = proxyHeaderWarner(app.cfg.trustProxy, (headers) =>
     log.warn("proxy.headers_ignored", { headers, hint: PROXY_HINT }),
@@ -163,6 +166,14 @@ export function startServer(app: App): Server<SocketData> {
       try {
         guardRequest(req, app.cfg);
         assertBodyAllowed(req, url.pathname);
+        if (url.pathname === AGENT_CONNECT_PATH) {
+          if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+            throw badRequest(msg("ws_upgrade_failed"));
+          }
+          const data: AgentSocketData = { kind: "agent" };
+          if (server.upgrade(req, { data })) return undefined;
+          throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
+        }
         const tm = TERMINAL_PATH.exec(url.pathname);
         if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           const caller = await callerOf(app, req, server);
@@ -340,6 +351,7 @@ async function boot(): Promise<void> {
     log.info("server.stopping", { signal });
     app.monitor.stop();
     app.hostAdmin.close();
+    app.agents.close();
     for (const host of app.hosts.list()) host.sampler.stop();
     app.retention.stop();
     app.checkpointSweep.stop();

@@ -327,7 +327,7 @@ export type EngineTarget =
   | { readonly socketPath: string }
   | { readonly host: string; readonly port: number; readonly ca: string; readonly cert: string; readonly key: string };
 
-export type RuntimeErrorKind = "not_found" | "conflict" | "invalid" | "unavailable" | "engine";
+export type RuntimeErrorKind = "not_found" | "conflict" | "invalid" | "unavailable" | "engine" | "unsupported";
 
 /**
  * The only error type business code receives from a Runtime for engine failures. `kind` selects the HTTP response

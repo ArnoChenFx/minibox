@@ -11,7 +11,9 @@ export type Endpoint =
       readonly hostname: string;
       readonly port: number;
       readonly socketPath: string;
-    };
+    }
+  /** An agent that dials in. The agent id names its record; no address is involved. */
+  | { readonly kind: "agent"; readonly agentId: string };
 
 export const DEFAULT_TLS_PORT = 2376;
 export const DEFAULT_SSH_PORT = 22;
@@ -22,6 +24,8 @@ const USER_RE = /^[A-Za-z_][A-Za-z0-9._-]{0,31}$/;
 const HOSTNAME_RE = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,252}[A-Za-z0-9])?$/;
 const IPV6_RE = /^[0-9A-Fa-f:.]+$/;
 const MAX_SOCKET_PATH = 255;
+/** An agent id is 16 random bytes in hex. */
+export const AGENT_ID_RE = /^[0-9a-f]{32}$/;
 
 /** The reason an endpoint string is refused. The message is shown to the caller as is. */
 export class EndpointError extends Error {
@@ -47,6 +51,8 @@ export function parseEndpoint(raw: string): Endpoint {
       return tcpEndpoint(url);
     case "ssh:":
       return sshEndpoint(url);
+    case "agent:":
+      return agentEndpoint(url);
     default:
       throw new EndpointError("the scheme must be unix://, tcp:// or ssh://");
   }
@@ -61,7 +67,17 @@ export function endpointLabel(endpoint: Endpoint): string {
       return `tcp://${bracketed(endpoint.hostname)}:${endpoint.port}`;
     case "ssh":
       return `ssh://${endpoint.user}@${bracketed(endpoint.hostname)}:${endpoint.port}${endpoint.socketPath}`;
+    case "agent":
+      return `agent://${endpoint.agentId}`;
   }
+}
+
+function agentEndpoint(url: URL): Endpoint {
+  if (url.username !== "" || url.port !== "" || url.pathname !== "" || url.host === "") {
+    throw new EndpointError("agent endpoints take only an agent id, such as agent://<id>");
+  }
+  if (!AGENT_ID_RE.test(url.host)) throw new EndpointError("the agent id is not valid");
+  return { kind: "agent", agentId: url.host };
 }
 
 function unixEndpoint(url: URL): Endpoint {

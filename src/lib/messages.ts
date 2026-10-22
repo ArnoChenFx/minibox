@@ -249,6 +249,25 @@ export const MESSAGES = {
     "The SSH host key {presented} is not the key you confirmed ({expected}). No credentials were sent to the host.",
   host_unreachable: "The host could not be reached: {detail}",
   host_unsupported: "{feature} is not supported on remote hosts yet.",
+  host_endpoint_agent:
+    "Agent hosts are paired with a code, not added by endpoint. Create a pairing code, then run the agent on the host.",
+  host_not_agent: "Host “{host}” is not an agent host.",
+  agent_pairing_unknown: "The pairing code is not valid. Create a new one under Settings, Hosts.",
+  agent_pairing_used: "This pairing code has already been used. Create a new one under Settings, Hosts.",
+  agent_pairing_expired: "This pairing code has expired. Create a new one under Settings, Hosts.",
+  agent_pairing_limit:
+    "At most {max} pairing codes can wait at once. Pair an agent or let a code expire, then try again.",
+  agent_pairing_request_invalid:
+    "The pairing request is not valid. Run the agent image again with the current MiniBox version.",
+  agent_key_invalid: "The agent's public key must be an Ed25519 key in PEM form.",
+  agent_protocol_mismatch:
+    "This agent speaks protocol {agent}, and this MiniBox speaks protocol {server}. Update the agent image, then pair again.",
+  agent_refused_auth: "The agent could not prove its identity. Pair it again under Settings, Hosts.",
+  agent_refused_revoked: "This agent was revoked. Remove its host, then pair the agent again.",
+  agent_refused_protocol: "This MiniBox speaks agent protocol {protocol}. Update the agent image.",
+  runtime_unsupported: "This host cannot run that operation: {detail}",
+  move_agent_unsupported:
+    "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
   preview_remote_unsupported: "Port preview is not supported on remote hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",

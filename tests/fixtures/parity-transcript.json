@@ -2288,6 +2288,94 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
+    "step": "create a pairing code for an agent host",
+    "method": "POST",
+    "path": "/api/hosts/pairing",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"edge\",\"name\":\"edge\",\"code\":\"<pairing-code>\",\"expiresAt\":\"<time>\"}"
+  },
+  {
+    "step": "create a pairing code for a host that exists",
+    "method": "POST",
+    "path": "/api/hosts/pairing",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A host with the id “local” already exists.\",\"retryable\":false,\"key\":\"host_exists\",\"params\":{\"host\":\"local\"}}}"
+  },
+  {
+    "step": "create a pairing code with a bad id",
+    "method": "POST",
+    "path": "/api/hosts/pairing",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A host id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.\",\"retryable\":false,\"key\":\"host_id_invalid\",\"details\":{\"field\":\"id\"}}}"
+  },
+  {
+    "step": "revoke a host that is not an agent",
+    "method": "POST",
+    "path": "/api/hosts/local/revoke",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Host “local” is not an agent host.\",\"retryable\":false,\"key\":\"host_not_agent\",\"params\":{\"host\":\"local\"},\"details\":{\"field\":\"id\"}}}"
+  },
+  {
+    "step": "revoke a missing host",
+    "method": "POST",
+    "path": "/api/hosts/missing/revoke",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “missing” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"missing\"}}}"
+  },
+  {
+    "step": "pair an agent with an unknown code",
+    "method": "POST",
+    "path": "/api/agent/pair",
+    "status": 401,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"The pairing code is not valid. Create a new one under Settings, Hosts.\",\"retryable\":false,\"key\":\"agent_pairing_unknown\"}}"
+  },
+  {
+    "step": "pair an agent with its code",
+    "method": "POST",
+    "path": "/api/agent/pair",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"agentId\":\"<agentId>\",\"hostId\":\"edge\",\"protocol\":1}"
+  },
+  {
+    "step": "pair an agent with a used code",
+    "method": "POST",
+    "path": "/api/agent/pair",
+    "status": 401,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"This pairing code has already been used. Create a new one under Settings, Hosts.\",\"retryable\":false,\"key\":\"agent_pairing_used\"}}"
+  },
+  {
+    "step": "list hosts with an agent",
+    "method": "GET",
+    "path": "/api/hosts",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":6,\"createdAt\":null},{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":false}}]}"
+  },
+  {
+    "step": "revoke the agent host",
+    "method": "POST",
+    "path": "/api/hosts/edge/revoke",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"host\":{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":true}}}"
+  },
+  {
+    "step": "remove the revoked agent host",
+    "method": "DELETE",
+    "path": "/api/hosts/edge",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"host\":{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":true}}}"
+  },
+  {
     "step": "create the files volume",
     "method": "POST",
     "path": "/api/volumes",

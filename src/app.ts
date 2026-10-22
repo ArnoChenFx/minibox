@@ -16,6 +16,9 @@ import { RetentionJob } from "./events/retention";
 import { StreamSlots } from "./events/slots";
 import { EventStore, type StoredEvent } from "./events/store";
 import { ulid } from "./events/ulid";
+import { AgentHub } from "./host/agent/hub";
+import { PairingBook } from "./host/agent/pairing";
+import { AgentStore } from "./host/agent/store";
 import type { LiveTopics } from "./host/live";
 import { HostManager } from "./host/manager";
 import type { HostMonitor } from "./host/metrics";
@@ -68,6 +71,8 @@ export interface App {
   hosts: HostRegistry;
   /** Adds, tests, removes and probes the hosts beyond the local one. */
   hostAdmin: HostManager;
+  /** The connections of the host agents that dial in, and the codes they pair with. */
+  agents: AgentHub;
   monitor: HostMonitor;
   activity: ActivityLog;
   events: EventStore;
@@ -241,6 +246,11 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const audit = deps.hooks?.audit ?? recordAudit(events, bus);
   const recordNote = recordNoteWith(audit);
   const containers = new ContainerWatch(hosts, recordNote);
+  const agents = new AgentHub({
+    store: new AgentStore(cfg.dataDir),
+    pairing: new PairingBook(),
+    serverVersion: version,
+  });
   const hostAdmin = new HostManager({
     cfg,
     registry: hosts,
@@ -256,9 +266,11 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       host.sampler.stop();
     },
     onLive: reconcileOnLive,
+    agents,
   });
   hostAdmin.load();
   bus.subscribe("link", (frame) => hostAdmin.onLink(frame));
+  agents.subscribe((event) => hostAdmin.onAgent(event));
   const terminals = new TerminalService({
     record: recordNote,
     takeoverIdleMs: cfg.takeoverIdleSec * 1000,
@@ -281,6 +293,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     cfg,
     hosts,
     hostAdmin,
+    agents,
     monitor: local.monitor,
     activity,
     events,

@@ -1,5 +1,6 @@
 import { spyOn } from "bun:test";
 
+import { generateKeyPairPem } from "../../src/agent/identity";
 import type { HostMetrics } from "../../src/host/metrics";
 import { startServer } from "../../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "../support/app";
@@ -46,7 +47,10 @@ export function normalize(text: string): string {
     .replace(/"cursor":"[0-9a-f]{12}\./g, '"cursor":"<epoch>.')
     .replace(/"ts":\d+/g, '"ts":0')
     .replace(/"durationMs":\d+/g, '"durationMs":0')
-    .replace(/"latencyMs":\d+/g, '"latencyMs":0');
+    .replace(/"latencyMs":\d+/g, '"latencyMs":0')
+    .replace(/"code":"[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}"/g, '"code":"<pairing-code>"')
+    .replace(/"agentId":"[0-9a-f]{32}"/g, '"agentId":"<agentId>"')
+    .replace(/agent:\/\/[0-9a-f]{32}/g, "agent://<agentId>");
 }
 
 function boxId(json: Record<string, unknown> | null): string {
@@ -791,6 +795,22 @@ async function recordScenario(): Promise<Exchange[]> {
     await moveBox("move a box to a host that is not added", mover, { host: "lab", confirm: true }, 1);
     await moveBox("move a missing box", "missing", { host: "lab", confirm: true }, 1);
 
+    const agentKey = generateKeyPairPem();
+    const issued = await post("create a pairing code for an agent host", "/api/hosts/pairing", { id: "edge" });
+    await post("create a pairing code for a host that exists", "/api/hosts/pairing", { id: "local" });
+    await post("create a pairing code with a bad id", "/api/hosts/pairing", { id: "Edge One" });
+    await post("revoke a host that is not an agent", "/api/hosts/local/revoke", {});
+    await post("revoke a missing host", "/api/hosts/missing/revoke", {});
+    const agent = { publicKey: agentKey.publicKeyPem, version: "0.4.0", protocol: 1 };
+    await post("pair an agent with an unknown code", "/api/agent/pair", { ...agent, code: "00000-00000" });
+    await post("pair an agent with its code", "/api/agent/pair", { ...agent, code: String(issued.json?.code ?? "") });
+    await post("pair an agent with a used code", "/api/agent/pair", {
+      ...agent,
+      code: String(issued.json?.code ?? ""),
+    });
+    await send("list hosts with an agent", "GET", "/api/hosts");
+    await post("revoke the agent host", "/api/hosts/edge/revoke", {});
+    await send("remove the revoked agent host", "DELETE", "/api/hosts/edge");
     const filesRes = await post("create the files volume", "/api/volumes", { name: "files", confirm: true });
     const filesId = String((filesRes.json?.volume as { id?: string } | undefined)?.id ?? "");
     const OCTET = "application/octet-stream";

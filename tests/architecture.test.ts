@@ -52,9 +52,11 @@ describe("runtime boundary", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("only the composition root (app.ts) and src/docker import the Docker adapter", () => {
+  // The agent image is a second composition root: it runs on the host and talks to the local engine itself.
+  test("only the composition roots (app.ts and the agent's main.ts) and src/docker import the Docker adapter", () => {
+    const roots = new Set(["app.ts", "agent/main.ts"]);
     const offenders = files
-      .filter((f) => f.rel !== "app.ts" && !isWithin(f.path, DOCKER_DIR))
+      .filter((f) => !roots.has(f.rel) && !isWithin(f.path, DOCKER_DIR))
       .filter((f) => f.imports.some((s) => s.startsWith(".") && isWithin(resolve(dirname(f.path), s), DOCKER_DIR)))
       .map((f) => f.rel);
     expect(offenders).toEqual([]);
