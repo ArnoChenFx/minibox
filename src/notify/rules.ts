@@ -32,6 +32,49 @@ function notice(kind: NoticeKind, event: StoredEvent, title: string, box?: Notic
   return { kind, title, body, box, at: event.ts };
 }
 
+/** A volume notice is sent once per volume within the dedup window, so one volume does not hide another's. */
+function volumeNotice(event: StoredEvent, kind: NoticeKind, title: string, body?: string): Notice | null {
+  const target = event.target;
+  if (target?.kind !== "volume") return null;
+  return { kind, title, body, at: event.ts, dedupKey: `${kind}:${target.id ?? target.name}` };
+}
+
+function hostDiskNotice(event: StoredEvent): Notice | null {
+  const target = event.target;
+  if (target?.kind !== "host") return null;
+  return {
+    kind: "host.disk_low",
+    title: `Host disk is low: ${target.name}`,
+    body: hostDiskBody(fieldsOf(event.detail)),
+    host: target.name,
+    at: event.ts,
+    dedupKey: `host.disk_low:${target.id ?? target.name}`,
+  };
+}
+
+const MB = 1024 * 1024;
+
+function megabytes(bytes: unknown): string {
+  return typeof bytes === "number" ? `${Math.round(bytes / MB)} MB` : "an unknown amount";
+}
+
+function usageHighBody(detail: Fields): string {
+  return `Using ${megabytes(detail.bytes)} against a soft limit of ${megabytes(detail.softBytes)}. A soft limit is best effort, not a quota.`;
+}
+
+function usageLimitBody(detail: Fields): string {
+  const reason = `Reason: over the hard limit of ${megabytes(detail.hardBytes)}, with ${megabytes(detail.bytes)} used. Action: ${textOf(detail.action) ?? "warn"}.`;
+  const boxes = Array.isArray(detail.boxes)
+    ? detail.boxes.map((box) => textOf(fieldsOf(box).name)).filter((name): name is string => name !== undefined)
+    : [];
+  return boxes.length > 0 ? `${reason} Stopped: ${boxes.join(", ")}.` : reason;
+}
+
+function hostDiskBody(detail: Fields): string {
+  const free = typeof detail.freePercent === "number" ? `${detail.freePercent}% free` : "Little free space";
+  return `${free}, below the minimum of ${String(detail.minFreePercent ?? "")}%. New volumes and checkpoints are refused until space is freed.`;
+}
+
 /**
  * The notice an event calls for, or null when the event is not one that notifies. Events the notifier itself writes,
  * such as a delivery record, are never matched, so a notification cannot start another one.
@@ -39,10 +82,27 @@ function notice(kind: NoticeKind, event: StoredEvent, title: string, box?: Notic
 export function noticeOfEvent(event: StoredEvent): Notice | null {
   const box = boxOf(event);
   const name = box?.name ?? "a box";
+  const volumeName = event.target?.kind === "volume" ? event.target.name : "a volume";
   const detail = fieldsOf(event.detail);
   switch (event.op) {
     case "container.oom":
       return box ? notice("box.oom", event, `Box ran out of memory: ${name}`, box) : null;
+    case "volume.usage_high":
+      return volumeNotice(
+        event,
+        "volume.usage_high",
+        `Volume over its soft limit: ${volumeName}`,
+        usageHighBody(detail),
+      );
+    case "volume.usage_limit":
+      return volumeNotice(
+        event,
+        "volume.usage_limit",
+        `Volume over its hard limit: ${volumeName}`,
+        usageLimitBody(detail),
+      );
+    case "host.disk_low":
+      return hostDiskNotice(event);
     case "exec.finish": {
       if (!commandFailed(detail)) return null;
       const title = detail.timedOut === true ? `Command timed out in ${name}` : `Command failed in ${name}`;

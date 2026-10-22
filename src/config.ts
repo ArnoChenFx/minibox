@@ -74,6 +74,13 @@ export interface Config {
   hostOvercommit: number;
   /** Lets a notification channel send to an address that is not public, such as a self-hosted ntfy or a LAN webhook. */
   notifyAllowPrivate: boolean;
+  /** How often every volume's usage is sampled, in seconds. */
+  volumeUsageIntervalSec: number;
+  /**
+   * Free space, as a percentage of the disk, below which a host alerts and refuses new volumes and checkpoints. 0 turns
+   * the check off.
+   */
+  hostDiskMinFreePercent: number;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -250,6 +257,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     fileUploadMaxMb: intInRange(get("FILE_UPLOAD_MAX_MB"), 1024, 1, 65536),
     hostOvercommit: parseHostOvercommit(get("HOST_OVERCOMMIT")),
     notifyAllowPrivate: isTruthy(get("NOTIFY_ALLOW_PRIVATE")),
+    volumeUsageIntervalSec: intInRange(get("VOLUME_USAGE_INTERVAL_SEC"), 600, 60, 86400),
+    hostDiskMinFreePercent: intInRange(get("HOST_DISK_MIN_FREE_PERCENT"), 10, 0, 100),
   };
 }
 

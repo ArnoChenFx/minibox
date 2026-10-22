@@ -28,6 +28,7 @@ import { loadCatalog } from "../tools/catalog";
 import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent, poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
+import { assertMountsWithinLimits } from "../volumes/limits";
 import { validMountPath } from "../volumes/mounts";
 import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
 import type { VolumeRecord, VolumeRole } from "../volumes/types";
@@ -469,6 +470,7 @@ async function buildBox(
   const mounts = input.mounts
     ? await resolveCreateMounts(host, input.mounts)
     : await provisionDefaultMounts(host, { id, name: input.name, createdBy }, known, attempt.changes);
+  assertMountsWithinLimits(host, mounts);
   await trackPoolRoots(host, poolsUsed(host, mounts), attempt.changes);
   await assertPoolsReachable(host, poolsUsed(host, mounts));
 
@@ -627,6 +629,7 @@ export async function startLocked(host: HostCtx, box: Box, options: StartOptions
   if (!box.running) {
     refuseExpired(host, box.boxId);
     assertSecretsStartable(host.secrets, storedEnv(host, box.boxId));
+    assertMountsWithinLimits(host, host.specs.read(box.boxId)?.mounts ?? box.mounts);
   }
   const previousReason = (host.specs.read(box.boxId)?.lifecycle.stopReason ?? null) as StopReason | null;
   await ensureRunningStorage(host, box);
@@ -708,6 +711,7 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   return locked(host, ref, async (box) => {
     refuseExpired(host, box.boxId);
     assertSecretsStartable(host.secrets, storedEnv(host, box.boxId));
+    assertMountsWithinLimits(host, host.specs.read(box.boxId)?.mounts ?? box.mounts);
     await ensureRunningStorage(host, box);
     await attachToBoxNetwork(host, box);
     await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
