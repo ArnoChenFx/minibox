@@ -82,7 +82,10 @@ function watcher(): LifecycleWatcher {
   return new LifecycleWatcher(options);
 }
 
-function newBox(name: string, patch: { idleTimeoutSec?: number | null; ttlSec?: number | null } = {}): Promise<Box> {
+function newBox(
+  name: string,
+  patch: { idleTimeoutSec?: number | null; ttlSec?: number | null; startupCommand?: string } = {},
+): Promise<Box> {
   return boxes.createBox(host, { name, cpus: 1, memoryMb: 256, ...patch });
 }
 
@@ -100,8 +103,8 @@ async function primeSampler(on: HostCtx, box: Box): Promise<void> {
 }
 
 /** A running box, idle for two minutes with a 30 second window, whose CPU sample is low. */
-async function quietBox(name: string): Promise<Box> {
-  const box = await newBox(name, { idleTimeoutSec: 30 });
+async function quietBox(name: string, startupCommand?: string): Promise<Box> {
+  const box = await newBox(name, { idleTimeoutSec: 30, startupCommand });
   app.pulse.touch(box.boxId, "exec", Date.now() - 120_000);
   await primeSampler(host, box);
   return box;
@@ -325,6 +328,27 @@ describe("idle sleep", () => {
     await primeSampler(host, box);
 
     expect((await watcher().tick()).slept).toContain(box.boxId);
+  });
+
+  test("a running startup command in its init session does not keep a quiet box awake", async () => {
+    const box = await quietBox("init-command", "sleep 3600");
+    expect(runtime.tmux.sessionNames(box.id)).toContain("minibox-init");
+
+    expect((await watcher().tick()).slept).toContain(box.boxId);
+  });
+
+  test("a person attached to the init session keeps the box awake until they detach", async () => {
+    const box = await quietBox("init-attached", "sleep 3600");
+    const client = { output: () => undefined, end: () => undefined };
+    expect(runtime.tmux.attach(box.id, "minibox-init", client)).toBe(true);
+    const idle = watcher();
+
+    expect((await idle.tick()).slept).not.toContain(box.boxId);
+    runtime.tmux.detach(box.id, "minibox-init", client);
+    offsetMs = 25_000;
+    expect((await idle.tick()).slept).not.toContain(box.boxId);
+    offsetMs = 56_000;
+    expect((await idle.tick()).slept).toContain(box.boxId);
   });
 
   test("a box whose image has no tmux has no terminal to keep it awake, and still sleeps", async () => {

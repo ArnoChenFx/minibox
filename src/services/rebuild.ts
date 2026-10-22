@@ -23,6 +23,7 @@ import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox, refuseExpired } from "./boxes";
 import { beginChange } from "./moving";
+import { launchStartup } from "./startup";
 import { alignVolumeRoot, type RecordNote, restoreVolumeRoot, writableWorkspaceVolume } from "./volume-owner";
 
 interface SwapState {
@@ -389,6 +390,7 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
         previous.mounts.map((mount) => mount.volume),
       );
       await host.runtime.startContainer(previous.containerId);
+      await launchStartup(host, previous.containerId, previous.startupCommand);
     });
   }
   await state.changes.rollback();
@@ -465,6 +467,7 @@ async function swap(
       await host.runtime.stopContainer(created.id, { timeoutSec: host.stopTimeoutSec });
     }
     await host.runtime.removeContainer(previous.containerId, { force: true });
+    if (previous.lifecycle.desired === "running") await launchStartup(host, created.id, previous.startupCommand);
     log.info("box.rebuilt", {
       id: previous.id,
       name: previous.name,

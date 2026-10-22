@@ -409,6 +409,14 @@ export const MESSAGES = {
   file_copy_into_self: "Cannot copy a path into itself or a subdirectory of itself.",
   file_copy_failed: "Could not copy files: {detail}",
   mcp_not_sse_hint: "Post JSON-RPC to /mcp. DELETE /mcp closes a session.",
+  startup_command_empty: "The startup command is empty. Enter a command, or remove it.",
+  startup_command_too_long: "The startup command is longer than {max} bytes.",
+  startup_command_control: "The startup command has a control character. Only tabs and line breaks are allowed.",
+  startup_command_none: "No startup command is set on this box.",
+  startup_command_box_stopped: "The box is stopped, so the startup command cannot run now.",
+  startup_command_box_stopped_hint: "Start the box. The command runs at every start.",
+  startup_command_failed: "MiniBox could not run the startup command: {detail}",
+  startup_command_timeout: "The startup command did not start within {max} seconds.",
 } as const;
 export type MessageKey = keyof typeof MESSAGES;
 
