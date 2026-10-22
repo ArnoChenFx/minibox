@@ -37,6 +37,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Checkpoints | Copy a box's workspace and home into a restic repository, then fork a new box from the copy or roll the box back to it, confirming or undoing the rollback. Retention and a capacity limit apply. Available over REST and in the console's Checkpoints tab; MCP tools are not there yet. See [Checkpoints](#checkpoints) |
 | Templates | Bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
+| Multiple hosts | Add other Docker engines over a unix socket, mutual TLS or SSH, and create boxes on any of them. The SSH host key is confirmed when the host is added. Adding and removing hosts is owner-only, in Settings or the API. See [Multiple hosts](#multiple-hosts) |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Live updates | Box state, resource samples, host metrics, task progress and box logs are pushed over SSE (`GET /api/events/stream`, `GET /api/boxes/:id/logs/stream`). The console polls only while a stream is down |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window. Named tmux sessions survive a page refresh or a dropped connection. An agent's session opens read-only until you take it over |
@@ -116,7 +117,7 @@ flowchart LR
 ### Target architecture (planned)
 
 > [!NOTE]
-> Storage pools and volumes, exec, `/mcp` and the CLI client, sessions, the path-mode port preview proxy, and checkpoints (take, fork, rollback, retention and the console's Checkpoints tab) are implemented. Scheduled checkpoints, checkpoint export and import, MCP tools for checkpoints, multi-host and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
+> Storage pools and volumes, exec, `/mcp` and the CLI client, sessions, the path-mode port preview proxy, and checkpoints (take, fork, rollback, retention and the console's Checkpoints tab) are implemented. Scheduled checkpoints, checkpoint export and import, MCP tools for checkpoints, multi-host scheduling, agents and migration (direct TLS and SSH connections are in place), and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
 
 ```mermaid
 flowchart LR
@@ -433,6 +434,8 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | `secrets/` | `700` | Secret values and repository keys. `checkpoint-repo.key` (mode `600`) is the checkpoint repository's password, made on first use. Keep it with the repository volume: without it the checkpoints cannot be read |
 | `volumes/` | `700` | One volume record per file, `vol_….json` (mode `600`). The engine volume is not renamed when this file is written |
 | `pools.json` | `600` | Storage pools and the role-to-pool defaults. Missing means the implicit local pool; a corrupt file is left in place and treated as missing |
+| `hosts.json` | `600` | Remote hosts: id, name, endpoint without any credential, the SSH host key fingerprint, and when each was added. Missing means only `local` |
+| `hosts/` | `700` | One directory per remote host, `hosts/<id>/`, holding its credential files at mode `600`: `ca.pem`, `cert.pem` and `key.pem` for `tcp://`, `ssh_key` for `ssh://`. The API never returns them, and removing the host deletes them |
 | `events.db` (with `events.db-wal` and `events.db-shm` beside it) | inside `DATA_DIR` | Event log, SQLite in WAL mode. See [Events](#events) |
 | `tasks.db` (with `tasks.db-wal` and `tasks.db-shm` beside it) | inside `DATA_DIR` | Task status and the newest 64 KB of each task's output. See [Tasks](#tasks) |
 
@@ -549,6 +552,42 @@ Checkpoints are not disaster recovery. The repository is on the same Docker daem
 
 Scheduled checkpoints, automatic checkpoints other than the one a rollback takes, a checkpoint before a rebuild, export and import (with encrypted export packages), single-file browsing, MCP tools, standalone volume snapshots, a per-box retention override and a recycle bin are planned under [#11](https://github.com/ArnoChenFx/minibox/issues/11).
 
+## Multiple hosts
+
+The machine MiniBox runs on is always the host `local`. You can add other Docker engines from **Settings → Hosts** or with the API, and choose a host when you create a box. Each box records its host, and everything done to the box runs on that host.
+
+There are three ways to reach an engine:
+
+| Endpoint | Connection | What MiniBox needs |
+|---|---|---|
+| `unix:///var/run/docker.sock` | A socket on this machine, or one mounted into the container | Nothing |
+| `tcp://host:2376` | The engine's TLS port, with mutual TLS in both directions | The CA that signed the engine's certificate, and a client certificate and key that the engine trusts. Start the engine with `--tlsverify` |
+| `ssh://user@host` | The engine's Docker socket, forwarded over SSH, so only the SSH port is reachable. The socket is `/var/run/docker.sock` unless the path says otherwise | A key the user can log in with. The SSH host key is confirmed when the host is added |
+
+To add a host:
+
+1. Test the connection first. The Settings dialog and `POST /api/hosts/test` both reach the engine, read its version and capacity, and for SSH show the host key it presents. Nothing is saved.
+2. For SSH, compare the fingerprint (`SHA256:…`) with the host's own key, then add the host with that fingerprint. Without it, the add is refused with `host_key_unconfirmed`, before any login or Docker request. A different key is refused with `host_key_mismatch`.
+3. Add it. Credentials are written to `DATA_DIR/hosts/<id>/` (directory `700`, files `600`), and the API never returns them.
+
+Behaviour:
+
+- **Routing.** A box's operations run on its host. Create a box on another host with `host` in the request body; the default is `local`. There are no `/api/hosts/:host/...` routes, because a box keeps an id and a name that are unique across hosts.
+- **Lists.** Box, volume and checkpoint lists read every host at once. A host that is offline or does not answer within 5 seconds does not hold up the others. Its boxes are listed as `unreachable`, with the name and image from their spec and no live data, and its volumes and checkpoints are left out. A failure on the local host still fails the list.
+- **Console.** With more than one host, each box names its host, the overview shows a card per host, the top bar filters by host, and unreachable boxes are greyed out.
+- **Tokens.** A token's `hosts` grant lists the hosts it may use: `local` (the default for the `readonly`, `operator` and `sandboxed-agent` presets), host ids, or `*` (the `admin` preset). A box on another host is refused with `403` (key `host_not_granted`).
+- **Removing.** A host that still has boxes, volumes or checkpoints cannot be removed (`409`, key `host_in_use`). `local` cannot be removed (`409`, key `host_is_local`).
+- **Audit.** Adding, testing and removing a host are recorded in the audit log. Credentials never are.
+
+Limits in this part:
+
+- Port preview and snapshots return `501` on a remote host. Port preview needs MiniBox to reach a container's IP directly, which it cannot do on a remote host yet.
+- Templates and checkpoints are not copied between hosts. A remote host needs the template image on its own engine, or creating a box there returns `400` (`template_image_missing`). Each host keeps its own checkpoint repository.
+- Host-level CPU and memory usage come from `/proc` on the local host only. A remote host shows the cores and memory its engine reports (`docker info`), plus the usage of its own boxes.
+- Not yet: an agent that connects out from a remote machine, placement with `host: "auto"`, and moving a box to another host.
+
+The MCP tools `list_hosts`, `test_host`, `add_host` and `remove_host` do the same work. They are in the `meta` toolset, which is on by default. The CLI has no host commands yet.
+
 ## API reference
 
 All endpoints are JSON. Everything except those marked **public** requires either the session cookie (set by `/api/auth/login`) or an `Authorization: Bearer` header. The bearer secret is the access key, or an agent API token (`mbx_…`) from Settings or `POST /api/tokens`. Writes must send `Content-Type: application/json`, except requests that have neither a body nor a `Content-Type` (any other declared type gets `415`), and browser requests from other websites get `403`.
@@ -578,12 +617,21 @@ Errors use a consistent shape and the matching HTTP status:
 | `GET` | `/api/host/metrics` | Host metrics with sample history |
 | `GET` | `/api/activity` | Recent operations (in memory, cleared on restart) |
 
+### Hosts
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/hosts` | **Owner only.** Every host with `status`, `latencyMs`, `capacity`, `dockerVersion`, `boxes` and `error` (the last failed check). An offline host keeps its entry |
+| `POST` | `/api/hosts/test` | **Owner only.** Checks a connection and saves nothing. Body `{ "id", "endpoint", "ca"?, "cert"?, "key"?, "privateKey"?, "hostKeyFingerprint"? }`, with the credentials the endpoint needs. Returns `200` with `ok`, `latencyMs`, `capacity`, `dockerVersion` and, for SSH, the `hostKeyFingerprint` the host presents. A failure is reported in `error` |
+| `POST` | `/api/hosts` | **Owner only.** Adds a host once its connection checks out. The body is the same as for test, plus `name`. Returns `201` with the host. `400` for an invalid id, endpoint or credential; `409` with key `host_exists`, `host_key_unconfirmed` or `host_key_mismatch`; `503` (`docker_unavailable`) when the host cannot be reached |
+| `DELETE` | `/api/hosts/{id}` | **Owner only.** Removes the host and deletes its credentials. `409` (key `host_in_use`) while it holds boxes, volumes or checkpoints, and `409` (key `host_is_local`) for `local` |
+
 ### Boxes
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/boxes?stats=false` | List boxes from the host's cache, which the engine's events keep current. While the cache is current the list makes no engine call. Running boxes carry their latest sample unless `stats=false` |
-| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults. `idleTimeoutSec` of `0` disables idle sleep for this box; `null`/omitted inherits `BOX_IDLE_TIMEOUT_SEC`. `ttlSec` is an absolute lifetime from create time |
+| `GET` | `/api/boxes?stats=false` | List boxes from the host's cache, which the engine's events keep current. While the cache is current the list makes no engine call. Running boxes carry their latest sample unless `stats=false`. The list covers every host; `?host=<id>` narrows it to one |
+| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "host"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults. `idleTimeoutSec` of `0` disables idle sleep for this box; `null`/omitted inherits `BOX_IDLE_TIMEOUT_SEC`. `ttlSec` is an absolute lifetime from create time. `host` picks the host the box runs on, `local` by default (see [Multiple hosts](#multiple-hosts)) |
 | `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. `template`, `mounts`, `env`, `network` and `profile` are not applied in place: a difference returns `409 confirmation_required` with a preview and leaves the in-place fields unchanged |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete the box. `deleteVolume=true` also deletes owned volumes that no other box mounts. Independent volumes stay |
@@ -817,7 +865,7 @@ minibox/
 │   ├── tmux/                # tmux command lines, session names and parsing of tmux output
 │   ├── mcp/                 # Streamable HTTP MCP at /mcp
 │   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy
-│   ├── host/                # Host registry (implicit local), procfs parsers, HostSampler (box cache and samples), HostMonitor
+│   ├── host/                # Host registry, HostManager (add, test, remove), endpoints and links (unix, TLS, SSH), procfs parsers, HostSampler (box cache and samples), HostMonitor
 │   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, live frames, scope hook
 │   ├── tasks/               # Task store (SQLite), manager, progress stream on the event bus
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
@@ -957,7 +1005,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 
 ### M4 · Multi-host and optimization
 
-- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) Multi-host support over SSH or TLS
+- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) Multi-host support over SSH or TLS (first part done: direct connections and the console; agents, scheduling and migration remain)
 - [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) Idle auto-sleep with on-demand wake
 - [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) Template enhancements and warm pool
 
