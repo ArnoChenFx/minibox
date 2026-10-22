@@ -1,7 +1,7 @@
 /**
  * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-checkpoint.test.ts,
- * tests/docker-sessions.test.ts, tests/docker-ssh.test.ts and tests/docker-tools.test.ts) against the local Docker
- * engine, one file per process.
+ * tests/docker-sessions.test.ts, tests/docker-ssh.test.ts, tests/docker-tools.test.ts and tests/docker-hosts.test.ts)
+ * against the local Docker engine, one file per process.
  *
  *   bun run test:docker
  *
