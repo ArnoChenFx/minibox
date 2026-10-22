@@ -139,8 +139,24 @@ export const MESSAGES = {
     "No volume of this box is mounted at {path} now, so the checkpoint cannot be restored there.",
   checkpoint_pinned: "Checkpoint {id} is pinned. Unpin it before deleting it.",
   checkpoint_rollback_confirm:
-    "Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept; delete them yourself once you no longer need them. Send confirm: true to continue.",
+    "Rolling back first takes a checkpoint of the current data, then replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The replaced volumes are kept until you confirm the rollback, which deletes them, or undo it. Send confirm: true to continue.",
   checkpoint_out_of_scope: "This credential cannot use that checkpoint.",
+  checkpoint_capacity_exceeded:
+    "The checkpoint repository holds {used} MB, at or above its limit of {limit} MB. Delete checkpoints before rolling back: a rollback takes a safety checkpoint first.",
+  checkpoint_held_by_rollback:
+    "Checkpoint {id} is the safety point of a rollback that waits for its confirm or undo. Confirm or undo that rollback before deleting it.",
+  rollback_pending:
+    "Box {box} has a rollback that waits for its confirm or undo. Confirm or undo it before rolling back again.",
+  rollback_none: "Box {box} has no rollback that waits for its confirm or undo.",
+  rollback_confirm_required:
+    "Confirming deletes the volumes the rollback replaced. The box cannot switch back to them, but the checkpoint taken before the rollback still holds their data. Send confirm: true to continue.",
+  rollback_undo_confirm:
+    "Undoing mounts the replaced volumes again and deletes the volumes the rollback restored. Anything written since the rollback is lost. Send confirm: true to continue.",
+  rollback_undo_gone:
+    "Box {box} cannot undo its rollback: volume {volume}, which the rollback replaced, no longer exists.",
+  rollback_undo_unmounted:
+    "Box {box} cannot undo its rollback: it no longer mounts {volume}, which the rollback restored.",
+  rollback_out_of_scope: "This credential cannot change that box's rollback.",
   box_network_conflict:
     "Network {network} already exists but is not a bridge with inter-container communication disabled. Remove it when no box uses it, then try again.",
   volume_reserved: "Volume {volume} holds MiniBox's own data and cannot be mounted into a box.",
@@ -173,6 +189,7 @@ export const MESSAGES = {
   quota_cpus: "This token's boxes would use {used} CPU cores, above its limit of {max}.",
   quota_memory: "This token's boxes would use {used} MB of memory, above its limit of {max}.",
   quota_ttl: "TTL must be a positive number of seconds no greater than this token's limit of {max}.",
+  quota_checkpoints: "This token may have at most {max} checkpoints.",
   snapshot_out_of_scope: "This credential cannot use that snapshot.",
   template_out_of_scope: "This credential cannot use that template.",
   storage_unreachable: "Storage pool {pool} is unreachable: {detail}",
@@ -273,9 +290,10 @@ export const MESSAGES = {
   mcp_not_sse: "GET /mcp does not stream events.",
   tool_catalog_invalid: "Tool catalog entry {file} is invalid: {detail}.",
   tool_unknown: "Unknown tool “{id}”.",
-  tool_needs_root: "Tool “{id}” requires root, which MiniBox does not run for Agent CLI installs.",
+  tool_needs_root: "Tool “{id}” requires root, which MiniBox does not run for tool installs.",
   tool_volume_missing: "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
   tool_install_failed: "Installing “{id}” failed: {detail}",
+  tool_stop_failed: "Could not stop “{id}” in the box, so it was not uninstalled: {detail}",
   tool_install_timeout: "Installing “{id}” timed out.",
   tool_detect_failed: "Could not check which tools are installed in this box: {detail}",
   tool_reconcile_failed: "Could not install the requested tools: {detail}.",

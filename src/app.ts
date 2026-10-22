@@ -24,6 +24,7 @@ import { type AuditEvent, Executor, type ExecutorHooks, logAudit } from "./opera
 import { OPERATIONS } from "./operations/registry";
 import type { Runtime } from "./runtime";
 import { ActivityPulse } from "./services/activity-pulse";
+import { CheckpointSweep } from "./services/checkpoint-retention";
 import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
@@ -70,6 +71,8 @@ export interface App {
   mcpSessions: McpSessions;
   bus: Bus<AppTopics>;
   retention: RetentionJob;
+  /** Removes automatic checkpoints the retention policy no longer keeps, and reports repositories near their limit. */
+  checkpointSweep: CheckpointSweep;
   tasks: TaskManager;
   operations: Executor;
   throttle: LoginLimiter;
@@ -238,6 +241,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     mcpSessions: new McpSessions((id, listener) => tokens.watch(id, listener)),
     bus,
     retention,
+    checkpointSweep: new CheckpointSweep(hosts),
     tasks,
     operations: new Executor(OPERATIONS, {
       activity,

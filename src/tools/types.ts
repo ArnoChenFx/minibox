@@ -6,7 +6,7 @@ export function isToolCategory(value: string): value is ToolCategory {
   return (TOOL_CATEGORIES as readonly string[]).includes(value);
 }
 
-/** One Agent CLI entry from `catalog/*.json` or `DATA_DIR/tools.d/*.json`. */
+/** One tool entry from `catalog/*.json` or `DATA_DIR/tools.d/*.json`. */
 export interface CatalogEntry {
   id: string;
   name: string;
@@ -34,6 +34,11 @@ export interface CatalogEntry {
   install: string;
   upgrade: string;
   uninstall: string;
+  /**
+   * Optional. Runs as the box user in a running box before an uninstall, so a daemon the tool started exits before its
+   * binary is removed. A failure keeps the tool installed.
+   */
+  stop?: string;
   /** Prints a single-line version (or empty) to stdout. Exit 0 when present. */
   detect: string;
 }

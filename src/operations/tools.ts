@@ -60,7 +60,7 @@ const toolVersion = () =>
 export const toolList = defineOperation({
   name: "tool.list",
   tag: "tools",
-  summary: "List Agent CLI catalog and install status",
+  summary: "List tool catalog and install status",
   kind: "read",
   scope: "box:read",
   async: false,
@@ -74,7 +74,7 @@ export const toolList = defineOperation({
     toolset: "tools",
     name: "list_tools",
     description:
-      "List the Agent CLI catalog with installed status and version. Installed is detected in the box's own image and home volume, so tools baked into the image are reported too. Pass id to include the desired tools from that box's spec.",
+      "List the tool catalog with installed status and version. Installed is detected in the box's own image and home volume, so tools baked into the image are reported too. Pass id to include the desired tools from that box's spec.",
   },
   run: async ({ host }, input) => ({ tools: await listToolStatuses(host, input.id) }),
 });
@@ -82,7 +82,7 @@ export const toolList = defineOperation({
 export const toolInstall = defineOperation({
   name: "tool.install",
   tag: "tools",
-  summary: "Install an Agent CLI into the shared tools volume",
+  summary: "Install a tool into the shared tools volume",
   kind: "write",
   scope: "tool:install",
   async: true,
@@ -99,7 +99,7 @@ export const toolInstall = defineOperation({
     toolset: "tools",
     name: "install_tool",
     description:
-      "Install an Agent CLI from the catalog into the shared tools volume for a box. Updates BoxSpec.tools. Long-running; returns a task id.",
+      "Install a tool from the catalog into the shared tools volume for a box. Updates BoxSpec.tools. Long-running; returns a task id.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }) => `tool.write:${host.host.id}`,
@@ -111,7 +111,7 @@ export const toolInstall = defineOperation({
 export const toolUpgrade = defineOperation({
   name: "tool.upgrade",
   tag: "tools",
-  summary: "Upgrade an Agent CLI on the shared tools volume",
+  summary: "Upgrade a tool on the shared tools volume",
   kind: "write",
   scope: "tool:install",
   async: true,
@@ -127,7 +127,7 @@ export const toolUpgrade = defineOperation({
   mcp: {
     toolset: "tools",
     name: "upgrade_tool",
-    description: "Upgrade an Agent CLI already recorded on a box. Returns a task id.",
+    description: "Upgrade a tool already recorded on a box. Returns a task id.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }) => `tool.write:${host.host.id}`,
@@ -139,7 +139,7 @@ export const toolUpgrade = defineOperation({
 export const toolUninstall = defineOperation({
   name: "tool.uninstall",
   tag: "tools",
-  summary: "Uninstall an Agent CLI from the shared tools volume",
+  summary: "Uninstall a tool from the shared tools volume",
   kind: "destructive",
   scope: "tool:install",
   async: true,
@@ -155,7 +155,7 @@ export const toolUninstall = defineOperation({
   mcp: {
     toolset: "tools",
     name: "uninstall_tool",
-    description: "Remove an Agent CLI from the shared tools volume and from the box spec. Returns a task id.",
+    description: "Remove a tool from the shared tools volume and from the box spec. Returns a task id.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }) => `tool.write:${host.host.id}`,
@@ -167,7 +167,7 @@ export const toolUninstall = defineOperation({
 export const toolReconcile = defineOperation({
   name: "tool.reconcile",
   tag: "tools",
-  summary: "Install missing Agent CLIs from the box spec",
+  summary: "Install missing tools from the box spec",
   kind: "write",
   scope: "tool:install",
   async: true,
@@ -210,7 +210,7 @@ export function catalogSummary(dataDir: string) {
 export const toolCatalog = defineOperation({
   name: "tool.catalog",
   tag: "tools",
-  summary: "List the Agent CLI catalog without install status",
+  summary: "List the tool catalog without install status",
   kind: "read",
   scope: "box:read",
   async: false,

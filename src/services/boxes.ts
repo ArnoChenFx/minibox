@@ -114,7 +114,7 @@ export interface Box {
   mounts: BoxMountView[];
   /** Plain values and secret references. A secret reference is stored and not injected. */
   env: BoxEnv[];
-  /** Desired Agent CLIs from the spec (`id` + `version`). */
+  /** Desired tools from the spec (`id` + `version`). */
   tools: { id: string; version: string }[];
   /** `unreachable` when a pool backing a mount could not be probed. The engine state stays in `state`. */
   storage: {
@@ -698,6 +698,10 @@ export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolea
     const mounted = (spec?.mounts ?? [])
       .map((mount) => host.volumes.findByEngine(host.host.id, mount.volume))
       .filter((volume): volume is VolumeRecord => volume !== null);
+    // A rollback still waiting for its confirm or undo keeps the volumes it replaced. They are the box's, so they go with it.
+    const replaced = (host.checkpoints.pendingRollback(box.boxId)?.replaced ?? [])
+      .map((volume) => host.volumes.read(volume.volumeId))
+      .filter((volume): volume is VolumeRecord => volume !== null);
     await host.specs.exclusive(async () => {
       await host.runtime.removeContainer(box.id, { force: true });
       host.specs.remove(box.boxId);
@@ -705,7 +709,8 @@ export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolea
     await host.sampler.observe(box.id);
     host.pulse.clear(box.boxId);
     const result: DeleteBoxResult = { name: box.name, volumeDeleted: false };
-    if (deleteVolume) await removeOwnedVolumes(host, box.boxId, mounted, result);
+    if (deleteVolume) await removeOwnedVolumes(host, box.boxId, [...mounted, ...replaced], result);
+    host.checkpoints.removePendingRollback(box.boxId);
     log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
     return result;
   });

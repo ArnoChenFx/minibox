@@ -1,11 +1,17 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { isCheckpointId, newCheckpointId } from "../src/checkpoints/id";
 import { CheckpointStore } from "../src/checkpoints/store";
-import { CHECKPOINT_VERSION, type CheckpointRecord } from "../src/checkpoints/types";
+import {
+  CHECKPOINT_VERSION,
+  type CheckpointRecord,
+  type PendingRollback,
+  ROLLBACK_VERSION,
+} from "../src/checkpoints/types";
+import { newBoxId } from "../src/specs/revision";
 import { silenceLogs } from "./support/app";
 
 const roots: string[] = [];
@@ -55,6 +61,32 @@ function record(id: string, overrides: Partial<CheckpointRecord> = {}): Checkpoi
     system: null,
     createdAt: "2026-10-21T00:00:00.000Z",
     updatedAt: "2026-10-21T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function pendingOf(boxId: string, overrides: Partial<PendingRollback> = {}): PendingRollback {
+  return {
+    version: ROLLBACK_VERSION,
+    hostId: "local",
+    boxId,
+    boxName: "dev",
+    checkpointId: newCheckpointId(),
+    checkpointLabel: "before refactor",
+    safetyCheckpointId: newCheckpointId(),
+    createdBy: "owner",
+    createdAt: "2026-10-21T00:00:00.000Z",
+    replaced: [
+      { volumeId: "vol_abcdefgh1234", name: "dev-workspace", engineName: "mbtest-dev-workspace", path: "/workspace" },
+    ],
+    restored: [
+      {
+        volumeId: "vol_ijklmnop5678",
+        name: "dev-workspace-2",
+        engineName: "mbtest-dev-workspace-2",
+        path: "/workspace",
+      },
+    ],
     ...overrides,
   };
 }
@@ -115,6 +147,56 @@ describe("CheckpointStore", () => {
     const { store } = freshStore();
     expect(store.read("../../etc/passwd")).toBeNull();
     expect(() => store.pathFor("../escape")).toThrow();
+  });
+
+  test("a pending rollback round-trips through a file only its owner can read, and is listed until it is removed", () => {
+    const { store, dataDir } = freshStore();
+    const boxId = newBoxId();
+    const pending = pendingOf(boxId);
+
+    store.writePendingRollback(pending);
+
+    expect(store.pendingRollback(boxId)).toEqual(pending);
+    expect(store.pendingRollbacks()).toEqual([pending]);
+    expect(statSync(join(dataDir, "checkpoints", "rollbacks", `${boxId}.json`)).mode & 0o777).toBe(0o600);
+    store.removePendingRollback(boxId);
+    expect(store.pendingRollback(boxId)).toBeNull();
+    expect(store.pendingRollbacks()).toEqual([]);
+  });
+
+  test("a second write for a box replaces the first, since a box has at most one pending rollback", () => {
+    const { store } = freshStore();
+    const boxId = newBoxId();
+    store.writePendingRollback(pendingOf(boxId));
+    const next = pendingOf(boxId, { boxName: "renamed" });
+
+    store.writePendingRollback(next);
+
+    expect(store.pendingRollbacks()).toEqual([next]);
+  });
+
+  test("a corrupt rollback file is skipped and left in place, so nothing is deleted", () => {
+    const { store, dataDir } = freshStore();
+    const boxId = newBoxId();
+    store.writePendingRollback(pendingOf(boxId));
+    const path = join(dataDir, "checkpoints", "rollbacks", `${boxId}.json`);
+    writeFileSync(path, "{not json");
+    const restore = silenceLogs();
+    try {
+      expect(store.pendingRollback(boxId)).toBeNull();
+      expect(store.pendingRollbacks()).toEqual([]);
+    } finally {
+      restore();
+    }
+    expect(existsSync(path)).toBe(true);
+  });
+
+  test("a box id that is not a box id never reaches the filesystem, and a missing rollback lists nothing", () => {
+    const { store } = freshStore();
+    expect(store.pendingRollback("../escape")).toBeNull();
+    expect(() => store.writePendingRollback(pendingOf("../escape"))).toThrow();
+    expect(() => store.removePendingRollback("../escape")).not.toThrow();
+    expect(store.pendingRollbacks()).toEqual([]);
   });
 
   test("mutations queued with exclusive run one after another", async () => {

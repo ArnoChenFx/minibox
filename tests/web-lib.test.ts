@@ -669,7 +669,7 @@ describe("api error keys", () => {
   });
 });
 
-/** Agent CLI tools in catalog order, with the fields the picker reads. Category labels come from the loaded dictionary. */
+/** Tools in catalog order, with the fields the picker reads. Category labels come from the loaded dictionary. */
 const TOOLS = `
   const categoryLabel = (id) => i18n.t("tool.cat." + id);
   const tool = (fields) => ({ description: "", needsRoot: false, installed: false, managed: false, ...fields });

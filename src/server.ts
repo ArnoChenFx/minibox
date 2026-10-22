@@ -314,6 +314,7 @@ async function boot(): Promise<void> {
   for (const host of app.hosts.list()) host.sampler.start();
   app.monitor.start();
   app.retention.start();
+  app.checkpointSweep.start();
   app.containers.start();
   app.lifecycle.start();
   const server = startServer(app);
@@ -327,6 +328,7 @@ async function boot(): Promise<void> {
     app.monitor.stop();
     for (const host of app.hosts.list()) host.sampler.stop();
     app.retention.stop();
+    app.checkpointSweep.stop();
     app.containers.stop();
     app.lifecycle.stop();
     app.throttle.stop();

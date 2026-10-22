@@ -310,7 +310,7 @@ BoxSpec（期望，存控制端）              BoxStatus（观测，来自 Dock
 Docker 不能给运行中的容器加挂载，所以「挂载共享卷」和「换模板」必然是一次重建。工具安装通过 `exec` 完成，不属于这两类。原地更新的字段只改 `DATA_DIR` 里的规格（资源另外用 `docker update`，重命名用 `docker rename`），不会去改容器标签。
 
 - 修改接口使用 `If-Match: <revision>` 乐观并发，防止人和 Agent 同时修改互相覆盖；规格保留最近 20 个版本（`SPEC_HISTORY_LIMIT`），失败的重建回滚到上一版。
-- **重建必须显式确认**：用 `docker diff` 预览可写层会丢失的改动。未带 `confirm: true` 时返回 `409 confirmation_required` 和预览，不改容器。可选的重建前检查点不在这一步（#11）。
+- **重建必须显式确认**：用 `docker diff` 预览可写层会丢失的改动。未带 `confirm: true` 时返回 `409 confirmation_required` 和预览，不改容器。可选的重建前检查点不在这一步，本版本也尚未实现（§7.6）。
 - **跟随标签的 Box**：模板是标签，且创建时的镜像就是标签（`template.ref` 等于 `template.image`）时，标签若改指向另一个镜像，重建会把它列为一处模板变更，预览显示 `标签 (旧镜像短 ID) → 标签 (新镜像短 ID)`。确认后新容器从标签当前指向的镜像创建，标签字符串不变，`template.digest` 更新为新镜像 ID；新容器运行的镜像与规格不一致时，重建失败并回滚。快照 Box（模板为 `snapshot:<ref>`）不跟随，标签已被删除也不算移动。请求里指定了其它模板时，以该模板为准。
 
 ### 5.5 重建时什么保留、什么丢失
@@ -504,9 +504,9 @@ Checkpoint
 
 - 辅助镜像里运行 restic，仓库放在专用卷或存储池中；NAS 场景下放在**另一个**共享文件夹，不要与工作区处于同一快照范围。
 - 优点：Agent 频繁做检查点也不会吃满磁盘；自带保留策略与加密；仓库以后可指向异地。
-- 代价：多一个辅助镜像和仓库密钥（存 `DATA_DIR/secrets`）。
+- 代价：多一个辅助镜像和仓库密钥（存 `DATA_DIR/secrets`；每次调用以只读文件交给辅助容器，不进入环境变量，决策 62）。
 - **能力阶梯**（装有存储节点代理时，后续才有）：原生快照/克隆 > reflink 复制 > restic。第一版只有 restic。
-- **一致性**：默认 `live`（崩溃一致）；`pause`（冻结容器）、`stop` 可选。回滚前或重建前的安全点在 Box 已停止时执行。
+- **一致性**：默认 `live`（崩溃一致）；`pause`（冻结容器）、`stop` 可选。回滚前的安全点在 Box 已停止时执行（以 `stop` 拍摄）；重建前的安全点尚未实现（§7.6）。
 - **与休眠**：拍摄、派生与回滚持有 Box 的电源锁并计为活动，空闲休眠不会打断它们；休眠中的 Box 也不会因此被唤醒（决策 57）。
 - 本地仓库与 Docker 数据同盘，**不是灾备**，文档需写明；真正的灾备要把仓库另指别处。
 
@@ -518,27 +518,45 @@ Checkpoint
 | **原地回滚** | **恢复到一个全新的卷，再重建 Box 把挂载切到新卷**；原卷保留到用户确认或撤销。共享卷只提供「恢复为新卷」，不原地覆盖 |
 | **取回单个文件** | 浏览快照内容并拷出（接口预留，后做） |
 
-回滚后 Box 上提示「已回滚到 X，旧卷 Y 仍保留 [确认并清理] [撤销回滚]」。
+回滚后，Box 详情的「检查点」标签页提示旧卷仍保留，并给出 [确认并清理] [撤销回滚]（决策 60、65）。等待期间，另一次回滚与对安全检查点的删除都被拒绝。
 
 ### 7.4 触发与保留
 
-- 触发：手动、API/MCP（`checkpoint(label, reason)`）、自动（回滚前、重建前的安全点）、定时。
-- 保留策略：`keep-last`、`keep-daily` 等，全局默认，可按 Box 覆盖。自动生成的受策略清理；手动的不会被自动清；置顶的永远保留。
-- 容量：显示仓库总占用，到阈值告警，超限拒绝新的自动检查点。
-- 可选「回收站」：删除 Box 或卷前自动做一份最终快照，保留几天再清理。
+- 触发：手动（REST）、自动（回滚前的安全点）。MCP 工具（`checkpoint(label, reason)`）、重建前的安全点与定时尚未实现（§7.6）。
+- 保留策略：`keep-last`（`CHECKPOINT_KEEP_LAST`，默认 20）与 `keep-days`（`CHECKPOINT_KEEP_DAYS`，默认 30，0 为不限）。目前只有全局设置，尚不能按 Box 覆盖，也没有 `keep-daily`（决策 61）。自动生成的受策略清理；手动的不会被自动清；置顶的永远保留；待定回滚所持有的安全检查点也保留。
+- 容量：`CHECKPOINT_CAPACITY_MB`（默认 0，不限）。显示仓库总占用；达到上限的 80% 时告警（`checkpoint.capacity_warning`）；达到上限即拒绝新的自动检查点，因此回滚也被拒绝，手动拍摄仍可进行（决策 61）。
+- 可选「回收站」：删除 Box 或卷前自动做一份最终快照，保留几天再清理。本版本未实现（§7.6）。
 
 ### 7.5 API
 
 ```text
 POST  /api/boxes/:id/checkpoints   { label, include, consistency }
 GET   /api/checkpoints[/:id]
+GET   /api/checkpoints/usage
 POST  /api/checkpoints/:id/fork    { name, host?, copyHome? }
 POST  /api/boxes/:id/rollback      { checkpoint, confirm }
+GET   /api/boxes/:id/rollback
+POST  /api/boxes/:id/rollback/confirm
+POST  /api/boxes/:id/rollback/undo
 POST  /api/volumes/:id/snapshots   /  POST /api/volumes/:id/restore
 PATCH /api/checkpoints/:id         { pinned, label }
+DELETE /api/checkpoints/:id
 ```
 
 均为异步任务，带进度。「提升为模板」需要系统层，没有则提示「现在捕获系统层」。
+
+上面的路由已实现，除了卷快照的两条（`/api/volumes/:id/snapshots` 与 `restore`）；派生的 `host` 参数需等多宿主机完成后再加（§7.6）。
+
+### 7.6 实现说明（#11）
+
+- **引擎与密钥。** 辅助镜像为 `restic/restic:0.18.1`，仓库卷为 `<前缀>-checkpoints-<宿主机>`。密码首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 600）。每次调用都以只读文件挂入辅助容器的 `/run/secrets/repo.key`，由 `RESTIC_PASSWORD_FILE` 指向它，密码因此不进入环境变量或容器配置（决策 62）。文件先写入一个临时卷（带辅助容器的内部标签与 `minibox.helper-secrets` 标签），调用结束后删除该卷；若进程在两者之间崩溃，启动对帐会删除本实例残留的这类卷。辅助容器每次调用限制为 1 GiB 内存、256 个进程、64 MiB 的 `/tmp` 与 3600 秒。
+- **回滚的确认与撤销。** 回滚先以 `stop` 为当前数据拍摄安全检查点（自动，标签为 `Before rollback to <标签>`），再把检查点的数据恢复到新卷并重建 Box。被替换的卷保留且不挂载，待定记录写入 `DATA_DIR/checkpoints/rollbacks/<bx_id>.json`（决策 60）。待定期间，同一 Box 的另一次回滚返回 `409 rollback_pending`，删除其安全检查点返回 `409 checkpoint_held_by_rollback`，保留策略也不会清理它。
+- **保留与容量。** 保留策略只作用于自动检查点：每个 Box 保留最新的 `CHECKPOINT_KEEP_LAST` 个（默认 20），删除超过 `CHECKPOINT_KEEP_DAYS` 天（默认 30，0 为不限）的。手动与置顶的检查点从不被删除。服务启动时执行一次，之后每小时一次（`CheckpointSweep`）。容量上限 `CHECKPOINT_CAPACITY_MB` 默认为 0，即不限。占用达到上限的 80% 时记录 `checkpoint.capacity_warning`；达到上限时新的自动检查点被拒绝，回滚随之被拒绝。占用无法测量时放行（决策 61）。
+- **令牌的手动检查点配额。** `maxCheckpoints` 限制令牌创建的手动检查点数量，跨所有 Box 与宿主机合计，置顶的也计入。`sandboxed-agent` 默认 20，超出返回 `403 quota_checkpoints`。自动检查点不计入，它们由保留策略限制，而不由令牌决定（决策 63）。
+- **启动时的恢复。** 对帐时解冻被检查点（`pause` 或 `stop`）中断而暂停的容器，并启动期望运行却未运行的 Box，因此被中断的拍摄不会留下冻结或停止的 Box（决策 64）。
+- **控制台。** Box 详情的「检查点」标签页列出检查点，并提供拍摄、派生、回滚预览、确认与撤销；仓库占用与保留策略也显示在该页。界面文本有中英文，服务端生成的检查点标签（如回滚前的安全检查点）保持英文（决策 65）。
+- **用量接口仅所有者可读。** `GET /api/checkpoints/usage` 使用 `checkpoint:usage` scope，没有令牌持有该 scope，路由与执行器都会拒绝令牌（决策 66）。
+- **未实现。** 导入导出（包括加密导出包，§7.1 的加密要求尚未满足）、定时检查点、重建前的安全检查点、卷快照的独立路由、单文件取回、MCP 工具、按 Box 覆盖的保留策略、回收站、存储页的检查点时间线，以及派生的 `host` 参数。其中多数已列在 §16。
 
 ---
 
@@ -717,13 +735,13 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 ### 9.5 实现说明（#13）
 
 - **存储**：`DATA_DIR/tokens.json`（权限 600）只保存 SHA-256。明文 `mbx_…` 只出现在创建响应里。与浏览器会话分文件。更换 `ACCESS_KEY` 会结束会话，**不会**吊销 API 令牌；吊销在设置页或 `DELETE /api/tokens/:id`。
-- **预设**：`readonly`（`box:read` 与 `files:read`）、`operator`（除了不能签发令牌之外的全部 scope）、`sandboxed-agent`（operator 去掉 `volume:attach`、`tool:install` 和 `box:ssh`）、`admin`（全部 scope，Box 与宿主机为 `*`）。`sandboxed-agent` 的默认配额是 5 个 Box、合计 8 个 CPU、16 GB、TTL 4 小时、每 60 秒 60 次请求。未改 scope、且 Box 与宿主机都是 `*` 的 admin 可以读全部审计；其余令牌只看自己的事件和范围内 Box 的事件。任何预设都不能创建或吊销令牌。
+- **预设**：`readonly`（`box:read` 与 `files:read`）、`operator`（除了不能签发令牌之外的全部 scope）、`sandboxed-agent`（operator 去掉 `volume:attach`、`tool:install` 和 `box:ssh`）、`admin`（全部 scope，Box 与宿主机为 `*`）。`sandboxed-agent` 的默认配额是 5 个 Box、合计 8 个 CPU、16 GB、TTL 4 小时、每 60 秒 60 次请求，以及 20 个手动检查点（`maxCheckpoints`，§7.6）。未改 scope、且 Box 与宿主机都是 `*` 的 admin 可以读全部审计；其余令牌只看自己的事件和范围内 Box 的事件。任何预设都不能创建或吊销令牌。
 - **默认范围**：Box 为 `created-by-me`，宿主机为 `local`，卷为空。只读预设不能创建 Box，因此在改成 `*` 或列出 id / 标签之前，它看不到已经存在的 Box。
 - **授权**：仍是执行器上的 `authorize` 钩子，操作定义没有改。调用前检查 scope；输入合法且目标解析之后，再检查宿主机、卷、Box、TTL 和配额。直接读取范围外的已有 Box 返回 403，不存在的 Box 仍是 404。列表在处理函数里过滤，因为钩子只能拒绝整次调用。
 - **`exec`**：对令牌可见的 Box，`exec` 隐含其全部挂载的读写，所以 `files:*` 只对没有 `exec` 的令牌有意义。文件 API 已实现（#9）。终端要求 `exec` 且 Box 在范围内。
 - **卷**：创建 Box 总会挂上工作区卷。卷还不存在时，这是新建，不需要 `volume:attach`。卷已经存在时，这是挂载，必须对该卷有 `volume:attach`。请求里已经能写出的 `mounts`、`volumes`、`volume` 同样检查。
 - **TTL**：令牌带 `maxTtlSec` 时，省略或显式给出 `null` 都会把这个上限写入 `lifecycle.ttlSec`；大于上限的值返回 403（`quota_ttl`）。创建与更新都按此检查。到点自动停止由生命周期清扫完成（#12），这里只负责写入上限。
-- **配额**：统计 `createdBy` 是该令牌的 Box，跨所有宿主机。`maxCpus` 和 `maxMemoryMb` 是这些 Box 的合计，因此也限制单个 Box。只改名称不会因为资源已经超限而被拒绝。配额检查在按令牌串行的临界区内完成（N1），两个竞争的创建不能同时占用最后一个名额。速率限制是进程内的固定窗口，超出返回 429，不写入磁盘。
+- **配额**：统计 `createdBy` 是该令牌的 Box，跨所有宿主机。`maxCpus` 和 `maxMemoryMb` 是这些 Box 的合计，因此也限制单个 Box。只改名称不会因为资源已经超限而被拒绝。配额检查在按令牌串行的临界区内完成（N1），两个竞争的创建不能同时占用最后一个名额。速率限制是进程内的固定窗口，超出返回 429，不写入磁盘。`maxCheckpoints` 统计该令牌创建的手动检查点，跨所有 Box 与宿主机；超出返回 403（`quota_checkpoints`），检查与拍摄在按令牌排队的临界区内完成。自动检查点不计入（§7.6）。
 - **吊销**：立即从查找表删除哈希。`?deleteCreated=true` 会删除该令牌创建的 Box 及其工作区卷，覆盖所有宿主机。删除是尽力而为的：无法删除的 Box 连同宿主机与原因列在响应的 `failedBoxes` 中，其余 Box 照常删除（N7）。已打开的终端以关闭码 1008 结束；事件流、任务进度流、SSE 实时流与该令牌的 MCP 会话同时结束，之后的请求返回 401。
 - **MCP**：设置页和 README 给出可粘贴的配置。`/mcp` 接受令牌，并与 REST 共用鉴权路径，每次调用都以令牌主体执行，因此同样经过 scope 与授权规则。会话绑定到打开它的主体，令牌吊销时结束；其他主体按会话 id 也读不到它。
 - **事件名称**：事件接口（列表与实时流）按 Box 名称匹配时，只计入该 Box 创建之后记录的事件（`createdAt`），因此同名的早先 Box 的事件不会泄露给后来的令牌。按 id 匹配不受此限制，重建替换容器 id 之后，事件仍按名称与创建时间匹配。已知限制：创建操作自己的事件以操作开始时间记录，早于 `createdAt`，所以在 Box 被重建后，授予令牌的 Box 的创建事件不再可见。这是失败关闭，只会少显示。
@@ -804,11 +822,13 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 ### 11.3 工具目录
 
-声明式清单：`id`、名称、说明、安装/检测/升级/卸载命令、依赖（如 Node ≥ 20）、是否需要 root、预估体积、安装来源（npm / pip / 官方脚本）。
+声明式清单：`id`、名称、说明、安装/检测/升级/卸载命令、可选的停止命令、依赖（如 Node ≥ 20）、是否需要 root、预估体积、安装来源（npm / pip / 官方脚本）。
 
 - 分组（`category`）：`agents` AI 编程助手、`languages` 语言与运行时、`terminal` 终端与开发工具、`networking` 网络。`tools.d` 里没写 `category` 的旧自定义条目归入 `agents`。创建对话框与 Box 的「工具」页都按分组展示，并提供按名称、说明与分组过滤的搜索框。
-- 内置：AI 编程助手 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi；语言与运行时 Bun、uv、Rust（rustup）、Zig；终端与开发工具 herdr、luvus；网络 Tailscale（`needsRoot`）。
-- `needsRoot` 的条目只列出，安装、升级与卸载都被拒绝（`tool_needs_root`），MiniBox 从不以 root 安装。
+- 内置：AI 编程助手 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi；语言与运行时 Bun、uv、Rust（rustup）、Zig；终端与开发工具 herdr、luvus；网络 Tailscale（以 `dev` 用户安装，用户态网络模式）。
+- `needsRoot` 的条目只列出，安装、升级与卸载都被拒绝（`tool_needs_root`），MiniBox 从不以 root 安装。内置目录目前没有这样的条目。
+- 停止命令（`stop`）：卸载前在运行中的 Box 内以 `dev` 执行。写入 helper 访问不到 Box 内的进程，守护进程若不先停止，会继续运行已删除的二进制。停止失败则工具保持已安装。
+- Tailscale 以用户态网络运行：二进制装在工具卷，`minibox-tailscale up` 通过 `setsid` 双重 fork 启动 `tailscaled`，使它不随执行 `up` 的 exec 结束。状态在家目录卷的 `~/.local/state/tailscale` 中，卸载后保留。`tailscaled` 不需要 root，也不需要 `/dev/net/tun`。netstack 把发往本节点 tailnet IP 的入站 TCP/UDP 转发到 `127.0.0.1`；出站只能经 `localhost:1055` 的 SOCKS5/HTTP 代理，没有 ICMP。守护进程不随 Box 启动或唤醒自动拉起，tailnet 流量也不会唤醒休眠中的 Box。
 - 检测：镜像或家目录里已有的工具显示为已安装并带版本，但不计为受管；只有 tools 卷上的入口点才受管。升级与卸载只作用于受管工具，其它情况返回 `tool_unmanaged`。已检测到的工具不会被重复安装。
 - 清单放仓库 `catalog/*.json`，并允许在 `DATA_DIR/tools.d/` 放自定义条目。
 - 自定义条目由所有者管理：`tool.custom.list`、`tool.custom.put` 与 `tool.custom.delete` 是三个 `defineOperation`，REST、CLI、MCP 与控制台共用一份定义。写入前用 `parseCatalogEntry`（与加载器相同的规则）校验，只有通过校验的内容才会写入；文件经临时文件加重命名原子写入，权限 0644，目录不存在时创建。覆盖内置 id 必须显式传 `overrideBuiltin`，控制台在这种情况下给出警告。删除只移除 `tools.d` 中的文件，不卸载共享卷上的工具；没有 `tools.d` 覆盖的内置 id 不能删除。`tool:custom` 不是令牌可以持有的 scope，只有所有者（访问密钥或登录会话）能调用，令牌一律以 `operation_forbidden` 拒绝。`tools.d` 中无法读取的文件使整个目录加载失败（与加载器一致，错误信息给出文件路径）；删除按文件名 `<id>.json` 进行，即使其 JSON 已损坏。
@@ -962,6 +982,8 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 **概览 · 终端 · 文件 · 端口 · 活动 · 设置**
 
+> 本节是早期草稿。当前实现的标签页为 概览 · 终端 · 活动 · 资源 · 端口 · 工具 · 检查点（见 `web/js/pages/box-detail.js`）。检查点的列表与操作在「检查点」标签页中（§7.6）。
+
 - 终端：列出所有 tmux 会话，标明是 Agent 创建还是你创建。
 - 文件：基于 Volume，Box 停止时也可浏览。
 - 设置分区：资源 · 存储与挂载 · 工具 · 环境变量 · 生命周期 · 安全 · 检查点 · 规格历史。
@@ -979,7 +1001,7 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 
 - **Volume 表**：名称、大小、已挂载的 Box（带读写标签）、拥有者（随 Box / 独立）、所在存储池与能力、最近检查点、状态。没有任何 Box 挂载的标「未挂载」并给出清理建议。操作：浏览文件、快照、挂载到 Box、删除。
 - **确认流程（已实现）**：保存存储池前先请求预览，界面列出保存后的池、新增与移除的池，确认后带 `confirm: true` 重发。删除卷前先确认，然后请求 `DELETE /api/volumes/:id?confirm=true`。挂载与卸载显示与 §13.6 相同的重建预览，确认后才应用。
-- **Checkpoint**：按 Box 的时间线分组，显示时间、标签、手动/自动/置顶、包含的内容和大小。操作：派生新 Box、回滚、置顶、删除。
+- **Checkpoint**：按 Box 的时间线分组，显示时间、标签、手动/自动/置顶、包含的内容和大小。操作：派生新 Box、回滚、置顶、删除。未实现：本版本的检查点在 Box 详情的「检查点」标签页中操作（决策 65），存储页的时间线留待后续。
 
 ### 13.8 首次引导
 
@@ -1112,6 +1134,7 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 - 各 Agent CLI 的 transcript 位置声明与只读展示。
 - 「任务/工作流」层：仓库 + Agent + 提示词 → 运行 → 看 diff → 采纳或丢弃。
 - 取回检查点中的单个文件。
+- 检查点的导入导出（含加密导出包）、定时检查点、重建前的检查点、独立卷快照、按 Box 覆盖的保留策略、回收站与 MCP 工具（见 §7.6）。
 - MiniBox Agent 框架、存储节点角色、计算节点出站 Agent（issue #28 #29）：工作量接近一个独立产品，动手前先单独评估范围。
 - 商用 NAS 的原生快照/克隆后端（依赖存储节点代理）。
 
@@ -1121,7 +1144,7 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | --- | --- |
 | schema 库选型（zod / valibot） | 需能输出 JSON Schema、兼容 Bun、体积可接受 |
 | Agent 程序的实现语言与体积（后移） | 倾向与控制端同一个 TypeScript/Bun 代码库（`bun build --compile`），体积是否可接受需评估；随 #28 一并评估 |
-| 存储节点代理保存 restic 密钥的方式（后移） | 本地保存（权限 600）还是由控制端按操作传入 |
+| 存储节点代理保存 restic 密钥的方式（后移） | 本地保存（权限 600）还是由控制端按操作传入。#11 已在控制端选定本地保存（权限 600），每次调用以只读文件交给辅助容器（决策 62）；存储节点代理的做法仍随 #28 再定 |
 | 辅助容器使用什么镜像 | 文件 API 的列目录需要 `find` 等工具，可复用基础模板或使用精简镜像；需权衡体积与是否需要预先构建 |
 | 模板构建超过 60 秒是否真的被 `idleTimeout` 断开 | 会。Bun 从请求开始计时，写出的字节不延长它；4 秒一档，故 60 秒同样会断。在 Bun 1.4.3 上以 4 秒上限核实过。202 立即返回，进度流和事件流调用 `server.timeout(req, 0)`（`tests/long-work-routes.test.ts`）。见 [§8.10](#810-实现说明16) |
 | 端口预览的路径前缀与子域名两种模式 | 路径模式下很多前端框架有 base path 问题，倾向优先子域名模式；预览页与控制台同源的隔离方案需细化（issue #10） |
@@ -1192,6 +1215,13 @@ M0 的第一个 PR 会改变通过反向代理访问的现有部署的行为（�
 | 57 | 检查点与电源锁 | 拍摄、派生与回滚在该 Box 的电源锁内进行，并持有它的活动心跳：空闲休眠不会在操作中途停止它，操作结束时刷新心跳，空闲从结束时刻起算。启动、停止、休眠与删除等电源操作等待正在进行的检查点结束。派生持有源 Box 的电源锁与心跳，因此删除源 Box 会等派生读完快照。回滚在锁内检查 TTL，到期即拒绝（决策 53）。休眠中的 Box 不会因检查点、派生或回滚被唤醒：拍摄按原样读取卷，派生不改动源 Box，回滚后期望状态仍为 `stopped`、原因仍为 `idle`，只是重建会先短暂启动容器（同 §5.10 的已知限制）。检查点记录写入之后若 Box 恢复失败，检查点保留，失败记入任务日志，任务不报错，否则重试会再拍一份 |
 | 58 | 外部附着的终端（#12） | 箱内任何 tmux 会话上附着的客户端都算作打开的终端，无论由谁附着：控制台、只读查看，或 `docker exec -it <box> tmux attach` 之类的外部客户端。判定读取 `tmux list-sessions` 的 `session_attached`，每次巡检与真正休眠前的锁内复查各做一次。看到附着即刷新心跳；第一次发现它已离开的巡检再刷新一次，因此空闲窗口不早于关闭时刻，最迟晚一个 `LIFECYCLE_INTERVAL_MS` 起算。箱内没有 tmux 或没有 `dev` 用户时视为没有客户端，旧镜像的 Box 仍可休眠；其它失败让该 Box 本轮不休眠，下一轮再查 |
 | 59 | 分离的会话与会话上限（#12） | 分离的会话（没有附着的客户端）不计为活动，也不保持 Box 唤醒。议题的豁免只列「打开的终端」与「后台任务」，因此这是议题未决时采用的推荐默认（§5.10 已知限制）。会话上限计入箱内每一个 tmux 会话，包括由外部创建、名称 MiniBox 无法使用（如含空格的 `my work`）的会话：它们不出现在列表中，也不能被寻址，但占用名额（§10.5 资源上限） |
+| 60 | 回滚的确认与撤销（#11） | 回滚先以 `stop` 为当前数据拍安全检查点，再把检查点的数据恢复到新卷并重建 Box。旧卷保留且不挂载，待定记录保存在 `DATA_DIR/checkpoints/rollbacks/`，直到 `POST /api/boxes/:id/rollback/confirm` 删除它们，或 `POST /api/boxes/:id/rollback/undo` 重新挂载它们并删除恢复出的卷。撤销会丢掉回滚之后在恢复出的卷中写入的数据，因此需要 `If-Match` 与 `confirm: true`。待定期间，同一 Box 的另一次回滚被拒绝，其安全检查点不能删除 |
+| 61 | 保留与容量的默认值（#11） | 设计文档没有给出数值，以下默认值由本次实现选定：自动检查点每个 Box 保留最新 20 个（`CHECKPOINT_KEEP_LAST`），超过 30 天的删除（`CHECKPOINT_KEEP_DAYS`，0 为不限）。手动、置顶与待定回滚所持有的检查点从不被删除。容量默认不限（`CHECKPOINT_CAPACITY_MB=0`）；占用达到上限的 80% 告警，达到上限即拒绝新的自动检查点（因而也拒绝回滚），手动拍摄仍可进行。服务启动时执行一次，之后每小时执行一次 |
+| 62 | restic 密钥的交付（§16 开放问题） | 密码生成后保存在 `DATA_DIR/secrets/checkpoint-repo.key`（权限 600）。每次调用以只读文件挂入辅助容器的 `/run/secrets/repo.key`，由 `RESTIC_PASSWORD_FILE` 指向它。密码不进入环境变量或容器配置，`docker inspect` 看不到。这回答了 §16 的开放问题：密钥本地保存（权限 600），按每次调用交给辅助容器，不常驻于容器或环境变量 |
+| 63 | 令牌的检查点配额（#11） | `maxCheckpoints` 限制令牌创建的手动检查点数量，跨所有 Box 与宿主机合计，置顶的也计入。自动检查点（回滚的安全检查点）不计入，因为它们由保留策略限制，而不是由令牌拍摄。`sandboxed-agent` 默认 20，超出返回 403（`quota_checkpoints`）。检查与拍摄在按令牌排队的临界区内完成，因此两次并发拍摄不能同时占用最后一个名额 |
+| 64 | 启动时的恢复（#11） | 对帐发现被检查点（`pause` 或 `stop`）中断而暂停的容器时，解冻它；期望运行却未运行的 Box 照常启动。这样崩溃后的 Box 不会留在冻结或停止状态。空闲休眠与 TTL 把期望状态设为 `stopped`（§5.10），因此不会被唤醒。对帐还会整理崩溃留下的回滚记录：Box 已不存在的记录直接删除；Box 已重新挂载全部被替换卷、且不再挂载任何恢复卷的记录（撤销在重建后中断），按撤销收尾，删除没有被挂载的恢复卷。确认回滚时，仍被某个 Box 挂载的被替换卷保留不删 |
+| 65 | 控制台的位置（#11） | 检查点放在 Box 详情的「检查点」标签页，而不是存储页或设置页。理由：检查点属于一个 Box，拍摄、派生、回滚与确认都针对 Box，而存储页按卷组织。界面文本提供中英文；服务端生成的检查点标签（如回滚前的安全检查点）保持英文 |
+| 66 | 用量接口（#11） | `GET /api/checkpoints/usage` 只有所有者可读。仓库大小是宿主机的指标（与 §6.6 的存储健康相同），令牌不需要它，也不持有 `checkpoint:usage` scope，路由与执行器都拒绝令牌。返回值包含占用、上限、状态与保留策略，便于界面解释 |
 
 ---
 

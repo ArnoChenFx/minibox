@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { App } from "../src/app";
-import type { HelperSpec } from "../src/runtime";
+import type { ExecSpec, HelperSpec } from "../src/runtime";
 import { startServer } from "../src/server";
+import { getBox, stopBox } from "../src/services/boxes";
 import { savePools } from "../src/services/volumes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
@@ -136,7 +139,7 @@ describe("installed detection", () => {
     expect(toolRow(listed.json, "zig")).toMatchObject({ installed: false, installedVersion: null, managed: false });
     expect(toolRow(listed.json, "tailscale")).toMatchObject({
       category: "networking",
-      needsRoot: true,
+      needsRoot: false,
       installed: false,
     });
   });
@@ -348,16 +351,118 @@ describe("reconcile and changes to installed tools", () => {
   });
 
   test("a root-only tool cannot be recorded on a box or installed", async () => {
-    const refused = await call("POST", "/api/boxes", { name: "beta", cpus: 1, memoryMb: 256, tools: ["tailscale"] });
+    const dir = join(app.cfg.dataDir, "tools.d");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "rooted.json"), JSON.stringify({ ...DAEMON_TOOL, id: "rooted", needsRoot: true }));
+
+    const refused = await call("POST", "/api/boxes", { name: "beta", cpus: 1, memoryMb: 256, tools: ["rooted"] });
     expect(refused.status).toBe(400);
     expect((refused.json.error as { message: string }).message).toContain("requires root");
 
     const boxId = await createBox("alpha");
-    const started = await call("POST", `/api/boxes/${boxId}/tools/install`, { tool: "tailscale", version: "latest" });
+    const started = await call("POST", `/api/boxes/${boxId}/tools/install`, { tool: "rooted", version: "latest" });
     expect(started.status).toBe(202);
     const task = await waitTask(String(started.json.taskId));
     expect(task.status).toBe("failed");
     expect((task.error as { message: string }).message).toContain("requires root");
     expect(writerCalls()).toHaveLength(0);
+  });
+});
+
+const STOP_SHELL = "/opt/minibox/tools/bin/daemon-tool stop";
+
+/** A script tool that starts a daemon, with a stop command for the uninstall to run first. */
+const DAEMON_TOOL = {
+  id: "daemon-tool",
+  name: "Daemon tool",
+  description: "A tool that runs a daemon.",
+  category: "networking",
+  source: "script",
+  package: "daemon-tool.test",
+  bin: "daemon-tool",
+  needsRoot: false,
+  estimatedMb: 1,
+  install: "mkdir -p {{prefix}}/bin && touch {{prefix}}/bin/daemon-tool",
+  upgrade: "mkdir -p {{prefix}}/bin && touch {{prefix}}/bin/daemon-tool",
+  uninstall: "rm -f {{prefix}}/bin/daemon-tool",
+  stop: "{{prefix}}/bin/daemon-tool stop",
+  detect: "command -v daemon-tool >/dev/null && daemon-tool version 2>/dev/null",
+};
+
+function stopRuns(): number {
+  return runtime.callsTo("startExec").filter((call) => (call.args[1] as ExecSpec).cmd.at(-1) === STOP_SHELL).length;
+}
+
+describe("stopping a tool before its uninstall", () => {
+  beforeEach(() => {
+    const dir = join(app.cfg.dataDir, "tools.d");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "daemon-tool.json"), JSON.stringify(DAEMON_TOOL));
+  });
+
+  test("uninstall runs the stop command as dev in the running box, before the writer removes the binary", async () => {
+    const boxId = await createBox("alpha", { tools: ["daemon-tool"] });
+    answerDetection({ "daemon-tool": { managed: true, version: "1.0.0" } });
+
+    const started = await call("POST", `/api/boxes/${boxId}/tools/uninstall`, { tool: "daemon-tool" });
+    expect((await waitTask(String(started.json.taskId))).status).toBe("succeeded");
+
+    const stop = runtime.callsTo("startExec").find((call) => (call.args[1] as ExecSpec).cmd.at(-1) === STOP_SHELL);
+    expect(stop?.args[1]).toMatchObject({ cmd: ["/bin/sh", "-c", STOP_SHELL], user: "dev", tty: false });
+    const phases = runtime.calls.flatMap((call) => {
+      if (call.op === "startExec" && (call.args[1] as ExecSpec).cmd.at(-1) === STOP_SHELL) return ["stop"];
+      if (call.op === "runHelper" && (call.args[0] as HelperSpec).network === true) return ["writer"];
+      return [];
+    });
+    expect(phases).toEqual(["stop", "writer"]);
+  });
+
+  test("a failed stop keeps the tool on the box, and the writer does not run", async () => {
+    const boxId = await createBox("alpha", { tools: ["daemon-tool"] });
+    answerDetection({ "daemon-tool": { managed: true, version: "1.0.0" } });
+    runtime.execScript = { stdout: "", stderr: "tailscaled did not exit after SIGTERM\n", code: 1 };
+
+    const started = await call("POST", `/api/boxes/${boxId}/tools/uninstall`, { tool: "daemon-tool" });
+    const task = await waitTask(String(started.json.taskId));
+    expect(task.status).toBe("failed");
+    const message = (task.error as { message: string }).message;
+    expect(message).toContain("was not uninstalled");
+    expect(message).toContain("did not exit after SIGTERM");
+    expect(stopRuns()).toBe(1);
+    expect(writerCalls()).toHaveLength(0);
+    const box = await getBox(app.hosts.get(), boxId);
+    expect(app.hosts.get().specs.read(box.boxId)?.tools).toEqual([{ id: "daemon-tool", version: "latest" }]);
+  });
+
+  test("a stopped box has no daemon to stop, so the uninstall runs no stop command", async () => {
+    const boxId = await createBox("alpha", { tools: ["daemon-tool"] });
+    answerDetection({ "daemon-tool": { managed: true, version: "1.0.0" } });
+    await stopBox(app.hosts.get(), boxId, "manual");
+
+    const started = await call("POST", `/api/boxes/${boxId}/tools/uninstall`, { tool: "daemon-tool" });
+    expect((await waitTask(String(started.json.taskId))).status).toBe("succeeded");
+    expect(stopRuns()).toBe(0);
+    expect(writerCalls()).toHaveLength(1);
+  });
+
+  test("install and upgrade never run the stop command, and a tool the box does not have has nothing to stop", async () => {
+    const boxId = await createBox("alpha", { tools: ["daemon-tool", "codex"] });
+    answerDetection({
+      "daemon-tool": { managed: true, version: "1.0.0" },
+      codex: { managed: true, version: "0.163.0" },
+    });
+    const upgraded = await call("POST", `/api/boxes/${boxId}/tools/upgrade`, {
+      tool: "daemon-tool",
+      version: "latest",
+    });
+    expect((await waitTask(String(upgraded.json.taskId))).status).toBe("succeeded");
+    const removed = await call("POST", `/api/boxes/${boxId}/tools/uninstall`, { tool: "codex" });
+    expect((await waitTask(String(removed.json.taskId))).status).toBe("succeeded");
+    expect(stopRuns()).toBe(0);
+
+    answerDetection({});
+    const absent = await call("POST", `/api/boxes/${boxId}/tools/uninstall`, { tool: "daemon-tool" });
+    expect((await waitTask(String(absent.json.taskId))).status).toBe("succeeded");
+    expect(stopRuns()).toBe(0);
   });
 });

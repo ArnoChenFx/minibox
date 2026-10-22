@@ -1,4 +1,5 @@
 import { dirname } from "node:path";
+import type { Readable } from "node:stream";
 
 import type { HostCtx } from "../host/registry";
 import { badRequest, conflict, notFound } from "../lib/errors";
@@ -6,7 +7,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { TaskHandle } from "../tasks/types";
 import { findCatalogEntry, loadCatalog, requireCatalogEntry } from "../tools/catalog";
-import { commandFor, resolveToolVersion } from "../tools/commands";
+import { commandFor, renderCommand, resolveToolVersion } from "../tools/commands";
 import { detectScript, parseDetectOutput, type DetectResult } from "../tools/detect";
 import { TOOLS_PREFIX, type CatalogEntry, type ToolAction, type ToolStatus } from "../tools/types";
 import { chownEngines, findSharedTools } from "../volumes/engine";
@@ -18,6 +19,7 @@ const WRITER_MEMORY = 1024 * 1024 * 1024;
 const WRITER_PIDS = 256;
 const WRITER_TIMEOUT_SEC = 900;
 const DETECT_TIMEOUT_SEC = 300;
+const STOP_TIMEOUT_SEC = 30;
 
 /** Proxy and package-manager env forwarded into the tools writer when the host process has them. */
 export function installEnv(): string[] {
@@ -83,6 +85,71 @@ async function runToolsWriter(
   });
   if (result.logs) opts.task?.log(result.logs.endsWith("\n") ? result.logs : `${result.logs}\n`);
   return result;
+}
+
+/**
+ * Runs a shell command as the box user and waits for it, up to `STOP_TIMEOUT_SEC`. A command still running at the
+ * deadline is killed and reported with status 124, the status `timeout` gives.
+ */
+async function runInBox(host: HostCtx, box: Box, shell: string): Promise<{ exitCode: number; logs: string }> {
+  const session = await host.runtime.startExec(box.id, {
+    cmd: ["/bin/sh", "-c", shell],
+    env: [],
+    workingDir: "/",
+    user: "dev",
+    tty: false,
+  });
+  const stdout = collectText(session.stdout);
+  const stderr = collectText(session.stderr);
+  const logs = () => [stdout.text(), stderr.text()].filter(Boolean).join("\n");
+  const deadline = Date.now() + STOP_TIMEOUT_SEC * 1000;
+  let status = await session.inspect();
+  while (status.running && Date.now() < deadline) {
+    await Bun.sleep(50);
+    status = await session.inspect();
+  }
+  if (status.running) {
+    await session.kill().catch(() => {});
+    return { exitCode: 124, logs: logs() };
+  }
+  await Promise.race([Promise.all([stdout.ended, stderr.ended]), Bun.sleep(1000)]);
+  return { exitCode: status.exitCode ?? 1, logs: logs() };
+}
+
+/** Collects a stream as text while it is still open. `ended` settles when the stream ends or fails. */
+function collectText(stream: Readable): { text: () => string; ended: Promise<void> } {
+  const chunks: Buffer[] = [];
+  const ended = new Promise<void>((resolve) => {
+    const done = () => resolve();
+    stream.on("data", (chunk: Buffer | string) => chunks.push(Buffer.from(chunk)));
+    stream.once("end", done);
+    stream.once("close", done);
+    stream.once("error", done);
+  });
+  return { text: () => Buffer.concat(chunks).toString("utf8"), ended };
+}
+
+/**
+ * Stops what a tool started in the box before its binary is removed. A stopped box has no such process, and a tool
+ * without a stop command has nothing to stop. A failure throws, so the uninstall keeps the binary the daemon runs.
+ */
+async function stopTool(host: HostCtx, box: Box, entry: CatalogEntry, task?: TaskHandle): Promise<void> {
+  if (!entry.stop || !box.running) return;
+  const shell = renderCommand(entry.stop, entry, { version: "latest" });
+  task?.log(`stop ${entry.id} in the box\n$ ${shell}\n`);
+  const result = await runInBox(host, box, shell).catch((e: unknown) => ({
+    exitCode: 1,
+    logs: e instanceof Error ? e.message : String(e),
+  }));
+  if (result.logs) task?.log(result.logs.endsWith("\n") ? result.logs : `${result.logs}\n`);
+  if (result.exitCode !== 0) {
+    throw conflict(
+      msg("tool_stop_failed", {
+        id: entry.id,
+        detail: result.logs.trim().slice(0, 400) || String(result.exitCode),
+      }),
+    );
+  }
 }
 
 interface DetectTarget {
@@ -207,6 +274,7 @@ async function runAction(
   if (action !== "install") {
     const current = (await detectTools(host, [entry], box, { strict: true })).get(entry.id);
     if (current?.installed && !current.managed) throw badRequest(msg("tool_unmanaged", { id: toolId }));
+    if (action === "uninstall" && current?.installed) await stopTool(host, box, entry, task);
   }
   const shell = commandFor(entry, action, resolvedVersion);
   task?.log(`${action} ${entry.id}@${resolvedVersion}\n$ ${shell}\n`);

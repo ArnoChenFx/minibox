@@ -11,7 +11,16 @@ import { SpecStore } from "../src/specs/store";
 import { VolumeStore } from "../src/volumes/store";
 import { rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
-import { call, type Harness, mint, principalOf, refused, startHarness } from "./support/tokens";
+import {
+  call,
+  finishedTask,
+  type Harness,
+  mint,
+  principalOf,
+  refused,
+  type Reply,
+  startHarness,
+} from "./support/tokens";
 
 let harness: Harness;
 let restoreLogs: () => void;
@@ -30,6 +39,26 @@ afterEach(() => {
 
 async function createBox(token: string, name: string, extra: Record<string, unknown> = {}) {
   return call(harness.base, "/api/boxes", { token, body: { name, cpus: 1, memoryMb: 256, ...extra } });
+}
+
+function takeAs(boxId: string, token?: string) {
+  return call(harness.base, `/api/boxes/${boxId}/checkpoints`, { method: "POST", body: {}, token });
+}
+
+/** How a take ends: `succeeded`, or the key of its refusal, whether the refusal came at once or from its task. */
+async function outcomeOf(reply: Reply): Promise<string> {
+  if (reply.status !== 202) return reply.json.error?.key ?? String(reply.status);
+  const taskId = reply.json.taskId ?? "";
+  const done = await finishedTask(harness.base, taskId);
+  if (done.status === "succeeded") return "succeeded";
+  return (await call(harness.base, `/api/tasks/${taskId}`)).json.error?.key ?? done.status;
+}
+
+function tokenMade(boxId: string, tokenId: string) {
+  return harness.app.hosts
+    .get()
+    .checkpoints.list()
+    .filter((record) => record.boxId === boxId && record.createdBy === tokenId);
 }
 
 /** A second host with its own engine and stores, registered beside the local one. */
@@ -199,5 +228,69 @@ describe("boxes on every host", () => {
     expect(edge.host.specs.list().map((spec) => spec.name)).toEqual(["far"]);
     const owner = await call(harness.base, "/api/boxes");
     expect(owner.json.boxes?.map((box) => box.name)).toEqual([]);
+  });
+});
+
+describe("checkpoint count limit", () => {
+  test("a token's own checkpoints stop at its limit, and the refusal starts no task", async () => {
+    const token = mint(harness.app, { name: "snapper", preset: "operator", quotas: { maxCheckpoints: 2 } });
+    const boxId = (await createBox(token.secret, "alpha")).json.box?.boxId ?? "";
+
+    expect(await outcomeOf(await takeAs(boxId, token.secret))).toBe("succeeded");
+    expect(await outcomeOf(await takeAs(boxId, token.secret))).toBe("succeeded");
+    expect(refused(await takeAs(boxId, token.secret))).toEqual({ status: 403, key: "quota_checkpoints" });
+    expect(tokenMade(boxId, token.id)).toHaveLength(2);
+  });
+
+  test("the owner's checkpoints, and the safety point a token's rollback takes, do not count toward its limit", async () => {
+    const token = mint(harness.app, { name: "limited", preset: "operator", quotas: { maxCheckpoints: 1 } });
+    const boxId = (await createBox(token.secret, "alpha")).json.box?.boxId ?? "";
+    const owned = await call(harness.base, `/api/boxes/${boxId}/checkpoints`, { method: "POST", body: {} });
+    const target = (await finishedTask(harness.base, owned.json.taskId ?? "")).result?.checkpoint?.id ?? "";
+    const revision = harness.app.hosts.get().specs.read(boxId)?.revision ?? 0;
+
+    const rolled = await call(harness.base, `/api/boxes/${boxId}/rollback`, {
+      method: "POST",
+      token: token.secret,
+      body: { checkpoint: target, confirm: true },
+      headers: { "if-match": String(revision) },
+    });
+    expect(rolled.status).toBe(202);
+    expect((await finishedTask(harness.base, rolled.json.taskId ?? "")).status).toBe("succeeded");
+
+    expect(await outcomeOf(await takeAs(boxId, token.secret))).toBe("succeeded");
+    expect(await outcomeOf(await takeAs(boxId, token.secret))).toBe("quota_checkpoints");
+  });
+
+  test("two takes that race for a token's last place cannot both succeed, even on different boxes", async () => {
+    const token = mint(harness.app, { name: "racer", preset: "operator", quotas: { maxCheckpoints: 1 } });
+    const first = (await createBox(token.secret, "alpha")).json.box?.boxId ?? "";
+    const second = (await createBox(token.secret, "beta")).json.box?.boxId ?? "";
+
+    const replies = await Promise.all([takeAs(first, token.secret), takeAs(second, token.secret)]);
+    const outcomes = await Promise.all(replies.map(outcomeOf));
+
+    expect(outcomes.toSorted()).toEqual(["quota_checkpoints", "succeeded"]);
+    expect(
+      harness.app.hosts
+        .get()
+        .checkpoints.list()
+        .filter((record) => record.createdBy === token.id),
+    ).toHaveLength(1);
+  });
+
+  test("the sandboxed-agent preset allows twenty checkpoints", () => {
+    const agent = mint(harness.app, { name: "agent", preset: "sandboxed-agent" });
+    expect(principalOf(harness.app, agent.secret).grants.quotas.maxCheckpoints).toBe(20);
+  });
+
+  test("a checkpoint limit must be a whole number of at least one", async () => {
+    for (const value of [0, 1.5]) {
+      const reply = await call(harness.base, "/api/tokens", {
+        body: { name: `bad-${String(value).replace(".", "-")}`, preset: "operator", quotas: { maxCheckpoints: value } },
+      });
+      expect(reply.status).toBe(400);
+      expect(reply.json.error?.code).toBe("validation_failed");
+    }
   });
 });
