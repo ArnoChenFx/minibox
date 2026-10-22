@@ -20,6 +20,7 @@ const ACTION_ICON = {
   "box.restart": "restart",
   "box.resources": "sliders",
   "box.rebuild": "refresh",
+  "box.move": "move",
   "box.rollback": "history",
   "box.rollback.confirm": "check",
   "box.rollback.undo": "refresh",
