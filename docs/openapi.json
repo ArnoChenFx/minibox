@@ -22413,6 +22413,9 @@
                                 "null"
                               ]
                             },
+                            "timezoneUnknown": {
+                              "type": "boolean"
+                            },
                             "createdBy": {
                               "type": [
                                 "string",
@@ -22486,6 +22489,7 @@
                             "everyHours",
                             "at",
                             "timezone",
+                            "timezoneUnknown",
                             "createdBy",
                             "createdAt",
                             "updatedAt",
@@ -22698,6 +22702,9 @@
                             "null"
                           ]
                         },
+                        "timezoneUnknown": {
+                          "type": "boolean"
+                        },
                         "createdBy": {
                           "type": [
                             "string",
@@ -22771,6 +22778,7 @@
                         "everyHours",
                         "at",
                         "timezone",
+                        "timezoneUnknown",
                         "createdBy",
                         "createdAt",
                         "updatedAt",

@@ -1091,7 +1091,7 @@ export default {
   "ck.scheduleDaily": "每天 {at}（{zone}）",
   "ck.nextRun": "下次运行",
   "ck.lastRun": "上次运行",
-  "ck.localTime": "（本地时间）",
+  "ck.inZone": "（{zone}）",
   "ck.lastRunNone": "尚未运行",
   "ck.runOk": "{time}，已拍摄检查点",
   "ck.runSkipped": "{time}，已跳过：{reason}",
@@ -1109,6 +1109,7 @@ export default {
   "ck.scheduleTime": "时间",
   "ck.scheduleTimeHelp": "你所在时区（{zone}）的 HH:MM，例如 02:30。",
   "ck.scheduleZoneChange": "此计划当前按 {from} 运行，在这里保存会改为 {zone}。",
+  "ck.scheduleZoneUnknown": "保存的时区 {zone} 服务器无法识别，此计划暂按 UTC 运行。请修改计划，重新设置时区。",
   "ck.scheduleHelp":
     "定时检查点属于自动检查点。保留策略会删除超出上限的最旧检查点；仓库已满时，计划会跳过运行，直到腾出空间。",
   "ck.scheduleInvalid": "请输入 1 到 720 之间的整数小时，或一天中的时间。",

@@ -3,6 +3,7 @@ import {
   firstRunAt,
   isDue,
   nextRunAfterRun,
+  runZoneOf,
   type ScheduleRule,
   type ScheduleRun,
   SCHEDULE_VERSION,
@@ -22,6 +23,30 @@ export const SCHEDULER_EVERY_MS = 60 * 1000;
 type Outcome = Pick<ScheduleRun, "status" | "reason" | "checkpointId" | "error">;
 
 const skipped = (reason: SkipReason): Outcome => ({ status: "skipped", reason, checkpointId: null, error: null });
+
+/** A schedule as the API returns it: `timezoneUnknown` says its saved zone is not one this server knows, so it runs in UTC. */
+export type ScheduleView = BoxSchedule & { timezoneUnknown: boolean };
+
+export function scheduleView(schedule: BoxSchedule): ScheduleView {
+  return { ...schedule, timezoneUnknown: runZoneOf(schedule).unknown !== null };
+}
+
+/** The schedules already warned about, by box and zone, so a pass every minute does not repeat the warning. */
+const warnedZones = new Set<string>();
+
+function warnUnknownZone(hostId: string, schedule: BoxSchedule): void {
+  const { unknown } = runZoneOf(schedule);
+  if (unknown === null) return;
+  const key = `${schedule.boxId}\0${unknown}`;
+  if (warnedZones.has(key)) return;
+  warnedZones.add(key);
+  log.warn("checkpoint.schedule_timezone_unknown", {
+    host: hostId,
+    box: schedule.boxId,
+    timezone: unknown,
+    fallback: "UTC",
+  });
+}
 
 /**
  * Takes the checkpoints that box schedules are due for. A pass runs the due schedules one after another, so a backup
@@ -67,6 +92,7 @@ export class CheckpointScheduler {
         for (const schedule of store.checkpoints.schedules()) {
           if (seen.has(schedule.boxId)) continue;
           seen.add(schedule.boxId);
+          warnUnknownZone(store.host.id, schedule);
           const spec = store.specs.read(schedule.boxId);
           if (!spec) {
             await this.drop(store, schedule.boxId);
@@ -177,9 +203,12 @@ export class CheckpointScheduler {
 }
 
 /** The schedule of a box, or null when it has none. Schedules are off until one is set. */
-export async function scheduleOf(host: HostCtx, boxRef: string): Promise<BoxSchedule | null> {
+export async function scheduleOf(host: HostCtx, boxRef: string): Promise<ScheduleView | null> {
   const { boxId } = await getBox(host, boxRef);
-  return host.checkpoints.readSchedule(boxId);
+  const schedule = host.checkpoints.readSchedule(boxId);
+  if (!schedule) return null;
+  warnUnknownZone(host.host.id, schedule);
+  return scheduleView(schedule);
 }
 
 /**
@@ -192,7 +221,7 @@ export async function setSchedule(
   rule: ScheduleRule,
   createdBy: string | null,
   now = new Date(),
-): Promise<BoxSchedule> {
+): Promise<ScheduleView> {
   const { boxId } = await getBox(host, boxRef);
   return host.checkpoints.exclusive(async () => {
     const existing = host.checkpoints.readSchedule(boxId);
@@ -212,7 +241,7 @@ export async function setSchedule(
       lastRun: existing?.lastRun ?? null,
     };
     host.checkpoints.writeSchedule(schedule);
-    return schedule;
+    return scheduleView(schedule);
   });
 }
 
