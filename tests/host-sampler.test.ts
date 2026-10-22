@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 
 import type { App } from "../src/app";
 import type { BoxFrame, LinkFrame, SampleFrame } from "../src/host/live";
@@ -7,6 +7,7 @@ import type { LabelKeys } from "../src/labels";
 import { RuntimeError } from "../src/runtime";
 import { createBox, getBox, stopBox } from "../src/services/boxes";
 import { createTestApp, silenceLogs } from "./support/app";
+import { advance } from "./support/clock";
 import type { Call, FakeRuntime } from "./support/fake-runtime";
 
 const MB = 1024 * 1024;
@@ -35,13 +36,39 @@ beforeEach(() => {
 afterEach(() => {
   app.hosts.get().sampler.stop();
   restoreLogs();
+  fakeClock = false;
+  jest.useRealTimers();
 });
+
+let fakeClock = false;
+
+/**
+ * For the tests whose outcome depends on how long a timer runs: the cadence, the lease, the stale age and the re-list.
+ * They move a fake clock, so each check happens at an exact moment and nothing depends on how loaded the machine is.
+ */
+function useFakeClock(): void {
+  fakeClock = true;
+  jest.useFakeTimers();
+}
+
+/**
+ * Lets `ms` pass on the clock the test runs on. The fake clock moves a millisecond at a time: the sampler schedules its
+ * next wait from a promise continuation, which runs only after the clock stops, so one long step would lose every wait
+ * that falls inside it.
+ */
+async function elapse(ms: number): Promise<void> {
+  if (!fakeClock) {
+    await Bun.sleep(ms);
+    return;
+  }
+  for (let left = ms; left > 0; left--) await advance(1);
+}
 
 async function waitFor(check: () => boolean, what: string, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!check()) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await Bun.sleep(5);
+    await elapse(5);
   }
 }
 
@@ -255,24 +282,26 @@ describe("resource samples", () => {
 
 describe("the sample cadence", () => {
   test("with no watcher and no reader, nothing is sampled, and a reader gets one round at once", async () => {
+    useFakeClock();
     seedBox("kappa", true);
     const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
     sampler.start();
     await waitFor(() => sampler.ready(), "the first listing");
     await sampler.settle();
 
-    await Bun.sleep(60);
+    await elapse(60);
     await sampler.settle();
     expect(runtime.callsTo("containerStats")).toHaveLength(0);
 
     sampler.need();
     await waitFor(() => runtime.callsTo("containerStats").length === 1, "the round a reader asked for");
-    await Bun.sleep(60);
+    await elapse(60);
     await sampler.settle();
     expect(runtime.callsTo("containerStats")).toHaveLength(1);
   });
 
   test("a reader's lease keeps samples going only until it runs out, and then sampling stops", async () => {
+    useFakeClock();
     seedBox("xi", true);
     const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 5 });
     sampler.start();
@@ -280,11 +309,12 @@ describe("the sample cadence", () => {
     await sampler.settle();
 
     sampler.need(60);
+    const leaseEnd = Date.now() + 60;
     await waitFor(() => runtime.callsTo("containerStats").length >= 2, "samples within the lease");
-    await Bun.sleep(120);
+    await elapse(leaseEnd - Date.now());
     await sampler.settle();
     const ended = runtime.callsTo("containerStats").length;
-    await Bun.sleep(60);
+    await elapse(60);
     await sampler.settle();
     expect(runtime.callsTo("containerStats")).toHaveLength(ended);
   });
@@ -299,6 +329,7 @@ describe("the sample cadence", () => {
   });
 
   test("a sample older than the stale age is not reported", async () => {
+    useFakeClock();
     seedBox("pi", true);
     const sampler = fastSampler({ intervalMs: 5, staleAfterMs: 30 });
     sampler.start();
@@ -307,11 +338,14 @@ describe("the sample cadence", () => {
     const boxId = sampler.boxes({ withStats: false })[0]?.boxId ?? "";
     expect(sampler.statsOf(boxId)).not.toBeNull();
 
-    await Bun.sleep(40);
+    await elapse(29);
+    expect(sampler.statsOf(boxId)).not.toBeNull();
+    await elapse(1);
     expect(sampler.statsOf(boxId)).toBeNull();
   });
 
   test("a watcher gets a sample at once, then one per live interval, until it is released", async () => {
+    useFakeClock();
     seedBox("lambda", true);
     const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
     sampler.start();
@@ -324,12 +358,13 @@ describe("the sample cadence", () => {
     release();
     await sampler.settle();
     const released = runtime.callsTo("containerStats").length;
-    await Bun.sleep(60);
+    await elapse(60);
     await sampler.settle();
     expect(runtime.callsTo("containerStats")).toHaveLength(released);
   });
 
   test("sampling goes on while any watcher is left, and releasing one watcher twice counts once", async () => {
+    useFakeClock();
     seedBox("mu", true);
     const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
     sampler.start();
@@ -346,12 +381,13 @@ describe("the sample cadence", () => {
     second();
     await sampler.settle();
     const released = runtime.callsTo("containerStats").length;
-    await Bun.sleep(60);
+    await elapse(60);
     await sampler.settle();
     expect(runtime.callsTo("containerStats")).toHaveLength(released);
   });
 
   test("a stopped sampler takes no samples, even while it is watched", async () => {
+    useFakeClock();
     seedBox("nu", true);
     const sampler = fastSampler({ intervalMs: 5, idleIntervalMs: 60_000 });
     sampler.start();
@@ -362,7 +398,7 @@ describe("the sample cadence", () => {
     sampler.stop();
     await sampler.settle();
     const stopped = runtime.callsTo("containerStats").length;
-    await Bun.sleep(60);
+    await elapse(60);
     expect(runtime.callsTo("containerStats")).toHaveLength(stopped);
     release();
   });
@@ -370,6 +406,7 @@ describe("the sample cadence", () => {
 
 describe("the periodic re-list", () => {
   test("a change the event stream never reported reaches the cache on the next re-list, and the link stays up", async () => {
+    useFakeClock();
     const id = seedBox("zeta", true);
     const sampler = fastSampler({ relistMs: 20 });
     sampler.start();
@@ -387,6 +424,7 @@ describe("the periodic re-list", () => {
   });
 
   test("a container removed without an event leaves the cache on the next re-list", async () => {
+    useFakeClock();
     const id = seedBox("eta", true);
     const sampler = fastSampler({ relistMs: 20 });
     sampler.start();
@@ -399,6 +437,7 @@ describe("the periodic re-list", () => {
   });
 
   test("a re-list that finds nothing changed publishes nothing", async () => {
+    useFakeClock();
     seedBox("iota", true);
     const sampler = fastSampler({ relistMs: 5 });
     sampler.start();
@@ -412,6 +451,7 @@ describe("the periodic re-list", () => {
   });
 
   test("stop ends the re-lists", async () => {
+    useFakeClock();
     seedBox("theta", true);
     const sampler = fastSampler({ relistMs: 5 });
     sampler.start();
@@ -420,7 +460,7 @@ describe("the periodic re-list", () => {
     await sampler.settle();
     const listed = runtime.callsTo("listContainers").length;
 
-    await Bun.sleep(40);
+    await elapse(40);
     expect(runtime.callsTo("listContainers").length).toBe(listed);
   });
 

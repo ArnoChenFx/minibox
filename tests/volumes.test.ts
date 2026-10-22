@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, jest, spyOn, test } from "bun:test";
 import { statSync } from "node:fs";
 
 import type { Config } from "../src/config";
@@ -15,6 +15,7 @@ import { claimEngineVolumes } from "../src/volumes/engine";
 import { probePool, probePools } from "../src/volumes/health";
 import { DEV_OWNER, type StoragePool } from "../src/volumes/types";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
+import { settle } from "./support/clock";
 import { FakeRuntime } from "./support/fake-runtime";
 
 const mode = (path: string) => statSync(path).mode & 0o777;
@@ -768,10 +769,11 @@ describe("pool probes run side by side and give up at a deadline", () => {
   test("a pool that does not answer by the deadline is unreachable, and the other pools still report", async () => {
     await savePools(host, pools, undefined);
     const held = stuckHeld();
+    jest.useFakeTimers();
     try {
       const started = Date.now();
-      const probes = await probePools(host, { force: true, deadlineMs: 300 });
-      expect(Date.now() - started).toBeLessThan(2000);
+      const probes = await settle(probePools(host, { force: true, deadlineMs: 300 }));
+      expect(Date.now() - started).toBe(300);
       expect(Object.fromEntries(probes.map((probe) => [probe.pool, probe.status]))).toEqual({
         local: "reachable",
         stuck: "unreachable",
@@ -781,6 +783,7 @@ describe("pool probes run side by side and give up at a deadline", () => {
       expect(host.volumes.healthOf(host.host.id, "stuck")).toMatchObject({ status: "unreachable" });
     } finally {
       held.release();
+      jest.useRealTimers();
     }
   });
 
@@ -796,10 +799,11 @@ describe("pool probes run side by side and give up at a deadline", () => {
     const held = runtime.hold("runHelper", (args) =>
       [STUCK_ROOT, "mbtest-pool-dead"].includes((args[0] as HelperSpec).mounts?.[0]?.source ?? ""),
     );
+    jest.useFakeTimers();
     try {
       const started = Date.now();
-      const probes = await probePools(host, { force: true, deadlineMs: 500 });
-      expect(Date.now() - started).toBeLessThan(900);
+      const probes = await settle(probePools(host, { force: true, deadlineMs: 500 }));
+      expect(Date.now() - started).toBe(500);
       expect(
         probes
           .filter((probe) => probe.status === "unreachable")
@@ -808,6 +812,7 @@ describe("pool probes run side by side and give up at a deadline", () => {
       ).toEqual(["dead", "stuck"]);
     } finally {
       held.release();
+      jest.useRealTimers();
     }
   });
 

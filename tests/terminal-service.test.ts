@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { PassThrough } from "node:stream";
 import { finished } from "node:stream/promises";
 
@@ -17,7 +17,10 @@ import {
   VIEWER_ATTACHES_MAX,
 } from "../src/services/terminals";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
+import { advance } from "./support/clock";
 import type { FakeExec } from "./support/fake-runtime";
+
+afterEach(() => jest.useRealTimers());
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 
@@ -57,10 +60,6 @@ async function createBox(app: ReturnType<typeof setup>["app"], ctx: OperationCon
 
 async function runningBox(env: ReturnType<typeof setup>, name = "alpha"): Promise<Box> {
   return getBox(env.host, await createBox(env.app, env.ctx, name));
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function keptAfterCut(limit: number, text: string): Promise<string> {
@@ -555,7 +554,9 @@ describe("terminal service: takeover", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "mine", "ui");
 
-    await sleep(120);
+    jest.useFakeTimers();
+    await advance(120);
+    jest.useRealTimers();
     expect(await env.terminals.read(env.host, box, "mine", { lines: 5 })).toMatchObject({ controller: "human" });
     const refused = await rejectionOf(env.terminals.send(env.host, box, "mine", { text: "x" }));
     expect(refused).toMatchObject({ code: "taken_over" });
@@ -566,10 +567,11 @@ describe("terminal service: takeover", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
     const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
+    jest.useFakeTimers();
     env.terminals.takeOver(viewer);
 
-    await sleep(180);
-    expect(await env.terminals.read(env.host, box, "work", { lines: 5 })).toMatchObject({ controller: "agent" });
+    await advance(180);
+    expect(viewer.view()).toMatchObject({ controller: "agent" });
     const release = env.recorded.find((r) => r.note.op === "session.release");
     expect(release).toMatchObject({
       source: "system",
@@ -583,16 +585,17 @@ describe("terminal service: takeover", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
     const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
+    jest.useFakeTimers();
     env.terminals.takeOver(viewer);
 
     for (let i = 0; i < 5; i++) {
-      await sleep(50);
+      await advance(50);
       expect(viewer.write("a")).toBe(true);
     }
-    expect(await env.terminals.read(env.host, box, "work", { lines: 5 })).toMatchObject({ controller: "human" });
+    expect(viewer.view()).toMatchObject({ controller: "human" });
 
-    await sleep(300);
-    expect(await env.terminals.read(env.host, box, "work", { lines: 5 })).toMatchObject({ controller: "agent" });
+    await advance(300);
+    expect(viewer.view()).toMatchObject({ controller: "agent" });
   });
 
   test("with no idle timeout a takeover lasts until it is released", async () => {
@@ -600,12 +603,13 @@ describe("terminal service: takeover", () => {
     const box = await runningBox(env);
     await env.terminals.start(env.host, box, "work", "rest");
     const viewer = await env.terminals.attach(env.host, box, "work", { source: "ui", principal: OWNER });
+    jest.useFakeTimers();
     env.terminals.takeOver(viewer);
 
-    await sleep(80);
-    expect(await env.terminals.read(env.host, box, "work", { lines: 5 })).toMatchObject({ controller: "human" });
+    await advance(80);
+    expect(viewer.view()).toMatchObject({ controller: "human" });
     env.terminals.release(viewer);
-    expect(await env.terminals.read(env.host, box, "work", { lines: 5 })).toMatchObject({ controller: "agent" });
+    expect(viewer.view()).toMatchObject({ controller: "agent" });
   });
 
   test("an agent cannot close a session a person has taken over, and the console still can", async () => {
