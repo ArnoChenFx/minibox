@@ -28,7 +28,7 @@ What lives where:
 | Data | Where |
 |---|---|
 | Workspace (`/workspace`) and home (`/home/dev`) | NFS pool (the default pool) |
-| Shared tools volume (`/opt/minibox/tools`) | the default pool too, unless the **Tools** role is set to another pool |
+| Shared tools volume (`/opt/minibox/tools`) | the default pool too, unless the **Tools** role is set to another pool. There is one shared tools volume per pool, so boxes on the NFS pool get their own, empty at first: install tools again from an NFS box's **Tools** page, or with `POST /api/boxes/:id/tools/reconcile` |
 | Cache (`/home/dev/.cache`) | local pool, always, unless you override the **Cache** role |
 | Independent volumes | the pool you choose when you create them |
 | Docker images, container layers, `DATA_DIR`, checkpoint repository | compute machine |
@@ -59,6 +59,8 @@ So: map everything to uid 1000, and make the export directory itself owned by 10
 
 ### Linux (`nfs-kernel-server`)
 
+The test server was NFS-Ganesha, not kernel `nfsd`, so the commands below are standard `nfs-kernel-server` usage with the export options that were tested on Ganesha.
+
 ```bash
 sudo apt install nfs-kernel-server
 sudo mkdir -p /srv/minibox
@@ -86,34 +88,34 @@ sudo exportfs -v
 
 **Firewall.** NFSv4 needs only TCP **2049** from the compute machine. NFSv3 also needs `rpcbind` (111) and `mountd`, `statd` and `lockd`, whose ports are dynamic unless you pin them, which is one more reason to use v4.
 
-**NFSv4.1 vs v3.** Use 4.1 or 4.2. MiniBox's mounts go through Docker's `local` driver, which calls the `mount` syscall directly instead of `mount.nfs`. It does not negotiate the version, so always set `nfsvers=`. Without it the kernel tries v3. On the test client, whose kernel was built without NFSv3, that fails with `protocol not supported`. With v3 you also lose server-side locking unless `statd` runs on the compute machine.
+**NFSv4.1 vs v3.** Use 4.1 or 4.2. MiniBox's mounts go through Docker's `local` driver, which calls the `mount` syscall directly instead of `mount.nfs`. It does not negotiate the version, so always set `nfsvers=`. Without it the kernel tries v3. On the test client, whose kernel was built without NFSv3, that fails with `protocol not supported`. With v3, file locks also fail unless `rpc.statd` runs on the compute machine.
 
 ### Synology DSM (general guidance)
 
 - Enable the NFS service and allow NFSv4.1 as the maximum protocol.
 - Create a shared folder for MiniBox. Add an NFS rule on it for the compute machine's IP with read/write access.
-- Set squash to map all users to an account with uid 1000, or map all users to admin and make sure the folder is writable by that account. The goal is the `all_squash,anonuid=1000` row above. DSM user accounts usually start at uid 1024, not 1000, so check the uid (`id <user>` over SSH) and make the folder owned by the account the rule maps to. If that account is not uid 1000, files show its uid inside the box too. Writes still work, because the server checks permissions as that account, but tools that compare file owners with the current user, such as git's `safe.directory` check, may refuse the repository (not tested here).
-- Turn on "asynchronous" only if you accept losing recent writes on a NAS crash.
+- DSM's squash setting does not take an arbitrary uid: it maps root, or all users, to admin or to guest, or does no mapping. The closest to the recommended `all_squash,anonuid=1000` row is mapping all users to admin, with the shared folder writable by admin. DSM accounts usually start at uid 1024, not 1000, so check the uid (`id <user>` over SSH). Files then show that uid inside the box, not 1000. Writes still work, because the server checks permissions as that account, but tools that compare file owners with the current user, such as git's `safe.directory` check, may refuse the repository (not tested here).
+- Leave asynchronous writes off unless you accept losing recent writes on a NAS crash.
 - Enable snapshots on the shared folder as a disaster-recovery layer.
 
 ### QNAP QTS (general guidance)
 
 - Enable the NFS service with NFSv4 (4.1 where offered).
 - On the shared folder, set the NFS host access to the compute machine's IP with read/write.
-- Choose a squash option that maps all users (or root) to a uid-1000 account. As on DSM, check the actual uid of the account you map to.
+- Choose a squash option that maps all users (or root) to one account, and use uid 1000 if your firmware lets you set the anonymous uid. As on DSM, check the actual uid of the account you map to.
 - Snapshot the volume that holds the shared folder.
 
 ### TrueNAS SCALE (general guidance)
 
 - Create a dataset for MiniBox and set its owner to uid 1000 and gid 1000 (create a local user with those ids, or set the numeric owner).
 - Add an NFS share for the dataset, restricted to the compute machine's IP or network.
-- In the share's advanced options, set "Mapall User" and "Mapall Group" to that uid-1000 user and group. This is `all_squash,anonuid=1000,anongid=1000`. "Maproot" to the same user is the `root_squash,anonuid=1000` variant.
+- In the share's advanced options, set the mapall user and group to that uid-1000 user and group. This is `all_squash,anonuid=1000,anongid=1000`. Setting the maproot user and group instead is the `root_squash,anonuid=1000` variant. New TrueNAS users start at uid 3000, so give this user uid 1000 explicitly.
 - Enable NFSv4 in the NFS service settings.
 - Schedule periodic snapshots of the dataset.
 
 ### Unraid (general guidance)
 
-- Create a share for MiniBox and export it over NFS. Restrict it with a rule like `192.168.1.20(rw,sync,all_squash,anonuid=1000,anongid=1000)` in the share's NFS security settings, if your Unraid version offers rules. Unraid's default `nobody` user is uid 99, so without such a rule you get the "root_squash to nobody" row above.
+- Create a share for MiniBox and export it over NFS. The export path is `/mnt/user/<share>`. Restrict it with a rule like `192.168.1.20(rw,sync,all_squash,anonuid=1000,anongid=1000)` in the share's NFS security settings (private security), if your Unraid version offers rules. Without such a rule Unraid typically squashes everyone to `nobody`, uid 99 and gid 100: writes work, but files show uid 99 inside the box, with the same caveats as the DSM case above.
 - Enable NFSv4 if your version supports it. Older releases only offered NFSv3.
 - Make the share's directory owned by 1000:1000 from the Unraid shell.
 
@@ -129,7 +131,7 @@ Check the export from the compute machine before you add it to MiniBox:
 sudo mount -t nfs -o nfsvers=4.1 192.168.1.10:/srv/minibox /mnt && ls -ln /mnt && sudo umount /mnt
 ```
 
-The server address must be reachable from the **Docker daemon's** network namespace, because the daemon does the mount. With Docker Desktop or a remote daemon, that is not the machine MiniBox runs on.
+The server address must be reachable from the **Docker daemon's** network namespace, because the daemon does the mount. With Docker Desktop the daemon runs in a VM, and a remote daemon runs on another machine, so test from there.
 
 ### Adding the pool in the console
 
@@ -137,13 +139,13 @@ The server address must be reachable from the **Docker daemon's** network namesp
 
 | Field | What to enter | Checked by |
 |---|---|---|
-| Pool name | A short name such as `nas`. Letters, digits, `.` `_` `-`, starting with a letter or digit, up to 63 characters. `local` is reserved | console and server |
-| Server | IP address or hostname of the NFS server, for example `192.168.1.10`. Up to 254 characters of letters, digits, `.` `:` `-`. No `user@`, no port. The Docker daemon resolves hostnames | server |
+| Pool name | A short name such as `nas`. Letters, digits, `.` `_` `-`, starting with a letter or digit, up to 63 characters. `local` is the built-in local pool and cannot be NFS | console and server |
+| Server | IP address or hostname of the NFS server, for example `192.168.1.10`. Up to 254 characters of letters, digits, `.` `:` `-`, starting with a letter or digit. No `user@`, no port. The Docker daemon resolves hostnames | server |
 | Export | Absolute path of the export on the server, for example `/srv/minibox` or `/volume1/minibox`. No `..`, no spaces. A trailing `/` is dropped. Each volume becomes `<export>/<volume id>` | server |
-| Options | Comma-separated mount options, for example `nfsvers=4.1, hard, noatime`. Up to 16 options, each made of letters, digits and `. _ = -` | server |
+| Options | Comma-separated mount options, for example `nfsvers=4.1, hard, noatime`. Spaces around commas are trimmed. Up to 16 options, each up to 64 characters of letters, digits and `. _ = -`. Always include `nfsvers=4.1` (or `4.2`), see [Mount options](#mount-options) | server |
 | Make this the default pool | New boxes put workspace, home and tools here | console |
 
-Then click **Save pools** and confirm the preview. Until you save, the pool is only in the page. After saving, the pools table shows **Health** `reachable` and the free space reported by the NFS server. `unreachable` shows the mount error next to it.
+Then click **Save pools** and confirm the preview. Until you save, the pool is only in the page. After saving, the pool row shows **Health** Reachable (API status `reachable`) and the free space reported by the NFS server. When it shows Storage unreachable, the mount error is in the next column.
 
 The **Default** button on a pool row, and the **Role defaults** selects (Workspace, Home, Tools, Cache), also take effect only when you save. Leave the roles at "Use the rule" unless you need an exception: cache on the local pool, everything else on the default pool.
 
@@ -161,7 +163,7 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 
 `PUT /api/pools` replaces the whole list, so send every pool you want to keep. Without `"confirm": true` it returns `409 confirmation_required` with a preview. It needs `pool:admin`. `GET /api/pools?refresh=true` probes every pool again; without `refresh` a result is cached for 15 seconds. MCP: `list_pools` and `replace_pools` in the `storage` toolset. The saved file is `DATA_DIR/pools.json`.
 
-A pool that still has volumes cannot be removed or change backend (`409 pool_in_use`). Changing a pool's server, export or options does not change volumes that already exist: each Docker volume keeps the options it was created with.
+A pool that still has volumes cannot be removed or change backend (`409 pool_in_use`). Changing a pool's server, export or options, or the default pool, does not change volumes that already exist: each Docker volume keeps the options it was created with, and existing boxes stay on their volumes.
 
 ### Mount options
 
@@ -171,11 +173,11 @@ A pool that still has volumes cannot be removed or change backend (`409 pool_in_
 | `hard` | Recommended. I/O waits for the server instead of failing. A server that goes away freezes processes that touch the mount until it comes back, and then they continue where they were. Tested: data written before and after an NFS server restart was intact, and no remount was needed |
 | `soft` | Not recommended for data. I/O fails with `EIO` after `timeo`×`retrans`, which can leave half-written files that the program believes are written |
 | `noatime` | Recommended. Saves a write for every read |
-| `timeo=`, `retrans=` | Only matter with `soft`, or for how often a `hard` mount logs "server not responding". The defaults (`timeo=600`, i.e. 60 s, `retrans=2`) are fine |
+| `timeo=`, `retrans=` | Leave out. They only matter with `soft`, or for how often a `hard` mount logs "server not responding", and the defaults (`timeo=600`, i.e. 60 s, `retrans=2`) are fine. If you set them, they also replace the probe's short timeout (see below), so a dead server takes much longer to report |
 | `nconnect=4` | Optional, NFSv4.1+, several TCP connections for more throughput. Tested to mount on Linux 6.12 |
 | `rsize=`, `wsize=` | Leave out. The client and server negotiate them (1 MiB in the test) |
 
-You do not need `addr=`: MiniBox adds `addr=<server>` itself. MiniBox's reachability probe does **not** use your `hard`/`soft`: it mounts the export root with `soft,timeo=10,retrans=1` plus your other options, so a dead server cannot hang the probe.
+You do not need `addr=`: MiniBox adds `addr=<server>` itself. MiniBox's reachability probe does **not** use your `hard`/`soft`: it mounts the export root with `soft,timeo=10,retrans=1` followed by your other options, so a dead server cannot hang the probe. Your options come last and win, which is why `timeo=` and `retrans=` are best left out.
 
 ### Verify
 
@@ -190,14 +192,14 @@ You do not need `addr=`: MiniBox adds `addr=<server>` itself. MiniBox's reachabi
    ```
 
    `/workspace` and `/home/dev` should be `type nfs4 (rw,noatime,vers=4.1,…,hard,…)`, `/opt/minibox/tools` the same but `ro`, and `/home/dev/.cache` a local filesystem.
-4. On the server, the file is at `<export>/<workspace volume id>/nfs-test`, owned by 1000:1000. The volume id is the Volumes page's `vol_…` engine name.
+4. On the server, the file is at `<export>/<workspace volume id>/nfs-test`, owned by 1000:1000. The volume id is the `vol_…` id shown under the volume's name on the Volumes page.
 5. Restart the box and read the file again.
 
 ## When the NAS is down
 
 Tested by stopping the NFS server, and separately by dropping its traffic in the firewall to imitate a NAS that is powered off:
 
-- The probe reports `unreachable` with the mount error (`input/output error` when the server refuses, `connection timed out` when nothing answers). The box list marks affected boxes as storage `unreachable`.
+- The probe reports `unreachable` with the mount error (`input/output error` when the server refuses, `connection timed out` when nothing answers). The box list and the box page mark affected boxes as Storage unreachable.
 - Creating, starting and restarting a box on that pool returns `503` with code `docker_unavailable` and message key `storage_unreachable`, within a few seconds. Nothing is created: no container, no volume record, and no data under `/var/lib/docker/volumes/<volume>/_data` on the local disk.
 - Stopping a box still works.
 - A **running** box with a `hard` mount freezes any process that touches `/workspace` or `/home/dev` until the server is back, including MiniBox `exec` calls and terminals. An `exec` with `timeoutSec` does not return before the server is back, see [known issues](#known-issues).
