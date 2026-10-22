@@ -59,6 +59,12 @@ describe("OpenAPI document", () => {
     expect(documented.toSorted()).toEqual(expected.toSorted());
   });
 
+  test("a raw upload documents the 411, 413 and 415 answers its framing can give", () => {
+    const upload = documentOf(RENDERED).paths["/api/volumes/{id}/files/stream"]?.put;
+    expect(Object.keys(upload?.responses ?? {})).toEqual(expect.arrayContaining(["411", "413", "415"]));
+    expect(upload?.responses["413"]).toMatchObject({ description: expect.stringContaining("FILE_UPLOAD_MAX_MB") });
+  });
+
   test("each binding carries the operationId the registry derives for it", () => {
     const ids = Object.values(documentOf(RENDERED).paths).flatMap((item) =>
       Object.values(item).map((operation) => operation.operationId),
