@@ -21,7 +21,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 
 **为什么做它**
 
-- Agent 很容易把环境弄乱：随手全局安装、做到一半的构建、残留进程。放进 Box 里就不会污染宿主机，一键即可重建、快照或删除。
+- Agent 很容易把环境弄乱：随手全局安装、做到一半的构建、残留进程。放进 Box 里就不会污染宿主机，一键即可重建、建立检查点或删除。
 - 托管沙箱很好用，但有时你更想用自己的硬件和网络，也不想按分钟计费。
 - 更重的自托管方案（基于 Firecracker 的沙箱、Coder、Kubernetes Operator）对个人来说太重。MiniBox 只是一个和本机 Docker Engine 通信的 Bun 进程，**不需要数据库服务**。镜像和数据卷在 Docker 里。规格、卷记录和事件日志在[数据目录](#数据目录)里。
 
@@ -33,9 +33,8 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | 数据卷 | 独立的 Volume 与存储池（`local`、`nfs`、`path`）。新建 Box 会挂载工作区、主目录、一只共享只读的工具卷，以及本地缓存。见[数据卷与存储池](#数据卷与存储池) |
 | 资源配额 | 按预设（小型 2 核 4 GB / 中型 4 核 8 GB / 大型 8 核 16 GB）或自定义设置 CPU、内存，并按宿主机容量校验；运行中可热更新（`docker update`） |
 | Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行；Web 终端与 `docker exec` 默认以 `dev` 进入。三个[安全档位](#安全档位)决定 Box 能做什么：默认的「标准」档位保留无密码 `sudo`，「严格」档位禁止提权。见[基础模板](#基础模板) |
-| 快照 | 基于 `docker commit` 保存 Box 的系统环境，可从快照创建新 Box，或提升为模板 |
 | 检查点 | 把 Box 的工作区和主目录复制到 restic 仓库，再从副本派生新 Box，或把 Box 回滚到副本，并确认或撤销这次回滚。适用保留策略与容量上限。可通过 REST 使用，也可在控制台 Box 详情的「检查点」标签页中操作。MCP 工具暂未提供。见[检查点](#检查点) |
-| 模板 | 内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
+| 模板 | 新 Box 使用的环境：内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及从 Box 页面存为模板的自定义模板。保存的是系统层（apt 与 sudo 安装的软件、系统文件的改动），不含 `/workspace` 与 home 数据，数据请使用检查点 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 实时更新 | Box 状态、资源采样、宿主机指标、任务进度与 Box 日志通过 SSE 推送：`GET /api/events/stream` 与 `GET /api/boxes/:id/logs/stream`。控制台只在对应的流断开时轮询 |
@@ -54,8 +53,8 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | ![Box 列表](docs/screenshots/boxes-light.png) | ![创建 Box](docs/screenshots/create-dialog-light.png) |
 | **Box 详情** | **网页终端** |
 | ![Box 详情](docs/screenshots/box-detail-light.png) | ![网页终端](docs/screenshots/terminal-light.png) |
-| **快照** | **概览（深色）** |
-| ![快照](docs/screenshots/snapshots-light.png) | ![概览深色](docs/screenshots/overview-dark.png) |
+| **模板** | **概览（深色）** |
+| ![模板](docs/screenshots/templates-light.png) | ![概览深色](docs/screenshots/overview-dark.png) |
 
 更多截图见 [`docs/screenshots`](docs/screenshots)。
 
@@ -106,8 +105,8 @@ flowchart LR
 
 - **Box** = 带 `minibox=true` 标签、名为 `minibox-<名称>` 的容器，常驻进程为 `sleep infinity`（启用 `--init`）。重启策略为 `no`：启动时的协调器按规格里的期望状态（`running` 或 `stopped`）启动或停止容器。`DATA_DIR/boxes/` 下的规格文件是可变状态的权威来源。容器标签只在创建时写入，之后不再修改。新建 Box 会挂载 `/workspace`、`/home/dev`、共享且只读的 `/opt/minibox/tools` 和 `/home/dev/.cache`。新建卷的引擎名是 `vol_…`。已有的 `minibox-ws-<名称>` 会当作该 Box 的工作区继续使用，不会改名。更改挂载会重建容器，并把容器改名为 `minibox-<box id>`；认领已有容器不会改名。容器以非 root 用户 `dev` 运行（见[基础模板](#基础模板)）。
 - **会话** = Box 内以 `dev` 运行的一个具名 tmux 会话。网页终端附着到它；Agent 通过会话工具发送按键、读取屏幕。关闭页面只是断开附着，会话会一直运行，直到被关闭或 Box 停止（见[会话](#会话)）。
-- **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`。
-- **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。
+- **快照** = 带 `minibox.snapshot=true` 标签的镜像 `minibox-snap:<名称>-<时间>`，由 Box 的容器通过 `docker commit` 制作。这是底层方式：API 与命令行可以创建、提升和删除快照。从 Box 存为模板时，会在内部制作一个快照，模板创建后即删除。
+- **模板** = 带 `minibox.template=true` 标签的镜像 `minibox-template:<名称>`。它只保存 Box 的系统环境，从不包含数据。可以在 Box 页面存为模板，也可以提升快照。
 - **实时状态** = 每台主机一个 `HostSampler`。它根据引擎的容器事件保持盒子缓存最新，并每分钟重新列出一次容器，以补上事件流静默停止时漏掉的变化。有实时流打开时，每隔 `METRICS_INTERVAL_MS` 为每个运行中的 Box 采样；没有时，只有最近 5 分钟内有人读取过用量，才每 30 秒一次（`METRICS_INTERVAL_MS` 更长时按它），并保留 `METRICS_HISTORY` 个采样点；同时把 Box、采样、链路与主机指标帧发布到事件总线。`GET /api/events/stream` 把它们转发给控制台，控制台只在事件流断开时轮询。每个 Box 的日志在每台主机上只跟随一次，由它的所有日志流（`GET /api/boxes/:id/logs/stream`）共享。实时帧只带环境变量的名称，不带值。同时打开的事件流、任务流与日志流不超过 `STREAM_MAX_CONNECTIONS`，超出的请求返回 `429`。采样只保存在内存中，从不写入事件日志。
 - 前端无构建步骤：原生 ES Modules + 手写设计系统；xterm.js 随仓库放在 [`web/vendor/`](web/vendor/README.md)，控制台不会从 CDN 加载任何代码。
 
@@ -489,7 +488,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ## 检查点
 
-检查点是 Box 数据的一份副本，保存在 restic 仓库中。可以从它派生一个新 Box，也可以把 Box 回滚到它。快照只保存容器的可写层；检查点则包含 `/workspace`。[#11](https://github.com/ArnoChenFx/minibox/issues/11) 涵盖检查点的全部功能。拍摄、派生、回滚与保留策略可通过 REST API 使用，Box 详情的「检查点」标签页也会列出并操作它们。MCP 工具暂未提供。
+检查点是 Box 数据的一份副本，保存在 restic 仓库中。可以从它派生一个新 Box，也可以把 Box 回滚到它。模板只保存容器的系统层；检查点则包含 `/workspace`。[#11](https://github.com/ArnoChenFx/minibox/issues/11) 涵盖检查点的全部功能。拍摄、派生、回滚与保留策略可通过 REST API 使用，Box 详情的「检查点」标签页也会列出并操作它们。MCP 工具暂未提供。
 
 **检查点包含什么。** Box 的自有卷：工作区与主目录。缓存和共享的工具卷永不包含。Box 挂载的共享卷只有在请求的 `include.volumes` 中指名时才会包含。设置 `include.system: true` 时，可写层会被提交为镜像，派生从系统状态开始；否则派生从 Box 的模板开始。每个检查点还记录拍摄时 Box 的模板、CPU、内存、档位与规格版本。
 
@@ -641,14 +640,17 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ### 快照与模板
 
+模板只保存 Box 的系统环境，不保存数据。`POST /api/boxes/:id/template` 用于存为模板：它在 Box 的电源锁下提交容器，把提交的镜像提升为模板，并删除中间的快照。模板会记录它来自哪个 Box。快照是这一过程的底层方式，下面的快照接口仍然保留，供脚本使用。
+
 `:ref` 为镜像引用（如 `minibox-snap:demo-20261020-154259`），需要 URL 编码。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| `POST` | `/api/boxes/:id/template` | 存为模板 `{ "name", "description"? }`。返回 `202` `{ "taskId" }`，结果为新模板。名称已存在时返回 `409` |
 | `GET` | `/api/snapshots` | 快照列表 |
 | `DELETE` | `/api/snapshots/:ref` | 删除快照 |
 | `POST` | `/api/snapshots/:ref/boxes` | 从快照创建 Box `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
-| `POST` | `/api/snapshots/:ref/promote` | 提升为模板 `{ "name", "description"? }` |
+| `POST` | `/api/snapshots/:ref/promote` | 提升为模板 `{ "name", "description"? }`。名称已存在时返回 `409` |
 | `GET` | `/api/templates` | 模板列表 |
 | `POST` | `/api/templates/base/build` | 开始构建内置基础模板。返回 `202` `{ "taskId" }` |
 | `DELETE` | `/api/templates/:ref` | 删除模板 |
@@ -675,7 +677,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ### 任务
 
-模板构建和快照提交作为任务运行。POST 立即返回 `202` 和 `{ "taskId" }`，工作在服务端继续。同一时间只能构建一个模板，每个 Box 同一时间只能提交一个快照；第二次请求返回 `409`，`details.taskId` 指向正在运行的任务。
+模板构建、存为模板与快照提交都作为任务运行。POST 立即返回 `202` 和 `{ "taskId" }`，工作在服务端继续。同一时间只能构建一个模板，每个 Box 同一时间只能进行一次存为模板，也只能进行一次快照提交；同类的第二次请求返回 `409`，`details.taskId` 指向正在运行的任务。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -755,7 +757,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 > **警告：主访问密钥在 `/mcp` 上拥有完全的所有者权限。** 持有密钥的客户端可以调用其所请求工具集中的每一个工具，包括在非「严格」档位的 Box 中以 root 执行 `exec`、`delete_box` 与 `rebuild_box`。请把 Agent 令牌（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）交给 Agent，而不是主密钥，并确保密钥不出现在提示词、日志和仓库中。
 
-设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
+设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
 
 用 `bun run build:cli` 编译 CLI（`bun build --compile`，输出 `dist/minibox`，不提交）。它访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。
 
@@ -885,7 +887,8 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **这是容器隔离，不是安全沙箱。** Box 与宿主机共享内核，适合运行你自己的 Agent，**不适合运行不可信的第三方代码**，那种场景请使用 gVisor 或基于 microVM 的沙箱。不要把 Docker Socket 或宿主机敏感目录挂进 Box。
 - **默认的「标准」档位拥有无密码 `sudo`。** Box 内的 `dev` 用户可以提升为 root，而 Box 内的 root 可以改动 Box 以及其工作区卷中的任何内容。「标准」档位还丢弃了大部分 Linux capability，因此 Box 不是特权容器。「严格」档位禁止提权，见[安全档位](#安全档位)。
 - **`/mcp` 接受主访问密钥，它拥有完全的所有者权限。** 用该密钥连接 `/mcp` 的 Agent 可以在非「严格」档位的 Box 中以 root 执行 `exec`、删除 Box 并重建它们。请改为给 Agent 发放 Agent 令牌（[#13](https://github.com/ArnoChenFx/minibox/issues/13)），它的 `tools/list` 与每次调用都受其 scope 约束。参见 [Agent](#agent)。
-- **快照不包含 `/workspace`。** `docker commit` 不会保存挂载的数据卷，重要代码请用 git 同步或单独备份数据卷。检查点包含 `/workspace`，见[检查点](#检查点)。
+- **模板不包含 `/workspace` 与 home 数据。** 模板保存容器的系统层（apt 与 sudo 安装的软件、系统文件的改动），`docker commit` 不会保存挂载的数据卷。重要代码请用 git 同步或单独备份数据卷。检查点包含 `/workspace`，见[检查点](#检查点)。
+- **更早的快照与检查点可能含有环境变量的值。** `docker commit` 会把容器的环境变量复制进镜像。在 MiniBox 开始置空这些值之前制作的镜像仍保留它们；若其中有敏感信息，请删除这些快照与检查点。
 - `scripts/restart.sh` 是单用户沙箱的便利脚本。它可能会用 `sudo` 启动 `dockerd`，然后把 Docker Socket 的属组设为你的主组、权限设为 `660`，只有该主组的成员（通常只有你）和 root 能使用 Docker。但 Docker 访问等同于 root 权限，用在其他环境前请先检查脚本。
 
 ### 安全档位

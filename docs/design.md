@@ -656,10 +656,10 @@ Event
 
 长操作不再占用一条 HTTP 连接直到结束。
 
-- **受理**：`template.build` 与 `snapshot.create` 在校验、前置条件和解析通过后写入一条 `started` 审计事件（`ref.taskId`），立刻返回 `202` `{ "taskId" }`。领域结果（模板的 `{ ref }`、快照的 `{ snapshot }`）写在任务的 `result` 上，OpenAPI 用 `x-task-result` 标出。校验失败和互斥冲突不创建任务。
+- **受理**：`template.build`、`template.save` 与 `snapshot.create` 在校验、前置条件和解析通过后写入一条 `started` 审计事件（`ref.taskId`），立刻返回 `202` `{ "taskId" }`。领域结果（模板的 `{ ref }`、存为模板的 `{ template }`、快照的 `{ snapshot }`）写在任务的 `result` 上，OpenAPI 用 `x-task-result` 标出。校验失败和互斥冲突不创建任务。
 - **进度**：日志和状态变更发布到总线主题 `task`，经 `GET /api/tasks/:id/events` 流出。这条 SSE 复用事件流的心跳、重放上限和 `reset`，不另建一套。它和事件流一样不进操作注册表。新连接不回放历史；界面先 `GET` 任务上保留的输出，再用 `after` 续上（浏览器的 `EventSource` 第一次请求带不上 `Last-Event-ID`）。
 - **存储**：`DATA_DIR/tasks.db`（WAL）。每个任务只保留最新 64 KB 日志，避免把构建输出写进一年期的审计库（审计明细还有 8 KB 上限）。
-- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`），每个 Box 同时只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。冲突返回 `409`，`details.taskId` 指向持有锁的任务：正在运行的任务，或已取消但后台工作尚未返回的任务。
+- **互斥**：同一主机同时只能构建一个模板（`template.build:<host>`）。每个 Box 同时只能存为一个模板（`template.save:<host>:<boxId>`），也只能提交一个快照（`snapshot.create:<host>:<boxId>`，用解析后的 Box id，名字和 id 共用一把锁）。存为模板在 Box 的电源锁（`underBox`）下执行，与检查点的拍摄、回滚依次进行；快照提交不取该锁。冲突返回 `409`，`details.taskId` 指向持有锁的任务：正在运行的任务，或已取消但后台工作尚未返回的任务。
 - **取消**：把任务标为 `cancelled` 并中止 `AbortSignal`。构建关掉引擎的输出流，并在连接关闭后才返回（引擎在此之前可能仍在构建）。`docker commit` 无法中途取消：开始前和返回后各检查一次；若提交已经完成，镜像留下，任务仍可以是 `cancelled`，不回滚。互斥锁在后台工作返回之后才释放，所以取消后，同一主机或同一 Box 的新任务要等到引擎调用结束才能开始，期间返回 `409`。
 - **重启**：启动时把上次仍为 `running` 的任务标为 `interrupted`，不续跑，并释放所有互斥锁（包括已取消但工作未返回的任务持有的锁，持锁的进程已经不在了）。关闭时同样中止、标记并释放。
 - **空闲超时**：Bun 的 `idleTimeout` 从请求开始计算，按 4 秒进位，写出的字节（包括 SSE 心跳）不会延长它。只有 `server.timeout(req, 0)` 能关掉它。因此心跳只对付反向代理的 `proxy_read_timeout`，对付不了 Bun 自己。构建改为 202 之后，那条会被掐断的长连接不复存在；进度流显式关掉计时。这一点在 Bun 1.4.3 上用 4 秒上限核实过：静默处理和每秒心跳的流都会在约 4 秒被断开，`timeout 0` 可以撑过更长的等待。仓库不保留测 Bun 内部的用例（那类用例靠时间阈值判断，在 CI 上不稳定）；`tests/long-work-routes.test.ts` 只断言 MiniBox 自己的保证：202 立即返回，进度流和事件流调用 `server.timeout(req, 0)`，普通请求保留 Bun 的上限。生产配置保持 60 秒。
@@ -746,7 +746,7 @@ Box 里的 Agent 想自己做检查点、暴露端口、派生子 Box，但 Mini
 - **MCP**：设置页和 README 给出可粘贴的配置。`/mcp` 接受令牌，并与 REST 共用鉴权路径，每次调用都以令牌主体执行，因此同样经过 scope 与授权规则。会话绑定到打开它的主体，令牌吊销时结束；其他主体按会话 id 也读不到它。
 - **事件名称**：事件接口（列表与实时流）按 Box 名称匹配时，只计入该 Box 创建之后记录的事件（`createdAt`），因此同名的早先 Box 的事件不会泄露给后来的令牌。按 id 匹配不受此限制，重建替换容器 id 之后，事件仍按名称与创建时间匹配。已知限制：创建操作自己的事件以操作开始时间记录，早于 `createdAt`，所以在 Box 被重建后，授予令牌的 Box 的创建事件不再可见。这是失败关闭，只会少显示。
 - **任务**：任务列表、任务读取与任务进度流按任务的发起者，或其目标 Box 对令牌可见来判断；目标 Box 在所有宿主机上查找（T3）。
-- **模板与快照**：令牌只能从 `template=true` 的镜像与自己可见的快照创建、重建或派生；按 sha256 或镜像 id 引用时先解析再检查（T2）。`template.promote` 检查快照的所有者，`template.delete` 只允许所有者或模板的创建者，`template.build` 只允许所有者。
+- **模板与快照**：令牌只能从 `template=true` 的镜像与自己可见的快照创建、重建或派生；按 sha256 或镜像 id 引用时先解析再检查（T2）。`template.promote` 检查快照的所有者，`template.delete` 只允许所有者或模板的创建者，`template.build` 只允许所有者。`template.save` 与 `template.promote` 一样需要 `tool:install`，检查 Box 的可用性，并拒绝已被占用的名称（`template_out_of_scope`）。
 - **卷**：挂载按卷记录判断（`ownerBoxId`、`createdBy`），而不按名称。池根卷对所有主体拒绝；令牌不能挂载其他令牌创建的卷，即使它的卷授权是 `all`。`pool:admin` 不是令牌可以持有的 scope，存储池管理只属于所有者。
 - **宿主机**：Box 没有记录宿主机时，只有 `all` 的宿主机授权才允许访问（失败关闭，N4）。
 - **活动**：`/api/activity` 只对所有者开放（路由默认 `OWNER_ONLY`）。令牌使用按范围过滤的 `/api/events`。

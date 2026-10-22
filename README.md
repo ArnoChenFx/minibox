@@ -21,7 +21,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 
 **Why?**
 
-- Agents make a mess: random global installs, half-finished builds, stray processes. A box keeps that off your host and can be reset, snapshotted or deleted in one click.
+- Agents make a mess: random global installs, half-finished builds, stray processes. A box keeps that off your host and can be reset, checkpointed or deleted in one click.
 - Hosted sandboxes are great, but sometimes you want your own hardware, your own network and zero per-minute billing.
 - Heavier self-hosted options (Firecracker-based sandboxes, Coder, Kubernetes operators) are overkill for one person. MiniBox is a single Bun process talking to the local Docker Engine — **no database server**. Images and volumes live in Docker. Specs, volume records and the event log live in a [data directory](#data-directory).
 
@@ -33,9 +33,8 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Volumes | Independent volumes and storage pools (`local`, `nfs`, `path`). A new box mounts workspace, home, a shared read-only tools volume and a local cache. See [Volumes and storage pools](#volumes-and-storage-pools) |
 | Box user | Boxes run as the non-root `dev` user (uid/gid 1000); the web terminal and `docker exec` start as `dev`. Three [security profiles](#security-profiles) set what a box can do: `standard` (default) keeps passwordless `sudo`, and `strict` blocks escalation. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
-| Snapshots | Save a box's system environment via `docker commit`, create new boxes from a snapshot, or promote it to a template |
 | Checkpoints | Copy a box's workspace and home into a restic repository, then fork a new box from the copy or roll the box back to it, confirming or undoing the rollback. Retention and a capacity limit apply. Available over REST and in the console's Checkpoints tab; MCP tools are not there yet. See [Checkpoints](#checkpoints) |
-| Templates | Bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user) plus your own promoted templates |
+| Templates | The environment new boxes start from: the bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user), plus templates you save from a box's page. A save keeps the box's system layer, such as apt and sudo installs and system file changes, not `/workspace` or home data. Use a checkpoint for data. See [Base template](#base-template) |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Live updates | Box state, resource samples, host metrics, task progress and box logs are pushed over SSE (`GET /api/events/stream`, `GET /api/boxes/:id/logs/stream`). The console polls only while a stream is down |
@@ -54,8 +53,8 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | ![Box list](docs/screenshots/boxes-light.png) | ![Create dialog](docs/screenshots/create-dialog-light.png) |
 | **Box detail** | **Web terminal** |
 | ![Box detail](docs/screenshots/box-detail-light.png) | ![Terminal](docs/screenshots/terminal-light.png) |
-| **Snapshots** | **Overview (dark)** |
-| ![Snapshots](docs/screenshots/snapshots-light.png) | ![Overview, dark](docs/screenshots/overview-dark.png) |
+| **Templates** | **Overview (dark)** |
+| ![Templates](docs/screenshots/templates-light.png) | ![Overview, dark](docs/screenshots/overview-dark.png) |
 
 More in [`docs/screenshots`](docs/screenshots).
 
@@ -106,8 +105,8 @@ flowchart LR
 
 - **Box** = a container labeled `minibox=true`, named `minibox-<name>`, running `sleep infinity` (with `--init`). The restart policy is `no`: a startup reconciler starts or stops the container to match the spec's desired state (`running` or `stopped`). The spec file under `DATA_DIR/boxes/` is the authority for mutable state. Container labels are written once, at create, and are not changed later. A new box mounts `/workspace`, `/home/dev`, a shared read-only `/opt/minibox/tools` and `/home/dev/.cache`. New volumes are named `vol_…`. An existing `minibox-ws-<name>` volume is reused as that box's workspace and is not renamed. Changing mounts rebuilds the container and renames it to `minibox-<box id>`; claiming a container does not rename it. The container runs as the non-root user `dev` (see [Base template](#base-template)).
 - **Session** = a named tmux session inside a box, run as `dev`. The web terminal attaches to it, and agents send keys and read the screen through the session tools. Closing the page only detaches, so the session keeps running until it is closed or the box stops (see [Sessions](#sessions)).
-- **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`.
-- **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`.
+- **Snapshot** = an image `minibox-snap:<name>-<timestamp>` labeled `minibox.snapshot=true`, made by `docker commit` from a box's container. It is the low-level path: the API and CLI create, promote and delete snapshots. Saving a box as a template makes one internally and removes it afterwards.
+- **Template** = an image `minibox-template:<name>` labeled `minibox.template=true`. It holds a box's system environment, never its data. Save one from a box's page, or promote a snapshot.
 - **Live state** = one `HostSampler` per host. It keeps the box cache current from the engine's container events, and lists the containers again every minute to catch a change a stalled event stream missed. It samples each running box into a ring of `METRICS_HISTORY` points once per `METRICS_INTERVAL_MS` while a stream is open. With no stream, it samples every 30 seconds (or at `METRICS_INTERVAL_MS` if that is longer), but only while someone has read the box's usage in the last five minutes. It publishes box, sample, link and host frames on the event bus. `GET /api/events/stream` forwards them to the console, which polls only while the stream is down. Each box's log is followed once per host and shared by all of its log streams, `GET /api/boxes/:id/logs/stream`. Live frames carry environment variable names, never their values. At most `STREAM_MAX_CONNECTIONS` event, task and log streams are open at once, and the next one gets `429`. Samples stay in memory and never reach the event log.
 - The frontend has no build step: plain ES modules and a hand-written design system. xterm.js is vendored under [`web/vendor/`](web/vendor/README.md), so the console never loads code from a CDN.
 
@@ -492,7 +491,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ## Checkpoints
 
-A checkpoint is a copy of a box's data, kept in a restic repository. A new box can be forked from it, or the box can be rolled back to it. Unlike a snapshot, which keeps only the container's writable layer, a checkpoint includes `/workspace`. Issue [#11](https://github.com/ArnoChenFx/minibox/issues/11) covers them. Take, fork, rollback and retention work over the REST API, and the Checkpoints tab of a box in the console shows them. The MCP tools do not expose them yet.
+A checkpoint is a copy of a box's data, kept in a restic repository. A new box can be forked from it, or the box can be rolled back to it. Unlike a template, which keeps only the container's system layer, a checkpoint includes `/workspace`. Issue [#11](https://github.com/ArnoChenFx/minibox/issues/11) covers them. Take, fork, rollback and retention work over the REST API, and the Checkpoints tab of a box in the console shows them. The MCP tools do not expose them yet.
 
 **What a checkpoint holds.** The box's owned volumes: workspace and home. The cache and the shared tools volume are never included. A shared volume the box mounts is included only when the request names it in `include.volumes`. With `include.system: true` the writable layer is committed as an image, so a fork starts from the box's system state; otherwise a fork starts from the box's template. Each checkpoint also records the box's template, CPUs, memory, profile and spec revision.
 
@@ -644,14 +643,17 @@ The terminal socket sends output as binary frames and `state` or `error` frames 
 
 ### Snapshots & templates
 
+A template holds a box's system environment, not its data. `POST /api/boxes/:id/template` saves one: it commits the box's container under the box's power lock, promotes the commit to a template, and removes the intermediate snapshot. The template records the box it came from. Snapshots are the low-level path behind it, and their endpoints stay for scripts.
+
 `:ref` is an image reference (e.g. `minibox-snap:demo-20261020-154259`) and must be URL-encoded.
 
 | Method | Path | Description |
 |---|---|---|
+| `POST` | `/api/boxes/:id/template` | Save the box as a template `{ "name", "description"? }`. Returns `202` `{ "taskId" }`; the result is the new template. A taken name returns `409` |
 | `GET` | `/api/snapshots` | List snapshots |
 | `DELETE` | `/api/snapshots/:ref` | Delete a snapshot |
 | `POST` | `/api/snapshots/:ref/boxes` | Create a box from a snapshot `{ "name", "cpus"?, "memoryMb"?, "profile"? }` |
-| `POST` | `/api/snapshots/:ref/promote` | Promote to a template `{ "name", "description"? }` |
+| `POST` | `/api/snapshots/:ref/promote` | Promote to a template `{ "name", "description"? }`. A taken name returns `409` |
 | `GET` | `/api/templates` | List templates |
 | `POST` | `/api/templates/base/build` | Start a build of the bundled base template. Returns `202` `{ "taskId" }` |
 | `DELETE` | `/api/templates/:ref` | Delete a template |
@@ -678,7 +680,7 @@ Only images carrying MiniBox labels can be deleted through the API.
 
 ### Tasks
 
-Template builds and snapshot commits run as tasks. The POST returns `202` and `{ "taskId" }` immediately, then the work continues on the server. One template build runs at a time, and one snapshot commit runs at a time per box; a second request gets `409` with `details.taskId` of the one already running.
+Template builds, template saves and snapshot commits run as tasks. The POST returns `202` and `{ "taskId" }` immediately, then the work continues on the server. One template build runs at a time, one save runs at a time per box, and one snapshot commit runs at a time per box; a second request of the same kind gets `409` with `details.taskId` of the one already running.
 
 | Method | Path | Description |
 |---|---|---|
@@ -758,7 +760,7 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 > **Warning: the main access key grants full owner access over `/mcp`.** A client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Give an agent an agent token ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) rather than the key, and keep the key out of prompts, logs and repositories.
 
-The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
+The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
 
 Build the CLI with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). It talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token.
 
@@ -787,7 +789,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - A session started through MCP has origin agent. A person can take it over in the console. While they hold it, session_send fails with taken_over and retryable true: wait a little, read the session with session_read, and send again. session_read still works during a takeover.
 - session_read returns lines and a cursor. Pass the newest cursor as since to read only what is new. reset true means the screen was redrawn, and lines is the current window.
 - session_send takes keys (tmux names such as Enter, Tab, Escape or C-c) or text, but not both. The audit log keeps the counts, never the input.
-- The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool and reconcile_tools. Installs write to the shared tools volume and update BoxSpec.tools.
+- The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool, reconcile_tools and save_template. Installs write to the shared tools volume and update BoxSpec.tools. save_template saves a box as a template: it is long-running, returns a task id, and leaves out `/workspace` and home volumes.
 - The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
 - The network toolset (`/mcp?toolsets=network`) holds list_ports and expose_port for path-mode previews under `/box/<name>/<port>/`.
 - read_file, write_file, list_files and copy_files act on volumes (not boxes). They work when no box is running, via a helper container and the Docker archive API. A call keeps the boxes that mount the volume awake while it runs, and it never starts a stopped box. Paths are jailed inside the volume. write_file stamps uid/gid 1000 (dev). exec already implies volume RW on mounts of boxes the token may use; files:* only matters without exec.
@@ -897,7 +899,8 @@ MiniBox is built for **one trusted user on their own machine**. Please read this
 - **Container isolation, not a security sandbox.** Boxes share the host kernel. They are fine for your own agents, but **not for untrusted third-party code** — use gVisor or a microVM-based sandbox for that. Don't mount the Docker socket or sensitive host paths into a box.
 - **Boxes have passwordless `sudo` by default.** Under the default `standard` profile the `dev` user can become root inside its box, and root there can change anything in the box and in its workspace volume. `standard` also drops most Linux capabilities, so a box is not a privileged container. The `strict` profile stops escalation; see [Security profiles](#security-profiles).
 - **`/mcp` accepts the main access key, which grants full owner access.** An agent that connects with the key can run `exec` as root in a box that is not `strict`, delete boxes and rebuild them. Give agents an agent token instead ([#13](https://github.com/ArnoChenFx/minibox/issues/13)): its `tools/list` and every call are held to its scopes. See [Agents](#agents).
-- **Snapshots don't include `/workspace`.** `docker commit` skips mounted volumes; keep code in git or back up the volume separately. Checkpoints do include it, see [Checkpoints](#checkpoints).
+- **Templates don't include `/workspace` or home data.** A template keeps the container's system layer (apt and sudo installs, system file changes), because `docker commit` skips mounted volumes. Keep code in git or back up the volume separately. Checkpoints do include `/workspace`, see [Checkpoints](#checkpoints).
+- **Older snapshots and checkpoints may hold environment values.** `docker commit` copies a container's environment into its image. Images made before MiniBox blanked those values still carry them, so delete them if the values are sensitive.
 - `scripts/restart.sh` is a single-user sandbox convenience. It may start `dockerd` with `sudo`, then gives the Docker socket to your primary group with mode `660`, so only members of that group (normally just you) and root can use it. Docker access is still root-equivalent, so review the script before using it elsewhere.
 
 ### Security profiles
