@@ -1,6 +1,7 @@
 import { OPERATIONS } from "../operations/registry";
 import { authRoutes } from "./auth";
 import { boxLogRoutes } from "./box-logs";
+import { checkpointPackageRoutes } from "./checkpoint-packages";
 import { eventRoutes } from "./events";
 import { operationRoutes } from "./operations";
 import type { Route } from "./router";
@@ -15,5 +16,6 @@ export const routes: Route[] = [
   ...taskRoutes,
   ...sshRoutes,
   ...boxLogRoutes,
+  ...checkpointPackageRoutes,
   ...operationRoutes(OPERATIONS),
 ];

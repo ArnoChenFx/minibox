@@ -152,6 +152,42 @@ export const CheckpointUsageSchema = z.object({
   policy: z.object({ keepLast: z.number(), keepDays: z.number() }),
 });
 
+/** A sealed package, from an export or an upload. It can be downloaded and imported until `expiresAt`. */
+export const CheckpointPackageSchema = z.object({
+  id: z.string(),
+  checkpointId: z.string().nullable(),
+  origin: z.enum(["export", "upload"]),
+  bytes: z.number().int(),
+  sha256: z.string(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+  url: z.string(),
+});
+
+/** The outcome of one scheduled run. `reason` says why a run was skipped, such as `sleeping` or `capacity`. */
+export const ScheduleLastRunSchema = z.object({
+  at: z.string(),
+  status: z.enum(["ok", "skipped", "failed"]),
+  reason: z.string().nullable(),
+  checkpointId: z.string().nullable(),
+  error: z.string().nullable(),
+});
+
+/** A box's checkpoint schedule. Exactly one of `everyHours` and `at` is set, as `mode` says. */
+export const CheckpointScheduleSchema = z.object({
+  version: z.number().int(),
+  hostId: z.string(),
+  boxId: z.string(),
+  mode: z.enum(["interval", "daily"]),
+  everyHours: z.number().int().nullable(),
+  at: z.string().nullable(),
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  nextRunAt: z.string(),
+  lastRun: ScheduleLastRunSchema.nullable(),
+});
+
 /** A volume a rollback replaced or restored, and the path the box mounts it at. */
 export const RollbackVolumeSchema = z.object({
   id: z.string(),

@@ -2102,5 +2102,141 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null}]}"
+  },
+  {
+    "step": "create a box to export",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"portbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-portbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"portbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"portbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"portbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "take a checkpoint to export",
+    "method": "POST",
+    "path": "/api/boxes/<id>/checkpoints",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "export a checkpoint with a short passphrase",
+    "method": "POST",
+    "path": "/api/checkpoints/ck_<checkpoint>/export",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.\",\"retryable\":false,\"key\":\"package_passphrase_invalid\",\"details\":{\"field\":\"passphrase\"}}}"
+  },
+  {
+    "step": "export the checkpoint",
+    "method": "POST",
+    "path": "/api/checkpoints/ck_<checkpoint>/export",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "export a missing checkpoint",
+    "method": "POST",
+    "path": "/api/checkpoints/ck_<checkpoint>/export",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Checkpoint ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"checkpoint_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "import a short passphrase",
+    "method": "POST",
+    "path": "/api/packages/pk_0000000000000000/import",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.\",\"retryable\":false,\"key\":\"package_passphrase_invalid\",\"details\":{\"field\":\"passphrase\"}}}"
+  },
+  {
+    "step": "import a package that is not stored",
+    "method": "POST",
+    "path": "/api/packages/pk_0000000000000000/import",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "upload a body that is not a package",
+    "method": "POST",
+    "path": "/api/packages",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The package is not a valid MiniBox checkpoint package: the package ends inside an entry\",\"retryable\":false,\"key\":\"package_invalid\",\"params\":{\"reason\":\"the package ends inside an entry\"}}}"
+  },
+  {
+    "step": "download a package that is not stored",
+    "method": "GET",
+    "path": "/api/packages/pk_0000000000000000/download",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Package pk_0000000000000000 was not found. Packages are kept for a day, so it may have expired.\",\"retryable\":false,\"key\":\"package_not_found\",\"params\":{\"id\":\"pk_0000000000000000\"}}}"
+  },
+  {
+    "step": "create a box to schedule",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"timebox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-timebox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"timebox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"timebox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"timebox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "read the schedule of a box with none",
+    "method": "GET",
+    "path": "/api/boxes/<id>/checkpoint-schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"schedule\":null}"
+  },
+  {
+    "step": "set an hourly schedule",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/checkpoint-schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"schedule\":{\"version\":1,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"mode\":\"interval\",\"everyHours\":6,\"at\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null}}"
+  },
+  {
+    "step": "set a schedule with an hour and a time",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/checkpoint-schedule",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A schedule runs every 1 to 720 hours, or once a day at a time such as 02:30. Send either everyHours or at, not both.\",\"retryable\":false,\"key\":\"schedule_rule_invalid\"}}"
+  },
+  {
+    "step": "set a schedule past the longest interval",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/checkpoint-schedule",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A schedule runs every 1 to 720 hours, or once a day at a time such as 02:30. Send either everyHours or at, not both.\",\"retryable\":false,\"key\":\"schedule_rule_invalid\",\"details\":{\"field\":\"everyHours\"}}}"
+  },
+  {
+    "step": "read the schedule",
+    "method": "GET",
+    "path": "/api/boxes/<id>/checkpoint-schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"schedule\":{\"version\":1,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"mode\":\"interval\",\"everyHours\":6,\"at\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null}}"
+  },
+  {
+    "step": "clear the schedule",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/checkpoint-schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "clear the schedule again",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/checkpoint-schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
   }
 ]

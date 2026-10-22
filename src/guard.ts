@@ -9,6 +9,10 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CHECKED_READS = new Set(["/api/events", "/api/events/stream"]);
 /** A box's log stream needs the origin check too: its lines are read as the audit trail reads are, and may hold secrets. */
 const CHECKED_BOX_LOG_STREAM = /^\/api\/boxes\/[^/]+\/logs\/stream$/;
+/** A package download leaves the instance, so a page on another site may not start one with the owner's cookies. */
+const CHECKED_PACKAGE_DOWNLOAD = /^\/api\/packages\/[^/]+\/download$/;
+/** A package is uploaded as a raw stream, which the JSON body check would refuse. The route checks its own type. */
+const PACKAGE_UPLOAD = "/api/packages";
 
 export type GuardPolicy = Pick<Config, "allowedOrigins" | "trustProxy">;
 
@@ -48,10 +52,12 @@ export function guardRequest(req: Request, policy: GuardPolicy): void {
   const { pathname } = new URL(req.url);
   const websocket = req.headers.get("upgrade")?.toLowerCase() === "websocket";
   const apiWrite = pathname.startsWith("/api/") && !SAFE_METHODS.has(req.method);
-  const checkedRead = req.method === "GET" && (CHECKED_READS.has(pathname) || CHECKED_BOX_LOG_STREAM.test(pathname));
+  const checkedRead =
+    req.method === "GET" &&
+    (CHECKED_READS.has(pathname) || CHECKED_BOX_LOG_STREAM.test(pathname) || CHECKED_PACKAGE_DOWNLOAD.test(pathname));
   if (!websocket && !apiWrite && !checkedRead) return;
   if (!isSameOriginRequest(req, policy)) throw new AppError(403, "forbidden", msg("origin_forbidden"));
-  if (apiWrite) requireJsonBody(req);
+  if (apiWrite && !(req.method === "POST" && pathname === PACKAGE_UPLOAD)) requireJsonBody(req);
 }
 
 /**

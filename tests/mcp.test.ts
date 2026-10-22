@@ -214,14 +214,19 @@ describe("MCP", () => {
           .toSorted(),
       ).toEqual([
         "attach_volume",
+        "clear_checkpoint_schedule",
         "create_volume",
         "delete_volume",
         "detach_volume",
+        "export_checkpoint",
+        "get_checkpoint_schedule",
         "get_volume",
+        "import_checkpoint",
         "list_pools",
         "list_volumes",
         "measure_volume",
         "replace_pools",
+        "set_checkpoint_schedule",
       ]);
 
       const rebuild = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=rebuild");

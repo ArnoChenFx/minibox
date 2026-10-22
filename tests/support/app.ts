@@ -56,6 +56,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     checkpointKeepLast: 20,
     checkpointKeepDays: 30,
     checkpointCapacityMb: 0,
+    checkpointPackageMaxMb: 2048,
     ...overrides,
   };
 }

@@ -30,6 +30,7 @@ import type { EngineTarget, Runtime } from "./runtime";
 import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
 import { CheckpointSweep } from "./services/checkpoint-retention";
+import { CheckpointScheduler } from "./services/checkpoint-schedule";
 import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
@@ -81,6 +82,8 @@ export interface App {
   retention: RetentionJob;
   /** Removes automatic checkpoints the retention policy no longer keeps, and reports repositories near their limit. */
   checkpointSweep: CheckpointSweep;
+  /** Takes the checkpoints that box schedules are due for. Only runs once the server has started. */
+  checkpointScheduler: CheckpointScheduler;
   tasks: TaskManager;
   operations: Executor;
   throttle: LoginLimiter;
@@ -196,7 +199,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const volumes = new VolumeStore(cfg.dataDir);
   const bus = new Bus<AppTopics>();
   const pulse = new ActivityPulse();
-  const checkpoints = new CheckpointStore(cfg.dataDir);
+  const checkpoints = new CheckpointStore(cfg.dataDir, { packageMaxBytes: cfg.checkpointPackageMaxMb * MB });
   const checkpointEngine = deps.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir });
   const multiHost = () => hosts.list().length > 1;
   const secrets = new SecretStore(cfg.dataDir);
@@ -290,6 +293,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     bus,
     retention,
     checkpointSweep: new CheckpointSweep(hosts),
+    checkpointScheduler: new CheckpointScheduler(hosts, recordNote),
     tasks,
     operations: new Executor(OPERATIONS, {
       activity,

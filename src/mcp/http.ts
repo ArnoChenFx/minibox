@@ -1,7 +1,7 @@
 import type { App } from "../app";
 import { bearerKey, type Caller, callerGate, resolveCaller } from "../auth";
 import { AppError, toAppError } from "../lib/errors";
-import { errorResponse, json } from "../lib/http";
+import { errorResponse, JSON_BODY_MAX_BYTES, json, readBodyText } from "../lib/http";
 import { msg } from "../lib/messages";
 import { mcpTools } from "../operations/projections";
 import { OPERATIONS } from "../operations/registry";
@@ -129,9 +129,10 @@ export async function handleMcp(app: App, req: Request, url: URL, address: strin
   if (type !== "application/json") throw new AppError(415, "unsupported_media_type", msg("unsupported_media_type"));
 
   const toolsets = toolsetsOf(url);
+  const text = await readBodyText(req, JSON_BODY_MAX_BYTES);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await req.text());
+    parsed = JSON.parse(text);
   } catch {
     return rpcError(null, -32700, "Parse error.", 400);
   }

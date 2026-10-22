@@ -169,7 +169,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
       title: "MiniBox API",
       version,
       description:
-        "Generated from the operation registry: boxes, volumes, storage pools, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the streams (GET /api/events/stream, GET /api/tasks/{id}/events and GET /api/boxes/{id}/logs/stream, text/event-stream), are not listed yet.",
+        "Generated from the operation registry: boxes, volumes, storage pools, snapshots, checkpoints and their schedules, templates, tasks and the event log. Sign-in, host and activity routes, the package upload and download (POST /api/packages and GET /api/packages/{id}/download, raw application/octet-stream), and the streams (GET /api/events/stream, GET /api/tasks/{id}/events and GET /api/boxes/{id}/logs/stream, text/event-stream), are not listed yet.",
       license: { name: "MIT" },
     },
     tags,

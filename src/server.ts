@@ -41,6 +41,8 @@ import { BACKPRESSURE_LIMIT_BYTES, HEARTBEAT_SEC, type TerminalData } from "./ws
 const PUBLIC_PREFIXES = ["/assets/", "/css/", "/js/", "/vendor/", "/favicon"];
 const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
 const SSH_PATH = /^\/api\/ssh\/(?!host-key$)([^/]+)$/;
+const MB = 1024 * 1024;
+const PACKAGE_BODY_SLACK_BYTES = MB;
 const PROXY_HINT =
   "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
@@ -144,6 +146,9 @@ export function startServer(app: App): Server<SocketData> {
   return Bun.serve<SocketData>({
     hostname: app.cfg.host,
     port: app.cfg.port,
+    // Bun refuses a larger body before any route runs. Packages are the only body this large. The slack keeps a package
+    // a little over its limit on the package check, which answers with its JSON error, not Bun's plain one.
+    maxRequestBodySize: app.cfg.checkpointPackageMaxMb * MB + PACKAGE_BODY_SLACK_BYTES,
     // Bun's idle timer is a hard cap measured from the start of the request, in 4-second steps, and writes do not
     // extend it. A handler that stays silent for longer than this is reset. Long work returns 202 and keeps running;
     // progress streams call server.timeout(req, 0), which disables the cap (tests/long-work-routes.test.ts).
@@ -319,6 +324,7 @@ async function boot(): Promise<void> {
   app.monitor.start();
   app.retention.start();
   app.checkpointSweep.start();
+  app.checkpointScheduler.start();
   app.containers.start();
   app.lifecycle.start();
   const server = startServer(app);
@@ -334,6 +340,7 @@ async function boot(): Promise<void> {
     for (const host of app.hosts.list()) host.sampler.stop();
     app.retention.stop();
     app.checkpointSweep.stop();
+    app.checkpointScheduler.stop();
     app.containers.stop();
     app.lifecycle.stop();
     app.throttle.stop();

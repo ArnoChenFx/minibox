@@ -235,6 +235,7 @@ export async function deleteCheckpoint(host: HostCtx, id: string): Promise<void>
     const record = ownRecord(host, id);
     if (!record) throw notFound(msg("checkpoint_not_found", { id }));
     if (record.pinned) throw conflict(msg("checkpoint_pinned", { id }));
+    if (host.checkpoints.exporting.has(id)) throw conflict(msg("checkpoint_exporting", { id }));
     assertNotHeld(host, id);
     let current = record;
     for (const layer of record.data) {
@@ -415,7 +416,7 @@ export async function takeCheckpoint(
  * Holds every box that mounts a volume the backup reads, so the backup counts as activity for each of them (decision 56).
  * `auto` marks a checkpoint an automatic trigger took, such as the safety point of a rollback.
  */
-async function backupBox(
+export async function backupBox(
   host: HostCtx,
   box: Box,
   input: TakeCheckpointInput,
