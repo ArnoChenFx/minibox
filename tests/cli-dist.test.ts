@@ -187,6 +187,28 @@ describe("installer scripts", () => {
     }
   });
 
+  test.skipIf(!POSIX)("install.sh cut short anywhere by curl | sh runs none of its steps", () => {
+    const bin = tempDir();
+    const marker = join(bin, "ran");
+    for (const tool of ["curl", "uname", "mkdir", "awk"]) {
+      writeFileSync(join(bin, tool), `#!/bin/sh\necho ${tool} >> '${marker}'\n`);
+      chmodSync(join(bin, tool), 0o755);
+    }
+    const script = renderInstallScript("install.sh", "https://minibox.example");
+    expect(script.trimEnd().endsWith('main "$@"')).toBe(true);
+    const lines = script.split("\n");
+    const cut = lines.findLastIndex((line) => line.startsWith("main "));
+    for (let end = 1; end < cut; end += 1) {
+      const run = spawnSync("sh", ["-s"], {
+        input: `${lines.slice(0, end).join("\n")}\n`,
+        env: { PATH: `${bin}:/usr/bin:/bin`, HOME: bin },
+        encoding: "utf8",
+      });
+      expect(run.stdout).toBe("");
+      expect(statSync(marker, { throwIfNoEntry: false })).toBeUndefined();
+    }
+  });
+
   test.skipIf(SHELLCHECK === null)("install.sh is shellcheck-clean as POSIX sh, template and rendered", () => {
     const template = spawnSync(SHELLCHECK ?? "shellcheck", ["-s", "sh", join(ROOT, "src", "cli-dist", "install.sh")], {
       encoding: "utf8",
@@ -337,7 +359,9 @@ describe("CliDistribution", () => {
     const linux = target("minibox-linux-x64");
     await new CliDistribution({ dataDir, version: "1.0.0", root, build: stubBuilder().build }).artifact(linux);
     mkdirSync(join(dataDir, "cli", "runtimes"), { recursive: true });
-    writeFileSync(join(dataDir, "cli", "runtimes", "bun-linux-aarch64-v1.4.3"), "runtime");
+    const runtime = `bun-linux-aarch64-v${Bun.version}`;
+    writeFileSync(join(dataDir, "cli", "runtimes", runtime), "runtime");
+    writeFileSync(join(dataDir, "cli", "runtimes", "bun-linux-aarch64-v0.9.0"), "an older Bun's runtime");
 
     const next = stubBuilder();
     const artifact = await new CliDistribution({ dataDir, version: "2.0.0", root, build: next.build }).artifact(linux);
@@ -345,7 +369,27 @@ describe("CliDistribution", () => {
     const versionDir = basename(dirname(artifact.path));
     expect(versionDir.startsWith("2.0.0-")).toBe(true);
     expect(readdirSync(join(dataDir, "cli")).toSorted()).toEqual([versionDir, "runtimes"].toSorted());
-    expect(readFileSync(join(dataDir, "cli", "runtimes", "bun-linux-aarch64-v1.4.3"), "utf8")).toBe("runtime");
+    expect(readdirSync(join(dataDir, "cli", "runtimes"))).toEqual([runtime]);
+    expect(readFileSync(join(dataDir, "cli", "runtimes", runtime), "utf8")).toBe("runtime");
+  });
+
+  test("a partial build left by a crash is removed when the cache is first used, and the binary is still served", async () => {
+    const dataDir = tempDir();
+    const root = fakeRoot();
+    const linux = target("minibox-linux-x64");
+    const built = await new CliDistribution({ dataDir, version: "1.0.0", root, build: stubBuilder().build }).artifact(
+      linux,
+    );
+    const partial = join(dirname(built.path), `.${crypto.randomUUID()}.minibox-linux-arm64`);
+    writeFileSync(partial, "half a build");
+
+    const restarted = stubBuilder();
+    const again = await new CliDistribution({ dataDir, version: "1.0.0", root, build: restarted.build }).artifact(
+      linux,
+    );
+    expect(restarted.jobs).toHaveLength(0);
+    expect(again.path).toBe(built.path);
+    expect(readdirSync(dirname(built.path)).filter((name) => name.startsWith("."))).toEqual([]);
   });
 
   test("an edit to the CLI source rebuilds even when the version has not changed", async () => {

@@ -47,6 +47,7 @@ export interface CliDistributionOptions {
  * Serves the CLI binaries. Each one is compiled on first request, for the version of the running server, then kept in
  * `DATA_DIR/cli/<version>-<source hash>/` next to a `.sha256` sidecar. A new version removes the old directories, and
  * the Bun runtimes it downloaded stay in `DATA_DIR/cli/runtimes` so a later build can run without network access.
+ * Runtimes of another Bun version, and partial builds left by a crash, are removed when the cache is first used.
  */
 export class CliDistribution {
   private readonly cacheRoot: string;
@@ -155,6 +156,8 @@ export class CliDistribution {
     const dir = join(this.cacheRoot, key);
     await mkdir(dir, { recursive: true, mode: 0o700 });
     await removeOtherVersions(this.cacheRoot, [key, RUNTIMES_DIR]);
+    await removePartialBuilds(dir);
+    await removeOtherRuntimes(join(this.cacheRoot, RUNTIMES_DIR), Bun.version);
     return dir;
   }
 }
@@ -200,6 +203,22 @@ async function removeOtherVersions(root: string, keep: string[]): Promise<void> 
       .filter((entry) => entry.isDirectory() && !keep.includes(entry.name))
       .map((entry) => rm(join(root, entry.name), { recursive: true, force: true })),
   );
+}
+
+/** A build cut short by a crash or restart leaves its `.<uuid>.<file>` behind. No build runs before this. */
+async function removePartialBuilds(dir: string): Promise<void> {
+  const entries = await readdir(dir);
+  await Promise.all(entries.filter((name) => name.startsWith(".")).map((name) => rm(join(dir, name), { force: true })));
+}
+
+/**
+ * Bun names each downloaded runtime after its version, such as `bun-linux-aarch64-v1.4.2`. Only the running Bun's
+ * runtimes can be used, so the ones an older Bun downloaded are removed and the folder does not grow with upgrades.
+ */
+async function removeOtherRuntimes(dir: string, bunVersion: string): Promise<void> {
+  const entries = await readdir(dir).catch(() => [] as string[]);
+  const stale = entries.filter((name) => /^bun-.+-v\d/.test(name) && !name.endsWith(`-v${bunVersion}`));
+  await Promise.all(stale.map((name) => rm(join(dir, name), { recursive: true, force: true })));
 }
 
 function errorMessage(e: unknown): string {
