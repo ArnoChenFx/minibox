@@ -37,7 +37,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | 检查点 | 把 Box 的工作区和主目录复制到 restic 仓库，再从副本派生新 Box，或把 Box 回滚到副本，并确认或撤销这次回滚。适用保留策略与容量上限。可通过 REST 使用，也可在控制台 Box 详情的「检查点」标签页中操作。MCP 工具暂未提供。见[检查点](#检查点) |
 | 模板 | 新 Box 使用的环境：内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及从 Box 页面存为模板的自定义模板。保存的是系统层（apt 与 sudo 安装的软件、系统文件的改动），不含 `/workspace` 与 home 数据，数据请使用检查点 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
-| 多宿主机 | 可以通过 unix 套接字、双向 TLS 或 SSH 添加其它 Docker 引擎，并在其中任一台上创建 Box。添加宿主机时确认 SSH 主机密钥。添加与移除宿主机仅所有者可用，可在设置页或 API 中操作。见 [多宿主机](#多宿主机) |
+| 多宿主机 | 可以通过 unix 套接字、双向 TLS 或 SSH 添加其它 Docker 引擎，并在其中任一台上创建 Box，也可以用 `host: "auto"` 让 MiniBox 选择最空闲的宿主机。运行中的 Box 按各宿主机的容量核算，Box 可以连同卷迁移到另一台宿主机。添加宿主机时确认 SSH 主机密钥。添加与移除宿主机仅所有者可用；迁移需要可以使用全部宿主机与全部 Box 的凭据。见 [多宿主机](#多宿主机) |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 实时更新 | Box 状态、资源采样、宿主机指标、任务进度与 Box 日志通过 SSE 推送：`GET /api/events/stream` 与 `GET /api/boxes/:id/logs/stream`。控制台只在对应的流断开时轮询 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应。具名的 tmux 会话在刷新页面或连接断开后仍然保留。Agent 发起的会话默认只读，接管后才能输入 |
@@ -391,6 +391,7 @@ ssh mybox.minibox
 | `STOP_TIMEOUT_SEC` | `3` | 停止或重启 Box 时，发送 SIGTERM 后等待退出的秒数，超时则强制结束。0 到 300 之间的整数 |
 | `METRICS_INTERVAL_MS` | `3000` | 宿主机指标的间隔（毫秒）；有实时流打开时，也是每个 Box 资源采样的间隔。没有实时流时，Box 只在最近 5 分钟内有人读取其用量时每 30 秒采样一次（`METRICS_INTERVAL_MS` 更长时按它）。请保持在 2000 以上：Docker 的统计调用需要 1 到 2 秒，超时仍未返回的调用记为缺失的采样 |
 | `METRICS_HISTORY` | `120` | 每台主机与每个 Box 保留的采样点数量（默认间隔下约 6 分钟） |
+| `HOST_OVERCOMMIT` | `1` | 运行中的 Box 在某台宿主机上预留的 CPU 与内存，可以超过该宿主机容量的倍数，取值 1 至 10。`1` 表示预留不超过宿主机拥有的量。仅在宿主机多于一台时检查。见[宿主机容量](#宿主机容量) |
 | `STREAM_MAX_CONNECTIONS` | `256` | 同时打开的事件流、任务流与日志流上限，所有浏览器与客户端共用。超出的连接返回 `429`，控制台按逐渐增长的间隔重试。须为正整数 |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | 审计事件的保留天数：写操作、删除与被拒绝的调用。见[事件](#事件) |
 | `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | 活动事件的保留天数：命令执行、容器事件、终端会话与读取。同一分钟内的重复读取会合并 |
@@ -596,16 +597,57 @@ sudo touch /mnt/minibox/.minibox-mounted
 - **控制台。** 有多台宿主机时，每个 Box 标明所在的宿主机，概览页为每台宿主机显示一张卡片，顶栏可按宿主机筛选，不可达的 Box 显示为灰色。
 - **令牌。** 令牌的 `hosts` 授权列出它可以使用的宿主机：`local`（`readonly`、`operator` 与 `sandboxed-agent` 预设的缺省值）、宿主机 id，或 `*`（`admin` 预设）。令牌访问其它宿主机上的 Box 时返回 `403`（键 `host_not_granted`）。
 - **移除。** 仍有 Box、卷或检查点的宿主机不能移除（`409`，键 `host_in_use`）。`local` 不能移除（`409`，键 `host_is_local`）。
-- **审计。** 添加、测试与移除宿主机都会写入审计日志，凭据从不写入。
+- **审计。** 添加、测试与移除宿主机都会写入审计日志，每次迁移也会记录（含目标宿主机）。凭据从不写入。
+
+### 宿主机用量
+
+`GET /api/hosts/usage`（仅所有者）按宿主机返回：引擎在最近一次成功检查时报告的容器数（`running` 与 `total`）、运行中的 Box 预留的 CPU 与内存（`allocated`），以及这些 Box 当前的用量（`usage`，由各 Box 最新的统计样本近似）。离线宿主机的 `allocated` 与 `usage` 为 `null`。概览页显示相同的数据。远端宿主机显示其引擎报告的核数与内存（`docker info`），以及其上 Box 的占用。
+
+### 自动放置
+
+创建 Box 时把 `host` 设为 `"auto"`，MiniBox 按以下规则选择宿主机：
+
+1. 只考虑在线、且已持有该 Box 模板镜像的宿主机。放置时不会为此向宿主机复制镜像。
+2. 在其中只保留有余量的宿主机：Box 必须能放进宿主机的核数与内存，且加上预留后不超过容量乘以 `HOST_OVERCOMMIT`（见[宿主机容量](#宿主机容量)）。
+3. 放置后剩余 CPU 与内存中较紧一项的比例最大的宿主机胜出。并列时保留靠前的宿主机，即 `local`。
+
+Box 的 `hostId` 即为所选宿主机。无法放置时：没有在线宿主机返回 `503`（`docker_unavailable`）；没有宿主机持有模板返回 `400`（`template_image_missing`）；没有宿主机有余量返回 `422`（`insufficient_capacity`）。
+
+### 宿主机容量
+
+宿主机多于一台时，MiniBox 按宿主机登记运行中 Box 的 CPU 与内存预留，若某次操作会使预留超过容量乘以 `HOST_OVERCOMMIT`，就拒绝它。检查的操作包括：
+
+- 新建的运行中 Box，包括由快照或检查点派生出的 Box；
+- 增加运行中 Box 的 CPU 或内存的调整。缩小从不被拒绝；
+- 使 Box 在目标宿主机上保持运行的迁移。
+
+拒绝时返回 `422`（`insufficient_capacity`），`field` 指明超出的资源。`HOST_OVERCOMMIT` 默认为 `1`，即预留不超过宿主机拥有的量，取值范围为 1 至 10。单个 Box 的 CPU 或内存超过其宿主机时，在任何安装上都以 `422` 拒绝。启动已停止的 Box 不做这项检查，因为停止的 Box 不占用预留，这是已知限制。单机安装从不做预留检查。
+
+### 迁移 Box
+
+`POST /api/boxes/:id/move` 接受 `{ "host": "<目标>" }`，并在 `If-Match` 头中带上 Box 当前的 revision（缺失返回 `428`，过期返回 `412`）。迁移涉及所有宿主机，因此只有可以使用全部宿主机与全部 Box 的凭据才能迁移：所有者，或 `admin` 预设。Box 使用了密钥引用时，还需要 `secret:use`。控制台的 Box 页在宿主机多于一台时显示「迁移到宿主机」按钮；MCP 工具 `move_box`（位于 `move` 工具集，`/mcp?toolsets=move`）执行相同的调用。
+
+第一次调用不改动任何内容。没有 `"confirm": true` 时返回 `409 confirmation_required` 与 `preview`，预览包括：每个卷及其处理方式、是否需要发送模板镜像、迁移后是否在目标上启动（只有期望状态为运行的 Box 才会启动，因此停止的 Box 保持停止）、留在原宿主机的检查点、保留与丢失的内容，以及迁移写入的 revision。带上 `"confirm": true` 时返回 `202` 与 `taskId`，任务依次执行：
+
+1. 目标没有模板镜像时发送它：以 `docker save` 流式送入 `docker load`。镜像保留其 id，因此 Box 的摘要在目标上依然成立。若目标已有同名标签却指向另一个镜像，则拒绝，而不是覆盖它。
+2. 复制本地卷时暂停运行中的 Box。
+3. 本地卷复制为目标上的新卷。NFS 卷在目标上重新挂载而不复制，因为两台宿主机使用同一个导出。Box 的工具卷映射到目标的共享工具卷，工具本身不复制。
+4. 在目标上创建 Box 的容器，优先使用 Box 的名称。两台宿主机共享同一引擎时名称已被占用，因此容器会取得带后缀的名称。若 Box 应当运行，则在目标上启动它。
+5. 确认后才把规格中的宿主机改为目标；写入前在规格锁下再次检查 revision 与宿主机。
+6. 删除源端的容器与复制的卷。这一步失败不会撤销迁移，结果中的 `leftovers` 列出留在源端的内容。
+
+写入规格之前的任何一步失败，都会删除目标上的容器与复制的卷、恢复卷的记录，并恢复源端的暂停。Box 留在原宿主机上，任务报告错误。
+
+迁移保留 Box 的 id、名称、卷、环境变量与规格历史。与重建一样，它会丢失卷之外的可写层、运行中的进程与容器 IP。检查点留在原宿主机，不会在新宿主机上恢复，结果中给出其数量。以下情况在改动之前就会被拒绝：卷是绑定挂载（`move_bind_volume`）、卷不是 MiniBox 创建的（`volume_unmanaged`）、同一宿主机上另一个 Box 也挂载了该卷（`move_shared_volume`），或有回滚正在等待确认（`rollback_pending`）。Box 正在重建或更新时，迁移返回 `409`（`box_changing`）；迁移中的 Box 不能被重建或更新，返回 `409`（`box_moving`）。启动与停止迁移中的 Box 会等待迁移结束。这些保护只在 MiniBox 进程内有效，因此只覆盖这一台服务器。
 
 本版本的限制：
 
 - 远端宿主机上的端口预览与快照返回 `501`。端口预览需要 MiniBox 直接访问容器的 IP，远端宿主机上暂时做不到。
-- 模板与检查点不会在宿主机之间复制。远端宿主机的引擎上需要有模板镜像，否则在那里创建 Box 返回 `400`（`template_image_missing`）。每台宿主机保留各自的检查点仓库。
+- 模板与检查点不会在宿主机之间复制，但迁移时会发送 Box 所用的模板镜像。远端宿主机的引擎上需要有模板镜像，否则在那里创建 Box 返回 `400`（`template_image_missing`）。每台宿主机保留各自的检查点仓库，迁移后检查点仍留在原宿主机上。
 - 宿主机层面的 CPU 与内存使用率只来自本机的 `/proc`。远端宿主机显示其引擎报告的核数与内存（`docker info`），以及其上 Box 的占用。
-- 尚未支持：从远端机器主动连回的 Agent、`host: "auto"` 调度，以及把 Box 迁移到另一台宿主机。
+- 尚未支持：从远端机器主动连回的 Agent。
 
-MCP 工具 `list_hosts`、`test_host`、`add_host` 与 `remove_host` 的功能相同，属于默认开启的 `meta` 工具集。CLI 暂无宿主机命令。
+MCP 工具 `list_hosts`、`test_host`、`add_host`、`remove_host` 与 `get_host_usage` 的功能相同，属于默认开启的 `meta` 工具集。`move_box` 位于 `move` 工具集。CLI 暂无宿主机与迁移命令。
 
 ## 环境变量与密钥
 
@@ -664,6 +706,7 @@ Box 的环境变量是一组条目。创建时设置，重建时整体替换。�
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/hosts` | **仅所有者。** 每台宿主机的 `status`、`latencyMs`、`capacity`、`dockerVersion`、`boxes` 与 `error`（最近一次失败的检查）。离线的宿主机保留其条目 |
+| `GET` | `/api/hosts/usage` | **仅所有者。** 每台宿主机的 `containers`（`running` 与 `total`）、`allocated`（其运行中的 Box 预留的量）与 `usage`（这些 Box 当前的用量，由统计采样近似）。离线宿主机的数值为 `null`。见[宿主机用量](#宿主机用量) |
 | `POST` | `/api/hosts/test` | **仅所有者。** 检查连接，不保存任何内容。请求体为 `{ "id", "endpoint", "ca"?, "cert"?, "key"?, "privateKey"?, "hostKeyFingerprint"? }`，附带端点所需的凭据。返回 `200` 与 `ok`、`latencyMs`、`capacity`、`dockerVersion`；SSH 还返回宿主机出示的 `hostKeyFingerprint`。失败记录在 `error` 中 |
 | `POST` | `/api/hosts` | **仅所有者。** 连接检查通过后添加宿主机。请求体与测试相同，另加 `name`。返回 `201` 与宿主机信息。无效的 id、端点或凭据返回 `400`；键为 `host_exists`、`host_key_unconfirmed` 或 `host_key_mismatch` 时返回 `409`；宿主机无法连接时返回 `503`（`docker_unavailable`） |
 | `DELETE` | `/api/hosts/{id}` | **仅所有者。** 移除宿主机并删除其凭据。仍有 Box、卷或检查点时返回 `409`（键 `host_in_use`）；移除 `local` 返回 `409`（键 `host_is_local`） |
@@ -673,12 +716,13 @@ Box 的环境变量是一组条目。创建时设置，重建时整体替换。�
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | 从主机的缓存列出 Box，缓存由引擎事件保持最新。缓存就绪时列表不调用引擎；除非 `stats=false`，否则运行中的 Box 附带最近一次采样。列表涵盖所有宿主机；`?host=<id>` 只列出该宿主机上的 Box |
-| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "host"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载。`idleTimeoutSec` 为 `0` 时该 Box 永不休眠；省略或 `null` 继承 `BOX_IDLE_TIMEOUT_SEC`。`ttlSec` 为自创建起的绝对寿命。`host` 指定 Box 所在的宿主机，缺省为 `local`（见[多宿主机](#多宿主机)）。`env` 为最多 64 项的列表，每项为 `{ "name", "value" }` 或 `{ "name", "secretRef" }`，见[环境变量与密钥](#环境变量与密钥) |
+| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "host"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载。`idleTimeoutSec` 为 `0` 时该 Box 永不休眠；省略或 `null` 继承 `BOX_IDLE_TIMEOUT_SEC`。`ttlSec` 为自创建起的绝对寿命。`host` 指定 Box 所在的宿主机：缺省为 `local`，也可以是宿主机 id，或 `"auto"` 由 MiniBox 选择（见[多宿主机](#多宿主机)）。`env` 为最多 64 项的列表，每项为 `{ "name", "value" }` 或 `{ "name", "secretRef" }`，见[环境变量与密钥](#环境变量与密钥) |
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除 Box。`deleteVolume=true` 还会删除没有被其他 Box 挂载的自有卷。独立卷会留下 |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | 生命周期操作。启动和停止会记下期望状态 |
 | `PATCH` | `/api/boxes/:id/resources` | 热更新配额 `{ "cpus"?, "memoryMb"?, "pids"? }`。必须带 `If-Match` |
+| `POST` | `/api/boxes/:id/move` | 把 Box 迁移到另一台宿主机，请求体为 `{ "host", "confirm"? }`。需要 `If-Match`（缺失返回 `428`，过期返回 `412`）。仅所有者或管理员可用。没有 `"confirm": true` 时返回 `409 confirmation_required` 与 `preview`，且不做任何改动；带上它时返回 `202` 与 `{ "taskId" }`，任务结果中带有 Box 的新 `id`。见[迁移 Box](#迁移-box) |
 | `GET` | `/api/boxes/:id/stats` | 最近一次占用（最新采样）。`?history=true` 另外返回最近的采样，按时间从早到晚排列 |
 | `GET` | `/api/boxes/:id/logs?tail=300` | 容器日志（1–5000 行）。同一 Box 与 tail 的引擎读取在两秒内共享 |
 | `GET` | `/api/boxes/:id/logs/stream?tail=300` | 同样的日志以服务器推送事件（`text/event-stream`）返回：先是一帧 `sync`（最新的行），之后每新增一行一帧 `line`。不是操作，因此不在 OpenAPI 文档中 |
@@ -868,11 +912,11 @@ MINIBOX_ACCESS_KEY=$KEY minibox exec agent-dev -- npm test
 
 ## Agent
 
-`POST /mcp` 是 Streamable HTTP MCP。请发送 `Authorization: Bearer`，其值为访问密钥或 Agent 令牌。浏览器会话 Cookie 不会被接受；错误的 Bearer 密钥计入与错误登录密钥相同的登录限流。`tools/list` 只列出令牌 scope 能够调用的工具；令牌无权调用的工具会返回带 `forbidden` 代码的工具错误，且不执行任何操作。会话属于打开它的主体，该令牌被吊销时会话随之结束。`GET /mcp` 不提供事件流。`DELETE /mcp` 结束会话。`?toolsets=core,session` 选择工具集，默认是 `core,meta`。`rebuild_box` 位于 `rebuild` 工具集中，需要用 `?toolsets=rebuild` 启用。
+`POST /mcp` 是 Streamable HTTP MCP。请发送 `Authorization: Bearer`，其值为访问密钥或 Agent 令牌。浏览器会话 Cookie 不会被接受；错误的 Bearer 密钥计入与错误登录密钥相同的登录限流。`tools/list` 只列出令牌 scope 能够调用的工具；令牌无权调用的工具会返回带 `forbidden` 代码的工具错误，且不执行任何操作。会话属于打开它的主体，该令牌被吊销时会话随之结束。`GET /mcp` 不提供事件流。`DELETE /mcp` 结束会话。`?toolsets=core,session` 选择工具集，默认是 `core,meta`。`rebuild_box` 位于 `rebuild` 工具集中，需要用 `?toolsets=rebuild` 启用。`move_box` 位于 `move` 工具集中，需要用 `?toolsets=move` 启用。
 
 > **警告：主访问密钥在 `/mcp` 上拥有完全的所有者权限。** 持有密钥的客户端可以调用其所请求工具集中的每一个工具，包括在非「严格」档位的 Box 中以 root 执行 `exec`、`delete_box` 与 `rebuild_box`。请把 Agent 令牌（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）交给 Agent，而不是主密钥，并确保密钥不出现在提示词、日志和仓库中。
 
-设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
+设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`move_box` 属于 `move`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
 
 用 [SSH 访问](#ssh-访问) 中的一行安装脚本从服务器安装 CLI，或在源码目录用 `bun run build:cli` 编译（`bun build --compile`，输出 `dist/minibox`，不提交）。`minibox --version` 输出构建该二进制所用的版本，`minibox <命令> --help` 输出帮助并以 0 退出。CLI 访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。`ssh-proxy` 发现服务器比 CLI 新时，会打印一行如何更新的提示。
 
@@ -894,6 +938,7 @@ minibox mcp
 - 前台 exec 的 `timeoutSec` 最大为 55。更长的命令使用 `background: true` 并把 `timeoutSec` 设到最大 3600，再用 `exec_get` 的 `waitMs`（最大 25000）轮询。`exec_kill` 结束进程树。
 - `exec` 可以读写该 Box 上挂载的每一个卷。
 - `rebuild_box` 位于 `rebuild` 工具集（`/mcp?toolsets=rebuild`），需要 `confirm: true`。
+- `move_box` 位于 `move` 工具集（`/mcp?toolsets=move`），需要 `confirm: true`。没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。它把 Box 迁移到另一台宿主机，见[迁移 Box](#迁移-box)。只有所有者或管理员凭据可以迁移 Box。
 - `session_start`、`session_send` 与 `session_read` 驱动 Box 里的 tmux 会话，它们属于 `session` 工具集（`/mcp?toolsets=core,session`）。会话在你断开后继续运行。一次性命令用 exec，长时间运行或需要交互的程序用会话。列出和关闭会话只在 REST API 与 CLI 中提供。
 - 经由 MCP 启动的会话，发起方为 agent。人可以在控制台接管它。人持有会话期间，`session_send` 会失败并返回 `taken_over`（`retryable: true`）：稍等一下，用 `session_read` 读取会话，然后再发送。接管期间 `session_read` 仍可用。
 - `session_read` 返回 `lines` 与游标。把最新的游标作为 `since` 传入，只读取新增内容。`reset: true` 表示屏幕被重绘，此时 `lines` 是当前窗口。
@@ -1066,7 +1111,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 ### M4 · 多宿主机与优化
 
-- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) 多宿主机（仅 SSH / TLS 直连）（第一部分已完成：直连与控制台；Agent、调度与迁移仍待完成）
+- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) 多宿主机（仅 SSH / TLS 直连）（第一、二部分已完成：直连、控制台、宿主机指标与容量、自动放置与迁移 Box；Agent 仍待完成）
 - [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) 空闲自动休眠与按需唤醒
 - [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) 模板增强与预热池
 

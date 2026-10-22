@@ -37,7 +37,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Checkpoints | Copy a box's workspace and home into a restic repository, then fork a new box from the copy or roll the box back to it, confirming or undoing the rollback. Retention and a capacity limit apply. Available over REST and in the console's Checkpoints tab; MCP tools are not there yet. See [Checkpoints](#checkpoints) |
 | Templates | The environment new boxes start from: the bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user), plus templates you save from a box's page. A save keeps the box's system layer, such as apt and sudo installs and system file changes, not `/workspace` or home data. Use a checkpoint for data. See [Base template](#base-template) |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
-| Multiple hosts | Add other Docker engines over a unix socket, mutual TLS or SSH, and create boxes on any of them. The SSH host key is confirmed when the host is added. Adding and removing hosts is owner-only, in Settings or the API. See [Multiple hosts](#multiple-hosts) |
+| Multiple hosts | Add other Docker engines over a unix socket, mutual TLS or SSH, and create boxes on any of them, or let MiniBox pick the freest host with `host: "auto"`. Running boxes are checked against each host's capacity, and a box can move to another host with its volumes. The SSH host key is confirmed when the host is added. Adding and removing hosts is owner-only. A move needs a credential that may use every host and every box. See [Multiple hosts](#multiple-hosts) |
 | Per-box monitoring | Live CPU / memory usage relative to the box quota, with history charts |
 | Live updates | Box state, resource samples, host metrics, task progress and box logs are pushed over SSE (`GET /api/events/stream`, `GET /api/boxes/:id/logs/stream`). The console polls only while a stream is down |
 | Web terminal | Interactive bash over WebSocket with xterm.js, auto-resizes with the window. Named tmux sessions survive a page refresh or a dropped connection. An agent's session opens read-only until you take it over |
@@ -394,6 +394,7 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `STOP_TIMEOUT_SEC` | `3` | Seconds a box gets to exit after SIGTERM before it is killed, used by stop and restart. Whole number from 0 to 300 |
 | `METRICS_INTERVAL_MS` | `3000` | Interval (ms) between host metrics samples, and between per-box resource samples while a live stream is open. Without one, boxes are sampled every 30 seconds (or at this interval if it is longer) for five minutes after each read of their usage. Keep it above 2000: a Docker stats call takes 1 to 2 seconds, and a call still running at the timeout is a missed sample |
 | `METRICS_HISTORY` | `120` | Number of samples kept per host and per box (≈ 6 minutes at the default interval) |
+| `HOST_OVERCOMMIT` | `1` | How far the CPU and memory booked by running boxes on a host may exceed its capacity, as a ratio from 1 to 10. `1` books no more than the host has. Checked only with more than one host. See [Host capacity](#host-capacity) |
 | `STREAM_MAX_CONNECTIONS` | `256` | Event, task and log streams open at once, across all browsers and clients. The next one gets `429`, and the console retries it with a growing delay. A positive whole number |
 | `EVENT_RETENTION_AUDIT_DAYS` | `365` | Days to keep audit events: writes, deletes and refused calls. See [Events](#events) |
 | `EVENT_RETENTION_ACTIVITY_DAYS` | `30` | Days to keep activity: command runs, container events, terminal sessions and reads. Repeated reads are merged per minute |
@@ -596,19 +597,60 @@ Behaviour:
 
 - **Routing.** A box's operations run on its host. Create a box on another host with `host` in the request body; the default is `local`. There are no `/api/hosts/:host/...` routes, because a box keeps an id and a name that are unique across hosts.
 - **Lists.** Box, volume and checkpoint lists read every host at once. A host that is offline or does not answer within 5 seconds does not hold up the others. Its boxes are listed as `unreachable`, with the name and image from their spec and no live data, and its volumes and checkpoints are left out. A failure on the local host still fails the list.
-- **Console.** With more than one host, each box names its host, the overview shows a card per host, the top bar filters by host, and unreachable boxes are greyed out.
+- **Console.** With more than one host, each box names its host, the overview shows a card per host (its state, latency, cores, memory, containers, and what its boxes book and use), the top bar filters by host, and unreachable boxes are greyed out. The box header offers **Move to host**, which appears only then.
 - **Tokens.** A token's `hosts` grant lists the hosts it may use: `local` (the default for the `readonly`, `operator` and `sandboxed-agent` presets), host ids, or `*` (the `admin` preset). A box on another host is refused with `403` (key `host_not_granted`).
 - **Removing.** A host that still has boxes, volumes or checkpoints cannot be removed (`409`, key `host_in_use`). `local` cannot be removed (`409`, key `host_is_local`).
-- **Audit.** Adding, testing and removing a host are recorded in the audit log. Credentials never are.
+- **Audit.** Adding, testing and removing a host are recorded in the audit log, and so is each move, with its target host. Credentials never are.
 
-Limits in this part:
+### Host usage
+
+`GET /api/hosts/usage` (owner only) reports, for each host, the containers its engine reports at its last successful check (`running` and `total`), the CPU and memory its running boxes book (`allocated`), and the CPU and memory those boxes use now (`usage`). `usage` comes from each box's newest stats sample, so it is an approximation. An offline host reports `null` for `allocated` and `usage`. The overview shows the same figures per host. A remote host reports the cores and memory its engine reports (`docker info`), and the usage of its own boxes.
+
+### Automatic placement
+
+A box created with `"host": "auto"` goes to the host MiniBox picks:
+
+1. Only online hosts that already hold the box's template image are considered. Nothing is copied to a host for placement.
+2. Of those, only the hosts with room for the box are kept. The box must fit the host's cores and memory, and booking it must keep the host within its capacity times `HOST_OVERCOMMIT` (see [Host capacity](#host-capacity)).
+3. The host left with the largest free share of CPU and memory wins, measured on whichever of the two is tighter. A tie goes to the earlier host, which is `local`.
+
+The box's `hostId` names the host it went to. When no host can take the box, the create fails with `503` (`docker_unavailable`) if no host is online, `400` (`template_image_missing`) if none holds the template, or `422` (`insufficient_capacity`) if none has room.
+
+### Host capacity
+
+With more than one host, MiniBox books the CPU and memory limits of the running boxes on each host, and refuses a booking that takes the host past its capacity times `HOST_OVERCOMMIT`. The check applies to:
+
+- a new running box, including one made by a snapshot or checkpoint fork;
+- a resize that grows the CPU or memory of a running box. A shrink is never refused;
+- a move that leaves the box running on the target.
+
+A refusal is `422` (`insufficient_capacity`), and its `field` names the resource that is over. `HOST_OVERCOMMIT` defaults to `1`, which books no more than the host has. A box that asks for more CPU or memory than its host has is refused with `422` on any install. Starting a stopped box is not checked against the booking, because a stopped box books nothing. This is a known limit. A single-host install is never checked against bookings.
+
+### Moving a box
+
+A box moves with `POST /api/boxes/:id/move`, which takes `{ "host": "<target>" }` and an `If-Match` header with the box's current revision (`428` if missing, `412` if stale). Moving reaches every host, so only a credential that may use every host and every box can move a box: the owner, or the `admin` preset. A box with secret references also needs `secret:use`. The console offers the same action as **Move to host** in the box header, and the MCP tool `move_box` (in the `move` toolset, `/mcp?toolsets=move`) makes the same call.
+
+The first call changes nothing. Without `"confirm": true` it answers `409 confirmation_required` with a `preview`: each volume and what happens to it, whether the template image must be sent, whether the box starts on the target (only a box whose desired state is running does, so a stopped box stays stopped), the checkpoints that stay on the old host, what is kept and what is lost, and the revision the move writes. With `"confirm": true` it answers `202` with a `taskId`, and the task does the following:
+
+1. Sends the template image to the target when the target does not hold it. The image is streamed as `docker save` into `docker load`, and it keeps its id, so the box's digest still holds on the target. A target that already has a different image under the same tag is refused, not overwritten.
+2. Pauses a running box while its local volumes are copied.
+3. Copies each local volume to a new volume on the target. Attaches each NFS volume to the target without copying, because the same export serves both hosts. Maps the box's tools volume to the target's shared tools volume, and does not copy the tools.
+4. Creates the box's container on the target, under the box's name when the target has it free. Two hosts that share one engine share its names, so the container then takes a suffixed name. It starts the container if the box runs.
+5. Writes the box's new host to its spec once, checking the revision and the host again under the spec lock.
+6. Removes the container and the copied volumes from the source. A failure here does not undo the move. The result lists what stayed on the source in `leftovers`.
+
+A failure before step 5 removes the target container and the volumes the move copied, restores the volume records, and unpauses the source. The box stays where it was, and the task reports the error.
+
+A move keeps the box's id, name, volumes, environment and spec history. Like a rebuild, it loses the writable layer outside volumes, running processes and the container IP. Its checkpoints stay on the old host and are not restored on the new one; the result counts them. The move refuses before anything changes when a volume is a bind mount (`move_bind_volume`), when MiniBox did not create a volume (`volume_unmanaged`), when another box on the same host mounts the same volume (`move_shared_volume`), or when a rollback is waiting (`rollback_pending`). A move is refused with `box_changing` while the box is being rebuilt or updated, and a rebuild or update is refused with `box_moving` while the box moves. Starts and stops of a moving box wait for the move to end. These guards live in the MiniBox process, so they cover one server.
+
+Limits:
 
 - Port preview and snapshots return `501` on a remote host. Port preview needs MiniBox to reach a container's IP directly, which it cannot do on a remote host yet.
-- Templates and checkpoints are not copied between hosts. A remote host needs the template image on its own engine, or creating a box there returns `400` (`template_image_missing`). Each host keeps its own checkpoint repository.
+- Templates and checkpoints are not copied between hosts, except the template image that a move sends. A new box on a host needs the template image on that host's engine, or creating it returns `400` (`template_image_missing`). Each host keeps its own checkpoint repository, and a moved box's checkpoints stay on the old host.
 - Host-level CPU and memory usage come from `/proc` on the local host only. A remote host shows the cores and memory its engine reports (`docker info`), plus the usage of its own boxes.
-- Not yet: an agent that connects out from a remote machine, placement with `host: "auto"`, and moving a box to another host.
+- Not yet: an agent that connects out from a remote machine.
 
-The MCP tools `list_hosts`, `test_host`, `add_host` and `remove_host` do the same work. They are in the `meta` toolset, which is on by default. The CLI has no host commands yet.
+The MCP tools `list_hosts`, `test_host`, `add_host`, `remove_host` and `get_host_usage` do the same work. They are in the `meta` toolset, which is on by default. The CLI has no host or move commands yet.
 
 ## Environment variables and secrets
 
@@ -667,6 +709,7 @@ Errors use a consistent shape and the matching HTTP status:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/hosts` | **Owner only.** Every host with `status`, `latencyMs`, `capacity`, `dockerVersion`, `boxes` and `error` (the last failed check). An offline host keeps its entry |
+| `GET` | `/api/hosts/usage` | **Owner only.** Per host: `containers` (`running`, `total`), `allocated` (what its running boxes book) and `usage` (what they use now, approximated from stats samples). Offline hosts report `null` figures. See [Host usage](#host-usage) |
 | `POST` | `/api/hosts/test` | **Owner only.** Checks a connection and saves nothing. Body `{ "id", "endpoint", "ca"?, "cert"?, "key"?, "privateKey"?, "hostKeyFingerprint"? }`, with the credentials the endpoint needs. Returns `200` with `ok`, `latencyMs`, `capacity`, `dockerVersion` and, for SSH, the `hostKeyFingerprint` the host presents. A failure is reported in `error` |
 | `POST` | `/api/hosts` | **Owner only.** Adds a host once its connection checks out. The body is the same as for test, plus `name`. Returns `201` with the host. `400` for an invalid id, endpoint or credential; `409` with key `host_exists`, `host_key_unconfirmed` or `host_key_mismatch`; `503` (`docker_unavailable`) when the host cannot be reached |
 | `DELETE` | `/api/hosts/{id}` | **Owner only.** Removes the host and deletes its credentials. `409` (key `host_in_use`) while it holds boxes, volumes or checkpoints, and `409` (key `host_is_local`) for `local` |
@@ -676,12 +719,13 @@ Errors use a consistent shape and the matching HTTP status:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | List boxes from the host's cache, which the engine's events keep current. While the cache is current the list makes no engine call. Running boxes carry their latest sample unless `stats=false`. The list covers every host; `?host=<id>` narrows it to one |
-| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "host"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults. `idleTimeoutSec` of `0` disables idle sleep for this box; `null`/omitted inherits `BOX_IDLE_TIMEOUT_SEC`. `ttlSec` is an absolute lifetime from create time. `host` picks the host the box runs on, `local` by default (see [Multiple hosts](#multiple-hosts)). `env` is a list of up to 64 `{ "name", "value" }` or `{ "name", "secretRef" }` entries; see [Environment variables and secrets](#environment-variables-and-secrets) |
+| `POST` | `/api/boxes` | Create and start. `{ "name", "template"?, "host"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`, where `profile` is `standard`, `strict` or `relaxed`; defaults 2 vCPU / 4096 MB. Each mount is `{ "volume", "path", "mode" }` with `mode` `rw` or `ro`. Omitted mounts use the four role defaults. `idleTimeoutSec` of `0` disables idle sleep for this box; `null`/omitted inherits `BOX_IDLE_TIMEOUT_SEC`. `ttlSec` is an absolute lifetime from create time. `host` picks the host the box runs on: `local` by default, a host id, or `"auto"` to let MiniBox choose (see [Multiple hosts](#multiple-hosts)). `env` is a list of up to 64 `{ "name", "value" }` or `{ "name", "secretRef" }` entries; see [Environment variables and secrets](#environment-variables-and-secrets) |
 | `GET` | `/api/boxes/:id` | Details, including live usage. The response carries `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | In-place update `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`. Requires `If-Match`. Does not change container labels. `template`, `mounts`, `env`, `network` and `profile` are not applied in place: a difference returns `409 confirmation_required` with a preview and leaves the in-place fields unchanged |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | Delete the box. `deleteVolume=true` also deletes owned volumes that no other box mounts. Independent volumes stay |
 | `POST` | `/api/boxes/:id/start` · `/stop` · `/restart` | Lifecycle actions. Start and stop record the desired state |
 | `PATCH` | `/api/boxes/:id/resources` | Live-update quota `{ "cpus"?, "memoryMb"?, "pids"? }`. Requires `If-Match` |
+| `POST` | `/api/boxes/:id/move` | Move the box to another host `{ "host", "confirm"? }`. Requires `If-Match` (`428` if missing, `412` if stale). Owner or admin only. Without `"confirm": true` it returns `409 confirmation_required` with a `preview` and changes nothing; with it, `202` `{ "taskId" }`. The task's result carries the box's new `id`. See [Moving a box](#moving-a-box) |
 | `GET` | `/api/boxes/:id/stats` | Latest usage, the newest sample. `?history=true` also returns the recent samples, oldest first |
 | `GET` | `/api/boxes/:id/logs?tail=300` | Container logs (1–5000 lines). Engine reads are shared for two seconds per box and tail |
 | `GET` | `/api/boxes/:id/logs/stream?tail=300` | The same lines as a server-sent event stream: a `sync` frame with the newest lines, then a `line` frame for each new one. Not an operation, so it is not in the OpenAPI document |
@@ -871,11 +915,11 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 ## Agents
 
-`POST /mcp` is Streamable HTTP MCP. Send `Authorization: Bearer` with the access key or an agent token. A browser session cookie is refused, and a wrong Bearer key counts toward the same login limit as a wrong login key. `tools/list` offers a token only the tools its scopes reach. A call the token may not make returns a tool error with the code `forbidden` and runs nothing. A session belongs to the principal that opened it, and it ends when that token is revoked. `GET /mcp` is not an event stream. `DELETE /mcp` closes a session. `?toolsets=core,session` selects toolsets. The default is `core,meta`. `rebuild_box` is in the `rebuild` toolset, so enable it with `?toolsets=rebuild`.
+`POST /mcp` is Streamable HTTP MCP. Send `Authorization: Bearer` with the access key or an agent token. A browser session cookie is refused, and a wrong Bearer key counts toward the same login limit as a wrong login key. `tools/list` offers a token only the tools its scopes reach. A call the token may not make returns a tool error with the code `forbidden` and runs nothing. A session belongs to the principal that opened it, and it ends when that token is revoked. `GET /mcp` is not an event stream. `DELETE /mcp` closes a session. `?toolsets=core,session` selects toolsets. The default is `core,meta`. `rebuild_box` is in the `rebuild` toolset, so enable it with `?toolsets=rebuild`. `move_box` is in the `move` toolset, so enable it with `?toolsets=move`.
 
 > **Warning: the main access key grants full owner access over `/mcp`.** A client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Give an agent an agent token ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) rather than the key, and keep the key out of prompts, logs and repositories.
 
-The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
+The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `move_box` in `move`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
 
 Install the CLI from the server with the one-line installer in [SSH access](#ssh-access), or build it from a checkout with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). `minibox --version` prints the version the binary was built from, and `minibox <command> --help` prints the help and exits 0. The CLI talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token. When `ssh-proxy` finds the server newer than the CLI, it prints one line that says how to update.
 
@@ -1080,7 +1124,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 
 ### M4 · Multi-host and optimization
 
-- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) Multi-host support over SSH or TLS (first part done: direct connections and the console; agents, scheduling and migration remain)
+- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) Multi-host support over SSH or TLS (first two parts done: direct connections, the console, host metrics and capacity, automatic placement and moving a box; agents remain)
 - [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) Idle auto-sleep with on-demand wake
 - [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) Template enhancements and warm pool
 
