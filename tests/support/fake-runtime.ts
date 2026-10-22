@@ -1258,6 +1258,7 @@ export class FakeRuntime implements Runtime {
 
   async runHelper(spec: HelperSpec): Promise<HelperResult> {
     this.enter("runHelper", [spec]);
+    await this.gate("runHelper", [spec]);
     this.getImage(spec.image);
     this.ensureVolumes(spec.mounts);
     if (this.helperHandler !== defaultHelper) return this.helperHandler(spec);

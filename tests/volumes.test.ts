@@ -11,7 +11,8 @@ import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
 import { attachVolume, createVolume, getPools, listVolumes, measureVolume, savePools } from "../src/services/volumes";
 import { claimEngineVolumes } from "../src/volumes/engine";
-import { DEV_OWNER } from "../src/volumes/types";
+import { probePool, probePools } from "../src/volumes/health";
+import { DEV_OWNER, type StoragePool } from "../src/volumes/types";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 
@@ -712,6 +713,124 @@ describe("a storage server that refuses the box is a storage error", () => {
     expect(box.mounts.map((mount) => mount.role).toSorted()).toEqual(["cache", "home", "tools", "workspace"]);
     expect(helperSpecs(".minibox-write-check")).toHaveLength(3);
     expect(helperSpecs("rmdir")).toHaveLength(0);
+  });
+});
+
+/** Waits for `check` to hold, for about a second, so a test that expects a state can fail with a clear message. */
+async function eventually(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !check(); i++) await Bun.sleep(5);
+}
+
+const dfCalls = () => helperSpecs("df -B1 -P").length;
+const stuckPool = () => host.volumes.readPools().pools.find((pool) => pool.name === "stuck") as StoragePool;
+
+describe("pool probes run side by side and give up at a deadline", () => {
+  const pools = [
+    { name: "local", backend: "local" as const },
+    {
+      name: "stuck",
+      backend: "nfs" as const,
+      server: "192.168.1.10",
+      export: "/volume1/stuck",
+      options: ["nfsvers=4.1", "hard"],
+    },
+    {
+      name: "fine",
+      backend: "nfs" as const,
+      server: "192.168.1.11",
+      export: "/volume1/fine",
+      options: ["nfsvers=4.1", "hard"],
+      default: true,
+    },
+  ];
+  const STUCK_ROOT = "mbtest-pool-stuck";
+  const stuckHeld = () =>
+    runtime.hold("runHelper", (args) => (args[0] as HelperSpec).mounts?.[0]?.source === STUCK_ROOT);
+  const stuckCalls = () => helperSpecs("df -B1 -P").filter((spec) => spec.mounts?.[0]?.source === STUCK_ROOT).length;
+
+  test("every pool's probe starts before any has answered, so a pool still waiting holds back none", async () => {
+    await savePools(host, pools, undefined);
+    const before = dfCalls();
+    const held = runtime.hold("runHelper", (args) => (args[0] as HelperSpec).cmd.join(" ").includes("df -B1 -P"));
+    const probing = probePools(host, { force: true, deadlineMs: 5000 });
+    try {
+      await eventually(() => dfCalls() - before >= 2);
+      expect(dfCalls() - before).toBe(2);
+    } finally {
+      held.release();
+    }
+    expect((await probing).map((probe) => probe.status)).toEqual(["reachable", "reachable", "reachable"]);
+  });
+
+  test("a pool that does not answer by the deadline is unreachable, and the other pools still report", async () => {
+    await savePools(host, pools, undefined);
+    const held = stuckHeld();
+    try {
+      const started = Date.now();
+      const probes = await probePools(host, { force: true, deadlineMs: 300 });
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(Object.fromEntries(probes.map((probe) => [probe.pool, probe.status]))).toEqual({
+        local: "reachable",
+        stuck: "unreachable",
+        fine: "reachable",
+      });
+      expect(probes.find((probe) => probe.pool === "stuck")?.message).toBe("no answer within 0.3 s");
+      expect(host.volumes.healthOf(host.host.id, "stuck")).toMatchObject({ status: "unreachable" });
+    } finally {
+      held.release();
+    }
+  });
+
+  test("two servers that do not answer share one deadline, so the call still returns in about one", async () => {
+    const dead = {
+      name: "dead",
+      backend: "nfs" as const,
+      server: "192.168.1.12",
+      export: "/volume1/dead",
+      options: ["nfsvers=4.1", "hard"],
+    };
+    await savePools(host, [...pools, dead], undefined);
+    const held = runtime.hold("runHelper", (args) =>
+      [STUCK_ROOT, "mbtest-pool-dead"].includes((args[0] as HelperSpec).mounts?.[0]?.source ?? ""),
+    );
+    try {
+      const started = Date.now();
+      const probes = await probePools(host, { force: true, deadlineMs: 500 });
+      expect(Date.now() - started).toBeLessThan(900);
+      expect(
+        probes
+          .filter((probe) => probe.status === "unreachable")
+          .map((probe) => probe.pool)
+          .toSorted(),
+      ).toEqual(["dead", "stuck"]);
+    } finally {
+      held.release();
+    }
+  });
+
+  test("a timed-out pool is answered from the cache, and a forced probe joins the one still running", async () => {
+    await savePools(host, pools, undefined);
+    const held = stuckHeld();
+    try {
+      await probePools(host, { force: true, deadlineMs: 100 });
+      const calls = stuckCalls();
+
+      expect(await probePool(host, stuckPool())).toMatchObject({ status: "unreachable" });
+      expect(stuckCalls()).toBe(calls);
+
+      expect(await probePool(host, stuckPool(), { force: true, deadlineMs: 100 })).toMatchObject({
+        status: "unreachable",
+      });
+      expect(stuckCalls()).toBe(calls);
+    } finally {
+      held.release();
+    }
+
+    await eventually(() => host.volumes.healthOf(host.host.id, "stuck")?.status === "reachable");
+    expect(host.volumes.healthOf(host.host.id, "stuck")).toMatchObject({ status: "reachable" });
+    const calls = stuckCalls();
+    await probePool(host, stuckPool(), { force: true });
+    expect(stuckCalls()).toBe(calls + 1);
   });
 });
 

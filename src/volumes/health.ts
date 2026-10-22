@@ -4,6 +4,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { RuntimeError, type VolumeInfo } from "../runtime";
 import { nfsDriverOpts, sameOptions } from "./pools";
+import type { VolumeStore } from "./store";
 import { DEV_OWNER, type PoolHealth, type StoragePool } from "./types";
 
 const PROBE_TTL_MS = 15_000;
@@ -160,21 +161,72 @@ async function probeRemote(host: HostCtx, pool: StoragePool): Promise<PoolHealth
   }
 }
 
+/** A probe that has not answered by then reports the pool unreachable. The probe itself keeps running until it ends. */
+const PROBE_DEADLINE_MS = 5_000;
+
+/**
+ * Probes still running, per store and pool. A hung mount keeps its helper busy, so a later probe of the same pool
+ * joins the one already running instead of starting another.
+ */
+const running = new WeakMap<VolumeStore, Map<string, Promise<PoolHealth>>>();
+
+function runningProbes(store: VolumeStore): Map<string, Promise<PoolHealth>> {
+  const existing = running.get(store);
+  if (existing) return existing;
+  const probes = new Map<string, Promise<PoolHealth>>();
+  running.set(store, probes);
+  return probes;
+}
+
+function startProbe(host: HostCtx, pool: StoragePool): Promise<PoolHealth> {
+  const probes = runningProbes(host.volumes);
+  const key = `${host.host.id}\0${pool.name}`;
+  const existing = probes.get(key);
+  if (existing) return existing;
+  const probe = (pool.backend === "local" ? probeLocal(host, pool) : probeRemote(host, pool))
+    .then((next) => {
+      host.volumes.rememberHealth(next);
+      return next;
+    })
+    .finally(() => probes.delete(key));
+  probes.set(key, probe);
+  return probe;
+}
+
+async function probeWithin(host: HostCtx, pool: StoragePool, deadlineMs: number): Promise<PoolHealth> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<PoolHealth>((resolve) => {
+    timer = setTimeout(() => {
+      const timedOut = health(host, pool, "unreachable", `no answer within ${deadlineMs / 1000} s`);
+      host.volumes.rememberHealth(timedOut);
+      resolve(timedOut);
+    }, deadlineMs);
+  });
+  try {
+    return await Promise.race([startProbe(host, pool), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+interface ProbeOptions {
+  force?: boolean;
+  /** Tests shorten the deadline. Production uses the default. */
+  deadlineMs?: number;
+}
+
 /** Cached for a few seconds. A forced probe is what the pools page asks for when the operator hits refresh. */
-export async function probePool(host: HostCtx, pool: StoragePool, opts: { force?: boolean } = {}): Promise<PoolHealth> {
+export async function probePool(host: HostCtx, pool: StoragePool, opts: ProbeOptions = {}): Promise<PoolHealth> {
   const cached = host.volumes.healthOf(host.host.id, pool.name);
   const fresh = cached?.checkedAt && Date.now() - Date.parse(cached.checkedAt) < PROBE_TTL_MS;
   if (!opts.force && cached && fresh) return cached;
-  const next = pool.backend === "local" ? await probeLocal(host, pool) : await probeRemote(host, pool);
-  host.volumes.rememberHealth(next);
-  return next;
+  return probeWithin(host, pool, opts.deadlineMs ?? PROBE_DEADLINE_MS);
 }
 
-export async function probePools(host: HostCtx, opts: { force?: boolean } = {}): Promise<PoolHealth[]> {
+/** Every pool is probed at once, so one dead server cannot delay the others. */
+export async function probePools(host: HostCtx, opts: ProbeOptions = {}): Promise<PoolHealth[]> {
   const file = host.volumes.readPools();
-  const results: PoolHealth[] = [];
-  for (const pool of file.pools) results.push(await probePool(host, pool, opts));
-  return results;
+  return Promise.all(file.pools.map((pool) => probePool(host, pool, opts)));
 }
 
 /**
