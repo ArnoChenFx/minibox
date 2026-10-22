@@ -18,8 +18,8 @@ import { icon } from "../lib/icons.js";
  *
  * Pages change selects in three ways, and each has a hook: a body-wide observer enhances the selects that are added and
  * destroys the ones that leave the document; a per-select observer follows options and attributes; and the `value` and
- * `selectedIndex` setters are wrapped, because a programmatic write fires no mutation record. `refreshSelect()` covers
- * the rest, such as an option whose `selected` flag is set directly.
+ * `selectedIndex` setters are wrapped, because a programmatic write fires no mutation record. A `change` event re-reads
+ * the selection too, which covers an option whose `selected` flag is set directly. `refreshSelect()` covers the rest.
  */
 
 const MENU_ID = "dd-menu";
@@ -300,6 +300,7 @@ class SelectControl {
     select.setAttribute("aria-hidden", "true");
     select.after(trigger);
     select.addEventListener("focus", this.onNativeFocus);
+    select.addEventListener("change", this.onNativeChange);
     trigger.addEventListener("click", this.onClick);
     trigger.addEventListener("keydown", this.onKeyDown);
     trigger.addEventListener("blur", this.onBlur);
@@ -338,6 +339,7 @@ class SelectControl {
     closeMenu(this);
     this.state = closedState();
     select.removeEventListener("focus", this.onNativeFocus);
+    select.removeEventListener("change", this.onNativeChange);
     delete select.value;
     delete select.selectedIndex;
     select.classList.remove("dropdown-native");
@@ -419,6 +421,8 @@ class SelectControl {
   onNativeFocus = () => {
     if (!this.select.disabled) this.trigger.focus();
   };
+
+  onNativeChange = () => this.sync();
 
   onClick = (event) => {
     event.preventDefault();
