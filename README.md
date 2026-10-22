@@ -13,7 +13,10 @@
 
 <p align="center"><b>English</b> | <a href="README-zh.md">简体中文</a></p>
 
-![The MiniBox overview page](docs/screenshots/overview-light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png" />
+  <img src="docs/screenshots/en/overview-light.png" alt="The MiniBox overview page" />
+</picture>
 
 ## What is MiniBox?
 
@@ -41,7 +44,10 @@ MiniBox is built for one trusted user. It has no user accounts, so anyone with t
 - **Agent access.** Give each agent its own scoped token, and connect it through MCP, the CLI, SSH or the REST API.
 - **Multiple hosts.** Run boxes on other Docker engines, through SSH, mutual TLS or a Unix socket. Let MiniBox place a box on the freest host, and move a box to another host with its volumes.
 
-![The boxes list in the MiniBox console](docs/screenshots/boxes-light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/boxes-dark.png" />
+  <img src="docs/screenshots/en/boxes-light.png" alt="The boxes list in the MiniBox console" />
+</picture>
 
 ## Install
 

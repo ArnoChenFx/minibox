@@ -13,7 +13,10 @@
 
 <p align="center"><a href="README.md">English</a> | <b>简体中文</b></p>
 
-![MiniBox 概览页](docs/screenshots/overview-light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh-CN/overview-dark.png" />
+  <img src="docs/screenshots/zh-CN/overview-light.png" alt="MiniBox 概览页" />
+</picture>
 
 ## 什么是 MiniBox？
 
@@ -41,7 +44,10 @@ MiniBox 面向单一可信用户。它没有用户账户，因此任何持有访
 - **Agent 访问。** 为每个 Agent 发放各自限定权限的令牌，通过 MCP、CLI、SSH 或 REST API 连接。
 - **多宿主机。** 通过 SSH、双向 TLS 或 Unix 套接字，在其他 Docker Engine 上运行 Box。可由 MiniBox 把 Box 放到最空闲的宿主机，也可以把 Box 连同卷迁移到另一台宿主机。
 
-![MiniBox 控制台中的 Box 列表](docs/screenshots/boxes-light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh-CN/boxes-dark.png" />
+  <img src="docs/screenshots/zh-CN/boxes-light.png" alt="MiniBox 控制台中的 Box 列表" />
+</picture>
 
 ## 安装
 
