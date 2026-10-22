@@ -34,7 +34,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | 资源配额 | 按预设（小型 2 核 4 GB / 中型 4 核 8 GB / 大型 8 核 16 GB）或自定义设置 CPU、内存，并按宿主机容量校验；运行中可热更新（`docker update`） |
 | Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行；Web 终端与 `docker exec` 默认以 `dev` 进入。三个[安全档位](#安全档位)决定 Box 能做什么：默认的「标准」档位保留无密码 `sudo`，「严格」档位禁止提权。见[基础模板](#基础模板) |
 | 环境变量 | Box 的普通环境变量，以及按名称注入的宿主机密钥（`secretRef`）。密钥在「设置」中设置，之后任何接口都不会返回其值。见[环境变量与密钥](#环境变量与密钥) |
-| 检查点 | 把 Box 的工作区和主目录复制到 restic 仓库，再从副本派生新 Box，或把 Box 回滚到副本，并确认或撤销这次回滚。适用保留策略与容量上限。可通过 REST 使用，也可在控制台 Box 详情的「检查点」标签页中操作。MCP 工具暂未提供。见[检查点](#检查点) |
+| 检查点 | 把 Box 的工作区和主目录复制到 restic 仓库，再从副本派生新 Box，或把 Box 回滚到副本，并确认或撤销这次回滚。检查点可以导出为用口令密封的包，在本机或其它实例上导入，也可以按计划每隔 N 小时或每天定时拍摄。适用保留策略与容量上限。可通过 REST 使用，也可在控制台 Box 详情的「检查点」标签页中操作；MCP 的存储工具集提供导出、导入与计划。见[检查点](#检查点) |
 | 模板 | 新 Box 使用的环境：内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及从 Box 页面存为模板的自定义模板。保存的是系统层（apt 与 sudo 安装的软件、系统文件的改动），不含 `/workspace` 与 home 数据，数据请使用检查点 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
 | 多宿主机 | 可以通过 unix 套接字、双向 TLS 或 SSH 添加其它 Docker 引擎，并在其中任一台上创建 Box。添加宿主机时确认 SSH 主机密钥。添加与移除宿主机仅所有者可用，可在设置页或 API 中操作。见 [多宿主机](#多宿主机) |
@@ -117,7 +117,7 @@ flowchart LR
 ### 目标架构（规划中）
 
 > [!NOTE]
-> exec、`/mcp` 与 CLI 客户端、会话、路径模式的端口预览代理、检查点（拍摄、派生、回滚、保留策略与控制台的检查点标签页），以及图中的存储池和数据卷已经实现。定时检查点、检查点的导入导出与 MCP 工具、多宿主机的调度、Agent 与迁移（直连 TLS 与 SSH 已可用），以及卷准备之外的辅助容器用途仍在规划中。完整设计见 [`docs/design.md`](docs/design.md)。
+> exec、`/mcp` 与 CLI 客户端、会话、路径模式的端口预览代理、检查点（拍摄、派生、回滚、保留策略、导出、导入、定时与控制台的检查点标签页），以及图中的存储池和数据卷已经实现。拍摄、列出、派生与回滚的 MCP 工具、多宿主机的调度、Agent 与迁移（直连 TLS 与 SSH 已可用），以及卷准备之外的辅助容器用途仍在规划中。完整设计见 [`docs/design.md`](docs/design.md)。
 
 ```mermaid
 flowchart LR
@@ -381,6 +381,7 @@ ssh mybox.minibox
 | `CHECKPOINT_KEEP_LAST` | `20` | 每个 Box 保留的自动检查点数量（最新的在前），取值 1 至 10000。手动与置顶的检查点从不被保留策略删除。见[检查点](#检查点) |
 | `CHECKPOINT_KEEP_DAYS` | `30` | 超过这些天数的自动检查点会被删除，取值 0 至 3650。`0` 表示不论时间长短都保留 |
 | `CHECKPOINT_CAPACITY_MB` | `0` | 检查点仓库的容量上限（MB），取值 0 至 1000000000。`0` 表示不限制。达到上限时新的自动检查点会被拒绝，因此回滚（它先要拍摄安全检查点）也会被拒绝 |
+| `CHECKPOINT_PACKAGE_MAX_MB` | `2048` | 检查点包的最大体积（MB），取值 1 至 65536。服务器接受的请求体最大为这一体积再加 1 MB，超过上限的包导出或上传会失败。JSON 请求体仍限制为 128 MB。见[导出与导入](#导出与导入) |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
 | `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
@@ -449,6 +450,8 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 | `ssh_host_ed25519_key` | `600` | 网关的 SSH 主机密钥（OpenSSH 格式的 ed25519 私钥），首次启动时生成。`minibox ssh-config` 固定的是它的公钥。见 [SSH 访问](#ssh-访问) |
 | `boxes/` | `700` | 每个 Box 一个规格文件 `<id>.json`（权限 `600`）。可变状态写在这里；标签只是创建时的副本 |
 | `checkpoints/` | `700` | 每个检查点一个记录文件 `ck_….json`（权限 `600`）：记录拍摄时的 Box 规格、各卷的数据层及其 restic 快照 id。数据本身在仓库卷中，不在这里 |
+| `checkpoints/schedules/` | `700` | 每个 Box 的检查点计划一个文件 `<box id>.json`（权限 `600`）：记录计划的规则、下次运行与上次运行。没有文件的 Box 没有计划。重启后仍然有效 |
+| `packages/` | `700` | 检查点包 `<id>.mbckpt`（权限 `600`），旁边各有一个记录文件 `<id>.json`。包用导出时的口令封装。超过 24 小时后，每小时的清理会将其删除 |
 | `exec/` | `700` | `exec` 命令保存的输出，每个 exec 一个 JSON 文件。进程重启后内存中的记录消失，文件保留到清理策略删除它 |
 | `secrets/` | `700` | 宿主机密钥与仓库密钥。每个密钥是一个文件 `env/<名称>`（权限 `600`），只在构建 Box 的容器时读取。`checkpoint-repo.key`（权限 `600`）是检查点仓库的密码，首次使用时生成。需与仓库卷一起保存：没有它，检查点无法读取 |
 | `volumes/` | `700` | 每只卷一个记录文件 `vol_….json`（权限 `600`）。写入该文件不会改 Docker 卷名 |
@@ -514,7 +517,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ## 检查点
 
-检查点是 Box 数据的一份副本，保存在 restic 仓库中。可以从它派生一个新 Box，也可以把 Box 回滚到它。模板只保存容器的系统层；检查点则包含 `/workspace`。[#11](https://github.com/ArnoChenFx/minibox/issues/11) 涵盖检查点的全部功能。拍摄、派生、回滚与保留策略可通过 REST API 使用，Box 详情的「检查点」标签页也会列出并操作它们。MCP 工具暂未提供。
+检查点是 Box 数据的一份副本，保存在 restic 仓库中。可以从它派生一个新 Box，也可以把 Box 回滚到它。模板只保存容器的系统层；检查点则包含 `/workspace`。[#11](https://github.com/ArnoChenFx/minibox/issues/11) 涵盖检查点的全部功能。拍摄、派生、回滚与保留策略可通过 REST API 使用，Box 详情的「检查点」标签页也会列出并操作它们。检查点还可以导出为用口令密封的包，在本机或其它实例上导入，并按计划定时拍摄。MCP 的存储工具集提供导出、导入与计划；拍摄、列出、派生与回滚仍只能通过 REST 使用。
 
 **检查点包含什么。** Box 的自有卷：工作区与主目录。缓存和共享的工具卷永不包含。Box 挂载的共享卷只有在请求的 `include.volumes` 中指名时才会包含。设置 `include.system: true` 时，可写层会被提交为镜像，派生从系统状态开始；否则派生从 Box 的模板开始。每个检查点还记录拍摄时 Box 的模板、CPU、内存、档位与规格版本。
 
@@ -548,15 +551,40 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ### 保留与容量
 
-自动检查点是 MiniBox 自己拍摄的检查点，目前只有每次回滚前的安全检查点。保留策略为每个 Box 保留最新的 `CHECKPOINT_KEEP_LAST` 个（默认 `20`）自动检查点，并删除超过 `CHECKPOINT_KEEP_DAYS` 天（默认 `30`；为 `0` 时不论时间长短都保留）的自动检查点。手动拍摄与置顶的检查点不会被它删除，等待确认或撤销的回滚所对应的安全检查点同样不会被删除。保留策略在服务器启动时执行一次，之后每小时执行一次。
+自动检查点是 MiniBox 自己拍摄的检查点：每次回滚前的安全检查点，以及[定时检查点](#定时检查点)。保留策略为每个 Box 保留最新的 `CHECKPOINT_KEEP_LAST` 个（默认 `20`）自动检查点，并删除超过 `CHECKPOINT_KEEP_DAYS` 天（默认 `30`；为 `0` 时不论时间长短都保留）的自动检查点。手动拍摄与置顶的检查点不会被它删除，等待确认或撤销的回滚所对应的安全检查点同样不会被删除。保留策略在服务器启动时执行一次，之后每小时执行一次。
 
 `CHECKPOINT_CAPACITY_MB`（默认 `0`，即不限制）限制检查点仓库占用的空间。达到上限的 80% 时，每小时的检查都会记录 `checkpoint.capacity_warning`，检查点标签页也会显示仓库的占用情况。达到上限时，新的自动检查点会被拒绝，返回 `409 checkpoint_capacity_exceeded`，因此回滚会在替换任何卷之前被拒绝。手动拍摄仍可进行。如果无法测量占用空间，自动检查点照常进行。`GET /api/checkpoints/usage` 返回占用空间、上限、状态与保留策略，只有所有者可以读取。
 
 保留策略是全局的。本版本没有按 Box 覆盖的策略，也没有回收站。
 
+### 定时检查点
+
+Box 可以按计划拍摄检查点：每隔 `everyHours` 小时（1 至 720），或每天在 `at`（`HH:MM`，按服务器的时钟）拍摄一次。二者只能发送其一。`PUT /api/boxes/:id/checkpoint-schedule` 设置计划，并替换该 Box 已有的计划。`GET` 返回计划，包括下一次与上一次运行，没有计划时返回 `null`。`DELETE` 删除计划，已拍摄的检查点保留。在设置计划之前，Box 没有计划，因此不使用它的安装不会有任何变化。仅所有者可用。
+
+后台每分钟运行一次到期的计划。定时拍摄的检查点使用 `live` 方式，以 Box 的名称作为标签，不置顶，计为自动检查点，因此与回滚检查点一样由保留策略保留或删除。其原因为 `Taken on a schedule`。
+
+不拍摄检查点的运行会被记录，计划随即进入下一次运行：
+
+- `sleeping` 与 `stopped` 的 Box 会被跳过。计划从不唤醒或启动 Box。
+- `capacity` 表示仓库已达上限。有空间之后的运行才会拍摄检查点。
+- `gone` 表示 Box 在运行期间被删除，其计划在下一轮运行时被删除。
+- `failed` 表示备份失败，错误会被记录。
+
+结果保存在计划的 `lastRun` 中（`at`、`status`、`reason`、`checkpointId`、`error`），检查点标签页也会显示它。每次未被跳过的运行都会以 `checkpoint.scheduled` 写入审计日志。宿主机离线时，计划等待它恢复。计划保存在 `DATA_DIR/checkpoints/schedules/` 中，重启后仍然有效。服务器停机期间到期的计划，会在服务器启动后的第一轮运行中执行一次，最迟约一分钟。间隔计划沿着自己的时间网格前进；每日计划则在下一个发生时刻运行。
+
+### 导出与导入
+
+`POST /api/checkpoints/:id/export`，请求体为 `{ "passphrase" }`，把检查点写成一个包，返回 `202` 与 `taskId`。任务的结果即该包，包含其 `id`、`bytes`、`sha256`、`expiresAt`，以及下载它的 `url`。`GET /api/packages/:id/download` 以 `application/octet-stream` 返回文件，文件名为 `<id>.mbckpt`。包保留 24 小时，之后删除。仅所有者可用。
+
+口令为 12 至 1024 个字符，首尾不能有空格，也不能包含换行。MiniBox 从不保存口令，只有相同的口令能打开该包。口令不会出现在日志、审计事件、任务记录或辅助容器的环境变量中，辅助容器从只读文件读取它。包是检查点的快照组成的 restic 仓库，以该口令密封，并附带一份清单，记录 Box 的名称、检查点的标签与原因、规格和卷的数据层。包中不含仓库密钥、环境变量的值和宿主机 id。包不携带系统层，因此含系统层的检查点会被拒绝，返回 `409 checkpoint_export_system`。旧快照（`checkpoint_export_legacy`）与没有数据的检查点（`checkpoint_export_empty`）同样被拒绝。包的体积超过 `CHECKPOINT_PACKAGE_MAX_MB` 时，导出任务以 `413 payload_too_large` 失败。
+
+要导入，先以原始字节的 `application/octet-stream` 调用 `POST /api/packages` 上传文件。响应为 `201`，包位于 `package` 中，其 `id` 即导入所需的 id。字节在到达时即被校验，不是包的内容会被拒绝，返回 `400 package_invalid`。然后调用 `POST /api/packages/:id/import`，请求体为 `{ "passphrase" }`，并可选 `"host"`（缺省为 `local`），返回 `202` 与 `taskId`，任务结果即该检查点。导入会再次校验包，用口令打开它，并把快照复制进目标宿主机的仓库。口令错误返回 `400 package_passphrase_wrong`，包会保留，直到过期前都可以再次尝试。目标上已有同 id 的检查点时返回 `409 checkpoint_import_exists`，那里的内容不会有任何改变。
+
+导入的检查点有两点需要注意。它保留来源 Box 的 id，因此导入的实例上 `GET /api/checkpoints` 会列出它；只有那个实例上存在同 id 的 Box 时，它才会出现在该 Box 的检查点标签页中。另外，若检查点没有系统层，从它派生时使用它记录的模板镜像，导入的宿主机需要有该镜像，否则派生返回 `400 template_image_missing`。
+
 ### 数据存放在哪里
 
-仓库由一个短生命周期的辅助容器写入，镜像为 `restic/restic:0.18.1`。每台宿主机一个仓库，位于 Docker 卷 `<LABEL_PREFIX>-checkpoints-<宿主机>` 中，默认为 `minibox-checkpoints-local`。密码在首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 `600`）。每个辅助容器通过只读文件 `/run/secrets/repo.key` 获得它，restic 经由 `RESTIC_PASSWORD_FILE` 读取，密码不在辅助容器的环境变量中。调用期间它暂存于一个临时的 Docker 卷中，调用结束时删除该卷。如果密码打不开仓库，这是一个错误，而不是新建仓库的理由。
+仓库由一个短生命周期的辅助容器写入，镜像为 `restic/restic:0.18.1`。每台宿主机一个仓库，位于 Docker 卷 `<LABEL_PREFIX>-checkpoints-<宿主机>` 中，默认为 `minibox-checkpoints-local`。密码在首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 `600`）。每个辅助容器通过只读文件 `/run/secrets/repo.key` 获得它，restic 经由 `RESTIC_PASSWORD_FILE` 读取，密码不在辅助容器的环境变量中。调用期间它暂存于一个临时的 Docker 卷中，调用结束时删除该卷。如果密码打不开仓库，这是一个错误，而不是新建仓库的理由。包写入 `DATA_DIR/packages/<id>.mbckpt`，旁边是 `<id>.json` 记录，两者都只有所有者可读。正在导出的检查点不能删除（`409 checkpoint_exporting`），保留策略也不会动它。
 
 检查点不是灾难恢复。仓库与 Box 位于同一个 Docker 守护进程和同一块磁盘上，磁盘损坏时两者会一起丢失。若要在别处保留副本，请把卷和密钥一起复制。无论如何都不能丢失的内容，请在主机之外保留一份；代码应放在 git 中。辅助容器每次调用有 1 GiB 内存、256 个进程、64 MiB 的 `/tmp`，以及一小时的时限。这些限制尚未用大数据量测量。
 
@@ -566,10 +594,11 @@ sudo touch /mnt/minibox/.minibox-mounted
 - `checkpoint:restore` 可以回滚 Box。
 - 派生需要 `box:write`。
 - 列出与读取需要 `box:read`、`checkpoint:create` 与 `checkpoint:restore` 三者之一。令牌能看到自己创建的检查点，或它有权查看的 Box 所拍摄的检查点。
+- 导出、导入、上传、下载与定时计划只限所有者。没有任何令牌 scope 能授予它们，因此令牌（即使是 `admin` 预设）会被以 `403 operation_forbidden` 拒绝。
 
 ### 本版本未包含
 
-定时检查点、除回滚之外的自动检查点、重建前的检查点、导入导出（含加密导出包）、单文件浏览、MCP 工具、独立的卷快照、按 Box 覆盖的保留策略与回收站，都计划在 [#11](https://github.com/ArnoChenFx/minibox/issues/11) 中完成。
+重建前的检查点、单文件浏览、拍摄、列出、派生与回滚的 MCP 工具、独立的卷快照、按 Box 覆盖的保留策略与回收站，都计划在 [#11](https://github.com/ArnoChenFx/minibox/issues/11) 中完成。导出含系统层的检查点暂不支持。
 
 ## 多宿主机
 
@@ -787,6 +816,13 @@ Box 的环境变量是一组条目。创建时设置，重建时整体替换。�
 | `GET` | `/api/boxes/:id/rollback` | 正在等待确认或撤销的回滚（如果有） |
 | `POST` | `/api/boxes/:id/rollback/confirm` | 确认等待中的回滚 `{ "confirm": true }`：删除回滚替换下来的卷 |
 | `POST` | `/api/boxes/:id/rollback/undo` | 撤销等待中的回滚 `{ "confirm": true }`。需要 `If-Match`：重新挂载替换下来的卷，并删除恢复出的卷 |
+| `POST` | `/api/checkpoints/:id/export` | 把检查点封装为包 `{ "passphrase" }`。任务结果为包。仅所有者 |
+| `POST` | `/api/packages` | 以原始 `application/octet-stream` 上传 `.mbckpt` 文件，返回 `201` 与包。仅所有者 |
+| `GET` | `/api/packages/:id/download` | 以 `<id>.mbckpt` 下载包，包 24 小时后过期。仅所有者 |
+| `POST` | `/api/packages/:id/import` | 把包导入为检查点 `{ "passphrase", "host"? }`，`host` 缺省为 `local`。任务结果为检查点。仅所有者 |
+| `GET` | `/api/boxes/:id/checkpoint-schedule` | Box 的计划，含下一次与上一次运行；没有计划时为 `null`。仅所有者 |
+| `PUT` | `/api/boxes/:id/checkpoint-schedule` | 设置计划 `{ "everyHours" }` 或 `{ "at": "HH:MM" }`，二者只能其一；会替换已有计划。仅所有者 |
+| `DELETE` | `/api/boxes/:id/checkpoint-schedule` | 删除计划，已拍摄的检查点保留。仅所有者 |
 | `PATCH` | `/api/checkpoints/:id` | 置顶或改标签 `{ "pinned"?, "label"? }`。旧快照返回 `409` |
 | `DELETE` | `/api/checkpoints/:id` | 删除检查点及其快照。置顶的检查点返回 `409`（`checkpoint_pinned`） |
 
@@ -836,7 +872,7 @@ Bun 的 HTTP 空闲计时从请求开始计算，上限 60 秒，响应内容不
 
 ### OpenAPI
 
-盒子、快照、检查点、模板、任务、事件列表以及 Agent 令牌的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。`202` 的响应体是 `{ "taskId" }`；操作自己的输出在 `x-task-result` 中，并保存在任务上。认证、系统、宿主机与活动记录接口，以及事件流、任务流和日志流，暂未纳入。
+盒子、快照、检查点、模板、任务、事件列表以及 Agent 令牌的路由由 [`docs/openapi.json`](docs/openapi.json) 描述。这是一份 OpenAPI 3.1 文档，由 `src/operations/` 中的操作注册表生成，修改操作后运行 `bun run openapi` 重新生成。文件过期或未通过校验时，测试会失败。`202` 的响应体是 `{ "taskId" }`；操作自己的输出在 `x-task-result` 中，并保存在任务上。认证、系统、宿主机与活动记录接口、包的上传与下载，以及事件流、任务流和日志流，暂未纳入。
 
 ### 示例
 
@@ -872,7 +908,7 @@ MINIBOX_ACCESS_KEY=$KEY minibox exec agent-dev -- npm test
 
 > **警告：主访问密钥在 `/mcp` 上拥有完全的所有者权限。** 持有密钥的客户端可以调用其所请求工具集中的每一个工具，包括在非「严格」档位的 Box 中以 root 执行 `exec`、`delete_box` 与 `rebuild_box`。请把 Agent 令牌（[#13](https://github.com/ArnoChenFx/minibox/issues/13)）交给 Agent，而不是主密钥，并确保密钥不出现在提示词、日志和仓库中。
 
-设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
+设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`），以及导出、导入与定时的五个检查点工具（`export_checkpoint`、`import_checkpoint`、`get_checkpoint_schedule`、`set_checkpoint_schedule` 与 `clear_checkpoint_schedule`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
 
 用 [SSH 访问](#ssh-访问) 中的一行安装脚本从服务器安装 CLI，或在源码目录用 `bun run build:cli` 编译（`bun build --compile`，输出 `dist/minibox`，不提交）。`minibox --version` 输出构建该二进制所用的版本，`minibox <命令> --help` 输出帮助并以 0 退出。CLI 访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。`ssh-proxy` 发现服务器比 CLI 新时，会打印一行如何更新的提示。
 
@@ -898,7 +934,7 @@ minibox mcp
 - 经由 MCP 启动的会话，发起方为 agent。人可以在控制台接管它。人持有会话期间，`session_send` 会失败并返回 `taken_over`（`retryable: true`）：稍等一下，用 `session_read` 读取会话，然后再发送。接管期间 `session_read` 仍可用。
 - `session_read` 返回 `lines` 与游标。把最新的游标作为 `since` 传入，只读取新增内容。`reset: true` 表示屏幕被重绘，此时 `lines` 是当前窗口。
 - `session_send` 接受 `keys`（tmux 键名，如 Enter、Tab、Escape 或 C-c）或 `text`，二者只能提供一个。审计日志只记录数量，从不记录输入内容。
-- `storage` 工具集（`/mcp?toolsets=storage`）包含卷与存储池工具。`create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`。没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 会重建 Box，因此适用与 `rebuild_box` 相同的挂载规则。`measure_volume` 只刷新缓存的大小。
+- `storage` 工具集（`/mcp?toolsets=storage`）包含卷与存储池工具，以及检查点的导出、导入与定时工具，这些工具仅所有者可用。通过 REST 用 `POST /api/packages` 上传包后，才能调用 `import_checkpoint`。`create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`。没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`attach_volume` 与 `detach_volume` 会重建 Box，因此适用与 `rebuild_box` 相同的挂载规则。`measure_volume` 只刷新缓存的大小。
 - 文件工具：`read_file` / `write_file` / `list_files` / `copy_files`（作用于卷；Box 停止时也可用）。默认工具集是 core 与 meta。设计目录 27 个工具，默认工具集 15 个；当前服务只暴露已经实现的工具。
 
 ## 项目结构
@@ -1059,7 +1095,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 ### M3 · 核心价值
 
-- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) 基于 restic 的检查点：派生、回滚与保留策略（拍摄、派生、回滚、保留策略、容量上限与控制台的检查点标签页已完成；导入导出、定时检查点与 MCP 工具尚未完成）
+- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) 基于 restic 的检查点：派生、回滚与保留策略（拍摄、派生、回滚、保留策略、容量上限、导出、导入、定时与控制台的检查点标签页已完成；拍摄、列出、派生与回滚的 MCP 工具、重建前的安全检查点、回收站、单文件浏览与按 Box 覆盖的保留策略尚未完成）
 
 - [x] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Box 内 dev server 的端口预览
 - [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) 创建时或运行中可选装 Agent CLI

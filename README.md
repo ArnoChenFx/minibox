@@ -34,7 +34,7 @@ MiniBox lets you spin up isolated **boxes** — long-running Docker containers w
 | Box user | Boxes run as the non-root `dev` user (uid/gid 1000); the web terminal and `docker exec` start as `dev`. Three [security profiles](#security-profiles) set what a box can do: `standard` (default) keeps passwordless `sudo`, and `strict` blocks escalation. See [Base template](#base-template) |
 | Resource quotas | Presets (Small 2 vCPU / 4 GB, Medium 4 vCPU / 8 GB, Large 8 vCPU / 16 GB) or custom CPU & memory, validated against host capacity; live-updatable while running (`docker update`) |
 | Environment | Plain environment variables on a box, and host secrets injected by name with `secretRef`. Secret values are set in Settings and never returned. See [Environment variables and secrets](#environment-variables-and-secrets) |
-| Checkpoints | Copy a box's workspace and home into a restic repository, then fork a new box from the copy or roll the box back to it, confirming or undoing the rollback. Retention and a capacity limit apply. Available over REST and in the console's Checkpoints tab; MCP tools are not there yet. See [Checkpoints](#checkpoints) |
+| Checkpoints | Copy a box's workspace and home into a restic repository, then fork a new box from the copy or roll the box back to it, confirming or undoing the rollback. Export a checkpoint as a package sealed with a passphrase, import it on this or another instance, and schedule checkpoints every N hours or daily. Retention and a capacity limit apply. Available over REST and in the console's Checkpoints tab; the MCP storage toolset exposes export, import and schedules. See [Checkpoints](#checkpoints) |
 | Templates | The environment new boxes start from: the bundled base template (Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root `dev` user), plus templates you save from a box's page. A save keeps the box's system layer, such as apt and sudo installs and system file changes, not `/workspace` or home data. Use a checkpoint for data. See [Base template](#base-template) |
 | Host monitoring | CPU usage, load average, memory, disk (root & Docker data dir), uptime, Docker status, allocated quota vs. host capacity, CPU/memory sparklines |
 | Multiple hosts | Add other Docker engines over a unix socket, mutual TLS or SSH, and create boxes on any of them. The SSH host key is confirmed when the host is added. Adding and removing hosts is owner-only, in Settings or the API. See [Multiple hosts](#multiple-hosts) |
@@ -117,7 +117,7 @@ flowchart LR
 ### Target architecture (planned)
 
 > [!NOTE]
-> Storage pools and volumes, exec, `/mcp` and the CLI client, sessions, the path-mode port preview proxy, and checkpoints (take, fork, rollback, retention and the console's Checkpoints tab) are implemented. Scheduled checkpoints, checkpoint export and import, MCP tools for checkpoints, multi-host scheduling, agents and migration (direct TLS and SSH connections are in place), and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
+> Storage pools and volumes, exec, `/mcp` and the CLI client, sessions, the path-mode port preview proxy, and checkpoints (take, fork, rollback, retention, export, import, schedules and the console's Checkpoints tab) are implemented. MCP tools for taking, listing, forking and rolling back checkpoints, multi-host scheduling, agents and migration (direct TLS and SSH connections are in place), and helper uses beyond volume setup in this diagram are still planned. The full design is in [`docs/design.md`](docs/design.md) (in Chinese).
 
 ```mermaid
 flowchart LR
@@ -384,6 +384,7 @@ Precedence: process environment > `.env` file > defaults. The access key also fa
 | `CHECKPOINT_KEEP_LAST` | `20` | Automatic checkpoints kept per box, newest first, from 1 to 10000. Manual and pinned checkpoints are never removed by retention. See [Checkpoints](#checkpoints) |
 | `CHECKPOINT_KEEP_DAYS` | `30` | Automatic checkpoints older than this many days are removed, from 0 to 3650. `0` keeps them whatever their age |
 | `CHECKPOINT_CAPACITY_MB` | `0` | Checkpoint repository size limit in MB, from 0 to 1000000000. `0` sets no limit. At the limit, new automatic checkpoints are refused, so a rollback is refused too, because it takes a safety checkpoint first |
+| `CHECKPOINT_PACKAGE_MAX_MB` | `2048` | Largest checkpoint package in MB, from 1 to 65536. The server accepts request bodies up to this size plus 1 MB, and a package over the limit fails its export or upload. JSON bodies stay capped at 128 MB. See [Export and import](#export-and-import) |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket path |
 | `DATA_DIR` | `./data` (`/data` in the image) | State directory, see [Data directory](#data-directory) |
 | `LABEL_PREFIX` | `minibox` | Prefix for labels and container / image / volume names |
@@ -452,6 +453,8 @@ MiniBox keeps the state it owns in `DATA_DIR`: a directory of plain files and on
 | `ssh_host_ed25519_key` | `600` | The SSH gateway's host key, an OpenSSH ed25519 private key, created on first start. `minibox ssh-config` pins its public half. See [SSH access](#ssh-access) |
 | `boxes/` | `700` | One Box spec per file, `<id>.json` (mode `600`). Mutable state lives here; labels are only a create-time copy |
 | `checkpoints/` | `700` | One checkpoint record per file, `ck_….json` (mode `600`): the box spec it was taken from, its volume layers and their restic snapshot ids. The data itself is in the repository volume, not here |
+| `checkpoints/schedules/` | `700` | One checkpoint schedule per box, `<box id>.json` (mode `600`): its rule, the next run and the last run. A box without a file has no schedule. It survives a restart |
+| `packages/` | `700` | Checkpoint packages, `<id>.mbckpt` (mode `600`), each with a `<id>.json` record beside it. A package is sealed with the passphrase it was exported with. The hourly sweep removes it once it is 24 hours old |
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per exec. The in-memory record is dropped on restart; the file stays until retention removes it |
 | `secrets/` | `700` | Host secrets and repository keys. Each secret is one file, `env/<name>` (mode `600`), read only to build a box's container. `checkpoint-repo.key` (mode `600`) is the checkpoint repository's password, made on first use. Keep it with the repository volume: without it the checkpoints cannot be read |
 | `volumes/` | `700` | One volume record per file, `vol_….json` (mode `600`). The engine volume is not renamed when this file is written |
@@ -517,7 +520,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ## Checkpoints
 
-A checkpoint is a copy of a box's data, kept in a restic repository. A new box can be forked from it, or the box can be rolled back to it. Unlike a template, which keeps only the container's system layer, a checkpoint includes `/workspace`. Issue [#11](https://github.com/ArnoChenFx/minibox/issues/11) covers them. Take, fork, rollback and retention work over the REST API, and the Checkpoints tab of a box in the console shows them. The MCP tools do not expose them yet.
+A checkpoint is a copy of a box's data, kept in a restic repository. A new box can be forked from it, or the box can be rolled back to it. Unlike a template, which keeps only the container's system layer, a checkpoint includes `/workspace`. Issue [#11](https://github.com/ArnoChenFx/minibox/issues/11) covers them. Take, fork, rollback and retention work over the REST API, and the Checkpoints tab of a box in the console shows them. A checkpoint can also be exported as a sealed package, imported on this or another instance, and taken on a schedule. The MCP storage toolset exposes export, import and schedules. Taking, listing, forking and rolling back stay on REST.
 
 **What a checkpoint holds.** The box's owned volumes: workspace and home. The cache and the shared tools volume are never included. A shared volume the box mounts is included only when the request names it in `include.volumes`. With `include.system: true` the writable layer is committed as an image, so a fork starts from the box's system state; otherwise a fork starts from the box's template. Each checkpoint also records the box's template, CPUs, memory, profile and spec revision.
 
@@ -551,15 +554,40 @@ A snapshot taken before checkpoints existed is listed too, with `"legacy": true`
 
 ### Retention and capacity
 
-Automatic checkpoints are the ones MiniBox takes itself: today, the safety checkpoint of each rollback. Retention keeps the newest `CHECKPOINT_KEEP_LAST` (default `20`) automatic checkpoints of each box and removes those older than `CHECKPOINT_KEEP_DAYS` (default `30`; `0` keeps them whatever their age). Manual and pinned checkpoints are never removed by it, and neither is the safety checkpoint of a rollback that is still waiting for confirm or undo. Retention runs when the server starts, then every hour.
+Automatic checkpoints are the ones MiniBox takes itself: the safety checkpoint of each rollback, and the checkpoints of a [schedule](#scheduled-checkpoints). Retention keeps the newest `CHECKPOINT_KEEP_LAST` (default `20`) automatic checkpoints of each box and removes those older than `CHECKPOINT_KEEP_DAYS` (default `30`; `0` keeps them whatever their age). Manual and pinned checkpoints are never removed by it, and neither is the safety checkpoint of a rollback that is still waiting for confirm or undo. Retention runs when the server starts, then every hour.
 
 `CHECKPOINT_CAPACITY_MB` (default `0`, no limit) caps the repository's stored size. At 80% of the limit, each hourly check logs `checkpoint.capacity_warning` and the Checkpoints tab shows how full the repository is. At the limit, new automatic checkpoints are refused with `409 checkpoint_capacity_exceeded`, so a rollback is refused before it replaces any volume. Manual checkpoints are still taken. If the size cannot be measured, the automatic checkpoint goes ahead. `GET /api/checkpoints/usage` reports the size, the limit and the state; only the owner can read it.
 
 Retention is global. A per-box override and a recycle bin are not in this release.
 
+### Scheduled checkpoints
+
+A box can take checkpoints on a schedule: every `everyHours` hours (1 to 720), or once a day at `at` (`HH:MM` on the server's clock). Send exactly one of the two. `PUT /api/boxes/:id/checkpoint-schedule` sets the schedule and replaces any schedule the box has. `GET` returns it, with its next run and its last run, or `null` when there is none. `DELETE` removes it and keeps the checkpoints already taken. A box has no schedule until one is set, so nothing changes on an install that does not use them. Owner only.
+
+Every minute the server runs the schedules that are due. A scheduled checkpoint is taken with `live` consistency, labelled with the box's name, is not pinned, and counts as automatic, so retention keeps or removes it like the rollback checkpoints. Its reason is `Taken on a schedule`.
+
+A run that takes no checkpoint is recorded, and the schedule moves on to its next run:
+
+- `sleeping` and `stopped` boxes are skipped. A schedule never wakes or starts a box.
+- `capacity` means the repository is at its limit. A later run takes the checkpoint, once there is room.
+- `gone` means the box was deleted during the run. Its schedule is removed on the next pass.
+- `failed` means the backup failed, and the error is recorded.
+
+The result is in the schedule's `lastRun` (`at`, `status`, `reason`, `checkpointId`, `error`), and the Checkpoints tab shows it. Each run that is not skipped is written to the audit log as `checkpoint.scheduled`. A schedule on a host that is offline waits until the host is back. Schedules are stored in `DATA_DIR/checkpoints/schedules/` and survive a restart. A schedule that came due while the server was down runs once, on the first pass after the server starts, within a minute. An interval stays on its own grid, and a daily schedule runs at its next occurrence.
+
+### Export and import
+
+`POST /api/checkpoints/:id/export` with `{ "passphrase" }` writes the checkpoint as a package and returns `202` with a `taskId`. The task's result holds the package: its `id`, `bytes`, `sha256`, `expiresAt` and the `url` that downloads it. `GET /api/packages/:id/download` returns the file as `application/octet-stream`, named `<id>.mbckpt`. A package is kept for 24 hours, then removed. Owner only.
+
+The passphrase is 12 to 1024 characters, with no leading or trailing spaces and no line breaks. MiniBox never stores it. Only the same passphrase opens the package, and it never reaches a log, an audit event, a task record or a helper's environment: a helper reads it from a read-only file. The package is the checkpoint's snapshots as a restic repository, sealed with that passphrase, and a manifest with the box's name, the checkpoint's label and reason, its spec and its volume layers. It holds no repository key, no environment values and no host id. A package does not carry the system layer, so a checkpoint with one is refused: `409 checkpoint_export_system`. A legacy snapshot (`checkpoint_export_legacy`) and a checkpoint with no data (`checkpoint_export_empty`) are refused the same way. If the package would be larger than `CHECKPOINT_PACKAGE_MAX_MB`, the export task fails with `413 payload_too_large`.
+
+To import, upload the file with `POST /api/packages`, sending its bytes as `application/octet-stream`. The response is `201` with the package under `package`, and its `id` is what the import needs. The bytes are checked as they arrive, and anything that is not a package is refused with `400 package_invalid`. Then `POST /api/packages/:id/import` with `{ "passphrase" }`, and optionally `"host"` (default `local`), returns `202` with a `taskId`, and the checkpoint is the task's result. The import checks the package again, opens it with the passphrase, and copies its snapshots into the target host's repository. A wrong passphrase fails the import with `400 package_passphrase_wrong`, and the package stays, so the passphrase can be tried again until the package expires. A checkpoint with the same id already on the target is refused with `409 checkpoint_import_exists`, and nothing there changes.
+
+Two things to know about an imported checkpoint. It keeps the id of the box it came from, so it is listed by `GET /api/checkpoints` on the importing instance, and it appears under that box's Checkpoints tab only when that box exists there with the same id. And a fork from it, when it has no system layer, starts from the template image it records. The importing host needs that image, as for any box made from the template, or the fork is refused with `400 template_image_missing`.
+
 ### Where the data lives
 
-The repository is written by a short-lived helper from the image `restic/restic:0.18.1`. Each host has one repository, in the Docker volume `<LABEL_PREFIX>-checkpoints-<host>`, which is `minibox-checkpoints-local` by default. Its password is generated on first use into `DATA_DIR/secrets/checkpoint-repo.key` (mode `600`). It reaches each helper as a read-only file, `/run/secrets/repo.key`, which restic reads through `RESTIC_PASSWORD_FILE`. It is not in the helper's environment. The file is staged in a temporary Docker volume that is removed when the call ends. A repository that the password cannot open is an error, never a reason to make a new one.
+The repository is written by a short-lived helper from the image `restic/restic:0.18.1`. Each host has one repository, in the Docker volume `<LABEL_PREFIX>-checkpoints-<host>`, which is `minibox-checkpoints-local` by default. Its password is generated on first use into `DATA_DIR/secrets/checkpoint-repo.key` (mode `600`). It reaches each helper as a read-only file, `/run/secrets/repo.key`, which restic reads through `RESTIC_PASSWORD_FILE`. It is not in the helper's environment. The file is staged in a temporary Docker volume that is removed when the call ends. A repository that the password cannot open is an error, never a reason to make a new one. Packages are written to `DATA_DIR/packages/<id>.mbckpt`, beside a `<id>.json` record, both readable only by the owner. While a checkpoint is being exported it cannot be deleted (`409 checkpoint_exporting`), and retention leaves it alone.
 
 Checkpoints are not disaster recovery. The repository is on the same Docker daemon and disk as the boxes, so losing that disk loses both. To keep a copy elsewhere, copy the volume and the key together. Keep an off-host copy of anything you cannot lose; code belongs in git. The helper gets 1 GiB of memory, 256 processes, a 64 MiB `/tmp` and one hour per call. Those limits are not yet measured against large data.
 
@@ -569,10 +597,11 @@ Checkpoints are not disaster recovery. The repository is on the same Docker daem
 - `checkpoint:restore` rolls a box back.
 - `box:write` is needed to fork.
 - Listing and reading need one of `box:read`, `checkpoint:create` or `checkpoint:restore`. A token sees a checkpoint if it created it, or if it may see the box it was taken from.
+- Export, import, upload, download and schedules are owner only. No token scope grants them, so a token, even one of the `admin` preset, is refused with `403 operation_forbidden`.
 
 ### Not in this release
 
-Scheduled checkpoints, automatic checkpoints other than the one a rollback takes, a checkpoint before a rebuild, export and import (with encrypted export packages), single-file browsing, MCP tools, standalone volume snapshots, a per-box retention override and a recycle bin are planned under [#11](https://github.com/ArnoChenFx/minibox/issues/11).
+A checkpoint before a rebuild, single-file browsing, MCP tools for taking, listing, forking and rolling back, standalone volume snapshots, a per-box retention override and a recycle bin are planned under [#11](https://github.com/ArnoChenFx/minibox/issues/11). Exporting a checkpoint that has a system layer is not supported yet.
 
 ## Multiple hosts
 
@@ -790,6 +819,13 @@ Only images carrying MiniBox labels can be deleted through the API.
 | `GET` | `/api/boxes/:id/rollback` | The rollback waiting for confirm or undo, if there is one |
 | `POST` | `/api/boxes/:id/rollback/confirm` | Confirm a waiting rollback `{ "confirm": true }`: delete the volumes it replaced |
 | `POST` | `/api/boxes/:id/rollback/undo` | Undo a waiting rollback `{ "confirm": true }`. Requires `If-Match`: mount the replaced volumes again and delete the restored ones |
+| `POST` | `/api/checkpoints/:id/export` | Seal the checkpoint as a package `{ "passphrase" }`. The task's result holds the package. Owner only |
+| `POST` | `/api/packages` | Upload a `.mbckpt` file as raw `application/octet-stream`. Returns `201` with the package. Owner only |
+| `GET` | `/api/packages/:id/download` | Download a package as `<id>.mbckpt`. Packages expire after 24 hours. Owner only |
+| `POST` | `/api/packages/:id/import` | Import a package `{ "passphrase", "host"? }` as a checkpoint on `host` (default `local`). The task's result holds the checkpoint. Owner only |
+| `GET` | `/api/boxes/:id/checkpoint-schedule` | The box's schedule with its next and last run, or `null`. Owner only |
+| `PUT` | `/api/boxes/:id/checkpoint-schedule` | Set the schedule `{ "everyHours" }` or `{ "at": "HH:MM" }`, exactly one. Replaces any schedule. Owner only |
+| `DELETE` | `/api/boxes/:id/checkpoint-schedule` | Remove the schedule. Checkpoints already taken are kept. Owner only |
 | `PATCH` | `/api/checkpoints/:id` | Pin or relabel `{ "pinned"?, "label"? }`. A legacy snapshot returns `409` |
 | `DELETE` | `/api/checkpoints/:id` | Delete a checkpoint and its snapshots. A pinned checkpoint returns `409` (`checkpoint_pinned`) |
 
@@ -839,7 +875,7 @@ The owner, and an admin token whose scopes and resource limits were not narrowed
 
 ### OpenAPI
 
-The box, snapshot, checkpoint, template, task, event-list and agent-token routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. A `202` body is `{ "taskId" }`; the operation's own output is `x-task-result` and is stored on the task. Auth, system, host and activity routes, and the event, task and log streams, are not in it yet.
+The box, snapshot, checkpoint, template, task, event-list and agent-token routes are described by an OpenAPI 3.1 document, [`docs/openapi.json`](docs/openapi.json). It is generated from the operation registry in `src/operations/`, so run `bun run openapi` after changing an operation. The test suite fails when the committed file is stale or no longer validates. A `202` body is `{ "taskId" }`; the operation's own output is `x-task-result` and is stored on the task. Auth, system, host and activity routes, the package upload and download, and the event, task and log streams, are not in it yet.
 
 ### Example
 
@@ -875,7 +911,7 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 > **Warning: the main access key grants full owner access over `/mcp`.** A client that holds the key can call every tool in the toolsets it asks for, including `exec` as root in a box that is not `strict`, `delete_box` and `rebuild_box`. Give an agent an agent token ([#13](https://github.com/ArnoChenFx/minibox/issues/13)) rather than the key, and keep the key out of prompts, logs and repositories.
 
-The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
+The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools and the five checkpoint package and schedule tools (`export_checkpoint`, `import_checkpoint`, `get_checkpoint_schedule`, `set_checkpoint_schedule` and `clear_checkpoint_schedule`) in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` / `save_template` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
 
 Install the CLI from the server with the one-line installer in [SSH access](#ssh-access), or build it from a checkout with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). `minibox --version` prints the version the binary was built from, and `minibox <command> --help` prints the help and exits 0. The CLI talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token. When `ssh-proxy` finds the server newer than the CLI, it prints one line that says how to update.
 
@@ -906,7 +942,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - session_read returns lines and a cursor. Pass the newest cursor as since to read only what is new. reset true means the screen was redrawn, and lines is the current window.
 - session_send takes keys (tmux names such as Enter, Tab, Escape or C-c) or text, but not both. The audit log keeps the counts, never the input.
 - The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool, reconcile_tools and save_template. Installs write to the shared tools volume and update BoxSpec.tools. save_template saves a box as a template: it is long-running, returns a task id, and leaves out `/workspace` and home volumes. list_custom_tools, put_custom_tool and delete_custom_tool manage the custom catalog in DATA_DIR/tools.d. Only the owner may use them. delete_custom_tool removes the file and does not uninstall the tool.
-- The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
+- The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools, and the checkpoint tools for export, import and schedules, which are owner only. Packages move as files over REST, so a client uploads one with `POST /api/packages` before `import_checkpoint`. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size.
 - The network toolset (`/mcp?toolsets=network`) holds list_ports and expose_port for path-mode previews under `/box/<name>/<port>/`.
 - read_file, write_file, list_files and copy_files act on volumes (not boxes). They work when no box is running, via a helper container and the Docker archive API. A call keeps the boxes that mount the volume awake while it runs, and it never starts a stopped box. Paths are jailed inside the volume. write_file stamps uid/gid 1000 (dev). exec already implies volume RW on mounts of boxes the token may use; files:* only matters without exec.
 - The default toolsets are core and meta. The design catalog is 27 tools, 15 of them in the default toolsets; this server exposes the tools that are implemented.
@@ -1072,7 +1108,7 @@ Order: the first PR bundles the changes already written for #1, #3 and #4. Then 
 
 ### M3 · Core value
 
-- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) Checkpoints with restic: fork, rollback and retention (take, fork, rollback, retention, capacity and the console's Checkpoints tab are in; export and import, scheduled checkpoints and MCP tools are not)
+- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) Checkpoints with restic: fork, rollback and retention (take, fork, rollback, retention, capacity, export, import, schedules and the console's Checkpoints tab are in; MCP tools for taking, listing, forking and rolling back, the safety checkpoint before a rebuild, the recycle bin, single-file browsing and a per-box retention override are not)
 
 - [x] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Port preview for dev servers running inside boxes
 - [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) Optional agent CLI install at creation or at runtime
