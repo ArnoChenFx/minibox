@@ -1,6 +1,7 @@
 import { lastListValue } from "./auth";
 import type { Config } from "./config";
 import { AppError } from "./lib/errors";
+import { FILE_STREAM_PATH } from "./lib/http";
 import { msg } from "./lib/messages";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -13,6 +14,8 @@ const CHECKED_BOX_LOG_STREAM = /^\/api\/boxes\/[^/]+\/logs\/stream$/;
 const CHECKED_PACKAGE_DOWNLOAD = /^\/api\/packages\/[^/]+\/download$/;
 /** A package is uploaded as a raw stream, which the JSON body check would refuse. The route checks its own type. */
 const PACKAGE_UPLOAD = "/api/packages";
+/** A volume file is streamed in and out as a raw body: the upload checks its own type, and the download leaves the instance. */
+const CHECKED_FILE_STREAM = FILE_STREAM_PATH;
 
 export type GuardPolicy = Pick<Config, "allowedOrigins" | "trustProxy">;
 
@@ -54,10 +57,14 @@ export function guardRequest(req: Request, policy: GuardPolicy): void {
   const apiWrite = pathname.startsWith("/api/") && !SAFE_METHODS.has(req.method);
   const checkedRead =
     req.method === "GET" &&
-    (CHECKED_READS.has(pathname) || CHECKED_BOX_LOG_STREAM.test(pathname) || CHECKED_PACKAGE_DOWNLOAD.test(pathname));
+    (CHECKED_READS.has(pathname) ||
+      CHECKED_BOX_LOG_STREAM.test(pathname) ||
+      CHECKED_PACKAGE_DOWNLOAD.test(pathname) ||
+      CHECKED_FILE_STREAM.test(pathname));
   if (!websocket && !apiWrite && !checkedRead) return;
   if (!isSameOriginRequest(req, policy)) throw new AppError(403, "forbidden", msg("origin_forbidden"));
-  if (apiWrite && !(req.method === "POST" && pathname === PACKAGE_UPLOAD)) requireJsonBody(req);
+  const rawUpload = req.method === "PUT" && CHECKED_FILE_STREAM.test(pathname);
+  if (apiWrite && !(req.method === "POST" && pathname === PACKAGE_UPLOAD) && !rawUpload) requireJsonBody(req);
 }
 
 /**

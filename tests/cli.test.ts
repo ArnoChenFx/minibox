@@ -1,8 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
+import { gunzipSync } from "node:zlib";
 
 import { Client } from "ssh2";
 
@@ -10,6 +20,7 @@ import { isNewerVersion, runCli } from "../src/cli";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
+import { parseTar } from "../src/services/files-tar";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import { fingerprintOf, runCommand } from "./support/ssh";
 import { mint } from "./support/tokens";
@@ -663,6 +674,144 @@ describe("CLI SSH commands", () => {
       expect(env.runtime.execs.at(-1)?.spec.user).toBe("dev");
       client.end();
       expect(await proxied).toBe(0);
+    } finally {
+      env.stop();
+    }
+  });
+});
+
+async function carrierBox(env: ReturnType<typeof serve>): Promise<void> {
+  await env.app.operations.run("box.create", env.ctx, { name: "carrier", cpus: 1, memoryMb: 256 });
+}
+
+/** The files of the volume a box mounts at `mount`, keyed by their path inside it. */
+async function volumeFilesAt(env: ReturnType<typeof serve>, mount: string) {
+  const { box } = (await env.app.operations.run("box.get", env.ctx, { id: "carrier" })) as {
+    box: { mounts: { path: string; volumeId: string | null }[] };
+  };
+  const host = env.app.hosts.get();
+  const volumeId = box.mounts.find((item) => item.path === mount)?.volumeId ?? "";
+  const record = host.volumes.resolve(volumeId, host.host.id);
+  if (!record) throw new Error(`no volume at ${mount}`);
+  return env.runtime.filesOf(record.engineName);
+}
+
+describe("CLI file transfers", () => {
+  let restoreLogs: () => void;
+  let dir: string;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+    dir = mkdtempSync(join(tmpdir(), "minibox-cli-files-"));
+  });
+  afterEach(() => {
+    restoreLogs();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("upload sends a file into a box, and download brings it back, refusing to replace either side by default", async () => {
+    const env = serve();
+    try {
+      await carrierBox(env);
+      const local = join(dir, "note.txt");
+      writeFileSync(local, "hello box\n");
+      const sent = io();
+      expect(await runCli(["upload", local, "carrier:/workspace/notes/note.txt"], env.env, sent, lines([]))).toBe(0);
+      expect(sent.out).toBe(`${local} -> carrier:/workspace/notes/note.txt\n`);
+      const inBox = await volumeFilesAt(env, "/workspace");
+      expect(inBox.get("notes/note.txt")).toMatchObject({ type: "file", uid: 1000, gid: 1000 });
+      expect(inBox.get("notes/note.txt")?.content?.toString("utf8")).toBe("hello box\n");
+
+      const refused = io();
+      expect(await runCli(["upload", local, "carrier:/workspace/notes/note.txt"], env.env, refused, lines([]))).toBe(1);
+      expect(refused.err).toContain("already exists");
+
+      writeFileSync(local, "replaced\n");
+      expect(
+        await runCli(["upload", local, "carrier:/workspace/notes/note.txt", "--overwrite"], env.env, io(), lines([])),
+      ).toBe(0);
+      expect(inBox.get("notes/note.txt")?.content?.toString("utf8")).toBe("replaced\n");
+
+      const out = join(dir, "back");
+      mkdirSync(out);
+      const fetched = io();
+      expect(await runCli(["download", "carrier:/workspace/notes/note.txt", out], env.env, fetched, lines([]))).toBe(0);
+      expect(fetched.out).toBe(`carrier:/workspace/notes/note.txt -> ${join(out, "note.txt")}\n`);
+      expect(readFileSync(join(out, "note.txt"), "utf8")).toBe("replaced\n");
+
+      const kept = io();
+      expect(await runCli(["download", "carrier:/workspace/notes/note.txt", out], env.env, kept, lines([]))).toBe(1);
+      expect(kept.err).toContain("already exists");
+      expect(readFileSync(join(out, "note.txt"), "utf8")).toBe("replaced\n");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("a folder uploads with its tree, skips symbolic links, and downloads as a tar.gz named after it", async () => {
+    const env = serve();
+    try {
+      await carrierBox(env);
+      const tree = join(dir, "tree");
+      mkdirSync(join(tree, "sub"), { recursive: true });
+      writeFileSync(join(tree, "a.txt"), "A");
+      writeFileSync(join(tree, "sub", "b.txt"), "B");
+      symlinkSync(join(tree, "a.txt"), join(tree, "link"));
+
+      const sent = io();
+      expect(await runCli(["upload", tree, "carrier:/workspace/out/"], env.env, sent, lines([]))).toBe(0);
+      expect(sent.err).toContain("skipped");
+      const inBox = await volumeFilesAt(env, "/workspace");
+      expect(inBox.get("out/tree/a.txt")?.content?.toString("utf8")).toBe("A");
+      expect(inBox.get("out/tree/sub/b.txt")?.content?.toString("utf8")).toBe("B");
+      expect(inBox.has("out/tree/link")).toBe(false);
+
+      const dl = join(dir, "dl");
+      mkdirSync(dl);
+      expect(await runCli(["download", "carrier:/workspace/out/tree", `${dl}/`], env.env, io(), lines([]))).toBe(0);
+      const names = parseTar(gunzipSync(readFileSync(join(dl, "tree.tar.gz")))).map((entry) => entry.name);
+      expect(names.some((name) => name.endsWith("a.txt"))).toBe(true);
+      expect(names.some((name) => name.endsWith("b.txt"))).toBe(true);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("cp copies in either direction, and refuses two box paths, two local paths or one argument", async () => {
+    const env = serve();
+    try {
+      await carrierBox(env);
+      const local = join(dir, "cp.txt");
+      writeFileSync(local, "cp data");
+      expect(await runCli(["cp", local, "carrier:/workspace/cp.txt"], env.env, io(), lines([]))).toBe(0);
+      const back = join(dir, "back.txt");
+      expect(await runCli(["cp", "carrier:/workspace/cp.txt", back], env.env, io(), lines([]))).toBe(0);
+      expect(readFileSync(back, "utf8")).toBe("cp data");
+
+      expect(await runCli(["cp", local, back], env.env, io(), lines([]))).toBe(2);
+      expect(await runCli(["cp", "carrier:/workspace/a", "carrier:/workspace/b"], env.env, io(), lines([]))).toBe(2);
+      expect(await runCli(["cp", local], env.env, io(), lines([]))).toBe(2);
+      expect(await runCli(["upload", local], env.env, io(), lines([]))).toBe(2);
+      expect(await runCli(["download"], env.env, io(), lines([]))).toBe(2);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("a missing box, a path no volume backs and an unknown option answer clearly", async () => {
+    const env = serve();
+    try {
+      await carrierBox(env);
+      const local = join(dir, "x.txt");
+      writeFileSync(local, "x");
+      const ghost = io();
+      expect(await runCli(["download", "ghost:/workspace/x", dir], env.env, ghost, lines([]))).toBe(1);
+      expect(ghost.err).not.toBe("");
+
+      const unmounted = io();
+      expect(await runCli(["upload", local, "carrier:/nowhere/x.txt"], env.env, unmounted, lines([]))).toBe(1);
+      expect(unmounted.err).toContain("has no mounted volume at /nowhere/x.txt");
+
+      expect(await runCli(["upload", local, "carrier:/workspace/x.txt", "--force"], env.env, io(), lines([]))).toBe(2);
     } finally {
       env.stop();
     }

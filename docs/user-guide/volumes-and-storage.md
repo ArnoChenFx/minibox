@@ -64,4 +64,4 @@ minibox files read my-volume notes.txt
 minibox files write my-volume notes.txt --content "hello"
 ```
 
-See the [CLI reference](../reference/cli.md) for all `minibox files` commands.
+See the [CLI reference](../reference/cli.md) for all `minibox files` commands. To browse, upload and download files from the box page, see [Files](files.md).

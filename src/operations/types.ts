@@ -4,6 +4,7 @@ import type { EventReader } from "../events/store";
 import type { AuditNote, EventRefs, EventTarget, Source } from "../events/types";
 import type { HostManager } from "../host/manager";
 import type { HostCtx } from "../host/registry";
+import type { RawBody } from "../lib/body";
 import type { ExecService } from "../services/exec";
 import type { TerminalService } from "../services/terminals";
 import type { TaskHandle, TaskReader } from "../tasks/types";
@@ -73,6 +74,8 @@ export interface OperationContext {
   readonly execs?: ExecService;
   /** Terminal sessions (tmux in the box). Present on REST, MCP and the CLI. */
   readonly terminals?: TerminalService;
+  /** The raw body of a `raw` binding. Only the REST route sets it, and only for that binding. */
+  readonly body?: RawBody;
   /** Records an audit event parented to this operation. Exec uses it for start, finish and kill. */
   record?(note: AuditNote): void;
   /**
@@ -98,6 +101,13 @@ export interface RestBinding {
    * The operation's input must have an `expectedRevision` field.
    */
   readonly ifMatch?: boolean;
+  /**
+   * The body is one raw file: `application/octet-stream` with a Content-Length. The bytes reach the operation as
+   * `ctx.body`, unread until it runs, so a refused call never reads them. Mutually exclusive with `body`.
+   */
+  readonly raw?: boolean;
+  /** The response is the byte stream the operation returns, sent unbuffered, instead of JSON. */
+  readonly stream?: boolean;
 }
 
 export interface McpMetadata {

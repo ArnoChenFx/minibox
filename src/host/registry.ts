@@ -77,6 +77,8 @@ export interface HostCtx {
   pulse: ActivityPulse;
   /** Checkpoint records. One store is shared by every host, files live under `DATA_DIR/checkpoints`. */
   checkpoints: CheckpointStore;
+  /** Largest single file a volume upload accepts, from FILE_UPLOAD_MAX_MB. */
+  fileUploadMaxBytes: number;
   /** Stores volume contents for checkpoints. Each host keeps its own repository behind this engine. */
   checkpointEngine: SnapshotEngine;
   /** How automatic checkpoints are kept and how much repository space they may use. */
@@ -160,6 +162,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
     secrets: shared.secrets,
     pulse: shared.pulse,
     checkpoints: shared.checkpoints,
+    fileUploadMaxBytes: cfg.fileUploadMaxMb * 1024 * 1024,
     checkpointEngine: shared.checkpointEngine,
     checkpointPolicy: {
       keepLast: cfg.checkpointKeepLast,

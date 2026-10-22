@@ -325,6 +325,25 @@ describe("host overcommit", () => {
   });
 });
 
+describe("file upload limit", () => {
+  test("FILE_UPLOAD_MAX_MB is 1024 by default and can be set from the environment", () => {
+    expect(load({ ACCESS_KEY: KEY }).fileUploadMaxMb).toBe(1024);
+    expect(load({ ACCESS_KEY: KEY, FILE_UPLOAD_MAX_MB: "64" }).fileUploadMaxMb).toBe(64);
+  });
+  test("it can come from .env, and the process env wins over it", () => {
+    writeFileSync(envFile, "FILE_UPLOAD_MAX_MB=256\n");
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).fileUploadMaxMb).toBe(256);
+    expect(
+      loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir, FILE_UPLOAD_MAX_MB: "32" }, { envFile }).fileUploadMaxMb,
+    ).toBe(32);
+  });
+  test("a value that is not a whole number from 1 to 65536 falls back to 1024", () => {
+    for (const value of ["0", "-5", "1.5", "many", "65537"]) {
+      expect(load({ ACCESS_KEY: KEY, FILE_UPLOAD_MAX_MB: value }).fileUploadMaxMb).toBe(1024);
+    }
+  });
+});
+
 describe("terminal takeover", () => {
   test("a human's takeover returns to the agent after 300 seconds without input by default", () => {
     expect(load({ ACCESS_KEY: KEY })).toMatchObject({ takeoverIdleSec: 300 });

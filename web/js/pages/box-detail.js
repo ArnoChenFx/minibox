@@ -4,6 +4,7 @@ import { openMove } from "../components/box-move.js";
 import { mountCheckpoints, takeCheckpoint } from "../components/checkpoints.js";
 import { deleteCustomTool, openCustomToolDialog } from "../components/custom-tool-dialog.js";
 import { mountEnvCard } from "../components/env-card.js";
+import { mountFiles } from "../components/files.js";
 import { openSaveTemplate } from "../components/save-template.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks } from "../components/tasks.js";
@@ -88,6 +89,7 @@ const TABS = [
   ["ports", "bd.tabPorts", "externalLink"],
   ["tools", "bd.tabTools", "layers"],
   ["checkpoints", "bd.tabCheckpoints", "history"],
+  ["files", "bd.tabFiles", "folder"],
 ];
 
 export function render(view, id, tab = "overview") {
@@ -854,5 +856,9 @@ const TAB_RENDER = {
 
   checkpoints(root, { box, refreshBox }) {
     return mountCheckpoints(root, { box, refreshBox });
+  },
+
+  files(root, { box, onChange }) {
+    return mountFiles(root, { box, onChange });
   },
 };

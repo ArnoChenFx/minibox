@@ -65,6 +65,8 @@ export interface Config {
   checkpointCapacityMb: number;
   /** Largest checkpoint package in MB that an export writes or an upload accepts. It also caps the HTTP request body. */
   checkpointPackageMaxMb: number;
+  /** Largest single file in MB that the file browser or the file API uploads. It caps the request body of that upload. */
+  fileUploadMaxMb: number;
   /**
    * How far the CPU and memory that running boxes book on a host may exceed the host's capacity, as a ratio. 1 books no
    * more than the host has. Checked only on a control plane with more than one host.
@@ -243,6 +245,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     checkpointKeepDays: intInRange(get("CHECKPOINT_KEEP_DAYS"), 30, 0, 3650),
     checkpointCapacityMb: intInRange(get("CHECKPOINT_CAPACITY_MB"), 0, 0, 1_000_000_000),
     checkpointPackageMaxMb: intInRange(get("CHECKPOINT_PACKAGE_MAX_MB"), 2048, 1, 65536),
+    fileUploadMaxMb: intInRange(get("FILE_UPLOAD_MAX_MB"), 1024, 1, 65536),
     hostOvercommit: parseHostOvercommit(get("HOST_OVERCOMMIT")),
   };
 }
