@@ -73,7 +73,12 @@ async function underSourceBox<T>(host: HostCtx, boxId: string | null, run: () =>
   }
 }
 
-async function forkFrom(
+/**
+ * Creates a box from a checkpoint's data and settings. A recycle bin entry of a box is forked the same way, so its
+ * restore is a fork. Only the checkpoint's template, resources and profile are taken; anything the box had outside
+ * them is not in a checkpoint and is not restored.
+ */
+export async function forkFrom(
   host: HostCtx,
   checkpoint: CheckpointView,
   input: ForkCheckpointInput,
@@ -81,7 +86,9 @@ async function forkFrom(
   progress: Progress | undefined,
   record: RecordNote | undefined,
 ): Promise<Box> {
-  const image = checkpoint.system?.image ?? checkpoint.spec.template.image;
+  const spec = checkpoint.spec;
+  if (!spec) throw conflict(msg("checkpoint_no_spec", { id: checkpoint.id }));
+  const image = checkpoint.system?.image ?? spec.template.image;
   const boxId = newBoxId();
   const known = new Set<string>();
   const changes = new VolumeChanges();
@@ -126,11 +133,11 @@ async function forkFrom(
         image,
         cpus: input.cpus,
         memoryMb: input.memoryMb,
-        profile: input.profile ?? checkpoint.spec.profile ?? undefined,
+        profile: input.profile ?? spec.profile ?? undefined,
         createdBy,
         mounts,
         ttlSec: input.ttlSec,
-        templateLabel: checkpoint.spec.template.ref,
+        templateLabel: spec.template.ref,
       },
       record,
     );

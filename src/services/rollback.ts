@@ -126,7 +126,7 @@ export async function confirmRollback(
         log.warn("checkpoint.rollback_confirm_kept", { box: box.name, volume: volume.name });
       } else if (host.volumes.read(volume.volumeId)) {
         progress?.log?.(`Deleting ${volume.name}…\n`);
-        await deleteVolume(host, volume.volumeId);
+        await deleteVolume(host, volume.volumeId, { skipTrash: true });
         removed.push({ id: volume.volumeId, name: volume.name });
       }
       left = left.filter((item) => item.volumeId !== volume.volumeId);
@@ -214,7 +214,7 @@ export async function undoRollback(
     for (const volume of plan.pending.restored) {
       progress?.log?.(`Deleting ${volume.name}…\n`);
       try {
-        await deleteVolume(host, volume.volumeId);
+        await deleteVolume(host, volume.volumeId, { skipTrash: true });
       } catch (e) {
         progress?.log?.(`${volume.name} could not be deleted: ${errorText(e)}\n`);
         log.warn("checkpoint.rollback_undo_cleanup_failed", {
@@ -253,7 +253,7 @@ export async function settlePendingRollbacks(host: HostCtx): Promise<string[]> {
     for (const volume of pending.restored) {
       if (!host.volumes.read(volume.volumeId) || mountedByAnyBox(host, volume.engineName)) continue;
       try {
-        await deleteVolume(host, volume.volumeId);
+        await deleteVolume(host, volume.volumeId, { skipTrash: true });
       } catch (e) {
         log.warn("checkpoint.rollback_undo_cleanup_failed", {
           box: pending.boxName,

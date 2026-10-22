@@ -906,8 +906,8 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
           [`${prefix}.snapshot`]: "false",
         });
 
-        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "a", volumeDeleted: true });
-        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "b", volumeDeleted: true });
+        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "a", volumeDeleted: true, trash: null });
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "b", volumeDeleted: true, trash: null });
         expect(await rejectionOf(runtime.inspectContainer(alpha.id))).toMatchObject({ kind: "not_found" });
         expect(await rejectionOf(runtime.inspectVolume(alpha.volume))).toMatchObject({ kind: "not_found" });
 
@@ -945,8 +945,12 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         const beta = await boxes.createBox(host, { name: "env-b", image: saved.ref, cpus: 0.5, memoryMb: 64 });
         expect(await shell(beta.id, 'echo "[$MB_SCRUB_PROBE]"')).toBe("[]");
 
-        expect(await boxes.deleteBox(host, given.boxId, true)).toEqual({ name: "env-a", volumeDeleted: true });
-        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "env-b", volumeDeleted: true });
+        expect(await boxes.deleteBox(host, given.boxId, true)).toEqual({
+          name: "env-a",
+          volumeDeleted: true,
+          trash: null,
+        });
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "env-b", volumeDeleted: true, trash: null });
         await deleteTemplate(host, saved.ref);
       } finally {
         restore();
@@ -1310,13 +1314,21 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
           .filter((name) => name !== tools);
         expect(owned).toHaveLength(3);
 
-        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({ name: "del-alpha", volumeDeleted: true });
+        expect(await boxes.deleteBox(host, alpha.id, true)).toEqual({
+          name: "del-alpha",
+          volumeDeleted: true,
+          trash: null,
+        });
         for (const name of owned) expect(await volumeExists(name)).toBe(false);
         expect(host.volumes.findByEngine(host.host.id, alpha.volume)).toBeNull();
         expect(await volumeExists(tools)).toBe(true);
         expect(await volumeExists(beta.volume)).toBe(true);
 
-        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "del-beta", volumeDeleted: true });
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({
+          name: "del-beta",
+          volumeDeleted: true,
+          trash: null,
+        });
         expect(await volumeExists(beta.volume)).toBe(false);
         expect(await volumeExists(tools)).toBe(true);
       } finally {
@@ -1379,13 +1391,12 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
 
         expect(
           await rejectionOf(
-            attachVolume(host, notes.id, {
-              box: box.boxId,
-              path: "/srv/notes",
-              mode: "rw",
-              revision: box.revision,
-              confirm: true,
-            }),
+            attachVolume(
+              host,
+              notes.id,
+              { box: box.boxId, path: "/srv/notes", mode: "rw", revision: box.revision, confirm: true },
+              null,
+            ),
           ),
         ).toMatchObject({ status: 409, key: "volume_missing", params: { volume: notes.name } });
         expect(await volumeExists(notes.engineName)).toBe(false);

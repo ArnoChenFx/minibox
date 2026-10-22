@@ -28,7 +28,7 @@ export interface CheckpointView {
   auto: boolean;
   consistency: Consistency;
   specRevision: number | null;
-  spec: CheckpointSpec;
+  spec: CheckpointSpec | null;
   data: DataLayer[];
   system: SystemLayer | null;
   /** Bytes restic read from the volumes, summed over the data layers. */

@@ -232,10 +232,10 @@ const checkpointCreateRule: Rule = async (check) => {
 const checkpointForkRule: Rule = async ({ principal, host, input, resolved }) => {
   const checkpoint = resolvedCheckpoint(resolved);
   assertCheckpointVisible(principal, host, checkpoint);
-  const profile =
-    typeof input.profile === "string" ? input.profile : (checkpoint.spec.profile ?? host.security.defaultProfile);
+  const spec = checkpoint.spec;
+  const profile = typeof input.profile === "string" ? input.profile : (spec?.profile ?? host.security.defaultProfile);
   assertProfile(profile, undefined);
-  if (!checkpoint.system) await assertImageUsable(principal, host, checkpoint.spec.template.image, "template");
+  if (!checkpoint.system && spec) await assertImageUsable(principal, host, spec.template.image, "template");
   assertTtl(principal, input.ttlSec as number | null | undefined);
   for (const layer of checkpoint.data) {
     if (layer.ownership === "independent") assertVolumeVisible(principal, host, host.volumes.read(layer.volumeId));

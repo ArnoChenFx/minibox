@@ -10,11 +10,35 @@ export const CHECKPOINT_VERSION = 1;
 export const CONSISTENCY_MODES = ["live", "pause", "stop"] as const;
 export type Consistency = (typeof CONSISTENCY_MODES)[number];
 
+/** What a recycle bin entry holds: a deleted box's data, or a deleted volume's. */
+export const TRASH_KINDS = ["box", "volume"] as const;
+export type TrashKind = (typeof TRASH_KINDS)[number];
+
+/**
+ * Set on a checkpoint that keeps a deleted box's or volume's data until `expiresAt`. Such a checkpoint is listed under the
+ * recycle bin and never as a checkpoint, and retention removes it when it expires.
+ */
+export interface TrashMark {
+  kind: TrashKind;
+  /** The id the box (`bx_…`) or volume (`vol_…`) had when it was deleted. */
+  sourceId: string;
+  /** The name it had. A restore uses it as the new name unless another is given. */
+  sourceName: string;
+  deletedAt: string;
+  expiresAt: string;
+}
+
+/** A recycle bin entry a delete left behind: its id, and when retention purges it. */
+export interface TrashRef {
+  id: string;
+  expiresAt: string;
+}
+
 /** One volume's content, as a snapshot in the checkpoint repository. */
 export interface DataLayer {
   /** Stable id (`vol_…`) of the volume the layer was taken from. */
   volumeId: string;
-  /** Where the volume was mounted in the box when the checkpoint was taken. */
+  /** Where the volume was mounted in the box when the checkpoint was taken. Empty for a volume kept on its own. */
   path: string;
   mode: MountMode;
   role: VolumeRole | null;
@@ -51,10 +75,13 @@ export interface CheckpointRecord {
   version: typeof CHECKPOINT_VERSION;
   id: string;
   hostId: string;
-  /** Source box id (`bx_…`). The box may be renamed or deleted later; the checkpoint keeps the id. */
-  boxId: string;
+  /**
+   * Source box id (`bx_…`). The box may be renamed or deleted later; the checkpoint keeps the id. Null for a volume kept in
+   * the recycle bin, which had no box.
+   */
+  boxId: string | null;
   /** Box name when the checkpoint was taken. Display only. */
-  boxName: string;
+  boxName: string | null;
   label: string;
   reason: string;
   /** Principal that took the checkpoint. Null when none was recorded. */
@@ -63,11 +90,13 @@ export interface CheckpointRecord {
   /** Set by automatic triggers (rollback and rebuild safety points). Manual checkpoints are never automatic. */
   auto: boolean;
   consistency: Consistency;
-  /** The box's spec revision when the checkpoint was taken. */
-  specRevision: number;
-  spec: CheckpointSpec;
+  /** The box's spec revision when the checkpoint was taken. Null for a volume kept in the recycle bin. */
+  specRevision: number | null;
+  spec: CheckpointSpec | null;
   data: DataLayer[];
   system: SystemLayer | null;
+  /** Set on a recycle bin entry. Every other checkpoint has null here. */
+  trash: TrashMark | null;
   createdAt: string;
   updatedAt: string;
 }

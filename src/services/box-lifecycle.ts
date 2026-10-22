@@ -11,7 +11,7 @@ import { assertPoolsReachable } from "../volumes/health";
 import { assertMountsWithinLimits } from "../volumes/limits";
 import { removeEngine } from "../volumes/provision";
 import type { VolumeRecord } from "../volumes/types";
-import type { Box, StartOptions, EnsureResult, DeleteBoxResult } from "./box-model";
+import type { Box, StartOptions, EnsureResult, DeleteBoxOptions, DeleteBoxResult } from "./box-model";
 import { attachToBoxNetwork } from "./box-network";
 import { getBox } from "./box-query";
 import { launchStartup } from "./startup";
@@ -176,7 +176,12 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   });
 }
 
-export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolean): Promise<DeleteBoxResult> {
+export async function deleteBox(
+  host: HostCtx,
+  ref: string,
+  deleteVolume: boolean,
+  opts: DeleteBoxOptions = {},
+): Promise<DeleteBoxResult> {
   return locked(host, ref, async (box) => {
     const spec = host.specs.read(box.boxId);
     const mounted = (spec?.mounts ?? [])
@@ -186,19 +191,34 @@ export async function deleteBox(host: HostCtx, ref: string, deleteVolume: boolea
     const replaced = (host.checkpoints.pendingRollback(box.boxId)?.replaced ?? [])
       .map((volume) => host.volumes.read(volume.volumeId))
       .filter((volume): volume is VolumeRecord => volume !== null);
-    await host.specs.exclusive(async () => {
-      await host.runtime.removeContainer(box.id, { force: true });
-      host.specs.retire(box.id);
-      host.specs.remove(box.boxId);
-    });
+    const trash = opts.keep ? await opts.keep(box) : null;
+    try {
+      await host.specs.exclusive(async () => {
+        await host.runtime.removeContainer(box.id, { force: true });
+        host.specs.retire(box.id);
+        host.specs.remove(box.boxId);
+      });
+    } catch (e) {
+      if (trash !== null && box.running) await restartAfterFailedDelete(host, box);
+      throw e;
+    }
     await host.sampler.observe(box.id);
     host.pulse.clear(box.boxId);
-    const result: DeleteBoxResult = { name: box.name, volumeDeleted: false };
+    const result: DeleteBoxResult = { name: box.name, volumeDeleted: false, trash };
     if (deleteVolume) await removeOwnedVolumes(host, box.boxId, [...mounted, ...replaced], result);
     host.checkpoints.removePendingRollback(box.boxId);
     log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
     return result;
   });
+}
+
+/** The keep step stops a running box for its copy, so a removal that fails after it starts the box again. */
+async function restartAfterFailedDelete(host: HostCtx, box: Box): Promise<void> {
+  try {
+    await startLocked(host, { ...box, running: false }, {});
+  } catch (e) {
+    log.warn("box.delete_restart_failed", { id: box.boxId, error: String(e) });
+  }
 }
 
 /**
