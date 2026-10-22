@@ -1162,9 +1162,14 @@ export default {
   "bd.toolsTaskFailed": "工具任务失败",
   "bd.sshTitle": "SSH 访问",
   "bd.sshIntro": "用本机的 OpenSSH 客户端连接。连接时会启动已停止的 Box。",
+  "bd.sshInstall": "安装 CLI",
+  "bd.sshInstallHelp":
+    "在需要使用 ssh 的机器上运行。它从本服务器下载 minibox CLI，按服务器提供的校验和检查后，无需 sudo 安装到 ~/.local/bin。请把该目录加入 PATH。",
+  "bd.sshInstallUnix": "macOS 或 Linux",
+  "bd.sshInstallWindows": "Windows，在 PowerShell 中运行",
   "bd.sshSetup": "首次设置",
   "bd.sshSetupHelp":
-    "在 MiniBox 源码目录中运行。它把 minibox CLI 安装到 ~/.local/bin（需要在 PATH 中），并写入 ~/.ssh/config，固定本服务器的主机密钥。它还会把服务器地址和令牌保存到 ~/.config/minibox/ssh-credentials.json（权限 600），因此 ssh、scp 和 IDE 的 Remote-SSH 无需导出环境变量即可使用。请使用访问密钥，或带 box:ssh 范围的令牌。",
+    "在「{settings}」的「{tokens}」中新建带 box:ssh 范围的令牌，也可以直接使用访问密钥。这一步会在 ~/.ssh/config 中固定本服务器的主机密钥，并把服务器地址与令牌保存到 ~/.config/minibox/ssh-credentials.json（权限 600），因此 ssh、scp 和 IDE 的 Remote-SSH 无需导出环境变量即可使用。",
   "bd.sshConnect": "连接",
   "bd.sshConnectHelp": "scp 和 sftp 的用法相同。用 -L 转发端口还需要 port:expose 范围。",
   "bd.sshCopy": "复制",
