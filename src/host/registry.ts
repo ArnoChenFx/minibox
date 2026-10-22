@@ -52,6 +52,11 @@ export interface CapacityPolicy {
   readonly overcommit: number;
 }
 
+export interface DiskPolicy {
+  /** Free space, as a percentage of the disk, below which new volumes and checkpoints are refused. 0 turns the check off. */
+  readonly minFreePercent: number;
+}
+
 /** Everything business code needs to act on one host. `host.id` is the hostId the internal APIs are scoped by. */
 export interface HostCtx {
   host: Host;
@@ -90,6 +95,8 @@ export interface HostCtx {
   startup: StartupLaunches;
   /** How far the CPU and memory booked on this host may exceed its capacity. See `HOST_OVERCOMMIT`. */
   capacityPolicy: CapacityPolicy;
+  /** The host disk's free-space floor. See `HOST_DISK_MIN_FREE_PERCENT`. */
+  diskPolicy: DiskPolicy;
   /** CPU and memory a single box may take on this host. The local host reads the machine, others read the engine. */
   capacity(): Promise<HostCapacity>;
   /** True when the control plane holds more than one host. Box payloads name their host only then. */
@@ -175,6 +182,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
     power: new BoxPower(),
     startup: new StartupLaunches(),
     capacityPolicy: { overcommit: cfg.hostOvercommit },
+    diskPolicy: { minFreePercent: cfg.hostDiskMinFreePercent },
     capacity: async () => {
       if (identity.transport !== "local") return engineCapacity(runtime);
       const metrics = await ctx.monitor.snapshot();

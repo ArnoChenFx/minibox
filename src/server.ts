@@ -24,8 +24,9 @@ import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
 import { handleMcp } from "./mcp/http";
 import { isPreviewPath } from "./preview/path";
-import { proxyHttp, resolvePreview } from "./preview/proxy";
-import { attachPreviewUpstream, type PreviewSocketData } from "./preview/ws";
+import { proxyHttp, resolvePreview, upstreamSocketUrl } from "./preview/proxy";
+import { isPreviewHostRequest, servePreviewHost } from "./preview/subdomain";
+import { attachPreviewUpstream, type PreviewSocketData, watchPreviewSocket } from "./preview/ws";
 import { routes } from "./routes";
 import { handleCli } from "./routes/cli";
 import { matchRoute, routeAllows } from "./routes/router";
@@ -135,6 +136,113 @@ async function handlePage(app: App, req: Request, url: URL): Promise<Response> {
   return new Response("Not Found", { status: 404 });
 }
 
+/**
+ * Routes one request. A request to a preview host belongs to a box, so it is served before the console's guard and body
+ * limit: a box's own pages may send any content type. Returns undefined when the request became a WebSocket.
+ */
+async function dispatch(app: App, req: Request, url: URL, server: Server<SocketData>): Promise<Response | undefined> {
+  const base = app.cfg.previewBaseDomain;
+  if (base !== null && isPreviewHostRequest(url, base)) {
+    return servePreviewHost(req, url, server, {
+      base,
+      hosts: app.hosts,
+      grants: app.previewGrants,
+      pulse: app.pulse,
+      record: app.record,
+    });
+  }
+  guardRequest(req, app.cfg);
+  assertBodyAllowed(req, url.pathname);
+  if (url.pathname === AGENT_CONNECT_PATH) {
+    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+      throw badRequest(msg("ws_upgrade_failed"));
+    }
+    const data: AgentSocketData = { kind: "agent" };
+    if (server.upgrade(req, { data })) return undefined;
+    throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
+  }
+  const tm = TERMINAL_PATH.exec(url.pathname);
+  if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+    const caller = await callerOf(app, req, server);
+    if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
+    const name = url.searchParams.get("session") ?? "";
+    if (!isSessionName(name)) throw badRequest(msg("session_name_invalid"), { field: "session" });
+    const { host, box: found } = await locateBox(app.hosts, decodeURIComponent(tm[1] ?? ""));
+    const principal = caller.principal;
+    const source: Source = caller.sessionId ? "ui" : "rest";
+    if (
+      principal.type === "token" &&
+      (!scopeAllowed(principal.grants, "box:session") || !boxVisible(principal, viewOfBox(found, host.host.id)))
+    ) {
+      throw new AppError(403, "forbidden", msg("box_out_of_scope"));
+    }
+    if (name === INIT_SESSION && !mayUseSecrets(principal)) throw refusal("startup_session_forbidden");
+    // The hold spans the wake and the attach, so the idle sweep cannot stop the box in between (#12).
+    const release = app.pulse.hold(found.boxId);
+    let box: Box;
+    try {
+      box = await wakeIfSleeping(host, found.boxId, {
+        record: (note) => app.record(host.host.id, source, principal, note),
+      });
+      if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
+    } catch (e) {
+      release();
+      throw e;
+    }
+    const data: TerminalData = {
+      boxId: box.id,
+      box,
+      host,
+      name,
+      source,
+      sessionId: caller.sessionId,
+      principal,
+      releaseHold: release,
+    };
+    if (server.upgrade(req, { data })) return undefined;
+    release();
+    throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
+  }
+  const sm = SSH_PATH.exec(url.pathname);
+  if (sm && req.method === "GET") return sshRequest(app, req, server, decodeURIComponent(sm[1] ?? ""));
+  if (base === null && isPreviewPath(url.pathname)) return pathPreview(app, req, url, server);
+  if (url.pathname === "/mcp") return handleMcp(app, req, url, addressOf(app, req, server));
+  if (url.pathname.startsWith("/cli/")) return handleCli(app, req, url, server);
+  return url.pathname.startsWith("/api/") ? handleApi(app, req, url, server) : handlePage(app, req, url);
+}
+
+/**
+ * A path-mode preview, `/box/<name>/<port>/`. It needs the console's session cookie, and a proxied page gets the CSP
+ * sandbox. A socket keeps the sign-in it was opened under, so signing out closes it.
+ */
+async function pathPreview(
+  app: App,
+  req: Request,
+  url: URL,
+  server: Server<SocketData>,
+): Promise<Response | undefined> {
+  const caller = sessionCaller(req, app.sessions);
+  if (caller === null) throw new AppError(401, "unauthorized", msg("preview_unauthorized"));
+  const resolved = await resolvePreview(app.hosts, url, {
+    pulse: app.pulse,
+    audit: (hostId, note) => app.record(hostId, "ui", caller.principal, note),
+  });
+  if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+    const data: PreviewSocketData = {
+      kind: "preview",
+      boxId: resolved.box.boxId,
+      pendingUpstream: upstreamSocketUrl(resolved),
+      pendingHeaders: req.headers,
+      release: resolved.release,
+      sessionId: caller.sessionId ?? undefined,
+    };
+    if (server.upgrade(req, { data })) return undefined;
+    resolved.release();
+    throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
+  }
+  return proxyHttp(req, resolved);
+}
+
 export function startServer(app: App): Server<SocketData> {
   const sockets = socketHandlers({
     sessions: app.sessions,
@@ -165,95 +273,7 @@ export function startServer(app: App): Server<SocketData> {
       const started = performance.now();
       let res: Response | undefined;
       try {
-        guardRequest(req, app.cfg);
-        assertBodyAllowed(req, url.pathname);
-        if (url.pathname === AGENT_CONNECT_PATH) {
-          if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-            throw badRequest(msg("ws_upgrade_failed"));
-          }
-          const data: AgentSocketData = { kind: "agent" };
-          if (server.upgrade(req, { data })) return undefined;
-          throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
-        }
-        const tm = TERMINAL_PATH.exec(url.pathname);
-        if (tm && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-          const caller = await callerOf(app, req, server);
-          if (!caller) throw new AppError(401, "unauthorized", msg("unauthorized"));
-          const name = url.searchParams.get("session") ?? "";
-          if (!isSessionName(name)) throw badRequest(msg("session_name_invalid"), { field: "session" });
-          const { host, box: found } = await locateBox(app.hosts, decodeURIComponent(tm[1] ?? ""));
-          const principal = caller.principal;
-          const source: Source = caller.sessionId ? "ui" : "rest";
-          if (
-            principal.type === "token" &&
-            (!scopeAllowed(principal.grants, "box:session") || !boxVisible(principal, viewOfBox(found, host.host.id)))
-          ) {
-            throw new AppError(403, "forbidden", msg("box_out_of_scope"));
-          }
-          if (name === INIT_SESSION && !mayUseSecrets(principal)) throw refusal("startup_session_forbidden");
-          // The hold spans the wake and the attach, so the idle sweep cannot stop the box in between (#12).
-          const release = app.pulse.hold(found.boxId);
-          let box: Box;
-          try {
-            box = await wakeIfSleeping(host, found.boxId, {
-              record: (note) => app.record(host.host.id, source, principal, note),
-            });
-            if (!box.running) throw new AppError(409, "conflict", msg("terminal_not_running"));
-          } catch (e) {
-            release();
-            throw e;
-          }
-          const data: TerminalData = {
-            boxId: box.id,
-            box,
-            host,
-            name,
-            source,
-            sessionId: caller.sessionId,
-            principal,
-            releaseHold: release,
-          };
-          if (server.upgrade(req, { data })) return undefined;
-          release();
-          throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
-        }
-        const sm = SSH_PATH.exec(url.pathname);
-        if (sm && req.method === "GET") {
-          res = await sshRequest(app, req, server, decodeURIComponent(sm[1] ?? ""));
-        } else if (isPreviewPath(url.pathname)) {
-          // Path-mode preview: session cookie only (share links deferred). Proxied pages get CSP sandbox.
-          const caller = sessionCaller(req, app.sessions);
-          if (caller === null) {
-            throw new AppError(401, "unauthorized", msg("preview_unauthorized"));
-          }
-          const resolved = await resolvePreview(app.hosts, url, {
-            pulse: app.pulse,
-            audit: (hostId, note) => app.record(hostId, "ui", caller.principal, note),
-          });
-          if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-            const upstreamUrl =
-              resolved.upstreamOrigin.replace(/^http/, "ws") +
-              (resolved.target.forwardPath.startsWith("/")
-                ? resolved.target.forwardPath
-                : `/${resolved.target.forwardPath}`);
-            const data: PreviewSocketData = {
-              kind: "preview",
-              boxId: resolved.box.boxId,
-              pendingUpstream: upstreamUrl,
-              pendingHeaders: req.headers,
-              release: resolved.release,
-            };
-            if (server.upgrade(req, { data })) return undefined;
-            resolved.release();
-            throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
-          }
-          res = await proxyHttp(req, resolved);
-        } else if (url.pathname === "/mcp") res = await handleMcp(app, req, url, addressOf(app, req, server));
-        else if (url.pathname.startsWith("/cli/")) res = await handleCli(app, req, url, server);
-        else
-          res = url.pathname.startsWith("/api/")
-            ? await handleApi(app, req, url, server)
-            : await handlePage(app, req, url);
+        res = await dispatch(app, req, url, server);
       } catch (e) {
         res = errorResponse(e);
         if (res.status >= 500)
@@ -280,12 +300,9 @@ export function startServer(app: App): Server<SocketData> {
             const headers = data.pendingHeaders ?? new Headers();
             data.pendingUpstream = undefined;
             data.pendingHeaders = undefined;
-            await attachPreviewUpstream(
-              ws as import("bun").ServerWebSocket<PreviewSocketData>,
-              upstream,
-              app.pulse,
-              headers,
-            );
+            const preview = ws as import("bun").ServerWebSocket<PreviewSocketData>;
+            if (!watchPreviewSocket(preview, { watch: (id, listener) => app.sessions.watch(id, listener) })) return;
+            await attachPreviewUpstream(preview, upstream, app.pulse, headers);
           }
           return;
         }
@@ -343,6 +360,7 @@ async function boot(): Promise<void> {
   app.checkpointScheduler.start();
   app.containers.start();
   app.lifecycle.start();
+  app.volumeUsage.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
 
@@ -360,6 +378,7 @@ async function boot(): Promise<void> {
     app.checkpointScheduler.stop();
     app.containers.stop();
     app.lifecycle.stop();
+    app.volumeUsage.stop();
     app.notify.stop();
     app.throttle.stop();
     app.sessions.stop();

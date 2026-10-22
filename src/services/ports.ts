@@ -6,6 +6,7 @@ import { DIR_MODE, writeFileAtomic } from "../data-dir";
 import type { HostCtx } from "../host/registry";
 import { AppError, badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
+import { previewLaunchPath } from "../preview/domain";
 import { previewUrl } from "../preview/path";
 import { type Box, getBox } from "./boxes";
 
@@ -14,7 +15,10 @@ export type PortSource = "listening" | "manual";
 export interface BoxPort {
   readonly port: number;
   readonly source: PortSource;
-  /** Path-mode preview URL relative to MiniBox origin. */
+  /**
+   * Where the port opens, relative to the MiniBox origin. Path mode gives `/box/<name>/<port>/`. Subdomain mode gives
+   * the console path that signs the browser into the port's own preview host, which then redirects there.
+   */
   readonly url: string;
 }
 
@@ -107,24 +111,32 @@ async function discoverListening(host: HostCtx, box: Box): Promise<number[]> {
   ].toSorted((a, b) => a - b);
 }
 
-function mergePorts(ref: string, listening: number[], manual: number[]): BoxPort[] {
+function portUrl(box: Box, port: number, previewBaseDomain: string | null): string {
+  return previewBaseDomain === null ? previewUrl(box.name || box.boxId, port) : previewLaunchPath(box.boxId, port);
+}
+
+function mergePorts(box: Box, listening: number[], manual: number[], previewBaseDomain: string | null): BoxPort[] {
   const out = new Map<number, BoxPort>();
   for (const port of listening) {
-    out.set(port, { port, source: "listening", url: previewUrl(ref, port) });
+    out.set(port, { port, source: "listening", url: portUrl(box, port, previewBaseDomain) });
   }
   for (const port of manual) {
     if (out.has(port)) continue;
-    out.set(port, { port, source: "manual", url: previewUrl(ref, port) });
+    out.set(port, { port, source: "manual", url: portUrl(box, port, previewBaseDomain) });
   }
   return [...out.values()].toSorted((a, b) => a.port - b.port);
 }
 
 /** Lists discovered listening ports plus manually exposed ones. */
-export async function listBoxPorts(host: HostCtx, ref: string): Promise<{ box: Box; ports: BoxPort[] }> {
+export async function listBoxPorts(
+  host: HostCtx,
+  ref: string,
+  previewBaseDomain: string | null = null,
+): Promise<{ box: Box; ports: BoxPort[] }> {
   const box = await getBox(host, ref);
   const listening = await discoverListening(host, box);
   const manual = readManual(host, box.boxId);
-  return { box, ports: mergePorts(box.name || box.boxId, listening, manual) };
+  return { box, ports: mergePorts(box, listening, manual, previewBaseDomain) };
 }
 
 export function assertPort(port: number): number {
@@ -133,13 +145,18 @@ export function assertPort(port: number): number {
 }
 
 /** Remembers a port for one-click preview when automatic discovery misses it. */
-export async function exposeBoxPort(host: HostCtx, ref: string, port: number): Promise<{ box: Box; port: BoxPort }> {
+export async function exposeBoxPort(
+  host: HostCtx,
+  ref: string,
+  port: number,
+  previewBaseDomain: string | null = null,
+): Promise<{ box: Box; port: BoxPort }> {
   const box = await getBox(host, ref);
   const p = assertPort(port);
   const manual = new Set(readManual(host, box.boxId));
   manual.add(p);
   writeManual(host, box.boxId, [...manual]);
-  return { box, port: { port: p, source: "manual", url: previewUrl(box.name || box.boxId, p) } };
+  return { box, port: { port: p, source: "manual", url: portUrl(box, p, previewBaseDomain) } };
 }
 
 /** Removes a manually exposed port. Listening ports keep appearing until the process stops. */

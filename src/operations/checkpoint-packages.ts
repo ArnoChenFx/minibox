@@ -8,6 +8,7 @@ import { getBox } from "../services/boxes";
 import { clearSchedule, scheduleOf, setSchedule } from "../services/checkpoint-schedule";
 import { assertExportable, exportCheckpoint, importPackage, packageView } from "../services/checkpoint-transfer";
 import { getCheckpoint } from "../services/checkpoints";
+import { assertHostDiskRoom } from "../volumes/disk";
 import { boxTarget } from "./boxes";
 import { checkpointId, checkpointTarget } from "./checkpoints";
 import { defineOperation } from "./define";
@@ -99,6 +100,9 @@ export const checkpointImport = defineOperation({
       "Import a package on this instance as a checkpoint, once its bytes are here: upload them with POST /api/packages, then pass the returned package id and the passphrase it was sealed with. Optional host names the machine to import on (default local, see list_hosts). Returns a task id; the finished task holds the checkpoint, which can then be forked. Owner only.",
   },
   hostFor: (ctx, input) => hostById(ctx, input.host ?? LOCAL_HOST_ID),
+  beforeTask: async ({ host }) => {
+    await assertHostDiskRoom(host);
+  },
   // Checkpoint records are shared by every host, so two imports of one checkpoint must not run on two hosts at once.
   exclusive: () => "checkpoint.import",
   activity: { action: () => "checkpoint.import", target: (input) => input.id },

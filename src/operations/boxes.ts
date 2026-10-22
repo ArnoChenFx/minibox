@@ -31,6 +31,7 @@ import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
 import { boxVisible, hostAllowed, refusal, ttlFor, viewOfBox } from "../tokens/model";
 import { underQuota } from "../tokens/quota";
+import { assertHostDiskRoom } from "../volumes/disk";
 import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
 import { hostById, hostOfBox } from "./routing";
@@ -598,6 +599,7 @@ export const boxMove = defineOperation({
       requireRevision(input.expectedRevision),
     );
     if (!input.confirm) throw moveConfirmation(preview);
+    await assertHostDiskRoom(hostById(ctx, input.host));
   },
   exclusive: ({ host }, _input, box) => `box.move:${host.host.id}:${box.boxId}`,
   activity: { action: () => "box.move", target: (_input, box) => box.name },

@@ -20,7 +20,8 @@ function lowSpace(total: number | null, free: number | null): boolean {
   return free < LOW_FREE_BYTES || free / total < LOW_FREE_RATIO;
 }
 
-export function parseDf(logs: string): { totalBytes: number; freeBytes: number } | null {
+/** The size line of `df -B1 -P`: total, used and available bytes of the filesystem the path is on. */
+export function parseDf(logs: string): { totalBytes: number; usedBytes: number; freeBytes: number } | null {
   const line = logs
     .trim()
     .split("\n")
@@ -30,17 +31,20 @@ export function parseDf(logs: string): { totalBytes: number; freeBytes: number }
   if (!line) return null;
   const parts = line.split(/\s+/);
   const total = Number(parts[1]);
+  const used = Number(parts[2]);
   const free = Number(parts[3]);
-  if (!Number.isFinite(total) || !Number.isFinite(free)) return null;
-  return { totalBytes: total, freeBytes: free };
+  if (!Number.isFinite(total) || !Number.isFinite(used) || !Number.isFinite(free)) return null;
+  return { totalBytes: total, usedBytes: used, freeBytes: free };
 }
+
+type Space = { totalBytes: number | null; usedBytes: number | null; freeBytes: number | null };
 
 function health(
   host: HostCtx,
   pool: StoragePool,
   status: PoolHealth["status"],
   message: string | null,
-  space: { totalBytes: number | null; freeBytes: number | null } = { totalBytes: null, freeBytes: null },
+  space: Space = { totalBytes: null, usedBytes: null, freeBytes: null },
 ): PoolHealth {
   return {
     pool: pool.name,
@@ -49,12 +53,14 @@ function health(
     message,
     checkedAt: new Date().toISOString(),
     totalBytes: space.totalBytes,
+    usedBytes: space.usedBytes,
     freeBytes: space.freeBytes,
     lowSpace: lowSpace(space.totalBytes, space.freeBytes),
   };
 }
 
-async function helperImage(host: HostCtx): Promise<string | null> {
+/** The base template, which holds the helper tools, or null when it has not been built yet. */
+export async function helperImage(host: HostCtx): Promise<string | null> {
   try {
     await host.runtime.inspectImage(host.baseTemplateTag);
     return host.baseTemplateTag;
@@ -93,6 +99,7 @@ async function probeLocal(host: HostCtx, pool: StoragePool): Promise<PoolHealth>
     const disk = await host.runtime.diskUsage(info.rootDir || "/").catch(() => null);
     return health(host, pool, "reachable", null, {
       totalBytes: disk?.totalBytes ?? null,
+      usedBytes: disk ? disk.totalBytes - disk.freeBytes : null,
       freeBytes: disk?.freeBytes ?? null,
     });
   } catch (e) {
@@ -127,6 +134,7 @@ async function probeRemote(host: HostCtx, pool: StoragePool): Promise<PoolHealth
       const space = parseDf(result.logs);
       return health(host, pool, "reachable", null, {
         totalBytes: space?.totalBytes ?? null,
+        usedBytes: space?.usedBytes ?? null,
         freeBytes: space?.freeBytes ?? null,
       });
     }
@@ -152,6 +160,7 @@ async function probeRemote(host: HostCtx, pool: StoragePool): Promise<PoolHealth
     const space = parseDf(result.logs);
     return health(host, pool, "reachable", null, {
       totalBytes: space?.totalBytes ?? null,
+      usedBytes: space?.usedBytes ?? null,
       freeBytes: space?.freeBytes ?? null,
     });
   } catch (e) {

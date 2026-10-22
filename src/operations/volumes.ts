@@ -15,6 +15,7 @@ import {
   previewDeleteVolume,
   previewPools,
   savePools,
+  setVolumeLimits,
   type VolumeView,
 } from "../services/volumes";
 import { requireRevision } from "../specs/revision";
@@ -81,6 +82,7 @@ const PoolHealthSchema = z.object({
   checkedAt: z.string().nullable(),
   totalBytes: z.number().nullable(),
   freeBytes: z.number().nullable(),
+  usedBytes: z.number().nullable(),
   lowSpace: z.boolean(),
 });
 
@@ -97,6 +99,19 @@ const VolumeMountSchema = z.object({
   mode: z.enum(["rw", "ro"]),
 });
 
+const LimitsSchema = z.object({
+  softBytes: z.number().nullable(),
+  hardBytes: z.number().nullable(),
+  action: z.enum(["warn", "stop"]),
+});
+
+const UsageSchema = z.object({
+  scope: z.enum(["volume", "share"]),
+  level: z.enum(["unknown", "ok", "soft", "hard"]),
+  history: z.array(z.object({ at: z.string(), bytes: z.number() })),
+  lastError: z.string().nullable(),
+});
+
 const VolumeSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -111,6 +126,8 @@ const VolumeSchema = z.object({
   engineName: z.string(),
   bytes: z.number().nullable(),
   bytesAt: z.string().nullable(),
+  limits: LimitsSchema,
+  usage: UsageSchema,
   createdAt: z.string(),
   mounts: z.array(VolumeMountSchema),
   unattached: z.boolean(),
@@ -352,7 +369,8 @@ const volumeUsage = defineOperation({
   mcp: {
     toolset: "storage",
     name: "measure_volume",
-    description: "Measure used bytes with a helper container and cache the result on the volume.",
+    description:
+      "Measure a volume now. A local or path volume is measured with du over its own tree. An NFS volume reports the usage of its whole share, from df, and its scope is share. The result is kept on the volume and is what its limits compare with.",
   },
   hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
@@ -419,6 +437,47 @@ const poolReplace = defineOperation({
   },
 });
 
+const volumeLimitsSet = defineOperation({
+  name: "volume.limits.set",
+  tag: "volumes",
+  summary: "Set a volume's usage limits",
+  kind: "write",
+  scope: "volume:limit",
+  async: false,
+  input: z.object({
+    id: z.string().meta({ description: "Volume id (vol_…) or volume name." }),
+    softBytes: z.number().int().positive().nullable().optional().meta({
+      description: "Soft limit in bytes. Null clears it. A soft alert is best effort, not a quota.",
+    }),
+    hardBytes: z.number().int().positive().nullable().optional().meta({
+      description: "Hard limit in bytes. Null clears it.",
+    }),
+    action: z.enum(["warn", "stop"]).optional().meta({
+      description: "What the hard limit does: warn only, or stop the running boxes that mount the volume.",
+    }),
+  }),
+  output: z.object({ volume: VolumeSchema }),
+  rest: [{ method: "PUT", path: "/api/volumes/:id/limits", body: true }],
+  cli: "volume limits",
+  mcp: {
+    toolset: "storage",
+    name: "set_volume_limits",
+    description:
+      "Set a volume's soft and hard usage limits in bytes, and the action at the hard limit. A field left out keeps its value, and null clears a limit. Soft limits are best effort, not a quota. An NFS volume is refused, since its usage is the whole share's: set a quota on the NAS export instead. Owner only.",
+  },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
+  resolve: ({ host }, input) => getVolume(host, input.id),
+  activity: { action: () => "volume.limits", target: (_input, volume) => volume.name },
+  audit: { target: (_input, volume) => volume && volumeTarget(volume) },
+  run: async ({ host }, input) => ({
+    volume: setVolumeLimits(host, input.id, {
+      softBytes: input.softBytes,
+      hardBytes: input.hardBytes,
+      action: input.action,
+    }),
+  }),
+});
+
 export const volumeOperations = [
   volumeList,
   volumeGet,
@@ -427,6 +486,7 @@ export const volumeOperations = [
   volumeAttach,
   volumeDetach,
   volumeUsage,
+  volumeLimitsSet,
   poolList,
   poolReplace,
 ];

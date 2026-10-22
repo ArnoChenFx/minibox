@@ -163,6 +163,25 @@ export default {
   "err.preview_port_invalid": "Port must be an integer between 1 and 65535.",
   "err.preview_port_not_manual": "That port is not on the manual preview list.",
   "err.preview_unauthorized": "Sign in to open a box port preview.",
+  "err.preview_grant_required":
+    "Open this preview from the MiniBox console. Its link has been used, has expired, or the box was renamed or removed.",
+  "err.preview_host_unknown": "No box port is served at this address.",
+  "err.preview_subdomain_off":
+    "Subdomain previews are off. Set PREVIEW_BASE_DOMAIN and restart MiniBox to turn them on.",
+  "err.preview_check_console_in_base":
+    "The console is at {host}, which is inside the preview domain {base}. Serve the console from a domain outside it.",
+  "err.preview_check_console_ok": "The console is outside the preview domain.",
+  "err.preview_check_same_site":
+    "The console and {base} are the same site, so a box page could reach the console's site. Use a preview domain that is not under the console's domain, such as minibox-preview.net.",
+  "err.preview_check_same_site_ok": "The console and the preview domain are different sites.",
+  "err.preview_check_dns":
+    "Nothing resolves {host}. Add a wildcard DNS record for *.{base} that points at MiniBox or at the tunnel that reaches it.",
+  "err.preview_check_dns_ok": "Names under the preview domain resolve.",
+  "err.preview_check_https":
+    "Could not reach {host} over HTTPS: {detail}. Route *.{base} to MiniBox, with a certificate that covers it.",
+  "err.preview_check_other_server":
+    "{host} answers, but not from MiniBox. Route the wildcard for {base} to MiniBox, not to another server.",
+  "err.preview_check_ok": "Preview names reach MiniBox over HTTPS.",
   "err.operation_forbidden": "This credential may not run {op}.",
   "err.run_invalid":
     "X-Minibox-Run must be 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
@@ -409,6 +428,16 @@ export default {
   "err.storage_squash_hint":
     "On the NAS, set the export to all_squash,anonuid=1000,anongid=1000, or root_squash,anonuid=1000,anongid=1000, so the squashed user is uid 1000. Setup guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/nfs.md",
   "err.helper_image_missing": "Base template image {image} is missing, so volume helpers cannot run.",
+  "err.volume_over_limit":
+    "Volume {volume} is over its hard limit: {used} MB used, limit {limit} MB. Boxes that mount it cannot start.",
+  "err.volume_over_limit_hint": "Raise or clear the hard limit, or free space in the volume, then start the box.",
+  "err.volume_limit_order": "The soft limit must not be above the hard limit.",
+  "err.volume_limit_nfs":
+    "Volume {volume} is on an NFS pool, where usage is measured for the whole share, so a limit on it would not hold. Set a quota on the NAS export instead.",
+  "err.volume_usage_timeout": "Usage of volume {volume} did not answer within {seconds} s, so it was not measured.",
+  "err.host_disk_low":
+    "The host disk has {free}% free, below the minimum of {min}%, so MiniBox does not create volumes or checkpoints until space is freed.",
+  "err.host_disk_low_hint": "Free space on the disk the engine uses, or lower HOST_DISK_MIN_FREE_PERCENT.",
   "err.file_path_invalid": "File path must be at most 512 bytes, without NUL or line breaks.",
   "err.file_path_escape": "File path must stay inside the volume (no .. or absolute escape).",
   "err.file_symlink_loop": "Too many levels of symbolic links in the file path (more than {max}).",
@@ -1141,6 +1170,9 @@ export default {
   "ev.container.start": "Container started",
   "ev.container.stop": "Container stopped",
   "ev.container.oom": "Out of memory",
+  "ev.volume.usage_high": "Volume over soft limit",
+  "ev.volume.usage_limit": "Volume over hard limit",
+  "ev.host.disk_low": "Host disk low",
   "ev.session.start": "Session started",
   "ev.session.send": "Input sent",
   "ev.session.close": "Session closed",
@@ -1169,6 +1201,7 @@ export default {
   "bd.stopReason.idle": "idle",
   "bd.stopReason.ttl": "TTL elapsed",
   "bd.stopReason.manual": "manual",
+  "bd.stopReason.volume_limit": "volume over its hard limit",
   "bd.lastActivity": "Last activity",
   "bd.lastActivityUnknown": "No activity recorded since MiniBox started",
   "bd.idleTimeout": "Idle timeout",
@@ -1378,6 +1411,7 @@ export default {
   "ck.skip.sleeping": "the box was asleep",
   "ck.skip.stopped": "the box was stopped",
   "ck.skip.capacity": "the repository is full",
+  "ck.skip.disk": "the host disk is low on free space",
   "ck.skip.gone": "the box no longer exists",
   "sn.legacyTitle": "Legacy snapshots",
   "sn.legacyText":
@@ -1623,6 +1657,9 @@ export default {
   "st.notifyKind.box.idle_soon": "Box sleeps soon",
   "st.notifyKind.session.takeover": "Terminal taken over",
   "st.notifyKind.host.offline": "Host offline",
+  "st.notifyKind.volume.usage_high": "Volume over soft limit",
+  "st.notifyKind.volume.usage_limit": "Volume over hard limit",
+  "st.notifyKind.host.disk_low": "Host disk low",
   "st.notifyKind.notify.test": "Test notification",
   "st.notifyDeliveries": "Recent deliveries",
   "st.notifyDeliveriesHelp": "Each attempt to send a notice, newest first. A secret never appears here.",
@@ -1709,6 +1746,12 @@ export default {
   "st.tokenHosts": "Hosts",
   "st.tokenHostsLocal": "This host (local)",
   "st.tokenHostsAll": "Every host",
+  "st.preview": "Port previews",
+  "st.previewHelp":
+    "Each preview runs on its own address under the preview domain. The checks run from MiniBox's own host each time this page opens.",
+  "st.previewBase": "Preview domain",
+  "st.previewPathHelp":
+    "Previews run under /box/<name>/<port>/ on this address. Set PREVIEW_BASE_DOMAIN to give each preview its own address, which is recommended when the console is reachable from the internet.",
   "st.hosts": "Hosts",
   "st.hostsHelp":
     "Machines that run boxes. Add a Docker engine over its socket, mutual TLS or SSH. Credentials are stored on this control plane and are never shown again.",
@@ -1944,6 +1987,30 @@ export default {
     "Leave a role on “use the rule” to put cache on the local pool and the other roles on the default pool.",
   "vol.loadingFailed": "Could not load storage",
   "vol.choose": "Volume",
+  "vol.limits": "Limits",
+  "vol.limitsTitle": "Usage limits for {name}",
+  "vol.limitsHelp":
+    "A soft limit only raises an alert. It is best effort, not a quota: usage is sampled every few minutes, so it can pass the limit between samples. A hard limit applies the action chosen below.",
+  "vol.limitsNfs":
+    "An NFS volume's usage is the whole share's, so a limit is set as a quota on the NAS export instead.",
+  "vol.softLimit": "Soft limit (GB)",
+  "vol.hardLimit": "Hard limit (GB)",
+  "vol.limitAction": "At the hard limit",
+  "vol.actionWarn": "Warn only",
+  "vol.actionStop": "Stop the boxes that mount it",
+  "vol.actionHelp":
+    "Stopping leaves the boxes stopped until the volume is back under its hard limit, or the limit is raised or cleared.",
+  "vol.noLimit": "No limit",
+  "vol.limitSoft": "soft limit {limit}",
+  "vol.limitHard": "hard limit {limit}",
+  "vol.limitsSaved": "Limits saved",
+  "vol.limitsFailed": "Could not save the limits",
+  "vol.limitInvalid": "Enter a positive number of GB, or leave the field empty for no limit.",
+  "vol.limitOrder": "The soft limit must not be above the hard limit.",
+  "vol.overSoft": "Over soft limit",
+  "vol.overHard": "Over hard limit",
+  "vol.usageShare": "whole NFS share",
+  "vol.usageFailed": "Last check failed: {error}",
   "cb.tools": "Tools",
   "cb.toolsHelp":
     "Optional. Installed onto the shared tools volume after the box starts. Tools already in the template are skipped. Progress appears in Tasks.",
@@ -1961,7 +2028,7 @@ export default {
   "bd.toolsTitle": "Tools",
   "bd.portsTitle": "Ports",
   "bd.portsHelp":
-    "Open a path-mode preview of a service inside this box. MiniBox proxies /box/<name>/<port>/ to the container IP — nothing is published on the host. Sign-in is required. Share links are not available yet.",
+    "Open a preview of a service inside this box. MiniBox proxies it to the container IP, so nothing is published on the host. Sign-in is required. With PREVIEW_BASE_DOMAIN set, the preview runs on its own address; otherwise it runs under /box/<name>/<port>/. Share links are not available yet.",
   "bd.portsLoading": "Scanning listening ports…",
   "bd.portsLoadFailed": "Could not list ports",
   "bd.portsEmpty": "No listening ports yet",
@@ -1969,6 +2036,7 @@ export default {
   "bd.portsColPort": "Port",
   "bd.portsColSource": "Source",
   "bd.portsColUrl": "Preview",
+  "bd.portsOwnAddress": "Preview on its own address",
   "bd.portsListening": "Listening",
   "bd.portsManual": "Manual",
   "bd.portsOpen": "Open",

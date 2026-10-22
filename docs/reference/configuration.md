@@ -17,6 +17,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 | `PORT` | `3920` | The port that MiniBox listens on. A positive whole number. Other values use the default. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` from a reverse proxy. Turn it on only behind a proxy that overwrites these headers, and only when the proxy is the only way in. See [Remote access and TLS](../admin/remote-access.md). |
 | `ALLOWED_ORIGINS` | Empty | Public origins of this server, comma-separated, such as `https://minibox.example.com`. Needed when a proxy rewrites `Host`. An invalid value stops startup. |
+| `PREVIEW_BASE_DOMAIN` | Off | The base domain of subdomain port previews, such as `minibox-preview.net`. Each preview then runs on `<port>-<box>.<base>`, with an origin of its own. Blank keeps path previews under `/box/<name>/<port>/`. The domain must be outside the console's domain, and needs a wildcard DNS record and certificate that reach MiniBox. An invalid value stops startup. See [Subdomain previews](../admin/preview-subdomains.md). |
 | `COOKIE_SECURE` | `false` | Always set the `Secure` flag on the session cookie. Use it only over HTTPS. |
 | `SESSION_TTL_DAYS` | `30` | How long a sign-in lasts, counted from sign-in. A number of days above 0 and at most 3650. An invalid value stops startup. |
 | `SESSION_IDLE_DAYS` | Off | Ends a sign-in after this many days without use. A number of days above 0 and at most 3650. Off when empty. |
@@ -61,6 +62,13 @@ MiniBox reads its settings from environment variables. The precedence is:
 | `CHECKPOINT_KEEP_DAYS` | `30` | Automatic checkpoints older than this many days are removed. A whole number from 0 to 3650. `0` keeps them whatever their age. |
 | `CHECKPOINT_CAPACITY_MB` | `0` | The size limit of the checkpoint repository, in MB. A whole number from 0 to 1000000000. `0` sets no limit. At the limit, MiniBox refuses new automatic checkpoints. |
 | `CHECKPOINT_PACKAGE_MAX_MB` | `2048` | The largest checkpoint package, in MB. A whole number from 1 to 65536. An export or upload of a larger package fails. The package upload (`POST /api/packages`) accepts a body up to this size plus 1 MB. Only that upload and the volume file upload may exceed 128 MB; every other request, including JSON bodies and previews, stays capped at 128 MB. See [Export and import](../user-guide/checkpoints.md#export-and-import). |
+
+## Volumes and storage
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VOLUME_USAGE_INTERVAL_SEC` | `600` | How often each volume's usage is sampled, in seconds. A whole number from 60 to 86400; any other value falls back to 600. Every sample is checked against the volume's soft and hard limits. Soft alerts are best effort, not a quota. See [Volumes and storage](../user-guide/volumes-and-storage.md#usage-limits-and-free-space). |
+| `HOST_DISK_MIN_FREE_PERCENT` | `10` | The free space, as a percentage of the disk that the engine uses, below which MiniBox alerts once and refuses new volumes and checkpoints. A whole number from 0 to 100; any other value falls back to 10. `0` turns the check off. |
 
 ## Files
 
