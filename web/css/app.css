@@ -823,7 +823,8 @@ table.table {
   flex-direction: column;
   gap: 6px;
 }
-.field[hidden] {
+.field[hidden],
+[data-target-kind][hidden] {
   display: none;
 }
 .field + .field {
