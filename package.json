@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "description": "为 AI Agent 准备的个人开发环境：基于 Docker 的 Box 管理面板",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/ArnoChenFx/minibox.git"

@@ -71,7 +71,7 @@ const translationsZh = {
     faqTitle: "开始之前，聊几句。",
     faq1Question: "MiniBox 是托管云服务吗？",
     faq1Answer:
-      "MiniBox 运行在你自己的机器上，也可以把 Box 放到你通过 TLS 或 SSH 接入的其他 Docker 主机上。项目以 MIT 协议开源。无需 MiniBox 账号，也没有平台订阅费。你需要提供自己的硬件，以及 Agent 使用付费 AI 服务时所需的凭据。",
+      "MiniBox 运行在你自己的机器上，也可以把 Box 放到你通过 TLS 或 SSH 接入的其他 Docker 主机上。项目以 Apache-2.0 协议开源。无需 MiniBox 账号，也没有平台订阅费。你需要提供自己的硬件，以及 Agent 使用付费 AI 服务时所需的凭据。",
     faq2Question: "可以在 Box 里运行不可信代码吗？",
     faq2Answer:
       "Box 使用 Docker 容器隔离，与宿主机共享内核。它适合运行你自己的 Agent，不能当作不可信第三方代码的安全边界。如果工作负载需要，请使用更强的隔离方案。",

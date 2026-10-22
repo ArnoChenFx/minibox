@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.title="MiniBox" \
       org.opencontainers.image.description="Personal Docker-based dev environments (boxes) for AI agents, with a web dashboard" \
       org.opencontainers.image.source="https://github.com/ArnoChenFx/minibox" \
       org.opencontainers.image.url="https://github.com/ArnoChenFx/minibox" \
-      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="${MINIBOX_VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}"
@@ -29,6 +29,8 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock tsconfig.json ./
+COPY LICENSE NOTICE ./
+COPY licenses ./licenses
 COPY src ./src
 COPY web ./web
 COPY templates ./templates

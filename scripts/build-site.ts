@@ -10,6 +10,10 @@ mkdirSync(join(output, "assets", "screenshots"), { recursive: true });
 for (const file of ["index.html", "styles.css", "main.js"]) {
   cpSync(join(root, "site", file), join(output, file));
 }
+for (const file of ["LICENSE", "NOTICE"]) {
+  cpSync(join(root, file), join(output, file));
+}
+cpSync(join(root, "licenses"), join(output, "licenses"), { recursive: true });
 for (const file of ["logo-mark.svg", "favicon.svg"]) {
   cpSync(join(root, "web", "assets", file), join(output, "assets", file));
 }

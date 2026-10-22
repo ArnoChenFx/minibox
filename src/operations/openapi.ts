@@ -170,7 +170,7 @@ export function buildOpenApi(operations: readonly Operation[], version: string):
       version,
       description:
         "Generated from the operation registry: boxes, volumes, storage pools, snapshots, templates, tasks and the event log. Sign-in, host and activity routes, and the streams (GET /api/events/stream, GET /api/tasks/{id}/events and GET /api/boxes/{id}/logs/stream, text/event-stream), are not listed yet.",
-      license: { name: "MIT" },
+      license: { name: "Apache-2.0" },
     },
     tags,
     paths,

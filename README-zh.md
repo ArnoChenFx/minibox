@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml"><img src="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0" /></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.3-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.4.3" /></a>
   <img src="https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&amp;logoColor=white" alt="Sandbox: Docker" />
 </p>
@@ -1087,4 +1087,6 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 Arno Chen
+[Apache-2.0](LICENSE) © 2026 Arno Chen
+
+早期 MIT 授权代码的原始声明保留在 [licenses/legacy-MIT.txt](licenses/legacy-MIT.txt) 中。第三方组件继续适用各自的许可证，见 [NOTICE](NOTICE)。
