@@ -1,16 +1,10 @@
 import type { HostCtx } from "../host/registry";
 import { badRequest, conflict, notFound } from "../lib/errors";
-import { msg, type Msg } from "../lib/messages";
+import { msg } from "../lib/messages";
 import { pushHistory } from "../specs/history";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxRecovery, BoxSpec } from "../specs/types";
-import {
-  type StartupCommandProblem,
-  STARTUP_COMMAND_MAX_BYTES,
-  startupCommandProblem,
-  type StartupView,
-  viewOf,
-} from "../startup/command";
+import { startupCommandProblem, startupProblemMessage, type StartupView, viewOf } from "../startup/command";
 import { type Box, getBox, locked } from "./boxes";
 import { beginChange } from "./moving";
 import { failureOf, launchStartup, readPane } from "./startup";
@@ -45,13 +39,16 @@ export async function setStartupCommand(
   input: SetStartupCommand,
 ): Promise<StartupCommandState> {
   const problem = startupCommandProblem(input.command);
-  if (problem) throw badRequest(problemMessage(problem), { field: "command" });
+  if (problem) throw badRequest(startupProblemMessage(problem), { field: "command" });
   return locked(host, ref, async (box) => {
     const release = beginChange(box.boxId);
     try {
       const changed = await writeCommand(host, box.boxId, input.command, input.expectedRevision);
       if (changed) host.startup.clear(box.id);
-      if (input.applyNow === true && box.running) await launchStartup(host, box.id, input.command);
+      if (input.applyNow === true && box.running) {
+        host.pulse.touch(box.boxId, "exec");
+        await launchStartup(host, box.id, input.command);
+      }
       return await stateOf(host, box);
     } finally {
       release();
@@ -86,6 +83,7 @@ export async function runStartupCommand(host: HostCtx, ref: string): Promise<Sta
       if (!box.running) {
         throw conflict(msg("startup_command_box_stopped"), { hint: msg("startup_command_box_stopped_hint") });
       }
+      host.pulse.touch(box.boxId, "exec");
       await launchStartup(host, box.id, command);
       return await stateOf(host, box);
     } finally {
@@ -150,16 +148,5 @@ async function viewFor(host: HostCtx, box: Box, command: string | null): Promise
     return viewOf(command, await readPane(host, box.id), host.startup.failureOf(box.id));
   } catch (e) {
     return viewOf(command, null, failureOf(e));
-  }
-}
-
-function problemMessage(problem: StartupCommandProblem): Msg {
-  switch (problem) {
-    case "empty":
-      return msg("startup_command_empty");
-    case "too_long":
-      return msg("startup_command_too_long", { max: STARTUP_COMMAND_MAX_BYTES });
-    case "control":
-      return msg("startup_command_control");
   }
 }

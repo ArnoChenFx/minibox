@@ -395,6 +395,11 @@ export default {
   "err.startup_command_box_stopped_hint": "请启动该 Box。启动命令会在每次启动时运行。",
   "err.startup_command_failed": "MiniBox 无法运行启动命令：{detail}",
   "err.startup_command_timeout": "启动命令在 {max} 秒内未能启动。",
+  "err.startup_command_invalid": "启动命令必须是文本。",
+  "err.startup_command_forbidden":
+    "启动命令在 Box 中运行，并可能包含密钥。此令牌不能设置、移除或运行它。它需要 exec 和 secret:use 范围，或使用 admin 预设。",
+  "err.startup_session_forbidden":
+    "minibox-init 会话会显示 Box 启动命令的输出。此令牌不能使用它。它需要 exec 和 secret:use 范围，或使用 admin 预设。",
   "ui.nameRequired": "请输入{what}。",
   "ui.nameInvalid": "{what}只能包含字母、数字、点、下划线和连字符，须以字母或数字开头。",
   "state.running": "运行中",

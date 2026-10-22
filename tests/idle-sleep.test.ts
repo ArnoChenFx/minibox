@@ -16,6 +16,7 @@ import { type LifecycleOptions, LifecycleWatcher } from "../src/services/lifecyc
 import { BoxPower } from "../src/services/power";
 import { rebuildBox } from "../src/services/rebuild";
 import { reconcileHost } from "../src/services/reconcile";
+import { readStartupCommand, runStartupCommand, setStartupCommand } from "../src/services/startup-command";
 import type { RecordNote } from "../src/services/terminals";
 import { createVolume, type VolumeView } from "../src/services/volumes";
 import { ttlEndsAt, ttlExpired } from "../src/specs/lifetime";
@@ -349,6 +350,31 @@ describe("idle sleep", () => {
     expect((await idle.tick()).slept).not.toContain(box.boxId);
     offsetMs = 56_000;
     expect((await idle.tick()).slept).toContain(box.boxId);
+  });
+
+  test("reading a startup command's status does not keep a quiet box awake", async () => {
+    const box = await quietBox("read-status", "sleep 3600");
+    await readStartupCommand(host, box.boxId);
+
+    expect((await watcher().tick()).slept).toContain(box.boxId);
+  });
+
+  test("running the startup command by hand counts as activity, so the idle clock starts from the run", async () => {
+    const box = await quietBox("rerun", "sleep 3600");
+    await runStartupCommand(host, box.boxId);
+
+    expect((await watcher().tick()).slept).not.toContain(box.boxId);
+    offsetMs = 56_000;
+    expect((await watcher().tick()).slept).toContain(box.boxId);
+  });
+
+  test("applying a startup command now counts as activity, so the idle clock starts from the apply", async () => {
+    const box = await quietBox("apply-now", "sleep 3600");
+    await setStartupCommand(host, box.boxId, { command: "sleep 7200", applyNow: true });
+
+    expect((await watcher().tick()).slept).not.toContain(box.boxId);
+    offsetMs = 56_000;
+    expect((await watcher().tick()).slept).toContain(box.boxId);
   });
 
   test("a box whose image has no tmux has no terminal to keep it awake, and still sleeps", async () => {

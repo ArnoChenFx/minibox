@@ -9,6 +9,7 @@ import { getBox } from "../services/boxes";
 import { type CheckpointView, getCheckpoint } from "../services/checkpoints";
 import type { ExecTarget } from "../services/exec";
 import type { BoxEnv } from "../specs/types";
+import { INIT_SESSION } from "../startup/command";
 import { inspectVolumeOrNull } from "../volumes/engine";
 import type { VolumeRecord } from "../volumes/types";
 import {
@@ -16,6 +17,8 @@ import {
   boxVisible,
   hostAllowed,
   type ImageView,
+  mayGiveStartupCommand,
+  mayUseSecrets,
   profileForToken,
   profileRank,
   refusal,
@@ -140,6 +143,28 @@ function assertSecretUse(principal: TokenPrincipal, env: readonly BoxEnv[]): voi
   if (!env.some((entry) => entry.secretRef !== undefined)) return;
   if (!principal.grants.scopes.includes("secret:use")) throw refusal("secret_reference_forbidden");
 }
+
+/**
+ * A startup command runs in the box and may hold a secret the user typed, so a token needs exec and `secret:use` to give
+ * a box one at create. The startup operations need `secret:use` from the scope check.
+ */
+function assertStartupUse(principal: TokenPrincipal, command: unknown): void {
+  if (typeof command !== "string") return;
+  if (!mayGiveStartupCommand(principal)) throw refusal("startup_command_forbidden");
+}
+
+const startupWriteRule: Rule = async (check) => {
+  await boxRule(check);
+  if (!mayGiveStartupCommand(check.principal)) throw refusal("startup_command_forbidden");
+};
+
+/** The session that runs a box's startup command holds its output, so only the owner and `secret:use` may use it. */
+const sessionRule: Rule = async (check) => {
+  await boxRule(check);
+  if (check.input.name === INIT_SESSION && !mayUseSecrets(check.principal)) {
+    throw refusal("startup_session_forbidden");
+  }
+};
 
 /** A checkpoint is visible as a snapshot is: to its creator, and to a token that sees the box it was taken from. */
 function assertCheckpointVisible(principal: TokenPrincipal, host: HostCtx, checkpoint: CheckpointView): void {
@@ -317,6 +342,7 @@ const createRule: Rule = async ({ principal, host, input }) => {
   await assertImageUsable(principal, host, template, "template");
   assertTtl(principal, input.ttlSec as number | null | undefined);
   assertSecretUse(principal, envOf(input.env));
+  assertStartupUse(principal, input.startupCommand);
 };
 
 const forkRule: Rule = async ({ principal, host, input }) => {
@@ -438,6 +464,10 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["box.move", moveRule],
   ["box.logs", boxRule],
   ["box.stats", boxRule],
+  ["box.startup.get", boxRule],
+  ["box.startup.set", startupWriteRule],
+  ["box.startup.delete", startupWriteRule],
+  ["box.startup.run", startupWriteRule],
   ["snapshot.create", boxRule],
   ["snapshot.fork", forkRule],
   ["snapshot.list", noAccess],
@@ -484,10 +514,10 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["task.list", noAccess],
   ["task.get", noAccess],
   ["session.list", boxRule],
-  ["session.start", boxRule],
-  ["session.read", boxRule],
-  ["session.send", boxRule],
-  ["session.close", boxRule],
+  ["session.start", sessionRule],
+  ["session.read", sessionRule],
+  ["session.send", sessionRule],
+  ["session.close", sessionRule],
   ["exec.run", boxRule],
   ["exec.get", execRule],
   ["exec.kill", execRule],

@@ -59,6 +59,7 @@ import {
   hostId,
   hostOrAuto,
   statsFlag,
+  startupCommandOption,
   storageConfirmFlag,
   tail,
   templateImage,
@@ -195,6 +196,7 @@ export const boxCreate = defineOperation({
         description:
           "Catalog tool ids to record on the box spec (version latest). After create, call reconcile_tools (or install_tool) to install them onto the shared tools volume.",
       }),
+    startupCommand: startupCommandOption(),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/boxes", body: true, status: 201 }],
@@ -203,7 +205,7 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Optional startupCommand is a shell command the box runs at every start, through bash -lc in /workspace; it needs the exec and secret:use scopes, and get_startup_command reads it back. A box created from a template does not inherit a startup command unless one is passed. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
   hostFor: (ctx, input) => {
     if (input.host !== AUTO_HOST) return hostById(ctx, input.host ?? LOCAL_HOST_ID);
@@ -217,7 +219,11 @@ export const boxCreate = defineOperation({
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: {
     target: ({ name }, _box, result) => ({ kind: "box", id: result?.box.id, name }),
-    detail: (input) => ({ ...input, env: envNames(input.env) }),
+    detail: ({ startupCommand, ...input }) => ({
+      ...input,
+      env: envNames(input.env),
+      ...(startupCommand === undefined ? {} : { startupCommand: "set" }),
+    }),
   },
   run: async (ctx, input) => {
     const { host, principal, record } = ctx;
@@ -241,6 +247,7 @@ export const boxCreate = defineOperation({
           idleTimeoutSec: input.idleTimeoutSec,
           ttlSec: ttlFor(principal, input.ttlSec),
           tools: input.tools,
+          startupCommand: input.startupCommand,
         },
         record,
       ),

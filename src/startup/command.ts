@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { Msg } from "../lib/messages";
+import { msg, type Msg } from "../lib/messages";
 
 /** The most a startup command may hold, in UTF-8 bytes. */
 export const STARTUP_COMMAND_MAX_BYTES = 4096;
@@ -27,6 +27,17 @@ export function startupCommandProblem(command: string): StartupCommandProblem | 
   if (Buffer.byteLength(command, "utf8") > STARTUP_COMMAND_MAX_BYTES) return "too_long";
   if (CONTROL_RE.test(command.replace(LINE_BREAK_OR_TAB_RE, ""))) return "control";
   return null;
+}
+
+export function startupProblemMessage(problem: StartupCommandProblem): Msg {
+  switch (problem) {
+    case "empty":
+      return msg("startup_command_empty");
+    case "too_long":
+      return msg("startup_command_too_long", { max: STARTUP_COMMAND_MAX_BYTES });
+    case "control":
+      return msg("startup_command_control");
+  }
 }
 
 /** A short, stable fingerprint of a command's text. The runner prints it, so a status can tell which text a run used. */

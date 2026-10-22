@@ -749,6 +749,74 @@ async function recordScenario(): Promise<Exchange[]> {
     await moveBox("move a box with a stale revision", mover, { host: "local", confirm: true }, 9);
     await moveBox("move a box to a host that is not added", mover, { host: "lab", confirm: true }, 1);
     await moveBox("move a missing box", "missing", { host: "lab", confirm: true }, 1);
+
+    const startbox = boxId(
+      (
+        await post("create a box with a startup command", "/api/boxes", {
+          name: "startbox",
+          cpus: 1,
+          memoryMb: 256,
+          startupCommand: "echo ready",
+        })
+      ).json,
+    );
+    const startupAt = `/api/boxes/${startbox}/startup-command`;
+    await post("create a box with a startup command that is not text", "/api/boxes", {
+      name: "startbad",
+      cpus: 1,
+      memoryMb: 256,
+      startupCommand: 5,
+    });
+    await send("read the startup command", "GET", startupAt);
+    await send("read the startup command of a missing box", "GET", "/api/boxes/missing/startup-command");
+    await send("set the startup command without a revision", "PUT", startupAt, {
+      body: JSON.stringify({ command: "echo two" }),
+      contentType: JSON_TYPE,
+    });
+    await send("set the startup command with a stale revision", "PUT", startupAt, {
+      body: JSON.stringify({ command: "echo two" }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(9),
+    });
+    await send("set a startup command of only spaces", "PUT", startupAt, {
+      body: JSON.stringify({ command: "   " }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(1),
+    });
+    await send("set a startup command with a control character", "PUT", startupAt, {
+      body: JSON.stringify({ command: "echo \u0007" }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(1),
+    });
+    await send("set the startup command", "PUT", startupAt, {
+      body: JSON.stringify({ command: "echo two" }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(1),
+    });
+    await send("set the same startup command again", "PUT", startupAt, {
+      body: JSON.stringify({ command: "echo two" }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(2),
+    });
+    await send("set the startup command and apply it now", "PUT", startupAt, {
+      body: JSON.stringify({ command: "echo three", applyNow: true }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(2),
+    });
+    await send("run the startup command again", "POST", `${startupAt}/run`);
+    await send("stop the startup box", "POST", `/api/boxes/${startbox}/stop`);
+    await send("set the startup command while stopped", "PUT", startupAt, {
+      body: JSON.stringify({ command: "echo four" }),
+      contentType: JSON_TYPE,
+      headers: ifMatch(4),
+    });
+    await send("run the startup command while stopped", "POST", `${startupAt}/run`);
+    await send("start the startup box", "POST", `/api/boxes/${startbox}/start`);
+    await send("remove the startup command with a stale revision", "DELETE", startupAt, { headers: ifMatch(4) });
+    await send("remove the startup command", "DELETE", startupAt, { headers: ifMatch(6) });
+    await send("run the startup command with none set", "POST", `${startupAt}/run`);
+    await send("read the startup command after removal", "GET", startupAt);
+    await send("delete the startup box", "DELETE", `/api/boxes/${startbox}`);
   } finally {
     server.stop(true);
     app.throttle.stop();
