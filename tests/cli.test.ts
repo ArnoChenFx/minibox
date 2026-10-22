@@ -1228,3 +1228,106 @@ describe("CLI file transfers", () => {
     }
   });
 });
+
+async function api(base: string, method: string, path: string): Promise<{ status: number; json: unknown }> {
+  const res = await fetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${TEST_KEY}` } });
+  const text = await res.text();
+  return { status: res.status, json: text === "" ? null : JSON.parse(text) };
+}
+
+async function boxIdNamed(base: string, name: string): Promise<string> {
+  const listed = (await api(base, "GET", "/api/boxes")).json as { boxes: { boxId: string; name: string }[] };
+  return listed.boxes.find((box) => box.name === name)?.boxId ?? "";
+}
+
+describe("CLI recycle bin", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("trash ls shows the entries, trash restore brings one back as a new box, and trash purge removes one", async () => {
+    const env = serve();
+    try {
+      for (const name of ["alpha", "beta"]) {
+        expect(await runCli(["box", "create", name, "--cpus", "1", "--memory", "256"], env.env, io(), lines([]))).toBe(
+          0,
+        );
+      }
+      const alphaId = await boxIdNamed(env.env.MINIBOX_URL, "alpha");
+      const betaId = await boxIdNamed(env.env.MINIBOX_URL, "beta");
+      expect((await api(env.env.MINIBOX_URL, "DELETE", `/api/boxes/${alphaId}`)).status).toBe(200);
+      expect((await api(env.env.MINIBOX_URL, "DELETE", `/api/boxes/${betaId}`)).status).toBe(200);
+
+      const listed = (await api(env.env.MINIBOX_URL, "GET", "/api/trash")).json as {
+        trash: { id: string; sourceName: string }[];
+      };
+      const alphaEntry = listed.trash.find((entry) => entry.sourceName === "alpha")?.id ?? "";
+      const betaEntry = listed.trash.find((entry) => entry.sourceName === "beta")?.id ?? "";
+      expect(listed.trash).toHaveLength(2);
+
+      const table = io();
+      expect(await runCli(["trash", "ls"], env.env, table, lines([]))).toBe(0);
+      expect(table.out.split("\n")[0]).toBe("ID  NAME  KIND  DELETED  EXPIRES  BYTES");
+      expect(table.out).toContain(`${alphaEntry}  alpha  box  `);
+
+      const asJson = io();
+      expect(await runCli(["trash", "ls", "--json"], env.env, asJson, lines([]))).toBe(0);
+      expect(JSON.parse(asJson.out)).toEqual({
+        trash: expect.arrayContaining([expect.objectContaining({ id: betaEntry })]),
+      });
+
+      const restored = io();
+      expect(await runCli(["trash", "restore", alphaEntry, "--name", "alpha-back"], env.env, restored, lines([]))).toBe(
+        0,
+      );
+      expect(restored.out).toBe("alpha-back\n");
+      expect(await boxIdNamed(env.env.MINIBOX_URL, "alpha-back")).not.toBe("");
+
+      const purged = io();
+      expect(await runCli(["trash", "purge", betaEntry], env.env, purged, lines([]))).toBe(0);
+      expect(purged.out).toBe(`${betaEntry}\n`);
+
+      const left = (await api(env.env.MINIBOX_URL, "GET", "/api/trash")).json as { trash: unknown[] };
+      expect(left.trash).toEqual([]);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("a restore or purge of an entry that does not exist exits 1 with the server's message", async () => {
+    const env = serve();
+    try {
+      const restore = io();
+      expect(await runCli(["trash", "restore", "ck_0000000000000000000000000"], env.env, restore, lines([]))).toBe(1);
+      expect(restore.err).toContain("ck_0000000000000000000000000");
+
+      const purge = io();
+      expect(await runCli(["trash", "purge", "ck_0000000000000000000000000"], env.env, purge, lines([]))).toBe(1);
+      expect(purge.err).toContain("ck_0000000000000000000000000");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("trash usage errors exit 2 without calling the server", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    const cases: string[][] = [
+      ["trash"],
+      ["trash", "frobnicate"],
+      ["trash", "ls", "extra"],
+      ["trash", "restore"],
+      ["trash", "restore", "ck_1", "extra"],
+      ["trash", "restore", "ck_1", "--cpus", "lots"],
+      ["trash", "purge"],
+      ["trash", "purge", "ck_1", "--color", "red"],
+    ];
+    for (const argv of cases) {
+      const sink = io();
+      expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
+      expect(sink.err.length).toBeGreaterThan(0);
+      expect(sink.out).toBe("");
+    }
+  });
+});
