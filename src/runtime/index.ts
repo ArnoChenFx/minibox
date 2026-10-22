@@ -158,7 +158,7 @@ export interface HelperSpec {
   capAdd?: string[];
   timeoutSec?: number;
   labels?: Record<string, string>;
-  /** `NAME=value` entries. Used by Agent CLI installs for HTTP_PROXY and npm/pip settings. */
+  /** `NAME=value` entries. Used by tool installs for HTTP_PROXY and npm/pip settings. */
   env?: string[];
   /**
    * When true, the helper joins the engine's default bridge so it can reach npm / PyPI / GitHub.

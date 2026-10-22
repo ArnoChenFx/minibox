@@ -1057,7 +1057,7 @@ export default {
     "Leave a role on “use the rule” to put cache on the local pool and the other roles on the default pool.",
   "vol.loadingFailed": "Could not load storage",
   "vol.choose": "Volume",
-  "cb.tools": "Agent CLI tools",
+  "cb.tools": "Tools",
   "cb.toolsHelp":
     "Optional. Installed onto the shared tools volume after the box starts. Tools already in the template are skipped. Progress appears in Tasks.",
   "cb.toolsInstalling": "Installing tools",
@@ -1067,7 +1067,7 @@ export default {
   "bd.tabTools": "Tools",
   "bd.tools": "Tools",
   "bd.toolsNone": "None",
-  "bd.toolsTitle": "Agent CLI tools",
+  "bd.toolsTitle": "Tools",
   "bd.portsTitle": "Ports",
   "bd.portsHelp":
     "Open a path-mode preview of a service inside this box. MiniBox proxies /box/<name>/<port>/ to the container IP — nothing is published on the host. Sign-in is required. Share links are not available yet.",
@@ -1094,7 +1094,7 @@ export default {
   "bd.portsNotRunning": "Start the box to discover listening ports.",
 
   "bd.toolsHelp":
-    "Install, upgrade or uninstall Agent CLIs on the shared tools volume. Tools found in the image or home volume show as installed and MiniBox leaves them alone. Config and login state stay on the home volume. Rebuild keeps tools available from the volume.",
+    "Install, upgrade or uninstall tools on the shared tools volume. Tools found in the image or home volume show as installed and MiniBox leaves them alone. Config and login state stay on the home volume. Rebuild keeps tools available from the volume.",
   "bd.toolsLoading": "Loading catalog…",
   "bd.toolsLoadFailed": "Could not load tools",
   "bd.toolsColName": "Tool",
@@ -1136,7 +1136,7 @@ export default {
   "task.op.tool.reconcile": "Reconcile tools",
   "err.tool_catalog_invalid": "Tool catalog entry {file} is invalid: {detail}.",
   "err.tool_unknown": "Unknown tool “{id}”.",
-  "err.tool_needs_root": "Tool “{id}” requires root, which MiniBox does not run for Agent CLI installs.",
+  "err.tool_needs_root": "Tool “{id}” requires root, which MiniBox does not run for tool installs.",
   "err.tool_volume_missing":
     "No shared tools volume exists on this host yet. Create a box with the default mounts first.",
   "err.tool_install_failed": "Installing “{id}” failed: {detail}",

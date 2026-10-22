@@ -6,7 +6,7 @@ export function isToolCategory(value: string): value is ToolCategory {
   return (TOOL_CATEGORIES as readonly string[]).includes(value);
 }
 
-/** One Agent CLI entry from `catalog/*.json` or `DATA_DIR/tools.d/*.json`. */
+/** One tool entry from `catalog/*.json` or `DATA_DIR/tools.d/*.json`. */
 export interface CatalogEntry {
   id: string;
   name: string;

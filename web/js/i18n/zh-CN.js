@@ -995,7 +995,7 @@ export default {
   "vol.cacheHint": "角色保持「使用默认规则」时，缓存落在本地池，其他角色落在默认池。",
   "vol.loadingFailed": "无法加载存储信息",
   "vol.choose": "卷",
-  "cb.tools": "Agent CLI 工具",
+  "cb.tools": "工具",
   "cb.toolsHelp": "可选。Box 启动后装到共享 tools 卷。模板里已有的工具会跳过。进度在「任务」面板查看。",
   "cb.toolsInstalling": "正在安装工具",
   "cb.toolsInstallingText": "可在任务面板查看进度。",
@@ -1004,7 +1004,7 @@ export default {
   "bd.tabTools": "工具",
   "bd.tools": "工具",
   "bd.toolsNone": "无",
-  "bd.toolsTitle": "Agent CLI 工具",
+  "bd.toolsTitle": "工具",
   "bd.portsTitle": "端口",
   "bd.portsHelp":
     "一键打开 Box 内服务的路径模式预览。MiniBox 把 /box/<名称>/<端口>/ 代理到容器 IP，不会在宿主机发布端口。需要登录。分享链接尚未提供。",
@@ -1031,7 +1031,7 @@ export default {
   "bd.portsNotRunning": "请先启动 Box，才能发现监听端口。",
 
   "bd.toolsHelp":
-    "在共享 tools 卷上安装、升级或卸载 Agent CLI。镜像或 home 卷中已有的工具显示为已安装，MiniBox 不会改动它们。配置与登录态留在 home 卷。重建后工具仍可用。",
+    "在共享 tools 卷上安装、升级或卸载工具。镜像或 home 卷中已有的工具显示为已安装，MiniBox 不会改动它们。配置与登录态留在 home 卷，重建后工具仍可用。",
   "bd.toolsLoading": "正在加载目录…",
   "bd.toolsLoadFailed": "无法加载工具",
   "bd.toolsColName": "工具",
@@ -1073,7 +1073,7 @@ export default {
   "task.op.tool.reconcile": "补装工具",
   "err.tool_catalog_invalid": "工具目录条目 {file} 无效：{detail}。",
   "err.tool_unknown": "未知工具 “{id}”。",
-  "err.tool_needs_root": "工具 “{id}” 需要 root，MiniBox 不会以 root 安装 Agent CLI。",
+  "err.tool_needs_root": "工具 “{id}” 需要 root，MiniBox 不会以 root 安装工具。",
   "err.tool_volume_missing": "本机尚无共享 tools 卷。请先用默认挂载创建 Box。",
   "err.tool_install_failed": "安装 “{id}” 失败：{detail}",
   "err.tool_install_timeout": "安装 “{id}” 超时。",
