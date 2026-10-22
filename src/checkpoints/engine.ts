@@ -6,6 +6,11 @@ export interface BackupResult {
   bytes: number;
 }
 
+/** What the repository stores across all its snapshots, in bytes after deduplication and compression. */
+export interface EngineUsage {
+  bytes: number;
+}
+
 /**
  * Stores volume contents as snapshots and writes them back. A checkpoint keeps only snapshot ids, so another engine
  * that accepts these calls can replace the restic one.
@@ -17,4 +22,6 @@ export interface SnapshotEngine {
   restore(host: HostCtx, snapshotId: string, volume: string): Promise<void>;
   /** Removes the snapshot and frees the space that only it used. */
   forget(host: HostCtx, snapshotId: string): Promise<void>;
+  /** The repository's stored size. A repository that does not exist yet reports zero. */
+  usage(host: HostCtx): Promise<EngineUsage>;
 }

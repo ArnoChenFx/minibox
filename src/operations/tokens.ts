@@ -36,6 +36,7 @@ const QUOTA_MEMORY_MAX = 10_000_000;
 const QUOTA_TTL_MAX = 31_536_000;
 const RATE_MAX = 1_000_000;
 const WINDOW_MAX = 86_400;
+const QUOTA_CHECKPOINTS_MAX = 10_000;
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const HOST_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const CONTROL = /\p{Cc}/u;
@@ -187,7 +188,8 @@ function checkQuotas(value: unknown): Checked<Partial<Quotas> | undefined> {
       const maxTtlSec = checkQuotaNumber(source.maxTtlSec, QUOTA_TTL_MAX, true);
       const rateLimit = checkQuotaNumber(source.rateLimit, RATE_MAX, true);
       const rateWindowSec = checkQuotaNumber(source.rateWindowSec, WINDOW_MAX, true);
-      const numbers = [maxBoxes, maxCpus, maxMemoryMb, maxTtlSec, rateLimit, rateWindowSec];
+      const maxCheckpoints = checkQuotaNumber(source.maxCheckpoints, QUOTA_CHECKPOINTS_MAX, true);
+      const numbers = [maxBoxes, maxCpus, maxMemoryMb, maxTtlSec, rateLimit, rateWindowSec, maxCheckpoints];
       if (numbers.some((item) => Number.isNaN(item))) return reject(msg("token_quota_invalid"), "quotas");
       const quotas: Partial<Quotas> = {
         ...(maxBoxes !== undefined ? { maxBoxes } : {}),
@@ -196,6 +198,7 @@ function checkQuotas(value: unknown): Checked<Partial<Quotas> | undefined> {
         ...(maxTtlSec !== undefined ? { maxTtlSec } : {}),
         ...(rateLimit !== undefined ? { rateLimit } : {}),
         ...(rateWindowSec !== undefined ? { rateWindowSec } : {}),
+        ...(maxCheckpoints !== undefined ? { maxCheckpoints } : {}),
       };
       return accept(quotas);
     },
@@ -244,6 +247,7 @@ const QuotasSchema = z.object({
   maxTtlSec: z.number().nullable(),
   rateLimit: z.number().nullable(),
   rateWindowSec: z.number().nullable(),
+  maxCheckpoints: z.number().nullable(),
 });
 
 export const TokenInfoSchema = z.object({
@@ -310,7 +314,7 @@ const tokenCreateInput = z
     quotas: field(checkQuotas, {
       type: "object",
       description:
-        "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
+        "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. maxCheckpoints caps the checkpoints the token takes, as a total across its boxes; automatic checkpoints are kept by the retention policy and not counted. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
       properties: {
         maxBoxes: { type: ["integer", "null"] },
         maxCpus: { type: ["number", "null"] },
@@ -318,6 +322,7 @@ const tokenCreateInput = z
         maxTtlSec: { type: ["integer", "null"] },
         rateLimit: { type: ["integer", "null"] },
         rateWindowSec: { type: ["integer", "null"] },
+        maxCheckpoints: { type: ["integer", "null"] },
       },
     }).optional(),
     expiresInSec: field(checkExpiry, {

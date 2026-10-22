@@ -53,6 +53,9 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     boxIdleTimeoutSec: 0,
     boxIdleCpuPercent: 5,
     lifecycleIntervalMs: 30_000,
+    checkpointKeepLast: 20,
+    checkpointKeepDays: 30,
+    checkpointCapacityMb: 0,
     ...overrides,
   };
 }

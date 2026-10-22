@@ -1,4 +1,5 @@
-import { actionButtons, deleteBox, lifecycle, snapshotBox } from "../components/box-actions.js";
+import { actionButtons, deleteBox, lifecycle } from "../components/box-actions.js";
+import { takeCheckpoint } from "../components/checkpoints.js";
 import { openCreateBox } from "../components/create-box.js";
 import { api } from "../lib/api.js";
 import { applyBoxFrame, applySamples, boxesOfSync } from "../lib/box-state.js";
@@ -89,7 +90,7 @@ export function render(view) {
     stop: (el) => lifecycle(find(el.dataset.id), "stop", el).then(load),
     restart: (el) => lifecycle(find(el.dataset.id), "restart", el).then(load),
     terminal: (el) => (location.hash = `#/boxes/${el.dataset.id}/terminal`),
-    snapshot: (el) => snapshotBox(find(el.dataset.id)),
+    checkpoint: (el) => takeCheckpoint(find(el.dataset.id)),
     delete: (el) => deleteBox(find(el.dataset.id)).then((ok) => ok && load()),
   });
 

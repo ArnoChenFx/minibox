@@ -1,11 +1,12 @@
 import type { HostCtx } from "../host/registry";
 import { log } from "../lib/logger";
-import type { ContainerInfo } from "../runtime";
+import { type ContainerInfo, HELPER_SECRETS_LABEL } from "../runtime";
 import { ClaimError, ensureSpec } from "../specs/claim";
 import { ttlExpired } from "../specs/lifetime";
 import type { BoxSpec } from "../specs/types";
 import { claimEngineVolumes } from "../volumes/engine";
 import { sleepBox, startBox, stopBox } from "./boxes";
+import { settlePendingRollbacks } from "./rollback";
 
 export interface ReconcileReport {
   /** Stable ids of containers that had no spec file and were claimed on this pass. */
@@ -16,6 +17,12 @@ export interface ReconcileReport {
   stopped: string[];
   /** Stable ids whose engine restart policy was set back to `no`. */
   restartReset: string[];
+  /** Stable ids whose container was left paused, by a checkpoint a crash cut short, and was unpaused. */
+  unpaused: string[];
+  /** Stable ids whose rollback record a crash left stale (box gone, or undo cut short after its rebuild) and was settled. */
+  rollbacksSettled: string[];
+  /** Helper secret volumes a crash left behind, removed. */
+  secretsRemoved: string[];
   /** Stable ids whose container is gone. The spec is kept. */
   missing: string[];
   /**
@@ -32,7 +39,17 @@ export interface ReconcileReport {
  * the pass goes on: one broken box must not keep the rest of the host down after a restart.
  */
 export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
-  const report: ReconcileReport = { claimed: [], started: [], stopped: [], restartReset: [], missing: [], failed: [] };
+  const report: ReconcileReport = {
+    claimed: [],
+    started: [],
+    stopped: [],
+    restartReset: [],
+    unpaused: [],
+    rollbacksSettled: [],
+    secretsRemoved: [],
+    missing: [],
+    failed: [],
+  };
   await claimEngineVolumes(host);
   const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
   const seen = new Set<string>();
@@ -66,13 +83,51 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
       recordFailure(host, report, spec.id, info.name, e);
     }
   }
+  try {
+    report.rollbacksSettled = await settlePendingRollbacks(host);
+  } catch (e) {
+    log.error("checkpoint.rollback_settle_failed", { host: host.host.id, error: String(e) });
+  }
+  report.secretsRemoved = await removeStaleSecretVolumes(host);
   return report;
+}
+
+/**
+ * Removes the volumes that staged a helper's secrets and outlived it, because the process stopped between staging and
+ * cleanup. Nothing runs a helper before reconciliation ends. Only this instance's volumes (its internal label) are
+ * touched, and one still in use is refused by the engine and left.
+ */
+async function removeStaleSecretVolumes(host: HostCtx): Promise<string[]> {
+  const removed: string[] = [];
+  let volumes: Awaited<ReturnType<typeof host.runtime.listVolumes>>;
+  try {
+    volumes = await host.runtime.listVolumes();
+  } catch (e) {
+    log.warn("helper.secrets_sweep_failed", { host: host.host.id, error: String(e) });
+    return removed;
+  }
+  for (const volume of volumes) {
+    if (volume.labels[HELPER_SECRETS_LABEL] !== "true" || volume.labels[host.keys.internal] !== "true") continue;
+    try {
+      await host.runtime.removeVolume(volume.name);
+      removed.push(volume.name);
+    } catch (e) {
+      log.warn("helper.secrets_remove_failed", { host: host.host.id, volume: volume.name, error: String(e) });
+    }
+  }
+  return removed;
 }
 
 async function converge(host: HostCtx, info: ContainerInfo, spec: BoxSpec, report: ReconcileReport): Promise<void> {
   if (info.restart !== "no") {
     await host.runtime.updateContainer(info.id, { restart: "no" });
     report.restartReset.push(spec.id);
+  }
+  // Nothing pauses a box except a checkpoint in progress, and none is in progress at startup. A paused container is a
+  // checkpoint the last process did not finish, and it still reports itself running.
+  if (info.state === "paused") {
+    await host.runtime.unpauseContainer(info.id);
+    report.unpaused.push(spec.id);
   }
   if (spec.lifecycle.desired === "running" && !info.running) {
     if (ttlExpired(spec, Date.now())) {

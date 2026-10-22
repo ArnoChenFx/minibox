@@ -14750,6 +14750,148 @@
         "x-cli": "checkpoint list"
       }
     },
+    "/api/checkpoints/usage": {
+      "get": {
+        "operationId": "checkpoint.usage",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Read the checkpoint repository's size against its limit",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bytes": {
+                      "type": "number"
+                    },
+                    "limitBytes": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "unlimited",
+                        "ok",
+                        "warning",
+                        "exceeded"
+                      ]
+                    },
+                    "policy": {
+                      "type": "object",
+                      "properties": {
+                        "keepLast": {
+                          "type": "number"
+                        },
+                        "keepDays": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "keepLast",
+                        "keepDays"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "bytes",
+                    "limitBytes",
+                    "state",
+                    "policy"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "checkpoint:usage",
+        "x-async": false,
+        "x-cli": "checkpoint usage"
+      }
+    },
     "/api/checkpoints/{id}": {
       "get": {
         "operationId": "checkpoint.get",
@@ -17408,15 +17550,1041 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "safety": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label"
+              ],
+              "additionalProperties": false,
+              "description": "The checkpoint taken before the rollback. It holds the data the replaced volumes held."
             }
           },
           "required": [
             "box",
-            "replaced"
+            "replaced",
+            "safety"
           ],
           "additionalProperties": false
         },
         "x-cli": "box rollback"
+      },
+      "get": {
+        "operationId": "box.rollback.get",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Read the rollback of a box that waits for its confirm or undo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rollback": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "boxId": {
+                              "type": "string"
+                            },
+                            "checkpoint": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "safetyCheckpointId": {
+                              "type": "string"
+                            },
+                            "createdBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "replaced": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "path": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "path"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "restored": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "path": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "path"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "boxId",
+                            "checkpoint",
+                            "safetyCheckpointId",
+                            "createdBy",
+                            "createdAt",
+                            "replaced",
+                            "restored"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "rollback"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "checkpoint:read",
+        "x-async": false,
+        "x-cli": "box rollback-status"
+      }
+    },
+    "/api/boxes/{id}/rollback/confirm": {
+      "post": {
+        "operationId": "box.rollback.confirm",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Confirm a rollback: delete the volumes it replaced",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "volume:write",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "removed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "removed"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "box rollback-confirm"
+      }
+    },
+    "/api/boxes/{id}/rollback/undo": {
+      "post": {
+        "operationId": "box.rollback.undo",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Undo a rollback: mount the volumes it replaced again",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "The box's current revision: a positive integer, a quoted entity tag, or a weak tag. Missing is 428 precondition_required. A stale revision is 412 precondition_failed.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The If-Match revision is not the box's current revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required and was not sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "checkpoint:restore",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "box": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "boxId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "template": {
+                  "type": "string"
+                },
+                "profile": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "standard",
+                        "strict",
+                        "relaxed"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "network": {
+                  "type": "string"
+                },
+                "cpus": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "pids": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "volume": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "number"
+                },
+                "desired": {
+                  "type": "string",
+                  "enum": [
+                    "running",
+                    "stopped"
+                  ]
+                },
+                "idleTimeoutSec": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "ttlSec": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "stopReason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "ttl",
+                        "manual"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sleeping": {
+                  "type": "boolean"
+                },
+                "lastActivityAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "labels": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "createdBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "containerName": {
+                  "type": "string"
+                },
+                "drift": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "expected": {
+                        "type": "string"
+                      },
+                      "actual": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "expected",
+                      "actual"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "recovery": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "claim",
+                            "degraded"
+                          ]
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "needsReset": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "observedRestart": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "at",
+                        "needsReset",
+                        "observedRestart"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mounts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "volume": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "rw",
+                          "ro"
+                        ]
+                      },
+                      "volumeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "volumeName": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "role": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "workspace",
+                              "home",
+                              "tools",
+                              "cache"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "pool": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "volume",
+                      "path",
+                      "mode",
+                      "volumeId",
+                      "volumeName",
+                      "role",
+                      "pool"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "env": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "secretRef": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "storage": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "unreachable",
+                        "unknown"
+                      ]
+                    },
+                    "pools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "reachable",
+                              "unreachable",
+                              "unknown"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "pools"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "boxId",
+                "name",
+                "state",
+                "status",
+                "running",
+                "image",
+                "template",
+                "profile",
+                "network",
+                "cpus",
+                "memory",
+                "pids",
+                "createdAt",
+                "startedAt",
+                "volume",
+                "revision",
+                "desired",
+                "idleTimeoutSec",
+                "ttlSec",
+                "stopReason",
+                "sleeping",
+                "lastActivityAt",
+                "labels",
+                "createdBy",
+                "containerName",
+                "drift",
+                "recovery",
+                "mounts",
+                "env",
+                "tools",
+                "storage"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "box"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "box rollback-undo"
       }
     },
     "/api/templates": {
@@ -19419,6 +20587,12 @@
                                   "number",
                                   "null"
                                 ]
+                              },
+                              "maxCheckpoints": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -19427,7 +20601,8 @@
                               "maxMemoryMb",
                               "maxTtlSec",
                               "rateLimit",
-                              "rateWindowSec"
+                              "rateWindowSec",
+                              "maxCheckpoints"
                             ],
                             "additionalProperties": false
                           },
@@ -19644,7 +20819,7 @@
                   },
                   "quotas": {
                     "type": "object",
-                    "description": "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
+                    "description": "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. maxCheckpoints caps the checkpoints the token takes, as a total across its boxes; automatic checkpoints are kept by the retention policy and not counted. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
                     "properties": {
                       "maxBoxes": {
                         "type": [
@@ -19677,6 +20852,12 @@
                         ]
                       },
                       "rateWindowSec": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "maxCheckpoints": {
                         "type": [
                           "integer",
                           "null"
@@ -19949,6 +21130,12 @@
                                 "number",
                                 "null"
                               ]
+                            },
+                            "maxCheckpoints": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
@@ -19957,7 +21144,8 @@
                             "maxMemoryMb",
                             "maxTtlSec",
                             "rateLimit",
-                            "rateWindowSec"
+                            "rateWindowSec",
+                            "maxCheckpoints"
                           ],
                           "additionalProperties": false
                         },
@@ -20395,6 +21583,12 @@
                                 "number",
                                 "null"
                               ]
+                            },
+                            "maxCheckpoints": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
@@ -20403,7 +21597,8 @@
                             "maxMemoryMb",
                             "maxTtlSec",
                             "rateLimit",
-                            "rateWindowSec"
+                            "rateWindowSec",
+                            "maxCheckpoints"
                           ],
                           "additionalProperties": false
                         },

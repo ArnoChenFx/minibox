@@ -6,8 +6,10 @@ import { conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { getBox } from "../services/boxes";
 import { assertCapacity } from "../services/capacity";
+import { assertAutomaticAllowed, usageOf } from "../services/checkpoint-capacity";
 import {
   assertForkable,
+  assertNotHeld,
   assertTakeable,
   type CheckpointView,
   deleteCheckpoint,
@@ -22,13 +24,23 @@ import {
   type TakeCheckpointInput,
   updateCheckpoint,
 } from "../services/checkpoints";
+import {
+  assertUndoable,
+  cleanupConfirmation,
+  cleanupPreview,
+  confirmRollback,
+  pendingRollbackView,
+  undoConfirmation,
+  undoPreview,
+  undoRollback,
+} from "../services/rollback";
 import { requireRevision } from "../specs/revision";
 import { snapshotVisible, specViews, ttlFor } from "../tokens/model";
-import { assertWithinQuota, underQuota } from "../tokens/quota";
+import { assertCheckpointQuota, assertWithinQuota, underCheckpointQuota, underQuota } from "../tokens/quota";
 import { assertCanCreateDefaultMounts, assertCanWrite } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
-import { BoxSchema, CheckpointSchema, OkSchema } from "./schemas";
+import { BoxSchema, CheckpointSchema, CheckpointUsageSchema, OkSchema, PendingRollbackSchema } from "./schemas";
 import {
   boxId,
   boxName,
@@ -112,6 +124,24 @@ export const checkpointList = defineOperation({
   },
 });
 
+/**
+ * Owner-only: the repository's size is a host figure, like the host metrics. The scope is one no token holds, so the
+ * route and the executor both refuse a token.
+ */
+export const checkpointUsage = defineOperation({
+  name: "checkpoint.usage",
+  tag: "checkpoints",
+  summary: "Read the checkpoint repository's size against its limit",
+  kind: "read",
+  scope: "checkpoint:usage",
+  async: false,
+  input: z.object({}),
+  output: CheckpointUsageSchema,
+  rest: [{ method: "GET", path: "/api/checkpoints/usage" }],
+  cli: "checkpoint usage",
+  run: async ({ host }) => usageOf(host),
+});
+
 export const checkpointGet = defineOperation({
   name: "checkpoint.get",
   tag: "checkpoints",
@@ -140,12 +170,17 @@ export const checkpointCreate = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/checkpoints", body: true, status: 202 }],
   cli: "checkpoint create",
   resolve: ({ host }, input) => getBox(host, input.id),
-  beforeTask: async ({ host }, input, box) => assertTakeable(host, box, takeInput(input)),
+  beforeTask: async (ctx, input, box) => {
+    assertTakeable(ctx.host, box, takeInput(input));
+    assertCheckpointQuota(ctx);
+  },
   exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
   activity: { action: () => "checkpoint.create", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host, task, principal }, input) => ({
-    checkpoint: await takeCheckpoint(host, input.id, takeInput(input), principal.id, task),
+  run: async (ctx, input) => ({
+    checkpoint: await underCheckpointQuota(ctx, () =>
+      takeCheckpoint(ctx.host, input.id, takeInput(input), ctx.principal.id, ctx.task),
+    ),
   }),
 });
 
@@ -246,8 +281,9 @@ export const checkpointDelete = defineOperation({
   rest: [{ method: "DELETE", path: "/api/checkpoints/:id", status: 202 }],
   cli: "checkpoint rm",
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
-  beforeTask: async (_ctx, _input, checkpoint) => {
+  beforeTask: async ({ host }, _input, checkpoint) => {
     if (checkpoint.pinned) throw conflict(msg("checkpoint_pinned", { id: checkpoint.id }));
+    assertNotHeld(host, checkpoint.id);
   },
   exclusive: ({ host }, _input, checkpoint) => `checkpoint.item:${host.host.id}:${checkpoint.id}`,
   activity: { action: () => "checkpoint.delete", target: (_input, checkpoint) => checkpoint.label },
@@ -275,6 +311,9 @@ export const boxRollback = defineOperation({
   output: z.object({
     box: BoxSchema,
     replaced: z.array(z.object({ id: z.string(), name: z.string() })),
+    safety: z.object({ id: z.string(), label: z.string() }).meta({
+      description: "The checkpoint taken before the rollback. It holds the data the replaced volumes held.",
+    }),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rollback", body: true, ifMatch: true, status: 202 }],
   cli: "box rollback",
@@ -284,6 +323,7 @@ export const boxRollback = defineOperation({
     const revision = requireRevision(input.expectedRevision);
     if (!input.confirm) throw rollbackConfirmation(await previewRollback(host, input.id, input.checkpoint, revision));
     await planRollback(host, input.id, input.checkpoint, revision);
+    await assertAutomaticAllowed(host);
   },
   exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
   activity: { action: () => "box.rollback", target: (_input, box) => box.name },
@@ -296,16 +336,103 @@ export const boxRollback = defineOperation({
       ctx.principal.id,
       ctx.task,
     );
-    return { box: result.box, replaced: result.replaced };
+    return { box: result.box, replaced: result.replaced, safety: result.safety };
   },
 });
 
+const replacedVolumes = z.array(z.object({ id: z.string(), name: z.string() }));
+
+export const boxRollbackGet = defineOperation({
+  name: "box.rollback.get",
+  tag: "checkpoints",
+  summary: "Read the rollback of a box that waits for its confirm or undo",
+  kind: "read",
+  scope: "checkpoint:read",
+  async: false,
+  input: z.object({ id: boxId() }),
+  output: z.object({ rollback: PendingRollbackSchema.nullable() }),
+  rest: [{ method: "GET", path: "/api/boxes/:id/rollback" }],
+  cli: "box rollback-status",
+  resolve: ({ host }, input) => getBox(host, input.id),
+  run: async ({ host }, _input, box) => ({ rollback: pendingRollbackView(host, box.boxId) }),
+});
+
+/**
+ * Deletes the volumes a rollback replaced. Those volumes are no longer mounted, and the safety checkpoint still holds
+ * their data, so this step is the only one that removes them.
+ */
+export const boxRollbackConfirm = defineOperation({
+  name: "box.rollback.confirm",
+  tag: "checkpoints",
+  summary: "Confirm a rollback: delete the volumes it replaced",
+  kind: "destructive",
+  scope: "volume:write",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    id: boxId(),
+    confirm: storageConfirmFlag(),
+  }),
+  output: z.object({ removed: replacedVolumes }),
+  rest: [{ method: "POST", path: "/api/boxes/:id/rollback/confirm", body: true, status: 202 }],
+  cli: "box rollback-confirm",
+  resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async ({ host }, input, box) => {
+    const preview = cleanupPreview(host, box);
+    if (!input.confirm) throw cleanupConfirmation(preview);
+  },
+  exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
+  activity: { action: () => "box.rollback.confirm", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
+  run: async ({ host, task }, input) => confirmRollback(host, input.id, task),
+});
+
+/**
+ * Mounts the volumes a rollback replaced again, and deletes the ones it restored. The box is rebuilt, so the revision
+ * rules of a rebuild apply, and so does the power lock. Data written since the rollback is lost.
+ */
+export const boxRollbackUndo = defineOperation({
+  name: "box.rollback.undo",
+  tag: "checkpoints",
+  summary: "Undo a rollback: mount the volumes it replaced again",
+  kind: "destructive",
+  scope: "checkpoint:restore",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    id: boxId(),
+    confirm: storageConfirmFlag(),
+    expectedRevision: expectedRevision(),
+  }),
+  output: z.object({ box: BoxSchema }),
+  rest: [{ method: "POST", path: "/api/boxes/:id/rollback/undo", body: true, ifMatch: true, status: 202 }],
+  cli: "box rollback-undo",
+  precondition: (ctx) => assertCanWrite(ctx),
+  resolve: ({ host }, input) => getBox(host, input.id),
+  beforeTask: async ({ host }, input, box) => {
+    const revision = requireRevision(input.expectedRevision);
+    if (!input.confirm) throw undoConfirmation(undoPreview(host, box, revision));
+    assertUndoable(host, box, revision);
+  },
+  exclusive: ({ host }, _input, box) => `checkpoint.box:${host.host.id}:${box.boxId}`,
+  activity: { action: () => "box.rollback.undo", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
+  run: async (ctx, input) => ({
+    box: await undoRollback(ctx.host, input.id, { revision: requireRevision(input.expectedRevision) }, ctx.task),
+  }),
+});
+
+/** `checkpointUsage` precedes `checkpointGet`: the router takes the first path that matches, and `usage` is not an id. */
 export const checkpointOperations = [
   checkpointList,
+  checkpointUsage,
   checkpointGet,
   checkpointCreate,
   checkpointFork,
   checkpointUpdate,
   checkpointDelete,
   boxRollback,
+  boxRollbackGet,
+  boxRollbackConfirm,
+  boxRollbackUndo,
 ];
