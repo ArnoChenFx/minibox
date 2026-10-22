@@ -16,6 +16,8 @@ const CHECKED_PACKAGE_DOWNLOAD = /^\/api\/packages\/[^/]+\/download$/;
 const PACKAGE_UPLOAD = "/api/packages";
 /** A volume file is streamed in and out as a raw body: the upload checks its own type, and the download leaves the instance. */
 const CHECKED_FILE_STREAM = FILE_STREAM_PATH;
+/** The preview launcher opens a preview with the owner's session, so a page on another site may not start one. */
+const CHECKED_PREVIEW_LAUNCH = /^\/api\/boxes\/[^/]+\/ports\/\d+\/preview$/;
 
 export type GuardPolicy = Pick<Config, "allowedOrigins" | "trustProxy">;
 
@@ -60,7 +62,8 @@ export function guardRequest(req: Request, policy: GuardPolicy): void {
     (CHECKED_READS.has(pathname) ||
       CHECKED_BOX_LOG_STREAM.test(pathname) ||
       CHECKED_PACKAGE_DOWNLOAD.test(pathname) ||
-      CHECKED_FILE_STREAM.test(pathname));
+      CHECKED_FILE_STREAM.test(pathname) ||
+      CHECKED_PREVIEW_LAUNCH.test(pathname));
   if (!websocket && !apiWrite && !checkedRead) return;
   if (!isSameOriginRequest(req, policy)) throw new AppError(403, "forbidden", msg("origin_forbidden"));
   const rawUpload = req.method === "PUT" && CHECKED_FILE_STREAM.test(pathname);
