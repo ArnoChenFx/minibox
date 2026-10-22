@@ -387,4 +387,8 @@ export default {
   "bd.sshCopy": "复制",
   "bd.sshCopied": "命令已复制",
   "bd.sshCopyFailed": "无法复制命令",
+  "ev.box.trashed": "Box 已移入回收站",
+  "ev.volume.trashed": "卷已移入回收站",
+  "ev.trash.restored": "已从回收站恢复",
+  "ev.trash.purged": "已从回收站彻底删除",
 };

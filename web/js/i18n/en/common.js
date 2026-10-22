@@ -124,4 +124,5 @@ export default {
   "about.license": "License",
   "about.licenseMeta": "Apache License 2.0",
   "nav.volumes": "Volumes",
+  "nav.trash": "Recycle bin",
 };
