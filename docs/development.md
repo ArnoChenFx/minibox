@@ -6,7 +6,7 @@ This page is for people who change MiniBox. To run MiniBox, read [Install](admin
 
 - [Bun](https://bun.sh) 1.4.3 or later. `package.json` sets this as the minimum version.
 - Docker Engine, for the template check and the real-engine tests. The unit tests do not need Docker.
-- Chromium, only for the homepage browser tests.
+- Chromium, for the homepage browser tests and the preview isolation test. See [Tests](#tests).
 
 ## Set up
 
@@ -40,7 +40,7 @@ bun run check
 
 | Command | Needs | What it covers |
 |---|---|---|
-| `bun test` | Nothing | Unit and API tests. Part of `bun run check`. |
+| `bun test` | Nothing, except Chromium for the preview isolation test | Unit and API tests. Part of `bun run check`. `tests/preview-browser.test.ts` uses Chromium when one is available. |
 | `bun run test:docker` | Docker | Real-engine tests in `tests/docker-*.test.ts`. Not part of `bun run check`. |
 | `bun run build:template` and `bun run check:template` | Docker | The base template: its user, tools, mount points and each security profile. |
 | `bun run test:site` | Chromium | Browser tests for the homepage. |
@@ -81,7 +81,7 @@ bun run openapi
 
 | Workflow | When it runs | What it does |
 |---|---|---|
-| CI (`ci.yml`) | Pushes to `main`, pull requests, and calls from the release workflow | The `check` job runs `fmt:check`, `lint`, `typecheck` and `bun test`. The `docker` job builds the release image, starts it and probes `/login`. It also builds the base template for `linux/amd64` and `linux/arm64` and runs `scripts/check-box-image.sh` on each. |
+| CI (`ci.yml`) | Pushes to `main`, pull requests, and calls from the release workflow | The `check` job installs Chromium with Playwright, then runs `fmt:check`, `lint`, `typecheck` and `bun test`. The `docker` job builds the release image, starts it and probes `/login`. It also builds the base template for `linux/amd64` and `linux/arm64` and runs `scripts/check-box-image.sh` on each. |
 | Integration (`integration.yml`) | Pushes to `main`, pull requests, and manual runs | Runs `bun run test:docker` on the runner's Docker engine. |
 | Project homepage (`pages.yml`) | Changes to the homepage files, on pushes to `main`, pull requests, and manual runs | Runs the browser tests. On `main` only, deploys `dist/site` to GitHub Pages. |
 | Release (`release.yml`) | Tags that match `v*.*.*` | Runs the CI checks, checks that the tag matches `package.json`, pushes the multi-architecture image to `ghcr.io/arnochenfx/minibox`, and creates a GitHub release from the matching CHANGELOG section. |
@@ -105,6 +105,8 @@ bun run test:site
 ```
 
 To use an installed Chromium instead, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, for example `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun run test:site`. Playwright starts and stops its own preview server.
+
+`bun test` runs the preview isolation test, `tests/preview-browser.test.ts`, with the same browser. It uses `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when that is set, and Playwright's own Chromium otherwise. Without either, the test is skipped, except in CI, where a missing browser fails the run.
 
 ### Deployment
 
