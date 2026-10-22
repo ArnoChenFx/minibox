@@ -30,6 +30,7 @@ import {
 } from "../lib/validation";
 import type { BoxEnv, BoxMount } from "../specs/types";
 import { STARTUP_COMMAND_MAX_BYTES, startupCommandProblem, startupProblemMessage } from "../startup/command";
+import { isTargetSecretName } from "../targets/types";
 
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
@@ -541,6 +542,7 @@ function checkEnv(value: unknown): Checked<BoxEnv[] | undefined> {
       next.value = entry.value;
     } else {
       if (typeof entry.secretRef !== "string" || !IDENT_RE.test(entry.secretRef)) return invalid();
+      if (isTargetSecretName(entry.secretRef)) return reject(msg("secret_name_reserved"), "env");
       next.secretRef = entry.secretRef;
     }
     names.add(entry.name);
@@ -583,6 +585,7 @@ const SECRET_NAME_META: Meta = {
 
 function checkSecretName(value: unknown): Checked<string> {
   if (typeof value !== "string" || !IDENT_RE.test(value)) return reject(msg("secret_name_invalid"), "name");
+  if (isTargetSecretName(value)) return reject(msg("secret_name_reserved"), "name");
   return accept(value);
 }
 
@@ -752,6 +755,7 @@ function checkRepo(value: unknown): Checked<RepoInput | undefined> {
     if (typeof entry.secretRef !== "string" || !IDENT_RE.test(entry.secretRef)) {
       return reject(msg("secret_name_invalid"), "repo");
     }
+    if (isTargetSecretName(entry.secretRef)) return reject(msg("secret_name_reserved"), "repo");
     repo.secretRef = entry.secretRef;
   }
   return accept(repo);
