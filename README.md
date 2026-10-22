@@ -31,7 +31,7 @@ MiniBox is built for one trusted user. It has no user accounts, so anyone with t
 
 ## Key capabilities
 
-- **Boxes.** Create, start, stop, restart and delete boxes, and change their CPU and memory limits. Commands run as the non-root `dev` user by default. Idle boxes can sleep and wake on demand.
+- **Boxes.** Create, start, stop, restart and delete boxes, and change their CPU and memory limits. Commands run as the non-root `dev` user by default. Idle boxes can sleep and wake on demand. A box can also run a startup command each time it starts.
 - **Storage.** Keep `/workspace` and `/home/dev` across rebuilds. Use Docker volumes, NFS exports or host paths as storage pools.
 - **Templates.** Start new boxes from the bundled base template (Debian 12, Node.js 26, Python 3, git and tmux) or from a template you save from a box.
 - **Checkpoints.** Copy a box's data into a restic repository, then fork a new box from it or roll the box back. Export a checkpoint as a passphrase-sealed package, import it on this or another instance, and schedule checkpoints.

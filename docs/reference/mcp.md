@@ -60,6 +60,10 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `write_file` | `PUT /api/volumes/{id}/files/content` |
 | `list_files` | `GET /api/volumes/{id}/files` |
 | `copy_files` | `POST /api/volumes/{id}/files/copy` |
+| `get_startup_command` | `GET /api/boxes/{id}/startup-command` |
+| `set_startup_command` | `PUT /api/boxes/{id}/startup-command` |
+| `delete_startup_command` | `DELETE /api/boxes/{id}/startup-command` |
+| `run_startup_command` | `POST /api/boxes/{id}/startup-command/run` |
 
 ### meta
 
@@ -164,3 +168,9 @@ A session that a person has taken over in the console refuses `session_send` wit
 To give a box a host secret, pass `env` with `{ "name", "secretRef" }` entries to `create_box`. The call takes the secret's name, never its value. The token needs the `secret:use` scope, and the secret must exist.
 
 Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audit log keeps commands and argv, but never `env` values.
+
+## Startup command
+
+`create_box` takes an optional `startupCommand`, which the box runs at every start. The four startup tools read and change a box's startup command. `get_startup_command` needs the `secret:use` scope. `set_startup_command`, `delete_startup_command` and `run_startup_command` need `exec` and `secret:use`, because the command runs as code in the box. Each tool returns the command's status and the newest lines of its output only to a caller that may read the command.
+
+`set_startup_command` takes `command` and an optional `applyNow`, which runs the command at once on a running box. `set_startup_command` and `delete_startup_command` take `expectedRevision`, the box's current revision. The audit log records that the command changed, never its text. See [Startup command](../user-guide/boxes.md#startup-command).

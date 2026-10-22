@@ -43,6 +43,46 @@ Lists the boxes. The output has five columns: `NAME`, `STATE`, `RUNNING`, `IMAGE
 minibox box ls
 ```
 
+### `minibox box create <name> [options]`
+
+Creates a box and starts it, then prints its name. With `--json`, it prints the response instead.
+
+| Option | Meaning |
+|---|---|
+| `--template REF` | The template to start from. Default: the base template. |
+| `--cpus N` | CPU cores for the box. |
+| `--memory MB` | Memory for the box, in MB. |
+| `--startup-command TEXT` | A command that runs at every start of the box. See [Startup command](../user-guide/boxes.md#startup-command). |
+| `--startup-command-stdin` | Reads the startup command from standard input. Use it for a command that holds a secret, so the text stays out of the shell history. |
+| `--json` | Prints the response as JSON. |
+
+`--startup-command` and `--startup-command-stdin` cannot be used together.
+
+```bash
+minibox box create my-box --cpus 2 --memory 4096 --startup-command "python3 -m http.server 8000"
+```
+
+### `minibox box startup-command <subcommand> <box> [options]`
+
+Reads, sets, removes or runs a box's startup command. The subcommands are:
+
+| Subcommand | Meaning |
+|---|---|
+| `get` | Prints the command on standard output. Its status and the newest lines of output go to standard error. |
+| `set` | Sets the command, which runs at the box's next start. Give the text with `--command TEXT`, or with `--stdin`. Give exactly one. |
+| `set --apply` | Also runs the new command now, when the box is running. |
+| `rm` | Removes the command. A run already going keeps going until the box stops. |
+| `run` | Runs the command again now. The box must be running, and it must have a command. |
+
+`--json` prints the response as JSON. Reading the command needs the `secret:use` scope on the token, and changing or running it needs `exec` as well.
+
+```bash
+minibox box startup-command set my-box --command "python3 -m http.server 9000" --apply
+minibox box startup-command get my-box
+minibox box startup-command run my-box
+minibox box startup-command rm my-box
+```
+
 ### `minibox exec <box> [options] -- <argv...>`
 
 Runs a command in a box. Options must come before `--`. The words after `--` form the command. The command runs without a shell, so use `sh -c "..."` for shell syntax.
