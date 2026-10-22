@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ruleOf } from "../checkpoints/schedule";
+import { DEFAULT_TIMEZONE, ruleOf } from "../checkpoints/schedule";
 import { LOCAL_HOST_ID } from "../host/registry";
 import { badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
@@ -162,7 +162,7 @@ export const checkpointScheduleSet = defineOperation({
       boxId: box?.boxId ?? null,
       everyHours: input.everyHours ?? null,
       at: input.at ?? null,
-      timezone: input.at ? (input.timezone ?? null) : null,
+      timezone: input.at ? (input.timezone ?? DEFAULT_TIMEZONE) : null,
     }),
   },
   run: async ({ host, principal }, input, box) => {

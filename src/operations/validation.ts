@@ -292,7 +292,7 @@ export const scheduleTimezone = () =>
     type: "string",
     maxLength: 64,
     description:
-      "IANA time zone of the daily time, such as Asia/Shanghai. Defaults to UTC. Ignored for an every-hours schedule.",
+      "IANA time zone of the daily time, such as Asia/Shanghai. Defaults to UTC. An every-hours schedule has no zone, so it is not stored for one.",
   }).optional();
 
 export const cpusWithDefault = (defaultValue: number) =>
