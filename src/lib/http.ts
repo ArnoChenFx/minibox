@@ -71,10 +71,10 @@ export function errorResponse(e: unknown): Response {
 }
 
 /**
- * The largest JSON body the API reads. The biggest legitimate one is an archive upload of 4 MiB, base64-encoded. The
- * server accepts larger bodies only for package uploads.
+ * The largest JSON body the API reads. Archive uploads travel as base64 inside JSON, so this keeps the ceiling every
+ * request had before the server's body limit grew for packages. Only package uploads may be larger.
  */
-export const JSON_BODY_MAX_BYTES = 8 * 1024 * 1024;
+export const JSON_BODY_MAX_BYTES = 128 * 1024 * 1024;
 
 /** Reads a request body as UTF-8 text, refusing one longer than `limit` bytes before it is held in memory. */
 export async function readBodyText(req: Request, limit: number): Promise<string> {

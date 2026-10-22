@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { json, withSecurityHeaders } from "../src/lib/http";
+import { JSON_BODY_MAX_BYTES, json, readJson, withSecurityHeaders } from "../src/lib/http";
 
 function parseCsp(policy: string): Record<string, string[]> {
   const out: Record<string, string[]> = {};
@@ -49,5 +49,25 @@ describe("security headers", () => {
   test("headers set by a handler are kept", () => {
     const res = withSecurityHeaders(json({ ok: true }, 200, { "set-cookie": "a=b" }), false);
     expect(res.headers.get("set-cookie")).toBe("a=b");
+  });
+});
+
+describe("JSON bodies", () => {
+  test("a body of 9 MiB is read, since archive uploads travel as base64 inside JSON", async () => {
+    const content = "A".repeat(9 * 1024 * 1024);
+    const req = new Request("http://minibox.test/", { method: "POST", body: JSON.stringify({ content }) });
+    expect(await readJson(req)).toEqual({ content });
+  });
+
+  test("a body over 128 MiB is refused with payload_too_large, though the server accepts packages much larger", async () => {
+    const req = new Request("http://minibox.test/", {
+      method: "POST",
+      body: new Uint8Array(JSON_BODY_MAX_BYTES + 1),
+    });
+    const error = await readJson(req).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toMatchObject({ status: 413, code: "payload_too_large" });
   });
 });
