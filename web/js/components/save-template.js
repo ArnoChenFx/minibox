@@ -87,7 +87,7 @@ export function openSaveTemplate(box) {
     toast(t("tp.saved"), {
       message: value,
       link: { href: `#/templates/${enc(value)}`, text: t("tp.openTemplate") },
-      timeout: 8000,
+      timeout: 15000,
     });
   };
   ok.addEventListener("click", () => void submit());
