@@ -11,6 +11,11 @@ import type { RecordNote } from "./terminals";
 
 /** The first pass runs this soon after start, so a volume over a limit at boot is found without waiting a full interval. */
 const FIRST_PASS_MS = 30_000;
+/**
+ * Samples one host runs at once. Each is a helper container walking a tree, so a host with many volumes takes them a few
+ * at a time instead of starting a helper for every volume on the same tick. A late sample frees its slot at its deadline.
+ */
+export const SAMPLES_PER_HOST = 4;
 
 export interface VolumeUsageOptions {
   readonly hosts: HostRegistry;
@@ -41,6 +46,8 @@ export class VolumeUsageWatcher {
   private readonly levels = new Map<string, UsageLevel>();
   /** Hosts whose disk is below the free-space floor, so a low disk is announced once and not on every pass. */
   private readonly diskLow = new Set<string>();
+  /** Per host, the samples running now and the ones waiting for a slot. */
+  private readonly slots = new Map<string, { active: number; waiting: Array<() => void> }>();
 
   constructor(private readonly options: VolumeUsageOptions) {
     this.everyMs = options.everyMs ?? options.cfg.volumeUsageIntervalSec * 1000;
@@ -88,6 +95,7 @@ export class VolumeUsageWatcher {
   private async sampleVolume(host: HostCtx, volume: VolumeRecord): Promise<void> {
     if (this.sampling.has(volume.id)) return;
     this.sampling.add(volume.id);
+    const release = await this.slot(host.host.id);
     try {
       const sample = await sampleWithin(host, volume);
       const next = recordSample(host, volume.id, sample);
@@ -96,8 +104,26 @@ export class VolumeUsageWatcher {
     } catch (e) {
       log.error("volume.usage_failed", { host: host.host.id, id: volume.id, error: String(e) });
     } finally {
+      release();
       this.sampling.delete(volume.id);
     }
+  }
+
+  /** Waits for one of the host's sample slots, and returns the function that gives it back. */
+  private async slot(hostId: string): Promise<() => void> {
+    let slots = this.slots.get(hostId);
+    if (!slots) {
+      slots = { active: 0, waiting: [] };
+      this.slots.set(hostId, slots);
+    }
+    const held = slots;
+    if (held.active >= SAMPLES_PER_HOST) await new Promise<void>((resolve) => held.waiting.push(resolve));
+    else held.active += 1;
+    return () => {
+      const next = held.waiting.shift();
+      if (next) next();
+      else held.active -= 1;
+    };
   }
 
   private async judge(host: HostCtx, volume: VolumeRecord): Promise<void> {

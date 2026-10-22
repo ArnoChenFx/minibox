@@ -11,6 +11,7 @@ import type { StoredChannel } from "../src/notify/types";
 import { type HelperResult, type HelperSpec, RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { takeCheckpoint } from "../src/services/checkpoints";
+import { SAMPLES_PER_HOST } from "../src/services/volume-usage";
 import {
   attachVolume,
   createVolume,
@@ -401,6 +402,26 @@ describe("a frozen mount does not hold back the other volumes", () => {
 
       frozen.release();
       await first;
+    } finally {
+      frozen.release();
+    }
+  });
+
+  test("a host samples a few volumes at a time, and the rest wait for a slot", async () => {
+    const all = [];
+    for (let i = 0; i < SAMPLES_PER_HOST + 2; i++) {
+      all.push(await createVolume(host, { name: `v${i}`, pool: "local", role: null, createdBy: "owner" }));
+    }
+    const frozen = runtime.hold("runHelper", (args) => (args[0] as HelperSpec).cmd[0] === "du");
+    try {
+      const first = pass();
+      await untilDone(() => runsOf("du -sb").length === SAMPLES_PER_HOST);
+      for (let i = 0; i < 20; i++) await turn();
+      expect(runsOf("du -sb")).toHaveLength(SAMPLES_PER_HOST);
+
+      frozen.release();
+      await first;
+      expect(runsOf("du -sb")).toHaveLength(all.length);
     } finally {
       frozen.release();
     }

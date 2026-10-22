@@ -63,6 +63,7 @@ MiniBox measures every volume's usage every 10 minutes by default. You can set a
 - A volume on the local pool or on a path pool is measured with `du` over its own folder tree. The figure is that volume's size.
 - A volume on an NFS pool is measured with `df` on the pool's root. The figure is the usage of the whole share, so every volume on that pool shows the same figure, and the console marks it as a share figure. MiniBox never walks the folders of a share.
 - Each measurement has its own deadline: 2 minutes for a volume tree and 30 seconds for an NFS share. A mount that does not answer in time is recorded as a failed sample, with the reason, and the last good figure stays on the volume. The other volumes are still measured on their own schedule.
+- Each host measures at most 4 volumes at a time, so a host with many volumes does not start a helper for each of them at once.
 - The trend keeps the last 24 samples. A restart clears the trend, and the last figure stays.
 - The interval is set with `VOLUME_USAGE_INTERVAL_SEC`, from 60 to 86400 seconds. See [Configuration](../reference/configuration.md#volumes-and-storage).
 
@@ -89,7 +90,7 @@ Click **Limits** on a volume to set its limits. Each limit is in GB, and an empt
 MiniBox checks the free space on the disk that the engine uses. When it falls below `HOST_DISK_MIN_FREE_PERCENT`, 10% by default:
 
 - MiniBox records a `host.disk_low` event and sends a notice, once for that low spell.
-- MiniBox refuses at once, with `507` (`insufficient_storage`), a request that would create a volume or a checkpoint. That covers a new volume, the volumes of a new box or of a box made from a checkpoint, a checkpoint you take, the safety checkpoint that a rollback takes first, a rollback, and a move to this host. A scheduled checkpoint is skipped instead, and shows as skipped because the disk is low.
+- MiniBox refuses at once, with `507` (`insufficient_storage`), a request that would create a volume or a checkpoint. That covers a new volume, the volumes of a new box or of a box made from a checkpoint, a checkpoint you take, the safety checkpoint that a rollback takes first, a rollback, a checkpoint import, and a move to this host. A scheduled checkpoint is skipped instead, and shows as skipped because the disk is low.
 
 The refusal ends when free space is back above the floor. Set `HOST_DISK_MIN_FREE_PERCENT=0` to turn the floor off. If MiniBox cannot read the disk, it refuses nothing.
 
