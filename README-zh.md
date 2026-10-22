@@ -280,6 +280,8 @@ docker run -d --name minibox --restart unless-stopped \
 
 创建 Box 时可勾选 Agent CLI 与其他工具。列表按 AI 编程助手、语言与运行时、终端与开发工具、网络四组展示，上方的搜索框可按名称、说明或分组过滤。Box 详情的「工具」页使用同样的分组与搜索，安装 / 升级 / 卸载也在那里完成。目录包括 Claude Code、Codex、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust、Zig 与 Tailscale，每一项都从其官方来源安装（见仓库 `catalog/*.json`），`DATA_DIR/tools.d/*.json` 可追加或覆盖条目。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成，从不以 root 运行。镜像或家目录里已有的工具显示为已安装并附版本，MiniBox 不会重复安装；升级与卸载只作用于 MiniBox 自己装在 tools 卷上的工具。Tailscale 需要 root，MiniBox 只列出它，拒绝安装或卸载。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
 
+**自定义工具**只由所有者管理。在 Box 的「工具」页点**自定义工具**可新增条目，**编辑**与**删除**可修改或移除自定义条目。每个条目是一个文件 `DATA_DIR/tools.d/<id>.json`，格式与 `catalog/*.json` 相同，加载器把它与内置目录合并。表单在写入前先用加载器自己的规则校验，因此无效的条目不会被保存。若有人手动把 `tools.d` 中的文件改成加载器无法读取的内容，所有 Box 的目录都会加载失败，错误信息会给出该文件的路径，直到修好或删除该文件为止。`DELETE /api/tools/custom/<id>` 可以删除名为 `<id>.json` 的文件，即使它的 JSON 已损坏。与内置工具同名的 id 需要勾选**替换内置条目**（`overrideBuiltin`），删除该条目后内置条目恢复。删除只移除文件：已装在共享 tools 卷上的工具保持安装。API：`GET /api/tools/custom`、`PUT /api/tools/custom/:id` 与 `DELETE /api/tools/custom/:id`。CLI：`minibox tool custom list`、`minibox tool custom put <id> (--file FILE | --stdin) [--override-builtin]` 与 `minibox tool custom delete <id>`。MCP 工具集 `tools` 提供 `list_custom_tools`、`put_custom_tool` 与 `delete_custom_tool`。以上操作都只限所有者，Agent 令牌（包括 admin 预设的令牌）一律拒绝。`tools.d` 中无法解析的文件会让所有 Box 的工具目录失效，直到有人在服务器上修复或删除它。
+
 ## 空闲休眠
 
 Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。
