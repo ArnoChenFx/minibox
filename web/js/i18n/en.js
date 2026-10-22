@@ -1341,7 +1341,7 @@ export default {
   "about.issues": "Issues",
   "about.issuesMeta": "Report a bug or request a feature",
   "about.license": "License",
-  "about.licenseMeta": "MIT License",
+  "about.licenseMeta": "Apache License 2.0",
   "nav.volumes": "Volumes",
   "vol.subtitle":
     "Storage pools and volumes. Cache stays on the local pool unless you override it. A hard NFS mount that cannot be reached is reported here instead of hanging a box.",

@@ -1261,7 +1261,7 @@ export default {
   "about.issues": "问题反馈",
   "about.issuesMeta": "报告缺陷或提出功能需求",
   "about.license": "许可证",
-  "about.licenseMeta": "MIT 许可证",
+  "about.licenseMeta": "Apache 2.0 许可证",
   "nav.volumes": "卷",
   "vol.subtitle":
     "存储池与卷。除非单独指定，缓存落在本地池。无法连接的 hard NFS 会在这里显示为不可达，而不是把 Box 挂住。",
