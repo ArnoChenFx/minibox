@@ -178,6 +178,38 @@ export default {
   "err.template_not_found": "找不到该模板。",
   "err.template_name_taken": "名为「{name}」的模板已存在。",
   "err.template_image_missing": "模板镜像 {image} 不存在，请先在「模板」页构建或选择其他模板。",
+  "err.template_source_required": "请选择模板的来源：Dockerfile、Git 代码仓库、构建上下文 URL 或 devcontainer.json。",
+  "err.template_not_declared":
+    "模板 {name} 不是由声明的来源构建的，因此无法重建。请改用 Dockerfile、代码仓库、构建上下文或 devcontainer.json 构建模板。",
+  "err.dockerfile_invalid": "Dockerfile 不能超过 64 KB，不能包含 NUL 字节，且必须包含 FROM 指令。",
+  "err.dockerfile_not_found": "构建上下文中没有位于 {path} 的 Dockerfile。",
+  "err.context_url_invalid": "构建上下文 URL 必须以 http:// 或 https:// 开头，不能包含空格，也不能包含用户名或密码。",
+  "err.context_fetch_failed": "无法下载构建上下文：{detail}",
+  "err.context_invalid": "无法使用该构建上下文：{detail}",
+  "err.image_pull_failed": "无法拉取镜像 {image}：{detail}",
+  "err.image_not_found": "镜像仓库中找不到镜像 {image}，请检查名称和标签后重试。",
+  "err.repo_url_invalid":
+    "代码仓库地址必须是 https://主机/路径、ssh://主机/路径 或 用户@主机:路径 的形式，且不能包含空格。",
+  "err.repo_url_credentials": "代码仓库地址不能包含密码或令牌。请把凭据保存为密钥，并改为发送 secretRef。",
+  "err.repo_branch_invalid":
+    "分支名以字母或数字开头，只能包含字母、数字、点、下划线、斜杠和连字符，且最多 200 个字符。",
+  "err.repo_path_invalid": "代码仓库内的路径必须是相对路径，不能包含 .. 部分或控制字符，且最多 512 个字符。",
+  "err.repo_secret_missing": "尚未设置密钥 {name}。请在「设置」的「密钥」中设置后重试。",
+  "err.repo_needs_workspace": "克隆需要 Box 中一个空的、可写的 /workspace。请保留默认挂载，或挂载一个可写的工作区卷。",
+  "err.clone_failed": "无法克隆代码仓库：{detail}",
+  "err.devcontainer_missing": "代码仓库中没有位于 {path} 的 devcontainer.json。",
+  "err.devcontainer_invalid": "devcontainer.json 不是有效的 JSON（允许注释）：{detail}",
+  "err.devcontainer_unsupported": "devcontainer.json 使用了 MiniBox 不支持的配置：{keys}。",
+  "err.devcontainer_unsupported_hint":
+    "MiniBox 只读取 image、build.dockerfile、build.context、build.args 和 containerEnv。请把其他设置移入 Dockerfile 或删除后重试。",
+  "err.devcontainer_post_create":
+    "MiniBox 暂不执行 postCreateCommand 或其他生命周期命令。请把安装步骤写成 Dockerfile 中的 RUN 指令，删除该配置项后重试。",
+  "err.devcontainer_source": "devcontainer.json 必须设置 image 或 build.dockerfile，且只能设置其中一个。",
+  "err.devcontainer_build_invalid":
+    "build.dockerfile 必须是 Dockerfile 的路径，build.context 必须是构建上下文的路径，二者都相对于 devcontainer.json。",
+  "err.devcontainer_path_invalid":
+    "build.dockerfile 和 build.context 必须位于代码仓库之内，且 Dockerfile 必须位于构建上下文之内。",
+  "err.devcontainer_value_invalid": "{name} 必须是一行字符串，且不能包含 ${…} 形式的变量引用，MiniBox 不会展开变量。",
   "err.box_exists": "名为「{name}」的 Box 已存在。",
   "err.box_id_taken": "Box ID {id} 已被占用。",
   "err.checkpoint_not_found": "找不到检查点 {id}。",

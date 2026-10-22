@@ -5,13 +5,29 @@ import { labelChange } from "../labels";
 import { conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
+import { NAME_RE } from "../lib/validation";
 import { isRuntimeError } from "../runtime";
 import { getBox } from "./boxes";
 import { type Progress, underBox } from "./checkpoints";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 import { createSnapshot, deleteSnapshot } from "./snapshots";
+import { type BuildKind, buildKindOf, removeRecipe } from "./template-builds";
 
-export const listTemplates = (host: HostCtx): Promise<ImageItem[]> => listImagesByLabel(host, host.keys.template);
+export type TemplateItem = ImageItem & { buildKind?: BuildKind };
+
+/**
+ * The templates on this host. `buildKind` is set on a template built from a declared source, so a client can offer a
+ * rebuild, and is left out for one saved from a box or made by other tools.
+ */
+export async function listTemplates(host: HostCtx): Promise<TemplateItem[]> {
+  const images = await listImagesByLabel(host, host.keys.template);
+  const prefix = `${host.prefix}-template:`;
+  return images.map((image) => {
+    const tag = image.tags.find((t) => t.startsWith(prefix));
+    const buildKind = tag === undefined ? null : buildKindOf(host, tag.slice(prefix.length), image.id);
+    return buildKind === null ? image : { ...image, buildKind };
+  });
+}
 
 export const BASE_DESCRIPTION = "Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user";
 
@@ -146,6 +162,9 @@ export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> 
     log.warn("template.base_deleted", { ref });
   }
   await removeLabeledImage(host, ref, host.keys.template, "template_not_found");
+  const prefix = `${host.prefix}-template:`;
+  const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : "";
+  if (NAME_RE.test(name)) removeRecipe(host, name);
 }
 
 /**

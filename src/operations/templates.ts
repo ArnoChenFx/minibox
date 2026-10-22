@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
+import { createDeclaredTemplate, declaredTemplate, rebuildDeclaredTemplate } from "../services/template-builds";
 import {
   assertTemplateNameAvailable,
   buildBaseTemplate,
@@ -13,8 +14,8 @@ import {
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
 import { hostOfBox, localOnly } from "./routing";
-import { BuildResultSchema, ImageSchema, OkSchema, PromotedTemplateSchema } from "./schemas";
-import { boxId, snapshotRef, templateDescription, templateName, templateRef } from "./validation";
+import { BuildResultSchema, OkSchema, PromotedTemplateSchema, TemplateSchema } from "./schemas";
+import { boxId, snapshotRef, templateDescription, templateName, templateRef, templateSource } from "./validation";
 
 export const templateList = defineOperation({
   name: "template.list",
@@ -24,7 +25,7 @@ export const templateList = defineOperation({
   scope: "template:read",
   async: false,
   input: z.object({}),
-  output: z.object({ templates: z.array(ImageSchema), baseTemplate: z.string() }),
+  output: z.object({ templates: z.array(TemplateSchema), baseTemplate: z.string() }),
   rest: [{ method: "GET", path: "/api/templates" }],
   cli: "template list",
   run: async ({ host, principal }) => {
@@ -87,6 +88,77 @@ export const templateSave = defineOperation({
   }),
 });
 
+/** The audit record names where a template comes from, and gives the size of a pasted Dockerfile, never its text. */
+function sourceDetail(source: { kind: string; text?: string }): Record<string, unknown> {
+  const { text, ...rest } = source;
+  return text === undefined ? rest : { ...rest, bytes: text.length };
+}
+
+export const templateCreate = defineOperation({
+  name: "template.create",
+  tag: "templates",
+  summary: "Build a template from a Dockerfile, a repository, a build context or a devcontainer.json",
+  kind: "write",
+  scope: "template:build",
+  async: true,
+  conflicts: true,
+  input: z.object({ name: templateName(), description: templateDescription(), source: templateSource() }),
+  output: z.object({ template: PromotedTemplateSchema }),
+  rest: [{ method: "POST", path: "/api/templates", body: true, status: 202 }],
+  cli: "template create",
+  mcp: {
+    toolset: "tools",
+    name: "create_template",
+    description:
+      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv is kept, and any other devcontainer.json setting is refused. Returns a task id; the task log shows the build.",
+  },
+  precondition: async ({ host }) => localOnly(host, "templates"),
+  beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
+  exclusive: ({ host }, input) => `template.name:${host.host.id}:${input.name}`,
+  subject: (input) => input.name,
+  activity: { action: () => "template.create", target: (input) => input.name },
+  audit: {
+    target: (input) => ({ kind: "template", name: input.name }),
+    detail: (input) => ({ name: input.name, source: sourceDetail(input.source) }),
+  },
+  run: async ({ host, principal, task }, input) => ({
+    template: await createDeclaredTemplate(
+      host,
+      { name: input.name, description: input.description, source: input.source, createdBy: principal.id },
+      { log: (text) => task?.log(text), signal: task?.signal },
+    ),
+  }),
+});
+
+export const templateRebuild = defineOperation({
+  name: "template.rebuild",
+  tag: "templates",
+  summary: "Rebuild a template from the source it was built from",
+  kind: "write",
+  scope: "template:build",
+  async: true,
+  conflicts: true,
+  input: z.object({ ref: templateRef() }),
+  output: z.object({ template: PromotedTemplateSchema }),
+  rest: [{ method: "POST", path: "/api/templates/:ref/rebuild", status: 202 }],
+  cli: "template rebuild",
+  mcp: {
+    toolset: "tools",
+    name: "rebuild_template",
+    description:
+      "Rebuild a template from the source it was built from, so a branch or an archive gives its newest content. The tag moves only when the build succeeds, and a failed rebuild keeps the image the template had. Returns a task id.",
+  },
+  precondition: async ({ host }) => localOnly(host, "templates"),
+  resolve: ({ host }, input) => declaredTemplate(host, input.ref),
+  exclusive: ({ host }, _input, declared) => `template.name:${host.host.id}:${declared.name}`,
+  subject: (_input, declared) => declared.name,
+  activity: { action: () => "template.rebuild", target: (_input, declared) => declared.name },
+  audit: { target: (_input, declared) => declared && { kind: "template", name: declared.name } },
+  run: async ({ host, task }, _input, declared) => ({
+    template: await rebuildDeclaredTemplate(host, declared, { log: (text) => task?.log(text), signal: task?.signal }),
+  }),
+});
+
 export const templateBuild = defineOperation({
   name: "template.build",
   tag: "templates",
@@ -129,4 +201,12 @@ export const templateDelete = defineOperation({
   },
 });
 
-export const templateOperations = [templateList, templatePromote, templateSave, templateBuild, templateDelete];
+export const templateOperations = [
+  templateList,
+  templatePromote,
+  templateSave,
+  templateCreate,
+  templateRebuild,
+  templateBuild,
+  templateDelete,
+];

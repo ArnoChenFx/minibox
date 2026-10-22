@@ -196,6 +196,45 @@ export default {
   "err.template_name_taken": "A template named “{name}” already exists.",
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
+  "err.template_source_required":
+    "Choose where the template comes from: a Dockerfile, a Git repository, a build context URL or a devcontainer.json.",
+  "err.template_not_declared":
+    "Template {name} was not built from a declared source, so it cannot be rebuilt. Build a template from a Dockerfile, a repository, a build context or a devcontainer.json instead.",
+  "err.dockerfile_invalid":
+    "The Dockerfile must be at most 64 KB, contain no NUL bytes, and include a FROM instruction.",
+  "err.dockerfile_not_found": "There is no Dockerfile at {path} in the build context.",
+  "err.context_url_invalid":
+    "A build context URL must start with http:// or https://, contain no spaces, and carry no user name or password.",
+  "err.context_fetch_failed": "Could not download the build context: {detail}",
+  "err.context_invalid": "The build context cannot be used: {detail}",
+  "err.image_pull_failed": "Could not pull image {image}: {detail}",
+  "err.image_not_found": "Image {image} was not found in its registry. Check the name and tag, then try again.",
+  "err.repo_url_invalid":
+    "The repository URL must be https://host/path, ssh://host/path or user@host:path, and contain no spaces.",
+  "err.repo_url_credentials":
+    "The repository URL must not contain a password or token. Store the credential as a secret and send secretRef instead.",
+  "err.repo_branch_invalid":
+    "A branch name starts with a letter or digit, uses only letters, digits, dots, underscores, slashes and hyphens, and is at most 200 characters.",
+  "err.repo_path_invalid":
+    "A path inside the repository must be relative, have no .. part and no control characters, and be at most 512 characters.",
+  "err.repo_secret_missing": "Secret {name} is not set. Set it under Settings, Secrets, then try again.",
+  "err.repo_needs_workspace":
+    "A clone needs an empty, writable /workspace in the box. Leave the default mounts in place, or mount a writable workspace volume.",
+  "err.clone_failed": "Could not clone the repository: {detail}",
+  "err.devcontainer_missing": "There is no devcontainer.json at {path} in the repository.",
+  "err.devcontainer_invalid": "The devcontainer.json file is not valid JSON with comments: {detail}",
+  "err.devcontainer_unsupported": "devcontainer.json uses {keys}, which MiniBox does not support.",
+  "err.devcontainer_unsupported_hint":
+    "MiniBox reads image, build.dockerfile, build.context, build.args and containerEnv. Move other settings into the Dockerfile, remove them, then try again.",
+  "err.devcontainer_post_create":
+    "MiniBox does not run postCreateCommand or other lifecycle commands yet. Add the install steps to the Dockerfile as RUN instructions, remove the key, then try again.",
+  "err.devcontainer_source": "devcontainer.json must set image or build.dockerfile, and not both.",
+  "err.devcontainer_build_invalid":
+    "build.dockerfile must be a path to the Dockerfile, and build.context a path to the build context, both relative to devcontainer.json.",
+  "err.devcontainer_path_invalid":
+    "build.dockerfile and build.context must stay inside the repository, and the Dockerfile must be inside the build context.",
+  "err.devcontainer_value_invalid":
+    "{name} must be a string on one line without a ${…} variable reference, because MiniBox does not expand variables.",
   "err.box_exists": "A box named “{name}” already exists.",
   "err.box_id_taken": "Box id {id} is already in use.",
   "err.checkpoint_not_found": "Checkpoint {id} was not found.",
