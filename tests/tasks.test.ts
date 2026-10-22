@@ -359,6 +359,25 @@ describe("tasks", () => {
     }
   });
 
+  test("a task names what it acted on: the snapshot's name, and the base template", async () => {
+    const keys = app.hosts.get().keys;
+    runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
+    const alpha = (await app.operations.run("box.create", ctx, { name: "alpha", cpus: 1, memoryMb: 256 })) as {
+      box: { id: string };
+    };
+    const snapshot = (await app.operations.run("snapshot.create", ctx, {
+      id: alpha.box.id,
+      name: "before-upgrade",
+    })) as { taskId: string };
+    const build = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
+    await app.tasks.drain();
+
+    const named = (await app.operations.run("task.get", ctx, { id: snapshot.taskId })) as { subject?: string };
+    const base = (await app.operations.run("task.get", ctx, { id: build.taskId })) as { subject?: string };
+    expect(named.subject).toBe("before-upgrade");
+    expect(base.subject).toBe("base");
+  });
+
   test("unknown, malformed and finished tasks answer 404, 400 and 409", async () => {
     const server = serve(app);
     try {

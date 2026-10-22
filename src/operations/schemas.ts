@@ -214,6 +214,7 @@ export const TaskSchema = z.object({
   op: z.string(),
   status: TaskStatusSchema,
   summary: z.string(),
+  subject: z.string().optional(),
   hostId: z.string(),
   target: TaskTargetSchema.optional(),
   createdAt: z.string(),
