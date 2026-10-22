@@ -20424,6 +20424,16 @@
               }
             }
           },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected server error.",
             "content": {

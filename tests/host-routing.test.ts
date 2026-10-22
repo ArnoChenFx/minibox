@@ -205,3 +205,29 @@ describe("a host that still holds boxes cannot be removed", () => {
     expect((await api(`/api/boxes/${box.boxId}`)).status).toBe(200);
   });
 });
+
+describe("features with no remote form yet answer 501 on a remote host", () => {
+  test("a snapshot of a box on another host is refused before the engine is asked", async () => {
+    const box = await boxOn("edge", "alpha", { mounts: [] });
+    const commits = edge.callsTo("commitContainer").length;
+    const res = await post(`/api/boxes/${box.boxId}/snapshots`, {});
+    expect(res.status).toBe(501);
+    expect(await errorOf(res)).toMatchObject({ code: "unsupported", key: "host_unsupported" });
+    expect(edge.callsTo("commitContainer")).toHaveLength(commits);
+  });
+
+  test("saving a box on another host as a template is refused, not looked up on the local engine", async () => {
+    const box = await boxOn("edge", "alpha", { mounts: [] });
+    const localCalls = local.calls.length;
+    const res = await post(`/api/boxes/${box.boxId}/template`, { name: "edge-tpl" });
+    expect(res.status).toBe(501);
+    expect(await errorOf(res)).toMatchObject({ code: "unsupported", key: "host_unsupported" });
+    expect(local.calls.length).toBe(localCalls);
+  });
+
+  test("a box on the local host can still be saved as a template while another host exists", async () => {
+    const box = await boxOn("local", "beta", { mounts: [] });
+    const res = await post(`/api/boxes/${box.boxId}/template`, { name: "local-tpl" });
+    expect(res.status).toBe(202);
+  });
+});

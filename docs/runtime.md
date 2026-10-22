@@ -100,7 +100,7 @@
 - **读取超时**：远端宿主机的每次引擎读取最多等待 `ENGINE_READ_TIMEOUT_MS`（5 秒）。列表（`fromEveryHost()`、`listAllBoxes()`）并行读取所有宿主机。超时、失败或已离线的远端宿主机不阻塞其它宿主机：其箱子以 `unreachable` 状态列出，卷与检查点则从结果中略去。本机的失败仍使整个列表失败。
 - **探测**：`HostManager.refresh()` 每 30 秒（`PROBE_INTERVAL_MS`）对每台宿主机调用 `ping` 与 `info`，记录延迟、引擎版本与容量。`GET /api/hosts` 返回这些结果，离线宿主机保留条目，并给出最近一次失败的原因。
 - **管理接口**：`/api/hosts` 的列表、添加、测试与删除只允许所有者（scope `host:manage`），令牌无论持有什么 `hosts` 授权都不能使用。`POST /api/hosts/test` 不保存任何东西。添加 SSH 宿主机时，请求必须带上核对过的 `hostKeyFingerprint`（见 [design.md](design.md) 决策 77）。
-- **已知限制**：远端的端口预览（`src/preview/proxy.ts`）与快照接口返回 `501`。宿主机级的 CPU 与内存占用只统计本机，远端只显示 `docker info` 报告的核数与内存容量；箱子自己的占用仍来自各自的容器统计。模板与检查点不复制到其它宿主机，所选宿主机缺少模板镜像时，创建返回 `400`（`template_image_missing`）。`host: "auto"` 调度与跨机迁移尚未实现。
+- **已知限制**：远端的端口预览（`src/preview/proxy.ts`）、快照接口与存为模板（`template.save`）返回 `501`。宿主机级的 CPU 与内存占用只统计本机，远端只显示 `docker info` 报告的核数与内存容量；箱子自己的占用仍来自各自的容器统计。模板与检查点不复制到其它宿主机，所选宿主机缺少模板镜像时，创建返回 `400`（`template_image_missing`）。`host: "auto"` 调度与跨机迁移尚未实现。
 
 ## 盒子缓存与采样器
 
