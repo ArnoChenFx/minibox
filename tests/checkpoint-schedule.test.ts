@@ -25,6 +25,7 @@ import * as boxes from "../src/services/boxes";
 import { applyRetention } from "../src/services/checkpoint-retention";
 import { CheckpointScheduler, clearSchedule, scheduleOf, setSchedule } from "../src/services/checkpoint-schedule";
 import { newBoxId } from "../src/specs/revision";
+import { remeasureHostDisk } from "../src/volumes/disk";
 import { createTestApp, silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 import type { FakeCheckpointEngine } from "./support/fake-snapshots";
@@ -370,6 +371,25 @@ describe("checkpoint schedules over the scheduler", () => {
     expect(host.checkpoints.list()).toEqual([]);
 
     engine.reportedBytes = 0;
+    advance(HOUR);
+    await scheduler.run();
+    expect(await lastRunOf(box.boxId)).toMatchObject({ status: "ok" });
+    expect(host.checkpoints.list()).toHaveLength(1);
+  });
+
+  test("a host disk below its free-space floor skips the box as disk, and the checkpoint is taken once there is room", async () => {
+    const box = await makeBox("zeta");
+    await setSchedule(host, box.boxId, rule({ everyHours: 1 }), "owner", clock);
+    runtime.disk = { totalBytes: 100_000_000_000, freeBytes: 5_000_000_000 };
+    await remeasureHostDisk(host);
+    advance(HOUR);
+
+    await scheduler.run();
+    expect(await lastRunOf(box.boxId)).toMatchObject({ status: "skipped", reason: "disk", checkpointId: null });
+    expect(host.checkpoints.list()).toEqual([]);
+
+    runtime.disk = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
+    await remeasureHostDisk(host);
     advance(HOUR);
     await scheduler.run();
     expect(await lastRunOf(box.boxId)).toMatchObject({ status: "ok" });

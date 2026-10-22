@@ -94,9 +94,12 @@ jobs:
             ["assets/agents/codex.svg", "image/svg+xml"],
             ["assets/agents/opencode.svg", "image/svg+xml"],
             ["assets/agents/pi.svg", "image/svg+xml"],
-            ["assets/screenshots/overview-light.png", "image/png"],
-            ["assets/screenshots/boxes-light.png", "image/png"],
-            ["assets/screenshots/terminal-light.png", "image/png"],
+            ["assets/screenshots/en/overview-light.png", "image/png"],
+            ["assets/screenshots/en/boxes-light.png", "image/png"],
+            ["assets/screenshots/en/box-terminal-light.png", "image/png"],
+            ["assets/screenshots/zh-CN/overview-light.png", "image/png"],
+            ["assets/screenshots/zh-CN/boxes-light.png", "image/png"],
+            ["assets/screenshots/zh-CN/box-terminal-light.png", "image/png"],
           ];
           for (const [path, type, expected] of paths) {
             const url = new URL(path, base);

@@ -1,4 +1,5 @@
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
+import { usageCellHtml } from "../components/volume-usage.js";
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { bytes } from "../lib/format.js";
@@ -14,6 +15,7 @@ import {
   saveGroupBy,
   volumeSearchFields,
 } from "../lib/volume-list.js";
+import { limitDraft, limitsBody } from "../lib/volume-usage.js";
 
 const ROLES = [
   ["workspace", "vol.roleWorkspace"],
@@ -50,15 +52,22 @@ function volumeRow(volume) {
   const mounts = volume.mounts
     .map((mount) => `${esc(mount.boxName)}:${esc(mount.path)} (${esc(mount.mode)})`)
     .join(", ");
-  return `<tr>
+  const over =
+    volume.usage?.level === "hard" || volume.usage?.level === "soft" ? ` volume-over-${volume.usage.level}` : "";
+  const limits =
+    volume.backend === "nfs"
+      ? `<button class="btn btn-sm" disabled title="${esc(t("vol.limitsNfs"))}">${t("vol.limits")}</button>`
+      : `<button class="btn btn-sm" data-action="limits" data-id="${esc(volume.id)}">${t("vol.limits")}</button>`;
+  return `<tr class="${over.trim()}">
     <td><strong>${esc(volume.name)}</strong><div class="subtle mono">${esc(volume.id)}</div></td>
     <td>${volume.role ? esc(roleLabel(volume.role)) : "—"}</td>
     <td>${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
     <td>${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>
     <td>${mounts || "—"}</td>
-    <td class="num">${volume.bytes == null ? "—" : esc(bytes(volume.bytes))}</td>
+    <td>${usageCellHtml(volume)}</td>
     <td><div class="actions">
       <button class="btn btn-sm" data-action="measure" data-id="${esc(volume.id)}">${t("vol.measure")}</button>
+      ${limits}
       <button class="btn btn-sm" data-action="delete" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}">${t("vol.delete")}</button>
     </div></td>
   </tr>`;
@@ -83,6 +92,9 @@ const healthBadge = (status, low) => {
 function field(label, inner) {
   return `<label class="field"><span class="label">${esc(label)}</span>${inner}</label>`;
 }
+
+const limitInput = (id, value) =>
+  `<input class="input" id="${id}" type="number" min="0" step="any" inputmode="decimal" value="${esc(value)}" placeholder="${esc(t("vol.noLimit"))}" />`;
 
 /** What saving the pools would change. `t()` does not escape, so the whole sentence is escaped once here. */
 function poolPreviewHtml(preview) {
@@ -315,6 +327,38 @@ export function render(view) {
     draw();
   };
 
+  const editLimits = async (volume) => {
+    const draft = limitDraft(volume.limits);
+    const root = await formDialog(
+      t("vol.limitsTitle", { name: volume.name }),
+      `<p class="help">${esc(t("vol.limitsHelp"))}</p>
+        ${field(t("vol.softLimit"), limitInput("lim-soft", draft.soft))}
+        ${field(t("vol.hardLimit"), limitInput("lim-hard", draft.hard))}
+        ${field(
+          t("vol.limitAction"),
+          `<select class="select" id="lim-action">
+            <option value="warn" ${draft.action === "warn" ? "selected" : ""}>${esc(t("vol.actionWarn"))}</option>
+            <option value="stop" ${draft.action === "stop" ? "selected" : ""}>${esc(t("vol.actionStop"))}</option>
+          </select>`,
+        )}
+        <p class="help">${esc(t("vol.actionHelp"))}</p>`,
+    );
+    if (!root) return;
+    const parsed = limitsBody({
+      soft: root.querySelector("#lim-soft").value,
+      hard: root.querySelector("#lim-hard").value,
+      action: root.querySelector("#lim-action").value,
+    });
+    if (parsed.error) return toastError(t("vol.limitsFailed"), { message: t(parsed.error) });
+    try {
+      await api(`/api/volumes/${enc(volume.id)}/limits`, { method: "PUT", body: parsed.body });
+    } catch (e) {
+      return toastError(t("vol.limitsFailed"), e);
+    }
+    toast(t("vol.limitsSaved"));
+    await load();
+  };
+
   view.addEventListener("click", async (event) => {
     const target = event.target.closest("[data-action]");
     if (!target || !view.contains(target)) return;
@@ -431,6 +475,9 @@ export function render(view) {
         const result = await api(`/api/volumes/${enc(target.dataset.id)}/usage`, { method: "POST" });
         toast(t("vol.measure"), { message: t("vol.measured", { bytes: bytes(result.volume.bytes) }) });
         await load();
+      } else if (action === "limits") {
+        const volume = volumes?.find((item) => item.id === target.dataset.id);
+        if (volume) await editLimits(volume);
       }
     } catch (e) {
       toastError(t("vol.loadingFailed"), e);

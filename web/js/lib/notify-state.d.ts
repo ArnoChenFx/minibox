@@ -6,6 +6,9 @@ export declare const NOTICE_KINDS: readonly [
   "box.idle_soon",
   "session.takeover",
   "host.offline",
+  "volume.usage_high",
+  "volume.usage_limit",
+  "host.disk_low",
 ];
 
 export declare const CHANNEL_TYPES: readonly ["webhook", "ntfy", "telegram"];
