@@ -34,7 +34,7 @@ export interface RemoteObject {
 
 /** One open connection to a target. Each method is one round trip, or one streamed transfer. */
 export interface TargetSession {
-  /** Confirms the target answers and its folder can be listed, and creates the folder on an SFTP server. */
+  /** Confirms the target answers and its folder can be listed. Nothing is written. */
   probe(): Promise<void>;
   /** The objects directly inside `folder`. A folder that does not exist has none. */
   list(folder: string): Promise<RemoteObject[]>;
