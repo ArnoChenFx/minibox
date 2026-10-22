@@ -27,6 +27,7 @@ const ACTION_ICON = {
   "checkpoint.update": "sliders",
   "checkpoint.delete": "trash",
   "template.promote": "upload",
+  "template.save": "layers",
   "template.build": "hammer",
   "template.delete": "trash",
   "token.create": "key",

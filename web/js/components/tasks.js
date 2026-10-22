@@ -22,7 +22,16 @@ let open = false;
 let timer = null;
 let source = null;
 let logText = "";
-const seenBuild = new Set();
+const TEMPLATE_OPS = new Set(["template.build", "template.save"]);
+const announced = new Set();
+
+/** A template task that succeeded drops the cached template list, and tells the open pages to load it again. */
+function announceTemplateDone(task) {
+  if (!TEMPLATE_OPS.has(task.op) || task.status !== "succeeded" || announced.has(task.id)) return;
+  announced.add(task.id);
+  invalidateTemplates();
+  window.dispatchEvent(new CustomEvent("minibox-task-done", { detail: { op: task.op, id: task.id } }));
+}
 
 /** Prefer the translated `err.*` key. The stored message is always English. */
 export function taskErrorText(error) {
@@ -139,11 +148,7 @@ async function select(id) {
   logText = task.output ?? "";
   paintDetail(task);
   if (task.status === "running") listen(task);
-  if (task.op === "template.build" && task.status === "succeeded" && !seenBuild.has(task.id)) {
-    seenBuild.add(task.id);
-    invalidateTemplates();
-    window.dispatchEvent(new CustomEvent("minibox-task-done", { detail: { op: task.op, id: task.id } }));
-  }
+  announceTemplateDone(task);
 }
 
 async function refresh() {
@@ -167,11 +172,7 @@ async function refresh() {
     paintDetail({ ...current, ...detail, error: detail.error ?? current.error });
     if (current.status === "running" && !source) listen(detail.logSeq !== undefined ? detail : current);
     if (current.status !== "running") stopStream();
-    if (current.op === "template.build" && current.status === "succeeded" && !seenBuild.has(current.id)) {
-      seenBuild.add(current.id);
-      invalidateTemplates();
-      window.dispatchEvent(new CustomEvent("minibox-task-done", { detail: { op: current.op, id: current.id } }));
-    }
+    announceTemplateDone(current);
   } else if (tasks[0]) await select(tasks[0].id);
   else paintDetail(null);
   schedule();

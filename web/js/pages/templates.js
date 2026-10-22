@@ -11,11 +11,12 @@ import { invalidateTemplates } from "../lib/store.js";
 import { templateSearchFields } from "../lib/template-list.js";
 import { confirmDialog, emptyState, toast, toastError, withBusy } from "../lib/ui.js";
 
-export function render(view) {
+export function render(view, focusName = "") {
   let base = "";
   let templates = null;
   let loadError = null;
   let query = "";
+  let pendingFocus = focusName;
   view.innerHTML = `
     <div class="page-head">
       <div><h1>${t("nav.templates")}</h1><p>${t("tp.subtitle")}</p></div>
@@ -56,12 +57,13 @@ export function render(view) {
     }
     grid.innerHTML = matches
       .map(
-        (tp) => `<div class="card" style="display:flex;flex-direction:column">
+        (tp) => `<div class="card" style="display:flex;flex-direction:column" data-name="${esc(tp.name)}">
         <div class="card-body" style="flex:1">
           <div class="row between" style="margin-bottom:12px"><span class="avatar" style="width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-text)">${icon("layers")}</span>
           <span class="badge${tp.ref === base ? " badge-accent" : ""}">${esc(badge(tp))}</span></div>
           <h3 style="font-size:15px">${esc(tp.name)}</h3>
           <p class="muted" style="font-size:13px;margin-top:4px;min-height:40px">${esc(tp.description ?? t("tp.noDesc"))}</p>
+          ${tp.source ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.fromBox", { name: tp.source }))}</div>` : ""}
           <dl class="kv" style="margin-top:14px;font-size:12.5px"><dt>${t("tp.image")}</dt><dd class="mono">${esc(tp.ref)}</dd><dt>${t("tp.size")}</dt><dd>${bytes(tp.size)}</dd><dt>${t("tp.created")}</dt><dd>${dateTime(tp.createdAt)}</dd></dl>
         </div>
         <div class="dialog-foot" style="justify-content:space-between;background:transparent">
@@ -70,6 +72,12 @@ export function render(view) {
         </div></div>`,
       )
       .join("");
+    const focused = [...grid.querySelectorAll("[data-name]")].find((card) => card.dataset.name === pendingFocus);
+    pendingFocus = "";
+    if (focused) {
+      focused.classList.add("is-focus");
+      focused.scrollIntoView({ block: "center" });
+    }
   };
 
   const search = bindSearchBox(view.querySelector("#tpSearch"), (text) => {
@@ -130,7 +138,7 @@ export function render(view) {
   });
 
   const onTask = (event) => {
-    if (event.detail?.op === "template.build") load();
+    if (event.detail?.op === "template.build" || event.detail?.op === "template.save") load();
   };
   window.addEventListener("minibox-task-done", onTask);
   load();

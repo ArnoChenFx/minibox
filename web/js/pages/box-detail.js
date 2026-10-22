@@ -1,6 +1,7 @@
 import { mountActivity } from "../components/activity-panel.js";
 import { deleteBox, editResources, lifecycle, openRebuild, rebuildPreviewHtml } from "../components/box-actions.js";
 import { mountCheckpoints, takeCheckpoint } from "../components/checkpoints.js";
+import { openSaveTemplate } from "../components/save-template.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
@@ -119,6 +120,7 @@ export function render(view, id, tab = "overview") {
         <button class="btn" data-action="restart">${icon("restart")}${t("act.restart")}</button>
         <button class="btn" data-action="ssh">${icon("terminal")}${t("act.ssh")}</button>
         <button class="btn" data-action="checkpoint">${icon("camera")}${t("act.checkpoint")}</button>
+        <button class="btn" data-action="save-template">${icon("layers")}${t("tp.saveAction")}</button>
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
@@ -225,6 +227,7 @@ export function render(view, id, tab = "overview") {
     restart: (b) => lifecycle(box, "restart", b).then(rerender),
     ssh: () => openSshDialog(box),
     checkpoint: () => takeCheckpoint(box).then((taken) => taken && tab === "checkpoints" && rerender()),
+    "save-template": () => openSaveTemplate(box),
     rebuild: async () => {
       try {
         const { box: fresh } = await api(`/api/boxes/${enc(ref())}`);
