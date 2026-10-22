@@ -32,6 +32,8 @@ import { NotifyStore } from "./notify/store";
 import { type AuditEvent, Executor, type ExecutorHooks, logAudit } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
 import { OWNER } from "./operations/types";
+import { PreviewGrants } from "./preview/grants";
+import { type PreviewProbe, systemProbe } from "./preview/selfcheck";
 import type { EngineTarget, Runtime } from "./runtime";
 import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
@@ -42,6 +44,7 @@ import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
 import { reconcileHost } from "./services/reconcile";
 import { type RecordNote, TerminalService } from "./services/terminals";
+import { VolumeUsageWatcher } from "./services/volume-usage";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
 import { SshGateway } from "./ssh/gateway";
@@ -98,10 +101,16 @@ export interface App {
   operations: Executor;
   throttle: LoginLimiter;
   sessions: SessionStore;
+  /** Tickets and grants that open subdomain previews. Tied to the console sessions that minted them. */
+  previewGrants: PreviewGrants;
+  /** The network the preview self-check uses. Tests replace it. */
+  previewProbe: PreviewProbe;
   tokens: TokenStore;
   streams: StreamSlots;
   pulse: ActivityPulse;
   lifecycle: LifecycleWatcher;
+  /** Samples each volume's usage and raises the limit and host disk events. See `VOLUME_USAGE_INTERVAL_SEC`. */
+  volumeUsage: VolumeUsageWatcher;
   ssh: SshGateway;
   /** The CLI binaries served under /cli, built on first request for this version. */
   cli: CliDistribution;
@@ -123,6 +132,8 @@ export interface AppDeps {
   /** The SQLite file of the event store. Defaults to `events.db` under DATA_DIR. Tests pass `:memory:`. */
   eventsPath?: string;
   sessions?: SessionStore;
+  /** Probes the network for the preview self-check. Defaults to real DNS and HTTPS. Tests pass a stub. */
+  previewProbe?: PreviewProbe;
   /** Compiles a CLI binary. Defaults to `bun build --compile`. Tests pass a stub, because a real build takes seconds. */
   cliBuild?: CliBuilder;
   /** Replaces how a notification is sent, so a test reaches no channel. Anything omitted keeps its default. */
@@ -232,6 +243,14 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     file: tokensPath(cfg.dataDir),
     secrets: { add: (secret) => knownSecrets.push(secret) },
   });
+  const sessions =
+    deps.sessions ??
+    new SessionStore({
+      file: sessionsPath(cfg.dataDir),
+      accessKey: cfg.accessKey,
+      ttlMs: cfg.sessionTtlMs,
+      idleMs: cfg.sessionIdleMs,
+    });
   const events = openEventStore(deps.eventsPath ?? join(cfg.dataDir, "events.db"), redactor);
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const execs = new ExecManager(outputs, (text) => redactor.text(text));
@@ -311,6 +330,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     record: recordNote,
     ssh,
   });
+  const volumeUsage = new VolumeUsageWatcher({ hosts, record: recordNote, cfg });
   return {
     cfg,
     hosts,
@@ -335,6 +355,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       tasks,
       hosts,
       hostAdmin,
+      previewBaseDomain: cfg.previewBaseDomain,
       notify,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,
@@ -342,18 +363,14 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       },
     }),
     throttle: deps.throttle ?? new LoginLimiter(),
-    sessions:
-      deps.sessions ??
-      new SessionStore({
-        file: sessionsPath(cfg.dataDir),
-        accessKey: cfg.accessKey,
-        ttlMs: cfg.sessionTtlMs,
-        idleMs: cfg.sessionIdleMs,
-      }),
+    sessions,
+    previewGrants: new PreviewGrants({ sessionLive: (id) => sessions.hasLive(id) }),
+    previewProbe: deps.previewProbe ?? systemProbe,
     tokens,
     streams: new StreamSlots(cfg.streamMaxConnections),
     pulse,
     lifecycle,
+    volumeUsage,
     ssh,
     cli: new CliDistribution({ dataDir: cfg.dataDir, version, root: ROOT, build: deps.cliBuild }),
     record: recordNote,

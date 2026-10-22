@@ -4,7 +4,7 @@ import type { BoxProfile } from "../box-profile";
 export const SPEC_VERSION = 1;
 
 export type DesiredState = "running" | "stopped";
-export type StopReason = "idle" | "ttl" | "manual";
+export type StopReason = "idle" | "ttl" | "manual" | "volume_limit";
 export type MountMode = "rw" | "ro";
 export type RecoverySource = "claim" | "degraded";
 

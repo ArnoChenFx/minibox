@@ -18,6 +18,7 @@ export type ErrorCode =
   | "precondition_failed"
   | "precondition_required"
   | "insufficient_capacity"
+  | "insufficient_storage"
   | "docker_unavailable"
   | "docker_error"
   | "bad_gateway"

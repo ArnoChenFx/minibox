@@ -113,6 +113,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
     expectedRevision: "1",
   }),
   "volume.usage": () => ({ id: "spare" }),
+  "volume.limits.set": () => ({ id: "spare", softBytes: 1048576, hardBytes: 2097152, action: "warn" }),
   "pool.list": () => ({}),
   "pool.replace": () => ({ pools: [{ name: "local", backend: "local", default: true }], confirm: true }),
   "tool.catalog": () => ({}),
@@ -996,6 +997,7 @@ describe("projections", () => {
       "measure_volume",
       "replace_pools",
       "set_checkpoint_schedule",
+      "set_volume_limits",
     ]);
     expect(
       mcpTools(OPERATIONS, ["tools"])

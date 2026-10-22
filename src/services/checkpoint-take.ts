@@ -6,6 +6,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { assertNoSecretInImage } from "../secrets/env";
 import type { BoxSpec } from "../specs/types";
+import { assertHostDiskRoom } from "../volumes/disk";
 import { type Box, getBox } from "./boxes";
 import { planLayers, type PlannedLayer, commitSystemLayer, tagsFor, discardTaken } from "./checkpoint-layers";
 import type { TakeCheckpointInput, Progress, CheckpointView } from "./checkpoint-model";
@@ -52,6 +53,7 @@ export async function backupBox(
 ): Promise<CheckpointView> {
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
+  await assertHostDiskRoom(host);
   const layers = planLayers(host, spec, input.include.volumes);
   const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume, opts));
   try {
