@@ -5,7 +5,9 @@ import { LoginLimiter } from "./auth";
 import type { SnapshotEngine } from "./checkpoints/engine";
 import { ResticEngine } from "./checkpoints/restic";
 import { CheckpointStore } from "./checkpoints/store";
-import type { Config } from "./config";
+import { type CliBuilder } from "./cli-dist/build";
+import { CliDistribution } from "./cli-dist/distribution";
+import { type Config, ROOT } from "./config";
 import { sessionsPath, tokensPath } from "./data-dir";
 import { createDockerRuntime } from "./docker/runtime";
 import { OutputStore } from "./events/outputs";
@@ -24,6 +26,7 @@ import { type AuditEvent, Executor, type ExecutorHooks, logAudit } from "./opera
 import { OPERATIONS } from "./operations/registry";
 import type { Runtime } from "./runtime";
 import { ActivityPulse } from "./services/activity-pulse";
+import { CheckpointSweep } from "./services/checkpoint-retention";
 import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
@@ -70,6 +73,8 @@ export interface App {
   mcpSessions: McpSessions;
   bus: Bus<AppTopics>;
   retention: RetentionJob;
+  /** Removes automatic checkpoints the retention policy no longer keeps, and reports repositories near their limit. */
+  checkpointSweep: CheckpointSweep;
   tasks: TaskManager;
   operations: Executor;
   throttle: LoginLimiter;
@@ -79,6 +84,8 @@ export interface App {
   pulse: ActivityPulse;
   lifecycle: LifecycleWatcher;
   ssh: SshGateway;
+  /** The CLI binaries served under /cli, built on first request for this version. */
+  cli: CliDistribution;
   /** Writes an audit note for a request caused by a transport, such as a wake from a terminal or preview. */
   record: RecordNote;
   version: string;
@@ -95,6 +102,8 @@ export interface AppDeps {
   /** The SQLite file of the event store. Defaults to `events.db` under DATA_DIR. Tests pass `:memory:`. */
   eventsPath?: string;
   sessions?: SessionStore;
+  /** Compiles a CLI binary. Defaults to `bun build --compile`. Tests pass a stub, because a real build takes seconds. */
+  cliBuild?: CliBuilder;
 }
 
 const MB = 1024 * 1024;
@@ -238,6 +247,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     mcpSessions: new McpSessions((id, listener) => tokens.watch(id, listener)),
     bus,
     retention,
+    checkpointSweep: new CheckpointSweep(hosts),
     tasks,
     operations: new Executor(OPERATIONS, {
       activity,
@@ -262,6 +272,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     pulse,
     lifecycle,
     ssh,
+    cli: new CliDistribution({ dataDir: cfg.dataDir, version, root: ROOT, build: deps.cliBuild }),
     record: recordNote,
     version,
     startedAt: new Date(),

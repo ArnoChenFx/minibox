@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -169,6 +169,29 @@ describe("token store", () => {
       expect(restored.list()).toHaveLength(1);
     } finally {
       restored.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a token stored before the checkpoint limit existed loads, with no limit on its checkpoints", () => {
+    const dir = mkdtempSync(join(tmpdir(), "minibox-tokens-"));
+    const file = join(dir, "tokens.json");
+    const store = new TokenStore({ file });
+    try {
+      store.create(compileToken({ name: "older", preset: "operator" }), "owner");
+      store.stop();
+      const stored = JSON.parse(readFileSync(file, "utf8")) as { tokens: { quotas: Record<string, unknown> }[] };
+      for (const entry of stored.tokens) delete entry.quotas.maxCheckpoints;
+      writeFileSync(file, JSON.stringify(stored));
+
+      const restored = new TokenStore({ file });
+      try {
+        expect(restored.list()).toHaveLength(1);
+        expect(restored.list()[0]?.quotas.maxCheckpoints).toBeNull();
+      } finally {
+        restored.stop();
+      }
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });

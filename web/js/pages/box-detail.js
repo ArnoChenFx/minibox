@@ -1,13 +1,6 @@
 import { mountActivity } from "../components/activity-panel.js";
-import {
-  deleteBox,
-  editResources,
-  lifecycle,
-  openRebuild,
-  rebuildPreviewHtml,
-  snapshotBox,
-} from "../components/box-actions.js";
-import { openCreateBox } from "../components/create-box.js";
+import { deleteBox, editResources, lifecycle, openRebuild, rebuildPreviewHtml } from "../components/box-actions.js";
+import { mountCheckpoints, takeCheckpoint } from "../components/checkpoints.js";
 import { mountEnvCard } from "../components/env-card.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks } from "../components/tasks.js";
@@ -21,7 +14,7 @@ import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
-import { connectCommands, setupCommands } from "../lib/ssh.js";
+import { connectCommands, installCommands, setupCommands, windowsInstallCommands } from "../lib/ssh.js";
 import { filterTools, groupTools, toolAction } from "../lib/tool-list.js";
 import {
   boxState,
@@ -84,11 +77,12 @@ const TABS = [
   ["resources", "bd.tabResources", "sliders"],
   ["ports", "bd.tabPorts", "externalLink"],
   ["tools", "bd.tabTools", "layers"],
-  ["snapshots", "bd.tabSnapshots", "camera"],
+  ["checkpoints", "bd.tabCheckpoints", "history"],
 ];
 
 export function render(view, id, tab = "overview") {
   if (tab === "logs") tab = "activity";
+  if (tab === "snapshots") tab = "checkpoints";
   if (!TABS.some(([k]) => k === tab)) tab = "overview";
   let box = null;
   let disposed = false;
@@ -125,7 +119,7 @@ export function render(view, id, tab = "overview") {
         ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}${t("act.stop")}</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}${t("act.start")}</button>`}
         <button class="btn" data-action="restart">${icon("restart")}${t("act.restart")}</button>
         <button class="btn" data-action="ssh">${icon("terminal")}${t("act.ssh")}</button>
-        <button class="btn" data-action="snapshot">${icon("camera")}${t("act.snapshot")}</button>
+        <button class="btn" data-action="checkpoint">${icon("camera")}${t("act.checkpoint")}</button>
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
@@ -231,7 +225,7 @@ export function render(view, id, tab = "overview") {
     stop: (b) => lifecycle(box, "stop", b).then(rerender),
     restart: (b) => lifecycle(box, "restart", b).then(rerender),
     ssh: () => openSshDialog(box),
-    snapshot: () => snapshotBox(box).then((s) => s && tab === "snapshots" && rerender()),
+    checkpoint: () => takeCheckpoint(box).then((taken) => taken && tab === "checkpoints" && rerender()),
     rebuild: async () => {
       try {
         const { box: fresh } = await api(`/api/boxes/${enc(ref())}`);
@@ -244,8 +238,6 @@ export function render(view, id, tab = "overview") {
       if (await deleteBox(box)) location.hash = "#/boxes";
     },
     resources: () => editResources(box, rerender),
-    "from-snapshot": (b) =>
-      openCreateBox({ snapshot: b.dataset.ref, onCreated: (nb) => (location.hash = `#/boxes/${nb.id}`) }),
     "attach-volume": () =>
       attachVolume(box).then((next) => {
         if (!next) return;
@@ -320,23 +312,37 @@ function mountsCard(box) {
     <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;
 }
 
-function sshStep(number, title, help, commands) {
+/** `blocks` are the commands of one step, each with an optional label, such as the shell or PowerShell line. */
+function sshStep(number, title, help, blocks) {
+  const commands = blocks
+    .map(
+      ({ label, commands: text }) => `${label ? `<p class="help ssh-label">${esc(label)}</p>` : ""}
+    <div class="ssh-cmd"><pre class="token-snippet">${esc(text)}</pre><button class="btn btn-sm" type="button" data-copy="${esc(text)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button></div>`,
+    )
+    .join("");
   return `<section class="ssh-step">
     <div class="ssh-step-head"><span class="ssh-step-num">${number}</span><strong>${esc(title)}</strong></div>
     <p class="help">${esc(help)}</p>
-    <div class="ssh-cmd"><pre class="token-snippet">${esc(commands)}</pre><button class="btn btn-sm" type="button" data-copy="${esc(commands)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button></div>
+    ${commands}
   </section>`;
 }
 
 function openSshDialog(box) {
+  const origin = location.origin;
   const { root } = openDialog({
     title: t("bd.sshTitle"),
     description: esc(t("bd.sshIntro")),
     iconName: "terminal",
     wide: true,
     body: `<div class="ssh-steps">
-      ${sshStep(1, t("bd.sshSetup"), t("bd.sshSetupHelp"), setupCommands(location.origin))}
-      ${sshStep(2, t("bd.sshConnect"), t("bd.sshConnectHelp"), connectCommands(box.name))}
+      ${sshStep(1, t("bd.sshInstall"), t("bd.sshInstallHelp"), [
+        { label: t("bd.sshInstallUnix"), commands: installCommands(origin) },
+        { label: t("bd.sshInstallWindows"), commands: windowsInstallCommands(origin) },
+      ])}
+      ${sshStep(2, t("bd.sshSetup"), t("bd.sshSetupHelp", { settings: t("nav.settings"), tokens: t("st.tokens") }), [
+        { commands: setupCommands(origin) },
+      ])}
+      ${sshStep(3, t("bd.sshConnect"), t("bd.sshConnectHelp"), [{ commands: connectCommands(box.name) }])}
     </div>`,
     footer: `<button class="btn" data-close type="button">${t("common.close")}</button>`,
   });
@@ -790,34 +796,7 @@ const TAB_RENDER = {
     return () => offTask();
   },
 
-  snapshots(root, { box }) {
-    root.innerHTML =
-      '<div class="card"><div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div></div>';
-    api("/api/snapshots")
-      .then(({ snapshots }) => {
-        const list = snapshots.filter((s) => s.source === box().name);
-        root.innerHTML = `<div class="card"><div class="card-head"><h3>${t("bd.boxSnapshots")}</h3><button class="btn btn-sm btn-primary" data-action="snapshot">${icon("camera")}${t("act.snapshot")}</button></div>
-        ${
-          list.length
-            ? `<div class="table-wrap"><table class="table"><thead><tr><th>${t("bd.colSnapshot")}</th><th>${t("bd.colSize")}</th><th>${t("bd.created")}</th><th style="text-align:right">${t("bx.colActions")}</th></tr></thead><tbody>${list
-                .map(
-                  (
-                    s,
-                  ) => `<tr><td><span class="mono">${esc(s.ref)}</span></td><td class="num">${bytes(s.size)}</td><td class="subtle">${dateTime(s.createdAt)}</td>
-                  <td><div class="actions"><button class="btn btn-sm" data-action="from-snapshot" data-ref="${esc(s.ref)}">${icon("plus")}${t("bd.createFrom")}</button></div></td></tr>`,
-                )
-                .join("")}</tbody></table></div>`
-            : emptyState({
-                iconName: "camera",
-                title: t("bd.noSnapshots"),
-                text: t("bd.noSnapshotsText"),
-              })
-        }</div>`;
-      })
-      .catch((e) => {
-        root.innerHTML = emptyState({ iconName: "alert", title: t("bd.snapLoadFailed"), text: esc(e.message) });
-        toastError(t("bd.snapLoadFailedToast"), e);
-      });
-    return null;
+  checkpoints(root, { box, refreshBox }) {
+    return mountCheckpoints(root, { box, refreshBox });
   },
 };

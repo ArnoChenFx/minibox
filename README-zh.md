@@ -35,7 +35,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行；Web 终端与 `docker exec` 默认以 `dev` 进入。三个[安全档位](#安全档位)决定 Box 能做什么：默认的「标准」档位保留无密码 `sudo`，「严格」档位禁止提权。见[基础模板](#基础模板) |
 | 环境变量 | Box 的普通环境变量，以及按名称注入的宿主机密钥（`secretRef`）。密钥在「设置」中设置，之后任何接口都不会返回其值。见[环境变量与密钥](#环境变量与密钥) |
 | 快照 | 基于 `docker commit` 保存 Box 的系统环境，可从快照创建新 Box，或提升为模板 |
-| 检查点 | 把 Box 的工作区和主目录复制到 restic 仓库，再从副本派生新 Box，或把 Box 回滚到副本。目前仅提供 REST API。见[检查点](#检查点) |
+| 检查点 | 把 Box 的工作区和主目录复制到 restic 仓库，再从副本派生新 Box，或把 Box 回滚到副本，并确认或撤销这次回滚。适用保留策略与容量上限。可通过 REST 使用，也可在控制台 Box 详情的「检查点」标签页中操作。MCP 工具暂未提供。见[检查点](#检查点) |
 | 模板 | 内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及由快照提升的自定义模板 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
@@ -117,7 +117,7 @@ flowchart LR
 ### 目标架构（规划中）
 
 > [!NOTE]
-> exec、`/mcp` 与 CLI 客户端、会话、路径模式的端口预览代理、检查点（通过 REST 完成拍摄、派生与回滚），以及图中的存储池和数据卷已经实现。检查点的保留、定时与控制台、多宿主机，以及卷准备之外的辅助容器用途仍在规划中。完整设计见 [`docs/design.md`](docs/design.md)。
+> exec、`/mcp` 与 CLI 客户端、会话、路径模式的端口预览代理、检查点（拍摄、派生、回滚、保留策略与控制台的检查点标签页），以及图中的存储池和数据卷已经实现。定时检查点、检查点的导入导出与 MCP 工具、多宿主机，以及卷准备之外的辅助容器用途仍在规划中。完整设计见 [`docs/design.md`](docs/design.md)。
 
 ```mermaid
 flowchart LR
@@ -279,7 +279,7 @@ docker run -d --name minibox --restart unless-stopped \
 
 ## 工具
 
-创建 Box 时可勾选 Agent CLI 与其他工具。列表按 AI 编程助手、语言与运行时、终端与开发工具、网络四组展示，上方的搜索框可按名称、说明或分组过滤。Box 详情的「工具」页使用同样的分组与搜索，安装 / 升级 / 卸载也在那里完成。目录包括 Claude Code、Codex、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust、Zig 与 Tailscale，每一项都从其官方来源安装（见仓库 `catalog/*.json`），`DATA_DIR/tools.d/*.json` 可追加或覆盖条目。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成，从不以 root 运行。镜像或家目录里已有的工具显示为已安装并附版本，MiniBox 不会重复安装；升级与卸载只作用于 MiniBox 自己装在 tools 卷上的工具。Tailscale 需要 root，MiniBox 只列出它，拒绝安装或卸载。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
+创建 Box 时可勾选 Agent CLI 与其他工具。列表按 AI 编程助手、语言与运行时、终端与开发工具、网络四组展示，上方的搜索框可按名称、说明或分组过滤。Box 详情的「工具」页使用同样的分组与搜索，安装 / 升级 / 卸载也在那里完成。目录包括 Claude Code、Codex、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust、Zig 与 Tailscale，每一项都从其官方来源安装（见仓库 `catalog/*.json`），`DATA_DIR/tools.d/*.json` 可追加或覆盖条目。二进制装在共享只读 tools 卷（`/opt/minibox/tools`）；安装由联网的 helper 以 uid 1000 读写挂载该卷完成，从不以 root 运行。镜像或家目录里已有的工具显示为已安装并附版本，MiniBox 不会重复安装；升级与卸载只作用于 MiniBox 自己装在 tools 卷上的工具，卸载前会先停止该工具在 Box 内运行的守护进程。Tailscale 以 `dev` 用户安装，无需 root，并以用户态网络模式运行：在 Box 内执行 `minibox-tailscale up` 启动守护进程并打印登录链接。Box 里不会出现 tailnet 网卡。发往 Box tailnet IP 的入站 TCP 与 UDP 会被转发到 Box 内的 `127.0.0.1`，所以监听 localhost 或 `0.0.0.0`（IPv4）的程序可以从 tailnet 访问（受 tailnet ACL 约束）；只绑定 localhost 的服务也会因此暴露给 tailnet。出站访问 tailnet 主机必须经 `localhost:1055` 的 SOCKS5 或 HTTP 代理：设置 `ALL_PROXY=socks5h://localhost:1055`（`h` 表示由代理解析 MagicDNS 名称），HTTP 客户端也可用 `HTTP_PROXY`/`HTTPS_PROXY=http://localhost:1055`。没有 ICMP，`ping` tailnet 主机会失败，请用 `minibox-tailscale ping`。Box 重启或从空闲休眠唤醒后，守护进程不会自动启动，tailnet 流量也不会唤醒休眠中的 Box：重新执行 `minibox-tailscale up` 即可，已保存的登录会沿用。卸载只停止当前 Box 里的守护进程，同一主机上其他 Box 的守护进程会继续运行，直到它们停止。卸载后，Tailscale 的登录状态仍保留在家目录卷中。长安装走异步任务与实时日志。API：`GET /api/tools`、`GET /api/tools/catalog`、`POST /api/boxes/:id/tools/{install,upgrade,uninstall,reconcile}`。MCP 工具集 `tools`。进程环境中的 `HTTP_PROXY` / `HTTPS_PROXY` 会传入安装环境。
 
 ## 空闲休眠
 
@@ -318,9 +318,12 @@ Box 可以在空闲一段时间后自行停止，并按需唤醒（[#12](https:/
 
 ## SSH 访问
 
-`ssh`、`scp`、`sftp` 与 `ssh -L` 通过 MiniBox 连接 Box：经由服务器自身地址上的 WebSocket，不发布宿主机端口。在运行 `ssh` 的机器上，用 `bun run build:cli` 构建 CLI，并把 `dist/minibox` 放进 `PATH`。
+`ssh`、`scp`、`sftp` 与 `ssh -L` 通过 MiniBox 连接 Box：经由服务器自身地址上的 WebSocket，不发布宿主机端口。服务器同时分发自己的 CLI，因此运行 `ssh` 的机器无需源码目录：先从服务器安装 CLI。
 
 ```sh
+# 只需一次：把 minibox 安装到 ~/.local/bin（macOS 或 Linux；Windows 在 PowerShell 中运行：irm https://minibox.example.com/cli/install.ps1 | iex）
+curl -fsSL https://minibox.example.com/cli/install.sh | sh
+
 # 只需一次：访问密钥，或带 box:ssh 的 Agent 令牌
 MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
 ssh mybox.minibox
@@ -328,6 +331,8 @@ scp ./build.tar.gz mybox.minibox:/workspace/
 sftp mybox.minibox
 ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 ```
+
+安装脚本会识别系统与 CPU，从服务器下载 `minibox-<os>-<arch>`，按 `/cli/checksums.txt` 校验后安装到 `~/.local/bin`（或 `MINIBOX_INSTALL_DIR`）。它不需要 sudo；该目录不在 `PATH` 中时会打印一行 `PATH` 设置。服务器在该版本的首次请求时用 `bun build --compile` 构建各个二进制，并保存在 `DATA_DIR/cli` 下。与服务器不同的平台还需要该平台的 Bun 运行时，约 90 MB，每台服务器只从 npm 下载一次；无法访问 npm 的服务器会返回 `503` 与原因。此时请为 MiniBox 设置 `HTTPS_PROXY`。若想自行构建，可在源码目录运行 `bun run build:cli`，并把 `dist/minibox` 放进 `PATH`。
 
 `ssh-config --append` 在 `~/.ssh/config` 顶部写入 `Host *.minibox` 配置块，把服务器主机密钥固定在 `~/.ssh/minibox_known_hosts`，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600）。`ProxyCommand`（`minibox ssh-proxy %h`）在没有设置 `MINIBOX_ACCESS_KEY` 时读取该文件，因此从任何 shell 或 IDE 的 Remote-SSH 启动 ssh 都能使用。已导出的 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY` 仍然优先。
 
@@ -356,6 +361,9 @@ ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 | `BOX_IDLE_TIMEOUT_SEC` | `0` | Box 空闲休眠的全局默认秒数。`0` 关闭休眠。每个 Box 可用 `idleTimeoutSec` 覆盖（`0` = 该 Box 永不休眠；`null` 继承此默认）。见[空闲休眠](#空闲休眠) |
 | `BOX_IDLE_CPU_PERCENT` | `5` | 仅当最近 CPU 采样严格低于此百分比（0–100）时才视为空闲 |
 | `LIFECYCLE_INTERVAL_MS` | `30000` | 检查空闲休眠与 TTL 的间隔（毫秒）。它也决定了 MiniBox 外部打开的终端关闭后，空闲计时最晚延后多久开始 |
+| `CHECKPOINT_KEEP_LAST` | `20` | 每个 Box 保留的自动检查点数量（最新的在前），取值 1 至 10000。手动与置顶的检查点从不被保留策略删除。见[检查点](#检查点) |
+| `CHECKPOINT_KEEP_DAYS` | `30` | 超过这些天数的自动检查点会被删除，取值 0 至 3650。`0` 表示不论时间长短都保留 |
+| `CHECKPOINT_CAPACITY_MB` | `0` | 检查点仓库的容量上限（MB），取值 0 至 1000000000。`0` 表示不限制。达到上限时新的自动检查点会被拒绝，因此回滚（它先要拍摄安全检查点）也会被拒绝 |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine Socket 路径 |
 | `DATA_DIR` | `./data`（镜像中为 `/data`） | 状态目录，见[数据目录](#数据目录) |
 | `LABEL_PREFIX` | `minibox` | 标签以及容器 / 镜像 / 数据卷名称的前缀 |
@@ -456,12 +464,14 @@ MiniBox 在启动时创建这些目录，并收紧过宽的权限。它从不写
 
 ### 存储池
 
+要把 Box 放到 NAS 上，请看 [NAS / NFS 指南](docs/nas-zh.md)：Linux、群晖、威联通、TrueNAS 和 Unraid 的导出设置，「添加 NFS」各字段的填法，以及服务器宕机时会发生什么。
+
 `pools.json` 保存池列表。始终有一只名为 `local` 的池，其后端保持 `local`。恰好一只池是默认池。角色设为 `null` 时使用规则：缓存放本地池，其余放默认池。保存池配置不会改写已经存在的卷。仍有卷的池不能删除，也不能更换后端（`409`，键 `pool_in_use`）。
 
 | 后端 | MiniBox 的行为 |
 |---|---|
 | `local` | 本机上的 Docker 本地卷。不要把 Docker 的 data-root 挪到网络存储上。`DATA_DIR` 留在运行 MiniBox 的机器上 |
-| `nfs` | 带 NFS 选项的 Docker 本地卷（`type=nfs`，`o=addr=<服务器>,<选项>`，`device=:<导出路径>/<卷 id>`）。辅助容器在导出根目录下创建子目录。**数据**卷使用你设置的选项，通常是 `hard`。**探测**挂载是 `soft,timeo=10,retrans=1`（不会把你的 `hard`/`soft` 抄到探测上），这样服务器无响应时探测不会挂起。NFS 应在可信网络内使用。更长的 NAS 说明是 [#30](https://github.com/ArnoChenFx/minibox/issues/30) |
+| `nfs` | 带 NFS 选项的 Docker 本地卷（`type=nfs`，`o=addr=<服务器>,<选项>`，`device=:<导出路径>/<卷 id>`）。辅助容器在导出根目录下创建子目录。**数据**卷使用你设置的选项，通常是 `hard`。**探测**挂载是 `soft,timeo=10,retrans=1`（不会把你的 `hard`/`soft` 抄到探测上），这样服务器无响应时探测不会挂起。NFS 应在可信网络内使用。服务器设置、squash 与 uid 映射、挂载选项和故障排查见 [NAS / NFS 指南](docs/nas-zh.md) |
 | `path` | 通过 Docker 卷绑定 `<根目录>/<卷 id>`（`type=none`，`o=bind`）。任何写入之前，辅助容器以只读方式绑定 `root`，并检查标记文件是否存在（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在就是**存储不可达**；MiniBox 不会创建标记，也不会往本地盘里写 |
 
 `GET /api/pools` 探测可达性，并缓存 15 秒。`?refresh=true` 会重新探测。列出 Box 不会探测 NFS，因此在有东西探测之前，Box 的 `storage.status` 保持 `unknown`。Box 列表和详情只把 `unreachable` 标出来；`ok` 和 `unknown` 不单独提示。当非本地池不是 `reachable`（包括缺少基础模板镜像），或本地引擎探测本身失败时，启动、重启或创建 Box 返回 `503` `docker_unavailable`（消息键 `storage_unreachable`）。协调器记录 `reconcile.start_failed` 后继续，因此一只不可达的池不会让进程退出。剩余空间低于 5 GiB 或低于 10% 时 `lowSpace` 为 true。没有每卷配额。
@@ -485,7 +495,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ## 检查点
 
-检查点是 Box 数据的一份副本，保存在 restic 仓库中。可以从它派生一个新 Box，也可以把 Box 回滚到它。快照只保存容器的可写层；检查点则包含 `/workspace`。这是 [#11](https://github.com/ArnoChenFx/minibox/issues/11) 的第一部分：拍摄、派生与回滚已通过 REST API 提供，控制台与 MCP 工具暂未提供。
+检查点是 Box 数据的一份副本，保存在 restic 仓库中。可以从它派生一个新 Box，也可以把 Box 回滚到它。快照只保存容器的可写层；检查点则包含 `/workspace`。[#11](https://github.com/ArnoChenFx/minibox/issues/11) 涵盖检查点的全部功能。拍摄、派生、回滚与保留策略可通过 REST API 使用，Box 详情的「检查点」标签页也会列出并操作它们。MCP 工具暂未提供。
 
 **检查点包含什么。** Box 的自有卷：工作区与主目录。缓存和共享的工具卷永不包含。Box 挂载的共享卷只有在请求的 `include.volumes` 中指名时才会包含。设置 `include.system: true` 时，可写层会被提交为镜像，派生从系统状态开始；否则派生从 Box 的模板开始。每个检查点还记录拍摄时 Box 的模板、CPU、内存、档位与规格版本。
 
@@ -509,17 +519,25 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 `POST /api/boxes/:id/rollback`，请求体为 `{ "checkpoint": "ck_…" }`，把 Box 回滚到它自己的某个检查点。请带上 `If-Match`，值为 Box 当前的版本号：缺少该头返回 `428`，版本过期返回 `412`。没有 `"confirm": true` 时，调用不改动任何内容，并返回 `409 confirmation_required` 与 `details.preview`。预览列出将被替换的卷与容器的变化。
 
-带上 `confirm: true` 后，检查点的数据被恢复到新卷，Box 随之重建到这些卷上。与任何重建一样，卷之外的进程与可写层会丢失。Box 保留其 id、名称、规格历史与共享卷。被替换的卷会保留，但不再挂载，响应的 `replaced` 中列出了它们。删除 Box 不会删除它们；不再需要时，用 `DELETE /api/volumes/:id?confirm=true` 删除。属于其他 Box 的检查点，或没有卷数据的检查点，会以 `409` 被拒绝。
+带上 `confirm: true` 后，检查点的数据被恢复到新卷，Box 随之重建到这些卷上。与任何重建一样，卷之外的进程与可写层会丢失。Box 保留其 id、名称、规格历史与共享卷。被替换的卷会保留，但不再挂载，响应的 `replaced` 中列出了它们；删除 Box 不会删除它们。这些卷等待处理：`POST /api/boxes/:id/rollback/confirm` 带上 `"confirm": true` 时删除它们；`POST /api/boxes/:id/rollback/undo` 带上 `"confirm": true` 与 `If-Match` 时重新挂载它们，并删除恢复出的卷，因此回滚之后写入的数据会丢失。`GET /api/boxes/:id/rollback` 显示正在等待的回滚。等待期间，另一次回滚会被拒绝，其安全检查点也不能删除。替换任何卷之前，回滚会先以 `stop` 方式为当前数据拍摄一个安全检查点。属于其他 Box 的检查点，或没有卷数据的检查点，会以 `409` 被拒绝。
 
 ### 置顶与删除
 
-`PATCH /api/checkpoints/:id` 修改 `label` 与 `pinned`。置顶的检查点在取消置顶之前不能删除。`DELETE /api/checkpoints/:id` 会忘记它在仓库中的快照，并删除其系统镜像。只有拍摄该检查点的令牌或所有者才能修改或删除它。目前还没有保留策略，检查点在删除前一直保留。
+`PATCH /api/checkpoints/:id` 修改 `label` 与 `pinned`。置顶的检查点在取消置顶之前不能删除。`DELETE /api/checkpoints/:id` 会忘记它在仓库中的快照，并删除其系统镜像。只有拍摄该检查点的令牌或所有者才能修改或删除它。手动拍摄的检查点保留到被删除为止；自动检查点则由下文的保留策略管理。
 
 检查点功能出现之前拍摄的快照也会列出，带有 `"legacy": true`，只有系统层。可以派生和删除，但不能修改，也不能回滚到它。
 
+### 保留与容量
+
+自动检查点是 MiniBox 自己拍摄的检查点，目前只有每次回滚前的安全检查点。保留策略为每个 Box 保留最新的 `CHECKPOINT_KEEP_LAST` 个（默认 `20`）自动检查点，并删除超过 `CHECKPOINT_KEEP_DAYS` 天（默认 `30`；为 `0` 时不论时间长短都保留）的自动检查点。手动拍摄与置顶的检查点不会被它删除，等待确认或撤销的回滚所对应的安全检查点同样不会被删除。保留策略在服务器启动时执行一次，之后每小时执行一次。
+
+`CHECKPOINT_CAPACITY_MB`（默认 `0`，即不限制）限制检查点仓库占用的空间。达到上限的 80% 时，每小时的检查都会记录 `checkpoint.capacity_warning`，检查点标签页也会显示仓库的占用情况。达到上限时，新的自动检查点会被拒绝，返回 `409 checkpoint_capacity_exceeded`，因此回滚会在替换任何卷之前被拒绝。手动拍摄仍可进行。如果无法测量占用空间，自动检查点照常进行。`GET /api/checkpoints/usage` 返回占用空间、上限、状态与保留策略，只有所有者可以读取。
+
+保留策略是全局的。本版本没有按 Box 覆盖的策略，也没有回收站。
+
 ### 数据存放在哪里
 
-仓库由一个短生命周期的辅助容器写入，镜像为 `restic/restic:0.18.1`。每台宿主机一个仓库，位于 Docker 卷 `<LABEL_PREFIX>-checkpoints-<宿主机>` 中，默认为 `minibox-checkpoints-local`。密码在首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 `600`），并通过环境变量传给每个辅助容器。如果密码打不开仓库，这是一个错误，而不是新建仓库的理由。
+仓库由一个短生命周期的辅助容器写入，镜像为 `restic/restic:0.18.1`。每台宿主机一个仓库，位于 Docker 卷 `<LABEL_PREFIX>-checkpoints-<宿主机>` 中，默认为 `minibox-checkpoints-local`。密码在首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 `600`）。每个辅助容器通过只读文件 `/run/secrets/repo.key` 获得它，restic 经由 `RESTIC_PASSWORD_FILE` 读取，密码不在辅助容器的环境变量中。调用期间它暂存于一个临时的 Docker 卷中，调用结束时删除该卷。如果密码打不开仓库，这是一个错误，而不是新建仓库的理由。
 
 检查点不是灾难恢复。仓库与 Box 位于同一个 Docker 守护进程和同一块磁盘上，磁盘损坏时两者会一起丢失。若要在别处保留副本，请把卷和密钥一起复制。无论如何都不能丢失的内容，请在主机之外保留一份；代码应放在 git 中。辅助容器每次调用有 1 GiB 内存、256 个进程、64 MiB 的 `/tmp`，以及一小时的时限。这些限制尚未用大数据量测量。
 
@@ -532,7 +550,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ### 本版本未包含
 
-保留策略、定时与自动检查点（包括回滚前的检查点）、导入导出、单文件浏览、控制台、MCP 工具与独立的卷快照，都计划在 [#11](https://github.com/ArnoChenFx/minibox/issues/11) 中完成。
+定时检查点、除回滚之外的自动检查点、重建前的检查点、导入导出（含加密导出包）、单文件浏览、MCP 工具、独立的卷快照、按 Box 覆盖的保留策略与回收站，都计划在 [#11](https://github.com/ArnoChenFx/minibox/issues/11) 中完成。
 
 ## 环境变量与密钥
 
@@ -658,7 +676,18 @@ Box 的环境变量是一组条目。创建时设置，重建时整体替换。�
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/ssh/host-key` | 网关的主机密钥：`algorithm`（`ssh-ed25519`）、`fingerprint` 与 `publicKey`。令牌需要 `box:ssh` |
-| `GET` | `/api/ssh/:box` | 带 `Upgrade: websocket` 时，把一条 SSH 连接接到该 Box（按名称或 id）。不带时执行同样的检查：通过返回 `204`，拒绝则返回 JSON 错误。仅接受 Bearer 凭据 |
+| `GET` | `/api/ssh/:box` | 带 `Upgrade: websocket` 时，把一条 SSH 连接接到该 Box（按名称或 id）。不带时执行同样的检查：通过返回 `204`（并带 `x-minibox-version`，即本服务器版本），拒绝则返回 JSON 错误。仅接受 Bearer 凭据 |
+
+### CLI 下载
+
+公开且只读：不需要密钥，二进制文件不含任何机密。每个客户端对这些路由每分钟最多 120 次请求，超过后返回 `429` 与 `retry-after`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/cli/install.sh` | 适用于 macOS 与 Linux 的安装脚本，已写入本服务器的地址。它会校验二进制，且不需要 sudo |
+| `GET` | `/cli/install.ps1` | 适用于 Windows PowerShell 的安装脚本，步骤相同 |
+| `GET` | `/cli/checksums.txt` | 已构建二进制的 `sha256sum` 行，安装脚本据此校验 |
+| `GET` | `/cli/minibox-<os>-<arch>` | 一个 CLI 二进制，以附件形式返回：`minibox-linux-x64`、`minibox-linux-arm64`、`minibox-darwin-x64`、`minibox-darwin-arm64` 或 `minibox-windows-x64.exe`。该版本的首次请求时构建，并缓存在 `DATA_DIR/cli` 下。不在此列表中的名称返回 `404`。构建失败返回 `503` 与原因及替代方法 |
 
 ### 快照与模板
 
@@ -687,6 +716,10 @@ Box 的环境变量是一组条目。创建时设置，重建时整体替换。�
 | `POST` | `/api/boxes/:id/checkpoints` | 拍摄检查点 `{ "label"?, "reason"?, "pinned"?, "include"?: { "system"?, "volumes"? }, "consistency"? }`。`consistency` 为 `live`（默认）、`pause` 或 `stop` |
 | `POST` | `/api/checkpoints/:id/fork` | 从检查点创建 Box `{ "name", "cpus"?, "memoryMb"?, "profile"?, "copyHome"?, "ttlSec"? }`。`copyHome` 默认为 `false` |
 | `POST` | `/api/boxes/:id/rollback` | 回滚 Box `{ "checkpoint", "confirm"? }`。需要 `If-Match`（缺少返回 `428`，过期返回 `412`）。没有 `"confirm": true` 时返回 `409 confirmation_required` 与 `details.preview`，且不改动任何内容 |
+| `GET` | `/api/checkpoints/usage` | 仓库的占用空间、上限、状态与保留策略。仅所有者可读 |
+| `GET` | `/api/boxes/:id/rollback` | 正在等待确认或撤销的回滚（如果有） |
+| `POST` | `/api/boxes/:id/rollback/confirm` | 确认等待中的回滚 `{ "confirm": true }`：删除回滚替换下来的卷 |
+| `POST` | `/api/boxes/:id/rollback/undo` | 撤销等待中的回滚 `{ "confirm": true }`。需要 `If-Match`：重新挂载替换下来的卷，并删除恢复出的卷 |
 | `PATCH` | `/api/checkpoints/:id` | 置顶或改标签 `{ "pinned"?, "label"? }`。旧快照返回 `409` |
 | `DELETE` | `/api/checkpoints/:id` | 删除检查点及其快照。置顶的检查点返回 `409`（`checkpoint_pinned`） |
 
@@ -758,8 +791,8 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 # { "mcpServers": { "minibox": { "url": "http://127.0.0.1:3920/mcp",
 #   "headers": { "Authorization": "Bearer mbx_…" } } } }
 
-# 或使用 CLI（bun run build:cli 生成 dist/minibox）：
-MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
+# 或使用 CLI（经服务器安装，见 SSH 访问）：
+MINIBOX_ACCESS_KEY=$KEY minibox exec agent-dev -- npm test
 ```
 
 前台 exec 的 `timeoutSec` 最长 55 秒，因为服务器会在 60 秒后关闭空闲连接。更长的命令使用 `background: true`（`timeoutSec` 最长 3600），或 `minibox exec --background --timeout SEC`，并用 `GET /api/execs/:execId`（`waitMs` 最长 25000）或 `exec_get` 读取结果。每个 Box 最多同时运行 8 个后台 exec，整个 MiniBox 最多 64 个；超过任一上限的调用返回 `429`，且不会启动已停止的 Box。超时会杀掉进程树，CLI 以 124 退出。如果停止失败，exec 保持 `status: running`，停止会按递增的间隔（1 秒、2 秒、4 秒，最长 30 秒）再次尝试，也可以随时通过 `POST /api/execs/:execId/kill` 重试。把密钥放在 `env` 里，不要放在 `cmd` 或 `argv` 中：审计日志会记录命令与 argv（脱敏规则见[事件](#事件)），而 `env` 只记录变量名。
@@ -774,7 +807,7 @@ MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
 
 设计目录有 27 个工具，其中 15 个属于默认工具集，且不包含 `rebuild_box`。当前服务暴露已经实现的工具：`list_boxes`、`get_box`、`create_box`、`update_box`、`box_action`、`delete_box`，加上 `exec`、`exec_get`、`exec_kill`、`read_file`、`write_file`、`list_files` 与 `copy_files`，它们属于默认工具集（共 13 个）；`rebuild_box` 属于 `rebuild`；`session_start`、`session_send` 与 `session_read` 属于 `session`；`storage` 工具集加入九个卷与存储池工具，以及 `tools` 工具集中的 `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools`（`list_volumes`、`get_volume`、`create_volume`、`delete_volume`、`attach_volume`、`detach_volume`、`measure_volume`、`list_pools` 与 `replace_pools`）。其中 `create_volume`、`delete_volume`、`attach_volume`、`detach_volume` 与 `replace_pools` 需要 `confirm: true`；没有它，调用不改动任何内容，并返回 `confirmation_required` 与 `details.preview`。`measure_volume` 只刷新缓存的大小，因此没有 confirm。`network`（`list_ports`、`expose_port`）与 `meta` 可以被接受；启用 `tools` 以使用工具安装操作。说明见 [`docs/agents.md`](docs/agents.md)。
 
-用 `bun run build:cli` 编译 CLI（`bun build --compile`，输出 `dist/minibox`，不提交）。它访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。
+用 [SSH 访问](#ssh-访问) 中的一行安装脚本从服务器安装 CLI，或在源码目录用 `bun run build:cli` 编译（`bun build --compile`，输出 `dist/minibox`，不提交）。`minibox --version` 输出构建该二进制所用的版本，`minibox <命令> --help` 输出帮助并以 0 退出。CLI 访问正在运行的服务。`MINIBOX_URL` 默认 `http://127.0.0.1:3920`。`MINIBOX_ACCESS_KEY` 或 `ACCESS_KEY` 是 Bearer 令牌。`ssh-proxy` 发现服务器比 CLI 新时，会打印一行如何更新的提示。
 
 ```bash
 minibox box ls
@@ -895,7 +928,7 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **容器以 root 运行。** 容器需要使用 Docker Socket，而 Docker Socket 等同于 root。要缩小这部分权限，可以在 Socket 前放一个只转发 MiniBox 所需 Docker API 的 Socket 代理，并把 `DOCKER_SOCKET` 指向代理的 Unix Socket；也可以让 MiniBox 连接 rootless Docker 或 Podman 的 Socket。
 - **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。以 `Authorization: Bearer` 发送的错误密钥（发往 `/api/`、`/mcp` 或终端）计入同一限流。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以密钥的长度和随机性才是关键：请使用至少 20 位的随机字符，例如 `openssl rand -hex 32` 生成的密钥（自动生成的密钥为 64 位十六进制）。启动时，若密钥短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符），会记录 `auth.weak_key` 警告。MiniBox 仍会正常启动，已有部署不受影响。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务；使用新密钥启动时，全部浏览器会话随之结束。
 - **会话可以撤销。** 登录后密钥不会保存在浏览器里：Cookie 中是随机生成的 32 字节会话令牌，`DATA_DIR/sessions.json` 只保存它的 SHA-256 哈希，因此拿到该文件也无法用来伪造登录 Cookie。文件中还有一个用于检测密钥变更的 scrypt 校验值，所以访问密钥的强度依然重要。会话在登出、在设置页撤销、到期（`SESSION_TTL_DAYS`，默认 30 天）或访问密钥变更时结束；会话结束时，它打开的终端和事件流也会关闭。
-- **Agent API 令牌与访问密钥分开。** 在设置页或用 `POST /api/tokens` 创建。明文（`mbx_…`）只显示一次；`DATA_DIR/tokens.json` 只保存 SHA-256。令牌带有 scope（`box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`、`secret:use`）、Box 选择器（默认 `created-by-me`，也可以是 id、标签或 `*`）、显式的卷列表、允许的宿主机，以及可选配额。预设为 `readonly`、`operator`、`sandboxed-agent` 和 `admin`。`sandboxed-agent` 的起点是最多 5 个 Box、合计 8 个 CPU 与 16 GB 内存、4 小时 TTL、每分钟 60 次请求。吊销立即生效，也可以同时删除该令牌创建的 Box。`exec` 与 `box:ssh` 可以读写该令牌有权使用的 Box 上的全部挂载。挂载一个已经存在的卷需要对该卷的 `volume:attach`。在 Box 中引用宿主机密钥需要 `secret:use`，只有 `admin` 预设具有该 scope。更换 `ACCESS_KEY` 会结束浏览器会话，不会吊销 API 令牌。没有任何预设可以签发令牌：那仍属于访问密钥或已登录的会话。到期后 Box 会停止、不删除（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。同一枚令牌也是 `/mcp` 的 Bearer，`tools/list` 与每次调用都受其 scope 约束。吊销时，它的 MCP 会话、终端、事件流与任务流随之结束；删除它创建的 Box 时覆盖所有宿主机，无法删除的 Box 列在 `failedBoxes` 中。只读且限制在自己创建的 Box 上的令牌，在授予 `*` 或具体 id 之前看不到任何 Box，因为它不能创建 Box。
+- **Agent API 令牌与访问密钥分开。** 在设置页或用 `POST /api/tokens` 创建。明文（`mbx_…`）只显示一次；`DATA_DIR/tokens.json` 只保存 SHA-256。令牌带有 scope（`box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`、`secret:use`）、Box 选择器（默认 `created-by-me`，也可以是 id、标签或 `*`）、显式的卷列表、允许的宿主机，以及可选配额。预设为 `readonly`、`operator`、`sandboxed-agent` 和 `admin`。`sandboxed-agent` 的起点是最多 5 个 Box、合计 8 个 CPU 与 16 GB 内存、4 小时 TTL、每分钟 60 次请求，以及 20 个手动检查点。吊销立即生效，也可以同时删除该令牌创建的 Box。`exec` 与 `box:ssh` 可以读写该令牌有权使用的 Box 上的全部挂载。挂载一个已经存在的卷需要对该卷的 `volume:attach`。在 Box 中引用宿主机密钥需要 `secret:use`，只有 `admin` 预设具有该 scope。更换 `ACCESS_KEY` 会结束浏览器会话，不会吊销 API 令牌。没有任何预设可以签发令牌：那仍属于访问密钥或已登录的会话。到期后 Box 会停止、不删除（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。同一枚令牌也是 `/mcp` 的 Bearer，`tools/list` 与每次调用都受其 scope 约束。吊销时，它的 MCP 会话、终端、事件流与任务流随之结束；删除它创建的 Box 时覆盖所有宿主机，无法删除的 Box 列在 `failedBoxes` 中。只读且限制在自己创建的 Box 上的令牌，在授予 `*` 或具体 id 之前看不到任何 Box，因为它不能创建 Box。
 - **宿主机密钥留在宿主机上。** 密钥只写入一次，保存到 `DATA_DIR/secrets/env/<名称>`（权限 `600`），任何接口都不返回其值。它只会作为该容器的环境进入 Box，因此 Box 内的进程，以及有 `exec`、`box:ssh` 或终端进入该 Box 的人，都能读到它。只有所有者能设置或删除密钥，只有带 `secret:use` 的令牌能引用密钥。见[环境变量与密钥](#环境变量与密钥)。
 - **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。写请求必须声明 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外），这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
 - **严格的内容安全策略（CSP）。** 脚本只会从 MiniBox 自身加载（`script-src 'self'`），页面没有内联脚本，且禁止被嵌入 iframe（`frame-ancestors 'none'`）。通过 HTTPS 访问（直接访问、请求带有 `https://` Origin，或在 `TRUST_PROXY=true` 时经由代理）的请求还会带上 `Strict-Transport-Security`，有效期一年，不包含子域名。
@@ -954,11 +987,11 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 - [x] [#9](https://github.com/ArnoChenFx/minibox/issues/9) 面向 Agent 的执行与文件 API，并提供 MCP 服务与 CLI。exec、MCP 与 CLI 已落地；文件 API 已实现；Volume（#24）之后
 - [x] [#14](https://github.com/ArnoChenFx/minibox/issues/14) tmux 会话与人工接管
 - [x] [#17](https://github.com/ArnoChenFx/minibox/issues/17) 通过 SSE 推送 Box 状态与资源占用，取代轮询
-- [ ] [#30](https://github.com/ArnoChenFx/minibox/issues/30) NAS / NFS 部署指南
+- [x] [#30](https://github.com/ArnoChenFx/minibox/issues/30) [NAS / NFS 部署指南](docs/nas-zh.md)
 
 ### M3 · 核心价值
 
-- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) 基于 restic 的检查点：派生、回滚与保留策略（通过 REST 完成拍摄、派生与回滚；保留策略、定时与控制台尚未完成）
+- [ ] [#11](https://github.com/ArnoChenFx/minibox/issues/11) 基于 restic 的检查点：派生、回滚与保留策略（拍摄、派生、回滚、保留策略、容量上限与控制台的检查点标签页已完成；导入导出、定时检查点与 MCP 工具尚未完成）
 
 - [x] [#10](https://github.com/ArnoChenFx/minibox/issues/10) Box 内 dev server 的端口预览
 - [ ] [#8](https://github.com/ArnoChenFx/minibox/issues/8) 创建时或运行中可选装 Agent CLI
@@ -981,6 +1014,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 - [#28](https://github.com/ArnoChenFx/minibox/issues/28) MiniBox Agent 框架：配对、mTLS 与出站通道
 - [#29](https://github.com/ArnoChenFx/minibox/issues/29) 存储节点角色：NAS 与 Linux 存储服务器上的目录、配额与快照
+
 ## 许可证
 
 [MIT](LICENSE) © 2026 Arno Chen

@@ -17,6 +17,8 @@ import {
   type ContainerUpdate,
   type CreateContainerSpec,
   type DiskUsage,
+  HELPER_SECRETS_DIR,
+  HELPER_SECRETS_LABEL,
   type HelperSpec,
   isRuntimeError,
   type Mount,
@@ -25,7 +27,7 @@ import {
   RuntimeError,
   type VolumeInfo,
 } from "../runtime";
-import { parsePathStat, readFirstEntryOwner } from "./archive";
+import { parsePathStat, readFirstEntryOwner, secretsArchive } from "./archive";
 import { toRuntimeError } from "./errors";
 import { demuxLogs, followedLines, followFailure } from "./logs";
 import { computeStats } from "./stats";
@@ -545,6 +547,57 @@ async function exitCodeOf(
  * it here. Returns after the removal, so a volume the helper used can be removed straight after.
  */
 async function runHelper(docker: Docker, spec: HelperSpec): Promise<{ exitCode: number; logs: string }> {
+  if (!spec.secrets?.length) return runContainer(docker, spec);
+  const volume = await stageSecrets(docker, spec);
+  try {
+    const mounts = [...(spec.mounts ?? []), { source: volume, target: HELPER_SECRETS_DIR, mode: "ro" as const }];
+    return await runContainer(docker, { ...spec, mounts });
+  } finally {
+    await removeStagedVolume(docker, volume);
+  }
+}
+
+/**
+ * Writes a helper's secrets into a new volume. The files go in through a container that is created but never started,
+ * so the helper's own root filesystem is untouched, and the volume is mounted read-only in the helper afterwards.
+ */
+async function stageSecrets(docker: Docker, spec: HelperSpec): Promise<string> {
+  const volume = `mbhsec${randomBytes(6).toString("hex")}`;
+  await call(() => docker.createVolume({ Name: volume, Labels: { ...spec.labels, [HELPER_SECRETS_LABEL]: "true" } }));
+  try {
+    const stage = await call(() =>
+      docker.createContainer({
+        Image: spec.image,
+        name: `${volume}-stage`,
+        HostConfig: {
+          Mounts: [helperMountOf({ source: volume, target: HELPER_SECRETS_DIR, mode: "rw" })],
+          NetworkMode: "none",
+          ReadonlyRootfs: true,
+          CapDrop: ["ALL"],
+        },
+      }),
+    );
+    const container = docker.getContainer(stage.id);
+    try {
+      await call(() => container.putArchive(secretsArchive(spec.secrets ?? []), { path: HELPER_SECRETS_DIR }));
+    } finally {
+      await container.remove({ force: true }).catch(() => undefined);
+    }
+  } catch (e) {
+    await removeStagedVolume(docker, volume);
+    throw e;
+  }
+  return volume;
+}
+
+async function removeStagedVolume(docker: Docker, volume: string): Promise<void> {
+  await docker
+    .getVolume(volume)
+    .remove({ force: true })
+    .catch(() => undefined);
+}
+
+async function runContainer(docker: Docker, spec: HelperSpec): Promise<{ exitCode: number; logs: string }> {
   const name = `mbxhlp${randomBytes(4).toString("hex")}`;
   const created = await call(() => docker.createContainer(toHelperOptions(spec, name)));
   const container = docker.getContainer(created.id);

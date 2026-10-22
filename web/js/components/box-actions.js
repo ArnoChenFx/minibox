@@ -6,10 +6,9 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { canonicalMounts } from "../lib/mounts.js";
 import { hostNow, refreshHost } from "../lib/store.js";
-import { confirmDialog, nameError, openDialog, promptDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
-import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
 const LIFECYCLE = {
   start: ["ba.startFailed", "ba.started"],
@@ -59,39 +58,6 @@ export async function deleteBox(box) {
   } catch (e) {
     toastError(t("ba.deleteFailed"), e);
     return false;
-  }
-}
-
-export async function snapshotBox(box) {
-  const name = await promptDialog({
-    title: t("ba.snapTitle"),
-    description: t("ba.snapDesc", { name: esc(box.name) }),
-    iconName: "camera",
-    label: t("ba.snapLabel"),
-    placeholder: box.name,
-    help: t("ba.snapHelp"),
-    confirmText: t("ba.snapTitle"),
-    validate: (v) => (v ? nameError(v, "snapshotName") : ""),
-  });
-  if (name === null) return null;
-  toast(t("ba.snapCreating"), { type: "info", message: t("ba.snapCreatingText") });
-  try {
-    const r = await api(`/api/boxes/${enc(box.id)}/snapshots`, { method: "POST", body: name ? { name } : {} });
-    const done = await waitTask(r.taskId);
-    if (done.status !== "succeeded") {
-      toastError(t("ba.snapFailed"), { message: taskErrorText(done.error) || t(`task.status.${done.status}`) });
-      return null;
-    }
-    toast(t("ba.snapCreated"), { message: done.result.snapshot.ref });
-    return done.result.snapshot;
-  } catch (e) {
-    if (e.details?.taskId) {
-      toast(t("task.alreadyRunning"), { type: "info" });
-      openTasks(e.details.taskId);
-      return null;
-    }
-    toastError(t("ba.snapFailed"), e);
-    return null;
   }
 }
 
@@ -335,7 +301,7 @@ export function actionButtons(b, { compact = true } = {}) {
     b.running ? ib("stop", "stop", t("act.stop")) : ib("start", "play", t("act.start")),
     ib("restart", "restart", t("act.restart")),
     b.running ? ib("terminal", "terminal", t("act.terminal")) : "",
-    ib("snapshot", "camera", t("act.snapshot")),
+    ib("checkpoint", "camera", t("act.checkpoint")),
     ib("delete", "trash", t("act.delete"), "danger"),
   ].join("");
 }

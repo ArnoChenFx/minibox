@@ -95,12 +95,16 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "snapshot.fork": () => ({ name: "delta", ref: SNAPSHOT_REF }),
   "snapshot.delete": () => ({ ref: SNAPSHOT_REF }),
   "checkpoint.list": () => ({}),
+  "checkpoint.usage": () => ({}),
   "checkpoint.get": () => ({ id: CHECKPOINT_PLACEHOLDER }),
   "checkpoint.create": (id) => ({ id }),
   "checkpoint.fork": () => ({ id: CHECKPOINT_PLACEHOLDER, name: "delta" }),
   "checkpoint.update": () => ({ id: CHECKPOINT_PLACEHOLDER, pinned: true }),
   "checkpoint.delete": () => ({ id: CHECKPOINT_PLACEHOLDER }),
   "box.rollback": (id) => ({ id, checkpoint: CHECKPOINT_PLACEHOLDER, confirm: true, expectedRevision: "1" }),
+  "box.rollback.get": (id) => ({ id }),
+  "box.rollback.confirm": (id) => ({ id, confirm: true }),
+  "box.rollback.undo": (id) => ({ id, confirm: true, expectedRevision: "2" }),
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.build": () => ({}),
@@ -125,6 +129,9 @@ const CHECKPOINT_OPERATIONS_ON_AN_EXISTING = [
   "box.rollback",
 ];
 
+/** Operations that act on a rollback waiting for its confirm or undo, so `preparedInput` rolls a box back first. */
+const ROLLBACK_OPERATIONS_ON_A_PENDING = ["box.rollback.get", "box.rollback.confirm", "box.rollback.undo"];
+
 /** Takes a checkpoint of the sample box and returns its id. The list is newest first. */
 async function takeCheckpointOf(app: App, ctx: OperationContext, boxId: string): Promise<string> {
   await app.operations.run("checkpoint.create", ctx, { id: boxId });
@@ -133,6 +140,23 @@ async function takeCheckpointOf(app: App, ctx: OperationContext, boxId: string):
   const [newest] = checkpoints;
   if (!newest) throw new Error("the sample checkpoint was not listed");
   return newest.id;
+}
+
+/**
+ * Rolls the sample box back to a new checkpoint, which leaves a rollback waiting. A rebuild replaces the container, so the
+ * stable box id is used from here on. Returns that id and the box's revision after the rollback.
+ */
+async function pendingRollbackOf(
+  app: App,
+  ctx: OperationContext,
+  boxId: string,
+): Promise<{ id: string; revision: string }> {
+  const { box: before } = (await app.operations.run("box.get", ctx, { id: boxId })) as { box: { boxId: string } };
+  const checkpoint = await takeCheckpointOf(app, ctx, before.boxId);
+  await app.operations.run("box.rollback", ctx, { id: before.boxId, checkpoint, confirm: true, expectedRevision: "1" });
+  await app.tasks.drain();
+  const { box } = (await app.operations.run("box.get", ctx, { id: before.boxId })) as { box: { revision: number } };
+  return { id: before.boxId, revision: String(box.revision) };
 }
 
 /** A real id for operations that cannot succeed against the placeholder in `SAMPLES`. */
@@ -167,6 +191,13 @@ async function preparedInput(
     const checkpoint = await takeCheckpointOf(app, ctx, boxId);
     const sample = SAMPLES[operation.name]?.(boxId, app) as Record<string, unknown>;
     return { input: { ...sample, ...(operation.name === "box.rollback" ? { checkpoint } : { id: checkpoint }) } };
+  }
+  if (ROLLBACK_OPERATIONS_ON_A_PENDING.includes(operation.name)) {
+    const pending = await pendingRollbackOf(app, ctx, boxId);
+    const sample = SAMPLES[operation.name]?.(pending.id, app) as Record<string, unknown>;
+    return {
+      input: operation.name === "box.rollback.undo" ? { ...sample, expectedRevision: pending.revision } : sample,
+    };
   }
   if (operation.name === "exec.kill") {
     runtime.execScript = null;

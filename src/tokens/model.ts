@@ -41,7 +41,10 @@ export type BoxScope =
 export type VolumeScope = { readonly type: "list"; readonly ids: string[] } | { readonly type: "all" };
 export type HostScope = { readonly type: "list"; readonly ids: string[] } | { readonly type: "all" };
 
-/** Null means the limit is not set. `maxTtlSec` caps the TTL stored on a box; the lifecycle watcher enforces expiry. */
+/**
+ * Null means the limit is not set. `maxTtlSec` caps the TTL stored on a box; the lifecycle watcher enforces expiry.
+ * `maxCheckpoints` caps the checkpoints the token takes itself; automatic ones are kept by the retention policy.
+ */
 export interface Quotas {
   readonly maxBoxes: number | null;
   readonly maxCpus: number | null;
@@ -49,6 +52,7 @@ export interface Quotas {
   readonly maxTtlSec: number | null;
   readonly rateLimit: number | null;
   readonly rateWindowSec: number | null;
+  readonly maxCheckpoints: number | null;
 }
 
 export const NO_QUOTA: Quotas = {
@@ -58,6 +62,7 @@ export const NO_QUOTA: Quotas = {
   maxTtlSec: null,
   rateLimit: null,
   rateWindowSec: null,
+  maxCheckpoints: null,
 };
 
 export interface TokenGrants {
@@ -131,7 +136,7 @@ const SANDBOX_SCOPES: readonly Scope[] = OPERATOR_SCOPES.filter(
   (scope) => scope !== "volume:attach" && scope !== "tool:install" && scope !== "box:ssh",
 );
 
-/** Five boxes, 8 CPU cores and 16 GB between them, four hours, one request a second sustained. */
+/** Five boxes, 8 CPU cores and 16 GB between them, four hours, one request a second sustained, twenty checkpoints. */
 const SANDBOX_QUOTA: Quotas = {
   maxBoxes: 5,
   maxCpus: 8,
@@ -139,6 +144,7 @@ const SANDBOX_QUOTA: Quotas = {
   maxTtlSec: 4 * 60 * 60,
   rateLimit: 60,
   rateWindowSec: 60,
+  maxCheckpoints: 20,
 };
 
 const CREATED_BY_ME: BoxScope = { type: "created-by-me" };
@@ -202,6 +208,7 @@ function mergeQuotas(base: Quotas, patch: Partial<Quotas> | undefined): Quotas {
     maxTtlSec: pick("maxTtlSec"),
     rateLimit: pick("rateLimit"),
     rateWindowSec: pick("rateWindowSec"),
+    maxCheckpoints: pick("maxCheckpoints"),
   };
 }
 

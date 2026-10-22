@@ -75,6 +75,9 @@ describe("OpenAPI document", () => {
       "box.rebuild",
       "box.resources",
       "box.rollback",
+      "box.rollback.confirm",
+      "box.rollback.get",
+      "box.rollback.undo",
       "box.stats",
       "box.update",
       "checkpoint.create",
@@ -83,6 +86,7 @@ describe("OpenAPI document", () => {
       "checkpoint.get",
       "checkpoint.list",
       "checkpoint.update",
+      "checkpoint.usage",
       "events.list",
       "exec.get",
       "exec.kill",
@@ -150,11 +154,13 @@ describe("OpenAPI document", () => {
 describe("recorded HTTP transcript", () => {
   const transcript = JSON.parse(readFileSync(TRANSCRIPT, "utf8")) as Exchange[];
   const document = documentOf(RENDERED);
+  // The router answers a request with the first binding that matches it, so each exchange is checked against that one.
   const matched = transcript.flatMap((exchange) => {
     const pathname = new URL(exchange.path, "http://127.0.0.1").pathname;
-    return bindingsOf()
-      .filter(({ binding }) => binding.method === exchange.method && compilePath(binding.path).pattern.test(pathname))
-      .map((match) => ({ exchange, ...match }));
+    const first = bindingsOf().find(
+      ({ binding }) => binding.method === exchange.method && compilePath(binding.path).pattern.test(pathname),
+    );
+    return first ? [{ exchange, ...first }] : [];
   });
 
   test("the transcript answers every REST binding at least once", () => {

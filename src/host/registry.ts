@@ -1,5 +1,6 @@
 import type { BoxProfile } from "../box-profile";
 import type { SnapshotEngine } from "../checkpoints/engine";
+import type { CheckpointPolicy } from "../checkpoints/policy";
 import { ResticEngine } from "../checkpoints/restic";
 import { CheckpointStore } from "../checkpoints/store";
 import type { Config } from "../config";
@@ -63,6 +64,8 @@ export interface HostCtx {
   checkpoints: CheckpointStore;
   /** Stores volume contents for checkpoints. Each host keeps its own repository behind this engine. */
   checkpointEngine: SnapshotEngine;
+  /** How automatic checkpoints are kept and how much repository space they may use. */
+  checkpointPolicy: CheckpointPolicy;
   /** Serializes start, stop, sleep and wake of this host's boxes (#12). */
   power: BoxPower;
 }
@@ -123,6 +126,11 @@ export function createLocalHost(
     pulse,
     checkpoints: options.checkpoints ?? new CheckpointStore(cfg.dataDir),
     checkpointEngine: options.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir }),
+    checkpointPolicy: {
+      keepLast: cfg.checkpointKeepLast,
+      keepDays: cfg.checkpointKeepDays,
+      capacityBytes: cfg.checkpointCapacityMb * 1024 * 1024,
+    },
     power: new BoxPower(),
   };
   return ctx;

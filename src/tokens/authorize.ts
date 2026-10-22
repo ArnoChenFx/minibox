@@ -216,6 +216,16 @@ const rollbackRule: Rule = async (check) => {
   assertSecretUse(check.principal, storedEnv(check.host, resolvedBox(check.resolved).boxId));
 };
 
+/**
+ * A rollback's confirm and undo belong to the token that started it, as the rollback's checkpoint is its creator's to
+ * change. Another token may see the box but may not finish the rollback.
+ */
+const rollbackOwnerRule: Rule = async (check) => {
+  await boxRule(check);
+  const pending = check.host.checkpoints.pendingRollback(resolvedBox(check.resolved).boxId);
+  if (pending && pending.createdBy !== check.principal.id) throw refusal("rollback_out_of_scope");
+};
+
 /** An exec names its box by container id. Anything that cannot be matched to a visible spec is refused. */
 const execRule: Rule = async ({ principal, host, resolved }) => {
   const target = resolved as ExecTarget | undefined;
@@ -427,6 +437,9 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["checkpoint.update", ownedCheckpointRule],
   ["checkpoint.delete", ownedCheckpointRule],
   ["box.rollback", rollbackRule],
+  ["box.rollback.get", boxRule],
+  ["box.rollback.confirm", rollbackOwnerRule],
+  ["box.rollback.undo", rollbackOwnerRule],
   ["template.list", noAccess],
   [
     "template.promote",

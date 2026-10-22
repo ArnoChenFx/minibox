@@ -148,6 +148,21 @@ export interface HelperResult {
   logs: string;
 }
 
+/** Where a helper finds its `HelperSpec.secrets`, read-only. */
+export const HELPER_SECRETS_DIR = "/run/secrets";
+
+/**
+ * Marks the volume that stages a helper's secrets for one run. The volume also carries the helper's own labels, so a
+ * startup sweep can find the ones a crash left behind on this instance's prefix and remove them.
+ */
+export const HELPER_SECRETS_LABEL = "minibox.helper-secrets";
+
+/** A file-sized secret for one helper run. `name` is a plain file name, not a path. */
+export interface HelperSecret {
+  name: string;
+  value: string;
+}
+
 export interface HelperSpec {
   image: string;
   cmd: string[];
@@ -160,6 +175,12 @@ export interface HelperSpec {
   labels?: Record<string, string>;
   /** `NAME=value` entries. Used by tool installs for HTTP_PROXY and npm/pip settings. */
   env?: string[];
+  /**
+   * Secrets the helper reads from `/run/secrets/<name>`, read-only. A secret never goes into `env` or the container
+   * config, which the engine shows to anyone who can inspect the container. The engine stages them in a volume that
+   * exists only for the run.
+   */
+  secrets?: HelperSecret[];
   /**
    * When true, the helper joins the engine's default bridge so it can reach npm / PyPI / GitHub.
    * Absent or false keeps NetworkMode `none` (volume probes and chown).
