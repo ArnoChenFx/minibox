@@ -220,7 +220,7 @@ flowchart LR
 - **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, waitMs)` 长轮询（最长 25000 毫秒，不依赖客户端是否支持流式输出）；`exec_kill` 终止进程树。
 - **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。已到期 TTL 的 Box 不会被启动，返回 `409 box_ttl_expired`。空闲休眠与 TTL 的规则见 [5.10](#510-实现说明12)。
 - **默认用户**：非 root 用户 `dev`。工作目录默认 `/workspace`。
-- **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
+- **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。停止仍未结束时，前台调用最多再等 2 秒，然后返回 `status: running` 与 `timedOut: true`，停止在后台继续。
 - **并发上限**：后台 exec 每个 Box 最多 8 个，全部 MiniBox 最多 64 个。超限的调用返回 `429`，且不会唤醒已停止的 Box（决策 47）。前台调用不计入。
 - **终止在箱内完成**（决策 44）：非 TTY 的命令经包装 shell 运行，包装 shell 的参数中带有一个随机令牌。终止时，箱内的脚本在 `/proc` 中按命令行找到包装 shell；`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选，同样要核对命令行。「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本冻结整棵进程树（沿父进程号收集；包装 shell 自己是会话或进程组首进程时，同一会话与进程组也一并收集），再逐个 `SIGKILL`，并重新扫描直到没有新进程。宿主机从不向 Docker 报告的宿主机 pid 发送信号。Docker 报告 exec 已结束后才算成功；否则返回 `502`，exec 保持 `running`，可以重试。不在保证范围内的进程：调用 `setsid` 换了会话、且父进程已先退出的进程；命令结束后留在箱内的后台进程；处于不可中断睡眠的进程。Box 需要 `/bin/sh`、`cat`、`rm` 与 `sleep`。
 - **权限**：`exec` 意味着可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。挂载卷需要对该卷的 `volume:attach`，读写挂载或新建卷还需要 `volume:write`（见 [9.2](#92-必须写进文档与测试的安全约束)）。所有者密钥拥有全部范围；Agent 令牌只拥有创建时授予的范围（#13）。
