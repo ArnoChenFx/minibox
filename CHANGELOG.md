@@ -192,6 +192,10 @@
 - 基础模板等标签被重新指向新镜像后，以该标签创建的 Box 重建时，此前即使传入同一个模板名也返回 `rebuild_empty`，容器仍运行旧镜像；确认重建后规格仍记录旧摘要，Box 报告 `digest` 漂移。现在这类 Box 跟随标签：预览列出 `标签 (旧镜像短 ID) → 标签 (新镜像短 ID)` 的模板变更，确认后运行标签当前指向的镜像，`template.digest` 随之更新。快照 Box 与标签已删除的 Box 不跟随。
 - 镜像早于基础模板的 Box（缺少 `tmux`，或没有 `dev` 用户）启动会话时，此前显示引擎的原始错误（`docker_error`，或 `tmux failed: exit status 126`）。现在返回 `409` 与 `session_image_unsupported`，提示重新构建基础模板，并把该 Box 重建到新模板上。会话列表、启动与附着、终端错误帧都走同一映射。
 - 创建 Box，或重建到另一个镜像时，若模板的 `minibox.template.uid` 与 `minibox.template.gid` 标签给出的属主，与可写 `/workspace` 卷根目录的属主不同，启动前把根目录改为模板的属主（只改根目录，不递归）。此前已有内容的卷保留原来的 root 属主，`dev` 无法写入 `/workspace`。重建回滚时恢复原属主。只读挂载与不带属主标签的模板不做改动。
+- NFS 池上的 exec 超时不再等待冻结的挂载：终止命令、终端附着与 SSH 中继改在 `/` 下启动，终止命令的创建与启动限时 5 秒。前台 exec 超时后，若终止超过 2 秒仍未完成，调用返回 `status: running` 与 `timedOut: true`，终止在后台继续重试。此前 `hard` 挂载冻结时，带 `timeoutSec` 的 exec 要等服务器恢复才返回。辅助容器的工作目录也统一为 `/`。
+- 新建卷时，MiniBox 会以 Box 用户（uid 1000）在新的卷目录中试写一次。写不进去时创建失败，返回 `502 bad_gateway`（`storage_unwritable`），并删除刚建的子目录。错误提示说明应设置 `all_squash,anonuid=1000,anongid=1000`（或 `root_squash,anonuid=1000,anongid=1000`），并链接 NAS 指南。此前导出目录映射为 `nobody` 时，卷会静默创建，Box 内却无法写入。
+- NAS 拒绝创建卷目录（`Permission denied` 或 `Operation not permitted`）时，返回 `502 bad_gateway` 与 `storage_permission_denied`，不再是 `400 validation_failed`，错误提示同样指向 NAS 指南。其他准备失败仍是 `400`（`volume_prepare_failed`）。
+- 存储池改为并发探测。一台服务器无应答时，其余池照常报告，整次探测约 5 秒返回。单个池 5 秒内没有完成探测即报告 `unreachable`（`no answer within 5 s`），探测本身继续在后台运行，结束时更新缓存。15 秒缓存不变。此前池逐个探测，排在前面的池一直没有应答时，后面池的结果也要等它返回。
 
 ### 文档
 - README、README-zh 与 `docs/agents.md` 说明会话工具、接管与归还的规则、`SESSION_TAKEOVER_IDLE_SEC`、终端 WebSocket 的参数与控制帧、MCP 工具数（13 个），以及事件表中的活动与审计分档。`docs/design.md` 新增 §10.5 实现说明并更新 §8.9；`docs/runtime.md` 说明 FakeRuntime 对 tmux 的模拟（#14）。
