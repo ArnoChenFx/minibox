@@ -29,6 +29,7 @@ const SNAPSHOT_REF = "mbtest-snap:nightly";
 const TEMPLATE_REF = "mbtest-template:gold";
 const CHECKPOINT_PLACEHOLDER = `ck_${"0".repeat(16)}`;
 const PACKAGE_PLACEHOLDER = `pk_${"0".repeat(16)}`;
+const BACKUP_PLACEHOLDER = `bk_${"0".repeat(16)}`;
 const PASSPHRASE = "correct horse battery staple";
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 const CUSTOM_TOOL = {
@@ -157,6 +158,10 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "checkpoint.schedule.get": (id) => ({ id }),
   "checkpoint.schedule.set": (id) => ({ id, everyHours: 6 }),
   "checkpoint.schedule.clear": (id) => ({ id }),
+  "backup.create": () => ({ passphrase: PASSPHRASE }),
+  "backup.list": () => ({}),
+  "backup.download": () => ({ id: BACKUP_PLACEHOLDER }),
+  "backup.delete": () => ({ id: BACKUP_PLACEHOLDER }),
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.save": (id) => ({ id, name: "silver" }),
@@ -208,6 +213,16 @@ async function takeCheckpointOf(app: App, ctx: OperationContext, boxId: string):
   const { checkpoints } = (await app.operations.run("checkpoint.list", ctx, {})) as { checkpoints: { id: string }[] };
   const [newest] = checkpoints;
   if (!newest) throw new Error("the sample checkpoint was not listed");
+  return newest.id;
+}
+
+/** Makes a backup of the sample app's data directory and returns its id. */
+async function backupOf(app: App, ctx: OperationContext): Promise<string> {
+  await app.operations.run("backup.create", ctx, { passphrase: PASSPHRASE });
+  await app.tasks.drain();
+  const { backups } = (await app.operations.run("backup.list", ctx, {})) as { backups: { id: string }[] };
+  const [newest] = backups;
+  if (!newest) throw new Error("the sample backup was not listed");
   return newest.id;
 }
 
@@ -302,6 +317,9 @@ async function preparedInput(
   if (operation.name === "checkpoint.import") {
     const id = await packageOfCheckpoint(app, ctx, boxId);
     return { input: { id, passphrase: PASSPHRASE } };
+  }
+  if (operation.name === "backup.download" || operation.name === "backup.delete") {
+    return { input: { id: await backupOf(app, ctx) } };
   }
   if (CHECKPOINT_OPERATIONS_ON_AN_EXISTING.includes(operation.name)) {
     const checkpoint = await takeCheckpointOf(app, ctx, boxId);
@@ -985,13 +1003,16 @@ describe("projections", () => {
     ).toEqual([
       "attach_volume",
       "clear_checkpoint_schedule",
+      "create_backup",
       "create_volume",
+      "delete_backup",
       "delete_volume",
       "detach_volume",
       "export_checkpoint",
       "get_checkpoint_schedule",
       "get_volume",
       "import_checkpoint",
+      "list_backups",
       "list_pools",
       "list_volumes",
       "measure_volume",

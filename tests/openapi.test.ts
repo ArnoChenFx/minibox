@@ -70,6 +70,10 @@ describe("OpenAPI document", () => {
       Object.values(item).map((operation) => operation.operationId),
     );
     expect(ids.toSorted()).toEqual([
+      "backup.create",
+      "backup.delete",
+      "backup.download",
+      "backup.list",
       "box.action.restart",
       "box.action.start",
       "box.action.stop",

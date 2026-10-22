@@ -32,6 +32,7 @@ export function normalize(text: string): string {
     .replace(/vol_[0-9a-z]+/g, "<volumeId>")
     .replace(/\bbx_[0-9a-z]+/g, "<boxId>")
     .replace(/\bck_[0-9a-z]{8,32}\b/g, "ck_<checkpoint>")
+    .replace(/\bbk_[0-9a-z]{8,32}\b/g, "bk_<backup>")
     .replace(/tok_[0-9a-f]+/g, "<tokenId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
@@ -991,6 +992,14 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("list notification deliveries with a zero limit", "GET", "/api/notify/deliveries?limit=0");
     await send("delete the webhook channel", "DELETE", alerts);
     await send("delete the webhook channel again", "DELETE", alerts);
+
+    await send("list backups before any is made", "GET", "/api/backups");
+    await post("back up with a short passphrase", "/api/backups", { passphrase: "short" });
+    const made = await post("back up the data directory", "/api/backups", { passphrase: PASSPHRASE });
+    const backup = (await waitTask(base, made.json)).result as { backup?: { id?: string } } | undefined;
+    await send("download a backup that does not exist", "GET", "/api/backups/bk_0000000000000000/download");
+    await send("delete the backup", "DELETE", `/api/backups/${String(backup?.backup?.id ?? "")}`);
+    await send("delete the backup again", "DELETE", `/api/backups/${String(backup?.backup?.id ?? "")}`);
   } finally {
     server.stop(true);
     app.throttle.stop();

@@ -165,6 +165,19 @@ export const CheckpointPackageSchema = z.object({
   url: z.string(),
 });
 
+/** A stored backup of DATA_DIR. The archive is downloaded from `url` until the backup is deleted. */
+export const BackupSchema = z.object({
+  id: z.string(),
+  origin: z.enum(["create", "target"]),
+  targetId: z.string().nullable(),
+  createdBy: z.string().nullable(),
+  bytes: z.number().int(),
+  sha256: z.string(),
+  entries: z.number().int(),
+  createdAt: z.string(),
+  url: z.string(),
+});
+
 /** The outcome of one scheduled run. `reason` says why a run was skipped, such as `sleeping` or `capacity`. */
 export const ScheduleLastRunSchema = z.object({
   at: z.string(),

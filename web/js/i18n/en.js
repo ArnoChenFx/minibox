@@ -292,6 +292,11 @@ export default {
     "The checkpoint package is larger than the limit of {limit} MB. Raise CHECKPOINT_PACKAGE_MAX_MB to allow it.",
   "err.package_not_found": "Package {id} was not found. Packages are kept for a day, so it may have expired.",
   "err.package_upload_type": "A package is uploaded as application/octet-stream.",
+  "err.backup_not_found": "Backup {id} was not found.",
+  "err.backup_exists": "Backup {id} is already stored here, so it was not stored again.",
+  "err.backup_invalid": "The backup is not valid: {reason}",
+  "err.backup_passphrase_invalid":
+    "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
   "err.payload_too_large": "The request body is larger than the limit of {limit} MB.",
   "err.schedule_timezone_invalid": "The time zone must be an IANA name such as Asia/Shanghai or UTC.",
   "err.schedule_rule_invalid":
@@ -1503,6 +1508,7 @@ export default {
   "task.op.checkpoint.delete": "Delete checkpoint",
   "task.op.checkpoint.export": "Export checkpoint",
   "task.op.checkpoint.import": "Import checkpoint",
+  "task.op.backup.create": "Create backup",
   "task.op.box.move": "Move box",
   "task.op.box.rollback": "Roll back box",
   "task.op.box.rollback.confirm": "Confirm rollback",

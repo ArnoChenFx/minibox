@@ -253,6 +253,10 @@ export default {
   "err.package_too_large": "检查点包超过 {limit} MB 的上限。如需允许更大的包，请调高 CHECKPOINT_PACKAGE_MAX_MB。",
   "err.package_not_found": "找不到包 {id}。包只保留一天，可能已经过期。",
   "err.package_upload_type": "包必须以 application/octet-stream 上传。",
+  "err.backup_not_found": "找不到备份 {id}。",
+  "err.backup_exists": "备份 {id} 已存在于此实例，因此没有再次保存。",
+  "err.backup_invalid": "备份无效：{reason}",
+  "err.backup_passphrase_invalid": "口令长度须为 12 到 1024 个字符，不能以空格开头或结尾，也不能包含换行。",
   "err.payload_too_large": "请求体超过 {limit} MB 的上限。",
   "err.schedule_timezone_invalid": "时区必须是 IANA 名称，例如 Asia/Shanghai 或 UTC。",
   "err.schedule_rule_invalid":
@@ -1394,6 +1398,7 @@ export default {
   "task.op.checkpoint.delete": "删除检查点",
   "task.op.checkpoint.export": "导出检查点",
   "task.op.checkpoint.import": "导入检查点",
+  "task.op.backup.create": "创建备份",
   "task.op.box.move": "迁移 Box",
   "task.op.box.rollback": "回滚 Box",
   "task.op.box.rollback.confirm": "确认回滚",

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { BACKUP_VERSION, type BackupRecord, BackupStore, isBackupId, newBackupId } from "../src/backup/store";
+import { silenceLogs } from "./support/app";
 
 function recordFor(id: string, createdAt: string): BackupRecord {
   return {
@@ -62,12 +63,17 @@ describe("backup store", () => {
   });
 
   test("a record that does not parse is skipped, and listing goes on", () => {
-    store.ensureDir();
-    const broken = store.allocateId();
-    writeFileSync(join(store.dir(), `${broken}.json`), "{ not json");
-    finish(store.allocateId(), "2026-10-03T00:00:00.000Z");
-    expect(store.read(broken)).toBeNull();
-    expect(store.list()).toHaveLength(1);
+    const restoreLogs = silenceLogs();
+    try {
+      store.ensureDir();
+      const broken = store.allocateId();
+      writeFileSync(join(store.dir(), `${broken}.json`), "{ not json");
+      finish(store.allocateId(), "2026-10-03T00:00:00.000Z");
+      expect(store.read(broken)).toBeNull();
+      expect(store.list()).toHaveLength(1);
+    } finally {
+      restoreLogs();
+    }
   });
 
   test("a record whose id does not match its file name is not trusted", () => {

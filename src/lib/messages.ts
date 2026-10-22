@@ -239,6 +239,11 @@ export const MESSAGES = {
   package_too_large:
     "The checkpoint package is larger than the limit of {limit} MB. Raise CHECKPOINT_PACKAGE_MAX_MB to allow it.",
   package_not_found: "Package {id} was not found. Packages are kept for a day, so it may have expired.",
+  backup_not_found: "Backup {id} was not found.",
+  backup_exists: "Backup {id} is already stored here, so it was not stored again.",
+  backup_invalid: "The backup is not valid: {reason}",
+  backup_passphrase_invalid:
+    "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
   package_upload_type: "A package is uploaded as application/octet-stream.",
   payload_too_large: "The request body is larger than the limit of {limit} MB.",
   schedule_rule_invalid:
