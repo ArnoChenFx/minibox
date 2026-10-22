@@ -1,4 +1,4 @@
-# Coding agent brand icons
+# AI agent brand icons
 
 Vendored from [Lobe Icons](https://github.com/lobehub/lobe-icons/tree/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons), commit `ab8cbcc6ce806b923c547628132957c8a8b61509`, under the included MIT license. No runtime CDN requests or icon library dependency is required.
 

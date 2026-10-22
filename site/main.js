@@ -11,7 +11,7 @@ const translationsZh = {
     heroLine1: "你的 Agent。",
     heroLine2: "你的机器。",
     heroLine3: "你说了算。",
-    heroDescription: "在自己的机器上，为 AI 编程 Agent 提供独立的 Docker 工作空间。",
+    heroDescription: "在自己的机器上，为 AI Agent 提供独立的 Docker 工作空间。",
     getStarted: "开始使用",
     exploreProject: "了解开源项目",
     illustrationLabel: "个人 Docker 工作空间与终端的示意图",
@@ -76,7 +76,7 @@ const translationsZh = {
     faq3Question: "删除 Box 后，文件会怎样？",
     faq3Answer:
       "工作区与 home 的数据保存在独立于容器可写层的卷里。删除 Box 时，可以选择保留哪些归属卷。系统快照不包含挂载卷；检查点可以保存工作区和 home 的数据。",
-    faq4Question: "能连接我正在使用的编程 Agent 吗？",
+    faq4Question: "能连接我正在使用的 AI Agent 吗？",
     faq4Answer:
       "支持 Streamable HTTP MCP 的客户端都可以连接 MiniBox，也可以通过 CLI 和 REST API 接入。工具目录支持在 Box 里安装已适配的 Agent CLI。请给 Agent 分配受限令牌，而不是所有者主密钥。",
     closingTitle: "给下一个大想法，腾一点空间。",
