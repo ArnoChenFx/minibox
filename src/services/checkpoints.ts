@@ -27,7 +27,7 @@ import { ROLE_MOUNT, type VolumeRecord, type VolumeRole } from "../volumes/types
 import { type Box, createBox, getBox, locked, refuseExpired, startLocked } from "./boxes";
 import { assertAutomaticAllowed } from "./checkpoint-capacity";
 import { holdVolumeBoxes } from "./files";
-import type { ImageItem } from "./images";
+import { envScrubChanges, type ImageItem } from "./images";
 import { rebuildBox } from "./rebuild";
 import { deleteSnapshot, listSnapshots } from "./snapshots";
 import type { RecordNote } from "./volume-owner";
@@ -344,6 +344,7 @@ export async function underBox<T>(host: HostCtx, boxId: string, fn: (box: Box) =
 
 async function commitSystemLayer(host: HostCtx, box: Box, id: string, signal?: AbortSignal): Promise<SystemLayer> {
   const repo = `${host.prefix}-checkpoint`;
+  const scrub = await envScrubChanges(host, box);
   await host.runtime.commitContainer(box.id, {
     repo,
     tag: id,
@@ -351,7 +352,7 @@ async function commitSystemLayer(host: HostCtx, box: Box, id: string, signal?: A
     author: "minibox",
     pause: true,
     signal,
-    changes: [labelChange(host.keys.checkpoint, id), labelChange(host.keys.template, "false")],
+    changes: [labelChange(host.keys.checkpoint, id), labelChange(host.keys.template, "false"), ...scrub],
   });
   const image = `${repo}:${id}`;
   const details = await host.runtime.inspectImage(image);

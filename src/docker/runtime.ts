@@ -905,7 +905,7 @@ export function createDockerRuntime(socketPath: string): Runtime {
 
     async inspectImage(ref) {
       const info = await call(() => docker.getImage(ref).inspect());
-      return { id: info.Id, labels: info.Config?.Labels ?? {} };
+      return { id: info.Id, labels: info.Config?.Labels ?? {}, env: info.Config?.Env ?? [] };
     },
 
     async pullImage(ref) {
