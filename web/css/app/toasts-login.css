@@ -1,0 +1,169 @@
+/* ---------- Toasts ---------- */
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 40px));
+}
+.toast {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+  animation: slide 0.2s ease;
+}
+.toast .icon {
+  margin-top: 2px;
+}
+.toast.success .icon {
+  color: var(--success);
+}
+.toast.error .icon {
+  color: var(--danger);
+}
+.toast.info .icon {
+  color: var(--accent);
+}
+.toast strong {
+  display: block;
+  font-weight: 600;
+}
+.toast .muted {
+  font-size: 12.5px;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.toast-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+.toast-link:hover {
+  text-decoration: underline;
+}
+.toast.leaving {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: all 0.2s;
+}
+@keyframes slide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* ---------- Login ---------- */
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+}
+.login-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 48px;
+  display: flex;
+  flex-direction: column;
+  color: #eef;
+  background: radial-gradient(1200px 600px at 10% 0%, #4f46e5 0%, #312e81 45%, #111127 100%);
+}
+.login-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 85%);
+}
+.login-hero > * {
+  position: relative;
+  z-index: 1;
+}
+.login-hero h1 {
+  font-size: 34px;
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  max-width: 460px;
+}
+.login-hero .lead {
+  margin-top: 14px;
+  color: #c7c8f5;
+  font-size: 15px;
+  max-width: 440px;
+}
+.login-hero ul {
+  list-style: none;
+  padding: 0;
+  margin: 28px 0 0;
+  display: grid;
+  gap: 12px;
+  color: #dcdcfb;
+  font-size: 14px;
+}
+.login-hero li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.login-hero li .icon {
+  color: #a5a2ff;
+}
+/* Logo pinned top, pitch centred in the remaining height (offset by the logo row). */
+.login-hero .hero-body {
+  margin-block: auto;
+  padding-bottom: 30px;
+}
+.login-panel {
+  display: grid;
+  place-items: center;
+  padding: 40px 24px;
+  background: var(--bg-elev);
+}
+.login-card {
+  width: min(380px, 100%);
+}
+.login-card .logo {
+  height: 34px;
+  margin-bottom: 28px;
+}
+.login-card h2 {
+  font-size: 22px;
+}
+.login-card .sub {
+  color: var(--text-2);
+  margin: 6px 0 26px;
+}
+.login-card .btn {
+  height: 40px;
+  margin-top: 18px;
+}
+.login-card .note {
+  margin-top: 22px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.6;
+}
+.login-tools {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

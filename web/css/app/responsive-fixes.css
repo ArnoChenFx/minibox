@@ -1,0 +1,188 @@
+/* ---------- Responsive ---------- */
+@media (max-width: 1180px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: fixed;
+    z-index: 60;
+    left: 0;
+    top: 0;
+    width: var(--sidebar-w);
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+    box-shadow: var(--shadow-lg);
+  }
+  .shell.nav-open .sidebar {
+    transform: none;
+  }
+  .menu-btn {
+    display: inline-grid;
+  }
+  .content {
+    padding: 20px 16px;
+  }
+  .topbar {
+    padding: 0 16px;
+  }
+  .grid-3,
+  .grid-2,
+  .grid-fit {
+    grid-template-columns: 1fr;
+  }
+  .kv-cols {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+  .login-hero {
+    display: none;
+  }
+  .segmented {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .hide-sm {
+    display: none !important;
+  }
+}
+@media (max-width: 560px) {
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
+  .rebuild-mount {
+    grid-template-columns: 1fr;
+  }
+  /* Two lines per variable: name | kind, then value | remove. The columns still line up from row to row. */
+  .env-row {
+    grid-template-columns: minmax(0, 1fr) 112px;
+    grid-template-areas:
+      "name kind"
+      "value remove";
+  }
+  .env-row > [data-env-remove] {
+    width: 112px;
+  }
+  .env-rows {
+    gap: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---------- Fixes / overrides ---------- */
+.spark {
+  display: block;
+  width: 100%;
+  height: 40px;
+}
+.icon-btn.menu-btn {
+  display: none;
+}
+.pill .sep {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 8px;
+}
+.pill span {
+  display: inline-flex;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .icon-btn.menu-btn {
+    display: inline-grid;
+  }
+}
+
+.token-secret,
+.token-snippet {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+/* A command wraps at its spaces and scrolls sideways past a long word, so a URL or token is never split mid-word. */
+.token-snippet {
+  word-break: normal;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+textarea.token-lines {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 12px;
+  resize: vertical;
+}
+.ssh-steps {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.ssh-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ssh-step-num {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ssh-step {
+  min-width: 0;
+}
+.ssh-step > .help {
+  margin: 4px 0 8px;
+}
+.ssh-cmd {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 10px;
+}
+.ssh-cmd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ssh-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.ssh-cmd .token-snippet {
+  margin: 0;
+}
+.ssh-cmd .token-snippet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ssh-note {
+  margin: 0;
+}

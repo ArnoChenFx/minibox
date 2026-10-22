@@ -1,0 +1,171 @@
+/* ---------- Terminal / logs ---------- */
+.terminal-frame {
+  background: #0b0b0e;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #141418;
+  color: #a1a1aa;
+  font-size: 12px;
+  border-bottom: 1px solid #222;
+}
+.terminal-bar .lights {
+  display: flex;
+  gap: 6px;
+}
+.terminal-bar .lights i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #3f3f46;
+  display: block;
+}
+.terminal-bar .status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.terminal-bar .status .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #71717a;
+}
+.terminal-bar .status.on .dot {
+  background: #34d399;
+}
+.terminal {
+  height: 460px;
+  padding: 8px 10px;
+}
+.logs {
+  margin: 0;
+  height: 460px;
+  overflow: auto;
+  padding: 14px 16px;
+  background: #0b0b0e;
+  color: #d4d4d8;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.session-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.session-list {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.session-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 99px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.session-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.session-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.session-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.session-chip .icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.session-chip .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-meta {
+  padding-left: 6px;
+  border-left: 1px solid var(--border-strong);
+  color: var(--text-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.session-chip[aria-pressed="true"] .chip-meta {
+  color: var(--accent-text);
+}
+.control-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  background: #141418;
+  border-bottom: 1px solid #222;
+  color: #a1a1aa;
+  font-size: 12px;
+}
+.control-bar:empty {
+  display: none;
+}
+.control-help {
+  flex: 1;
+  min-width: 200px;
+  line-height: 1.5;
+}
+.control-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.control-bar .btn {
+  background: #1d1d23;
+  border-color: #34343c;
+  color: #e4e4e7;
+  box-shadow: none;
+}
+.control-bar .btn:hover {
+  background: #26262e;
+}
+.control-bar .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.control-bar .btn-primary:hover {
+  background: var(--accent-hover);
+}
+.control-bar .btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: #a1a1aa;
+}

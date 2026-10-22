@@ -1,0 +1,228 @@
+/* Overview card: names and values share one row height and one centre line, whatever a value holds. */
+.env-kv {
+  align-items: center;
+  row-gap: 6px;
+}
+.env-kv > dt,
+.env-kv > dd {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
+.env-kv-value {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.env-value {
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+.env-kv-reveal {
+  width: 28px;
+  height: 28px;
+}
+.env-secret {
+  font-family: var(--font-mono);
+}
+.env-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Startup command card: the buttons of the head and of the editor share one row, and the status sits above the command. */
+.startup-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.startup-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+/* The command and its output are monospace blocks; the output keeps its newest lines in view and scrolls past that. */
+.startup-block {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.startup-block:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.startup-log {
+  min-height: 56px;
+  color: var(--text-2);
+}
+.move-preview {
+  margin-top: 12px;
+}
+.move-volumes {
+  list-style: none;
+  margin: 6px 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.move-volumes li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.move-volumes li > :last-child {
+  margin-left: auto;
+}
+.rebuild-preview pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+.ck-usage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  font-size: 13px;
+}
+.ck-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ck-list {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+.ck-pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ck-row-actions {
+  flex-wrap: wrap;
+}
+.ck-schedule {
+  display: grid;
+  gap: 4px;
+}
+.ck-schedule-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.file-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.file-pick .btn {
+  flex: none;
+}
+.file-pick-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.file-pick-name.chosen {
+  color: var(--text);
+}
+.ck-schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 22px 0;
+}
+.dialog-head h2 {
+  font-size: 16px;
+}
+.dialog-head p {
+  color: var(--text-2);
+  font-size: 13px;
+  margin-top: 4px;
+}
+.dialog-head .icon-btn {
+  margin: -4px -6px 0 auto;
+}
+.dialog-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.dialog-icon.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.dialog-body {
+  padding: 18px 22px;
+  overflow: auto;
+}
+.dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.dialog-foot .error-text {
+  margin-right: auto;
+  align-self: center;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
