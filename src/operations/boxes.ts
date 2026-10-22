@@ -28,12 +28,13 @@ import { placeBox } from "../services/placement";
 import { rebuildBox } from "../services/rebuild";
 import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
-import { boxVisible, ttlFor, viewOfBox } from "../tokens/model";
+import { boxVisible, hostAllowed, refusal, ttlFor, viewOfBox } from "../tokens/model";
 import { underQuota } from "../tokens/quota";
 import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
 import { hostById, hostOfBox } from "./routing";
 import { BoxSchema, BoxWithStatsSchema, StatSampleSchema, StatsSchema } from "./schemas";
+import type { OperationContext } from "./types";
 import {
   boxEnv,
   boxId,
@@ -132,6 +133,19 @@ export const boxGet = defineOperation({
   }),
 });
 
+/**
+ * The hosts a create may place a box on: every host for the owner, and only the granted ones for a token. Automatic
+ * placement never picks, or even reads, a host the caller cannot use.
+ */
+function grantedHosts(ctx: OperationContext): HostCtx[] {
+  const hosts = ctx.allHosts?.() ?? [ctx.host];
+  const { principal } = ctx;
+  if (principal.type !== "token") return [...hosts];
+  const granted = hosts.filter((host) => hostAllowed(principal.grants.hosts, host.host.id));
+  if (granted.length === 0) throw refusal("host_not_granted", { host: AUTO_HOST });
+  return granted;
+}
+
 export const boxCreate = defineOperation({
   name: "box.create",
   tag: "boxes",
@@ -193,7 +207,7 @@ export const boxCreate = defineOperation({
   },
   hostFor: (ctx, input) => {
     if (input.host !== AUTO_HOST) return hostById(ctx, input.host ?? LOCAL_HOST_ID);
-    return placeBox(ctx.allHosts?.() ?? [ctx.host], {
+    return placeBox(grantedHosts(ctx), {
       cpus: input.cpus,
       memoryMb: input.memoryMb,
       image: input.template ?? ctx.host.baseTemplateTag,

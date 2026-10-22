@@ -10,6 +10,7 @@ import {
   GIB,
   SMALL_SOCKET,
 } from "./support/cluster";
+import { mint } from "./support/tokens";
 
 let cluster: Cluster | null = null;
 
@@ -39,6 +40,14 @@ const resize = (boxId: string, body: unknown, revision: number) =>
     method: "PATCH",
     body: JSON.stringify(body),
     headers: { "if-match": String(revision) },
+  });
+
+/** A box create sent with a token instead of the owner key. */
+const createAs = (secret: string, body: unknown) =>
+  fetch(`${current().base}/api/boxes`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
   });
 
 describe("a running box books its CPU and memory against the host it runs on", () => {
@@ -179,6 +188,29 @@ describe("host auto places a new box on the reachable host with the most room", 
     expect(res.status).toBe(422);
     expect(await errorOf(res)).toMatchObject({ code: "insufficient_capacity", key: "host_auto_no_room" });
     expect(current().engines.large.callsTo("createContainer")).toHaveLength(0);
+  });
+
+  test("a token's auto create considers only the hosts it is granted, and never reads the others", async () => {
+    await boot({}, ["small", "large"]);
+    const token = mint(current().app, {
+      name: "small-only",
+      preset: "operator",
+      hosts: { type: "list", ids: ["small"] },
+    });
+    const inspectsBefore = current().engines.large.callsTo("inspectImage").length;
+    const res = await createAs(token.secret, { name: "alpha", cpus: 1, memoryMb: 256, host: "auto", mounts: [] });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { box: { hostId: string } }).box.hostId).toBe("small");
+    expect(current().engines.large.callsTo("createContainer")).toHaveLength(0);
+    expect(current().engines.large.callsTo("inspectImage")).toHaveLength(inspectsBefore);
+  });
+
+  test("a token granted no host is refused an auto create before any engine is read", async () => {
+    await boot({}, ["small", "large"]);
+    const token = mint(current().app, { name: "nowhere", preset: "operator", hosts: { type: "list", ids: [] } });
+    const res = await createAs(token.secret, { name: "alpha", cpus: 1, memoryMb: 256, host: "auto", mounts: [] });
+    expect(res.status).toBe(403);
+    expect(await errorOf(res)).toMatchObject({ key: "host_not_granted" });
   });
 
   test("auto is a reserved word, so no host can be added under that id", async () => {

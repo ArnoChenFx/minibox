@@ -610,7 +610,7 @@ Behaviour:
 
 A box created with `"host": "auto"` goes to the host MiniBox picks:
 
-1. Only online hosts that already hold the box's template image are considered. Nothing is copied to a host for placement.
+1. Only online hosts that already hold the box's template image are considered, and for an agent token only the hosts its `hosts` grant lists. Nothing is copied to a host for placement.
 2. Of those, only the hosts with room for the box are kept. The box must fit the host's cores and memory, and booking it must keep the host within its capacity times `HOST_OVERCOMMIT` (see [Host capacity](#host-capacity)).
 3. The host left with the largest free share of CPU and memory wins, measured on whichever of the two is tighter. A tie goes to the earlier host, which is `local`.
 

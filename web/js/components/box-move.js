@@ -16,7 +16,7 @@ const ACTION_KEY = {
 };
 
 function volumeLine(volume, to) {
-  return `<li><span class="mono">${esc(volume.path)}</span> · <span class="mono">${esc(volume.name)}</span>
+  return `<li><span class="mono">${esc(volume.path)}</span><span class="mono help">${esc(volume.name)}</span>
     <span class="help">${esc(t(ACTION_KEY[volume.action] ?? "mv.action.copy", { to: hostName(to) }))}</span></li>`;
 }
 
@@ -68,7 +68,7 @@ export async function openMove(box) {
         <div class="field"><label class="label" for="mvHost">${esc(t("mv.host"))}</label>
           <select class="select" id="mvHost">${options}</select></div>
         <div class="error-text" id="mvErr"></div>
-        <div id="mvPreview" hidden></div>`
+        <div class="move-preview" id="mvPreview" hidden></div>`
       : `<p class="help">${esc(t("mv.noHosts"))}</p>`,
     footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button>
       ${options ? `<button class="btn btn-primary" id="mvPreviewBtn">${esc(t("mv.preview"))}</button>` : ""}
