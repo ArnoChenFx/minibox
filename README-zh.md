@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml"><img src="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="许可证：MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="许可证：Apache-2.0" /></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.3-f9f1e1?logo=bun&amp;logoColor=black" alt="运行时：Bun ≥ 1.4.3" /></a>
   <img src="https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&amp;logoColor=white" alt="沙箱：Docker" />
 </p>
@@ -83,4 +83,6 @@ docker exec minibox cat /data/access_key
 
 ## 许可证
 
-MIT。Copyright © 2026 Arno Chen。详见 [LICENSE](LICENSE)。
+Apache-2.0。Copyright © 2026 Arno Chen。详见 [LICENSE](LICENSE)。
+
+第三方组件继续适用各自的许可证，见 [NOTICE](NOTICE)。
