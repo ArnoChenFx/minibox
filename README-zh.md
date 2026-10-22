@@ -855,6 +855,8 @@ minibox/
 
 ## 开发
 
+独立项目主页位于 [`site/`](site/)。运行 `bun run preview:site` 预览，运行 `bun run test:site` 执行浏览器检查。参见[主页开发与 GitHub Pages 部署说明](docs/homepage.md)。
+
 ```bash
 bun run dev        # 监听文件变化自动重启
 bun run fmt        # 用 oxfmt 格式化（直接写入文件）
