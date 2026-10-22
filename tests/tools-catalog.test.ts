@@ -68,6 +68,7 @@ describe("tool catalog parse", () => {
     expect(parseCatalogEntry({ ...sample, stop: " claude stop " }, "x.json").stop).toBe("claude stop");
     expect(parseCatalogEntry({ ...sample, stop: "   " }, "x.json").stop).toBeUndefined();
     expect(parseCatalogEntry(sample, "x.json").stop).toBeUndefined();
+    expect(() => parseCatalogEntry({ ...sample, stop: ["claude", "stop"] }, "x.json")).toThrow(/stop must be a string/);
   });
 
   test("reads needsRoot and defaults it to false", () => {
@@ -187,10 +188,12 @@ describe("tailscale catalog entry", () => {
 
   test("requires explains userspace networking, the proxy, and what does not work", () => {
     expect(entry.requires).toContain("Userspace networking");
-    expect(entry.requires).toContain("inbound tailnet connections reach any program");
+    // tailscaled's netstack forwards inbound TCP and UDP for the node's own tailnet IPs to 127.0.0.1.
+    expect(entry.requires).toContain("Inbound TCP and UDP to the box's tailnet IP are forwarded to 127.0.0.1");
     expect(entry.requires).toContain("localhost:1055");
     expect(entry.requires).toContain("ALL_PROXY=socks5h://localhost:1055");
-    expect(entry.requires).toContain("UDP and ICMP are not supported");
+    expect(entry.requires).toContain("No ICMP");
+    expect(entry.requires).toContain("after the box restarts or wakes");
   });
 
   test("upgrade re-runs the install, and uninstall removes both binaries and the wrapper", () => {

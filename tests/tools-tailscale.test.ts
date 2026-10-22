@@ -243,6 +243,27 @@ describe.skipIf(!READY)("tailscale install", () => {
     expect(existsSync(join(sandbox.prefix, "bin", "minibox-tailscale"))).toBe(false);
   });
 
+  test("an empty or malformed published checksum installs nothing", () => {
+    for (const hex of ["", "not-a-digest", "a".repeat(63)]) {
+      writeChecksum(sandbox.site, `tailscale_${VERSION}_amd64.tgz`, hex);
+      const result = install(sandbox);
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("malformed sha256");
+      expect(existsSync(join(sandbox.prefix, "bin", "tailscale"))).toBe(false);
+    }
+  });
+
+  test("an index that names an unexpected tarball is refused before anything is downloaded", () => {
+    writeFileSync(
+      join(sandbox.site, "index.json"),
+      JSON.stringify({ Version: VERSION, Tarballs: { amd64: "../elsewhere/tailscale_1.2.3_amd64.tgz" } }),
+    );
+    const result = install(sandbox);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("no usable tailscale tarball for amd64");
+    expect(readFileSync(sandbox.curlLog, "utf8")).not.toContain(".tgz");
+  });
+
   test("an aarch64 machine gets the arm64 tarball", () => {
     const result = install(sandbox, "aarch64");
     expect(result).toMatchObject({ exitCode: 0 });
@@ -286,6 +307,17 @@ describe.skipIf(!READY)("minibox-tailscale", () => {
     expect(starts[0]).toContain(`--socket=${state}/tailscaled.sock`);
     expect(starts[0]).toContain("--socks5-server=localhost:1055");
     expect(starts[0]).toContain("--outbound-http-proxy-listen=localhost:1055");
+  }, 15_000);
+
+  test("up waits for a tailscaled that is still starting instead of starting a second one", async () => {
+    expect(wrapper(sandbox, ["up"])).toMatchObject({ exitCode: 0 });
+    const sock = join(stateDir(sandbox), "tailscaled.sock");
+    rmSync(sock);
+    const again = Bun.spawn([wrapperPath(sandbox), "up"], { env: envFor(sandbox), stdout: "pipe", stderr: "pipe" });
+    await Bun.sleep(300);
+    writeFileSync(sock, "");
+    expect(await again.exited).toBe(0);
+    expect(readFileSync(sandbox.daemonLog, "utf8").trim().split("\n")).toHaveLength(1);
   }, 15_000);
 
   test("up passes its other arguments to tailscale up", () => {
