@@ -3,20 +3,36 @@ import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks, trackTask } from "../components/tasks.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
-import { bytes, dateTime } from "../lib/format.js";
+import { bytes, dateTime, shortId } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { filterBySearch } from "../lib/search.js";
 import { invalidateTemplates } from "../lib/store.js";
 import { templateSearchFields } from "../lib/template-list.js";
-import { confirmDialog, emptyState, toast, toastError, withBusy } from "../lib/ui.js";
+import { confirmDialog, emptyState, nameError, promptDialog, toast, toastError, withBusy } from "../lib/ui.js";
+
+function legacyRow(s) {
+  return `<tr>
+        <td><div class="name-cell"><span class="avatar">${icon("camera")}</span><div class="truncate"><strong class="mono" style="font-weight:500">${esc(s.ref)}</strong><span class="subtle mono">${esc(shortId(s.id))}</span></div></div></td>
+        <td class="hide-sm">${s.source ? esc(s.source) : '<span class="subtle">—</span>'}</td>
+        <td class="num">${bytes(s.size)}</td>
+        <td class="hide-sm subtle nowrap">${dateTime(s.createdAt)}</td>
+        <td><div class="actions">
+          <button class="btn btn-sm" data-action="snap-create" data-ref="${esc(s.ref)}">${icon("plus")}${t("box.create")}</button>
+          <button class="btn btn-sm" data-action="snap-promote" data-ref="${esc(s.ref)}" data-source="${esc(s.source ?? "")}">${icon("upload")}${t("sn.promote")}</button>
+          <button class="icon-btn danger" data-action="snap-delete" data-ref="${esc(s.ref)}" title="${t("sn.delete")}" aria-label="${t("sn.delete")}">${icon("trash")}</button>
+        </div></td></tr>`;
+}
 
 export function render(view, focusName = "") {
   let base = "";
   let templates = null;
   let loadError = null;
+  let legacy = null;
+  let legacyError = null;
   let query = "";
   let pendingFocus = focusName;
+
   view.innerHTML = `
     <div class="page-head">
       <div><h1>${t("nav.templates")}</h1><p>${t("tp.subtitle")}</p></div>
@@ -25,8 +41,18 @@ export function render(view, focusName = "") {
         <button class="btn" data-action="build">${icon("hammer")}${t("tp.build")}</button>
       </div>
     </div>
-    <div class="grid grid-fit" id="tpGrid">${'<div class="card"><div class="skeleton sk-block"></div></div>'.repeat(3)}</div>`;
+    <div class="grid grid-fit" id="tpGrid">${'<div class="card"><div class="skeleton sk-block"></div></div>'.repeat(3)}</div>
+    <details class="advanced" id="tpLegacy" hidden>
+      <summary>${t("sn.legacyTitle")} <span class="subtle" id="tpLegacyCount"></span></summary>
+      <p class="help">${t("sn.legacyText")}</p>
+      <div class="card"><div class="table-wrap"><table class="table">
+        <thead><tr><th>${t("sn.colSnapshot")}</th><th class="hide-sm">${t("sn.colSource")}</th><th>${t("tp.size")}</th><th class="hide-sm">${t("bx.colCreated")}</th><th style="text-align:right">${t("bx.colActions")}</th></tr></thead>
+        <tbody id="tpLegacyBody"></tbody>
+      </table></div></div>
+    </details>`;
   const grid = view.querySelector("#tpGrid");
+  const legacyBox = view.querySelector("#tpLegacy");
+  const legacyBody = view.querySelector("#tpLegacyBody");
 
   const badge = (tp) => (tp.ref === base ? t("tp.builtin") : t("tp.custom"));
 
@@ -80,12 +106,21 @@ export function render(view, focusName = "") {
     }
   };
 
+  const drawLegacy = () => {
+    legacyBox.hidden = !legacyError && !legacy?.length;
+    if (legacyBox.hidden) return;
+    legacyBox.querySelector("#tpLegacyCount").textContent = legacy ? `(${legacy.length})` : "";
+    legacyBody.innerHTML = legacyError
+      ? `<tr><td colspan="5">${emptyState({ iconName: "alert", title: t("sn.loadFailed"), text: esc(legacyError.message) })}</td></tr>`
+      : legacy.map(legacyRow).join("");
+  };
+
   const search = bindSearchBox(view.querySelector("#tpSearch"), (text) => {
     query = text;
     draw();
   });
 
-  const load = async () => {
+  const loadTemplates = async () => {
     try {
       const r = await api("/api/templates");
       templates = r.templates;
@@ -96,6 +131,18 @@ export function render(view, focusName = "") {
     }
     draw();
   };
+
+  const loadLegacy = async () => {
+    try {
+      legacy = (await api("/api/snapshots")).snapshots;
+      legacyError = null;
+    } catch (e) {
+      legacyError = e;
+    }
+    drawLegacy();
+  };
+
+  const load = () => Promise.all([loadTemplates(), loadLegacy()]);
 
   delegate(view, {
     use: (b) => openCreateBox({ template: b.dataset.ref, onCreated: (b) => (location.hash = `#/boxes/${b.id}`) }),
@@ -130,6 +177,46 @@ export function render(view, focusName = "") {
         await api(`/api/templates/${enc(b.dataset.ref)}`, { method: "DELETE" });
         invalidateTemplates();
         toast(t("tp.deleted"));
+        load();
+      } catch (e) {
+        toastError(t("ba.deleteFailed"), e);
+      }
+    },
+    "snap-create": (b) =>
+      openCreateBox({ snapshot: b.dataset.ref, onCreated: (nb) => (location.hash = `#/boxes/${nb.id}`) }),
+    "snap-promote": async (b) => {
+      const name = await promptDialog({
+        title: t("sn.promote"),
+        description: t("sn.promoteDesc", { ref: esc(b.dataset.ref) }),
+        iconName: "upload",
+        label: t("sn.templateName"),
+        value: b.dataset.source || "",
+        placeholder: t("sn.templatePlaceholder"),
+        help: t("sn.promoteHelp"),
+        confirmText: t("sn.promote"),
+        validate: (v) => nameError(v, "templateName"),
+      });
+      if (!name) return;
+      try {
+        const r = await api(`/api/snapshots/${enc(b.dataset.ref)}/promote`, { method: "POST", body: { name } });
+        invalidateTemplates();
+        toast(t("sn.promoted"), { message: r.template.ref });
+        load();
+      } catch (e) {
+        toastError(t("sn.promoteFailed"), e);
+      }
+    },
+    "snap-delete": async (b) => {
+      const ok = await confirmDialog({
+        title: t("sn.delete"),
+        message: t("sn.deleteMessage", { ref: esc(b.dataset.ref) }),
+        confirmText: t("sn.delete"),
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await api(`/api/snapshots/${enc(b.dataset.ref)}`, { method: "DELETE" });
+        toast(t("sn.deleted"));
         load();
       } catch (e) {
         toastError(t("ba.deleteFailed"), e);
