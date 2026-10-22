@@ -23,6 +23,9 @@ const PRESETS = [
 
 const PROFILES = ["standard", "strict", "relaxed"];
 
+/** The host value that lets the control plane pick the host for the box. */
+const AUTO_HOST = "auto";
+
 /** The text for a custom row the dialog refuses before sending. Paths use the server's own messages. */
 function problemText(problem) {
   return problem.code === "volume" ? t("cb.mountVolumeRequired") : t(`err.${problem.code}`, { path: problem.path });
@@ -123,12 +126,12 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   const hostField =
     !snapshot && multiHost()
       ? `<div class="field"><label class="label" for="cbHost">${t("cb.host")}</label>
-          <select class="select" id="cbHost">${hostsNow()
+          <select class="select" id="cbHost"><option value="${AUTO_HOST}">${t("cb.hostAuto")}</option>${hostsNow()
             .map(
               (h) => `<option value="${esc(h.id)}"${h.id === initialHost ? " selected" : ""}>${esc(h.name)}</option>`,
             )
             .join("")}</select>
-          <div class="help">${t("cb.hostHelp")}</div></div>`
+          <div class="help" id="cbHostHelp">${t("cb.hostHelp")}</div></div>`
       : "";
 
   const volumesSection = snapshot
@@ -219,7 +222,9 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       err = t("cb.memRange", { max: maxMem });
     q("#cbResErr").textContent = err;
     const h = hostNow();
-    if (h && !err) {
+    const automatic = q("#cbHost")?.value === AUTO_HOST;
+    if (automatic) q("#cbCapacity").innerHTML = "";
+    else if (h && !err) {
       const cpuAfter = h.boxes.allocatedCpus + state.cpus;
       const memAfter = h.boxes.allocatedMemory + state.memoryMb * 1024 * 1024;
       const over = cpuAfter > h.cpu.cores || memAfter > h.memory.total;
@@ -255,6 +260,10 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   bind("#cbMemR", "input", "memoryMb");
   bind("#cbCpu", "change", "cpus");
   bind("#cbMem", "change", "memoryMb");
+  q("#cbHost")?.addEventListener("change", () => {
+    q("#cbHostHelp").textContent = t(q("#cbHost").value === AUTO_HOST ? "cb.hostAutoHelp" : "cb.hostHelp");
+    validateRes();
+  });
   q("#cbTemplates")?.addEventListener("click", (e) => {
     const o = e.target.closest(".option");
     if (!o) return;

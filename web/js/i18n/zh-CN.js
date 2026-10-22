@@ -527,6 +527,8 @@ export default {
   "cb.hostCap": "宿主机 {cores} 核 · {mem}",
   "cb.host": "宿主机",
   "cb.hostHelp": "在其他宿主机上创建 Box 时，该宿主机的引擎上也需要有对应的模板镜像。",
+  "cb.hostAuto": "自动：剩余空间最多的宿主机",
+  "cb.hostAutoHelp": "Box 会放到持有其模板、在线且剩余空间最多的宿主机上，剩余空间按运行中 Box 占用的 CPU 与内存计算。",
   "cb.overHost": "超出宿主机容量",
   "cb.memory": "内存",
   "cb.profile": "安全配置",

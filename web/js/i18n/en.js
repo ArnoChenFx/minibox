@@ -580,6 +580,9 @@ export default {
   "cb.hostCap": "host {cores} cores · {mem}",
   "cb.host": "Host",
   "cb.hostHelp": "A box on another host needs its template image on that host's engine.",
+  "cb.hostAuto": "Automatic: the host with the most room",
+  "cb.hostAutoHelp":
+    "The box goes to the online host that holds its template and has the most room for it, counting the CPU and memory its running boxes book.",
   "cb.overHost": "Exceeds host capacity",
   "cb.memory": "Memory",
   "cb.profile": "Security profile",
