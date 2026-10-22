@@ -46,5 +46,5 @@ WebSocket connections work through the preview. Hot module reload in Vite uses a
 ## Limits
 
 - Previews work only for boxes on the local host. A box on a remote host shows an error.
-- Previews use only the path address shown above. Subdomain addresses are not available.
+- Previews use only the path address shown above. Share links and subdomain addresses are not available.
 - A preview keeps its box awake while a response is loading, and while a WebSocket is open. See [Idle sleep and TTL](idle-sleep.md).
