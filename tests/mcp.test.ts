@@ -234,6 +234,7 @@ describe("MCP", () => {
         "measure_volume",
         "replace_pools",
         "set_checkpoint_schedule",
+        "set_volume_limits",
       ]);
 
       const rebuild = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=rebuild");

@@ -13,6 +13,7 @@ import type { HostCtx, HostRegistry } from "../host/registry";
 import { AppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { OWNER } from "../operations/types";
+import { assertHostDiskRoom } from "../volumes/disk";
 import { type Box, getBox } from "./boxes";
 import { assertAutomaticAllowed } from "./checkpoint-capacity";
 import { backupBox, underBox } from "./checkpoints";
@@ -163,8 +164,10 @@ export class CheckpointScheduler {
     if (!box.running) return skipped("stopped");
     try {
       await assertAutomaticAllowed(host);
+      await assertHostDiskRoom(host);
     } catch (e) {
       if (e instanceof AppError && e.status === 409) return skipped("capacity");
+      if (e instanceof AppError && e.status === 507) return skipped("disk");
       throw e;
     }
     const checkpoint = await backupBox(

@@ -114,6 +114,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `attach_volume` | `POST /api/volumes/{id}/attach` |
 | `detach_volume` | `POST /api/volumes/{id}/detach` |
 | `measure_volume` | `POST /api/volumes/{id}/usage` |
+| `set_volume_limits` | `PUT /api/volumes/{id}/limits`. Owner only. Soft limits are best effort, not a quota |
 | `list_pools` | `GET /api/pools` |
 | `replace_pools` | `PUT /api/pools` |
 | `export_checkpoint` | `POST /api/checkpoints/{id}/export`. Owner only. The task result holds the package |
