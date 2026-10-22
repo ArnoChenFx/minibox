@@ -223,6 +223,23 @@ export default {
   "err.volume_not_granted":
     "This credential cannot mount the volume “{volume}”. It needs volume:attach on that volume.",
   "err.host_not_granted": "This credential cannot use host “{host}”.",
+  "err.host_id_invalid": "A host id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.",
+  "err.host_exists": "A host with the id “{host}” already exists.",
+  "err.host_not_found": "Host “{host}” was not found.",
+  "err.host_is_local": "The local host cannot be removed.",
+  "err.host_in_use": "Host “{host}” still holds {count} boxes, volumes or checkpoints. Remove them first.",
+  "err.host_endpoint_invalid": "The endpoint is not valid: {reason}",
+  "err.host_credentials_missing": "The {field} is required for this host.",
+  "err.host_credentials_invalid": "The {field} is not a PEM block of the kind this host needs.",
+  "err.host_key_encrypted": "The {field} is encrypted. Use a key without a passphrase.",
+  "err.host_key_invalid": "The SSH key cannot be used: {reason}",
+  "err.host_key_unconfirmed":
+    "The SSH host key {fingerprint} has not been confirmed. Check it against the host, then add the host with that fingerprint.",
+  "err.host_key_mismatch":
+    "The SSH host key {presented} is not the key you confirmed ({expected}). Nothing was sent to the host.",
+  "err.host_unreachable": "The host could not be reached: {detail}",
+  "err.host_unsupported": "{feature} is not supported on remote hosts yet.",
+  "err.preview_remote_unsupported": "Port preview is not supported on remote hosts yet.",
   "err.profile_not_allowed": "This credential may not use the {profile} security profile.",
   "err.quota_boxes": "This token may have at most {max} boxes.",
   "err.quota_cpus": "This token's boxes would use {used} CPU cores, above its limit of {max}.",

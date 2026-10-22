@@ -1,6 +1,21 @@
 import { RuntimeError, type RuntimeErrorKind } from "../runtime";
 
-const UNAVAILABLE_CODES = new Set(["ENOENT", "ECONNREFUSED", "EACCES"]);
+/**
+ * Codes that mean the engine could not be reached at all. The network codes come from remote hosts: a host that is
+ * powered off, off the network, or whose SSH tunnel dropped. They are unavailable, not a failure of the engine.
+ */
+const UNAVAILABLE_CODES = new Set([
+  "ENOENT",
+  "ECONNREFUSED",
+  "EACCES",
+  "ECONNRESET",
+  "EPIPE",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+]);
 const UNKNOWN = "Unknown error";
 
 function kindForStatus(status: number): RuntimeErrorKind {

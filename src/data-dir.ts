@@ -46,6 +46,11 @@ export function tokensPath(dataDir: string): string {
   return join(dataDir, "tokens.json");
 }
 
+/** Remote hosts: their ids, names and endpoints, never a credential. Mode 600. Credentials live under `hosts/<id>`. */
+export function hostsPath(dataDir: string): string {
+  return join(dataDir, "hosts.json");
+}
+
 /**
  * Replace `path` with `contents` so a reader sees either the old file or the new one, never a partial write.
  * The new file is flushed before the rename, and the temporary file is removed if any step fails.

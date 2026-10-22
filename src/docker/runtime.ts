@@ -17,6 +17,7 @@ import {
   type ContainerUpdate,
   type CreateContainerSpec,
   type DiskUsage,
+  type EngineTarget,
   HELPER_SECRETS_DIR,
   HELPER_SECRETS_LABEL,
   type HelperSpec,
@@ -623,9 +624,29 @@ async function runContainer(docker: Docker, spec: HelperSpec): Promise<{ exitCod
   }
 }
 
+/** Longest a TLS engine may take to answer the connection before the request fails as unavailable. */
+const TLS_CONNECT_TIMEOUT_MS = 10_000;
+
+/** `connectionTimeout` is read by docker-modem but missing from dockerode's typings. */
+type DockerConnectOptions = Docker.DockerOptions & { connectionTimeout?: number };
+
+function dockerOptionsOf(target: string | EngineTarget): DockerConnectOptions {
+  if (typeof target === "string") return { socketPath: target };
+  if ("socketPath" in target) return { socketPath: target.socketPath };
+  return {
+    host: target.host,
+    port: target.port,
+    protocol: "https",
+    ca: target.ca,
+    cert: target.cert,
+    key: target.key,
+    connectionTimeout: TLS_CONNECT_TIMEOUT_MS,
+  };
+}
+
 /** The only module that talks to the Docker Engine API. */
-export function createDockerRuntime(socketPath: string): Runtime {
-  const docker = new Docker({ socketPath });
+export function createDockerRuntime(target: string | EngineTarget): Runtime {
+  const docker = new Docker(dockerOptionsOf(target));
   // The list has each container's state but not its limits, start time or network, which take one inspect per
   // container. An inspect is reused while the list reports the same state. Every change made through this adapter
   // clears the cache, so only a change made outside MiniBox can go unseen, and then for at most INSPECT_TTL_MS.
@@ -673,6 +694,8 @@ export function createDockerRuntime(socketPath: string): Runtime {
         rootDir: (info.DockerRootDir as string) ?? null,
         containers: { running: Number(info.ContainersRunning ?? 0), total: Number(info.Containers ?? 0) },
         images: Number(info.Images ?? 0),
+        cpus: typeof info.NCPU === "number" ? info.NCPU : null,
+        memoryBytes: typeof info.MemTotal === "number" ? info.MemTotal : null,
       };
     },
 

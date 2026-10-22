@@ -19,6 +19,7 @@ export type ErrorCode =
   | "docker_unavailable"
   | "docker_error"
   | "bad_gateway"
+  | "unsupported"
   | "internal";
 
 export interface ErrorExtra {
