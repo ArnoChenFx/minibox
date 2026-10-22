@@ -157,7 +157,7 @@ export const CheckpointUsageSchema = z.object({
 export const CheckpointPackageSchema = z.object({
   id: z.string(),
   checkpointId: z.string().nullable(),
-  origin: z.enum(["export", "upload"]),
+  origin: z.enum(["export", "upload", "target"]),
   bytes: z.number().int(),
   sha256: z.string(),
   createdAt: z.string(),
