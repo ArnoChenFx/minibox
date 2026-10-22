@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { ActivityLog } from "../src/activity";
+import { generateKeyPairPem } from "../src/agent/identity";
+import { AGENT_PROTOCOL } from "../src/agent/protocol";
 import type { App } from "../src/app";
 import type { RawBody } from "../src/lib/body";
 import { isByteStream } from "../src/lib/body";
@@ -164,6 +166,8 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "host.add": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.test": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.remove": () => ({ id: "lab" }),
+  "host.pairing.create": () => ({ id: "edge" }),
+  "host.revoke": () => ({ id: "edge" }),
 };
 
 /** Operations that act on a checkpoint which must already exist, so `preparedInput` takes one first. */
@@ -222,6 +226,17 @@ async function pendingRollbackOf(
   await app.tasks.drain();
   const { box } = (await app.operations.run("box.get", ctx, { id: before.boxId })) as { box: { revision: number } };
   return { id: before.boxId, revision: String(box.revision) };
+}
+
+/** Pairs an agent host called `id`, so an operation that acts on an agent host has one to act on. */
+async function pairAgentHost(app: App, id: string): Promise<void> {
+  const issued = await app.hostAdmin.createPairing({ id });
+  await app.hostAdmin.pairAgent({
+    code: issued.code,
+    publicKey: generateKeyPairPem().publicKeyPem,
+    version: "0.4.0",
+    protocol: AGENT_PROTOCOL,
+  });
 }
 
 function rawBodyOf(bytes: Buffer): RawBody {
@@ -307,6 +322,9 @@ async function preparedInput(
   }
   if (operation.name === "host.remove" || operation.name === "box.move") {
     await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });
+  }
+  if (operation.name === "host.revoke") {
+    await pairAgentHost(app, "edge");
   }
   const sample = SAMPLES[operation.name];
   if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);

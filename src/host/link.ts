@@ -8,12 +8,24 @@ export interface HostCredentials {
   readonly ssh?: { readonly privateKey: string; readonly hostKeyFingerprint: string | null };
 }
 
+/** An agent link has no socket. The control plane reaches the engine through the agent's own connection. */
+export interface AgentTarget {
+  readonly agentId: string;
+}
+
+/** What a link leads to: an engine socket or a TCP endpoint, or an agent that dialed in. */
+export type LinkTarget = EngineTarget | AgentTarget;
+
+export function isAgentTarget(target: LinkTarget): target is AgentTarget {
+  return "agentId" in target;
+}
+
 /**
- * One way to reach a host's engine. `target` is what the Docker adapter connects to. `connect` checks the link before any
+ * One way to reach a host's engine. `target` is what the runtime connects to. `connect` checks the link before any
  * request: for SSH it verifies the host key and logs in, and for the other kinds there is nothing to check yet.
  */
 export interface Link {
-  readonly target: EngineTarget;
+  readonly target: LinkTarget;
   connect(): Promise<void>;
   close(): void;
 }
@@ -62,9 +74,11 @@ export function openLink(endpoint: Endpoint, credentials: HostCredentials): Link
         close: () => tunnel.close(),
       };
     }
+    case "agent":
+      return noNetworkLink({ agentId: endpoint.agentId });
   }
 }
 
-function noNetworkLink(target: EngineTarget): Link {
+function noNetworkLink(target: LinkTarget): Link {
   return { target, connect: async () => {}, close: () => {} };
 }

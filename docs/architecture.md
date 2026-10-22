@@ -77,6 +77,8 @@ The CLI is a REST client. `minibox mcp` relays standard input and output to `/mc
 
 `src/host/registry.ts` holds one runtime for each host. The `local` host uses the Docker socket on the server. A remote host uses a `unix://`, `tcp://` or `ssh://` endpoint, which `src/host/endpoint.ts` parses. A `tcp://` host uses mutual TLS, and over `ssh://`, `src/host/ssh.ts` opens the tunnel.
 
+An agent host has no endpoint to dial. Its `agent://<agent id>` endpoint is served by the agent on that machine, which opens an outbound WebSocket to `/api/agent/connect` (`src/agent/`). `src/host/agent/hub.ts` keeps the live connections and verifies each agent's signature, `src/host/agent/pairing.ts` holds the one-time pairing codes, and `src/host/agent/store.ts` keeps the agent records in `agents.json`. `src/host/agent/runtime.ts` sends each `Runtime` call over the connection, so an agent host is used like any other host.
+
 Business code reaches an engine only through the `Runtime` interface in `src/runtime/index.ts`. Only `src/docker/` imports the Docker SDK, and `tests/architecture.test.ts` checks this.
 
 Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults to `minibox`. They join the `<prefix>-boxes` network.
@@ -120,6 +122,7 @@ Every path is under `DATA_DIR`.
 | `packages/` | `src/checkpoints/packages.ts` | Exported checkpoint packages, sealed with a passphrase |
 | `exec/` | `src/events/outputs.ts` | Saved output of commands |
 | `hosts.json`, `hosts/<id>/` | `src/host/store.ts` | Remote host records and their credential files |
+| `agents.json` | `src/host/agent/store.ts` | Paired host agents: ids, public keys and revocation. The private key stays in the agent's own volume |
 | `tools.d/` | `src/tools/custom.ts` | Custom tool catalog entries |
 | `ssh_host_ed25519_key` | `src/ssh/host-key.ts` | The SSH gateway's host key |
 | `events.db`, `tasks.db` | `src/events/store.ts`, `src/tasks/store.ts` | The audit log, and task status and output |

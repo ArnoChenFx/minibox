@@ -11,11 +11,24 @@ Each box records its host. Everything you do to a box runs on that host.
 | `unix:///var/run/docker.sock` | A socket on this machine, or one mounted into the container | Nothing else |
 | `tcp://host:2376` | The engine's TLS port, with mutual TLS in both directions | The CA that signed the engine's certificate, and a client certificate and key that the engine trusts. |
 | `ssh://user@host` | The engine's Docker socket, forwarded over SSH. Only the SSH port must be open. | An SSH key that can log in as that user. The socket is `/var/run/docker.sock`, unless the path says otherwise. |
+| None: the agent dials in | An [agent](../reference/agent.md) on the machine opens an outbound connection to MiniBox. The machine opens no port. | Docker on the machine, and the pairing command from **Add host**. Works behind NAT and firewalls. |
 
-## Add a host
+## Add an agent host
+
+An agent is a small program that runs in a container on the machine and connects out to MiniBox. The machine opens no port and needs no certificate or SSH key, so an agent works behind NAT and firewalls. The machine needs Docker, and it must reach the MiniBox address that the command names.
+
+1. Click **Settings** in the sidebar, open the **Hosts** section, and click **Add host**.
+2. Choose **Agent (recommended)**, enter an **Id**, and optionally a **Name**.
+3. Click **Create pairing command**. MiniBox shows a pairing code and a `docker run` command, one for bash and one for PowerShell.
+4. Run the command on the machine. The agent exchanges the code for its own credentials, which it keeps in the `minibox-agent` volume, and it reconnects by itself after a restart.
+5. The dialog closes when the agent connects. The host then shows as online, with the agent's version and when it was last seen.
+
+A pairing code works once and expires after 10 minutes. MiniBox spends it as soon as it receives it, so if the agent loses the reply and cannot save its credentials, the code is no longer valid. Then remove the agent's container and create a new code. Only the first start needs the code. For the options, the data volume and the operations an agent allows, see the [agent reference](../reference/agent.md).
+
+## Add a host with a Docker address
 
 1. Click **Settings** in the sidebar, then open the **Hosts** section.
-2. Click **Add host**.
+2. Click **Add host**, and choose **Docker address**.
 3. Fill in the form:
    - **Id**: lowercase letters, digits and hyphens, starting with a letter.
    - **Name**: a name you recognise.
@@ -62,15 +75,19 @@ The **Settings** page lists each host with its **Status**, its **Capacity**, and
 - The overview page shows a card for each host, with its status, latency, containers, and the CPU and memory its boxes reserve and use.
 - The top bar can filter the list by host.
 - A host that is offline shows its boxes as unreachable, and the rest of the list still loads.
+- An agent host shows the agent's version and when it was last seen. If the agent speaks another protocol than this MiniBox, the host shows **Agent needs an upgrade**. Pull the latest `minibox-agent` image and recreate the container with the same data volume.
 
 ## Remove a host
 
 Click **Remove** next to the host, and confirm. A host that still has boxes, volumes or checkpoints cannot be removed. The **local** host cannot be removed.
 
+To stop an agent at once, click **Revoke** on its host first. Revoking disconnects the agent and blocks it from reconnecting. Its boxes and volumes stay on the machine, and the host stays listed as revoked until you remove it. Removing an agent host forgets its record, but the agent's container keeps running idle on the machine. Stop and remove that container on the machine with `docker rm -f`.
+
 ## Limits
 
 - Port preview is not supported for boxes on a remote host. See [Port preview](port-preview.md).
 - Each host keeps its own checkpoints, and they are not copied between hosts. To move one, [export](checkpoints.md#export-and-import) it, then import it and choose the other host. See [Checkpoints](checkpoints.md).
+- A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.
 - Host-level CPU and memory use is shown for the local host only. A remote host shows the cores and memory that its engine reports, and the use of its own boxes.
 - The command-line tool has no host commands. Use the console, or the [REST API](../reference/api.md).
 - An [agent token](access-and-tokens.md) can be limited to specific hosts.

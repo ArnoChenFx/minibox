@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 92 operations in 15 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 99 operations in 15 groups.
 
 ## Authentication
 
@@ -291,4 +291,8 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `GET` | `/api/hosts/usage` | Show what each host runs and uses |
 | `POST` | `/api/hosts` | Add a host |
 | `POST` | `/api/hosts/test` | Test a host connection |
+| `POST` | `/api/hosts/pairing` | Create a one-time pairing code for a new agent host `{ "id", "name"? }`. Returns `201` with the code and when it expires |
+| `POST` | `/api/hosts/{id}/revoke` | Revoke an agent host. Its agent is disconnected and cannot reconnect |
 | `DELETE` | `/api/hosts/{id}` | Remove a host |
+
+An agent connects on its own: it exchanges the pairing code at `POST /api/agent/pair`, then keeps a WebSocket open at `/api/agent/connect`. Both are used by the agent, not by clients. See [Agent](agent.md).
