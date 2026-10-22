@@ -19,6 +19,7 @@ export function render(view) {
           <div class="card-head"><h3>${t("st.runtime")}</h3>${icon("settings")}</div>
           <div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div>
         </div>
+        <div class="card" id="stPreview"></div>
         <div class="card" id="stHosts"></div>
         <div class="card">
           <div class="card-head"><h3>${t("st.appearance")}</h3></div>
@@ -43,6 +44,7 @@ export function render(view) {
   document.addEventListener("themechange", paintTheme);
 
   loadRuntime(view);
+  loadPreview(view);
   loadHosts(view);
   loadSessions(view);
   loadTokens(view);
@@ -496,6 +498,39 @@ async function loadRuntime(view) {
       <dt>${t("st.boxLimits")}</dt><dd>${t("st.boxLimitsValue", { minC: s.limits.minCpus, maxC: s.limits.maxCpus, minM: s.limits.minMemoryMb, maxM: s.limits.maxMemoryMb })}</dd>
     </dl>
   </div>`;
+}
+
+async function loadPreview(view) {
+  const card = view.querySelector("#stPreview");
+  let setup;
+  try {
+    setup = await api("/api/preview/setup");
+  } catch (e) {
+    if (e.status === 401) {
+      location.href = "/login";
+      return;
+    }
+    card.innerHTML = `<div class="card-head"><h3>${t("st.preview")}</h3></div>
+      <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
+    return;
+  }
+  if (setup.mode !== "subdomain") {
+    card.innerHTML = `<div class="card-head"><div><h3>${t("st.preview")}</h3><p class="help">${t("st.previewPathHelp")}</p></div>${icon("link")}</div>`;
+    return;
+  }
+  const checks = setup.checks
+    .map((check) => {
+      const kind = check.status === "ok" ? "" : check.status === "warn" ? " warn" : " danger";
+      const text = errorText({ key: check.message.key, params: check.message.params, message: check.message.text });
+      return `<div class="callout${kind}">${icon(check.status === "ok" ? "check" : "alert")}<span>${esc(text)}</span></div>`;
+    })
+    .join("");
+  card.innerHTML = `
+    <div class="card-head"><div><h3>${t("st.preview")}</h3><p class="help">${t("st.previewHelp")}</p></div>${icon("link")}</div>
+    <div class="card-body stack">
+      <dl class="kv"><dt>${t("st.previewBase")}</dt><dd class="mono">${esc(setup.baseDomain)}</dd></dl>
+      ${checks}
+    </div>`;
 }
 
 async function loadSessions(view) {
