@@ -29,7 +29,7 @@ test("switches languages, persists the choice, and accepts shareable language UR
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await expect(page.locator("h1")).toContainText("你说了算。");
   await expect(page).toHaveURL(/\?lang=zh/);
-  await expect(page.locator("#install-command")).toContainText("bun install --frozen-lockfile");
+  await expect(page.locator("#install-command")).toContainText("ghcr.io/arnochenfx/minibox:latest");
   await page.reload();
   await expect(page.locator("h1")).toContainText("你的机器。");
   await page.goto("./?lang=en");
@@ -83,7 +83,7 @@ test("keeps content and navigation usable without JavaScript", async ({ browser 
   const question = page.getByText("Can I run untrusted code in a box?", { exact: true });
   await question.click();
   await expect(page.getByText("Boxes use Docker container isolation", { exact: false })).toBeVisible();
-  await expect(page.locator("#install-command")).toContainText("bun start");
+  await expect(page.locator("#install-command")).toContainText("docker exec minibox cat /data/access_key");
   await context.close();
 });
 

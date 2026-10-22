@@ -60,12 +60,12 @@ const translationsZh = {
     startTitle: `简单的开始。
 自己的空间。`,
     installationGuide: "完整安装指南",
-    installHeading: "从源码启动",
+    installHeading: "启动 MiniBox",
     copy: "复制",
     copied: "已复制安装命令",
     copyFailed: "浏览器未允许复制，请手动选中并复制命令。",
     installFooter: "然后在自己的机器上打开 127.0.0.1:3920。",
-    setupNote: "使用 data/access_key 中自动生成的密钥登录。远程访问请使用 HTTPS 或私有网络。",
+    setupNote: "使用自动生成的访问密钥登录。远程访问请使用 HTTPS 或私有网络。",
     faqTitle: "开始之前，聊几句。",
     faq1Question: "MiniBox 是托管云服务吗？",
     faq1Answer:

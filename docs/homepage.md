@@ -6,7 +6,7 @@ The public MiniBox website is a standalone static site in `site/`, separate from
 
 The visual direction uses MiniBox's existing purple cube mark, a warm light background, large editorial type, and a workspace/terminal illustration. The illustration is labeled as an example; the product gallery uses real console screenshots from `docs/screenshots/`.
 
-The page introduces the product, shows the console, explains the main capabilities, walks through connecting an agent, and provides the source installation commands. English is the default. The language button switches to Chinese, remembers the choice when storage is available, and updates the URL to `?lang=zh` for sharing. An explicit `?lang=en` overrides a remembered preference.
+The page introduces the product, shows the console, explains the main capabilities, walks through connecting an agent, and provides the documented release-container startup commands. English is the default. The language button switches to Chinese, remembers the choice when storage is available, and updates the URL to `?lang=zh` for sharing. An explicit `?lang=en` overrides a remembered preference.
 
 The agent strip uses the Claude Code, Codex, OpenCode and Pi Agent brand icons vendored under `site/assets/agents/`, with pinned upstream provenance and the MIT license included there. It has no external icon requests. The homepage does not include a roadmap section or navigation entry.
 
