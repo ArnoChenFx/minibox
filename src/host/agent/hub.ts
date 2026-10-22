@@ -15,6 +15,7 @@ import {
   type ServerFrame,
   verifyHello,
 } from "../../agent/protocol";
+import { abortError } from "../../lib/abort";
 import { log } from "../../lib/logger";
 import { msg } from "../../lib/messages";
 import type { Runtime } from "../../runtime";
@@ -407,11 +408,12 @@ export class AgentHub implements AgentLink {
     if (!call) return;
     this.calls.delete(id);
     clearTimeout(call.timer);
+    if (!call.opened) call.settle({ ok: false, error: abortError() });
     this.sendTo(agentId, { type: "cancel", id });
   }
 
   private sendWhileOpen(agentId: string, id: string, frame: ServerFrame): void {
-    if (this.callOf(agentId, id)) this.sendTo(agentId, frame);
+    if (this.callOf(agentId, id)?.opened) this.sendTo(agentId, frame);
   }
 
   private callOf(agentId: string, id: string): Call | undefined {
