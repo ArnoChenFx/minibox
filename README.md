@@ -532,7 +532,7 @@ Retention is global. A per-box override and a recycle bin are not in this releas
 
 ### Where the data lives
 
-The repository is written by a short-lived helper from the image `restic/restic:0.18.1`. Each host has one repository, in the Docker volume `<LABEL_PREFIX>-checkpoints-<host>`, which is `minibox-checkpoints-local` by default. Its password is generated on first use into `DATA_DIR/secrets/checkpoint-repo.key` (mode `600`). It reaches each helper as a read-only file, `/run/secrets/repo.key`, which restic reads through `RESTIC_PASSWORD_FILE`. It is not in the helper's environment. A repository that the password cannot open is an error, never a reason to make a new one.
+The repository is written by a short-lived helper from the image `restic/restic:0.18.1`. Each host has one repository, in the Docker volume `<LABEL_PREFIX>-checkpoints-<host>`, which is `minibox-checkpoints-local` by default. Its password is generated on first use into `DATA_DIR/secrets/checkpoint-repo.key` (mode `600`). It reaches each helper as a read-only file, `/run/secrets/repo.key`, which restic reads through `RESTIC_PASSWORD_FILE`. It is not in the helper's environment. The file is staged in a temporary Docker volume that is removed when the call ends. A repository that the password cannot open is an error, never a reason to make a new one.
 
 Checkpoints are not disaster recovery. The repository is on the same Docker daemon and disk as the boxes, so losing that disk loses both. To keep a copy elsewhere, copy the volume and the key together. Keep an off-host copy of anything you cannot lose; code belongs in git. The helper gets 1 GiB of memory, 256 processes, a 64 MiB `/tmp` and one hour per call. Those limits are not yet measured against large data.
 

@@ -529,7 +529,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 ### 数据存放在哪里
 
-仓库由一个短生命周期的辅助容器写入，镜像为 `restic/restic:0.18.1`。每台宿主机一个仓库，位于 Docker 卷 `<LABEL_PREFIX>-checkpoints-<宿主机>` 中，默认为 `minibox-checkpoints-local`。密码在首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 `600`）。每个辅助容器通过只读文件 `/run/secrets/repo.key` 获得它，restic 经由 `RESTIC_PASSWORD_FILE` 读取，密码不在辅助容器的环境变量中。如果密码打不开仓库，这是一个错误，而不是新建仓库的理由。
+仓库由一个短生命周期的辅助容器写入，镜像为 `restic/restic:0.18.1`。每台宿主机一个仓库，位于 Docker 卷 `<LABEL_PREFIX>-checkpoints-<宿主机>` 中，默认为 `minibox-checkpoints-local`。密码在首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 `600`）。每个辅助容器通过只读文件 `/run/secrets/repo.key` 获得它，restic 经由 `RESTIC_PASSWORD_FILE` 读取，密码不在辅助容器的环境变量中。调用期间它暂存于一个临时的 Docker 卷中，调用结束时删除该卷。如果密码打不开仓库，这是一个错误，而不是新建仓库的理由。
 
 检查点不是灾难恢复。仓库与 Box 位于同一个 Docker 守护进程和同一块磁盘上，磁盘损坏时两者会一起丢失。若要在别处保留副本，请把卷和密钥一起复制。无论如何都不能丢失的内容，请在主机之外保留一份；代码应放在 git 中。辅助容器每次调用有 1 GiB 内存、256 个进程、64 MiB 的 `/tmp`，以及一小时的时限。这些限制尚未用大数据量测量。
 

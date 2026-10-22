@@ -549,7 +549,7 @@ DELETE /api/checkpoints/:id
 
 ### 7.6 实现说明（#11）
 
-- **引擎与密钥。** 辅助镜像为 `restic/restic:0.18.1`，仓库卷为 `<前缀>-checkpoints-<宿主机>`。密码首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 600）。每次调用都以只读文件挂入辅助容器的 `/run/secrets/repo.key`，由 `RESTIC_PASSWORD_FILE` 指向它，密码因此不进入环境变量或容器配置（决策 62）。辅助容器每次调用限制为 1 GiB 内存、256 个进程、64 MiB 的 `/tmp` 与 3600 秒。
+- **引擎与密钥。** 辅助镜像为 `restic/restic:0.18.1`，仓库卷为 `<前缀>-checkpoints-<宿主机>`。密码首次使用时生成到 `DATA_DIR/secrets/checkpoint-repo.key`（权限 600）。每次调用都以只读文件挂入辅助容器的 `/run/secrets/repo.key`，由 `RESTIC_PASSWORD_FILE` 指向它，密码因此不进入环境变量或容器配置（决策 62）。文件先写入一个临时卷，调用结束后删除该卷；若进程在两者之间崩溃，这个未加标签的卷会残留，启动时没有清理它的逻辑，需要手动删除。辅助容器每次调用限制为 1 GiB 内存、256 个进程、64 MiB 的 `/tmp` 与 3600 秒。
 - **回滚的确认与撤销。** 回滚先以 `stop` 为当前数据拍摄安全检查点（自动，标签为 `Before rollback to <标签>`），再把检查点的数据恢复到新卷并重建 Box。被替换的卷保留且不挂载，待定记录写入 `DATA_DIR/checkpoints/rollbacks/<bx_id>.json`（决策 60）。待定期间，同一 Box 的另一次回滚返回 `409 rollback_pending`，删除其安全检查点返回 `409 checkpoint_held_by_rollback`，保留策略也不会清理它。
 - **保留与容量。** 保留策略只作用于自动检查点：每个 Box 保留最新的 `CHECKPOINT_KEEP_LAST` 个（默认 20），删除超过 `CHECKPOINT_KEEP_DAYS` 天（默认 30，0 为不限）的。手动与置顶的检查点从不被删除。服务启动时执行一次，之后每小时一次（`CheckpointSweep`）。容量上限 `CHECKPOINT_CAPACITY_MB` 默认为 0，即不限。占用达到上限的 80% 时记录 `checkpoint.capacity_warning`；达到上限时新的自动检查点被拒绝，回滚随之被拒绝。占用无法测量时放行（决策 61）。
 - **令牌的手动检查点配额。** `maxCheckpoints` 限制令牌创建的手动检查点数量，跨所有 Box 与宿主机合计，置顶的也计入。`sandboxed-agent` 默认 20，超出返回 `403 quota_checkpoints`。自动检查点不计入，它们由保留策略限制，而不由令牌决定（决策 63）。
