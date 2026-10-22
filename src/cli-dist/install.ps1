@@ -1,7 +1,36 @@
 # Installs the MiniBox CLI from the server that sent this script:
 #   irm <origin>/cli/install.ps1 | iex
 # The server fills in its own address below. The binary is checked against the server's sha256 list before it is
-# installed. MINIBOX_INSTALL_DIR chooses the folder (default %USERPROFILE%\.local\bin). No administrator rights are needed.
+# installed. MINIBOX_INSTALL_DIR chooses the folder (default %USERPROFILE%\.local\bin), and that folder is added to your
+# user PATH. No administrator rights are needed.
+
+# Returns PATH with Directory appended, unless an entry already names it. Pure, so the tests can call it on any OS.
+function Merge-PathEntry {
+  param([string]$Path, [Parameter(Mandatory)][string]$Directory)
+  $wanted = $Directory.TrimEnd('\')
+  $entries = @($Path -split ';' | Where-Object { $_ -ne '' })
+  if ($entries | Where-Object { $_.TrimEnd('\') -ieq $wanted }) { return $Path }
+  return (@($entries) + $Directory) -join ';'
+}
+
+# Adds Directory to the user PATH in the registry, so new terminals find it. The value is read unexpanded and written
+# back as ExpandString, so entries such as %USERPROFILE%\bin keep their variables. Returns $true when it changed the
+# value, and does nothing off Windows.
+function Add-UserPathEntry {
+  param([Parameter(Mandatory)][string]$Directory)
+  if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return $false }
+  $environment = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+  if ($null -eq $environment) { throw 'Your user environment settings cannot be opened, so the PATH was not changed.' }
+  try {
+    $current = [string]$environment.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $merged = Merge-PathEntry -Path $current -Directory $Directory
+    if ($merged -eq $current) { return $false }
+    $environment.SetValue('Path', $merged, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    return $true
+  } finally {
+    $environment.Close()
+  }
+}
 
 function Install-MiniBoxCli {
   $ErrorActionPreference = 'Stop'
@@ -37,21 +66,42 @@ function Install-MiniBoxCli {
     if ($actual -ne $expected) {
       throw "Checksum mismatch for $fileName (expected $expected, got $actual). Nothing was installed."
     }
+    # A running minibox.exe cannot be overwritten, but Windows lets it be renamed, so the old file moves aside first.
+    $movedAside = $false
+    if (Test-Path -LiteralPath $target) {
+      $previous = "$target.old"
+      Remove-Item -LiteralPath $previous -Force -ErrorAction SilentlyContinue
+      try {
+        Move-Item -Force -LiteralPath $target -Destination $previous
+        $movedAside = $true
+      } catch {
+        throw "$target is in use, so it was not replaced. Close the terminals that run minibox, then run this again."
+      }
+    }
     Move-Item -Force -LiteralPath $download -Destination $target
   } finally {
     Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
   }
 
   $version = & $target --version
-  if ($LASTEXITCODE -ne 0) { throw "$target was installed, but it does not run on this machine." }
+  if ($LASTEXITCODE -ne 0) {
+    if ($movedAside) {
+      Move-Item -Force -LiteralPath "$target.old" -Destination $target
+      throw "The new $fileName does not run on this machine, so the previous minibox.exe was kept."
+    }
+    throw "$target was installed, but it does not run on this machine."
+  }
   Write-Host "Installed $target ($version)"
-  if (-not (($env:Path -split ';') -contains $dir)) {
-    Write-Host "$dir is not on your PATH yet. Add it for your user account, then open a new terminal:"
-    Write-Host "  [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$dir', 'User')"
+  if (Add-UserPathEntry -Directory $dir) {
+    Write-Host "Added $dir to your user PATH. Open a new terminal, so minibox and ssh find it."
+  }
+  $env:Path = Merge-PathEntry -Path $env:Path -Directory $dir
+  if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
+    Write-Host 'The OpenSSH client is not installed. Add the "OpenSSH Client" optional feature in Windows Settings.'
   }
   Write-Host ''
   Write-Host 'Set up SSH with an access key, or an agent token that has the box:ssh scope:'
-  Write-Host "  `$env:MINIBOX_URL='$origin'; `$env:MINIBOX_ACCESS_KEY='<token>'; minibox ssh-config --append"
+  Write-Host ('  $env:MINIBOX_URL="' + $origin + '"; $env:MINIBOX_ACCESS_KEY="<token>"; minibox ssh-config --append')
 }
 
 Install-MiniBoxCli
