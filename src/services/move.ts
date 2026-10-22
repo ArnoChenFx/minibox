@@ -170,8 +170,6 @@ async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, rev
 
   const starts = spec.lifecycle.desired === "running";
   if (starts) await assertRoomFor(to, spec);
-  const formal = containerName(to.prefix, spec.id);
-  if (await containerExists(to, formal)) throw conflict(msg("move_name_conflict", { host: to.host.id, name: formal }));
 
   return {
     spec,
@@ -306,7 +304,6 @@ async function runMove(
 ): Promise<MoveResult> {
   const { spec } = plan;
   const oldId = spec.containerId;
-  const formal = containerName(to.prefix, spec.id);
   const changes = new VolumeChanges();
   const state: RunState = { created: null, paused: false };
   const say = (text: string) => progress?.log?.(`${text}\n`);
@@ -330,6 +327,7 @@ async function runMove(
 
     const mounts = spec.mounts.map((mount) => ({ ...mount, volume: moved.resolved.get(mount.volume) ?? mount.volume }));
     const template = { ref: spec.template.ref, image: spec.template.image, digest: plan.image.id };
+    const name = await targetContainerName(to, spec.id);
     const planned: PlannedRebuild = {
       changes: [],
       templateRef: spec.template.image,
@@ -337,11 +335,11 @@ async function runMove(
       env: spec.env,
       network: spec.network,
       profile: spec.profile,
-      containerName: formal,
+      containerName: name,
     };
     const env = containerEnv(to.secrets, spec.env);
     say(`Creating the box on ${to.host.id}.`);
-    const created = await to.runtime.createContainer(containerSpec(to, spec, planned, template, formal, env));
+    const created = await to.runtime.createContainer(containerSpec(to, spec, planned, template, name, env));
     state.created = created.id;
     await assertFresh(to, created.id, template, planned);
     if (plan.starts) {
@@ -351,13 +349,23 @@ async function runMove(
       if (!started.running) throw new AppError(502, "docker_error", msg("move_start_failed", { host: to.host.id }));
     }
     throwIfCancelled(progress);
-    await commitMove(from, to, spec.id, revision, { containerId: created.id, containerName: formal, mounts, template });
+    await commitMove(from, to, spec.id, revision, { containerId: created.id, containerName: name, mounts, template });
     say(`The box now runs on ${to.host.id}.`);
   } catch (e) {
     await undoMove(from, to, spec, state, changes, oldId);
     throw e;
   }
   return finishMove(from, to, spec, oldId, moved, state.created, say);
+}
+
+/**
+ * The name the box's container takes on the target: the box's own name when the target has it free. Two hosts that share
+ * one engine share its names, so the target then takes a suffixed name. The spec records whichever name it gets.
+ */
+async function targetContainerName(host: HostCtx, boxId: string): Promise<string> {
+  const formal = containerName(host.prefix, boxId);
+  if (!(await containerExists(host, formal))) return formal;
+  return `${formal}-${randomBytes(3).toString("hex")}`;
 }
 
 function throwIfCancelled(progress: Progress | undefined): void {

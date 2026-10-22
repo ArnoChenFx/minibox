@@ -294,7 +294,6 @@ export default {
     "Template {tag} now names a newer image than this box runs. Rebuild the box onto it, then move the box.",
   "err.move_template_differs":
     "Host {host} already has a different image under {tag}, so the template cannot be sent there. Remove or retag that image, then try again.",
-  "err.move_name_conflict": "Host {host} already has a container named {name}. Remove it, then try again.",
   "err.move_start_failed": "The box did not start on host {host}, so the move was undone.",
   "err.move_bind_volume": "Volume {volume} is a bind mount, which a move cannot carry to another host.",
   "err.move_shared_volume":

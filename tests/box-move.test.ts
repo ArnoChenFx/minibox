@@ -9,6 +9,7 @@ interface MoveView {
   hostId?: string;
   revision: number;
   boxId: string;
+  containerName: string;
 }
 
 async function waitFor(check: () => boolean, what: string): Promise<void> {
@@ -157,6 +158,24 @@ describe("moving a box to another host", () => {
     expect(containersOf(cluster, "small", box.boxId)).toEqual([]);
     const source = containersOf(cluster, "local", box.boxId);
     expect(source.map((container) => [container.running, container.paused])).toEqual([[true, false]]);
+  });
+
+  test("a target that already has the box's container name takes a suffixed name, and the spec records it", async () => {
+    const box = await boxOn(cluster, undefined, "dev");
+    const formal = `mbtest-${box.boxId}`;
+    cluster.engines.small.seedImage("stray:latest");
+    await cluster.engines.small.createContainer({ image: "stray:latest", name: formal, cmd: ["true"] });
+
+    const done = await confirmed(box.boxId, "small", box.revision);
+    expect(done.status).toBe("succeeded");
+
+    const containerName = (await viewOf(box.boxId)).containerName;
+    expect(containerName).toMatch(new RegExp(`^${formal}-[0-9a-f]{6}$`));
+    expect([...cluster.engines.small.containers.values()].map((container) => container.name)).toContain(containerName);
+    expect(containersOf(cluster, "small", box.boxId).map((container) => [container.name, container.running])).toEqual([
+      [containerName, true],
+    ]);
+    expect(containersOf(cluster, "local", box.boxId)).toEqual([]);
   });
 
   test("a volume copy that fails leaves the source volume and its data as they were", async () => {

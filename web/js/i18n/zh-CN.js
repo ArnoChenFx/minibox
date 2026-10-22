@@ -260,7 +260,6 @@ export default {
   "err.move_template_moved": "模板 {tag} 现在指向比此 Box 所运行镜像更新的镜像。请先把 Box 重建到新镜像，再迁移。",
   "err.move_template_differs":
     "宿主机 {host} 上的 {tag} 已指向另一个镜像，因此无法把模板发送过去。请先移除或重新标记该镜像，再重试。",
-  "err.move_name_conflict": "宿主机 {host} 上已有名为 {name} 的容器。请先移除它，再重试。",
   "err.move_start_failed": "Box 未能在宿主机 {host} 上启动，因此已撤销迁移。",
   "err.move_bind_volume": "卷 {volume} 是绑定挂载，迁移无法把它带到另一台宿主机。",
   "err.move_shared_volume": "卷 {volume} 同时被本宿主机上的另一个 Box 挂载，迁移时无法只为此 Box 复制它。",
