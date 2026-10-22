@@ -14,7 +14,7 @@
 import { randomBytes } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { chromium, type Browser, type Locator, type Page } from "@playwright/test";
@@ -28,6 +28,7 @@ const DEMO_HOSTNAME = "workstation";
 const TIME_ZONE = "Asia/Shanghai";
 const VIEWPORT = { width: 1440, height: 900 };
 const SESSION = "main";
+const NOTIFY_CHANNEL = "ops-webhook";
 
 const LANGUAGES = [
   { code: "en", locale: "en-US" },
@@ -48,6 +49,7 @@ const SCREENS = [
   "settings-hosts",
   "settings-tokens",
   "settings-secrets",
+  "settings-notifications",
   "create-box",
 ] as const;
 type Screen = (typeof SCREENS)[number];
@@ -310,7 +312,7 @@ async function createBox(api: Api, body: Json): Promise<string> {
 }
 
 /** Fixed demo content: three boxes, secrets, tokens, a volume, templates, checkpoints, a schedule and a terminal. */
-async function seed(api: Api): Promise<Demo> {
+async function seed(api: Api, receiverUrl: string): Promise<Demo> {
   console.log("[screenshots] building the base template; the first build takes a few minutes");
   await runTask(api, "/api/templates/base/build");
 
@@ -320,7 +322,7 @@ async function seed(api: Api): Promise<Demo> {
 
   const apiBox = await createBox(api, {
     name: "api-service",
-    cpus: 2,
+    cpus: 1,
     memoryMb: 2048,
     profile: "standard",
     env: [
@@ -343,6 +345,13 @@ async function seed(api: Api): Promise<Demo> {
   await writeFiles(api, apiBox, API_CHANGES);
   await runTask(api, `/api/boxes/${apiBox}/checkpoints`, { label: "metrics-wip" });
   await writeFiles(api, web, WEB_FILES);
+
+  await api("POST", `/api/boxes/${apiBox}/sessions`, { name: SESSION });
+  await typeIntoSession(api, apiBox, "export PS1='dev@api-service:\\w\\$ '; clear", 800);
+  await typeIntoSession(api, apiBox, "cd /workspace/api", 300);
+  await typeIntoSession(api, apiBox, "git status --short", 800);
+  await typeIntoSession(api, apiBox, "npm test", 4000);
+
   await api("PUT", `/api/boxes/${apiBox}/checkpoint-schedule`, { at: "02:30", timezone: TIME_ZONE });
 
   for (const [name, preset] of [
@@ -353,6 +362,8 @@ async function seed(api: Api): Promise<Demo> {
     await api("POST", "/api/tokens", { name, preset });
   }
 
+  await seedNotifications(api, receiverUrl);
+
   await runTask(api, "/api/templates", {
     name: "python-lab",
     description: "Debian 12 · Python 3.13",
@@ -360,16 +371,39 @@ async function seed(api: Api): Promise<Demo> {
   });
   await runTask(api, `/api/boxes/${web}/template`, { name: "node-api", description: "Node.js 26 API starter" });
 
-  await api("POST", `/api/boxes/${apiBox}/sessions`, { name: SESSION });
-  await typeIntoSession(api, apiBox, "export PS1='dev@api-service:\\w\\$ '; clear", 800);
-  await typeIntoSession(api, apiBox, "cd /workspace/api", 300);
-  await typeIntoSession(api, apiBox, "git status --short", 800);
-  await typeIntoSession(api, apiBox, "npm test", 4000);
-
   return { api: apiBox, web, sync };
 }
 
-function startServer(dataDir: string, port: number, key: string, logPath: string) {
+/** Two channels, and one successful test send so the deliveries list has a row. The receiver is local to this run. */
+async function seedNotifications(api: Api, receiverUrl: string): Promise<void> {
+  await api("PUT", `/api/notify/channels/${NOTIFY_CHANNEL}`, {
+    id: NOTIFY_CHANNEL,
+    type: "webhook",
+    name: "Ops webhook",
+    enabled: true,
+    events: ["box.oom", "exec.failed", "checkpoint.failed", "host.offline"],
+    url: receiverUrl,
+  });
+  await api("PUT", "/api/notify/channels/phone-ntfy", {
+    id: "phone-ntfy",
+    type: "ntfy",
+    name: "Phone",
+    enabled: true,
+    events: ["box.oom", "host.offline"],
+    topic: "minibox-demo-alerts",
+  });
+  const test = await api<{ ok: boolean; error: string | null }>("POST", `/api/notify/channels/${NOTIFY_CHANNEL}/test`);
+  if (!test.ok) throw new Error(`the test notification failed: ${test.error ?? "unknown error"}`);
+}
+
+/** A local webhook receiver that accepts every notice. The demo server may post to it because NOTIFY_ALLOW_PRIVATE is set. */
+function startReceiver(): { url: string; stop: () => void } {
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(null, { status: 204 }) });
+  if (server.port === undefined) throw new Error("the notification receiver has no port");
+  return { url: `http://127.0.0.1:${server.port}/hook`, stop: () => server.stop(true) };
+}
+
+function startServer(dataDir: string, port: number, key: string, version: string, logPath: string) {
   const log = openSync(logPath, "w");
   const proc = Bun.spawn([process.execPath, join(ROOT, "src", "server.ts")], {
     cwd: dataDir,
@@ -386,6 +420,8 @@ function startServer(dataDir: string, port: number, key: string, logPath: string
       DOCKER_SOCKET: SOCKET,
       BOX_IDLE_TIMEOUT_SEC: "0",
       LOG_LEVEL: "info",
+      NOTIFY_ALLOW_PRIVATE: "1",
+      MINIBOX_VERSION: version,
     },
     stdout: log,
     stderr: log,
@@ -480,6 +516,10 @@ const CAPTURES: Record<Screen, Capture> = {
     await openRoute(page, ctx, "/settings", exactText(page, "OPENAI_API_KEY"));
     await page.locator("#stSecrets").screenshot({ path: out });
   },
+  "settings-notifications": async (page, ctx, out) => {
+    await openRoute(page, ctx, "/settings", exactText(page, "Ops webhook"));
+    await page.locator("#stNotify").screenshot({ path: out });
+  },
   "create-box": async (page, ctx, out) => {
     await openRoute(page, ctx, "/boxes", exactText(page, "data-sync"));
     await page.locator('[data-action="create"]').first().click();
@@ -488,6 +528,25 @@ const CAPTURES: Record<Screen, Capture> = {
     await page.screenshot({ path: out });
   },
 };
+
+/**
+ * Runs in each page before the console loads: the language and the theme, and the host name. The REST reply is renamed by
+ * a route; the live stream is renamed here, because its `host` frames carry the name too.
+ */
+function pageScript(language: string, theme: string): string {
+  const from = JSON.stringify(`"hostname":${JSON.stringify(hostname())}`);
+  const to = JSON.stringify(`"hostname":${JSON.stringify(DEMO_HOSTNAME)}`);
+  return `
+    localStorage.setItem("minibox.lang", ${JSON.stringify(language)});
+    localStorage.setItem("minibox.theme", ${JSON.stringify(theme)});
+    const addEventListener = EventSource.prototype.addEventListener;
+    EventSource.prototype.addEventListener = function (type, listener, options) {
+      if (type !== "host") return addEventListener.call(this, type, listener, options);
+      const renamed = (message) => listener({ data: message.data.split(${from}).join(${to}) });
+      return addEventListener.call(this, type, renamed, options);
+    };
+  `;
+}
 
 async function captureAll(base: string, key: string, demo: Demo): Promise<void> {
   const browser = await launchBrowser();
@@ -504,13 +563,7 @@ async function captureAll(base: string, key: string, demo: Demo): Promise<void> 
           timezoneId: TIME_ZONE,
           colorScheme: theme,
         });
-        await context.addInitScript(
-          ({ lang, mode }) => {
-            localStorage.setItem("minibox.lang", lang);
-            localStorage.setItem("minibox.theme", mode);
-          },
-          { lang: language.code, mode: theme },
-        );
+        await context.addInitScript({ content: pageScript(language.code, theme) });
         await context.route(/\/api\/host\/metrics(\?.*)?$/, async (route) => {
           const response = await route.fetch();
           const body = (await response.json()) as Json;
@@ -555,19 +608,22 @@ async function main(): Promise<void> {
   await mkdir(CAPTURE_DIR, { recursive: true });
   await sweep();
 
+  const { version } = (await Bun.file(join(ROOT, "package.json")).json()) as { version: string };
   const dataDir = await mkdtemp(join(tmpdir(), "minibox-screenshots-"));
   const key = randomBytes(24).toString("base64url");
   const port = freePort();
   const base = `http://127.0.0.1:${port}`;
-  const server = startServer(dataDir, port, key, join(CAPTURE_DIR, "server.log"));
+  const receiver = startReceiver();
+  const server = startServer(dataDir, port, key, version, join(CAPTURE_DIR, "server.log"));
   try {
     await waitForServer(base);
-    const demo = await seed(apiClient(base, key));
+    const demo = await seed(apiClient(base, key), receiver.url);
     await captureAll(base, key, demo);
     await publish();
   } finally {
     await stopServer(server.proc);
     server.closeLog();
+    receiver.stop();
     try {
       await sweep();
     } finally {
