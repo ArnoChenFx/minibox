@@ -111,7 +111,7 @@ export interface OperationMeta {
   readonly kind: Kind;
   readonly scope: string;
   readonly async: boolean;
-  /** Creating a named object can fail with a 409 when the name is taken. */
+  /** Can fail with a 409: a name that is taken, a busy object, or a change the caller must confirm first. */
   readonly conflicts?: boolean;
   readonly rest: readonly RestBinding[];
   readonly cli?: string;

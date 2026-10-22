@@ -87,6 +87,9 @@ export interface Body {
   deletedBoxes?: string[];
   failedBoxes?: { id: string; name: string; hostId: string; message: string }[];
   tools?: { name: string; description: string }[];
+  tool?: { id: string; name: string; overridesBuiltin: boolean };
+  id?: string;
+  restoredBuiltin?: boolean;
   isError?: boolean;
   error?: { code: string; key?: string; details?: { field?: string; taskId?: string; preview?: RollbackPreviewBody } };
 }

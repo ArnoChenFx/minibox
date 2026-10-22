@@ -60,6 +60,11 @@ Commands:
   minibox files cp <volume> <from> <to>
   minibox files download <volume> [path]   Print a base64 tar of the path
   minibox files upload <volume> [path]     Read a base64 tar from stdin and extract
+  minibox tool custom list [--json]    List the custom Agent CLI entries in DATA_DIR/tools.d (owner only)
+  minibox tool custom put <id> (--file FILE | --stdin) [--override-builtin] [--json]
+                                       Save an entry from a JSON document (owner only)
+  minibox tool custom delete <id> [--json]
+                                       Remove an entry from tools.d; nothing is uninstalled
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
   minibox ssh-config [--append]        Print the ~/.ssh/config block and host key pin; --append writes both
   minibox ssh-proxy <box>              Carry one SSH connection over stdio (the ProxyCommand from ssh-config)
@@ -628,6 +633,91 @@ async function filesCommand(argv: string[], env: Record<string, string | undefin
   throw new Error(`Unknown files subcommand ${sub}`);
 }
 
+const TOOL_CUSTOM_COMMANDS = ["list", "put", "delete"];
+
+async function readStdinText(io: CliIo): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of io.stdinBytes()) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** `tool custom` manages DATA_DIR/tools.d. The other tool operations are reached over REST and MCP only. */
+async function toolCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const [group, sub, ...rest] = argv;
+  if (group !== "custom" || sub === undefined || !TOOL_CUSTOM_COMMANDS.includes(sub)) {
+    throw new Error(`minibox tool custom needs one of ${TOOL_CUSTOM_COMMANDS.join(", ")}`);
+  }
+  const positional: string[] = [];
+  let asJson = false;
+  let file: string | undefined;
+  let fromStdin = false;
+  let overrideBuiltin = false;
+  for (let i = 0; i < rest.length; i++) {
+    const token = rest[i] ?? "";
+    if (token === "--json") asJson = true;
+    else if (token === "--override-builtin") overrideBuiltin = true;
+    else if (token === "--stdin") fromStdin = true;
+    else if (token === "--file") {
+      file = flagValue(rest, i, token);
+      i += 1;
+    } else if (token.startsWith("--")) throw new Error(`Unknown option ${token}`);
+    else positional.push(token);
+  }
+
+  if (sub === "list") {
+    if (positional.length > 0 || file !== undefined || fromStdin || overrideBuiltin) {
+      throw new Error("minibox tool custom list takes no arguments");
+    }
+    const res = await request(env, "GET", "/api/tools/custom");
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+    if (asJson) return printJson(io, res.json);
+    const tools = (res.json as { tools?: Record<string, unknown>[] } | null)?.tools ?? [];
+    io.stdout("ID  NAME  SOURCE  PACKAGE  BIN  REPLACES BUILT-IN\n");
+    for (const tool of tools) {
+      io.stdout(
+        `${String(tool.id)}  ${String(tool.name)}  ${String(tool.source)}  ${String(tool.package)}  ${String(tool.bin)}  ${String(tool.overridesBuiltin)}\n`,
+      );
+    }
+    return 0;
+  }
+
+  const [id, ...more] = positional;
+  if (!id || more.length > 0) throw new Error(`minibox tool custom ${sub} needs exactly one id`);
+  const path = `/api/tools/custom/${encodeURIComponent(id)}`;
+
+  if (sub === "delete") {
+    if (file !== undefined || fromStdin || overrideBuiltin)
+      throw new Error("minibox tool custom delete takes only an id");
+    const res = await request(env, "DELETE", path);
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+    if (asJson) return printJson(io, res.json);
+    io.stdout(`${id}\n`);
+    return 0;
+  }
+
+  if (fromStdin === (file !== undefined)) {
+    throw new Error("minibox tool custom put needs exactly one of --file or --stdin");
+  }
+  const text = file !== undefined ? await readFile(file, "utf8") : await readStdinText(io);
+  let entry: unknown;
+  try {
+    entry = JSON.parse(text);
+  } catch {
+    throw new Error("minibox tool custom put reads one JSON object from --file or stdin");
+  }
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    throw new Error("minibox tool custom put reads one JSON object from --file or stdin");
+  }
+  const res = await request(env, "PUT", path, {
+    ...entry,
+    ...(overrideBuiltin ? { overrideBuiltin: true } : {}),
+  });
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  if (asJson) return printJson(io, res.json);
+  io.stdout(`${id}\n`);
+  return 0;
+}
+
 /** Runs one CLI invocation. `bun src/cli.ts` and the compiled binary both call this. */
 export async function runCli(
   argv: readonly string[],
@@ -645,6 +735,7 @@ export async function runCli(
     if (command === "exec") return await execCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "session") return await sessionCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "files") return await filesCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "tool") return await toolCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "mcp") return await mcpProxy(sub === undefined ? [] : [sub, ...rest], env, io, lines);
     if (command === "ssh-config") return await sshConfig(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "ssh-proxy")

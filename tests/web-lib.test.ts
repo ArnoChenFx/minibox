@@ -1,10 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ROOT } from "../src/config";
 import { validMountPath as serverValidMountPath } from "../src/volumes/mounts";
 import { ROLE_MOUNT, VOLUME_ROLES } from "../src/volumes/types";
+import {
+  type CommandTemplate,
+  commandsForSource,
+  commandTemplate,
+  customToolBody,
+  customToolForm,
+  isBuiltinId,
+  validCustomId,
+} from "../web/js/lib/custom-tool.js";
 import {
   canonicalMounts,
   checkMountRows,
@@ -796,5 +806,149 @@ describe("box state badges", () => {
       running: "running",
     });
     expect(badges.expired).toContain("TTL expired");
+  });
+});
+
+describe("custom tool form", () => {
+  const claude = JSON.parse(readFileSync(join(ROOT, "catalog", "claude-code.json"), "utf8")) as CommandTemplate;
+  const npm = commandTemplate("npm") as CommandTemplate;
+  const pip = commandTemplate("pip") as CommandTemplate;
+
+  test("the npm template is claude-code's own install, upgrade and uninstall, and its detect names the binary", () => {
+    expect({ install: npm.install, upgrade: npm.upgrade, uninstall: npm.uninstall }).toEqual({
+      install: claude.install,
+      upgrade: claude.upgrade,
+      uninstall: claude.uninstall,
+    });
+    expect(npm.detect).toBe("command -v {{bin}} >/dev/null && {{bin}} --version 2>/dev/null");
+  });
+
+  test("a pip template installs into a venv under tools/venvs and links the binary, so uninstall removes exactly that", () => {
+    expect(pip.install).toBe(pip.upgrade);
+    expect(pip.install).toContain("python3 -m venv {{prefix}}/venvs/{{bin}}");
+    expect(pip.install).toContain("{{prefix}}/venvs/{{bin}}/bin/pip install --upgrade {{package_spec}}");
+    expect(pip.uninstall).toBe("rm -f {{prefix}}/bin/{{bin}} && rm -rf {{prefix}}/venvs/{{bin}}");
+  });
+
+  test("a script has no template, and only the two package managers do", () => {
+    expect([commandTemplate("script"), commandTemplate("nope")]).toEqual([null, null]);
+  });
+
+  test("a source change moves the commands still holding a template and keeps the ones the admin typed", () => {
+    const typed = { ...npm, upgrade: "my upgrade" };
+    expect(commandsForSource(typed, "npm", "pip")).toEqual({ ...pip, upgrade: "my upgrade" });
+    expect(commandsForSource(typed, "npm", "script")).toEqual({
+      install: "",
+      upgrade: "my upgrade",
+      uninstall: "",
+      detect: "",
+    });
+    expect(commandsForSource({ install: "", upgrade: "", uninstall: "", detect: "" }, "script", "npm")).toEqual(npm);
+  });
+
+  test("a new entry starts on npm with its templates, and an existing entry shows its own text", () => {
+    expect(customToolForm(null)).toEqual({
+      id: "",
+      name: "",
+      description: "",
+      category: "agents",
+      source: "npm",
+      package: "",
+      bin: "",
+      requires: "",
+      estimatedMb: "50",
+      needsRoot: false,
+      overrideBuiltin: false,
+      ...npm,
+    });
+    const existing = customToolForm({
+      id: "acme",
+      name: "Acme",
+      description: "Acme CLI",
+      category: "terminal",
+      source: "script",
+      package: "acme.dev",
+      bin: "acme",
+      requires: null,
+      estimatedMb: 12,
+      needsRoot: false,
+      overridesBuiltin: true,
+      install: "i",
+      upgrade: "u",
+      uninstall: "x",
+      detect: "d",
+    });
+    expect(existing).toEqual({
+      id: "acme",
+      name: "Acme",
+      description: "Acme CLI",
+      category: "terminal",
+      source: "script",
+      package: "acme.dev",
+      bin: "acme",
+      requires: "",
+      estimatedMb: "12",
+      needsRoot: false,
+      overrideBuiltin: true,
+      install: "i",
+      upgrade: "u",
+      uninstall: "x",
+      detect: "d",
+    });
+  });
+
+  test("an id is built in when the merged catalog lists it, unless a custom entry says otherwise", () => {
+    const catalogIds = new Set(["claude-code", "uv", "acme", "mine"]);
+    const customById = new Map([
+      ["acme", { id: "acme", overridesBuiltin: true }],
+      ["mine", { id: "mine", overridesBuiltin: false }],
+    ]);
+    expect(["claude-code", "uv", "acme", "mine", "fresh"].map((id) => isBuiltinId(id, catalogIds, customById))).toEqual(
+      [true, true, true, false, false],
+    );
+  });
+
+  test("the request body trims text, leaves out the id and a blank requirement, and sends a size as a number when it is one", () => {
+    const values = {
+      ...customToolForm(null),
+      id: "acme",
+      name: "  Acme  ",
+      package: " acme.dev ",
+      bin: "acme",
+      requires: "   ",
+      estimatedMb: " 12 ",
+      needsRoot: true,
+    };
+    const body = customToolBody(values);
+    expect(body).toEqual({
+      name: "Acme",
+      description: "",
+      category: "agents",
+      source: "npm",
+      package: "acme.dev",
+      bin: "acme",
+      needsRoot: true,
+      estimatedMb: 12,
+      install: npm.install,
+      upgrade: npm.upgrade,
+      uninstall: npm.uninstall,
+      detect: npm.detect,
+      overrideBuiltin: false,
+    });
+    expect(body).not.toHaveProperty("id");
+    expect(customToolBody({ ...values, requires: " Node ≥ 22 " }).requires).toBe("Node ≥ 22");
+    expect(customToolBody({ ...values, estimatedMb: "1.5" }).estimatedMb).toBe("1.5");
+    expect(customToolBody({ ...values, estimatedMb: "" }).estimatedMb).toBe("");
+  });
+
+  test("an id is valid when it is a lowercase letter, then lowercase letters, digits or hyphens, at most 63 characters", () => {
+    expect(["acme", "acme-2", "a".repeat(63)].map(validCustomId)).toEqual([true, true, true]);
+    expect(["Acme", "2acme", "acme_x", "", "a".repeat(64)].map(validCustomId)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
   });
 });

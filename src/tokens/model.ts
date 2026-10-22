@@ -6,7 +6,7 @@ import type { BoxSpec } from "../specs/types";
 /**
  * Scopes a token may carry. Operations keep their own scope strings; `requiredScopes` maps those onto this list.
  * Anything that maps to no scope here is the owner's alone: token management, pool administration, pool listing,
- * template build, task cancellation, the console's session and system routes.
+ * the custom tool catalog, template build, task cancellation, the console's session and system routes.
  */
 export const SCOPES = [
   "box:read",
