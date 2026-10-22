@@ -77,6 +77,14 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       templates = [];
     }
   }
+  const usageById = new Map();
+  if (multiHost() && !snapshot) {
+    try {
+      for (const host of (await api("/api/hosts/usage")).hosts) usageById.set(host.id, host);
+    } catch {
+      /* without the figures, the capacity note stays hidden for a remote host */
+    }
+  }
   const system = await api("/api/system").catch(() => null);
   const defaultProfile = PROFILES.includes(system?.config?.boxProfile) ? system.config.boxProfile : "standard";
   const fits = (p) => p.cpus <= maxCpu && p.memoryMb <= maxMem;
@@ -215,23 +223,38 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     );
     validateRes();
   };
+  /** The capacity of the host a box would go to and what its running boxes already book there. Null when unknown. */
+  const figuresOf = (id) => {
+    if (!multiHost() || id === "local") {
+      const h = hostNow();
+      return h
+        ? { cores: h.cpu.cores, total: h.memory.total, cpus: h.boxes.allocatedCpus, memory: h.boxes.allocatedMemory }
+        : null;
+    }
+    const capacity = hostsNow().find((h) => h.id === id)?.capacity;
+    const allocated = usageById.get(id)?.allocated;
+    if (!capacity?.cpus || !capacity.memoryBytes || !allocated) return null;
+    return { cores: capacity.cpus, total: capacity.memoryBytes, cpus: allocated.cpus, memory: allocated.memoryBytes };
+  };
   const validateRes = () => {
     let err = "";
     if (!(state.cpus >= 0.1 && state.cpus <= maxCpu)) err = t("cb.cpuRange", { max: maxCpu });
     else if (!(Number.isInteger(state.memoryMb) && state.memoryMb >= 128 && state.memoryMb <= maxMem))
       err = t("cb.memRange", { max: maxMem });
     q("#cbResErr").textContent = err;
-    const h = hostNow();
-    const automatic = q("#cbHost")?.value === AUTO_HOST;
-    if (automatic) q("#cbCapacity").innerHTML = "";
-    else if (h && !err) {
-      const cpuAfter = h.boxes.allocatedCpus + state.cpus;
-      const memAfter = h.boxes.allocatedMemory + state.memoryMb * 1024 * 1024;
-      const over = cpuAfter > h.cpu.cores || memAfter > h.memory.total;
-      q("#cbCapacity").innerHTML =
-        `<div class="callout ${over ? "warn" : "info"}">${icon(over ? "alert" : "info")}<span>
-        ${t("cb.capacity", { cpu: +cpuAfter.toFixed(2), cores: h.cpu.cores, mem: gbOrMb(memAfter), total: bytes(h.memory.total) })}
+    const pick = q("#cbHost")?.value ?? initialHost;
+    if (pick === AUTO_HOST) q("#cbCapacity").innerHTML = "";
+    else {
+      const figures = figuresOf(pick);
+      if (figures && !err) {
+        const cpuAfter = figures.cpus + state.cpus;
+        const memAfter = figures.memory + state.memoryMb * 1024 * 1024;
+        const over = cpuAfter > figures.cores || memAfter > figures.total;
+        q("#cbCapacity").innerHTML =
+          `<div class="callout ${over ? "warn" : "info"}">${icon(over ? "alert" : "info")}<span>
+        ${t("cb.capacity", { cpu: +cpuAfter.toFixed(2), cores: figures.cores, mem: gbOrMb(memAfter), total: bytes(figures.total) })}
         ${over ? t("cb.capacityOver") : ""}</span></div>`;
+      }
     }
     return !err;
   };

@@ -490,6 +490,8 @@ export default {
   "ov.host": "Host",
   "ov.hostname": "Hostname",
   "ov.hostBoxes": "{n} boxes",
+  "ov.hostContainers": "{running} of {total} containers running",
+  "ov.hostUsing": "Using about {cpu} cores and {mem} now",
   "ov.os": "OS",
   "ov.kernel": "Kernel",
   "ov.cpu": "Processor",

@@ -441,6 +441,8 @@ export default {
   "ov.host": "宿主机",
   "ov.hostname": "主机名",
   "ov.hostBoxes": "{n} 个 Box",
+  "ov.hostContainers": "{running} / {total} 个容器运行中",
+  "ov.hostUsing": "目前约占用 {cpu} 核 CPU 与 {mem} 内存",
   "ov.os": "系统",
   "ov.kernel": "内核",
   "ov.cpu": "处理器",
