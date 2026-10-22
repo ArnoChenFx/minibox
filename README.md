@@ -338,7 +338,7 @@ ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 
 The installer detects the OS and CPU, downloads `minibox-<os>-<arch>` from the server, checks it against `/cli/checksums.txt` and installs it into `~/.local/bin` (or `MINIBOX_INSTALL_DIR`). It needs no sudo and prints a `PATH` line when that folder is not on `PATH`. The server builds each binary with `bun build --compile` on the first request for its version and keeps it under `DATA_DIR/cli`. A platform other than the server's first needs Bun's runtime for it, about 90 MB downloaded from npm once per server, so a server that cannot reach npm answers `503` with the reason and a fallback. Set `HTTPS_PROXY` for MiniBox in that case. To build the CLI yourself instead, run `bun run build:cli` in a checkout and put `dist/minibox` on your `PATH`.
 
-`ssh-config --append` writes a `Host *.minibox` block at the top of `~/.ssh/config`, pins the server's host key in `~/.ssh/minibox_known_hosts`, and saves the server address and key to `~/.config/minibox/ssh-credentials.json` (mode 600). The `ProxyCommand` (`minibox ssh-proxy %h`) reads that file when `MINIBOX_ACCESS_KEY` is not set, so ssh started from any shell or an IDE's Remote-SSH works. Exported `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` still take precedence.
+`ssh-config --append` writes a `Host *.minibox` block at the top of `~/.ssh/config`, pins the server's host key in `~/.ssh/minibox_known_hosts`, and saves the server address and key to `~/.config/minibox/ssh-credentials.json` (mode 600 on macOS and Linux). The `ProxyCommand` (`minibox ssh-proxy %h`) reads that file when `MINIBOX_ACCESS_KEY` is not set, so ssh started from any shell or an IDE's Remote-SSH works. Exported `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` still take precedence. `--url URL` and `--token KEY` override them for that command, and `--append` saves the values they resolve to; `--token` leaves the key in your shell history, so prefer the environment variable.
 
 - The login user is `dev` or the box id. `root` and other names are refused. The access key or token is checked at the WebSocket handshake, so the box needs no key or password. A browser session cannot open an SSH connection.
 - A token needs the `box:ssh` scope and reaches only the boxes its selector allows. `operator` and `admin` include the scope, `sandboxed-agent` does not. Like `exec`, it can run commands and read and write every mount of the box, so grant it the same way. `-L` also needs `port:expose`.
@@ -346,6 +346,21 @@ The installer detects the OS and CPU, downloads `minibox-<os>-<arch>` from the s
 - A stopped or sleeping box starts on connect. An open connection keeps the box awake, and input over it counts as activity. Stopping the box (by hand, idle or TTL), deleting it or rebuilding it ends its SSH connections, and a box whose TTL has passed refuses new ones with `409 box_ttl_expired`. Limits: 8 connections per box, 64 in total, and 16 channels per connection. Past a box or server limit the handshake returns `429`.
 - `sftp` and `-L` need `openssh-sftp-server` and `socat`, which the [base template](#base-template) installs. An older box can add them with `sudo apt-get install -y openssh-sftp-server socat` in the standard profile, or be created again.
 - The host key is `DATA_DIR/ssh_host_ed25519_key`, created on first start. If you delete it, run `minibox ssh-config --append` again so clients pin the new key. Connections, channels, refused forwards and disconnects are written to the audit log.
+
+### SSH from Windows
+
+Run these in a normal PowerShell window, not as administrator. Windows OpenSSH expects the files in `%USERPROFILE%\.ssh` to belong to your account, and `ssh-config --append` reminds you of this on Windows.
+
+```powershell
+irm https://minibox.example.com/cli/install.ps1 | iex
+$env:MINIBOX_URL="https://minibox.example.com"; $env:MINIBOX_ACCESS_KEY="..."; minibox ssh-config --append
+ssh mybox.minibox
+```
+
+- The installer puts `minibox.exe` in `%USERPROFILE%\.local\bin` (or `MINIBOX_INSTALL_DIR`), adds that folder to your user PATH, and moves an older `minibox.exe` aside to `minibox.exe.old`. Open a new terminal afterwards so `minibox` and `ssh` are found. If the running `minibox.exe` cannot be moved, the installer stops with a message and the installed file stays as it was. If the new file does not run, the installer puts the previous one back.
+- `ssh` needs the OpenSSH Client optional feature (Settings, System, Optional features). The installer prints a hint when it is missing.
+- `ssh-config` writes `%USERPROFILE%\.ssh\config`, `%USERPROFILE%\.ssh\minibox_known_hosts` and `%USERPROFILE%\.config\minibox\ssh-credentials.json`. Windows has no mode 600, so these files take their permissions from `%USERPROFILE%\.ssh` and belong to your account. If ssh reports bad owner or permissions, check the owner and access rules with `icacls "%USERPROFILE%\.ssh\config"`: the owner should be you, and no other account should be able to write to it.
+- The `ProxyCommand` names the CLI by its full path, such as `"C:/Users/you/.local/bin/minibox.exe" ssh-proxy %h`, because OpenSSH for Windows starts it without a shell and it may not be on that process's PATH. After you move `minibox.exe`, run `minibox ssh-config --append` again.
 
 ## Configuration
 

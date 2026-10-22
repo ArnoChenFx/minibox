@@ -7,14 +7,20 @@ import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
 import { applySamples } from "../lib/box-state.js";
-import { delegate, esc } from "../lib/dom.js";
+import { copyText, delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, dateTime, duration, gbOrMb, mem, pct, shortId } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
-import { connectCommands, installCommands, setupCommands, windowsInstallCommands } from "../lib/ssh.js";
+import {
+  connectCommands,
+  installCommands,
+  setupCommands,
+  windowsInstallCommands,
+  windowsSetupCommands,
+} from "../lib/ssh.js";
 import { filterTools, groupTools, toolAction } from "../lib/tool-list.js";
 import {
   boxState,
@@ -312,12 +318,21 @@ function mountsCard(box) {
     <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;
 }
 
-/** `blocks` are the commands of one step, each with an optional label, such as the shell or PowerShell line. */
+/**
+ * `blocks` are the commands of one step. Each has an optional label (the shell or PowerShell line) and an optional
+ * note. The command scrolls sideways instead of breaking inside a word, and its copy button stays beside its label.
+ */
 function sshStep(number, title, help, blocks) {
   const commands = blocks
     .map(
-      ({ label, commands: text }) => `${label ? `<p class="help ssh-label">${esc(label)}</p>` : ""}
-    <div class="ssh-cmd"><pre class="token-snippet">${esc(text)}</pre><button class="btn btn-sm" type="button" data-copy="${esc(text)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button></div>`,
+      ({ label = "", commands: text, note = "" }) => `<div class="ssh-cmd">
+      <div class="ssh-cmd-head">
+        <span class="ssh-label">${esc(label)}</span>
+        <button class="btn btn-sm" type="button" data-copy="${esc(text)}">${icon("copy")}${esc(t("bd.sshCopy"))}</button>
+      </div>
+      <pre class="token-snippet" tabindex="0">${esc(text)}</pre>
+      ${note ? `<p class="help ssh-note">${esc(note)}</p>` : ""}
+    </div>`,
     )
     .join("");
   return `<section class="ssh-step">
@@ -336,11 +351,12 @@ function openSshDialog(box) {
     wide: true,
     body: `<div class="ssh-steps">
       ${sshStep(1, t("bd.sshInstall"), t("bd.sshInstallHelp"), [
-        { label: t("bd.sshInstallUnix"), commands: installCommands(origin) },
-        { label: t("bd.sshInstallWindows"), commands: windowsInstallCommands(origin) },
+        { label: t("bd.sshUnix"), commands: installCommands(origin) },
+        { label: t("bd.sshWindows"), commands: windowsInstallCommands(origin), note: t("bd.sshInstallWindowsNote") },
       ])}
       ${sshStep(2, t("bd.sshSetup"), t("bd.sshSetupHelp", { settings: t("nav.settings"), tokens: t("st.tokens") }), [
-        { commands: setupCommands(origin) },
+        { label: t("bd.sshUnix"), commands: setupCommands(origin) },
+        { label: t("bd.sshWindows"), commands: windowsSetupCommands(origin), note: t("bd.sshSetupWindowsNote") },
       ])}
       ${sshStep(3, t("bd.sshConnect"), t("bd.sshConnectHelp"), [{ commands: connectCommands(box.name) }])}
     </div>`,
@@ -350,7 +366,7 @@ function openSshDialog(box) {
     const button = event.target.closest("[data-copy]");
     if (!button) return;
     try {
-      await navigator.clipboard.writeText(button.dataset.copy);
+      await copyText(button.dataset.copy);
       toast(t("bd.sshCopied"));
     } catch (err) {
       toastError(t("bd.sshCopyFailed"), err);

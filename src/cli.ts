@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 import { createInterface } from "node:readline";
 
 const DEFAULT_URL = "http://127.0.0.1:3920";
@@ -9,6 +9,8 @@ const SSH_BLOCK_BEGIN = "# BEGIN minibox ssh-config";
 const SSH_BLOCK_END = "# END minibox ssh-config";
 /** The server version the binary was compiled from. `bun build --env` inlines it; a run from source reports `dev`. */
 const BUILT_VERSION = process.env.MINIBOX_CLI_BUILD_VERSION?.trim() || "dev";
+/** Set by `bun build --compile`, so process.execPath is this CLI. From source it is the bun runtime. */
+const COMPILED = process.env.MINIBOX_CLI_BUILD_COMPILED === "1";
 const VERSION_SHAPE = /^(\d+)\.(\d+)\.(\d+)(?:-(\d+)-g[0-9a-f]+)?(?:-dirty)?$/;
 
 interface CliIo {
@@ -69,11 +71,14 @@ Commands:
   minibox tool custom delete <id> [--json]
                                        Remove an entry from tools.d; nothing is uninstalled
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
-  minibox ssh-config [--append]        Print the ~/.ssh/config block and host key pin; --append writes both
+  minibox ssh-config [--append] [--url URL] [--token KEY]
+                                       Print the ~/.ssh/config block and host key pin. --append writes both and saves
+                                       the server and key for ssh-proxy. --token leaves the key in shell history.
   minibox ssh-proxy <box>              Carry one SSH connection over stdio (the ProxyCommand from ssh-config)
   minibox --version                    Print the MiniBox version this CLI was built from
 
 Every command takes --help. Install this CLI from the server: curl -fsSL <MINIBOX_URL>/cli/install.sh | sh
+On Windows, in PowerShell: irm <MINIBOX_URL>/cli/install.ps1 | iex
 A foreground exec may use --timeout up to 55 seconds. Longer commands use --background with a larger --timeout.
 The process exit code is the command's exit code, 124 when the command times out, 1 on an API error, and 2 on usage.
 exec can read and write every volume mounted on the box.
@@ -352,24 +357,97 @@ async function mcpProxy(
   return 0;
 }
 
-/** Where `ssh-config --append` saves the server and key, so `ssh-proxy` works from any shell, IDE or launcher. */
-function credentialsPath(env: Record<string, string | undefined>): string {
-  return join(env.HOME ?? homedir(), ".config", "minibox", "ssh-credentials.json");
+export type Env = Record<string, string | undefined>;
+
+/** What the SSH setup depends on about this machine. Tests pass another one to cover Windows on any OS. */
+export interface SshHost {
+  readonly platform: NodeJS.Platform;
+  readonly homedir: string;
+  /** The running executable: the CLI itself when compiled, the bun runtime when run from source. */
+  readonly execPath: string;
+  readonly compiled: boolean;
+}
+
+export interface SshLayout {
+  readonly sshDir: string;
+  readonly configPath: string;
+  readonly pinPath: string;
+  readonly credentialsDir: string;
+  readonly credentialsPath: string;
+}
+
+function currentSshHost(): SshHost {
+  return { platform: process.platform, homedir: homedir(), execPath: process.execPath, compiled: COMPILED };
+}
+
+function pathsOf(host: SshHost) {
+  return host.platform === "win32" ? win32 : posix;
+}
+
+/**
+ * The folder that holds `.ssh` and `.config`. Windows programs, OpenSSH included, use the profile folder, and MSYS sets
+ * HOME to a POSIX path such as /c/Users/me that they cannot open, so HOME is read only on other platforms.
+ */
+function homeFolder(env: Env, host: SshHost): string {
+  return host.platform === "win32" ? env.USERPROFILE || host.homedir : env.HOME || host.homedir;
+}
+
+/**
+ * Where `ssh-config` reads and writes. `credentialsPath` holds the server and key that `ssh-config --append` saves, so
+ * `ssh-proxy` works from any shell, IDE or launcher.
+ */
+export function sshLayout(env: Env, host: SshHost): SshLayout {
+  const path = pathsOf(host);
+  const home = homeFolder(env, host);
+  const sshDir = path.join(home, ".ssh");
+  const credentialsDir = path.join(home, ".config", "minibox");
+  return {
+    sshDir,
+    configPath: path.join(sshDir, "config"),
+    pinPath: path.join(sshDir, "minibox_known_hosts"),
+    credentialsDir,
+    credentialsPath: path.join(credentialsDir, "ssh-credentials.json"),
+  };
+}
+
+function assertQuoteFree(path: string): void {
+  if (path.includes('"')) throw new Error(`${path} contains a double quote, which an SSH config line cannot hold`);
+}
+
+/**
+ * A quoted `UserKnownHostsFile` value. ssh expands `%` tokens in it, so a literal `%` is written `%%`. Windows
+ * separators become `/`, which ssh reads without treating `\` as an escape.
+ */
+function configValuePath(path: string, platform: NodeJS.Platform): string {
+  assertQuoteFree(path);
+  const slashed = platform === "win32" ? path.replaceAll("\\", "/") : path;
+  return `"${slashed.replaceAll("%", "%%")}"`;
+}
+
+/**
+ * The quoted program of a ProxyCommand. OpenSSH on POSIX gives the line to a shell, and Windows OpenSSH starts it with
+ * CreateProcess, so the quoting rules differ.
+ */
+function proxyProgram(path: string, platform: NodeJS.Platform): string {
+  if (platform === "win32") return configValuePath(path, platform);
+  assertQuoteFree(path);
+  return `"${path.replace(/[\\$`]/g, "\\$&").replaceAll("%", "%%")}"`;
 }
 
 /**
  * The environment `ssh-proxy` runs with. ssh starts it from whatever launched ssh, often an IDE that never saw the
- * shell's exports, so when no key is set it reads the server and key `ssh-config --append` saved (mode 600).
+ * shell's exports, so when no key is set it reads the server and key `ssh-config --append` saved.
  */
-async function proxyEnv(env: Record<string, string | undefined>): Promise<Record<string, string | undefined>> {
+async function proxyEnv(env: Env): Promise<Env> {
   if (env.MINIBOX_ACCESS_KEY ?? env.ACCESS_KEY) return env;
-  const text = await readFile(credentialsPath(env), "utf8").catch(() => null);
+  const { credentialsPath } = sshLayout(env, currentSshHost());
+  const text = await readFile(credentialsPath, "utf8").catch(() => null);
   if (text === null) return env;
   let saved: { url?: unknown; key?: unknown };
   try {
     saved = JSON.parse(text) as { url?: unknown; key?: unknown };
   } catch {
-    throw new Error(`${credentialsPath(env)} is not valid JSON. Run minibox ssh-config --append again.`);
+    throw new Error(`${credentialsPath} is not valid JSON. Run minibox ssh-config --append again.`);
   }
   if (typeof saved.key !== "string" || !saved.key) return env;
   return {
@@ -379,15 +457,14 @@ async function proxyEnv(env: Record<string, string | undefined>): Promise<Record
   };
 }
 
-async function saveCredentials(env: Record<string, string | undefined>): Promise<void> {
-  const path = credentialsPath(env);
-  await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
+async function saveCredentials(env: Env, layout: SshLayout): Promise<void> {
+  await mkdir(layout.credentialsDir, { recursive: true, mode: 0o700 });
   const url = (env.MINIBOX_URL ?? DEFAULT_URL).replace(/\/$/, "");
-  await writeFile(path, `${JSON.stringify({ url, key: accessKey(env) })}\n`, { mode: 0o600 });
-  await chmod(path, 0o600);
+  await writeFile(layout.credentialsPath, `${JSON.stringify({ url, key: accessKey(env) })}\n`, { mode: 0o600 });
+  await chmod(layout.credentialsPath, 0o600);
 }
 
-function accessKey(env: Record<string, string | undefined>): string {
+function accessKey(env: Env): string {
   const key = env.MINIBOX_ACCESS_KEY ?? env.ACCESS_KEY;
   if (!key) throw new Error("Set MINIBOX_ACCESS_KEY or ACCESS_KEY.");
   return key;
@@ -396,15 +473,18 @@ function accessKey(env: Record<string, string | undefined>): string {
 /**
  * The block `ssh-config` manages. It goes first in ~/.ssh/config, so its settings win over any earlier `Host *`. The pin
  * path is absolute: ssh expands `~` from the account's passwd entry, which is not always $HOME, and the pin must be
- * where the CLI wrote it.
+ * where the CLI wrote it. A compiled CLI is named by its absolute path, since an IDE that starts ssh may not have the
+ * install folder on its PATH.
  */
-function sshConfigBlock(pinPath: string): string {
+export function sshConfigBlock(env: Env, host: SshHost): string {
+  const layout = sshLayout(env, host);
+  const program = host.compiled ? proxyProgram(host.execPath, host.platform) : "minibox";
   return [
     SSH_BLOCK_BEGIN,
     `Host *${SSH_SUFFIX}`,
     "  User dev",
-    "  ProxyCommand minibox ssh-proxy %h",
-    `  UserKnownHostsFile "${pinPath.replaceAll("%", "%%")}"`,
+    `  ProxyCommand ${program} ssh-proxy %h`,
+    `  UserKnownHostsFile ${configValuePath(layout.pinPath, host.platform)}`,
     "  StrictHostKeyChecking yes",
     "  ServerAliveInterval 15",
     SSH_BLOCK_END,
@@ -422,10 +502,37 @@ function withoutManagedBlock(text: string): string {
   return text.slice(0, begin) + (lineEnd === -1 ? "" : text.slice(lineEnd + 1));
 }
 
-async function sshConfig(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
-  const unknown = argv.find((token) => token !== "--append");
-  if (unknown !== undefined) throw new Error(`Unknown option ${unknown}`);
-  const res = await request(env, "GET", "/api/ssh/host-key");
+interface SshConfigOptions {
+  readonly append: boolean;
+  readonly url?: string;
+  readonly token?: string;
+}
+
+function sshConfigOptions(argv: string[]): SshConfigOptions {
+  const options: { append: boolean; url?: string; token?: string } = { append: false };
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i] ?? "";
+    if (token === "--append") options.append = true;
+    else if (token === "--url") options.url = serverUrl(flagValue(argv, i++, token));
+    else if (token === "--token") options.token = flagValue(argv, i++, token);
+    else throw new Error(`Unknown option ${token}`);
+  }
+  return options;
+}
+
+function serverUrl(value: string): string {
+  if (!/^https?:\/\/[^/\s]+/.test(value)) throw new Error(`--url needs an http:// or https:// address, not ${value}`);
+  return value.replace(/\/$/, "");
+}
+
+async function sshConfig(argv: string[], env: Env, io: CliIo): Promise<number> {
+  const options = sshConfigOptions(argv);
+  const scoped: Env = { ...env };
+  if (options.url !== undefined) scoped.MINIBOX_URL = options.url;
+  if (options.token !== undefined) scoped.MINIBOX_ACCESS_KEY = options.token;
+  const host = currentSshHost();
+  const layout = sshLayout(scoped, host);
+  const res = await request(scoped, "GET", "/api/ssh/host-key");
   if (res.status >= 400) {
     fail(io, res.status, res.json, res.text);
     if (res.status === 403) io.stderr("A token needs the box:ssh scope to set up SSH.\n");
@@ -436,26 +543,29 @@ async function sshConfig(argv: string[], env: Record<string, string | undefined>
     throw new Error("The server did not publish an SSH host key.");
   }
   const pin = `*${SSH_SUFFIX} ${published.publicKey}\n`;
-  const sshDir = join(env.HOME ?? homedir(), ".ssh");
-  const configPath = join(sshDir, "config");
-  const pinPath = join(sshDir, "minibox_known_hosts");
-  if (!argv.includes("--append")) {
-    io.stdout(`# ~/.ssh/config\n${sshConfigBlock(pinPath)}\n# ~/.ssh/minibox_known_hosts\n${pin}`);
+  const block = sshConfigBlock(scoped, host);
+  if (!options.append) {
+    io.stdout(`# ${layout.configPath}\n${block}\n# ${layout.pinPath}\n${pin}`);
     return 0;
   }
-  await mkdir(sshDir, { recursive: true, mode: 0o700 });
-  const existing = await readFile(configPath, "utf8").catch((error: NodeJS.ErrnoException) => {
+  await mkdir(layout.sshDir, { recursive: true, mode: 0o700 });
+  const existing = await readFile(layout.configPath, "utf8").catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return "";
     throw error;
   });
   const kept = withoutManagedBlock(existing).replace(/^\n+/, "");
-  const block = sshConfigBlock(pinPath);
-  await writeFile(configPath, kept ? `${block}\n${kept}` : block, { mode: 0o600 });
-  await writeFile(pinPath, pin, { mode: 0o600 });
-  await saveCredentials(env);
+  await writeFile(layout.configPath, kept ? `${block}\n${kept}` : block, { mode: 0o600 });
+  await writeFile(layout.pinPath, pin, { mode: 0o600 });
+  await saveCredentials(scoped, layout);
+  const mode = host.platform === "win32" ? "" : " (mode 600)";
   io.stdout(
-    `Wrote ~/.ssh/config, ~/.ssh/minibox_known_hosts and ~/.config/minibox/ssh-credentials.json (mode 600). Pinned ${published.fingerprint} for *${SSH_SUFFIX}.\n`,
+    `Wrote ${layout.configPath}, ${layout.pinPath} and ${layout.credentialsPath}${mode}. Pinned ${published.fingerprint} for *${SSH_SUFFIX}.\n`,
   );
+  if (host.platform === "win32") {
+    io.stdout(
+      "Windows OpenSSH checks who owns these files, so run ssh-config from a normal PowerShell window, not an administrator one.\n",
+    );
+  }
   return 0;
 }
 

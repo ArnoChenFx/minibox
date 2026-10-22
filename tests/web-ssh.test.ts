@@ -1,6 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 
-import { connectCommands, installCommands, setupCommands, sshHost, windowsInstallCommands } from "../web/js/lib/ssh.js";
+import {
+  connectCommands,
+  installCommands,
+  setupCommands,
+  sshHost,
+  windowsInstallCommands,
+  windowsSetupCommands,
+} from "../web/js/lib/ssh.js";
+
+const ORIGIN = "https://minibox.example";
+const PWSH = Bun.which("pwsh");
 
 describe("SSH dialog commands", () => {
   test("a box answers to <name>.minibox, the host pattern ssh-config matches", () => {
@@ -25,10 +36,38 @@ describe("SSH dialog commands", () => {
     );
   });
 
+  test("the Windows setup command sets both variables with $env: and runs ssh-config on one line", () => {
+    expect(windowsSetupCommands(ORIGIN)).toBe(
+      '$env:MINIBOX_URL="https://minibox.example"; $env:MINIBOX_ACCESS_KEY="<token>"; minibox ssh-config --append',
+    );
+  });
+
   test("no SSH step asks the user to build the CLI from a checkout", () => {
-    const origin = "https://minibox.example";
-    for (const text of [installCommands(origin), windowsInstallCommands(origin), setupCommands(origin)]) {
+    for (const text of [installCommands(ORIGIN), windowsInstallCommands(ORIGIN), setupCommands(ORIGIN)]) {
       expect(text).not.toContain("build:cli");
+    }
+  });
+
+  test("the POSIX commands parse as sh, so a pasted line is not a syntax error", () => {
+    for (const text of [installCommands(ORIGIN), setupCommands(ORIGIN)]) {
+      const checked = spawnSync("sh", ["-n", "-c", text], { encoding: "utf8" });
+      expect({ text, status: checked.status, stderr: checked.stderr }).toEqual({ text, status: 0, stderr: "" });
+    }
+  });
+
+  test.skipIf(PWSH === null)("the PowerShell commands parse without errors", () => {
+    for (const text of [windowsInstallCommands(ORIGIN), windowsSetupCommands(ORIGIN)]) {
+      const checked = spawnSync(
+        PWSH ?? "pwsh",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "$errors = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($env:SAMPLE, [ref]$null, [ref]$errors); exit $errors.Count",
+        ],
+        { env: { ...process.env, SAMPLE: text }, encoding: "utf8" },
+      );
+      expect({ text, status: checked.status, stderr: checked.stderr }).toEqual({ text, status: 0, stderr: "" });
     }
   });
 });

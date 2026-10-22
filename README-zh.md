@@ -335,7 +335,7 @@ ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 
 安装脚本会识别系统与 CPU，从服务器下载 `minibox-<os>-<arch>`，按 `/cli/checksums.txt` 校验后安装到 `~/.local/bin`（或 `MINIBOX_INSTALL_DIR`）。它不需要 sudo；该目录不在 `PATH` 中时会打印一行 `PATH` 设置。服务器在该版本的首次请求时用 `bun build --compile` 构建各个二进制，并保存在 `DATA_DIR/cli` 下。与服务器不同的平台还需要该平台的 Bun 运行时，约 90 MB，每台服务器只从 npm 下载一次；无法访问 npm 的服务器会返回 `503` 与原因。此时请为 MiniBox 设置 `HTTPS_PROXY`。若想自行构建，可在源码目录运行 `bun run build:cli`，并把 `dist/minibox` 放进 `PATH`。
 
-`ssh-config --append` 在 `~/.ssh/config` 顶部写入 `Host *.minibox` 配置块，把服务器主机密钥固定在 `~/.ssh/minibox_known_hosts`，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（权限 600）。`ProxyCommand`（`minibox ssh-proxy %h`）在没有设置 `MINIBOX_ACCESS_KEY` 时读取该文件，因此从任何 shell 或 IDE 的 Remote-SSH 启动 ssh 都能使用。已导出的 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY` 仍然优先。
+`ssh-config --append` 在 `~/.ssh/config` 顶部写入 `Host *.minibox` 配置块，把服务器主机密钥固定在 `~/.ssh/minibox_known_hosts`，并把服务器地址与密钥保存到 `~/.config/minibox/ssh-credentials.json`（macOS 与 Linux 上权限为 600）。`ProxyCommand`（`minibox ssh-proxy %h`）在没有设置 `MINIBOX_ACCESS_KEY` 时读取该文件，因此从任何 shell 或 IDE 的 Remote-SSH 启动 ssh 都能使用。已导出的 `MINIBOX_URL` 与 `MINIBOX_ACCESS_KEY` 仍然优先。`--url URL` 与 `--token KEY` 只对本次命令生效，`--append` 会保存它们解析出的值；`--token` 会把密钥留在 shell 历史中，因此建议改用环境变量。
 
 - 登录用户为 `dev` 或 Box id，`root` 与其他名字会被拒绝。访问密钥或令牌在 WebSocket 握手时校验，Box 内不需要任何密钥或密码。浏览器会话不能建立 SSH 连接。
 - 令牌需要 `box:ssh` 范围，且只能访问其 Box 选择器允许的 Box。`operator` 与 `admin` 预设包含该范围，`sandboxed-agent` 不包含。它与 `exec` 一样能在 Box 内执行命令、读写全部挂载，因此应同样谨慎地授予。`-L` 另需 `port:expose`。
@@ -343,6 +343,21 @@ ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 - 已停止或休眠的 Box 会在连接时启动。打开的连接会让 Box 保持运行，连接上的输入计为活动。停止 Box（手动、空闲或 TTL）、删除或重建 Box 会断开它的 SSH 连接；TTL 已过的 Box 拒绝新连接，返回 `409 box_ttl_expired`。上限：每个 Box 8 个连接，全局 64 个，每个连接 16 个通道。超过 Box 或全局上限时，握手返回 `429`。
 - `sftp` 与 `-L` 需要 `openssh-sftp-server` 和 `socat`，[基础模板](#基础模板)已包含它们。旧 Box 可在标准档位下执行 `sudo apt-get install -y openssh-sftp-server socat` 补装，或重新创建。
 - 主机密钥位于 `DATA_DIR/ssh_host_ed25519_key`，首次启动时生成。删除后需重新运行 `minibox ssh-config --append`，让客户端固定新密钥。连接、通道、被拒绝的转发与断开都会写入审计日志。
+
+### Windows 上的 SSH
+
+请在普通的 PowerShell 窗口中运行，不要以管理员身份运行。Windows 版 OpenSSH 要求 `%USERPROFILE%\.ssh` 中的文件属于你的账户；Windows 上 `ssh-config --append` 会打印这条提醒。
+
+```powershell
+irm https://minibox.example.com/cli/install.ps1 | iex
+$env:MINIBOX_URL="https://minibox.example.com"; $env:MINIBOX_ACCESS_KEY="..."; minibox ssh-config --append
+ssh mybox.minibox
+```
+
+- 安装程序把 `minibox.exe` 放在 `%USERPROFILE%\.local\bin`（或 `MINIBOX_INSTALL_DIR`），把该目录加入用户的 PATH，并把旧的 `minibox.exe` 移为 `minibox.exe.old`。之后请打开新的终端，`minibox` 与 `ssh` 才能被找到。若正在运行的 `minibox.exe` 无法移动，安装程序会停止并给出提示，已安装的文件保持不变。若新文件无法运行，安装程序会把旧文件放回原处。
+- `ssh` 需要「OpenSSH 客户端」可选功能（设置 → 系统 → 可选功能）。缺少时安装程序会打印提示。
+- `ssh-config` 会写入 `%USERPROFILE%\.ssh\config`、`%USERPROFILE%\.ssh\minibox_known_hosts` 与 `%USERPROFILE%\.config\minibox\ssh-credentials.json`。Windows 没有 600 权限，这些文件的权限继承自 `%USERPROFILE%\.ssh`，并属于你的账户。若 ssh 提示所有者或权限有问题，请用 `icacls "%USERPROFILE%\.ssh\config"` 检查所有者与访问规则：所有者应为你本人，其他账户不应有写入权限。
+- `ProxyCommand` 用完整路径指向 CLI，例如 `"C:/Users/you/.local/bin/minibox.exe" ssh-proxy %h`，因为 Windows 版 OpenSSH 不经过 shell 启动它，该进程也未必能找到 PATH 中的命令。移动 `minibox.exe` 之后，请重新运行 `minibox ssh-config --append`。
 
 ## 配置
 

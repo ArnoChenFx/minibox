@@ -1245,11 +1245,14 @@ export default {
   "bd.sshInstall": "安装 CLI",
   "bd.sshInstallHelp":
     "在需要使用 ssh 的机器上运行。它从本服务器下载 minibox CLI，按服务器提供的校验和检查后，无需 sudo 安装到 ~/.local/bin。请把该目录加入 PATH。",
-  "bd.sshInstallUnix": "macOS 或 Linux",
-  "bd.sshInstallWindows": "Windows，在 PowerShell 中运行",
+  "bd.sshUnix": "macOS 或 Linux",
+  "bd.sshWindows": "Windows，在 PowerShell 中运行",
+  "bd.sshInstallWindowsNote": "安装程序会把所在目录加入用户的 PATH。安装完成后请打开新的 PowerShell 窗口。",
   "bd.sshSetup": "首次设置",
   "bd.sshSetupHelp":
-    "在「{settings}」的「{tokens}」中新建带 box:ssh 范围的令牌，也可以直接使用访问密钥。这一步会在 ~/.ssh/config 中固定本服务器的主机密钥，并把服务器地址与令牌保存到 ~/.config/minibox/ssh-credentials.json（权限 600），因此 ssh、scp 和 IDE 的 Remote-SSH 无需导出环境变量即可使用。",
+    "在「{settings}」的「{tokens}」中新建带 box:ssh 范围的令牌，也可以直接使用访问密钥。这一步会在 ~/.ssh/config 中固定本服务器的主机密钥，并把服务器地址与令牌保存到 ~/.config/minibox/ssh-credentials.json（macOS 与 Linux 上权限为 600），因此 ssh、scp 和 IDE 的 Remote-SSH 无需导出环境变量即可使用。",
+  "bd.sshSetupWindowsNote":
+    "请在普通的 PowerShell 窗口中运行，不要以管理员身份运行，这样文件才归你的账户所有。文件位于 %USERPROFILE%\\.ssh 和 %USERPROFILE%\\.config\\minibox。",
   "bd.sshConnect": "连接",
   "bd.sshConnectHelp": "scp 和 sftp 的用法相同。用 -L 转发端口还需要 port:expose 范围。",
   "bd.sshCopy": "复制",

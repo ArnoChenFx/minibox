@@ -15,11 +15,16 @@ export function windowsInstallCommands(origin) {
 }
 
 /**
- * Run once on the machine that will use ssh. `ssh-config --append` saves the server and token (mode 600), so the
- * ProxyCommand works from any shell or IDE without exported variables.
+ * Run once on the machine that will use ssh. `ssh-config --append` saves the server and token, so the ProxyCommand
+ * works from any shell or IDE without exported variables.
  */
 export function setupCommands(origin) {
   return [`MINIBOX_URL=${origin} \\`, "  MINIBOX_ACCESS_KEY=<token> minibox ssh-config --append"].join("\n");
+}
+
+/** The same setup in PowerShell, which sets environment variables with `$env:` and runs on one line. */
+export function windowsSetupCommands(origin) {
+  return `$env:MINIBOX_URL="${origin}"; $env:MINIBOX_ACCESS_KEY="<token>"; minibox ssh-config --append`;
 }
 
 export function connectCommands(name) {

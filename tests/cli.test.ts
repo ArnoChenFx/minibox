@@ -547,6 +547,48 @@ describe("CLI SSH commands", () => {
     }
   });
 
+  test("ssh-config --url and --token save the server and key without exported variables, and override them", async () => {
+    const env = serve();
+    const home = mkdtempSync(join(tmpdir(), "minibox-home-"));
+    try {
+      const saved = io();
+      const flags = ["ssh-config", "--append", "--url", `${env.env.MINIBOX_URL}/`, "--token", TEST_KEY];
+      expect(await runCli(flags, { HOME: home }, saved, lines([]))).toBe(0);
+      expect(saved.out).toContain(`Pinned ${env.app.ssh.hostKeyView().fingerprint}`);
+      expect(JSON.parse(readFileSync(join(home, ".config", "minibox", "ssh-credentials.json"), "utf8"))).toEqual({
+        url: env.env.MINIBOX_URL,
+        key: TEST_KEY,
+      });
+
+      const overridden = io();
+      const stale = { HOME: home, MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: "stale" };
+      expect(
+        await runCli(["ssh-config", "--url", env.env.MINIBOX_URL, "--token", TEST_KEY], stale, overridden, lines([])),
+      ).toBe(0);
+      expect(overridden.out).toContain(`*.minibox ${env.app.ssh.hostKeyView().publicKey}`);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      env.stop();
+    }
+  });
+
+  test("ssh-config --url needs an http or https address, and each flag needs its value", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    for (const [argv, message] of [
+      [["ssh-config", "--url", "minibox.example"], "--url needs an http:// or https:// address, not minibox.example"],
+      [
+        ["ssh-config", "--url", "ftp://minibox.example"],
+        "--url needs an http:// or https:// address, not ftp://minibox.example",
+      ],
+      [["ssh-config", "--url"], "--url needs a value"],
+      [["ssh-config", "--token", "--append"], "--token needs a value"],
+    ] as const) {
+      const sink = io();
+      expect(await runCli([...argv], env, sink, lines([]))).toBe(2);
+      expect(sink.err).toContain(message);
+    }
+  });
+
   test("ssh-config tells a token without box:ssh what it needs", async () => {
     const env = serve();
     try {
