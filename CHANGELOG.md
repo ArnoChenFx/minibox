@@ -4,7 +4,13 @@
 
 ## [Unreleased]
 
+### 新增
+- Box 的环境变量可以在创建时设置（创建对话框中默认折叠的「环境变量」），也可以在概览页编辑。保存通过重建完成，沿用预览与确认；普通值以掩码显示，可点击显示。`POST /api/boxes` 接受 `env`，最多 64 项。
+- 宿主机密钥：`GET /api/secrets`、`PUT /api/secrets/:name` 与 `DELETE /api/secrets/:name`，以及「设置」中的「密钥」卡片。环境变量的 `secretRef` 在创建与重建时注入容器；缺少的密钥返回 `400`（`env_secret_missing`），不会以空值启动。删除正在使用的密钥返回 `409` 并列出 Box，`force=true` 可强制删除。替换密钥的值在下一次重建时生效，启动不会读取它。
+
 ### 变更
+- `secretRef` 不再只存储：创建与重建时注入容器。升级前已保存的 `secretRef` 若没有对应密钥，之后的重建会返回 `400`，启动已停止的 Box 会返回 `409`。请先在「设置」中设置这些密钥。
+- 重建对话框的环境变量由 `NAME=value` 文本框改为逐行编辑。
 - 工具目录已不只包含 Agent CLI：控制台、API 说明、MCP 说明与 README 中的「Agent CLI 工具」统一改称「工具」（Tools），接口与 id 不变（#8）。
 
 ### 升级必读（经隧道或反向代理访问的部署）
@@ -18,6 +24,7 @@
 - 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
 
 ### 安全
+- 宿主机密钥只保存在 `DATA_DIR/secrets/env/<名称>`（权限 `600`）中，任何接口都不返回其值，日志、事件、审计、容器标签与规格也不含值。管理密钥只限所有者；令牌引用密钥需要 `secret:use`，只有 `admin` 预设具有该 scope。快照与带系统镜像的检查点在 Box 引用密钥时返回 `409`（`secret_in_image`），因为镜像会保存容器环境。
 - Agent API 令牌与访问密钥分开（#13）。明文（`mbx_…`）只在创建时返回一次，`DATA_DIR/tokens.json` 只保存 SHA-256。scope 包括 `box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`。资源范围默认是该令牌创建的 Box（`created-by-me`），也可以指定 id、标签或全部 Box；卷必须显式列出；宿主机默认只有 `local`。预设为 `readonly`、`operator`、`sandboxed-agent` 与 `admin`。`sandboxed-agent` 默认最多 5 个 Box、合计 8 个 CPU 与 16384 MB、TTL 最长 4 小时、每分钟 60 次请求。超出配额返回 `403`（`quota_*`），速率超限返回 `429`。吊销立即生效；`DELETE /api/tokens/:id?deleteCreated=true` 同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。创建 Box 时若工作区卷已经存在，或更新挂载指向已有卷，缺少对该卷的 `volume:attach` 会返回 `403`。签发与吊销令牌只有所有者可以做，`admin` 预设不能签发令牌。更换 `ACCESS_KEY` 不会吊销这些令牌。审计日志会打码本进程内创建的令牌，以及形如 `mbx_` 再加至少 20 个字符的值。同一枚令牌也可以作为 `/mcp` 的 Bearer 使用，`tools/list` 与每次调用都受其 scope 约束；吊销会结束它的 MCP 会话、终端、事件流与任务流，并在 `failedBoxes` 中列出无法删除的 Box。TTL 到期后 Box 会停止、不删除（#12）。
 - 错误的 `Authorization: Bearer` 密钥计入登录限流：`/api/`、`/mcp` 与终端 WebSocket 和登录共用同一计数，超限后返回 `429`。正确的密钥不计入，也不会被拒绝。此前 Bearer 密钥的错误不受限制。
 - `/mcp` 接受访问密钥与 Agent 令牌（#13）。持有访问密钥的 MCP 客户端拥有完全的所有者权限，包括以 `root` 执行 `exec`（非「严格」档位）、`delete_box` 与 `rebuild_box`，因此应优先发放令牌。README、README-zh 与 `docs/agents.md` 已用警示块写明。
