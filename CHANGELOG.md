@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 新增
+- 多宿主机（[#21](https://github.com/ArnoChenFx/minibox/issues/21) 第一部分）：可以在控制台「设置 → 宿主机」或 API 中添加其它 Docker 引擎作为宿主机，创建箱子时选择宿主机（缺省 `local`）。三种连接方式：`unix://` 套接字、`tcp://`（必须双向 TLS）与 `ssh://user@host`（经 SSH 转发引擎套接字，添加前须确认主机密钥指纹）。
+- 宿主机登记在 `DATA_DIR/hosts.json`（权限 600），凭据存放在 `DATA_DIR/hosts/<id>/`（目录 700，文件 600）。凭据不出现在任何 API 响应、日志或审计中。没有 `hosts.json` 时只有本机，既有数据无需迁移。
+- 宿主机管理仅所有者可用：`GET /api/hosts`、`POST /api/hosts/test`、`POST /api/hosts`、`DELETE /api/hosts/:id`，对应 CLI 的 `host list`、`host test`、`host add`、`host remove` 与 MCP 工具 `list_hosts`、`test_host`、`add_host`、`remove_host`。添加、测试与删除都写入审计日志。仍有箱子、卷或检查点的宿主机不能删除（`409`），本机也不能删除。
+- 令牌的 `hosts` 授权限定其可用的宿主机（`local`、一个列表或 `*`）。`admin` 预设可用全部宿主机，其它预设只可用 `local`。授权之外的宿主机返回 `403`（`host_not_granted`）。
+- 宿主机多于一台时，箱子带有 `hostId`，控制台显示宿主机卡片、顶栏的宿主机筛选与「不可达」状态。远端宿主机离线或超过 5 秒未响应时，列表仍然返回，其箱子显示为不可达，不阻塞其它宿主机。
+- 远端宿主机暂不支持端口预览与快照（返回 `501`）。模板与检查点不复制到其它宿主机，缺少模板镜像时创建返回 `400`。`host: "auto"` 调度与跨机迁移留到后续部分。
+
 ### 变更
 - 工具目录已不只包含 Agent CLI：控制台、API 说明、MCP 说明与 README 中的「Agent CLI 工具」统一改称「工具」（Tools），接口与 id 不变（#8）。
 
