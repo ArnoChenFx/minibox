@@ -1696,6 +1696,35 @@ input[type="range"] {
   font-size: 12px;
   margin: 4px 0 0;
 }
+.ck-usage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  font-size: 13px;
+}
+.ck-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ck-list {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+.ck-pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ck-row-actions {
+  flex-wrap: wrap;
+}
 .dialog-head {
   display: flex;
   align-items: flex-start;
