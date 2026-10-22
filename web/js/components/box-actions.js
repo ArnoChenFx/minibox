@@ -161,10 +161,39 @@ function rebuildBody(root, box) {
   return { body };
 }
 
+/**
+ * An environment change as the preview holds it: a JSON list of entries, or a note about a rotated secret, which is not
+ * JSON. A secret shows its name only.
+ */
+function envChangeText(text) {
+  let entries;
+  try {
+    entries = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (!Array.isArray(entries)) return text;
+  if (!entries.length) return "—";
+  return entries
+    .map((entry) =>
+      entry.secretRef
+        ? `${entry.name}=${t("env.secretLabel", { name: entry.secretRef })}`
+        : `${entry.name}=${entry.value ?? ""}`,
+    )
+    .join(", ");
+}
+
+function changeText(change, text) {
+  return change.field === "env" ? envChangeText(text) : text;
+}
+
 /** The HTML for a rebuild preview: the planned changes, the writable layer, what is kept and what is lost. */
 export function rebuildPreviewHtml(preview) {
   const changes = (preview.changes ?? [])
-    .map((change) => `${t(`rebuild.field.${change.field}`)}: ${change.from} → ${change.to}`)
+    .map(
+      (change) =>
+        `${t(`rebuild.field.${change.field}`)}: ${changeText(change, change.from)} → ${changeText(change, change.to)}`,
+    )
     .join("\n");
   const diff = preview.diff?.length
     ? preview.diff.map((change) => `${t(`rebuild.diff.${change.kind}`)} ${change.path}`).join("\n")

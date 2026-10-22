@@ -15,6 +15,7 @@ import {
 } from "../web/js/lib/env.js";
 
 const ENV_EDITOR = join(ROOT, "web", "js", "components", "env-editor.js");
+const BOX_ACTIONS = join(ROOT, "web", "js", "components", "box-actions.js");
 
 const plain = (name: string, value: string): EnvRow => ({ name, kind: "value", value, secretRef: "" });
 const secret = (name: string, secretRef: string): EnvRow => ({ name, kind: "secret", value: "", secretRef });
@@ -108,8 +109,8 @@ describe("secret values and error keys", () => {
   });
 });
 
-/** Loads the env editor in a fresh process, with the browser globals it reads at import, and renders one row. */
-function rowMarkup(row: Record<string, string>, secrets: string[] | null): string {
+/** Loads a browser module in a fresh process, with the globals it reads at import, and returns what `call` renders. */
+function inBrowser(moduleFile: string, call: string): string {
   const stubs = [
     `const stub = { documentElement: {}, body: {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, removeEventListener() {} };`,
     `Object.defineProperty(globalThis, "document", { configurable: true, value: stub });`,
@@ -119,12 +120,20 @@ function rowMarkup(row: Record<string, string>, secrets: string[] | null): strin
   ];
   const script = [
     ...stubs,
-    `const { envRowHtml } = await import(${JSON.stringify(ENV_EDITOR)});`,
-    `console.log(JSON.stringify(envRowHtml(${JSON.stringify(row)}, ${JSON.stringify(secrets)})));`,
+    `const mod = await import(${JSON.stringify(moduleFile)});`,
+    `console.log(JSON.stringify(${call}));`,
   ].join("\n");
   const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
   if (run.status !== 0) throw new Error(run.stderr);
   return JSON.parse(run.stdout) as string;
+}
+
+function rowMarkup(row: Record<string, string>, secrets: string[] | null): string {
+  return inBrowser(ENV_EDITOR, `mod.envRowHtml(${JSON.stringify(row)}, ${JSON.stringify(secrets)})`);
+}
+
+function previewMarkup(preview: Record<string, unknown>): string {
+  return inBrowser(BOX_ACTIONS, `mod.rebuildPreviewHtml(${JSON.stringify(preview)})`);
 }
 
 describe("env row markup", () => {
@@ -157,5 +166,41 @@ describe("env row markup", () => {
     const html = rowMarkup({ name: '"><img src=x>', kind: "value", value: '"<b>', secretRef: "" }, []);
     expect(html).not.toContain("<img");
     expect(html).toContain('value="&quot;&lt;b&gt;"');
+  });
+});
+
+describe("rebuild preview of an environment change", () => {
+  test("each entry reads NAME=value, and a secret shows its name only", () => {
+    const html = previewMarkup({
+      changes: [
+        {
+          field: "env",
+          from: JSON.stringify([{ name: "MODE", value: "standard", secretRef: null }]),
+          to: JSON.stringify([
+            { name: "MODE", value: "production", secretRef: null },
+            { name: "TOKEN", value: null, secretRef: "gh-token" },
+          ]),
+        },
+      ],
+      diff: [],
+      keeps: [],
+      loses: [],
+      containerName: { from: "minibox-a", to: "minibox-a" },
+      revision: { current: 1, next: 2 },
+    });
+    expect(html).toContain("Environment: MODE=standard → MODE=production, TOKEN=🔒 secret: gh-token");
+    expect(html).not.toContain("secretRef");
+  });
+
+  test("a rotated secret is shown as the server wrote it, since it is not a list", () => {
+    const html = previewMarkup({
+      changes: [{ field: "env", from: "secret gh-token: value in use", to: "secret gh-token: new value" }],
+      diff: [],
+      keeps: [],
+      loses: [],
+      containerName: { from: "a", to: "a" },
+      revision: { current: 1, next: 2 },
+    });
+    expect(html).toContain("Environment: secret gh-token: value in use → secret gh-token: new value");
   });
 });
