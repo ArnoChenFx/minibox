@@ -231,6 +231,18 @@ export const MESSAGES = {
   host_unreachable: "The host could not be reached: {detail}",
   host_unsupported: "{feature} is not supported on remote hosts yet.",
   preview_remote_unsupported: "Port preview is not supported on remote hosts yet.",
+  box_moving: "This box is moving to another host. Try again when the move finishes.",
+  move_same_host: "The box already runs on host {host}, so it cannot move there.",
+  move_changed: "The box changed while it was moving, so the move was undone. Refresh the box and try again.",
+  move_template_moved:
+    "Template {tag} now names a newer image than this box runs. Rebuild the box onto it, then move the box.",
+  move_template_differs:
+    "Host {host} already has a different image under {tag}, so the template cannot be sent there. Remove or retag that image, then try again.",
+  move_name_conflict: "Host {host} already has a container named {name}. Remove it, then try again.",
+  move_start_failed: "The box did not start on host {host}, so the move was undone.",
+  move_bind_volume: "Volume {volume} is a bind mount, which a move cannot carry to another host.",
+  move_shared_volume:
+    "Volume {volume} is also mounted by another box on this host, so a move cannot copy it for this box alone.",
   profile_not_allowed: "This credential may not use the {profile} security profile.",
   quota_boxes: "This token may have at most {max} boxes.",
   quota_cpus: "This token's boxes would use {used} CPU cores, above its limit of {max}.",

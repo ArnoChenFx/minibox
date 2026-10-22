@@ -34,6 +34,7 @@ import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
 import type { VolumeRecord, VolumeRole } from "../volumes/types";
 import { assertMountAllowed, mountTarget } from "./attachments";
 import { projectBox, unreachableBox } from "./box-view";
+import { assertNotMoving } from "./moving";
 import { desiredToolsOf } from "./tools";
 import { alignVolumeRoot, type RecordNote, writableWorkspaceVolume } from "./volume-owner";
 
@@ -343,7 +344,7 @@ function engineMounts(mounts: BoxMount[]): { source: string; target: string; mod
 }
 
 /** Boxes share one bridge network with inter-container communication off. A network that differs is never reused. */
-async function ensureBoxNetwork(host: HostCtx): Promise<void> {
+export async function ensureBoxNetwork(host: HostCtx): Promise<void> {
   try {
     await host.runtime.ensureBridgeNetwork(host.security.network, { interContainerComm: false });
   } catch (e) {
@@ -860,6 +861,7 @@ function clearNeedsReset(spec: BoxSpec, patch: BoxUpdate): BoxRecovery | null {
 export async function updateBox(host: HostCtx, ref: string, revision: number, patch: BoxUpdate): Promise<Box> {
   if (!hasUpdate(patch)) throw badRequest(msg("box_update_empty"));
   const current = await getBox(host, ref);
+  assertNotMoving(current.boxId);
   await host.specs.exclusive(async () => {
     const spec = host.specs.read(current.boxId);
     if (!spec) throw notFound(msg("box_not_found"));
