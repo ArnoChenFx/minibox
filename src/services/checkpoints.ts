@@ -235,6 +235,7 @@ export async function deleteCheckpoint(host: HostCtx, id: string): Promise<void>
     const record = ownRecord(host, id);
     if (!record) throw notFound(msg("checkpoint_not_found", { id }));
     if (record.pinned) throw conflict(msg("checkpoint_pinned", { id }));
+    if (host.checkpoints.exporting.has(id)) throw conflict(msg("checkpoint_exporting", { id }));
     assertNotHeld(host, id);
     let current = record;
     for (const layer of record.data) {
@@ -333,9 +334,15 @@ async function resumeStep(
 /**
  * Runs `fn` under the box's power lock, and holds the box awake while it runs, so the idle watcher cannot sleep it and
  * its end counts as activity (#12). The box is read again under the lock, so a change made while this call waited is seen.
+ * `quiet` keeps the hold but does not count its end as activity, for work the scheduler starts on its own.
  */
-export async function underBox<T>(host: HostCtx, boxId: string, fn: (box: Box) => Promise<T>): Promise<T> {
-  const release = host.pulse.hold(boxId);
+export async function underBox<T>(
+  host: HostCtx,
+  boxId: string,
+  fn: (box: Box) => Promise<T>,
+  opts: { quiet?: boolean } = {},
+): Promise<T> {
+  const release = host.pulse.hold(boxId, opts);
   try {
     return await locked(host, boxId, fn);
   } finally {
@@ -415,18 +422,19 @@ export async function takeCheckpoint(
  * Holds every box that mounts a volume the backup reads, so the backup counts as activity for each of them (decision 56).
  * `auto` marks a checkpoint an automatic trigger took, such as the safety point of a rollback.
  */
-async function backupBox(
+export async function backupBox(
   host: HostCtx,
   box: Box,
   input: TakeCheckpointInput,
   createdBy: string | null,
   progress?: Progress,
   auto = false,
+  opts: { quiet?: boolean } = {},
 ): Promise<CheckpointView> {
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
   const layers = planLayers(host, spec, input.include.volumes);
-  const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume));
+  const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume, opts));
   try {
     return await writeCheckpoint(host, box, spec, layers, input, createdBy, auto, progress);
   } finally {

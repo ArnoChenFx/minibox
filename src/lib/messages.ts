@@ -169,6 +169,24 @@ export const MESSAGES = {
     "The checkpoint repository holds {used} MB, at or above its limit of {limit} MB. Delete checkpoints before rolling back: a rollback takes a safety checkpoint first.",
   checkpoint_held_by_rollback:
     "Checkpoint {id} is the safety point of a rollback that waits for its confirm or undo. Confirm or undo that rollback before deleting it.",
+  checkpoint_exporting: "Checkpoint {id} is being exported. It can be deleted once the export finishes.",
+  checkpoint_export_legacy: "Snapshot {id} was made before checkpoints. It has no data to export.",
+  checkpoint_export_empty: "Checkpoint {id} holds no volume data, so there is nothing to export.",
+  checkpoint_export_system:
+    "Checkpoint {id} includes its system layer, which a package does not carry yet. Take a checkpoint without the system layer to export it.",
+  checkpoint_import_exists:
+    "Checkpoint {id} already exists on this instance, so the package was not imported. Delete the existing checkpoint first, or keep this one.",
+  package_invalid: "The package is not a valid MiniBox checkpoint package: {reason}",
+  package_passphrase_wrong: "The passphrase does not open this package.",
+  package_passphrase_invalid:
+    "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
+  package_too_large:
+    "The checkpoint package is larger than the limit of {limit} MB. Raise CHECKPOINT_PACKAGE_MAX_MB to allow it.",
+  package_not_found: "Package {id} was not found. Packages are kept for a day, so it may have expired.",
+  package_upload_type: "A package is uploaded as application/octet-stream.",
+  payload_too_large: "The request body is larger than the limit of {limit} MB.",
+  schedule_rule_invalid:
+    "A schedule runs every 1 to 720 hours, or once a day at a time such as 02:30. Send either everyHours or at, not both.",
   rollback_pending:
     "Box {box} has a rollback that waits for its confirm or undo. Confirm or undo it before rolling back again.",
   rollback_none: "Box {box} has no rollback that waits for its confirm or undo.",

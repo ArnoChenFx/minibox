@@ -15,6 +15,7 @@ export interface Exchange {
 }
 
 const GB = 1024 ** 3;
+const PASSPHRASE = "correct horse battery staple";
 
 /** A fixed host, so capacity errors do not depend on the machine running the scenario. */
 const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as HostMetrics;
@@ -735,6 +736,46 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("remove the lab host", "DELETE", "/api/hosts/lab");
     await send("remove a missing host", "DELETE", "/api/hosts/missing");
     await send("list hosts after removing lab", "GET", "/api/hosts");
+
+    const portBox = boxId(
+      (await post("create a box to export", "/api/boxes", { name: "portbox", cpus: 1, memoryMb: 256 })).json,
+    );
+    const portable = checkpointIdOf(
+      await waitTask(
+        base,
+        (await post("take a checkpoint to export", `/api/boxes/${portBox}/checkpoints`, { label: "to export" })).json,
+      ),
+    );
+    const exportPath = `/api/checkpoints/${portable}/export`;
+    await post("export a checkpoint with a short passphrase", exportPath, { passphrase: "short" });
+    await waitTask(base, (await post("export the checkpoint", exportPath, { passphrase: PASSPHRASE })).json);
+    await post("export a missing checkpoint", "/api/checkpoints/ck_0000000000000000000000000/export", {
+      passphrase: PASSPHRASE,
+    });
+    const importPath = "/api/packages/pk_0000000000000000/import";
+    await post("import a short passphrase", importPath, { passphrase: "short" });
+    await waitTask(
+      base,
+      (await post("import a package that is not stored", importPath, { passphrase: PASSPHRASE })).json,
+    );
+    await send("upload a body that is not a package", "POST", "/api/packages", {
+      body: "not a package",
+      contentType: "application/octet-stream",
+    });
+    await send("download a package that is not stored", "GET", "/api/packages/pk_0000000000000000/download");
+
+    const timeBox = boxId(
+      (await post("create a box to schedule", "/api/boxes", { name: "timebox", cpus: 1, memoryMb: 256 })).json,
+    );
+    const schedulePath = `/api/boxes/${timeBox}/checkpoint-schedule`;
+    await send("read the schedule of a box with none", "GET", schedulePath);
+    await put("set an hourly schedule", schedulePath, { everyHours: 6 });
+    await put("set a schedule with an hour and a time", schedulePath, { everyHours: 6, at: "02:30" });
+    await put("set a schedule past the longest interval", schedulePath, { everyHours: 721 });
+    await send("read the schedule", "GET", schedulePath);
+    await send("clear the schedule", "DELETE", schedulePath);
+    await send("clear the schedule again", "DELETE", schedulePath);
+
     await send("list host usage after removing lab", "GET", "/api/hosts/usage");
     const mover = boxId(
       (await post("create a box to move", "/api/boxes", { name: "mover", cpus: 1, memoryMb: 256 })).json,

@@ -1,11 +1,23 @@
 import { api, enc } from "../lib/api.js";
-import { contentsOf, HOLD_MODES, kindsOf, newestFirst, rowActions, usedPercent } from "../lib/checkpoint-state.js";
+import {
+  contentsOf,
+  HOLD_MODES,
+  kindsOf,
+  newestFirst,
+  passphraseOk,
+  rowActions,
+  SCHEDULE_HOURS,
+  SKIP_REASON_KEYS,
+  scheduleBody,
+  usedPercent,
+} from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime } from "../lib/format.js";
+import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { subscribe } from "../lib/live.js";
-import { confirmDialog, emptyState, nameError, openDialog, toast, toastError } from "../lib/ui.js";
+import { confirmDialog, emptyState, nameError, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
 const KIND_CLASS = { legacy: "badge-warning", pinned: "badge-success", automatic: "", manual: "badge-accent" };
@@ -139,6 +151,268 @@ export async function forkCheckpoint(checkpoint, box) {
     toast(t("ck.forked"), { message: input.name });
     location.hash = `#/boxes/${enc(done.result.box.id)}`;
     return done.result.box;
+  });
+}
+
+/** Starts the browser's download of a package. The server names the file and keeps the package for a day. */
+function download(url) {
+  const link = document.createElement("a");
+  link.href = url;
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+export function exportFormHtml() {
+  return `<div class="field"><label class="label" for="ckPass">${esc(t("ck.passphrase"))}</label>
+      <input class="input mono" id="ckPass" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" />
+      <div class="help">${esc(t("ck.passphraseHelp"))}</div></div>
+    <div class="field"><label class="label" for="ckPassAgain">${esc(t("ck.passphraseAgain"))}</label>
+      <input class="input mono" id="ckPassAgain" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" />
+      <div class="error-text" id="ckPassErr"></div></div>
+    ${callout("info", t("ck.exportHow"))}`;
+}
+
+function askExport(checkpoint) {
+  return new Promise((resolve) => {
+    let result = null;
+    const { root, close } = openDialog({
+      title: t("ck.exportTitle", { label: checkpoint.label }),
+      description: esc(t("ck.exportDesc")),
+      iconName: "download",
+      body: exportFormHtml(),
+      footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button><button class="btn btn-primary" id="ckExportOk">${esc(t("ck.exportConfirm"))}</button>`,
+      onClose: () => resolve(result),
+    });
+    const pass = root.querySelector("#ckPass");
+    const again = root.querySelector("#ckPassAgain");
+    const err = root.querySelector("#ckPassErr");
+    root.querySelector("#ckExportOk").addEventListener("click", () => {
+      const invalid = !passphraseOk(pass.value);
+      const mismatch = !invalid && pass.value !== again.value;
+      pass.classList.toggle("invalid", invalid);
+      again.classList.toggle("invalid", mismatch);
+      err.textContent = invalid ? t("err.package_passphrase_invalid") : mismatch ? t("ck.passphraseMismatch") : "";
+      if (invalid || mismatch) return;
+      result = { passphrase: pass.value };
+      close();
+    });
+  });
+}
+
+/** Asks for a passphrase, seals the checkpoint in a package, and downloads the package once the export finishes. */
+export async function exportCheckpoint(checkpoint) {
+  const input = await askExport(checkpoint);
+  if (!input) return null;
+  return guarded("ck.exportFailed", async () => {
+    const started = await api(`/api/checkpoints/${enc(checkpoint.id)}/export`, { method: "POST", body: input });
+    toast(t("ck.exportStarted"), { type: "info", message: checkpoint.label });
+    const done = await waitTask(started.taskId);
+    if (done.status !== "succeeded") {
+      toastError(t("ck.exportFailed"), { message: failureOf(done) });
+      return null;
+    }
+    download(done.result.package.url);
+    toast(t("ck.exported"), { message: checkpoint.label });
+    return done.result.package;
+  });
+}
+
+export function importFormHtml({ hosts, host }) {
+  const hostField =
+    hosts.length > 1
+      ? `<div class="field"><label class="label" for="ckImportHost">${esc(t("cb.host"))}</label>
+          <select class="select" id="ckImportHost">${hosts
+            .map((h) => `<option value="${esc(h.id)}"${h.id === host ? " selected" : ""}>${esc(h.name)}</option>`)
+            .join("")}</select>
+          <div class="help">${esc(t("ck.importHostHelp"))}</div></div>`
+      : "";
+  return `<div class="field"><span class="label">${esc(t("ck.importFile"))}</span>
+      <div class="file-pick">
+        <input class="sr-only" id="ckImportFile" type="file" accept=".mbckpt" tabindex="-1" />
+        <button type="button" class="btn btn-sm" id="ckImportPick">${icon("upload")}${esc(t("ck.importChoose"))}</button>
+        <span class="file-pick-name" id="ckImportFileName">${esc(t("ck.importNoneChosen"))}</span>
+      </div>
+      <div class="help">${esc(t("ck.importFileHelp"))}</div></div>
+    <div class="field"><label class="label" for="ckImportPass">${esc(t("ck.passphrase"))}</label>
+      <input class="input mono" id="ckImportPass" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" /></div>
+    ${hostField}
+    <div class="error-text" id="ckImportErr"></div>`;
+}
+
+/**
+ * Asks for a package file and the passphrase it was sealed with, uploads the file and imports it as a checkpoint. The
+ * dialog stays open until the import succeeds: a wrong passphrase is retyped in place, and the uploaded package is
+ * imported again rather than uploaded again.
+ */
+export function importCheckpoint() {
+  return new Promise((resolve) => {
+    let imported = null;
+    let uploaded = null;
+    const { root, close } = openDialog({
+      title: t("ck.importTitle"),
+      description: esc(t("ck.importDesc")),
+      iconName: "upload",
+      body: importFormHtml({ hosts: multiHost() ? hostsNow() : [], host: hostFilter() || "local" }),
+      footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button><button class="btn btn-primary" id="ckImportOk">${esc(t("ck.importConfirm"))}</button>`,
+      onClose: () => resolve(imported),
+    });
+    const file = root.querySelector("#ckImportFile");
+    const pass = root.querySelector("#ckImportPass");
+    const hostInput = root.querySelector("#ckImportHost");
+    const ok = root.querySelector("#ckImportOk");
+    const err = root.querySelector("#ckImportErr");
+    const pick = root.querySelector("#ckImportPick");
+    const fileName = root.querySelector("#ckImportFileName");
+    pick.addEventListener("click", () => file.click());
+    file.addEventListener("change", () => {
+      const chosen = file.files?.[0];
+      fileName.textContent = chosen ? `${chosen.name} · ${bytes(chosen.size)}` : t("ck.importNoneChosen");
+      fileName.classList.toggle("chosen", Boolean(chosen));
+    });
+    const run = async () => {
+      err.textContent = "";
+      if (!uploaded && !file.files?.[0]) {
+        err.textContent = t("ck.importNoFile");
+        return;
+      }
+      if (!passphraseOk(pass.value)) {
+        err.textContent = t("err.package_passphrase_invalid");
+        return;
+      }
+      try {
+        if (!uploaded) {
+          const { package: stored } = await api("/api/packages", { method: "POST", body: file.files[0] });
+          uploaded = stored;
+          file.disabled = true;
+          pick.disabled = true;
+        }
+        const body = { passphrase: pass.value, ...(hostInput ? { host: hostInput.value } : {}) };
+        const started = await api(`/api/packages/${enc(uploaded.id)}/import`, { method: "POST", body });
+        const done = await waitTask(started.taskId);
+        if (done.status !== "succeeded") {
+          err.textContent = failureOf(done);
+          return;
+        }
+        imported = done.result.checkpoint;
+        toast(t("ck.imported"), { message: imported.label });
+        close();
+      } catch (error) {
+        err.textContent = error.message;
+      }
+    };
+    ok.addEventListener("click", () => withBusy(ok, run));
+  });
+}
+
+/** The rule in words, as the card and the dialog say it. */
+function ruleText(schedule) {
+  if (schedule.mode === "daily") return t("ck.scheduleDaily", { at: schedule.at });
+  return schedule.everyHours === 1 ? t("ck.scheduleEveryHour") : t("ck.scheduleEvery", { n: schedule.everyHours });
+}
+
+function skipText(reason) {
+  const key = SKIP_REASON_KEYS[reason];
+  return key ? t(key) : (reason ?? "");
+}
+
+function lastRunText(run) {
+  if (!run) return t("ck.lastRunNone");
+  const time = dateTime(run.at);
+  if (run.status === "ok") return t("ck.runOk", { time });
+  if (run.status === "skipped") return t("ck.runSkipped", { time, reason: skipText(run.reason) });
+  return t("ck.runFailed", { time, error: run.error ?? "" });
+}
+
+/** The schedule line of the card: off, or the rule with its next and last run, and the buttons that change it. */
+export function scheduleHtml(schedule) {
+  if (!schedule) {
+    return `<div class="ck-schedule">
+      <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge">${esc(t("ck.scheduleOff"))}</span></div>
+      <div class="help">${esc(t("ck.scheduleOffHelp"))}</div>
+      <div class="ck-schedule-actions"><button class="btn btn-sm" data-action="ck-schedule">${icon("clock")}${esc(t("ck.scheduleSet"))}</button></div>
+    </div>`;
+  }
+  return `<div class="ck-schedule">
+    <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge badge-accent">${esc(ruleText(schedule))}</span></div>
+    <div class="help">${esc(t("ck.nextRun"))}: ${esc(dateTime(schedule.nextRunAt))}</div>
+    <div class="help">${esc(t("ck.lastRun"))}: ${esc(lastRunText(schedule.lastRun))}</div>
+    <div class="help">${esc(t("ck.scheduleNote"))}</div>
+    <div class="ck-schedule-actions">
+      <button class="btn btn-sm" data-action="ck-schedule">${icon("clock")}${esc(t("ck.scheduleEdit"))}</button>
+      <button class="btn btn-sm" data-action="ck-schedule-off">${icon("x")}${esc(t("ck.scheduleTurnOff"))}</button>
+    </div>
+  </div>`;
+}
+
+export function scheduleFormHtml(schedule) {
+  const mode = schedule?.mode ?? "interval";
+  const modeButton = (value, title, hint) =>
+    `<button type="button" class="seg" data-mode="${value}" aria-pressed="${value === mode}"><strong>${esc(title)}</strong><span>${esc(hint)}</span></button>`;
+  return `<div class="field"><span class="label">${esc(t("ck.scheduleWhen"))}</span>
+      <div class="segmented segmented-2" role="group" aria-label="${esc(t("ck.scheduleWhen"))}">${modeButton("interval", t("ck.scheduleModeEvery"), t("ck.scheduleModeEveryHint"))}${modeButton("daily", t("ck.scheduleModeDaily"), t("ck.scheduleModeDailyHint"))}</div></div>
+    <div class="field${mode === "daily" ? " hidden" : ""}" data-field="interval"><label class="label" for="ckHours">${esc(t("ck.scheduleHours"))}</label>
+      <input class="input" id="ckHours" type="number" min="${SCHEDULE_HOURS.min}" max="${SCHEDULE_HOURS.max}" step="1" inputmode="numeric" value="${esc(schedule?.everyHours ?? 6)}" />
+      <div class="help">${esc(t("ck.scheduleHoursHelp"))}</div></div>
+    <div class="field${mode === "interval" ? " hidden" : ""}" data-field="daily"><label class="label" for="ckAt">${esc(t("ck.scheduleTime"))}</label>
+      <input class="input mono" id="ckAt" type="text" inputmode="numeric" maxlength="5" placeholder="02:30" autocomplete="off" spellcheck="false" value="${esc(schedule?.at ?? "02:00")}" />
+      <div class="help">${esc(t("ck.scheduleTimeHelp"))}</div></div>
+    <div class="error-text" id="ckScheduleErr"></div>
+    ${callout("info", t("ck.scheduleHelp"))}`;
+}
+
+function askSchedule(schedule) {
+  return new Promise((resolve) => {
+    let result = null;
+    let mode = schedule?.mode ?? "interval";
+    const { root, close } = openDialog({
+      title: t("ck.scheduleTitle"),
+      description: esc(t("ck.scheduleDesc")),
+      iconName: "clock",
+      body: scheduleFormHtml(schedule),
+      footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button><button class="btn btn-primary" id="ckScheduleOk">${esc(t("ck.scheduleSave"))}</button>`,
+      onClose: () => resolve(result),
+    });
+    const err = root.querySelector("#ckScheduleErr");
+    const show = (next) => {
+      mode = next;
+      for (const button of root.querySelectorAll("[data-mode]")) {
+        button.setAttribute("aria-pressed", String(button.dataset.mode === next));
+      }
+      root.querySelector('[data-field="interval"]').classList.toggle("hidden", next !== "interval");
+      root.querySelector('[data-field="daily"]').classList.toggle("hidden", next !== "daily");
+    };
+    for (const button of root.querySelectorAll("[data-mode]")) {
+      button.addEventListener("click", () => show(button.dataset.mode));
+    }
+    root.querySelector("#ckScheduleOk").addEventListener("click", () => {
+      const body = scheduleBody(mode, {
+        hours: root.querySelector("#ckHours").value,
+        at: root.querySelector("#ckAt").value.trim(),
+      });
+      err.textContent = body ? "" : t("ck.scheduleInvalid");
+      if (!body) return;
+      result = body;
+      close();
+    });
+  });
+}
+
+async function editSchedule(box, schedule) {
+  const body = await askSchedule(schedule);
+  if (!body) return null;
+  return guarded("ck.scheduleFailed", async () => {
+    const saved = await api(`/api/boxes/${enc(box.boxId)}/checkpoint-schedule`, { method: "PUT", body });
+    toast(t("ck.scheduleSaved"), { message: ruleText(saved.schedule) });
+    return saved.schedule;
+  });
+}
+
+function turnOffSchedule(box) {
+  return guarded("ck.scheduleFailed", async () => {
+    await api(`/api/boxes/${enc(box.boxId)}/checkpoint-schedule`, { method: "DELETE" });
+    toast(t("ck.scheduleOffDone"));
+    return null;
   });
 }
 
@@ -387,13 +661,15 @@ export function checkpointRowHtml(checkpoint, state) {
     <td class="num" style="text-align:right">${esc(bytes(checkpoint.bytes))}</td>
     <td><div class="actions ck-row-actions">
       ${rowButton("ck-fork", checkpoint, "copy", t("ck.fork"), rules.fork)}
+      ${rowButton("ck-export", checkpoint, "download", t("ck.export"), rules.export)}
       ${rowButton("ck-rollback", checkpoint, "refresh", t("ck.rollback"), rules.rollback)}
       ${rowButton("ck-pin", checkpoint, "layers", checkpoint.pinned ? t("ck.unpin") : t("ck.pin"), rules.pin)}
       ${rowButton("ck-delete", checkpoint, "trash", t("ck.delete"), rules.delete)}
     </div></td></tr>`;
 }
 
-export function checkpointCardHtml({ rows, pending, usage }) {
+/** `schedule` is null when the box has none, and undefined when it could not be read, which hides the line. */
+export function checkpointCardHtml({ rows, pending, usage, schedule }) {
   const body = rows.length
     ? `<div class="table-wrap"><table class="table"><thead><tr>
         <th>${esc(t("ck.colTaken"))}</th><th>${esc(t("ck.colLabel"))}</th><th>${esc(t("ck.colKind"))}</th>
@@ -407,11 +683,12 @@ export function checkpointCardHtml({ rows, pending, usage }) {
     : emptyState({ iconName: "history", title: t("ck.empty"), text: esc(t("ck.emptyText")) });
   return `<div class="card">
     <div class="card-head"><h3>${esc(t("ck.title"))}</h3>
-      <div class="actions"><button class="btn btn-sm btn-primary" data-action="ck-take">${icon("camera")}${esc(t("act.checkpoint"))}</button></div></div>
+      <div class="actions"><button class="btn btn-sm" data-action="ck-import">${icon("upload")}${esc(t("ck.import"))}</button><button class="btn btn-sm btn-primary" data-action="ck-take">${icon("camera")}${esc(t("act.checkpoint"))}</button></div></div>
     <div class="card-body stack">
       <p class="help">${esc(t("ck.help"))}</p>
       ${usage ? usageHtml(usage) : ""}
       ${pending ? pendingHtml(pending) : ""}
+      ${schedule === undefined ? "" : scheduleHtml(schedule)}
     </div>
     ${body}
   </div>`;
@@ -426,20 +703,26 @@ export function mountCheckpoints(root, { box, refreshBox }) {
   let seq = 0;
   let rows = [];
   let pending = null;
+  let schedule = undefined;
 
   const load = async () => {
     const token = ++seq;
     try {
       const current = box();
-      const [{ checkpoints }, { rollback }, usage] = await Promise.all([
+      const [{ checkpoints }, { rollback }, usage, plan] = await Promise.all([
         api("/api/checkpoints"),
         api(`/api/boxes/${enc(current.boxId)}/rollback`),
         api("/api/checkpoints/usage").catch(() => null),
+        api(`/api/boxes/${enc(current.boxId)}/checkpoint-schedule`).then(
+          (reply) => reply.schedule,
+          () => undefined,
+        ),
       ]);
       if (disposed || token !== seq) return;
       rows = newestFirst(checkpoints.filter((checkpoint) => checkpoint.boxId === current.boxId));
       pending = rollback;
-      root.innerHTML = checkpointCardHtml({ rows, pending, usage });
+      schedule = plan;
+      root.innerHTML = checkpointCardHtml({ rows, pending, usage, schedule });
     } catch (err) {
       if (disposed || token !== seq) return;
       root.innerHTML = emptyState({ iconName: "alert", title: t("ck.loadFailed"), text: esc(err.message) });
@@ -451,12 +734,16 @@ export function mountCheckpoints(root, { box, refreshBox }) {
   };
   const actions = new Map([
     ["ck-take", (current) => takeCheckpoint(current)],
+    ["ck-import", () => importCheckpoint()],
+    ["ck-export", (_current, checkpoint) => exportCheckpoint(checkpoint)],
     ["ck-fork", (current, checkpoint) => forkCheckpoint(checkpoint, current)],
     ["ck-rollback", (current, checkpoint) => rollBack(current, checkpoint).then(settled)],
     ["ck-pin", (_current, checkpoint) => setPinned(checkpoint, !checkpoint.pinned)],
     ["ck-delete", (_current, checkpoint) => removeCheckpoint(checkpoint)],
     ["ck-confirm", (current) => confirmPending(current).then(settled)],
     ["ck-undo", (current) => undoPending(current).then(settled)],
+    ["ck-schedule", (current) => editSchedule(current, schedule)],
+    ["ck-schedule-off", (current) => turnOffSchedule(current)],
   ]);
 
   const onClick = (event) => {

@@ -35,7 +35,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `session` | Terminal sessions in boxes |
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
-| `storage` | Volumes and storage pools |
+| `storage` | Volumes, storage pools, and the owner's checkpoint export, import and schedules |
 | `tools` | Installing tools, custom tools and saving templates |
 | `network` | Preview ports |
 
@@ -104,6 +104,11 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `measure_volume` | `POST /api/volumes/{id}/usage` |
 | `list_pools` | `GET /api/pools` |
 | `replace_pools` | `PUT /api/pools` |
+| `export_checkpoint` | `POST /api/checkpoints/{id}/export`. Owner only. The task result holds the package |
+| `import_checkpoint` | `POST /api/packages/{id}/import`. Owner only |
+| `get_checkpoint_schedule` | `GET /api/boxes/{id}/checkpoint-schedule`. Owner only |
+| `set_checkpoint_schedule` | `PUT /api/boxes/{id}/checkpoint-schedule`. Owner only |
+| `clear_checkpoint_schedule` | `DELETE /api/boxes/{id}/checkpoint-schedule`. Owner only |
 
 ### tools
 

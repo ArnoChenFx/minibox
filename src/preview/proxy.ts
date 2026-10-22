@@ -1,6 +1,7 @@
 import type { AuditNote } from "../events/types";
 import type { HostCtx, HostRegistry } from "../host/registry";
 import { AppError } from "../lib/errors";
+import { JSON_BODY_MAX_BYTES, limitedBody } from "../lib/http";
 import { msg } from "../lib/messages";
 import type { ActivityPulse } from "../services/activity-pulse";
 import { type Box, hostOfSpecRef, locateBox, wakeIfSleeping } from "../services/boxes";
@@ -65,7 +66,8 @@ export async function proxyHttp(req: Request, resolved: PreviewResolve): Promise
     signal: AbortSignal.timeout(60_000),
   };
   if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = req.body;
+    // The server's body limit is sized for checkpoint packages; a preview keeps the ceiling every other route has.
+    init.body = req.body ? limitedBody(req.body, JSON_BODY_MAX_BYTES) : null;
     // Bun requires duplex when streaming a request body.
     (init as RequestInit & { duplex: string }).duplex = "half";
   }

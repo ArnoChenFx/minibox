@@ -270,11 +270,11 @@ async function resolveInVolume(
  * Holds each box on this host that mounts `volume` until the returned release is called, so work on the volume counts
  * as box activity (#12). It never starts a box: the file API works while boxes are stopped.
  */
-export function holdVolumeBoxes(host: HostCtx, volume: VolumeRecord): () => void {
+export function holdVolumeBoxes(host: HostCtx, volume: VolumeRecord, opts: { quiet?: boolean } = {}): () => void {
   const releases = host.specs
     .list()
     .filter((spec) => spec.hostId === host.host.id && spec.mounts.some((mount) => mount.volume === volume.engineName))
-    .map((spec) => host.pulse.hold(spec.id));
+    .map((spec) => host.pulse.hold(spec.id, opts));
   return () => {
     for (const release of releases) release();
   };

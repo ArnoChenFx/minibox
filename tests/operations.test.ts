@@ -24,6 +24,8 @@ const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
 const TEMPLATE_REF = "mbtest-template:gold";
 const CHECKPOINT_PLACEHOLDER = `ck_${"0".repeat(16)}`;
+const PACKAGE_PLACEHOLDER = `pk_${"0".repeat(16)}`;
+const PASSPHRASE = "correct horse battery staple";
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 const CUSTOM_TOOL = {
   id: "sample-tool",
@@ -132,6 +134,11 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.rollback.get": (id) => ({ id }),
   "box.rollback.confirm": (id) => ({ id, confirm: true }),
   "box.rollback.undo": (id) => ({ id, confirm: true, expectedRevision: "2" }),
+  "checkpoint.export": () => ({ id: CHECKPOINT_PLACEHOLDER, passphrase: PASSPHRASE }),
+  "checkpoint.import": () => ({ id: PACKAGE_PLACEHOLDER, passphrase: PASSPHRASE }),
+  "checkpoint.schedule.get": (id) => ({ id }),
+  "checkpoint.schedule.set": (id) => ({ id, everyHours: 6 }),
+  "checkpoint.schedule.clear": (id) => ({ id }),
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.save": (id) => ({ id, name: "silver" }),
@@ -159,6 +166,7 @@ const CHECKPOINT_OPERATIONS_ON_AN_EXISTING = [
   "checkpoint.fork",
   "checkpoint.update",
   "checkpoint.delete",
+  "checkpoint.export",
   "box.rollback",
 ];
 
@@ -173,6 +181,24 @@ async function takeCheckpointOf(app: App, ctx: OperationContext, boxId: string):
   const [newest] = checkpoints;
   if (!newest) throw new Error("the sample checkpoint was not listed");
   return newest.id;
+}
+
+/**
+ * Exports a checkpoint of the sample box, then deletes it, so the package is the only copy left. Returns the package id,
+ * which `checkpoint.import` restores.
+ */
+async function packageOfCheckpoint(app: App, ctx: OperationContext, boxId: string): Promise<string> {
+  const checkpoint = await takeCheckpointOf(app, ctx, boxId);
+  const started = (await app.operations.run("checkpoint.export", ctx, { id: checkpoint, passphrase: PASSPHRASE })) as {
+    taskId: string;
+  };
+  await app.tasks.drain();
+  const finished = app.tasks.get(started.taskId, { output: false });
+  const packaged = (finished?.result as { package?: { id: string } } | undefined)?.package?.id;
+  if (!packaged) throw new Error("the export returned no package");
+  await app.operations.run("checkpoint.delete", ctx, { id: checkpoint });
+  await app.tasks.drain();
+  return packaged;
 }
 
 /**
@@ -222,6 +248,10 @@ async function preparedInput(
   }
   if (operation.name === "secret.delete") {
     await app.operations.run("secret.set", ctx, { name: "vault", value: "s3cret-value" });
+  }
+  if (operation.name === "checkpoint.import") {
+    const id = await packageOfCheckpoint(app, ctx, boxId);
+    return { input: { id, passphrase: PASSPHRASE } };
   }
   if (CHECKPOINT_OPERATIONS_ON_AN_EXISTING.includes(operation.name)) {
     const checkpoint = await takeCheckpointOf(app, ctx, boxId);
@@ -869,14 +899,19 @@ describe("projections", () => {
         .toSorted(),
     ).toEqual([
       "attach_volume",
+      "clear_checkpoint_schedule",
       "create_volume",
       "delete_volume",
       "detach_volume",
+      "export_checkpoint",
+      "get_checkpoint_schedule",
       "get_volume",
+      "import_checkpoint",
       "list_pools",
       "list_volumes",
       "measure_volume",
       "replace_pools",
+      "set_checkpoint_schedule",
     ]);
     expect(
       mcpTools(OPERATIONS, ["tools"])

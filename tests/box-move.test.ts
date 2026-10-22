@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { RuntimeError } from "../src/runtime";
+import { CheckpointScheduler, scheduleOf } from "../src/services/checkpoint-schedule";
 import { beginChange, beginMove } from "../src/services/moving";
 import { type Cluster, type HostName, bootCluster, boxOn, errorOf } from "./support/cluster";
 import { finishedTask } from "./support/tokens";
@@ -113,6 +114,31 @@ describe("moving a box to another host", () => {
     const view = await viewOf(box.boxId);
     expect(view.hostId).toBe("small");
     expect(view.revision).toBe(box.revision + 1);
+  });
+
+  test("a checkpoint schedule follows the box: the next run is taken on the host the box moved to", async () => {
+    const box = await boxOn(cluster, undefined, "dev");
+    const set = await cluster.api(`/api/boxes/${box.boxId}/checkpoint-schedule`, {
+      method: "PUT",
+      body: JSON.stringify({ everyHours: 1 }),
+    });
+    expect(set.status).toBe(200);
+    expect((await confirmed(box.boxId, "small", box.revision)).status).toBe("succeeded");
+
+    const later = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const scheduler = new CheckpointScheduler(
+      cluster.app.hosts,
+      () => undefined,
+      undefined,
+      () => later,
+    );
+    expect(await scheduler.run()).toEqual([box.boxId]);
+
+    const small = cluster.app.hosts.get("small");
+    const schedule = await scheduleOf(small, box.boxId);
+    expect(schedule).toMatchObject({ hostId: "small", lastRun: { status: "ok" } });
+    const taken = small.checkpoints.list().filter((record) => record.boxId === box.boxId);
+    expect(taken.map((record) => record.hostId)).toEqual(["small"]);
   });
 
   test("the source container is removed only after the box runs on the target", async () => {

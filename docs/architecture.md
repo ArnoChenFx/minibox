@@ -85,7 +85,7 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 
 - **Templates** are images on a box's host. The base template is `minibox-template:base` by default, and it is built from `templates/base/Dockerfile`. Saving a box as a template commits it as a snapshot, promotes the snapshot to a template and then removes the snapshot. Volumes are never part of a template.
 - **Volumes** hold a box's files. Each volume has a role that sets its mount point: `workspace` at `/workspace` and `home` at `/home/dev`, both read-write; `tools` at `/opt/minibox/tools`, read-only; and `cache` at `/home/dev/.cache`. Volume records and storage pools are JSON files in `DATA_DIR`. A pool stores its volumes on the local Docker engine, on an NFS export or in a host path.
-- **Checkpoints** are stored in one restic repository per host, in the volume `<prefix>-checkpoints-<host>`. restic runs in helper containers, and its password is generated once into `DATA_DIR/secrets`.
+- **Checkpoints** are stored in one restic repository per host, in the volume `<prefix>-checkpoints-<host>`. restic runs in helper containers, and its password is generated once into `DATA_DIR/secrets`. An exported checkpoint is a package in `DATA_DIR/packages`, sealed with the passphrase chosen at export. The checkpoint repository key never goes into a package.
 - **Secrets** are files in `DATA_DIR/secrets/env`. A box refers to a secret by name, and gets the value when it is created or rebuilt. Secret values never appear in events, the audit log or the server log.
 
 ## Background work
@@ -94,6 +94,7 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 - `src/services/reconcile.ts` compares the engine with the stored box specs. It claims containers that have no spec, and it settles rollbacks that are still pending.
 - `src/services/container-watch.ts` turns engine start, stop and out-of-memory events into the `container.*` activity that the Activity tab shows.
 - `src/events/retention.ts` and `src/services/checkpoint-retention.ts` apply the retention limits.
+- `src/services/checkpoint-schedule.ts` takes the scheduled checkpoints once a minute, and skips boxes that are stopped or asleep.
 
 ## Terminals, sessions and SSH
 
@@ -115,6 +116,8 @@ Every path is under `DATA_DIR`.
 | `tokens.json`, `sessions.json`, `access_key` | `src/tokens/store.ts`, `src/sessions.ts`, `src/data-dir.ts` | Hashed agent tokens, browser sessions and the access key |
 | `secrets/env/` | `src/secrets/store.ts` | Host secrets |
 | `checkpoints/` | `src/checkpoints/store.ts` | Checkpoint records |
+| `checkpoints/schedules/` | `src/checkpoints/store.ts`, `src/services/checkpoint-schedule.ts` | Checkpoint schedules, one per box |
+| `packages/` | `src/checkpoints/packages.ts` | Exported checkpoint packages, sealed with a passphrase |
 | `exec/` | `src/events/outputs.ts` | Saved output of commands |
 | `hosts.json`, `hosts/<id>/` | `src/host/store.ts` | Remote host records and their credential files |
 | `tools.d/` | `src/tools/custom.ts` | Custom tool catalog entries |
