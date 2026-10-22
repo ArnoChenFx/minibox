@@ -145,16 +145,12 @@ describe.skipIf(!enabled)("Tailscale in a box built from templates/base", () => 
   test("the tools writer installs tailscale for dev, and detection finds it on the tools volume", async () => {
     const installed = await installTool(host, box.id, "tailscale", "latest");
     expect(installed).toMatchObject({ id: "tailscale" });
-    expect(installed.installedVersion).toMatch(/^\d+\.\d+\.\d+/);
+    const version = installed.installedVersion ?? "";
+    expect(version).toMatch(/^\d+\.\d+\.\d+/);
 
     const identity = await execInBox("id -un; id -u; command -v tailscale; tailscale version | head -n 1");
     expect(identity).toMatchObject({ exitCode: 0 });
-    expect(identity.stdout.trim().split("\n")).toEqual([
-      "dev",
-      "1000",
-      "/opt/minibox/tools/bin/tailscale",
-      installed.installedVersion,
-    ]);
+    expect(identity.stdout.trim().split("\n")).toEqual(["dev", "1000", "/opt/minibox/tools/bin/tailscale", version]);
 
     const listed = await listToolStatuses(host, box.id);
     expect(listed.find((tool) => tool.id === "tailscale")).toMatchObject({
