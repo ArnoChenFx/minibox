@@ -15,8 +15,11 @@ Only the owner sets up notifications, in **Settings**, under **Notifications**. 
 | `box.idle_soon` | A box will sleep for being idle within 5 minutes. |
 | `session.takeover` | A person took over an agent's terminal session. |
 | `host.offline` | A host that was online stopped answering. A host that is already down when MiniBox starts does not send one. |
+| `volume.usage_high` | A volume reaches its soft usage limit. The limit is best effort, not a quota. See [Volumes and storage](volumes-and-storage.md#soft-and-hard-limits). |
+| `volume.usage_limit` | A volume reaches its hard usage limit. The notice gives the reason and the action, and names the boxes that were stopped. |
+| `host.disk_low` | The host disk falls below its free-space minimum, so new volumes and checkpoints are refused. |
 
-Volume usage alerts and questions from agents are not sent yet.
+Questions from agents are not sent yet.
 
 ## Set up a channel
 
@@ -24,7 +27,7 @@ Volume usage alerts and questions from agents are not sent yet.
 2. Enter a **Name** and an **Id**. The id uses lowercase letters, digits and hyphens, starts with a letter, and cannot be changed later.
 3. Choose the **Type**, Webhook, ntfy or Telegram, and fill in its fields. See [Channel types](#channel-types).
 4. Choose the **Notices to send**. A new channel gets all of them.
-5. Optionally limit the channel to some **Boxes**, by name or id, separated by commas or new lines. Leave it blank for every box. Host notices always reach the channel.
+5. Optionally limit the channel to some **Boxes**, by name or id, separated by commas or new lines. Leave it blank for every box. Host and volume notices always reach the channel.
 6. Choose **Save channel**, then **Send test** in the channel's row. The result appears on the screen at once.
 
 A channel with **Send to this channel** turned off keeps its settings and sends nothing.
@@ -68,7 +71,7 @@ const valid = expected.length === received.length && timingSafeEqual(Buffer.from
 
 ### ntfy
 
-MiniBox posts the notice to `<server>/<topic>`. The **ntfy server** defaults to `https://ntfy.sh`. The text is the title, then a new line and the body. The title is sent in a header, which allows only printable ASCII, so other characters appear as `?`. Each notice has a priority: 4 for `box.oom`, `checkpoint.failed` and `host.offline`, and 3 for the others. It also has a tag that matches the notice, such as `warning` or `zzz`.
+MiniBox posts the notice to `<server>/<topic>`. The **ntfy server** defaults to `https://ntfy.sh`. The text is the title, then a new line and the body. The title is sent in a header, which allows only printable ASCII, so other characters appear as `?`. Each notice has a priority: 4 for `box.oom`, `checkpoint.failed`, `host.offline`, `volume.usage_limit` and `host.disk_low`, and 3 for the others. It also has a tag that matches the notice, such as `warning` or `zzz`.
 
 Anyone who knows the topic can read it, so choose a name that is hard to guess. If the topic needs a token, give it as the **Access token**. MiniBox sends it as `Authorization: Bearer`.
 
@@ -81,7 +84,7 @@ Create a bot with @BotFather and give its token as the **Bot token**. Give the *
 - **Non-blocking.** A notice is queued and sent in the background, so the action that caused it does not wait. Up to 4 sends run at once, and up to 256 notices can wait. Beyond that, a notice is recorded as failed with `queue_full`.
 - **Timeout.** Each attempt gives up after 10 seconds, including the name lookup.
 - **Retries.** A send is tried up to 3 times, with a wait of 1 second and then 2 seconds between tries. Only timeouts, network and DNS failures, and HTTP `429` and `5xx` answers are retried. Other answers, such as `404`, fail at once. Redirects are not followed, so a `3xx` answer is a failure.
-- **Repeats.** The same notice about the same box or host is not sent again on the same channel for 5 minutes.
+- **Repeats.** The same notice about the same box, host or volume is not sent again on the same channel for 5 minutes.
 - **Queued notices are not saved.** A restart drops the notices that were not sent yet.
 
 ## Delivery history

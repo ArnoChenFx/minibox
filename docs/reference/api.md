@@ -77,6 +77,7 @@ Errors have the same shape, with the matching HTTP status:
 | `method_not_allowed` | 405 | The method is not supported on this path |
 | `conflict` | 409 | The request conflicts with the current state |
 | `confirmation_required` | 409 | A change needs `confirm: true`. `details.preview` shows what would change. |
+| `volume_over_limit` | 409 | A box mounts a volume that is over its hard limit with the `stop` action. Raise or clear the limit, or free space in the volume, and then start the box |
 | `precondition_failed` | 412 | The `If-Match` revision is stale |
 | `unsupported_media_type` | 415 | The `Content-Type` is not JSON |
 | `insufficient_capacity` | 422 | The host does not have enough capacity for the request |
@@ -85,6 +86,7 @@ Errors have the same shape, with the matching HTTP status:
 | `docker_error` | 502 | The Docker engine returned an error |
 | `bad_gateway` | 502 | A storage server or another upstream refused the request |
 | `docker_unavailable` | 503 | The Docker engine, or a storage pool, cannot be reached |
+| `insufficient_storage` | 507 | The host disk is below its free-space minimum (`HOST_DISK_MIN_FREE_PERCENT`), so no volume or checkpoint is created until space is freed |
 
 Error messages are in English. The `code` is stable, so scripts should check it rather than the message.
 
@@ -184,6 +186,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/volumes/{id}/attach` | Mount a volume on a box |
 | `POST` | `/api/volumes/{id}/detach` | Unmount a volume from a box |
 | `POST` | `/api/volumes/{id}/usage` | Measure a volume |
+| `PUT` | `/api/volumes/{id}/limits` | Set a volume's soft and hard limits in bytes, and the action at the hard limit (`warn` or `stop`). A field left out keeps its value, and `null` clears a limit. Owner only. An NFS volume answers `400` |
 | `GET` | `/api/pools` | List storage pools |
 | `PUT` | `/api/pools` | Replace storage pool configuration |
 

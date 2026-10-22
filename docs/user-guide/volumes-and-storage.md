@@ -54,6 +54,51 @@ Click **Delete** on the volume. MiniBox does not delete a volume that a box stil
 
 When you delete a box, you can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
 
+## Usage, limits and free space
+
+MiniBox measures every volume's usage every 10 minutes by default. You can set a soft and a hard limit on each volume, and the host keeps a free-space floor. **Soft alerts are best effort, not a quota.** They tell you early that a volume is growing, but nothing stops the volume from growing past them.
+
+### How usage is measured
+
+- A volume on the local pool or on a path pool is measured with `du` over its own folder tree. The figure is that volume's size.
+- A volume on an NFS pool is measured with `df` on the pool's root. The figure is the usage of the whole share, so every volume on that pool shows the same figure, and the console marks it as a share figure. MiniBox never walks the folders of a share.
+- Each measurement has its own deadline: 2 minutes for a volume tree and 30 seconds for an NFS share. A mount that does not answer in time is recorded as a failed sample, with the reason, and the last good figure stays on the volume. The other volumes are still measured on their own schedule.
+- The trend keeps the last 24 samples. A restart clears the trend, and the last figure stays.
+- The interval is set with `VOLUME_USAGE_INTERVAL_SEC`, from 60 to 86400 seconds. See [Configuration](../reference/configuration.md#volumes-and-storage).
+
+To measure a volume now, click **Measure** on the **Volumes** page, or call `POST /api/volumes/{id}/usage`. The new figure counts at once for starting boxes. The alerts and the stop action come from the background sampling, at its next pass.
+
+### Soft and hard limits
+
+Click **Limits** on a volume to set its limits. Each limit is in GB, and an empty field means no limit. The soft limit must not be above the hard limit. Limits are also set with `PUT /api/volumes/{id}/limits`, in bytes, and with the MCP tool `set_volume_limits`. Only the owner can set them.
+
+| Limit reached | What MiniBox does |
+|---|---|
+| **Soft limit** | Records a `volume.usage_high` event, which a notification channel can send, and highlights the volume on the **Volumes** page. The event is recorded once for each crossing, and again only after the volume drops below the soft limit. |
+| **Hard limit**, action **warn** (the default) | Records a `volume.usage_limit` event and sends a notice. Boxes keep running. |
+| **Hard limit**, action **stop** | As for **warn**, and it also stops each running box that mounts the volume. A stopped box stays stopped, and its page shows the reason, **volume over its hard limit**. |
+
+- The event and the notice both say why: the limit, the usage, the action, and the boxes that were stopped.
+- **Warn is the default** because stopping a box can interrupt its work. Choose **stop** for a volume that must not grow past its hard limit.
+- Alerts and the stop action are decided at each sample, so a box can write past a limit between two samples. A new limit is saved at once, and starts are checked against it straight away.
+- While a volume stays over a hard limit with the **stop** action, MiniBox refuses to create, start, restart or rebuild a box that mounts it, and refuses to attach it to a box. The refusal is `volume_over_limit` (409). Raise or clear the hard limit, or free space in the volume, and then start the box.
+- **NFS volumes take no limits.** Their usage is the whole share's, so a limit on one volume would not hold. The **Limits** button is disabled for them. See [NFS and NAS storage](nfs.md#usage-and-quotas).
+
+### Host free space
+
+MiniBox checks the free space on the disk that the engine uses. When it falls below `HOST_DISK_MIN_FREE_PERCENT`, 10% by default:
+
+- MiniBox records a `host.disk_low` event and sends a notice, once for that low spell.
+- MiniBox refuses to create a volume, which includes the volumes of a new box, and to take a checkpoint, including the safety checkpoint that a rollback takes first. A scheduled checkpoint is skipped instead, and shows as skipped because the disk is low.
+
+The refusal ends when free space is back above the floor. Set `HOST_DISK_MIN_FREE_PERCENT=0` to turn the floor off. If MiniBox cannot read the disk, it refuses nothing.
+
+The floor only stops new volumes and checkpoints. It does not stop a box that is already writing to the disk.
+
+### Quotas
+
+Limits are not quotas. MiniBox does not set filesystem quotas yet, so a volume can use more space than its limits between two samples. Filesystem quotas, such as XFS project quotas or btrfs and ZFS quotas on a local pool, are later work. For an NFS pool, set the quota on the NAS export. See [NFS and NAS storage](nfs.md#usage-and-quotas).
+
 ## Files in a volume
 
 You can read and write the files in a volume with the command-line tool, even when no box is using it:

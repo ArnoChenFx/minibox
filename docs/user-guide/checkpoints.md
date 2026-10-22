@@ -28,6 +28,8 @@ Checkpoints are not a backup of the whole server. They are stored on the same ho
 
 The checkpoint appears in the list when it is ready. Follow the progress in the **Tasks** panel.
 
+While the host disk is below its free-space minimum, MiniBox refuses a checkpoint you create by hand, and a rollback, which takes a safety checkpoint first. Both return `507` (`insufficient_storage`). A scheduled checkpoint is skipped instead. See [Volumes and storage](volumes-and-storage.md#usage-limits-and-free-space).
+
 ## Checkpoint list
 
 The list shows each checkpoint's **Taken** time, **Label**, **Kind** and **Contents**. The kinds are:
@@ -105,7 +107,7 @@ The tab then shows the schedule, such as `Every day at 03:00 (Asia/Shanghai)`, w
 
 A scheduled checkpoint is taken while the box keeps running, like a **Live** checkpoint. It is not pinned, and it counts as automatic, so the retention policy keeps or removes it in the same way as the checkpoints MiniBox takes before a rollback.
 
-MiniBox never wakes or starts a box for a schedule. A stopped or sleeping box is skipped, and a scheduled checkpoint does not count as activity, so it never keeps an idle box from sleeping. A box moved to another host keeps its schedule, and the next run is taken on the new host. A run is also skipped while the checkpoint repository is at its limit, until space is freed. If the box has been deleted, its schedule is removed. A failed run records its error. While a host is offline, its schedules wait for it to come back.
+MiniBox never wakes or starts a box for a schedule. A stopped or sleeping box is skipped, and a scheduled checkpoint does not count as activity, so it never keeps an idle box from sleeping. A box moved to another host keeps its schedule, and the next run is taken on the new host. A run is also skipped while the checkpoint repository is at its limit, or while the host disk is below its free-space minimum, until space is freed. If the box has been deleted, its schedule is removed. A failed run records its error. While a host is offline, its schedules wait for it to come back.
 
 Schedules are checked every minute, and they are kept on the instance, so they survive a restart. A run that fell due while the server was down happens once after the server starts, within about a minute. An every-hours schedule keeps to its original times, so a late run does not move the later ones. A daily schedule runs at its next time, and keeps to the clock of its zone when daylight saving time starts or ends. A time the clocks skip runs an hour later, and a time that happens twice runs once.
 

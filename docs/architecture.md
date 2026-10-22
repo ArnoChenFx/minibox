@@ -97,6 +97,7 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 - `src/services/container-watch.ts` turns engine start, stop and out-of-memory events into the `container.*` activity that the Activity tab shows.
 - `src/events/retention.ts` and `src/services/checkpoint-retention.ts` apply the retention limits.
 - `src/services/checkpoint-schedule.ts` takes the scheduled checkpoints once a minute, and skips boxes that are stopped or asleep.
+- `src/services/volume-usage.ts` runs `VolumeUsageWatcher`. It samples each volume's usage every `VOLUME_USAGE_INTERVAL_SEC` seconds, and checks the host disk's free-space floor on the same pass. Each volume is sampled on its own clock, with its own deadline, so a frozen NFS mount holds back only its own sample. The watcher keeps each volume's last level in memory, so an event is written when a volume crosses a limit, not on every pass. The sample logic is in `src/volumes/usage.ts`, the limit rules in `src/volumes/limits.ts`, and the disk floor in `src/volumes/disk.ts`.
 
 ## Terminals, sessions and SSH
 
