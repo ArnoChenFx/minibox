@@ -13,7 +13,7 @@ For people who use MiniBox every day.
 - [Boxes](user-guide/boxes.md): create, start, resize, rebuild and delete boxes.
 - [Idle sleep and TTL](user-guide/idle-sleep.md): let idle boxes sleep, and give boxes a lifetime.
 - [Port preview](user-guide/port-preview.md): open a web app running in a box.
-- [Templates](user-guide/templates.md): the base template, and templates you save from a box.
+- [Templates](user-guide/templates.md): the base template, templates you save from a box, and templates built from a Dockerfile or a repository.
 - [Checkpoints](user-guide/checkpoints.md): copy a box's data, fork it or roll it back.
 - [Tools and custom tools](user-guide/tools.md): install agent CLIs and runtimes into a box.
 - [Environment variables and secrets](user-guide/environment-and-secrets.md): set variables and use host secrets.
