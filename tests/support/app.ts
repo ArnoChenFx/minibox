@@ -68,7 +68,13 @@ export function createTestApp(
   const cfg = testConfig(overrides);
   if (overrides.dataDir === undefined) cfg.dataDir = mkdtempSync(join(tmpdir(), "minibox-test-"));
   const checkpoints = new FakeCheckpointEngine(runtime);
-  const app = createApp(cfg, "0.0.0-test", { runtime, hooks, eventsPath: ":memory:", checkpointEngine: checkpoints });
+  const app = createApp(cfg, "0.0.0-test", {
+    runtime,
+    connect: () => new FakeRuntime(),
+    hooks,
+    eventsPath: ":memory:",
+    checkpointEngine: checkpoints,
+  });
   return { app, runtime, checkpoints };
 }
 

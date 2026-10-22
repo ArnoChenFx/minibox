@@ -115,6 +115,10 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "token.revoke": (_boxId, app) => ({
     id: app.tokens.create(compileToken({ name: "gone", preset: "readonly" }), "owner").record.id,
   }),
+  "host.list": () => ({}),
+  "host.add": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
+  "host.test": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
+  "host.remove": () => ({ id: "lab" }),
 };
 
 /** Operations that act on a checkpoint which must already exist, so `preparedInput` takes one first. */
@@ -220,6 +224,9 @@ async function preparedInput(
     if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
     const input = sample(boxId, app) as Record<string, unknown>;
     return { input: { ...input, id: volumeId } };
+  }
+  if (operation.name === "host.remove") {
+    await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });
   }
   const sample = SAMPLES[operation.name];
   if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
@@ -808,6 +815,10 @@ describe("projections", () => {
       "write_file",
       "list_files",
       "copy_files",
+      "list_hosts",
+      "add_host",
+      "test_host",
+      "remove_host",
     ]);
     expect(
       mcpTools(OPERATIONS, ["storage"])
@@ -851,6 +862,7 @@ describe("projections", () => {
       "mounts",
       "idleTimeoutSec",
       "ttlSec",
+      "host",
       "tools",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });

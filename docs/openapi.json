@@ -18610,6 +18610,9 @@
                     "pools"
                   ],
                   "additionalProperties": false
+                },
+                "hostId": {
+                  "type": "string"
                 }
               },
               "required": [
