@@ -6,7 +6,7 @@ import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { AuditEvent, ExecutorHooks } from "../src/operations/executor";
 import type { OperationContext } from "../src/operations/types";
-import { type HelperSpec, RuntimeError } from "../src/runtime";
+import { type HelperResult, type HelperSpec, RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
 import { attachVolume, createVolume, getPools, listVolumes, measureVolume, savePools } from "../src/services/volumes";
@@ -585,6 +585,63 @@ describe("helper containers ask only for what their command needs", () => {
       expect(spec.user).toBe(DEV_OWNER);
       expect(spec.capAdd).toBeUndefined();
     }
+  });
+});
+
+/** Fails the helper whose command has `text`, with `logs`. Every other helper succeeds. */
+const refuse =
+  (text: string, logs: string) =>
+  (spec: HelperSpec): HelperResult =>
+    spec.cmd.join(" ").includes(text) ? { exitCode: 1, logs } : { exitCode: 0, logs: "" };
+
+describe("a storage server that refuses the box is a storage error", () => {
+  const nasPools = [
+    { name: "local", backend: "local" as const },
+    {
+      name: "nas",
+      backend: "nfs" as const,
+      server: "192.168.1.10",
+      export: "/volume1/minibox",
+      options: ["nfsvers=4.1", "hard"],
+      default: true,
+    },
+  ];
+
+  test("permission denied creating the export subdirectory is a 502 storage_permission_denied, not a 400", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = refuse("mkdir -p", "mkdir: cannot create directory '/mnt/vol_x': Permission denied\n");
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({
+      status: 502,
+      code: "bad_gateway",
+      key: "storage_permission_denied",
+      params: { pool: "nas" },
+      hintKey: "storage_squash_hint",
+      retryable: false,
+    });
+    expect(runtime.containers.size).toBe(0);
+    expect(host.volumes.list()).toEqual([]);
+  });
+
+  test("operation not permitted is the same refusal", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = refuse("mkdir -p", "mkdir: cannot create directory: Operation not permitted\n");
+
+    expect(await rejectionOf(newBox("alpha"))).toMatchObject({ status: 502, key: "storage_permission_denied" });
+  });
+
+  test("a prepare failure that is not a refusal stays a 400 volume_prepare_failed", async () => {
+    await savePools(host, nasPools, undefined);
+    runtime.helperHandler = refuse(
+      "mkdir -p",
+      "mkdir: cannot create directory '/mnt/vol_x': No such file or directory\n",
+    );
+
+    const error = await rejectionOf(newBox("alpha"));
+    expect(error).toMatchObject({ status: 400, code: "validation_failed", key: "volume_prepare_failed" });
+    expect((error as AppError).hintKey).toBeUndefined();
   });
 });
 

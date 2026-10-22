@@ -1,8 +1,8 @@
 import type { HostCtx } from "../host/registry";
 import { volumeName } from "../labels";
-import { badRequest, conflict, forbidden } from "../lib/errors";
+import { AppError, badRequest, conflict, forbidden } from "../lib/errors";
 import { log } from "../lib/logger";
-import { msg } from "../lib/messages";
+import { type Msg, msg } from "../lib/messages";
 import { RuntimeError, type VolumeInfo } from "../runtime";
 import type { BoxSpec } from "../specs/types";
 import { VolumeChanges } from "./changes";
@@ -76,6 +76,14 @@ export async function chownEngines(host: HostCtx, engines: string[], known: Set<
   }
 }
 
+/** Permission errors from the storage server while a volume directory is prepared. A squashed root is the usual cause. */
+const PERMISSION_DENIED = /permission denied|operation not permitted/i;
+
+/** The storage server refused the box. A retry changes nothing until the export or the path changes. */
+function storageRefusal(message: Msg): AppError {
+  return new AppError(502, "bad_gateway", message, undefined, { hint: msg("storage_squash_hint"), retryable: false });
+}
+
 async function prepareSubdir(host: HostCtx, pool: StoragePool, subpath: string, known: Set<string>): Promise<void> {
   if (!(await imageReady(host, known))) {
     throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
@@ -96,9 +104,11 @@ async function prepareSubdir(host: HostCtx, pool: StoragePool, subpath: string, 
     labels: { [host.keys.internal]: "true" },
   });
   if (result.exitCode !== 0) {
-    throw badRequest(
-      msg("volume_prepare_failed", { detail: result.logs.trim().slice(0, 400) || String(result.exitCode) }),
-    );
+    const detail = result.logs.trim().slice(0, 400) || String(result.exitCode);
+    if (PERMISSION_DENIED.test(result.logs)) {
+      throw storageRefusal(msg("storage_permission_denied", { pool: pool.name, detail }));
+    }
+    throw badRequest(msg("volume_prepare_failed", { detail }));
   }
   if (result.logs.includes("MINIBOX_CHOWN_SKIPPED")) {
     log.warn("volume.chown_skipped", { pool: pool.name, subpath, reason: "chown failed, often root_squash" });

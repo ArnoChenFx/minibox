@@ -225,6 +225,9 @@ export default {
   "err.volume_create_forbidden": "此凭据不能创建卷。",
   "err.volume_chown_failed": "无法修改新卷的所有者：{detail}",
   "err.volume_prepare_failed": "无法准备卷目录：{detail}",
+  "err.storage_permission_denied": "存储池 {pool} 拒绝创建卷目录（权限不足）：{detail}",
+  "err.storage_squash_hint":
+    "在 NAS 上把导出设置为 all_squash,anonuid=1000,anongid=1000，或 root_squash,anonuid=1000,anongid=1000，使被映射的用户为 uid 1000。设置指南：https://github.com/ArnoChenFx/minibox/blob/main/docs/nas-zh.md",
   "err.helper_image_missing": "基础模板镜像 {image} 不存在，因此无法运行卷辅助容器。",
   "err.file_path_invalid": "文件路径最多 512 字节，且不能包含 NUL 或换行。",
   "err.file_path_escape": "文件路径必须留在卷内（不能使用 .. 或绝对路径逃逸）。",

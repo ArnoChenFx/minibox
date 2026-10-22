@@ -47,7 +47,7 @@ How the server maps the helper's root decides whether this works. Tested with ea
 | Server export | Export directory owner | Result |
 |---|---|---|
 | `all_squash,anonuid=1000,anongid=1000` | 1000:1000 | **Works. Recommended.** Every file is 1000:1000 on the server, whoever writes it. A `chown` inside the box succeeds but changes nothing |
-| `all_squash,anonuid=1000,anongid=1000` | root, mode 755 | Volume create fails: `mkdir: cannot create directory '/mnt/vol_…': Permission denied` (`volume_prepare_failed`) |
+| `all_squash,anonuid=1000,anongid=1000` | root, mode 755 | Volume create fails with `502`, code `bad_gateway` and message key `storage_permission_denied`: `mkdir: cannot create directory '/mnt/vol_…': Permission denied` |
 | `root_squash,anonuid=1000,anongid=1000` | 1000:1000 | Works. Root maps to 1000, `dev` stays 1000. Root inside the box also writes as 1000 |
 | `no_root_squash` | any | Works. The helper's chown succeeds. Root inside a box is real root on the export, so use it only on a dedicated export |
 | `root_squash` (anon uid is `nobody`) | 1000:1000, mode 755 | Volume create fails with `Permission denied` |
@@ -224,7 +224,7 @@ All messages below were seen in the tests.
 | Pool `unreachable` | `… input/output error` | The server is down, or nothing listens on TCP 2049. Start the NFS service, check the firewall |
 | Pool `unreachable` | `… connection timed out` | Wrong server address, or the network or firewall drops the traffic |
 | Pool `unreachable` | `… no such file or directory` | The export path does not exist, or this client is not allowed. NFSv4 hides exports the client may not use, so a client restriction can look like a wrong path. Linux `nfsd` may say `access denied by server` instead |
-| Box create fails | `Could not prepare the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` | The squashed uid cannot write the export root. `chown 1000:1000` the export directory and use `all_squash,anonuid=1000,anongid=1000` |
+| Box create fails with `502` and code `bad_gateway` | `Storage pool nas denied permission to create the volume directory: mkdir: cannot create directory '/mnt/vol_…': Permission denied` (`storage_permission_denied`) | The squashed uid cannot write the export root. Use `all_squash,anonuid=1000,anongid=1000` (or `root_squash,anonuid=1000,anongid=1000`) and make the export directory 1000:1000. The response's `hint` names these options and links this guide |
 | Box starts, but `dev` cannot write `/workspace`, and the server log has `volume.chown_skipped` | `Permission denied` inside the box; on the server the `vol_…` directory belongs to `nobody` (shown as 65534, or 4294967294 on Ganesha) | `root_squash` to `nobody`. Change the export to `all_squash,anonuid=1000,anongid=1000`, then on the server `chown -R 1000:1000 <export>/vol_…` |
 | `chown` in the box "succeeds" but nothing changes | — | Expected with `all_squash`: every file belongs to the anon uid |
 | `Stale file handle` inside the box; then `start` fails with `lstat …/_data: stale NFS file handle` | | The volume's directory was deleted or replaced on the server while mounted (for example restored from a snapshot into a new folder). Stop the box and put the data back in place. In the test, start kept failing until the client's cache was dropped (`sync; echo 2 \| sudo tee /proc/sys/vm/drop_caches` on the compute machine) |
@@ -237,7 +237,6 @@ Found while testing this guide:
 
 - An `exec` (and the timeout of a foreground `exec`) cannot finish while a `hard` mount is frozen: the kill MiniBox runs inside the box starts in the box's working directory `/workspace` and blocks with it. The call returns once the server is back.
 - With `root_squash` mapped to `nobody`, creating a volume succeeds although `dev` cannot write it; the only signal is the `volume.chown_skipped` log line.
-- A permission error on the export is reported as `400 validation_failed` rather than a storage error.
 - Pools are probed one after another, so the pools page slows down with several unreachable NFS pools.
 
 ## Path pools

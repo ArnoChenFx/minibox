@@ -251,6 +251,9 @@ export default {
   "err.volume_create_forbidden": "This credential may not create volumes.",
   "err.volume_chown_failed": "Could not change ownership of a new volume: {detail}",
   "err.volume_prepare_failed": "Could not prepare the volume directory: {detail}",
+  "err.storage_permission_denied": "Storage pool {pool} denied permission to create the volume directory: {detail}",
+  "err.storage_squash_hint":
+    "On the NAS, set the export to all_squash,anonuid=1000,anongid=1000, or root_squash,anonuid=1000,anongid=1000, so the squashed user is uid 1000. Setup guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/nas.md",
   "err.helper_image_missing": "Base template image {image} is missing, so volume helpers cannot run.",
   "err.file_path_invalid": "File path must be at most 512 bytes, without NUL or line breaks.",
   "err.file_path_escape": "File path must stay inside the volume (no .. or absolute escape).",
