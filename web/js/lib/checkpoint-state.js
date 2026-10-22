@@ -9,9 +9,27 @@ export const REASON_KEYS = [
   "ck.reasonLegacy",
   "ck.reasonPending",
   "ck.reasonNoData",
+  "ck.reasonEmpty",
   "ck.reasonHeld",
   "ck.reasonPinned",
+  "ck.reasonSystem",
 ];
+
+/** The translation of each reason a scheduled run can be skipped for, as the server names it. */
+export const SKIP_REASON_KEYS = Object.freeze({
+  sleeping: "ck.skip.sleeping",
+  stopped: "ck.skip.stopped",
+  capacity: "ck.skip.capacity",
+  gone: "ck.skip.gone",
+});
+
+/** The limits of a package passphrase, counted in characters as the server counts them. */
+export const PASSPHRASE_MIN = 12;
+export const PASSPHRASE_MAX = 1024;
+
+/** The limits of an every-N-hours schedule. A daily time is `HH:MM` on the server's clock. */
+export const SCHEDULE_HOURS = Object.freeze({ min: 1, max: 720 });
+const SCHEDULE_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** The kinds a row carries. A legacy snapshot is read-only, so it carries only that kind. */
 export function kindsOf(checkpoint) {
@@ -43,6 +61,7 @@ export function rowActions(checkpoint, { held = false, pending = false } = {}) {
   if (checkpoint.legacy) {
     return {
       fork: ALLOWED,
+      export: refused("ck.reasonLegacy"),
       rollback: refused("ck.reasonLegacy"),
       pin: refused("ck.reasonLegacy"),
       delete: ALLOWED,
@@ -55,7 +74,28 @@ export function rowActions(checkpoint, { held = false, pending = false } = {}) {
   let remove = ALLOWED;
   if (held) remove = refused("ck.reasonHeld");
   else if (checkpoint.pinned) remove = refused("ck.reasonPinned");
-  return { fork: ALLOWED, rollback, pin: ALLOWED, delete: remove };
+  let exportable = ALLOWED;
+  if (checkpoint.data.length === 0) exportable = refused("ck.reasonEmpty");
+  else if (checkpoint.system !== null) exportable = refused("ck.reasonSystem");
+  return { fork: ALLOWED, export: exportable, rollback, pin: ALLOWED, delete: remove };
+}
+
+/** Whether a passphrase is one the server will seal a package with: its length, and no edge spaces or line breaks. */
+export function passphraseOk(value) {
+  const length = [...value].length;
+  if (length < PASSPHRASE_MIN || length > PASSPHRASE_MAX) return false;
+  return value === value.trim() && !/[\r\n\0]/.test(value);
+}
+
+/**
+ * The request body a schedule form sends for its mode: `everyHours` for an interval, `at` for a daily time. Null when the
+ * form does not describe a rule the server accepts.
+ */
+export function scheduleBody(mode, { hours, at }) {
+  if (mode === "daily") return SCHEDULE_TIME.test(at ?? "") ? { at } : null;
+  const every = Number(hours);
+  const inRange = Number.isInteger(every) && every >= SCHEDULE_HOURS.min && every <= SCHEDULE_HOURS.max;
+  return inRange ? { everyHours: every } : null;
 }
 
 /** Newest first, by the time each was taken. */

@@ -1917,6 +1917,43 @@ input[type="range"] {
 .ck-row-actions {
   flex-wrap: wrap;
 }
+.ck-schedule {
+  display: grid;
+  gap: 4px;
+}
+.ck-schedule-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.file-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.file-pick .btn {
+  flex: none;
+}
+.file-pick-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.file-pick-name.chosen {
+  color: var(--text);
+}
+.ck-schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
 .dialog-head {
   display: flex;
   align-items: flex-start;

@@ -15,6 +15,7 @@ export async function applyRetention(host: HostCtx, now = Date.now()): Promise<s
   const expired = expiredAutomatic(records, host.checkpointPolicy, now, heldCheckpointIds(host));
   const removed: string[] = [];
   for (const record of expired) {
+    if (host.checkpoints.exporting.has(record.id)) continue;
     try {
       await deleteCheckpoint(host, record.id);
       removed.push(record.id);
@@ -39,6 +40,18 @@ async function warnIfNearLimit(host: HostCtx): Promise<void> {
   }
 }
 
+/** Removes expired packages. Hosts share one package store, so it is swept once. */
+function sweepPackages(hosts: readonly HostCtx[], now: number): void {
+  for (const store of new Set(hosts.map((host) => host.checkpoints.packages))) {
+    try {
+      const removed = store.sweep(now);
+      if (removed.length > 0) log.info("checkpoint.packages_swept", { removed: removed.length });
+    } catch (e) {
+      log.error("checkpoint.package_sweep_failed", { error: String(e) });
+    }
+  }
+}
+
 /** Applies every host's retention policy now and then on a timer, and reports repositories that near their limit. */
 export class CheckpointSweep {
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -60,6 +73,7 @@ export class CheckpointSweep {
         log.error("checkpoint.sweep_failed", { host: host.host.id, error: String(e) });
       }
     }
+    sweepPackages(this.hosts.list(), now);
     return removed;
   }
 

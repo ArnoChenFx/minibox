@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { BOX_PROFILES, type BoxProfile, isBoxProfile } from "../box-profile";
+import { SCHEDULE_HOURS_MAX, SCHEDULE_HOURS_MIN, SCHEDULE_TIME_RE } from "../checkpoints/schedule";
 import { AUTO_HOST, HOST_ID_RE } from "../host/store";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
@@ -222,6 +223,63 @@ export const checkpointLabel = () =>
 
 export const checkpointReason = () =>
   oneLine(`Why the checkpoint is taken, one line, at most ${DESCRIPTION_MAX} characters.`);
+
+const PASSPHRASE_MIN = 12;
+const PASSPHRASE_MAX = 1024;
+
+const passphraseInvalid = (): Checked<string> => reject(msg("package_passphrase_invalid"), "passphrase");
+
+function checkPassphrase(value: unknown): Checked<string> {
+  if (typeof value !== "string") return passphraseInvalid();
+  const length = [...value].length;
+  if (length < PASSPHRASE_MIN || length > PASSPHRASE_MAX) return passphraseInvalid();
+  if (value !== value.trim() || /[\r\n\0]/.test(value)) return passphraseInvalid();
+  return accept(value);
+}
+
+/** Seals a package. The value is never stored, logged or echoed back, so only the sealed file keeps anything of it. */
+export const passphrase = () =>
+  field(checkPassphrase, {
+    type: "string",
+    minLength: PASSPHRASE_MIN,
+    maxLength: PASSPHRASE_MAX,
+    description:
+      "Passphrase that seals the package: 12 to 1024 characters, no leading or trailing spaces, no line breaks. MiniBox never stores it, so a package cannot be opened without it.",
+  });
+
+export const packageRef = () =>
+  z.string().meta({ description: "Package id (pk_…), as the export or the upload returned it." });
+
+function checkScheduleHours(value: unknown): Checked<number | undefined> {
+  if (value === undefined || value === null) return accept(undefined);
+  const n = toNumber(value);
+  if (n === undefined || !Number.isInteger(n) || n < SCHEDULE_HOURS_MIN || n > SCHEDULE_HOURS_MAX) {
+    return reject(msg("schedule_rule_invalid"), "everyHours");
+  }
+  return accept(n);
+}
+
+function checkScheduleTime(value: unknown): Checked<string | undefined> {
+  if (value === undefined || value === null) return accept(undefined);
+  if (typeof value === "string" && SCHEDULE_TIME_RE.test(value)) return accept(value);
+  return reject(msg("schedule_rule_invalid"), "at");
+}
+
+export const scheduleEveryHours = () =>
+  field(checkScheduleHours, {
+    type: "integer",
+    minimum: SCHEDULE_HOURS_MIN,
+    maximum: SCHEDULE_HOURS_MAX,
+    description: `Take a checkpoint every this many hours, an integer from ${SCHEDULE_HOURS_MIN} to ${SCHEDULE_HOURS_MAX}. Send either this or at.`,
+  }).optional();
+
+export const scheduleAt = () =>
+  field(checkScheduleTime, {
+    type: "string",
+    pattern: SCHEDULE_TIME_RE.source,
+    description:
+      "Take a checkpoint once a day at this time, HH:MM on the server's clock, such as 02:30. Send either this or everyHours.",
+  }).optional();
 
 export const cpusWithDefault = (defaultValue: number) =>
   field(checkCpus, { ...CPUS_META, description: withDefault(CPUS_HELP, defaultValue) }).default(defaultValue);

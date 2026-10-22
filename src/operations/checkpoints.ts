@@ -55,9 +55,10 @@ import {
   ttl,
 } from "./validation";
 
-const checkpointId = () => z.string().meta({ description: "Checkpoint id (ck_…), as the checkpoint list shows it." });
+export const checkpointId = () =>
+  z.string().meta({ description: "Checkpoint id (ck_…), as the checkpoint list shows it." });
 
-const checkpointTarget = (checkpoint: Pick<CheckpointView, "id" | "label">): EventTarget => ({
+export const checkpointTarget = (checkpoint: Pick<CheckpointView, "id" | "label">): EventTarget => ({
   kind: "checkpoint",
   id: checkpoint.id,
   name: checkpoint.label,

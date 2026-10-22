@@ -146,7 +146,9 @@ describe("MCP", () => {
       expect(initBody.result.protocolVersion).toBe("2025-03-26");
       expect(initBody.result.instructions).toContain(AGENTS_MD_SNIPPET);
       expect(initBody.result.instructions).not.toContain("design catalog");
-      expect(initBody.result.instructions).toContain("Checkpoints have no MCP tools");
+      expect(initBody.result.instructions).toContain(
+        "Taking, listing, forking and rolling back checkpoints have no MCP tools",
+      );
 
       const listed = await post(env.base, rpc(2, "tools/list"), { "mcp-session-id": session ?? "" });
       const tools = ((await listed.json()) as { result: { tools: { name: string }[] } }).result.tools.map(
@@ -214,14 +216,19 @@ describe("MCP", () => {
           .toSorted(),
       ).toEqual([
         "attach_volume",
+        "clear_checkpoint_schedule",
         "create_volume",
         "delete_volume",
         "detach_volume",
+        "export_checkpoint",
+        "get_checkpoint_schedule",
         "get_volume",
+        "import_checkpoint",
         "list_pools",
         "list_volumes",
         "measure_volume",
         "replace_pools",
+        "set_checkpoint_schedule",
       ]);
 
       const rebuild = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=rebuild");

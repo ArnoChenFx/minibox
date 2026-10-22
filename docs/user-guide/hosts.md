@@ -70,7 +70,7 @@ Click **Remove** next to the host, and confirm. A host that still has boxes, vol
 ## Limits
 
 - Port preview is not supported for boxes on a remote host. See [Port preview](port-preview.md).
-- Each host keeps its own checkpoints. Checkpoints are not copied between hosts. See [Checkpoints](checkpoints.md).
+- Each host keeps its own checkpoints, and they are not copied between hosts. To move one, [export](checkpoints.md#export-and-import) it, then import it and choose the other host. See [Checkpoints](checkpoints.md).
 - Host-level CPU and memory use is shown for the local host only. A remote host shows the cores and memory that its engine reports, and the use of its own boxes.
 - The command-line tool has no host commands. Use the console, or the [REST API](../reference/api.md).
 - An [agent token](access-and-tokens.md) can be limited to specific hosts.

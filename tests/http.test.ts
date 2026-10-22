@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { json, withSecurityHeaders } from "../src/lib/http";
+import {
+  assertBodyAllowed,
+  JSON_BODY_MAX_BYTES,
+  json,
+  limitedBody,
+  readJson,
+  withSecurityHeaders,
+} from "../src/lib/http";
 
 function parseCsp(policy: string): Record<string, string[]> {
   const out: Record<string, string[]> = {};
@@ -49,5 +56,62 @@ describe("security headers", () => {
   test("headers set by a handler are kept", () => {
     const res = withSecurityHeaders(json({ ok: true }, 200, { "set-cookie": "a=b" }), false);
     expect(res.headers.get("set-cookie")).toBe("a=b");
+  });
+});
+
+describe("JSON bodies", () => {
+  test("a body of 9 MiB is read, since archive uploads travel as base64 inside JSON", async () => {
+    const content = "A".repeat(9 * 1024 * 1024);
+    const req = new Request("http://minibox.test/", { method: "POST", body: JSON.stringify({ content }) });
+    expect(await readJson(req)).toEqual({ content });
+  });
+
+  test("a body over 128 MiB is refused with payload_too_large, though the server accepts packages much larger", async () => {
+    const req = new Request("http://minibox.test/", {
+      method: "POST",
+      body: new Uint8Array(JSON_BODY_MAX_BYTES + 1),
+    });
+    const error = await readJson(req).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toMatchObject({ status: 413, code: "payload_too_large" });
+  });
+});
+
+const declaring = (method: string, bytes: number) =>
+  new Request("http://minibox.test/", { method, headers: { "content-length": String(bytes) } });
+
+/** Four chunks of 1 KiB. */
+const fourKib = () =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < 4; i++) controller.enqueue(new Uint8Array(1024));
+      controller.close();
+    },
+  });
+
+describe("the body limit outside package uploads", () => {
+  test("a request that declares more than 128 MiB is refused on every route but the package upload", () => {
+    const big = JSON_BODY_MAX_BYTES + 1;
+    for (const path of ["/api/auth/login", "/api/boxes", "/mcp", "/box/dev/3000/upload", "/api/packages/pk_x/import"]) {
+      expect(() => assertBodyAllowed(declaring("POST", big), path)).toThrow(
+        expect.objectContaining({ status: 413, code: "payload_too_large" }),
+      );
+    }
+    expect(() => assertBodyAllowed(declaring("PUT", big), "/api/packages")).toThrow(
+      expect.objectContaining({ status: 413 }),
+    );
+    expect(() => assertBodyAllowed(declaring("POST", big), "/api/packages")).not.toThrow();
+    expect(() => assertBodyAllowed(declaring("POST", JSON_BODY_MAX_BYTES), "/api/boxes")).not.toThrow();
+  });
+
+  test("a forwarded body fails once it passes its limit, and one within it arrives whole", async () => {
+    expect((await new Response(limitedBody(fourKib(), 4096)).arrayBuffer()).byteLength).toBe(4096);
+    const error = await new Response(limitedBody(fourKib(), 4095)).arrayBuffer().then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toMatchObject({ status: 413, code: "payload_too_large" });
   });
 });

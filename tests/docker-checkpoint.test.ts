@@ -14,7 +14,7 @@
  * with "mbit", so the cleanup can never touch a real MiniBox install.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,6 +28,7 @@ import { HELPER_SECRETS_DIR, isRuntimeError, type Runtime } from "../src/runtime
 import * as boxes from "../src/services/boxes";
 import { usageOf } from "../src/services/checkpoint-capacity";
 import { applyRetention } from "../src/services/checkpoint-retention";
+import { exportCheckpoint, importPackage, receivePackage } from "../src/services/checkpoint-transfer";
 import { forkCheckpoint, rollbackBox, takeCheckpoint } from "../src/services/checkpoints";
 import { reconcileHost } from "../src/services/reconcile";
 import { confirmRollback, undoRollback } from "../src/services/rollback";
@@ -97,6 +98,20 @@ async function shell(id: string, script: string): Promise<string> {
 
 const manifestOf = (id: string) => shell(id, MANIFEST);
 
+const PASSPHRASE = "correct horse battery staple";
+
+async function* oneChunk(bytes: Uint8Array): AsyncIterable<Uint8Array> {
+  yield bytes;
+}
+
+/** The volumes a package stages while it is written or opened. None may outlive the call. */
+async function stagingVolumes(): Promise<string[]> {
+  const { Volumes } = await docker.listVolumes();
+  return (Volumes ?? [])
+    .map((volume) => volume.Name)
+    .filter((name) => name.startsWith(prefix) && name.includes("-package-"));
+}
+
 /** The same host with some checkpoint limits changed. The stores and the engine are shared, so both see one repository. */
 function withPolicy(ctx: HostCtx, policy: Partial<CheckpointPolicy>): HostCtx {
   return { ...ctx, checkpointPolicy: { ...ctx.checkpointPolicy, ...policy } };
@@ -139,12 +154,12 @@ async function backupHelperWhile(
 
 /** Removes what the tests left behind: containers first, so that the volumes they mount can go, then the network. */
 async function removeLeftovers(host: HostCtx): Promise<void> {
-  for (const c of await runtime.listContainers({ labels: { [prefix]: "true" } })) {
+  for (const c of await runtime.listContainers({ labels: { [host.prefix]: "true" } })) {
     await runtime.removeContainer(c.id, { force: true }).catch(() => {});
   }
   const { Volumes } = await docker.listVolumes();
   for (const volume of Volumes ?? []) {
-    if (volume.Labels?.[prefix] === "true" || volume.Name.startsWith(`${prefix}-`)) {
+    if (volume.Labels?.[host.prefix] === "true" || volume.Name.startsWith(`${host.prefix}-`)) {
       await docker
         .getVolume(volume.Name)
         .remove()
@@ -160,6 +175,8 @@ async function removeLeftovers(host: HostCtx): Promise<void> {
 describe.skipIf(!enabled)("checkpoints against a real engine", () => {
   let dataDir = "";
   let host: HostCtx;
+  let otherDataDir = "";
+  let other: HostCtx;
   let restoreLogs: () => void;
 
   const takeOf = (boxId: string, consistency: "live" | "pause", ctx: HostCtx = host) =>
@@ -184,12 +201,19 @@ describe.skipIf(!enabled)("checkpoints against a real engine", () => {
       testConfig({ labelPrefix: prefix, dockerSocket: SOCKET, baseTemplateTag: IMAGE, dataDir }),
       runtime,
     );
+    otherDataDir = mkdtempSync(join(tmpdir(), "minibox-checkpoint-docker-other-"));
+    other = createLocalHost(
+      testConfig({ labelPrefix: `${prefix}-b`, dockerSocket: SOCKET, baseTemplateTag: IMAGE, dataDir: otherDataDir }),
+      runtime,
+    );
   });
 
   afterAll(async () => {
     await removeLeftovers(host);
+    await removeLeftovers(other);
     restoreLogs();
     rmSync(dataDir, { recursive: true, force: true });
+    rmSync(otherDataDir, { recursive: true, force: true });
   });
 
   test(
@@ -463,6 +487,42 @@ describe.skipIf(!enabled)("checkpoints against a real engine", () => {
       });
 
       expect(checkpoint.data.find((layer) => layer.role === "workspace")?.bytes).toBeGreaterThanOrEqual(2 * GIB);
+    },
+    LONG,
+  );
+
+  test(
+    "a checkpoint exported here imports on another instance and forks with the files it took, and the package holds no secret",
+    async () => {
+      const source = await createSource("ship-src");
+      await shell(source.id, SEED);
+      const before = await manifestOf(source.id);
+      const checkpoint = await takeOf(source.boxId, "live");
+
+      const exported = await exportCheckpoint(host, checkpoint.id, PASSPHRASE, "tester");
+      const sealed = readFileSync(host.checkpoints.packages.pathFor(exported.id));
+      const repoKey = readSecretFile(join(dataDir, "secrets", "checkpoint-repo.key")) ?? "";
+      expect(repoKey).toMatch(/^[0-9a-f]{64}$/);
+      expect(sealed.includes(Buffer.from(repoKey))).toBe(false);
+      expect(sealed.includes(Buffer.from(PASSPHRASE))).toBe(false);
+
+      const received = await receivePackage(other, oneChunk(sealed), "tester");
+      const wrong = await rejectionOf(importPackage(other, received.id, "a different passphrase", "tester"));
+      expect(wrong).toMatchObject({ status: 400, key: "package_passphrase_wrong" });
+      expect(other.checkpoints.packages.read(received.id)).not.toBeNull();
+
+      const imported = await importPackage(other, received.id, PASSPHRASE, "tester");
+      expect(imported).toMatchObject({ id: checkpoint.id, boxId: source.boxId, label: checkpoint.label });
+      expect(other.checkpoints.packages.read(received.id)).toBeNull();
+
+      const forked = await forkCheckpoint(
+        other,
+        imported.id,
+        { name: "ship-copy", cpus: 0.5, memoryMb: 64, copyHome: false },
+        "tester",
+      );
+      expect(await manifestOf(forked.id)).toBe(before);
+      expect(await stagingVolumes()).toEqual([]);
     },
     LONG,
   );

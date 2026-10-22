@@ -5,7 +5,16 @@ import { DIR_MODE, ensureDataDir, writeFileAtomic } from "../data-dir";
 import { log } from "../lib/logger";
 import { isBoxId } from "../specs/revision";
 import { isCheckpointId, newCheckpointId } from "./id";
+import { PackageStore } from "./packages";
+import { type BoxSchedule, BoxScheduleSchema } from "./schedule";
 import { CHECKPOINT_VERSION, type CheckpointRecord, type PendingRollback, ROLLBACK_VERSION } from "./types";
+
+const DEFAULT_PACKAGE_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+
+export interface CheckpointStoreOptions {
+  /** Largest package the store accepts, in bytes. Exports and uploads above it are refused. */
+  packageMaxBytes?: number;
+}
 
 const isEnoent = (e: unknown): boolean => typeof e === "object" && e !== null && "code" in e && e.code === "ENOENT";
 
@@ -48,8 +57,17 @@ function isRecord(value: unknown): value is CheckpointRecord {
  */
 export class CheckpointStore {
   private tail: Promise<void> = Promise.resolve();
+  /** The packages exported or uploaded and waiting to be downloaded or imported. Shared by every host. */
+  readonly packages: PackageStore;
+  /** Checkpoints whose package is being written. Retention and deletion leave their snapshots alone meanwhile. */
+  readonly exporting = new Set<string>();
 
-  constructor(private readonly dataDir: string) {}
+  constructor(
+    private readonly dataDir: string,
+    options: CheckpointStoreOptions = {},
+  ) {
+    this.packages = new PackageStore(dataDir, options.packageMaxBytes ?? DEFAULT_PACKAGE_MAX_BYTES);
+  }
 
   dir(): string {
     return join(this.dataDir, "checkpoints");
@@ -63,6 +81,67 @@ export class CheckpointStore {
   /** `DATA_DIR/checkpoints/rollbacks`: one file per box whose rollback still waits for a confirm or an undo. */
   rollbackDir(): string {
     return join(this.dir(), "rollbacks");
+  }
+
+  /** `DATA_DIR/checkpoints/schedules`: one file per box that has a checkpoint schedule. */
+  scheduleDir(): string {
+    return join(this.dir(), "schedules");
+  }
+
+  readSchedule(boxId: string): BoxSchedule | null {
+    if (!isBoxId(boxId)) return null;
+    let text: string;
+    try {
+      text = readFileSync(this.schedulePath(boxId), "utf8");
+    } catch (e) {
+      if (isEnoent(e)) return null;
+      throw e;
+    }
+    try {
+      const parsed = BoxScheduleSchema.safeParse(JSON.parse(text));
+      if (parsed.success && parsed.data.boxId === boxId) return parsed.data;
+      log.warn("checkpoint.schedule_unreadable", { box: boxId, error: "not a schedule record" });
+    } catch (e) {
+      log.warn("checkpoint.schedule_unreadable", { box: boxId, error: String(e) });
+    }
+    return null;
+  }
+
+  schedules(): BoxSchedule[] {
+    let names: string[];
+    try {
+      names = readdirSync(this.scheduleDir());
+    } catch (e) {
+      if (isEnoent(e)) return [];
+      throw e;
+    }
+    const found: BoxSchedule[] = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const schedule = this.readSchedule(name.slice(0, -".json".length));
+      if (schedule) found.push(schedule);
+    }
+    return found;
+  }
+
+  writeSchedule(schedule: BoxSchedule): void {
+    ensureDataDir(this.dataDir);
+    mkdirSync(this.scheduleDir(), { recursive: true, mode: DIR_MODE });
+    writeFileAtomic(this.schedulePath(schedule.boxId), `${JSON.stringify(schedule, null, 2)}\n`);
+  }
+
+  removeSchedule(boxId: string): void {
+    if (!isBoxId(boxId)) return;
+    try {
+      unlinkSync(this.schedulePath(boxId));
+    } catch (e) {
+      if (!isEnoent(e)) throw e;
+    }
+  }
+
+  private schedulePath(boxId: string): string {
+    if (!isBoxId(boxId)) throw new Error(`refusing a schedule path for ${boxId}`);
+    return join(this.scheduleDir(), `${boxId}.json`);
   }
 
   pendingRollback(boxId: string): PendingRollback | null {

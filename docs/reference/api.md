@@ -37,20 +37,20 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `files:read` | `files:read` or `exec` |
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
-| `checkpoint:usage`, `host:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+| `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 
 The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` and `secret:use` are token scopes with no operation of their own: `box:ssh` allows the SSH gateway, and `secret:use` allows a create or rebuild that refers to a secret.
 
 ## Requests
 
-- Send JSON bodies, and set `Content-Type: application/json` on every write. A write with another content type gets `415`. A write with neither a body nor a `Content-Type` is accepted.
+- Send JSON bodies, and set `Content-Type: application/json` on every write. A write with another content type gets `415`. A write with neither a body nor a `Content-Type` is accepted. The one exception is the package upload, `POST /api/packages`, which takes the raw bytes of a `.mbckpt` file as `application/octet-stream`.
 - Cross-site browser requests that upgrade a WebSocket, change state through the API, or read the event or box log streams are refused with `403`. See [Security](../admin/security.md).
 - A request may send an `X-Minibox-Run` header that names the client session it belongs to. The audit events of one session share this value. It takes 1 to 64 letters, digits, dots, colons, underscores or hyphens, and starts with a letter or digit. Any other value gets `400`.
 - Some writes need the box's current revision. Send it in the `If-Match` header. A missing header gets `428`, a stale revision gets `412`, and a malformed value gets `400`. The box's `revision` field shows the current value.
 
 ## Long-running operations
 
-Some operations take a while, such as template builds, checkpoints, forks, rollbacks and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
+Some operations take a while, such as template builds, checkpoints, exports, imports, forks, rollbacks and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
 
 - `GET /api/tasks/{id}` shows the task, including its status and result.
 - `GET /api/tasks/{id}/events` streams its progress as server-sent events. It is not in the OpenAPI document.
@@ -233,6 +233,13 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/boxes/{id}/rollback` | Roll a box back to one of its checkpoints |
 | `POST` | `/api/boxes/{id}/rollback/confirm` | Confirm a rollback: delete the volumes it replaced |
 | `POST` | `/api/boxes/{id}/rollback/undo` | Undo a rollback: mount the volumes it replaced again |
+| `POST` | `/api/checkpoints/{id}/export` | Export a checkpoint as a sealed package `{ "passphrase" }`. Returns `202`; the task result holds the package. Owner only |
+| `POST` | `/api/packages` | Upload a `.mbckpt` package as raw `application/octet-stream`. Returns `201` with the package. Owner only. Not in the OpenAPI document |
+| `GET` | `/api/packages/{id}/download` | Download a package as `<id>.mbckpt`. A package expires 24 hours after its export. Owner only. Not in the OpenAPI document |
+| `POST` | `/api/packages/{id}/import` | Import an uploaded package as a checkpoint `{ "passphrase", "host"? }`. `host` defaults to `local`. Returns `202`; the task result holds the checkpoint. Owner only |
+| `GET` | `/api/boxes/{id}/checkpoint-schedule` | Read a box's checkpoint schedule, with its next and last run. `null` when none is set. Owner only |
+| `PUT` | `/api/boxes/{id}/checkpoint-schedule` | Set a schedule `{ "everyHours" }` or `{ "at": "HH:MM" }`, not both. Replaces any schedule the box has. Owner only |
+| `DELETE` | `/api/boxes/{id}/checkpoint-schedule` | Remove a box's schedule. Checkpoints already taken are kept. Owner only |
 
 ### templates
 

@@ -60,6 +60,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 | `CHECKPOINT_KEEP_LAST` | `20` | Automatic checkpoints kept for each box, newest first. A whole number from 1 to 10000. Manual and pinned checkpoints are never removed. |
 | `CHECKPOINT_KEEP_DAYS` | `30` | Automatic checkpoints older than this many days are removed. A whole number from 0 to 3650. `0` keeps them whatever their age. |
 | `CHECKPOINT_CAPACITY_MB` | `0` | The size limit of the checkpoint repository, in MB. A whole number from 0 to 1000000000. `0` sets no limit. At the limit, MiniBox refuses new automatic checkpoints. |
+| `CHECKPOINT_PACKAGE_MAX_MB` | `2048` | The largest checkpoint package, in MB. A whole number from 1 to 65536. An export or upload of a larger package fails. Only the package upload (`POST /api/packages`) accepts a body up to this size plus 1 MB. Every other request, including JSON bodies and previews, stays capped at 128 MB. See [Export and import](../user-guide/checkpoints.md#export-and-import). |
 
 ## Events and logs
 
