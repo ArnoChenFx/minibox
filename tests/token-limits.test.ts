@@ -172,6 +172,7 @@ describe("boxes on every host", () => {
 
     expect((await createBox(token.secret, "near")).status).toBe(201);
     await harness.app.operations.run("box.create", contextOn(edge.host, principal), {
+      host: "edge",
       name: "far",
       cpus: 1,
       memoryMb: 256,
@@ -180,6 +181,7 @@ describe("boxes on every host", () => {
 
     const error = await rejectionOf(
       harness.app.operations.run("box.create", contextOn(edge.host, principal), {
+        host: "edge",
         name: "third",
         cpus: 1,
         memoryMb: 256,
@@ -194,6 +196,7 @@ describe("boxes on every host", () => {
     const principal = principalOf(harness.app, token.secret);
     expect((await createBox(token.secret, "near")).status).toBe(201);
     await harness.app.operations.run("box.create", contextOn(edge.host, principal), {
+      host: "edge",
       name: "far",
       cpus: 1,
       memoryMb: 256,
@@ -213,6 +216,7 @@ describe("boxes on every host", () => {
     const principal = principalOf(harness.app, token.secret);
     expect((await createBox(token.secret, "near")).status).toBe(201);
     await harness.app.operations.run("box.create", contextOn(edge.host, principal), {
+      host: "edge",
       name: "far",
       cpus: 1,
       memoryMb: 256,
@@ -227,7 +231,7 @@ describe("boxes on every host", () => {
     ]);
     expect(edge.host.specs.list().map((spec) => spec.name)).toEqual(["far"]);
     const owner = await call(harness.base, "/api/boxes");
-    expect(owner.json.boxes?.map((box) => box.name)).toEqual([]);
+    expect(owner.json.boxes?.map((box) => box.name)).toEqual(["far"]);
   });
 });
 
