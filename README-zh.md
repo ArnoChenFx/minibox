@@ -1089,4 +1089,4 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 [Apache-2.0](LICENSE) © 2026 Arno Chen
 
-早期 MIT 授权代码的原始声明保留在 [licenses/legacy-MIT.txt](licenses/legacy-MIT.txt) 中。第三方组件继续适用各自的许可证，见 [NOTICE](NOTICE)。
+第三方组件继续适用各自的许可证，见 [NOTICE](NOTICE)。

@@ -3,10 +3,6 @@ Copyright (c) 2026 Arno Chen
 
 MiniBox is distributed under the Apache License, Version 2.0. See LICENSE.
 
-Portions of MiniBox were originally distributed under the MIT License.
-The original copyright and permission notice for that code is preserved in
-licenses/legacy-MIT.txt. Earlier MIT-licensed releases retain their license.
-
 Third-party components retain their own copyright notices and licenses:
 - web/vendor/xterm/LICENSE
 - web/vendor/xterm-addon-fit/LICENSE

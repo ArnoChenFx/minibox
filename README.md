@@ -1102,4 +1102,4 @@ Not on the main path. Each needs a scope review before work starts.
 
 [Apache-2.0](LICENSE) © 2026 Arno Chen
 
-The original notices for earlier MIT-licensed code are preserved in [licenses/legacy-MIT.txt](licenses/legacy-MIT.txt). Third-party components retain their own licenses; see [NOTICE](NOTICE).
+Third-party components retain their own licenses; see [NOTICE](NOTICE).

@@ -30,7 +30,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock tsconfig.json ./
 COPY LICENSE NOTICE ./
-COPY licenses ./licenses
 COPY src ./src
 COPY web ./web
 COPY templates ./templates
