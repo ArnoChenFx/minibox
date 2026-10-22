@@ -220,7 +220,7 @@ flowchart LR
 - **长命令**：`background: true` 返回 `execId`，再用 `exec_get(execId, waitMs)` 长轮询（最长 25000 毫秒，不依赖客户端是否支持流式输出）；`exec_kill` 终止进程树。
 - **自动唤醒**：对已停止的 Box 执行 `exec` 会先启动它。唤醒把期望状态改为 `running`，这是规格的一次修改（见 [5.1](#51-规格与观测状态)），因此 `revision` 加 1（决策 46）。读过 `revision` 的客户端在带 `If-Match` 的修改之前需要重新读取。被并发上限拒绝的调用不会唤醒 Box。已到期 TTL 的 Box 不会被启动，返回 `409 box_ttl_expired`。空闲休眠与 TTL 的规则见 [5.10](#510-实现说明12)。
 - **默认用户**：非 root 用户 `dev`。工作目录默认 `/workspace`。
-- **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。
+- **前台时限**：前台调用的 `timeoutSec` 最多 55 秒，因为服务器的 idle 超时是 60 秒。更长的命令用 `background: true`，`timeoutSec` 最多 3600。超时不是 HTTP 错误：结果里 `timedOut: true`，退出码来自 `inspect`，没有退出码时用 137。停止仍未结束时，前台调用最多再等 2 秒，然后返回 `status: running` 与 `timedOut: true`，停止在后台继续。
 - **并发上限**：后台 exec 每个 Box 最多 8 个，全部 MiniBox 最多 64 个。超限的调用返回 `429`，且不会唤醒已停止的 Box（决策 47）。前台调用不计入。
 - **终止在箱内完成**（决策 44）：非 TTY 的命令经包装 shell 运行，包装 shell 的参数中带有一个随机令牌。终止时，箱内的脚本在 `/proc` 中按命令行找到包装 shell；`/tmp/.minibox-exec-<令牌>.<pid>` 形式的标记文件只提供候选，同样要核对命令行。「标准」与「宽松」档位以 `root` 执行，使 `sudo` 等提权子进程也能被结束；「严格」档位以 exec 的用户执行，该档位无法提权。脚本冻结整棵进程树（沿父进程号收集；包装 shell 自己是会话或进程组首进程时，同一会话与进程组也一并收集），再逐个 `SIGKILL`，并重新扫描直到没有新进程。宿主机从不向 Docker 报告的宿主机 pid 发送信号。Docker 报告 exec 已结束后才算成功；否则返回 `502`，exec 保持 `running`，可以重试。不在保证范围内的进程：调用 `setsid` 换了会话、且父进程已先退出的进程；命令结束后留在箱内的后台进程；处于不可中断睡眠的进程。Box 需要 `/bin/sh`、`cat`、`rm` 与 `sleep`。
 - **权限**：`exec` 意味着可以读写该 Box 上挂载的每一个卷。更细的 `files:*` 范围只对没有 `exec` 的令牌有意义。挂载卷需要对该卷的 `volume:attach`，读写挂载或新建卷还需要 `volume:write`（见 [9.2](#92-必须写进文档与测试的安全约束)）。所有者密钥拥有全部范围；Agent 令牌只拥有创建时授予的范围（#13）。
@@ -457,9 +457,9 @@ pools:
 第一版实现与上文的差异如下。
 
 - **引擎名**：新建卷的 Docker 卷名就是卷 id（`vol_…`），显示名另存。Docker 不能在创建后补标签，所以已有的 `<prefix>-ws-*` 只写入所有权记录，不改名、不补标签、启动时不 chown；创建或重建采用该卷时的属主修正见 §6.2。认领容器也不改名。
-- **chown**：新建的本地卷用基础模板镜像的辅助容器（root，`0:0`）执行 `chown -R 1000:1000`，失败则创建失败。镜像不存在时跳过并记 `volume.chown_skipped`。NFS 与 path 必须先建子目录；chown 尽力而为（`root_squash` 常见，辅助容器打印 `MINIBOX_CHOWN_SKIPPED`）。重建不递归 chown 已有数据。创建或重建到带属主标签的模板时，只把可写 `/workspace` 的根目录改为模板属主（见 §6.2）；其余遗留的 root 属主工作区仍用 README 中的一次性命令。
+- **chown**：新建的本地卷用基础模板镜像的辅助容器（root，`0:0`）执行 `chown -R 1000:1000`，失败则创建失败。镜像不存在时跳过并记 `volume.chown_skipped`。NFS 与 path 必须先建子目录；chown 尽力而为（`root_squash` 常见，辅助容器打印 `MINIBOX_CHOWN_SKIPPED`）。之后以 1000:1000 在目录里创建并删除一个文件（写入检查）；不能写入则创建失败，返回 `bad_gateway`（`storage_unwritable`），子目录按 `VolumeChanges` 删除。重建不递归 chown 已有数据。创建或重建到带属主标签的模板时，只把可写 `/workspace` 的根目录改为模板属主（见 §6.2）；其余遗留的 root 属主工作区仍用 README 中的一次性命令。
 - **重建改名**：挂载变更会重建容器，新容器名为 `<prefix>-<box id>`。失败则回滚名称，并在原先处于运行时重新启动旧容器，不写规格。界面在容器 id 变化后跳到新 id；稳定 box id 在 API 里仍然有效。
-- **探测**：池健康缓存在 `VolumeStore` 的内存里，15 秒。`GET /api/pools` 会探测（`refresh=true` 强制）。列出 Box 不探测 NFS，因此 `storage.status` 在探测前是 `unknown`；界面只把 `unreachable` 标成警告。启动、重启和创建在非本地池不是 `reachable`（含缺少基础镜像时的 `unknown`）时返回 503 `docker_unavailable`，消息键 `storage_unreachable`。本地池只有引擎探测失败才算不可达。协调器捕获该错误，记 `reconcile.start_failed` 后继续。
+- **探测**：池健康缓存在 `VolumeStore` 的内存里，15 秒。`GET /api/pools` 会探测（`refresh=true` 强制）。各池并发探测；单次探测 5 秒内没有应答则报告 `unreachable`（`no answer within 5 s`），探测本身继续运行，结束时更新缓存。同一池的探测仍在进行时，新的探测加入它，不另起一个。列出 Box 不探测 NFS，因此 `storage.status` 在探测前是 `unknown`；界面只把 `unreachable` 标成警告。启动、重启和创建在非本地池不是 `reachable`（含缺少基础镜像时的 `unknown`）时返回 503 `docker_unavailable`，消息键 `storage_unreachable`。本地池只有引擎探测失败才算不可达。协调器捕获该错误，记 `reconcile.start_failed` 后继续。
 - **NFS**：数据卷使用用户选项（通常 `hard`）。探测根卷 `<prefix>-pool-<pool>` 强制 `soft,timeo=10,retrans=1`，并在驱动选项变化时重建，避免死服务器挂起探测。已有数据卷保持创建时的选项。不要把 Docker data-root 搬到网络存储上。
 - **path**：辅助容器以只读方式绑定根目录，并 `test -f` 标记文件（默认 `.minibox-mounted`，只能是单个文件名）。标记不存在则为不可达，不写入、不创建标记。
 - **能力**：由后端计算，用户不能设置。全部可共享；`snapshots`、`quota`、`clone` 为 false；只有 nfs 的 `crossHost` 为 true。无每卷配额。
@@ -831,6 +831,8 @@ Box 详情的「活动」标签页合并：exec 历史、容器事件（启动/�
 - Tailscale 以用户态网络运行：二进制装在工具卷，`minibox-tailscale up` 通过 `setsid` 双重 fork 启动 `tailscaled`，使它不随执行 `up` 的 exec 结束。状态在家目录卷的 `~/.local/state/tailscale` 中，卸载后保留。`tailscaled` 不需要 root，也不需要 `/dev/net/tun`。netstack 把发往本节点 tailnet IP 的入站 TCP/UDP 转发到 `127.0.0.1`；出站只能经 `localhost:1055` 的 SOCKS5/HTTP 代理，没有 ICMP。守护进程不随 Box 启动或唤醒自动拉起，tailnet 流量也不会唤醒休眠中的 Box。
 - 检测：镜像或家目录里已有的工具显示为已安装并带版本，但不计为受管；只有 tools 卷上的入口点才受管。升级与卸载只作用于受管工具，其它情况返回 `tool_unmanaged`。已检测到的工具不会被重复安装。
 - 清单放仓库 `catalog/*.json`，并允许在 `DATA_DIR/tools.d/` 放自定义条目。
+- 自定义条目由所有者管理：`tool.custom.list`、`tool.custom.put` 与 `tool.custom.delete` 是三个 `defineOperation`，REST、CLI、MCP 与控制台共用一份定义。写入前用 `parseCatalogEntry`（与加载器相同的规则）校验，只有通过校验的内容才会写入；文件经临时文件加重命名原子写入，权限 0644，目录不存在时创建。可选的 `stop` 命令与内置条目相同：卸载前在运行中的 Box 内以 `dev` 执行，失败则不卸载。覆盖内置 id 必须显式传 `overrideBuiltin`，控制台在这种情况下给出警告。删除只移除 `tools.d` 中的文件，不卸载共享卷上的工具；没有 `tools.d` 覆盖的内置 id 不能删除。`tool:custom` 不是令牌可以持有的 scope，只有所有者（访问密钥或登录会话）能调用，令牌一律以 `operation_forbidden` 拒绝。`tools.d` 中无法读取的文件使整个目录加载失败（与加载器一致，错误信息给出文件路径）；删除按文件名 `<id>.json` 进行，即使其 JSON 已损坏。
+- 控制台：Box 的「工具」页在所有者会话中显示「自定义工具」按钮，自定义条目带「自定义」标记，并可编辑或删除。页面通过 `GET /api/tools/custom` 探测权限，请求失败（例如 403，或目录中有无法读取的文件）时不显示这些控制。表单里的提示只是便利，服务端的校验为准。
 - 长耗时安装使用异步任务与进度流；兼容代理配置。
 - API Key：短期用环境变量输入，密钥单独存储；长期方向是宿主机侧密钥注入，避免把密钥写进 Box。
 

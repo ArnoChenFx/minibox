@@ -6,6 +6,7 @@
 
 ### 变更
 - 工具目录已不只包含 Agent CLI：控制台、API 说明、MCP 说明与 README 中的「Agent CLI 工具」统一改称「工具」（Tools），接口与 id 不变（#8）。
+- 任务面板更易读：桌面端加宽到约 900px，左侧每项显示操作、工具或模板名、Box 与相对时间，右侧标题显示操作、对象与 Box、状态、开始时间与用时。命令收在可展开的「命令」一行中并可复制；输出为 12px 等宽字体的深色区域，默认不换行、可切换自动换行，运行中自动跟随到底部，手动向上滚动后停止跟随。ANSI 颜色与粗体安全渲染，其他控制序列与 `\r` 重绘不再显示为乱码。任务接口新增 `subject` 字段，记录工具 id、模板或快照名（旧任务为空）。
 
 ### 文档
 - 新增 NAS / NFS 部署指南（[`docs/nas.md`](docs/nas.md)、[`docs/nas-zh.md`](docs/nas-zh.md)）：Linux `/etc/exports` 与群晖、威联通、TrueNAS SCALE、Unraid 的导出设置，squash 与 uid 1000 的映射，「添加 NFS」各字段与等价的 API，推荐挂载选项，服务器不可用时的行为，以及根据实测整理的故障排查表。步骤已在 NFS-Ganesha 上经 Docker 实际验证；README 的存储池一节加了入口（#30）。
@@ -60,6 +61,7 @@
 - 接管锁不约束在箱内以 `dev` 运行的 `exec`：它与 tmux 服务器同属一个用户，可直接调用 `tmux send-keys` 或 `tmux kill-session`。README、README-zh 与 `docs/agents.md` 已说明这一边界（#14）。
 
 ### 新增
+- 自定义工具目录管理：所有者可在 Box 的「工具」页新增、编辑与删除自定义工具（`DATA_DIR/tools.d/<id>.json`，中英文界面）。新操作 `tool.custom.list`、`tool.custom.put`、`tool.custom.delete` 同时提供 REST（`/api/tools/custom`）、CLI（`minibox tool custom`）与 MCP（`list_custom_tools` 等）。条目包含安装、升级、卸载、检测命令与可选的停止命令（卸载前在 Box 内以 `dev` 执行）。保存前按加载器的规则校验，原子写入；覆盖内置 id 需要 `overrideBuiltin`；删除只移除文件，不卸载共享工具卷上的工具。令牌一律不能使用这些操作。
 - 检查点（Refs #11，第一部分）：`POST /api/boxes/:id/checkpoints` 为 Box 拍下检查点，默认包含工作区 `/workspace` 与主目录 `/home/dev` 两个自有卷。`include.system` 可把可写层提交为系统镜像，`include.volumes` 可加入 Box 已挂载的共享卷，缓存与共享工具卷永不包含。`consistency` 取 `live`（默认）、`pause` 或 `stop`。数据保存在 restic 仓库中（镜像 `restic/restic:0.18.1`，仓库卷 `minibox-checkpoints-local`，密码位于 `DATA_DIR/secrets/checkpoint-repo.key`），检查点记录保存在 `DATA_DIR/checkpoints/`。`POST /api/checkpoints/:id/fork` 从检查点派生新 Box，使用新卷，默认不复制主目录（`copyHome: false`）。`POST /api/boxes/:id/rollback` 需要 `If-Match`：数据恢复到新卷，Box 重建到这些卷上，原卷保留；没有 `confirm: true` 时返回 `409 confirmation_required` 与预览。新增 `GET /api/checkpoints`、`GET /api/checkpoints/:id`、`PATCH /api/checkpoints/:id`（置顶与标签）与 `DELETE /api/checkpoints/:id`，置顶的检查点不能删除。已有的系统快照以只读检查点的形式出现，可以派生与删除。令牌使用既有的 scope（`checkpoint:create`、`checkpoint:restore`、`box:write`）与资源范围。拍摄、派生与回滚期间 Box 保持唤醒，空闲休眠不会打断它们；休眠中的 Box 不会因检查点被唤醒。保留策略、回滚的确认与撤销、配额与控制台见下一条。
 - 检查点（#11，第二部分）：回滚改为先确认或撤销。回滚前的安全检查点以停止式拍摄，数据恢复到新卷并重建 Box 后，旧卷保留为待定状态：`POST /api/boxes/:id/rollback/confirm` 确认后删除旧卷，`POST /api/boxes/:id/rollback/undo` 撤销后重新挂载旧卷并删除恢复出的卷（回滚之后写入的数据丢失），`GET /api/boxes/:id/rollback` 查看待定的回滚。保留策略：自动检查点按 Box 保留最新的 `CHECKPOINT_KEEP_LAST` 个（默认 20），并删除超过 `CHECKPOINT_KEEP_DAYS` 天（默认 30）的，手动与置顶的从不自动删除。容量：`CHECKPOINT_CAPACITY_MB`（默认 0，不限）达到 80% 时记录告警并在界面提示，达到上限时拒绝新的自动检查点（回滚也因此被拒绝），手动拍摄仍可进行。令牌配额 `maxCheckpoints` 限制令牌拍摄的手动检查点合计，`sandboxed-agent` 默认 20。启动时解冻因检查点中断而暂停的容器。`GET /api/checkpoints/usage` 仅所有者可读。控制台的 Box 详情新增「检查点」标签页（中英文）。尚未实现：导入导出（含加密导出包）、定时检查点、单文件取回、MCP 工具、独立卷快照、重建前的检查点、按 Box 覆盖的保留策略与回收站。
 - 空闲自动休眠与按需唤醒（#12）：Box 空闲一段时间后自动停止（期望状态 `stopped`，原因 `idle`），容器与工作区卷保留。空闲时长由 `BOX_IDLE_TIMEOUT_SEC` 与每个 Box 的 `idleTimeoutSec` 决定，`0` 关闭休眠。活动包括终端的输入、输出与打开中的连接（无论由 MiniBox 还是箱内其它 tmux 客户端打开，如 `docker exec -it <box> tmux attach`）、exec、会话的启动 / 读取 / 发送、端口预览（含流式响应与预览 WebSocket）、卷上的文件调用（计入挂载该卷的每个 Box），以及箱内异步任务结束时；读取 Box 记录与统计不计入。exec 与 `session_start` 唤醒任何已停止的 Box；终端 WebSocket 与端口预览只唤醒休眠中的 Box，人为停止的 Box 仍返回 `409`。唤醒记入审计 `box.wake`。`ttlSec` 从创建时刻起算，到期后停止 Box（原因 `ttl`），已到期的 Box 不能被启动、重启、重建、唤醒、exec、会话、终端或预览再次启动（`409`，`box_ttl_expired`）。终端与预览会在所有已注册的 Docker 主机上查找 Box。控制台的终端页会说明休眠与 TTL 到期的原因，并可唤醒休眠中的 Box（中英文）。卷上的文件调用计入挂载该卷的每个 Box 的活动，但不启动已停止的 Box（#9、#12）。
@@ -194,6 +196,10 @@
 - 基础模板等标签被重新指向新镜像后，以该标签创建的 Box 重建时，此前即使传入同一个模板名也返回 `rebuild_empty`，容器仍运行旧镜像；确认重建后规格仍记录旧摘要，Box 报告 `digest` 漂移。现在这类 Box 跟随标签：预览列出 `标签 (旧镜像短 ID) → 标签 (新镜像短 ID)` 的模板变更，确认后运行标签当前指向的镜像，`template.digest` 随之更新。快照 Box 与标签已删除的 Box 不跟随。
 - 镜像早于基础模板的 Box（缺少 `tmux`，或没有 `dev` 用户）启动会话时，此前显示引擎的原始错误（`docker_error`，或 `tmux failed: exit status 126`）。现在返回 `409` 与 `session_image_unsupported`，提示重新构建基础模板，并把该 Box 重建到新模板上。会话列表、启动与附着、终端错误帧都走同一映射。
 - 创建 Box，或重建到另一个镜像时，若模板的 `minibox.template.uid` 与 `minibox.template.gid` 标签给出的属主，与可写 `/workspace` 卷根目录的属主不同，启动前把根目录改为模板的属主（只改根目录，不递归）。此前已有内容的卷保留原来的 root 属主，`dev` 无法写入 `/workspace`。重建回滚时恢复原属主。只读挂载与不带属主标签的模板不做改动。
+- NFS 池上的 exec 超时不再等待冻结的挂载：终止命令、终端附着与 SSH 中继改在 `/` 下启动，终止命令的创建与启动限时 5 秒。前台 exec 超时后，若终止超过 2 秒仍未完成，调用返回 `status: running` 与 `timedOut: true`，终止在后台继续重试。此前 `hard` 挂载冻结时，带 `timeoutSec` 的 exec 要等服务器恢复才返回。辅助容器的工作目录也统一为 `/`。
+- 新建卷时，MiniBox 会以 Box 用户（uid 1000）在新的卷目录中试写一次。写不进去时创建失败，返回 `502 bad_gateway`（`storage_unwritable`），并删除刚建的子目录。错误提示说明应设置 `all_squash,anonuid=1000,anongid=1000`（或 `root_squash,anonuid=1000,anongid=1000`），并链接 NAS 指南。此前导出目录映射为 `nobody` 时，卷会静默创建，Box 内却无法写入。
+- NAS 拒绝创建卷目录（`Permission denied` 或 `Operation not permitted`）时，返回 `502 bad_gateway` 与 `storage_permission_denied`，不再是 `400 validation_failed`，错误提示同样指向 NAS 指南。其他准备失败仍是 `400`（`volume_prepare_failed`）。
+- 存储池改为并发探测。一台服务器无应答时，其余池照常报告，整次探测约 5 秒返回。单个池 5 秒内没有完成探测即报告 `unreachable`（`no answer within 5 s`），探测本身继续在后台运行，结束时更新缓存。15 秒缓存不变。此前池逐个探测，排在前面的池一直没有应答时，后面池的结果也要等它返回。
 
 ### 文档
 - README、README-zh 与 `docs/agents.md` 说明会话工具、接管与归还的规则、`SESSION_TAKEOVER_IDLE_SEC`、终端 WebSocket 的参数与控制帧、MCP 工具数（13 个），以及事件表中的活动与审计分档。`docs/design.md` 新增 §10.5 实现说明并更新 §8.9；`docs/runtime.md` 说明 FakeRuntime 对 tmux 的模拟（#14）。

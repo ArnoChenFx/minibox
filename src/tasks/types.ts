@@ -36,6 +36,8 @@ export interface TaskView {
   readonly op: string;
   readonly status: TaskStatus;
   readonly summary: string;
+  /** The name the task acted on, such as a tool id or a snapshot name. Absent when the operation names none. */
+  readonly subject?: string;
   readonly hostId: string;
   /** The principal that started the task. Visibility checks use it, and the public task shape leaves it out. */
   readonly principalId: string;
@@ -91,6 +93,7 @@ export interface TaskPrincipal {
 export interface NewTask {
   readonly op: string;
   readonly summary: string;
+  readonly subject?: string;
   readonly hostId: string;
   readonly target?: TaskTarget;
   readonly principal: TaskPrincipal;

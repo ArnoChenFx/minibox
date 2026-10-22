@@ -315,7 +315,7 @@ describe("terminal session with the console", () => {
     expect(attach.spec).toEqual({
       cmd: ["tmux", "-u", "attach-session", "-t", "=work"],
       env: ["TERM=xterm-256color", "LANG=C.UTF-8"],
-      workingDir: "/workspace",
+      workingDir: "/",
       user: "dev",
       tty: true,
     });

@@ -12365,6 +12365,715 @@
         }
       }
     },
+    "/api/tools/custom": {
+      "get": {
+        "operationId": "tool.custom.list",
+        "tags": [
+          "tools"
+        ],
+        "summary": "List the custom tool entries in DATA_DIR/tools.d",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "agents",
+                              "languages",
+                              "terminal",
+                              "networking"
+                            ]
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "npm",
+                              "pip",
+                              "script"
+                            ]
+                          },
+                          "package": {
+                            "type": "string"
+                          },
+                          "bin": {
+                            "type": "string"
+                          },
+                          "needsRoot": {
+                            "type": "boolean"
+                          },
+                          "estimatedMb": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "requires": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "install": {
+                            "type": "string"
+                          },
+                          "upgrade": {
+                            "type": "string"
+                          },
+                          "uninstall": {
+                            "type": "string"
+                          },
+                          "stop": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "detect": {
+                            "type": "string"
+                          },
+                          "overridesBuiltin": {
+                            "type": "boolean",
+                            "description": "True when the id is a built-in tool and this entry replaces its catalog entry."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "description",
+                          "category",
+                          "source",
+                          "package",
+                          "bin",
+                          "needsRoot",
+                          "estimatedMb",
+                          "requires",
+                          "install",
+                          "upgrade",
+                          "uninstall",
+                          "stop",
+                          "detect",
+                          "overridesBuiltin"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "tools"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "tool:custom",
+        "x-async": false,
+        "x-cli": "tool custom list",
+        "x-mcp": {
+          "name": "list_custom_tools",
+          "toolset": "tools"
+        }
+      }
+    },
+    "/api/tools/custom/{id}": {
+      "put": {
+        "operationId": "tool.custom.put",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Create or replace a custom tool entry in DATA_DIR/tools.d",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 63,
+              "pattern": "^[a-z][a-z0-9-]{0,62}$",
+              "description": "Entry id: a lowercase letter, then lowercase letters, digits or hyphens, at most 63 characters. It is the file name, tools.d/<id>.json."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "description": "Display name, one line, at most 80 characters."
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "description": "Short description, one line, at most 300 characters."
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "agents",
+                      "languages",
+                      "terminal",
+                      "networking"
+                    ],
+                    "description": "UI group: agents, languages, terminal or networking. Defaults to agents."
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "npm",
+                      "pip",
+                      "script"
+                    ],
+                    "description": "Where the package comes from. A script takes no version pin, so only latest installs."
+                  },
+                  "package": {
+                    "type": "string",
+                    "maxLength": 214,
+                    "description": "npm or pip package name, or a short label for a script. Letters, digits, @, dots, underscores, slashes, plus and hyphen."
+                  },
+                  "bin": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+                    "description": "Command name the install puts on the tools volume's bin directory."
+                  },
+                  "needsRoot": {
+                    "type": "boolean",
+                    "description": "True when the install needs root. MiniBox never runs root, so the entry is listed and every write is refused. Defaults to false."
+                  },
+                  "estimatedMb": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 102400,
+                    "description": "Rough installed size in MB for the UI, from 1 to 102400. Defaults to 50."
+                  },
+                  "requires": {
+                    "type": "string",
+                    "maxLength": 600,
+                    "description": "Dependency note shown under the entry, such as Node ≥ 20. At most 600 characters."
+                  },
+                  "install": {
+                    "type": "string",
+                    "maxLength": 16000,
+                    "description": "Install. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 16000 characters."
+                  },
+                  "upgrade": {
+                    "type": "string",
+                    "maxLength": 16000,
+                    "description": "Upgrade. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 16000 characters."
+                  },
+                  "uninstall": {
+                    "type": "string",
+                    "maxLength": 16000,
+                    "description": "Uninstall. Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 16000 characters."
+                  },
+                  "stop": {
+                    "type": "string",
+                    "maxLength": 16000,
+                    "description": "Optional. Runs as the box user (dev) inside the running box before an uninstall, so a daemon the tool started exits before its binary is removed. A failure keeps the tool installed. Placeholders as for install."
+                  },
+                  "detect": {
+                    "type": "string",
+                    "maxLength": 16000,
+                    "description": "Prints one line with the version (or nothing) and exits 0 when the tool is present. It runs in each box's image. Placeholders as for install."
+                  },
+                  "overrideBuiltin": {
+                    "type": "boolean",
+                    "description": "Required to replace a built-in id, because the built-in entry would stop being used. Ignored for any other id. Defaults to false."
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "source",
+                  "package",
+                  "bin",
+                  "install",
+                  "upgrade",
+                  "uninstall",
+                  "detect"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tool": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "agents",
+                            "languages",
+                            "terminal",
+                            "networking"
+                          ]
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "npm",
+                            "pip",
+                            "script"
+                          ]
+                        },
+                        "package": {
+                          "type": "string"
+                        },
+                        "bin": {
+                          "type": "string"
+                        },
+                        "needsRoot": {
+                          "type": "boolean"
+                        },
+                        "estimatedMb": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "requires": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "install": {
+                          "type": "string"
+                        },
+                        "upgrade": {
+                          "type": "string"
+                        },
+                        "uninstall": {
+                          "type": "string"
+                        },
+                        "stop": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "detect": {
+                          "type": "string"
+                        },
+                        "overridesBuiltin": {
+                          "type": "boolean",
+                          "description": "True when the id is a built-in tool and this entry replaces its catalog entry."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "description",
+                        "category",
+                        "source",
+                        "package",
+                        "bin",
+                        "needsRoot",
+                        "estimatedMb",
+                        "requires",
+                        "install",
+                        "upgrade",
+                        "uninstall",
+                        "stop",
+                        "detect",
+                        "overridesBuiltin"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "tool"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "tool:custom",
+        "x-async": false,
+        "x-cli": "tool custom put",
+        "x-mcp": {
+          "name": "put_custom_tool",
+          "toolset": "tools"
+        }
+      },
+      "delete": {
+        "operationId": "tool.custom.delete",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Delete a custom tool entry from tools.d. Nothing is uninstalled from the shared tools volume.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 63,
+              "pattern": "^[a-z][a-z0-9-]{0,62}$",
+              "description": "Entry id: a lowercase letter, then lowercase letters, digits or hyphens, at most 63 characters. It is the file name, tools.d/<id>.json."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "restoredBuiltin": {
+                      "type": "boolean",
+                      "description": "True when a built-in entry with this id is back in the catalog after the delete."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "restoredBuiltin"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "tool:custom",
+        "x-async": false,
+        "x-cli": "tool custom delete",
+        "x-mcp": {
+          "name": "delete_custom_tool",
+          "toolset": "tools"
+        }
+      }
+    },
     "/api/boxes/{id}/sessions": {
       "get": {
         "operationId": "session.list",
@@ -19297,6 +20006,9 @@
                           "summary": {
                             "type": "string"
                           },
+                          "subject": {
+                            "type": "string"
+                          },
                           "hostId": {
                             "type": "string"
                           },
@@ -19525,6 +20237,9 @@
                       ]
                     },
                     "summary": {
+                      "type": "string"
+                    },
+                    "subject": {
                       "type": "string"
                     },
                     "hostId": {
@@ -19758,6 +20473,9 @@
                       ]
                     },
                     "summary": {
+                      "type": "string"
+                    },
+                    "subject": {
                       "type": "string"
                     },
                     "hostId": {

@@ -1117,7 +1117,7 @@
     "path": "/api/tasks",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"tasks\":[{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"truncated\":false,\"logSeq\":2},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:nightly-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3}]}"
+    "body": "{\"tasks\":[{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"subject\":\"base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"truncated\":false,\"logSeq\":2},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:alpha-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3},{\"id\":\"<ulid>\",\"op\":\"snapshot.create\",\"status\":\"succeeded\",\"summary\":\"Snapshot a box: alpha\",\"subject\":\"nightly\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"snapshot\":{\"ref\":\"mbtest-snap:nightly-<stamp>\",\"source\":\"alpha\"}},\"truncated\":false,\"logSeq\":3}]}"
   },
   {
     "step": "read the base build task",
@@ -1125,7 +1125,7 @@
     "path": "/api/tasks/<ulid>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
+    "body": "{\"id\":\"<ulid>\",\"op\":\"template.build\",\"status\":\"succeeded\",\"summary\":\"Build the bundled base template: mbtest-template:base\",\"subject\":\"base\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"mbtest-template:base\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ref\":\"mbtest-template:base\"},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
   },
   {
     "step": "read a missing task",
@@ -1205,7 +1205,7 @@
     "path": "/api/tasks/<ulid>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"id\":\"<ulid>\",\"op\":\"tool.install\",\"status\":\"succeeded\",\"summary\":\"Install a tool into the shared tools volume: toolsbox\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"toolsbox\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"id\":\"claude-code\",\"version\":\"latest\",\"installedVersion\":\"1.0.0\"},\"output\":\"install claude-code@latest\\n$ npm install -g --prefix /opt/minibox/tools @anthropic-ai/claude-code@latest\\nUsing tools volume <volumeId> (read-write)\\nok\\n\",\"truncated\":false,\"logSeq\":4}"
+    "body": "{\"id\":\"<ulid>\",\"op\":\"tool.install\",\"status\":\"succeeded\",\"summary\":\"Install a tool into the shared tools volume: toolsbox\",\"subject\":\"claude-code\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"toolsbox\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"id\":\"claude-code\",\"version\":\"latest\",\"installedVersion\":\"1.0.0\"},\"output\":\"install claude-code@latest\\n$ npm install -g --prefix /opt/minibox/tools @anthropic-ai/claude-code@latest\\nUsing tools volume <volumeId> (read-write)\\nok\\n\",\"truncated\":false,\"logSeq\":4}"
   },
   {
     "step": "upgrade claude-code",
@@ -1798,5 +1798,69 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"bytes\":0,\"limitBytes\":null,\"state\":\"unlimited\",\"policy\":{\"keepLast\":20,\"keepDays\":30}}"
+  },
+  {
+    "step": "list custom tools",
+    "method": "GET",
+    "path": "/api/tools/custom",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tools\":[]}"
+  },
+  {
+    "step": "save a custom tool",
+    "method": "PUT",
+    "path": "/api/tools/custom/parity-tool",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tool\":{\"id\":\"parity-tool\",\"name\":\"Parity tool\",\"description\":\"A custom entry for the transcript.\",\"category\":\"terminal\",\"source\":\"npm\",\"package\":\"parity-tool\",\"bin\":\"parity-tool\",\"needsRoot\":false,\"estimatedMb\":50,\"requires\":\"Node ≥ 20\",\"install\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"upgrade\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"uninstall\":\"npm uninstall -g --prefix {{prefix}} {{package}}\",\"stop\":null,\"detect\":\"command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null\",\"overridesBuiltin\":false}}"
+  },
+  {
+    "step": "list custom tools after a save",
+    "method": "GET",
+    "path": "/api/tools/custom",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tools\":[{\"id\":\"parity-tool\",\"name\":\"Parity tool\",\"description\":\"A custom entry for the transcript.\",\"category\":\"terminal\",\"source\":\"npm\",\"package\":\"parity-tool\",\"bin\":\"parity-tool\",\"needsRoot\":false,\"estimatedMb\":50,\"requires\":\"Node ≥ 20\",\"install\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"upgrade\":\"npm install -g --prefix {{prefix}} {{package_spec}}\",\"uninstall\":\"npm uninstall -g --prefix {{prefix}} {{package}}\",\"stop\":null,\"detect\":\"command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null\",\"overridesBuiltin\":false}]}"
+  },
+  {
+    "step": "save a custom tool with an unknown placeholder",
+    "method": "PUT",
+    "path": "/api/tools/custom/parity-tool",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Install command uses {{home}}, which is not a placeholder. Use prefix, version, package, package_spec or bin.\",\"retryable\":false,\"key\":\"tool_custom_placeholder_invalid\",\"params\":{\"label\":\"toolInstall\",\"placeholder\":\"{{home}}\"},\"details\":{\"field\":\"install\"}}}"
+  },
+  {
+    "step": "save a custom tool over a built-in id",
+    "method": "PUT",
+    "path": "/api/tools/custom/uv",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"“uv” is a built-in tool. Send overrideBuiltin as true to replace its catalog entry, or choose another id.\",\"retryable\":false,\"key\":\"tool_custom_builtin\",\"params\":{\"id\":\"uv\"}}}"
+  },
+  {
+    "step": "delete the custom tool",
+    "method": "DELETE",
+    "path": "/api/tools/custom/parity-tool",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"parity-tool\",\"restoredBuiltin\":false}"
+  },
+  {
+    "step": "delete a missing custom tool",
+    "method": "DELETE",
+    "path": "/api/tools/custom/parity-tool",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"No custom tool “parity-tool” is saved in tools.d.\",\"retryable\":false,\"key\":\"tool_custom_not_found\",\"params\":{\"id\":\"parity-tool\"}}}"
+  },
+  {
+    "step": "delete a built-in tool with no custom entry",
+    "method": "DELETE",
+    "path": "/api/tools/custom/uv",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"“uv” is a built-in tool with no custom entry, so there is nothing to delete.\",\"retryable\":false,\"key\":\"tool_custom_builtin_delete\",\"params\":{\"id\":\"uv\"}}}"
   }
 ]

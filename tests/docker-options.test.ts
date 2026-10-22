@@ -162,6 +162,14 @@ describe("toHelperOptions", () => {
     expect(options.HostConfig).toMatchObject({ CapDrop: ["ALL"], NetworkMode: "none", AutoRemove: true });
   });
 
+  test("a helper starts in / whatever working directory its image sets", () => {
+    const options = toHelperOptions(
+      { image: "img:1", cmd: ["true"], mounts: [{ source: "/srv/pool", target: "/home/dev", kind: "bind" }] },
+      "mbxhlp00000006",
+    );
+    expect(options).toMatchObject({ WorkingDir: "/" });
+  });
+
   test("a tools writer may join the bridge, write the root filesystem, and carry proxy env", () => {
     const options = toHelperOptions(
       {

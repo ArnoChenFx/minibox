@@ -111,7 +111,7 @@ export interface OperationMeta {
   readonly kind: Kind;
   readonly scope: string;
   readonly async: boolean;
-  /** Creating a named object can fail with a 409 when the name is taken. */
+  /** Can fail with a 409: a name that is taken, a busy object, or a change the caller must confirm first. */
   readonly conflicts?: boolean;
   readonly rest: readonly RestBinding[];
   readonly cli?: string;
@@ -158,6 +158,8 @@ export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> ex
    * mutex. The key should use the resolved id, so a name and an id share one lock.
    */
   readonly exclusive?: (ctx: OperationContext, input: z.output<I>, resolved: R) => string | undefined;
+  /** The name an async operation acts on, such as a tool id or a snapshot name, shown in the task list. */
+  readonly subject?: (input: z.output<I>, resolved: R) => string | undefined;
   run(ctx: OperationContext, input: z.output<I>, resolved: R): Promise<z.input<O>>;
 }
 
@@ -179,5 +181,6 @@ export interface Operation extends OperationMeta {
     ref?(input: unknown, resolved: unknown, result: unknown): EventRefs | undefined;
   };
   exclusive?(ctx: OperationContext, input: unknown, resolved: unknown): string | undefined;
+  subject?(input: unknown, resolved: unknown): string | undefined;
   run(ctx: OperationContext, input: unknown, resolved: unknown): Promise<unknown>;
 }

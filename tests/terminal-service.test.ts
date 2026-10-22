@@ -721,7 +721,7 @@ describe("terminal service: attachments", () => {
       cmd: ["tmux", "-u", "attach-session", "-t", "=work"],
       user: "dev",
       tty: true,
-      workingDir: "/workspace",
+      workingDir: "/",
     });
     await viewer.close();
   });

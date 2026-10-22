@@ -34,6 +34,7 @@ export const snapshotCreate = defineOperation({
   cli: "snapshot create",
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }, _input, box) => `snapshot.create:${host.host.id}:${box.id}`,
+  subject: (input) => input.name,
   activity: { action: () => "snapshot.create", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host, task, principal }, input) => ({
