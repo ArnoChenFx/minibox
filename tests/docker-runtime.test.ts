@@ -55,7 +55,7 @@ const host = createLocalHost(cfg, runtime);
 const owned = { [prefix]: "true" };
 const docker = new Docker({ socketPath: SOCKET });
 
-/** CapBnd and NoNewPrivs each profile must produce inside a box (docs/design.md §14). */
+/** CapBnd and NoNewPrivs each profile must produce inside a box. */
 const EXPECTED_STATE: Record<BoxProfile, { capBnd: string; noNewPrivs: string }> = {
   standard: { capBnd: "00000000a00024fb", noNewPrivs: "0" },
   strict: { capBnd: "0000000000000000", noNewPrivs: "1" },

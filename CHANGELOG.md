@@ -28,7 +28,7 @@
 - 环境变量界面对齐：编辑行的「显示」按钮移到值输入框内，普通值与密钥行的四列（名称、类型、值、移除）等宽等高；概览卡片的名称与值垂直居中在同一行；窄屏下每个变量分两行排列。「设置 › 密钥」表格的字号与令牌表一致，替换与删除按钮之间留出间距，窄屏只显示图标；卡片内表格的左右边距与卡片标题对齐。
 
 ### 文档
-- 新增 NAS / NFS 部署指南（[`docs/nas.md`](docs/nas.md)、[`docs/nas-zh.md`](docs/nas-zh.md)）：Linux `/etc/exports` 与群晖、威联通、TrueNAS SCALE、Unraid 的导出设置，squash 与 uid 1000 的映射，「添加 NFS」各字段与等价的 API，推荐挂载选项，服务器不可用时的行为，以及根据实测整理的故障排查表。步骤已在 NFS-Ganesha 上经 Docker 实际验证；README 的存储池一节加了入口（#30）。
+- 新增 NAS / NFS 部署指南（[`docs/nas.md`](docs/user-guide/nfs.md)、[`docs/nas-zh.md`](docs/zh-CN/user-guide/nfs.md)）：Linux `/etc/exports` 与群晖、威联通、TrueNAS SCALE、Unraid 的导出设置，squash 与 uid 1000 的映射，「添加 NFS」各字段与等价的 API，推荐挂载选项，服务器不可用时的行为，以及根据实测整理的故障排查表。步骤已在 NFS-Ganesha 上经 Docker 实际验证；README 的存储池一节加了入口（#30）。
 
 ### 升级必读（经隧道或反向代理访问的部署）
 - 通过隧道或反向代理访问 MiniBox 的部署，升级后请先检查以下设置：

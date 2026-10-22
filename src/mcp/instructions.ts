@@ -1,6 +1,6 @@
 /**
- * Pasteable instructions for an agent working through MiniBox. README.md and docs/agents.md include this text,
- * and the MCP `instructions` field does too, so the three stay the same.
+ * Pasteable instructions for an agent working through MiniBox. docs/user-guide/agents.md includes this text,
+ * and the MCP `instructions` field does too, so the two stay the same.
  */
 export const AGENTS_MD_SNIPPET = `## MiniBox
 
