@@ -32,12 +32,15 @@ test("switches languages, persists the choice, and accepts shareable language UR
   await expect(page.locator("h1")).toContainText("你说了算");
   await expect(page).toHaveURL(/\?lang=zh/);
   await expect(page.locator("#install-command")).toContainText("ghcr.io/arnochenfx/minibox:latest");
+  await expect(page.locator("#product-screenshot")).toHaveAttribute("src", /screenshots\/zh-CN\/overview-light\.png$/);
+  await expect(page.locator("#product-screenshot")).toHaveJSProperty("naturalWidth", 2880);
   await page.reload();
   await expect(page.locator("h1")).toContainText("你的机器");
   await page.goto("./?lang=en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.locator("h1")).toContainText("Your machine");
   await expect(page.locator("#start-title")).toContainText("A small setup");
+  await expect(page.locator("#product-screenshot")).toHaveAttribute("src", /screenshots\/en\/overview-light\.png$/);
 });
 
 test("changes real screenshots with pointer and keyboard and opens a dismissible preview", async ({ page }) => {

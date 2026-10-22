@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### 亮点
+- **声明式模板**：从 Dockerfile、Git 代码仓库、构建上下文压缩包或 `devcontainer.json`（支持子集）构建模板，创建 Box 时可把代码仓库克隆到 `/workspace`。
+- **启动命令**：Box 每次启动时在 `minibox-init` tmux 会话中运行一条命令，不阻塞启动。
+- **事件通知**：把内存耗尽、命令失败、检查点失败、宿主机离线等事件发送到 Webhook、ntfy 主题或 Telegram 聊天。
+
 ### 新增
 - 声明式模板与镜像拉取：可从粘贴的 Dockerfile、Git 代码仓库（可选分支与子目录）、构建上下文压缩包 URL 或仓库中的 `devcontainer.json` 构建模板（`POST /api/templates`，任务），构建失败不留下模板；`POST /api/templates/:ref/rebuild` 按同一来源重新构建，成功后才替换镜像；`POST /api/images/pull` 按需拉取镜像；`POST /api/boxes` 的 `repo` 可在首次创建时把代码仓库克隆到 `/workspace`，私有仓库使用密钥。构建、重新构建与拉取仅限所有者（Refs #15）
 - 启动命令：每个 Box 可设置一条启动命令，每次容器启动后以 Box 用户在 `/workspace` 中用 `bash -lc` 运行，运行在名为 `minibox-init` 的 tmux 会话中。创建、启动、唤醒、重启、重建与检查点恢复时都会运行。命令保存在 Box 规格中，无需重建，Box 停止或休眠时也可修改，改动在下次启动时生效；运行中的 Box 可以即时运行（`PUT` 的 `applyNow`，或 `POST /api/boxes/:id/startup-command/run`）。命令最长 4096 字节，按输入原样保存，不能含控制字符（制表符与换行除外）。接口为 `GET`、`PUT`（需要 `If-Match`，请求体 `{ command, applyNow }`）与 `DELETE /api/boxes/:id/startup-command`，`POST /api/boxes` 与 `POST /api/snapshots/:ref/boxes` 接受 `startupCommand`。MCP 工具 `get_startup_command`、`set_startup_command`、`delete_startup_command` 与 `run_startup_command` 位于 `core` 工具集。命令行为 `minibox box create --startup-command` 与 `minibox box startup-command get|set|rm|run`。读取需要 `secret:use`，设置、删除与运行还需要 `exec`；命令文本不进入审计、活动、事件或 SSE，只显示已更改。`minibox-init` 会话只有有人 attach 时才算活动，手动运行与 `applyNow` 计入活动。模板不携带启动命令，从模板、快照或检查点创建的 Box 不继承源 Box 的命令。
@@ -13,6 +18,8 @@
 
 ### 文档
 - 新增通知指南（`docs/user-guide/notifications.md`，并提供 `docs/zh-CN/` 中文版本），并在设置、配置、API、MCP、数据目录、备份与安全文档中补充通知相关内容。
+- README、项目主页与文档的截图换成中英文、浅色与深色版本，由新脚本 `bun run screenshots` 在隔离的实例中生成（[#125](https://github.com/ArnoChenFx/minibox/issues/125)）。
+- 升级文档新增 1.0 之前的兼容性说明，并汇总 0.4 以来需要手动处理的升级步骤。
 
 ## [0.4.1] - 2026-10-23
 
