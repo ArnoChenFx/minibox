@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { Duplex, PassThrough, Readable } from "node:stream";
 
 import { templateOwnerOf } from "../../src/labels";
@@ -36,6 +38,22 @@ export type Op = keyof Runtime;
 export interface Call {
   op: Op;
   args: unknown[];
+}
+
+/** The regular files a build sends, read from disk: the top-level entries named by `src`, or the Dockerfile alone. */
+function contextFiles(spec: BuildSpec): Map<string, string> {
+  const files = new Map<string, string>();
+  const walk = (abs: string, rel: string) => {
+    const info = statSync(abs, { throwIfNoEntry: false });
+    if (!info) return;
+    if (info.isDirectory()) {
+      for (const name of readdirSync(abs)) walk(join(abs, name), rel === "" ? name : `${rel}/${name}`);
+    } else if (info.isFile()) {
+      files.set(rel, readFileSync(abs, "utf8"));
+    }
+  };
+  for (const entry of spec.src ?? [spec.dockerfile]) walk(join(spec.contextDir, entry), entry);
+  return files;
 }
 
 export interface FakeContainer {
@@ -344,6 +362,10 @@ export class FakeRuntime implements Runtime {
   engine = { cpus: 8, memoryBytes: 16 * 1024 * 1024 * 1024 };
   /** Output returned by the next and later builds. */
   buildLog = "Successfully built fake\n";
+  /** References a pull cannot fetch, as a registry without that repository answers. Others are pulled on demand. */
+  readonly unpullable = new Set<string>();
+  /** Each build context as `buildImage` received it: the files on disk when the call was made, keyed by relative path. */
+  readonly builds: { tag: string; dockerfile: string; args: Record<string, string>; files: Map<string, string> }[] = [];
   /** Bytes reported by `diskUsage`. Tests shrink `freeBytes` to exercise the low-space flag. */
   disk: DiskUsage = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
   /** Answers `runHelper`. The default pretends `df`, `du` and `chown` succeeded. */
@@ -1242,10 +1264,19 @@ export class FakeRuntime implements Runtime {
     return { id: img.id, tags: [...img.tags], labels: { ...img.labels }, env: [...img.env] };
   }
 
-  /** Any reference the registry is assumed to have. A test that needs a missing registry image fails the pull with `fail`. */
-  async pullImage(ref: string): Promise<void> {
+  /**
+   * A missing reference is pulled unless it is in `unpullable`, which is how a test models a repository that does not
+   * exist: the pull fails with `not_found`, as Docker reports it. `onLog` receives a line per layer, then the image is present.
+   */
+  async pullImage(ref: string, opts?: { onLog?(text: string): void }): Promise<void> {
     this.enter("pullImage", [ref]);
-    if (!this.findImage(ref)) this.seedImage(ref);
+    if (this.findImage(ref)) return;
+    if (this.unpullable.has(normalizeRef(ref))) {
+      throw new RuntimeError("not_found", `${ref}: manifest unknown`);
+    }
+    opts?.onLog?.(`${ref}: Pulling fs layer\n`);
+    opts?.onLog?.(`${ref}: Pull complete\n`);
+    this.seedImage(ref);
   }
 
   /** Removes one reference. The image stays as a dangling image while a container still uses it. */
@@ -1296,6 +1327,11 @@ export class FakeRuntime implements Runtime {
 
   async buildImage(spec: BuildSpec): Promise<string> {
     this.enter("buildImage", [spec]);
+    const files = contextFiles(spec);
+    if (!files.has(spec.dockerfile)) {
+      throw new RuntimeError("engine", `failed to read dockerfile: open ${spec.dockerfile}: no such file or directory`);
+    }
+    this.builds.push({ tag: spec.tag, dockerfile: spec.dockerfile, args: { ...spec.args }, files });
     spec.onLog?.(this.buildLog);
     await this.gate("buildImage", [spec]);
     if (spec.signal?.aborted) throw abortError();

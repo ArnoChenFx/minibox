@@ -128,6 +128,7 @@ async function recordScenario(): Promise<Exchange[]> {
     { [keys.template]: "true", [keys.templateName]: "base" },
     "2000-01-01T00:00:00.000Z",
   );
+  runtime.unpullable.add("ghost:1");
 
   const exchanges: Exchange[] = [];
   let alphaRev = 0;
@@ -925,6 +926,35 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("delete a file without confirm", "DELETE", `/api/volumes/${filesId}/files?path=made/deep/moved.txt`);
     await send("delete a file", "DELETE", `/api/volumes/${filesId}/files?path=made/deep/moved.txt&confirm=true`);
     await send("delete the volume root", "DELETE", `/api/volumes/${filesId}/files?path=/&confirm=true`);
+
+    const sampleSource = { kind: "dockerfile", text: "FROM alpine:3.20\n" };
+    const sample = await post("create a template from a Dockerfile", "/api/templates", {
+      name: "sample",
+      source: sampleSource,
+    });
+    await waitTask(base, sample.json);
+    await send("read the template build task", "GET", `/api/tasks/${String(sample.json?.taskId ?? "")}`);
+    await post("create a template without a source", "/api/templates", { name: "nosource" });
+    await post("create a template from a Dockerfile without FROM", "/api/templates", {
+      name: "nofrom",
+      source: { kind: "dockerfile", text: "RUN true\n" },
+    });
+    const sampleRebuilt = await send(
+      "rebuild the sample template",
+      "POST",
+      "/api/templates/mbtest-template%3Asample/rebuild",
+    );
+    await waitTask(base, sampleRebuilt.json);
+    await send("read the rebuild task", "GET", `/api/tasks/${String(sampleRebuilt.json?.taskId ?? "")}`);
+    await send("rebuild a template that was not declared", "POST", "/api/templates/mbtest-template%3Abase/rebuild");
+
+    const pulled = await post("pull an image", "/api/images/pull", { ref: "alpine:3.20" });
+    await waitTask(base, pulled.json);
+    await send("read the pull task", "GET", `/api/tasks/${String(pulled.json?.taskId ?? "")}`);
+    const absent = await post("pull an image the registry does not hold", "/api/images/pull", { ref: "ghost:1" });
+    await waitTask(base, absent.json);
+    await send("read the failed pull task", "GET", `/api/tasks/${String(absent.json?.taskId ?? "")}`);
+    await post("pull an image with a bad reference", "/api/images/pull", { ref: "bad ref" });
   } finally {
     server.stop(true);
     app.throttle.stop();

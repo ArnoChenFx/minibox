@@ -121,6 +121,7 @@ describe("createBox", () => {
   });
 
   test("a missing template image is rejected before any volume or network is created", async () => {
+    runtime.unpullable.add("ghost:latest");
     const error = await rejectionOf(newBox("alpha", { image: "ghost:latest" }));
     expect(error).toMatchObject({ status: 400, key: "template_image_missing", details: { field: "template" } });
     expect(runtime.callsTo("createVolume")).toHaveLength(0);

@@ -22,12 +22,32 @@ Every box runs as the user `dev`, user ID 1000. Inside a box, `sudo` works witho
 
 5. If MiniBox has more than one host, choose the **Host** where the box runs. See [Hosts](hosts.md).
 6. To change the security profile, open **Advanced** and choose a profile. The default is `standard`. The same section takes an optional **Startup command**. See [Startup command](#startup-command).
-7. To install agent CLIs or other tools with the box, tick them under **Tools**. See [Tools](tools.md).
-8. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. See [Volumes and storage](volumes-and-storage.md).
-9. To set environment variables, open **Environment variables**. See [Environment variables and secrets](environment-and-secrets.md).
-10. Click **Create and start**.
+7. To clone a Git repository into `/workspace`, open **Clone a repository into /workspace**. See [Clone a repository](#clone-a-repository).
+8. To install agent CLIs or other tools with the box, tick them under **Tools**. See [Tools](tools.md).
+9. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. See [Volumes and storage](volumes-and-storage.md).
+10. To set environment variables, open **Environment variables**. See [Environment variables and secrets](environment-and-secrets.md).
+11. Click **Create and start**.
 
 The box is listed with its status. Open it to see its details.
+
+## Clone a repository
+
+A new box can start with a copy of a Git repository in `/workspace`. In the create dialog, open **Clone a repository into /workspace** and fill in its fields:
+
+- **Repository URL** is an HTTPS or SSH address, such as `https://github.com/org/app.git` or `git@github.com:org/app.git`. Do not put a token or password in an HTTPS address.
+- **Branch** names a branch or a tag. Leave it empty for the repository's default branch.
+- **Secret for a private repository** names a secret that holds a token for HTTPS, or a base64 deploy key for SSH. Set the secret first. See [Environment variables and secrets](environment-and-secrets.md).
+
+The same fields are the `repo` object in the API, the `--repo`, `--branch` and `--secret` options of `minibox box create`, and the `repo` argument of the `create_box` MCP tool. See the [API](../reference/api.md), [CLI](../reference/cli.md) and [MCP](../reference/mcp.md) references.
+
+The clone runs once, when the box is created:
+
+- It is shallow. The workspace gets the latest commit of the branch, without the history.
+- The box is created first, then the clone runs as its own task, **Clone repository**. Follow it in the **Tasks** panel. If the clone fails, the box stays, and the task shows why.
+- Starting, stopping, restarting and rebuilding a box never clone again.
+- `/workspace` must be writable. The default volumes give a new box an empty workspace. If you choose **Customize** and mount a volume that already has files at `/workspace`, the clone fails.
+
+The secret's value is read for the clone only. It is never written into the box or its image, and the task log shows the clone output with the value replaced. A secret that is not set stops the create before anything is created. For what a clone can reach and how SSH host keys are checked, see [Security](../admin/security.md#template-builds-and-repository-clones).
 
 ## Open a box
 

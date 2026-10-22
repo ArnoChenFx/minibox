@@ -175,6 +175,17 @@ export class Executor {
       hostAdmin: ctx.hostAdmin ?? this.deps.hostAdmin,
       boxViews: ctx.boxViews ?? (() => (hosts ? allBoxViews(hosts.list()) : specViews(ctx.host.specs.list()))),
       allHosts: ctx.allHosts ?? (() => (hosts ? hosts.list() : [ctx.host])),
+      startTask: (child, childInput, childResolved) => {
+        const childStarted = { ts: Date.now(), at: performance.now() };
+        return this.startAsync(
+          child,
+          { ...bound, parentId: id },
+          childInput,
+          childResolved,
+          childStarted,
+          ulid(childStarted.ts),
+        );
+      },
       authorize: (request) =>
         this.deps.hooks.authorize({
           principal: ctx.principal,

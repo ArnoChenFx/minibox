@@ -112,7 +112,9 @@ describe("rebuild preview", () => {
     const same = await rejectionOf(rebuildBox(host, box.id, box.revision, { profile: "standard" }, true));
     expect(same).toMatchObject({ status: 400, key: "rebuild_empty" });
 
-    const missing = await rejectionOf(rebuildBox(host, box.id, box.revision, { template: "missing:1" }, false));
+    const missing = await rejectionOf(
+      rebuildBox(host, box.id, box.revision, { template: "mbtest-template:missing" }, false),
+    );
     expect(missing).toMatchObject({ status: 400, key: "template_image_missing", details: { field: "template" } });
     expect(runtime.callsTo("containerDiff")).toHaveLength(0);
     expect(runtime.containers.size).toBe(1);
@@ -127,6 +129,16 @@ describe("rebuild preview", () => {
 });
 
 describe("rebuild swap", () => {
+  test("a rebuild to an image the registry does not hold is refused on confirm, and the box keeps its container", async () => {
+    const box = await newBox("alpha");
+    runtime.unpullable.add("missing:1");
+    const error = await rejectionOf(rebuildBox(host, box.id, box.revision, { template: "missing:1" }, true));
+    expect(error).toMatchObject({ status: 400, key: "template_image_missing", details: { field: "template" } });
+    expect(runtime.callsTo("pullImage")).toHaveLength(1);
+    expect(runtime.containers.get(box.id)?.name).toBe("mbtest-alpha");
+    expect(host.specs.read(box.boxId)?.revision).toBe(1);
+  });
+
   test("confirm renames to prefix-id, keeps the volume and the stable id, and drops the old container", async () => {
     const box = await newBox("alpha");
     const rebuilt = await rebuildBox(host, box.boxId, box.revision, { profile: "strict" }, true);

@@ -45,20 +45,26 @@ minibox box ls
 
 ### `minibox box create <name> [options]`
 
-Creates a box and starts it, then prints its name. With `--json`, it prints the response instead.
+Creates and starts a box. It starts from the base template unless you choose another.
 
 | Option | Meaning |
 |---|---|
-| `--template REF` | The template to start from. Default: the base template. |
-| `--cpus N` | CPU cores for the box. |
-| `--memory MB` | Memory for the box, in MB. |
+| `--template IMAGE` | The template to start from. Default: the base template. |
+| `--cpus N` | CPU cores for the box |
+| `--memory MB` | Memory limit, in MB |
+| `--profile P` | Security profile: `standard`, `strict` or `relaxed`. Default: the `BOX_PROFILE` setting, `standard` unless changed. |
+| `--repo URL` | Clones a Git repository into `/workspace` on the first create. See [Clone a repository](../user-guide/boxes.md#clone-a-repository). |
+| `--branch BRANCH` | With `--repo`: a branch or tag. Default: the repository's default branch. |
+| `--secret NAME` | With `--repo`: the secret that holds a token or deploy key |
 | `--startup-command TEXT` | A command that runs at every start of the box. See [Startup command](../user-guide/boxes.md#startup-command). |
 | `--startup-command-stdin` | Reads the startup command from standard input. Use it for a command that holds a secret, so the text stays out of the shell history. |
-| `--json` | Prints the response as JSON. |
+| `--no-wait` | Prints the clone's task ID and returns without waiting for the clone |
+| `--json` | Prints the server's JSON response |
 
-`--startup-command` and `--startup-command-stdin` cannot be used together.
+With `--repo`, the command waits for the clone. If the clone fails, the box is kept, and the command reports the reason and exits with `1`. `--startup-command` and `--startup-command-stdin` cannot be used together.
 
 ```bash
+minibox box create my-app --template node-tools --repo https://github.com/example/app.git --branch main --secret GITHUB_TOKEN
 minibox box create my-box --cpus 2 --memory 4096 --startup-command "python3 -m http.server 8000"
 ```
 
@@ -162,6 +168,38 @@ Symbolic links inside an uploaded folder are skipped, with a note on standard er
 minibox upload ./site mybox:/workspace/
 minibox download mybox:/workspace/report.txt
 minibox cp mybox:/workspace/report.txt ./report.txt
+```
+
+## Templates and images
+
+Building a template, rebuilding one and pulling an image are for the owner only. Each one runs as a task. The command waits for the task, prints the task log to standard error, and exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. See [Templates](../user-guide/templates.md).
+
+| Command | Meaning |
+|---|---|
+| `minibox template create <name> (--dockerfile FILE \| --repo URL \| --context URL \| --devcontainer URL) [options]` | Builds a template from one source, and prints its reference, such as `minibox-template:node-tools` |
+| `minibox template rebuild <ref>` | Rebuilds a template from the source it was built from. The tag moves only when the build succeeds. |
+| `minibox image pull <ref>` | Pulls an image from its registry, unless the engine already has it |
+
+The options of `template create`:
+
+| Option | Meaning |
+|---|---|
+| `--dockerfile FILE` | Builds from a Dockerfile. `--dockerfile -` reads it from standard input. |
+| `--repo URL` | Builds from a Git repository, cloned shallowly |
+| `--context URL` | Builds from a `.tar` or `.tar.gz` build context |
+| `--devcontainer URL` | Builds from the `devcontainer.json` of a repository |
+| `--branch BRANCH` | With `--repo` or `--devcontainer`: a branch or tag. Default: the repository's default branch. |
+| `--secret NAME` | With `--repo` or `--devcontainer`: the secret for a private repository |
+| `--subdir DIR` | With `--repo`: the build context inside the repository |
+| `--dockerfile-path PATH` | With `--repo` or `--context`: the Dockerfile, relative to the build context |
+| `--devcontainer-path PATH` | With `--devcontainer`: the `devcontainer.json` inside the repository |
+| `--description TEXT` | A description of up to 200 characters |
+
+```bash
+minibox template create node-tools --dockerfile ./Dockerfile
+minibox template create node-tools --repo https://github.com/example/app.git --branch main --subdir services/api --secret DEPLOY_TOKEN
+minibox template rebuild minibox-template:node-tools
+minibox image pull node:24-bookworm-slim
 ```
 
 ## Custom tools

@@ -14,7 +14,6 @@ import {
   type ContainerInfo,
   type ContainerStats,
   type ContainerUpdate,
-  type ImageDetails,
   isRuntimeError,
   type Runtime,
   RuntimeError,
@@ -34,6 +33,7 @@ import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
 import type { VolumeRecord, VolumeRole } from "../volumes/types";
 import { assertMountAllowed, mountTarget } from "./attachments";
 import { projectBox, unreachableBox } from "./box-view";
+import { ensureImageOn } from "./images";
 import { beginChange } from "./moving";
 import { launchStartup } from "./startup";
 import { desiredToolsOf } from "./tools";
@@ -303,17 +303,6 @@ async function listedStats(host: HostCtx, boxId: string, containerId: string): P
   return host.runtime.containerStats(containerId).catch(() => null);
 }
 
-async function ensureImage(host: HostCtx, image: string): Promise<ImageDetails> {
-  try {
-    return await host.runtime.inspectImage(image);
-  } catch (e) {
-    if (isRuntimeError(e, "not_found")) {
-      throw badRequest(msg("template_image_missing", { image }), { field: "template" });
-    }
-    throw e;
-  }
-}
-
 function assertMountList(mounts: BoxMount[]): void {
   const paths = new Set<string>();
   for (const mount of mounts) {
@@ -470,7 +459,7 @@ async function buildBox(
 
   const image = input.image ?? host.baseTemplateTag;
   const profile = input.profile ?? security.defaultProfile;
-  const details = await ensureImage(host, image);
+  const details = await ensureImageOn(host, image);
   await ensureBoxNetwork(host);
 
   const id = boxIdFor(host, input.id);

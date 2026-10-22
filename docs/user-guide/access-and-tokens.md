@@ -72,9 +72,9 @@ Each preset is a set of these scopes:
 | `volume:write` | Create volumes |
 | `volume:attach` | Mount existing volumes into boxes |
 | `tool:install` | Install, upgrade and remove tools. Save a box as a template, and delete templates. |
-| `secret:use` | Give a box a host secret |
+| `secret:use` | Give a box a host secret, or the secret for a repository clone |
 
-Only the owner can create, change or revoke tokens. A token cannot create other tokens.
+Only the owner can create, change or revoke tokens. A token cannot create other tokens. Building or rebuilding a template, and pulling an image, are for the owner only. No scope allows them.
 
 ### Revoke a token
 

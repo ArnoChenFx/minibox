@@ -47,6 +47,12 @@ export function envRowHtml(row, secrets) {
   </div>`;
 }
 
+/** The options of a secret chooser: an empty first option that means no secret, then each name. */
+export function secretChoicesHtml(names, emptyText) {
+  const choices = (names ?? []).map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+  return `<option value="">${esc(emptyText)}</option>${choices}`;
+}
+
 /** One env row as an element, ready to append to an editor. */
 export function envRow(row, secrets) {
   const template = document.createElement("template");

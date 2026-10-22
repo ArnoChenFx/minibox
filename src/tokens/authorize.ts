@@ -141,6 +141,10 @@ function envOf(value: unknown): readonly BoxEnv[] {
  */
 function assertSecretUse(principal: TokenPrincipal, env: readonly BoxEnv[]): void {
   if (!env.some((entry) => entry.secretRef !== undefined)) return;
+  requireSecretUse(principal);
+}
+
+function requireSecretUse(principal: TokenPrincipal): void {
   if (!principal.grants.scopes.includes("secret:use")) throw refusal("secret_reference_forbidden");
 }
 
@@ -165,6 +169,11 @@ const sessionRule: Rule = async (check) => {
     throw refusal("startup_session_forbidden");
   }
 };
+
+/** A clone that reads a secret writes that secret into the box's workspace, so it needs the scope an env secret needs. */
+function assertRepoSecretUse(principal: TokenPrincipal, repo: unknown): void {
+  if (typeof repo === "object" && repo !== null && "secretRef" in repo && repo.secretRef) requireSecretUse(principal);
+}
 
 /** A checkpoint is visible as a snapshot is: to its creator, and to a token that sees the box it was taken from. */
 function assertCheckpointVisible(principal: TokenPrincipal, host: HostCtx, checkpoint: CheckpointView): void {
@@ -343,6 +352,7 @@ const createRule: Rule = async ({ principal, host, input }) => {
   assertTtl(principal, input.ttlSec as number | null | undefined);
   assertSecretUse(principal, envOf(input.env));
   assertStartupUse(principal, input.startupCommand);
+  assertRepoSecretUse(principal, input.repo);
 };
 
 const forkRule: Rule = async ({ principal, host, input }) => {

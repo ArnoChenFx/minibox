@@ -73,6 +73,7 @@ function handlerFor(operation: Operation, binding: RestBinding): Handler {
     if (binding.raw || binding.stream) server.timeout(req, 0);
     const body = binding.body ? asObject(await readJson(req)) : {};
     const raw = binding.raw ? rawBodyOf(req) : undefined;
+    if (operation.longSync) server.timeout(req, 0);
     // The source comes from how the request signed in, never from a header: a browser session is the console (`ui`).
     const source: Source = caller?.sessionId ? "ui" : "rest";
     const result = await app.operations.run(

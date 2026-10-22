@@ -2662,5 +2662,101 @@
     "status": 400,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The volume root cannot be moved or deleted.\",\"retryable\":false,\"key\":\"file_root_protected\",\"details\":{\"field\":\"path\"}}}"
+  },
+  {
+    "step": "create a template from a Dockerfile",
+    "method": "POST",
+    "path": "/api/templates",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the template build task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"template.create\",\"status\":\"succeeded\",\"summary\":\"Build a template from a Dockerfile, a repository, a build context or a devcontainer.json: sample\",\"subject\":\"sample\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"sample\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"template\":{\"ref\":\"mbtest-template:sample\",\"name\":\"sample\"}},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
+  },
+  {
+    "step": "create a template without a source",
+    "method": "POST",
+    "path": "/api/templates",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Choose where the template comes from: a Dockerfile, a Git repository, a build context URL or a devcontainer.json.\",\"retryable\":false,\"key\":\"template_source_required\",\"details\":{\"field\":\"source\"}}}"
+  },
+  {
+    "step": "create a template from a Dockerfile without FROM",
+    "method": "POST",
+    "path": "/api/templates",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The Dockerfile must be at most 64 KB, contain no NUL bytes, and include a FROM instruction.\",\"retryable\":false,\"key\":\"dockerfile_invalid\",\"details\":{\"field\":\"source\"}}}"
+  },
+  {
+    "step": "rebuild the sample template",
+    "method": "POST",
+    "path": "/api/templates/mbtest-template%3Asample/rebuild",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the rebuild task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"template.rebuild\",\"status\":\"succeeded\",\"summary\":\"Rebuild a template from the source it was built from: sample\",\"subject\":\"sample\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"sample\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"template\":{\"ref\":\"mbtest-template:sample\",\"name\":\"sample\"}},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
+  },
+  {
+    "step": "rebuild a template that was not declared",
+    "method": "POST",
+    "path": "/api/templates/mbtest-template%3Abase/rebuild",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Template base was not built from a declared source, so it cannot be rebuilt. Build a template from a Dockerfile, a repository, a build context or a devcontainer.json instead.\",\"retryable\":false,\"key\":\"template_not_declared\",\"params\":{\"name\":\"base\"}}}"
+  },
+  {
+    "step": "pull an image",
+    "method": "POST",
+    "path": "/api/images/pull",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the pull task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"image.pull\",\"status\":\"succeeded\",\"summary\":\"Pull an image from its registry: alpine:3.20\",\"subject\":\"alpine:3.20\",\"hostId\":\"local\",\"target\":{\"kind\":\"image\",\"name\":\"alpine:3.20\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"image\":{\"ref\":\"alpine:3.20\",\"id\":\"sha256:<image>\"}},\"output\":\"alpine:3.20: Pulling fs layer\\nalpine:3.20: Pull complete\\n\",\"truncated\":false,\"logSeq\":3}"
+  },
+  {
+    "step": "pull an image the registry does not hold",
+    "method": "POST",
+    "path": "/api/images/pull",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the failed pull task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"image.pull\",\"status\":\"failed\",\"summary\":\"Pull an image from its registry: ghost:1\",\"subject\":\"ghost:1\",\"hostId\":\"local\",\"target\":{\"kind\":\"image\",\"name\":\"ghost:1\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"error\":{\"code\":\"validation_failed\",\"message\":\"Image ghost:1 was not found in its registry. Check the name and tag, then try again.\",\"status\":400,\"key\":\"image_not_found\",\"params\":{\"image\":\"ghost:1\"}},\"output\":\"\",\"truncated\":false,\"logSeq\":1}"
+  },
+  {
+    "step": "pull an image with a bad reference",
+    "method": "POST",
+    "path": "/api/images/pull",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"retryable\":false,\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"ref\"}}}"
   }
 ]

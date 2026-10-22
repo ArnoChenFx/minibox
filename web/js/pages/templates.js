@@ -1,6 +1,7 @@
 import { openCreateBox } from "../components/create-box.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks, trackTask } from "../components/tasks.js";
+import { openNewTemplate } from "../components/template-dialog.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, dateTime, shortId } from "../lib/format.js";
@@ -9,7 +10,11 @@ import { icon } from "../lib/icons.js";
 import { filterBySearch } from "../lib/search.js";
 import { invalidateTemplates } from "../lib/store.js";
 import { templateSearchFields } from "../lib/template-list.js";
+import { imageRefOk, KIND_LABEL_KEYS } from "../lib/template-source.js";
 import { confirmDialog, emptyState, nameError, promptDialog, toast, toastError, withBusy } from "../lib/ui.js";
+
+/** Operations whose success changes the template list. */
+const TEMPLATE_TASK_OPS = new Set(["template.build", "template.save", "template.create", "template.rebuild"]);
 
 function legacyRow(s) {
   return `<tr>
@@ -38,7 +43,9 @@ export function render(view, focusName = "") {
       <div><h1>${t("nav.templates")}</h1><p>${t("tp.subtitle")}</p></div>
       <div class="page-actions">
         ${searchBoxHtml({ id: "tpSearch", placeholder: t("tp.searchPlaceholder"), label: t("tp.search") })}
+        <button class="btn" data-action="pull">${icon("download")}${t("tp.pull")}</button>
         <button class="btn" data-action="build">${icon("hammer")}${t("tp.build")}</button>
+        <button class="btn btn-primary" data-action="new-template">${icon("plus")}${t("tp.new")}</button>
       </div>
     </div>
     <div class="grid grid-fit" id="tpGrid">${'<div class="card"><div class="skeleton sk-block"></div></div>'.repeat(3)}</div>
@@ -90,11 +97,15 @@ export function render(view, focusName = "") {
           <h3 style="font-size:15px">${esc(tp.name)}</h3>
           <p class="muted" style="font-size:13px;margin-top:4px;min-height:40px">${esc(tp.description ?? t("tp.noDesc"))}</p>
           ${tp.source ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.fromBox", { name: tp.source }))}</div>` : ""}
+          ${tp.buildKind ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.builtFrom", { kind: t(KIND_LABEL_KEYS[tp.buildKind]) }))}</div>` : ""}
           <dl class="kv" style="margin-top:14px;font-size:12.5px"><dt>${t("tp.image")}</dt><dd class="mono">${esc(tp.ref)}</dd><dt>${t("tp.size")}</dt><dd>${bytes(tp.size)}</dd><dt>${t("tp.created")}</dt><dd>${dateTime(tp.createdAt)}</dd></dl>
         </div>
         <div class="dialog-foot" style="justify-content:space-between;background:transparent">
           <button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>
-          <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>
+          <div class="actions">
+            ${tp.buildKind ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
+            <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>
+          </div>
         </div></div>`,
       )
       .join("");
@@ -147,6 +158,46 @@ export function render(view, focusName = "") {
   delegate(view, {
     use: (b) => openCreateBox({ template: b.dataset.ref, onCreated: (b) => (location.hash = `#/boxes/${b.id}`) }),
     "clear-search": () => search.clear(),
+    "new-template": () => openNewTemplate({ onCreated: () => load() }),
+    pull: async () => {
+      const ref = await promptDialog({
+        title: t("tp.pullTitle"),
+        description: t("tp.pullDesc"),
+        iconName: "download",
+        label: t("tp.pullLabel"),
+        placeholder: "node:24-bookworm-slim",
+        help: t("tp.pullHelp"),
+        confirmText: t("tp.pull"),
+        validate: (v) => (imageRefOk(v) ? "" : t("tp.errImageRef")),
+      });
+      if (!ref) return;
+      try {
+        const r = await api("/api/images/pull", { method: "POST", body: { ref } });
+        toast(t("tp.pullStarted"), { type: "info", message: ref });
+        trackTask(r.taskId);
+      } catch (e) {
+        if (e.details?.taskId) {
+          toast(t("task.alreadyRunning"), { type: "info" });
+          openTasks(e.details.taskId);
+          return;
+        }
+        toastError(t("tp.pullFailed"), e);
+      }
+    },
+    rebuild: async (b) => {
+      try {
+        const r = await withBusy(b, () => api(`/api/templates/${enc(b.dataset.ref)}/rebuild`, { method: "POST" }));
+        toast(t("tp.rebuildStarted"), { type: "info", message: t("tp.rebuildStartedText") });
+        trackTask(r.taskId);
+      } catch (e) {
+        if (e.details?.taskId) {
+          toast(t("task.alreadyRunning"), { type: "info" });
+          openTasks(e.details.taskId);
+          return;
+        }
+        toastError(t("tp.rebuildFailed"), e);
+      }
+    },
     build: async (btn) => {
       try {
         const r = await withBusy(btn, () => api("/api/templates/base/build", { method: "POST" }));
@@ -225,7 +276,7 @@ export function render(view, focusName = "") {
   });
 
   const onTask = (event) => {
-    if (event.detail?.op === "template.build" || event.detail?.op === "template.save") load();
+    if (TEMPLATE_TASK_OPS.has(event.detail?.op)) load();
   };
   window.addEventListener("minibox-task-done", onTask);
   load();

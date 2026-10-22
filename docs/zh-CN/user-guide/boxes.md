@@ -22,12 +22,32 @@ Box 是一个隔离的 Docker 容器，拥有独立的文件和进程。你的�
 
 5. 若 MiniBox 有多台宿主机，选择 Box 运行的**宿主机**。见 [宿主机](hosts.md)。
 6. 要更改安全档位，打开**高级**并选择档位。默认为 `standard`。同一区域还可以设置可选的**启动命令**。见 [启动命令](#启动命令)。
-7. 要在 Box 中安装 Agent CLI 或其他工具，在**工具**下勾选。见 [工具](tools.md)。
-8. 打开**卷：默认**，然后选择**默认**以挂载 workspace、home、cache 和 tools 卷，或选择**自定义**自行挑选卷。见 [卷与存储](volumes-and-storage.md)。
-9. 要设置环境变量，打开**环境变量**。见 [环境变量与密钥](environment-and-secrets.md)。
-10. 点击**创建并启动**。
+7. 要把 Git 代码仓库克隆进 `/workspace`，打开**克隆代码仓库到 /workspace**。见[克隆代码仓库](#克隆代码仓库)。
+8. 要在 Box 中安装 Agent CLI 或其他工具，在**工具**下勾选。见 [工具](tools.md)。
+9. 打开**卷：默认**，然后选择**默认**以挂载 workspace、home、cache 和 tools 卷，或选择**自定义**自行挑选卷。见 [卷与存储](volumes-and-storage.md)。
+10. 要设置环境变量，打开**环境变量**。见 [环境变量与密钥](environment-and-secrets.md)。
+11. 点击**创建并启动**。
 
 Box 会出现在列表中并显示状态。打开它可查看详情。
+
+## 克隆代码仓库
+
+新 Box 可以在 `/workspace` 中以一份 Git 代码仓库作为起点。在创建对话框中打开**克隆代码仓库到 /workspace**，并填写以下字段：
+
+- **代码仓库地址** 是 HTTPS 或 SSH 地址，例如 `https://github.com/org/app.git` 或 `git@github.com:org/app.git`。不要把令牌或密码写进 HTTPS 地址。
+- **分支** 可以是分支或标签名。留空则使用默认分支。
+- **私有仓库的密钥** 指向一个密钥，其中保存 HTTPS 使用的令牌，或 SSH 使用的 base64 部署密钥。请先设置该密钥。参见[环境变量与密钥](environment-and-secrets.md)。
+
+同样的字段在 API 中是 `repo` 对象；在命令行中是 `minibox box create` 的 `--repo`、`--branch` 和 `--secret` 选项；在 MCP 中是 `create_box` 工具的 `repo` 参数。参见 [REST API（英文）](../../reference/api.md)、[CLI 参考（英文）](../../reference/cli.md) 和 [MCP 工具（英文）](../../reference/mcp.md)。
+
+克隆只在创建 Box 时运行一次：
+
+- 克隆为浅克隆。工作区只获得分支的最新提交，不含历史。
+- 先创建 Box，然后克隆作为独立任务**克隆代码仓库**运行。在**任务**面板中查看进度。若克隆失败，Box 会保留，任务会说明原因。
+- 启动、停止、重启和重建 Box 都不会再次克隆。
+- `/workspace` 必须可写。默认卷会为新 Box 提供空的工作区。若你选择**自定义**，并把一个已有文件的卷挂载到 `/workspace`，克隆会失败。
+
+密钥的值只在克隆时读取。它永远不会写入 Box 或其镜像，任务日志中的克隆输出会把该值替换掉。若所选密钥未设置，创建会在任何内容生成之前被拒绝。关于克隆能访问的范围以及 SSH 主机密钥的校验方式，参见[安全（英文）](../../admin/security.md#template-builds-and-repository-clones)。
 
 ## 打开 Box
 

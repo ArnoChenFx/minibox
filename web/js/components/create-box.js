@@ -8,9 +8,10 @@ import { icon } from "../lib/icons.js";
 import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoices } from "../lib/mounts.js";
 import { STARTUP_COMMAND_MAX_BYTES, startupProblem, startupProblemKey } from "../lib/startup.js";
 import { getTemplates, hostNow, refreshHost } from "../lib/store.js";
+import { cloneRepo } from "../lib/template-source.js";
 import { filterTools, groupTools } from "../lib/tool-list.js";
 import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
-import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
+import { bindEnvRows, envProblemText, envRow, readEnvRows, secretChoicesHtml, secretNames } from "./env-editor.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "./search-box.js";
 import { openTasks } from "./tasks.js";
@@ -181,6 +182,25 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           <textarea class="textarea command-input" id="cbStartup" rows="2" spellcheck="false" placeholder="${esc(t("cb.startupPlaceholder"))}"></textarea>
           <div class="help">${t("cb.startupHelp")}</div>
           <div class="error-text" id="cbStartupErr"></div></div>`;
+  const repoSection = snapshot
+    ? ""
+    : `<details class="advanced" id="cbRepo">
+        <summary id="cbRepoSummary">${t("cb.repoSummary")}</summary>
+        <div class="stack">
+          <div class="help">${t("cb.repoHelp")}</div>
+          <div class="field"><label class="label" for="cbRepoUrl">${t("src.url")}</label>
+            <input class="input mono" id="cbRepoUrl" placeholder="https://github.com/org/app.git" autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <div class="help">${t("src.urlHelp")}</div></div>
+          <div class="grid grid-2 form-grid">
+            <div class="field"><label class="label" for="cbRepoBranch">${t("src.branch")}</label>
+              <input class="input mono" id="cbRepoBranch" placeholder="${esc(t("src.branchPlaceholder"))}" autocomplete="off" autocapitalize="off" spellcheck="false" /></div>
+            <div class="field"><label class="label" for="cbRepoSecret">${t("src.secret")}</label>
+              <select class="select" id="cbRepoSecret">${secretChoicesHtml(secrets, t("src.secretNone"))}</select>
+              <div class="help">${secrets === null ? t("env.secretsUnavailable") : t("src.secretHelp")}</div></div>
+          </div>
+          <div class="error-text" id="cbRepoErr"></div>
+        </div>
+      </details>`;
 
   const { root, close } = openDialog({
     title: snapshot ? t("cb.titleSnapshot") : t("cb.title"),
@@ -216,7 +236,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           ).join("")}</div>
           <div class="help">${t("cb.profileHelp")}</div></div>
         ${startupSection}
-      </details>${toolsSection}${volumesSection}${envSection}`,
+      </details>${repoSection}${toolsSection}${volumesSection}${envSection}`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
 
@@ -336,6 +356,11 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbStartupErr").textContent = "";
   });
 
+  const showRepoError = (message) => {
+    q("#cbRepo").open = true;
+    q("#cbRepoErr").textContent = message;
+  };
+
   const refreshMounts = () => {
     if (!choices) return;
     const rows = readMountRows(q("#cbMountRows"));
@@ -447,6 +472,11 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       refreshEnv();
       rows.lastElementChild.querySelector("[data-env-name]").focus();
     });
+    const clearRepoError = () => {
+      q("#cbRepoErr").textContent = "";
+    };
+    q("#cbRepo").addEventListener("input", clearRepoError);
+    q("#cbRepo").addEventListener("change", clearRepoError);
   }
 
   const submit = async () => {
@@ -487,6 +517,19 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         return;
       }
     }
+    let repo = null;
+    if (!snapshot) {
+      const checked = cloneRepo({
+        url: q("#cbRepoUrl").value,
+        branch: q("#cbRepoBranch").value,
+        secretRef: q("#cbRepoSecret").value,
+      });
+      if ("problem" in checked) {
+        showRepoError(t(checked.key));
+        return;
+      }
+      repo = checked.repo;
+    }
     const btn = q("#cbSubmit");
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
@@ -497,6 +540,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       if (mounts) body.mounts = mounts;
       if (env?.length) body.env = env;
       if (startupCommand !== undefined) body.startupCommand = startupCommand;
+      if (repo) body.repo = repo;
       const selectedToolIds = [...selectedTools];
       if (selectedToolIds.length) body.tools = selectedToolIds;
       const res = snapshot
@@ -514,6 +558,10 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           toast(t("cb.toolsInstallLater"), { message: installErr.message });
         }
       }
+      if (res.clone?.taskId) {
+        openTasks(res.clone.taskId);
+        toast(t("cb.cloning"), { message: t("cb.cloningText") });
+      }
       onCreated?.(res.box);
     } catch (e) {
       btn.disabled = false;
@@ -524,6 +572,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         showEnvError(`${e.message}${e.hint ? ` ${e.hint}` : ""}`);
       } else if (e.details?.field === "startupCommand" || e.key === "startup_command_forbidden") {
         showStartupError(e.message);
+      } else if (!snapshot && e.details?.field === "repo") {
+        showRepoError(`${e.message}${e.hint ? ` ${e.hint}` : ""}`);
       } else if (e.details?.field === "name") {
         q("#cbName").classList.add("invalid");
         q("#cbNameErr").textContent = e.message;

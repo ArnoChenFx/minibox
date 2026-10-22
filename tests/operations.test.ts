@@ -151,8 +151,11 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.save": (id) => ({ id, name: "silver" }),
+  "template.create": () => ({ name: "sample", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" } }),
+  "template.rebuild": () => ({ ref: "mbtest-template:sample" }),
   "template.build": () => ({}),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
+  "image.pull": () => ({ ref: "alpine:3.20" }),
   "task.list": () => ({}),
   "task.get": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "task.cancel": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
@@ -252,6 +255,10 @@ async function preparedInput(
   operation: Operation,
   boxId: string,
 ): Promise<{ input: unknown; release?: () => void; body?: RawBody }> {
+  if (operation.name === "template.rebuild") {
+    await app.operations.run("template.create", ctx, SAMPLES["template.create"]?.(boxId, app));
+    await app.tasks.drain();
+  }
   if (operation.name === "task.get") {
     const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
     await app.tasks.drain();
@@ -959,11 +966,14 @@ describe("projections", () => {
         .map((tool) => tool.name)
         .toSorted(),
     ).toEqual([
+      "create_template",
       "delete_custom_tool",
       "install_tool",
       "list_custom_tools",
       "list_tools",
+      "pull_image",
       "put_custom_tool",
+      "rebuild_template",
       "reconcile_tools",
       "save_template",
       "uninstall_tool",
@@ -1001,6 +1011,7 @@ describe("projections", () => {
       "host",
       "tools",
       "startupCommand",
+      "repo",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });
