@@ -1,6 +1,7 @@
 import { api, enc } from "../lib/api.js";
 import { $$, esc } from "../lib/dom.js";
 import { bytes, gbOrMb } from "../lib/format.js";
+import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoices } from "../lib/mounts.js";
@@ -115,6 +116,18 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           .join("")}</div>`
       : `<div class="callout warn">${icon("alert")}<span>${t("cb.noTemplates")}</span></div>`;
 
+  const initialHost = hostFilter() || "local";
+  const hostField =
+    !snapshot && multiHost()
+      ? `<div class="field"><label class="label" for="cbHost">${t("cb.host")}</label>
+          <select class="select" id="cbHost">${hostsNow()
+            .map(
+              (h) => `<option value="${esc(h.id)}"${h.id === initialHost ? " selected" : ""}>${esc(h.name)}</option>`,
+            )
+            .join("")}</select>
+          <div class="help">${t("cb.hostHelp")}</div></div>`
+      : "";
+
   const volumesSection = snapshot
     ? ""
     : `<details class="advanced" id="cbVolumes">
@@ -146,6 +159,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         <input class="input" id="cbName" placeholder="${t("cb.namePlaceholder")}" autocomplete="off" autofocus />
         <div class="help">${t("cb.nameHelp")}</div>
         <div class="error-text" id="cbNameErr"></div></div>
+      ${hostField}
       <div class="field"><span class="label">${snapshot ? t("cb.sourceSnapshot") : t("cb.template")}</span>${templatePicker}</div>
       <div class="field"><span class="label">${t("cb.size")} <span class="subtle">${t("cb.hostCap", { cores: maxCpu, mem: gbOrMb(maxMem * 1024 * 1024) })}</span></span>
         <div class="segmented" id="cbPresets">${PRESETS.map(
@@ -378,6 +392,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
     try {
       const body = { name, cpus: state.cpus, memoryMb: state.memoryMb, profile: state.profile };
+      const hostPick = q("#cbHost");
+      if (hostPick) body.host = hostPick.value;
       if (mounts) body.mounts = mounts;
       const selectedToolIds = [...selectedTools];
       if (selectedToolIds.length) body.tools = selectedToolIds;

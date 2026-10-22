@@ -3,6 +3,8 @@ import { api } from "../lib/api.js";
 import { applyBoxFrame, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, duration, gbOrMb, mem, pct, relTime } from "../lib/format.js";
+import { boxesOnHost, HOST_BADGE, isUnreachable } from "../lib/host-list.js";
+import { hostFilter, hostName, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
@@ -44,6 +46,7 @@ export function render(view) {
       <div><h1>${t("nav.overview")}</h1><p id="ovSub">${t("ov.subtitle")}</p></div>
       <div class="page-actions"><button class="btn btn-primary" data-action="create">${icon("plus")}${t("box.create")}</button></div>
     </div>
+    <div class="grid grid-4" id="ovHosts" style="margin-bottom:16px" hidden></div>
     <div class="grid grid-4" id="ovMetrics">${metricSkeleton().repeat(4)}</div>
     <div class="grid grid-3" style="margin-top:16px">
       <div class="card" style="grid-column: span 2" id="ovAlloc"><div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div></div>
@@ -62,9 +65,11 @@ export function render(view) {
   });
 
   let boxes = [];
+  let loaded = false;
   const loadBoxes = async () => {
     try {
       boxes = (await api("/api/boxes?stats=false")).boxes;
+      loaded = true;
       renderBoxes(view, boxes);
     } catch {
       /* the host pill already signals connectivity issues */
@@ -89,6 +94,10 @@ export function render(view) {
   };
 
   const offs = [
+    onHosts((list) => {
+      renderHostCards(view, list);
+      if (loaded) renderBoxes(view, boxes);
+    }),
     subscribe("sync", (frame) => {
       const next = boxesOfSync(frame);
       if (!next) return;
@@ -190,13 +199,43 @@ function renderBoxes(view, boxes) {
     });
     return;
   }
-  root.innerHTML = `<ul class="activity">${boxes
+  const scoped = boxesOnHost(boxes, hostFilter());
+  if (!scoped.length) {
+    root.innerHTML = emptyState({
+      iconName: "box",
+      title: t("bx.noHostBoxes"),
+      text: t("bx.noHostBoxesText", { host: esc(hostName(hostFilter())) }),
+    });
+    return;
+  }
+  root.innerHTML = `<ul class="activity">${scoped
     .slice(0, 6)
     .map(
-      (b) => `<li><span class="ico">${icon("box")}</span><a href="#/boxes/${b.id}"><strong>${esc(b.name)}</strong></a>
+      (
+        b,
+      ) => `<li class="${isUnreachable(b) ? "is-unreachable" : ""}"><span class="ico">${icon("box")}</span><a href="#/boxes/${b.id}"><strong>${esc(b.name)}</strong></a>
       <span class="subtle">${cpus(b.cpus)} · ${mem(b.memory)}</span><span class="time">${stateBadge(boxState(b))}</span></li>`,
     )
     .join("")}</ul>`;
+}
+
+function renderHostCards(view, hosts) {
+  const root = view.querySelector("#ovHosts");
+  root.hidden = hosts.length < 2;
+  root.innerHTML = root.hidden ? "" : hosts.map(hostCard).join("");
+}
+
+function hostCard(host) {
+  const capacity = host.capacity
+    ? `${cpus(host.capacity.cpus)} · ${mem(host.capacity.memoryBytes)}`
+    : t("common.unknown");
+  const latency = host.latencyMs == null ? "" : ` · ${host.latencyMs} ms`;
+  return `<div class="card metric" data-host="${esc(host.id)}">
+    <div class="metric-top"><span>${esc(host.name)}</span>${icon("server")}</div>
+    <div class="metric-value">${host.boxes}<small>${t("ov.hostBoxes", { n: host.boxes })}</small></div>
+    <div class="metric-sub">${esc(t(`st.transport.${host.transport}`))} · ${capacity}${latency}</div>
+    <div style="margin-top:auto"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span></div>
+  </div>`;
 }
 
 function renderActivity(view, items) {

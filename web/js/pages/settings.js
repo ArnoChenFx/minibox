@@ -1,6 +1,8 @@
-import { api, enc } from "../lib/api.js";
+import { api, enc, errorText } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import { dateTime, relTime } from "../lib/format.js";
+import { cpus, dateTime, mem, relTime } from "../lib/format.js";
+import { HOST_BADGE } from "../lib/host-list.js";
+import { refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { currentTheme, toggleTheme } from "../lib/theme.js";
@@ -15,6 +17,7 @@ export function render(view) {
           <div class="card-head"><h3>${t("st.runtime")}</h3>${icon("settings")}</div>
           <div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div>
         </div>
+        <div class="card" id="stHosts"></div>
         <div class="card">
           <div class="card-head"><h3>${t("st.appearance")}</h3></div>
           <div class="card-body row between">
@@ -37,9 +40,213 @@ export function render(view) {
   document.addEventListener("themechange", paintTheme);
 
   loadRuntime(view);
+  loadHosts(view);
   loadSessions(view);
   loadTokens(view);
   return () => document.removeEventListener("themechange", paintTheme);
+}
+
+async function loadHosts(view) {
+  const card = view.querySelector("#stHosts");
+  let hosts;
+  try {
+    ({ hosts } = await api("/api/hosts"));
+  } catch (e) {
+    if (e.status === 401) {
+      location.href = "/login";
+      return;
+    }
+    card.innerHTML = `<div class="card-head"><h3>${t("st.hosts")}</h3></div>
+      <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
+    return;
+  }
+  card.innerHTML = `
+    <div class="card-head">
+      <div><h3>${t("st.hosts")}</h3><p class="help">${t("st.hostsHelp")}</p></div>
+      <button class="btn btn-sm btn-primary" id="stHostAdd">${icon("plus")}${t("st.hostAdd")}</button>
+    </div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>${t("st.hostColName")}</th><th class="hide-sm">${t("st.hostColEndpoint")}</th><th>${t("st.hostColStatus")}</th>
+        <th class="hide-sm">${t("st.hostColCapacity")}</th><th class="hide-sm">${t("st.hostColBoxes")}</th><th></th>
+      </tr></thead>
+      <tbody>${hosts.map(hostRow).join("")}</tbody>
+    </table></div>`;
+  card.querySelector("#stHostAdd").addEventListener("click", () => addHost(view));
+  card.querySelectorAll("[data-remove-host]").forEach((btn) => {
+    btn.addEventListener("click", () => removeHost(view, btn.dataset.removeHost, btn.dataset.hostName));
+  });
+}
+
+function hostRow(host) {
+  const capacity = host.capacity
+    ? `${cpus(host.capacity.cpus)} · ${mem(host.capacity.memoryBytes)}`
+    : t("common.unknown");
+  const latency = host.latencyMs == null ? "" : ` <span class="subtle">${host.latencyMs} ms</span>`;
+  const error = host.error ? `<div class="help" title="${esc(host.error)}">${esc(host.error)}</div>` : "";
+  const action =
+    host.transport === "local"
+      ? `<span class="subtle">${t("st.hostLocal")}</span>`
+      : `<button class="btn btn-sm btn-danger" data-remove-host="${esc(host.id)}" data-host-name="${esc(host.name)}">${icon("x")}${t("st.hostRemove")}</button>`;
+  return `<tr>
+    <td><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span></td>
+    <td class="hide-sm"><span class="mono">${esc(host.endpoint)}</span> <span class="badge">${esc(t(`st.transport.${host.transport}`))}</span></td>
+    <td class="nowrap"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}</td>
+    <td class="hide-sm nowrap">${capacity}</td>
+    <td class="hide-sm">${host.boxes}</td>
+    <td class="nowrap"><div class="actions">${action}</div></td>
+  </tr>`;
+}
+
+const HOST_CREDENTIALS = { tcp: ["ca", "cert", "key"], ssh: ["privateKey"] };
+
+function schemeOf(endpoint) {
+  return endpoint.trim().split("://")[0].toLowerCase();
+}
+
+function hostBody(form) {
+  const data = new FormData(form);
+  const scheme = schemeOf(String(data.get("endpoint") ?? ""));
+  const body = {};
+  for (const key of ["id", "name", "endpoint", ...(HOST_CREDENTIALS[scheme] ?? [])]) {
+    const value = String(data.get(key) ?? "").trim();
+    if (value) body[key] = value;
+  }
+  return body;
+}
+
+function addHost(view) {
+  let fingerprint = "";
+  const { root, close } = openDialog({
+    title: t("st.hostAdd"),
+    description: t("st.hostAddHelp"),
+    iconName: "server",
+    wide: true,
+    body: `
+      <form id="stHostForm" class="stack" autocomplete="off">
+        <div class="grid grid-2">
+          <label class="field">${t("st.hostId")}<input class="input mono" name="id" required pattern="[a-z][a-z0-9-]{0,31}" placeholder="lab" /><span class="help">${t("st.hostIdHelp")}</span></label>
+          <label class="field">${t("st.hostName")}<input class="input" name="name" maxlength="64" placeholder="Lab" /></label>
+        </div>
+        <label class="field">${t("st.hostEndpoint")}<input class="input mono" name="endpoint" required placeholder="unix:///var/run/docker.sock" /><span class="help">${t("st.hostEndpointHelp")}</span></label>
+        <div class="stack" data-cred="tcp" hidden>
+          <label class="field">${t("st.hostCa")}<textarea class="textarea mono" name="ca" rows="3" spellcheck="false"></textarea></label>
+          <label class="field">${t("st.hostCert")}<textarea class="textarea mono" name="cert" rows="3" spellcheck="false"></textarea></label>
+          <label class="field">${t("st.hostKey")}<textarea class="textarea mono" name="key" rows="3" spellcheck="false"></textarea><span class="help">${t("st.hostCredHelp")}</span></label>
+        </div>
+        <label class="field" data-cred="ssh" hidden>${t("st.hostPrivateKey")}<textarea class="textarea mono" name="privateKey" rows="4" spellcheck="false"></textarea><span class="help">${t("st.hostCredHelp")}</span></label>
+        <div id="stHostResult"></div>
+      </form>`,
+    footer: `<button class="btn" data-close>${t("common.cancel")}</button>
+      <button class="btn" id="stHostTest">${icon("refresh")}${t("st.hostTest")}</button>
+      <button class="btn btn-primary" id="stHostSave">${icon("plus")}${t("st.hostAddSubmit")}</button>`,
+  });
+  const form = root.querySelector("#stHostForm");
+  const result = root.querySelector("#stHostResult");
+  const endpoint = form.elements.namedItem("endpoint");
+  endpoint.addEventListener("input", () => {
+    const scheme = schemeOf(endpoint.value);
+    for (const block of form.querySelectorAll("[data-cred]")) block.hidden = block.dataset.cred !== scheme;
+    fingerprint = "";
+    result.innerHTML = "";
+  });
+  root.querySelector("#stHostTest").addEventListener("click", async (e) => {
+    const res = await withBusyHost(e.currentTarget, () => testHost(form, result));
+    fingerprint = res?.hostKeyFingerprint ?? "";
+  });
+  root
+    .querySelector("#stHostSave")
+    .addEventListener("click", (e) =>
+      withBusyHost(e.currentTarget, () => saveHost(view, form, close, () => fingerprint)),
+    );
+}
+
+async function withBusyHost(btn, fn) {
+  btn.disabled = true;
+  try {
+    return await fn();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function testHost(form, result) {
+  result.innerHTML = `<div class="callout">${icon("refresh")}<span>${t("st.hostTesting")}</span></div>`;
+  let res;
+  try {
+    res = await api("/api/hosts/test", { method: "POST", body: hostBody(form) });
+  } catch (e) {
+    result.innerHTML = `<div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div>`;
+    return null;
+  }
+  const parts = [];
+  if (res.ok) {
+    const cap = res.capacity
+      ? t("st.hostTestCapacity", { cores: res.capacity.cpus, mem: mem(res.capacity.memoryBytes) })
+      : "";
+    parts.push(
+      `<div class="callout">${icon("check")}<span>${esc(t("st.hostTestOk", { version: res.dockerVersion ?? "—", ms: res.latencyMs ?? "—" }))}${cap ? ` · ${esc(cap)}` : ""}</span></div>`,
+    );
+  } else {
+    parts.push(`<div class="callout danger">${icon("alert")}<span>${esc(errorText(res.error ?? {}))}</span></div>`);
+  }
+  if (res.hostKeyFingerprint) {
+    parts.push(
+      `<div class="callout">${icon("info")}<span>${esc(t("st.hostFingerprint", { fingerprint: res.hostKeyFingerprint }))}</span></div>`,
+    );
+  }
+  result.innerHTML = parts.join("");
+  return res;
+}
+
+async function saveHost(view, form, close, confirmedFingerprint) {
+  const body = hostBody(form);
+  const scheme = schemeOf(body.endpoint ?? "");
+  if (scheme === "ssh" && confirmedFingerprint()) body.hostKeyFingerprint = confirmedFingerprint();
+  try {
+    await api("/api/hosts", { method: "POST", body });
+  } catch (e) {
+    const presented = e.key === "host_key_unconfirmed" ? e.details?.fingerprint : null;
+    if (!presented) {
+      toastError(t("st.hostAddFailed"), e);
+      return;
+    }
+    const ok = await confirmDialog({
+      title: t("st.hostTrustTitle"),
+      message: esc(t("st.hostTrustMessage", { fingerprint: presented })),
+      confirmText: t("st.hostTrust"),
+    });
+    if (!ok) return;
+    try {
+      await api("/api/hosts", { method: "POST", body: { ...body, hostKeyFingerprint: presented } });
+    } catch (again) {
+      toastError(t("st.hostAddFailed"), again);
+      return;
+    }
+  }
+  close();
+  toast(t("st.hostAdded"), { message: body.name ?? body.id });
+  await refreshHosts();
+  loadHosts(view);
+}
+
+async function removeHost(view, id, name) {
+  const ok = await confirmDialog({
+    title: t("st.hostRemoveTitle"),
+    message: esc(t("st.hostRemoveMessage", { name })),
+    confirmText: t("st.hostRemove"),
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api(`/api/hosts/${enc(id)}`, { method: "DELETE" });
+  } catch (e) {
+    toastError(t("st.hostRemoveFailed"), e);
+    return;
+  }
+  toast(t("st.hostRemoved"), { message: name });
+  await refreshHosts();
+  loadHosts(view);
 }
 
 async function loadRuntime(view) {
