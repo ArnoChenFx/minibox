@@ -5,6 +5,9 @@ export function errorText(err, status = 0) {
   if (err?.key && has(`err.${err.key}`)) {
     const params = { ...err.params };
     if (typeof params.label === "string" && has(`label.${params.label}`)) params.label = t(`label.${params.label}`);
+    if (typeof params.feature === "string" && has(`feature.${params.feature}`)) {
+      params.feature = t(`feature.${params.feature}`);
+    }
     return t(`err.${err.key}`, params);
   }
   return err?.message ?? t("api.httpError", { status });

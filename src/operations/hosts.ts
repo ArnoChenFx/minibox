@@ -61,7 +61,7 @@ const CREDENTIAL = {
 
 const hostFieldsInput = z.object({
   id: z.string().min(1).max(32).meta({
-    description: "Host id: lowercase letters, digits and hyphens, starting with a letter. local is taken.",
+    description: "Host id: lowercase letters, digits and hyphens, starting with a letter. local and auto are taken.",
   }),
   name: z.string().max(64).optional().meta({ description: "Name shown in the UI. Defaults to the id." }),
   endpoint: z.string().min(1).max(512).meta({
@@ -122,6 +122,47 @@ export const hostList = defineOperation({
       "List the hosts MiniBox runs boxes on, with each one's status, latency, capacity and box count. Owner only. A host that is offline keeps its entry.",
   },
   run: async (ctx) => ({ hosts: hostsOf(ctx).list() }),
+});
+
+const AmountSchema = z.object({
+  cpus: z.number().meta({ description: "CPU cores, as a fraction where a box takes part of one." }),
+  memoryBytes: z.number(),
+});
+
+const HostUsageSchema = z.object({
+  id: z.string(),
+  status: HostStatusSchema,
+  containers: z
+    .object({ running: z.number().int(), total: z.number().int() })
+    .nullable()
+    .meta({ description: "Containers the engine reported at its last successful check. Null until one succeeds." }),
+  allocated: AmountSchema.nullable().meta({
+    description: "CPUs and memory the running boxes on this host book. Null while the host is offline.",
+  }),
+  usage: AmountSchema.nullable().meta({
+    description:
+      "CPUs and memory the running boxes use now, from their newest stats samples, so an approximation. Null while the host is offline or no sample is current.",
+  }),
+});
+
+export const hostUsage = defineOperation({
+  name: "host.usage",
+  tag: "hosts",
+  summary: "Show what each host runs and uses",
+  kind: "read",
+  scope: "host:manage",
+  async: false,
+  input: z.object({}),
+  output: z.object({ hosts: z.array(HostUsageSchema) }),
+  rest: [{ method: "GET", path: "/api/hosts/usage" }],
+  cli: "host usage",
+  mcp: {
+    toolset: "meta",
+    name: "get_host_usage",
+    description:
+      "For each host, the containers its engine reports, the CPU and memory its running boxes book, and the CPU and memory they use now, approximated from stats samples. Owner only. Offline hosts report null figures.",
+  },
+  run: async (ctx) => ({ hosts: await hostsOf(ctx).usage() }),
 });
 
 export const hostAdd = defineOperation({
@@ -203,4 +244,4 @@ export const hostRemove = defineOperation({
   run: async (ctx, input): Promise<{ host: HostView }> => ({ host: await hostsOf(ctx).remove(input.id) }),
 });
 
-export const hostOperations = [hostList, hostAdd, hostTest, hostRemove];
+export const hostOperations = [hostList, hostUsage, hostAdd, hostTest, hostRemove];

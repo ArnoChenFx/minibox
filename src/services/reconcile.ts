@@ -57,10 +57,11 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
 
   for (const info of infos) {
     try {
-      const { spec, created } = await ensureSpec(host, info);
-      seen.add(spec.id);
+      const claimed = await ensureSpec(host, info);
+      if (!claimed) continue;
+      seen.add(claimed.spec.id);
       live.push(info);
-      if (created) report.claimed.push(spec.id);
+      if (claimed.created) report.claimed.push(claimed.spec.id);
     } catch (e) {
       if (e instanceof ClaimError) {
         log.warn("box.claim_skipped", { container: info.name, host: host.host.id, error: e.message });
@@ -75,8 +76,8 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
   }
 
   for (const info of live) {
-    const spec = host.specs.findByContainer(info.id, info.name);
-    if (!spec || spec.hostId !== host.host.id) continue;
+    const spec = host.specs.findByContainer(info.id, info.name, host.host.id);
+    if (!spec) continue;
     try {
       await converge(host, info, spec, report);
     } catch (e) {

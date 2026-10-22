@@ -39,7 +39,7 @@ MiniBox 面向单一可信用户。它没有用户账户，因此任何持有访
 - **终端与会话。** 打开浏览器终端，或让 Agent 驱动你可接管的 tmux 会话。
 - **预览。** 通过 MiniBox 打开 Box 内运行的 Web 应用，而无需在宿主机上发布端口。
 - **Agent 访问。** 为每个 Agent 发放各自限定权限的令牌，通过 MCP、CLI、SSH 或 REST API 连接。
-- **多宿主机。** 通过 SSH、双向 TLS 或 Unix 套接字，在其他 Docker Engine 上运行 Box。
+- **多宿主机。** 通过 SSH、双向 TLS 或 Unix 套接字，在其他 Docker Engine 上运行 Box。可由 MiniBox 把 Box 放到最空闲的宿主机，也可以把 Box 连同卷迁移到另一台宿主机。
 
 ![MiniBox 控制台中的 Box 列表](docs/screenshots/boxes-light.png)
 

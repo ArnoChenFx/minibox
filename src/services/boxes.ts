@@ -34,6 +34,7 @@ import { provisionDefaultMounts, removeEngine } from "../volumes/provision";
 import type { VolumeRecord, VolumeRole } from "../volumes/types";
 import { assertMountAllowed, mountTarget } from "./attachments";
 import { projectBox, unreachableBox } from "./box-view";
+import { beginChange } from "./moving";
 import { desiredToolsOf } from "./tools";
 import { alignVolumeRoot, type RecordNote, writableWorkspaceVolume } from "./volume-owner";
 
@@ -205,13 +206,15 @@ export async function getBox(host: HostCtx, ref: string): Promise<Box> {
     asMissing(e);
   }
   if (!parseBoxLabels(info.labels, host.keys).isBox) throw notFound(msg("box_not_found"));
+  let claimed: Awaited<ReturnType<typeof ensureSpec>>;
   try {
-    const { spec } = await ensureSpec(host, info);
-    return projectBox(host, spec, info);
+    claimed = await ensureSpec(host, info);
   } catch (e) {
     if (e instanceof ClaimError) throw conflict(msg("box_claim_failed", { detail: e.message }));
     throw e;
   }
+  if (!claimed) throw notFound(msg("box_not_found"));
+  return projectBox(host, claimed.spec, info);
 }
 
 /**
@@ -271,9 +274,9 @@ export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {
   const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
   const boxes: Box[] = [];
   for (const info of infos) {
-    let spec: BoxSpec;
+    let claimed: Awaited<ReturnType<typeof ensureSpec>>;
     try {
-      spec = (await ensureSpec(host, info)).spec;
+      claimed = await ensureSpec(host, info);
     } catch (e) {
       if (e instanceof ClaimError) {
         log.warn("box.claim_skipped", { container: info.name, host: host.host.id, error: e.message });
@@ -281,9 +284,10 @@ export async function listBoxes(host: HostCtx, opts: { withStats?: boolean } = {
       }
       throw e;
     }
-    const box = projectBox(host, spec, info);
+    if (!claimed) continue;
+    const box = projectBox(host, claimed.spec, info);
     if (opts.withStats) {
-      box.stats = box.running ? await listedStats(host, spec.id, info.id) : null;
+      box.stats = box.running ? await listedStats(host, claimed.spec.id, info.id) : null;
     }
     boxes.push(box);
   }
@@ -340,7 +344,7 @@ function engineMounts(mounts: BoxMount[]): { source: string; target: string; mod
 }
 
 /** Boxes share one bridge network with inter-container communication off. A network that differs is never reused. */
-async function ensureBoxNetwork(host: HostCtx): Promise<void> {
+export async function ensureBoxNetwork(host: HostCtx): Promise<void> {
   try {
     await host.runtime.ensureBridgeNetwork(host.security.network, { interContainerComm: false });
   } catch (e) {
@@ -857,6 +861,15 @@ function clearNeedsReset(spec: BoxSpec, patch: BoxUpdate): BoxRecovery | null {
 export async function updateBox(host: HostCtx, ref: string, revision: number, patch: BoxUpdate): Promise<Box> {
   if (!hasUpdate(patch)) throw badRequest(msg("box_update_empty"));
   const current = await getBox(host, ref);
+  const release = beginChange(current.boxId);
+  try {
+    return await updateChanging(host, current, revision, patch);
+  } finally {
+    release();
+  }
+}
+
+async function updateChanging(host: HostCtx, current: Box, revision: number, patch: BoxUpdate): Promise<Box> {
   await host.specs.exclusive(async () => {
     const spec = host.specs.read(current.boxId);
     if (!spec) throw notFound(msg("box_not_found"));

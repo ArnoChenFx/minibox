@@ -20,7 +20,7 @@ export interface NewVolume {
   createdBy: string | null;
 }
 
-function labelsFor(
+export function labelsFor(
   host: HostCtx,
   volume: Pick<VolumeRecord, "name" | "role" | "pool" | "ownership">,
 ): Record<string, string> {

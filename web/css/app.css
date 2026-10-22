@@ -1859,6 +1859,29 @@ input[type="range"] {
   flex-wrap: wrap;
   gap: 8px;
 }
+.move-preview {
+  margin-top: 12px;
+}
+.move-volumes {
+  list-style: none;
+  margin: 6px 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.move-volumes li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.move-volumes li > :last-child {
+  margin-left: auto;
+}
 .rebuild-preview pre {
   white-space: pre-wrap;
   word-break: break-word;

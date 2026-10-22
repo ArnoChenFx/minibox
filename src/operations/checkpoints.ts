@@ -5,7 +5,7 @@ import type { EventTarget } from "../events/types";
 import { conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { getBox } from "../services/boxes";
-import { assertCapacity } from "../services/capacity";
+import { assertNewBox } from "../services/capacity";
 import { assertAutomaticAllowed, usageOf } from "../services/checkpoint-capacity";
 import {
   assertForkable,
@@ -211,7 +211,7 @@ export const checkpointFork = defineOperation({
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/checkpoints/:id/fork", body: true, status: 202 }],
   cli: "checkpoint fork",
-  precondition: ({ host }, input) => assertCapacity(host, input),
+  precondition: ({ host }, input) => assertNewBox(host, input),
   hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
   beforeTask: async (ctx, input, checkpoint) => {

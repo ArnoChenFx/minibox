@@ -45,6 +45,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 | `LIFECYCLE_INTERVAL_MS` | `30000` | How often MiniBox checks idle sleep and TTLs, in milliseconds. A positive whole number. |
 | `METRICS_INTERVAL_MS` | `3000` | How often MiniBox samples host and box resource use, in milliseconds. A positive whole number. Keep it above 2000. |
 | `METRICS_HISTORY` | `120` | The number of samples kept for each host and each box. A positive whole number. |
+| `HOST_OVERCOMMIT` | `1` | How far the CPU and memory that running boxes reserve on a host may exceed its capacity, as a ratio from 1 to 10. `1` reserves no more than the host has. Checked only when there is more than one host. See [Hosts](../user-guide/hosts.md#capacity). |
 
 ## Sessions and tokens
 

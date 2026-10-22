@@ -168,7 +168,7 @@ function touchSettledBox(hosts: HostRegistry, pulse: ActivityPulse, subject: Tas
   const target = subject.target;
   if (target?.kind !== "box" || target.id === undefined) return;
   const host = hosts.list().find((candidate) => candidate.host.id === subject.hostId);
-  const spec = host?.specs.findByContainer(target.id, target.name);
+  const spec = host?.specs.findByContainer(target.id, target.name, subject.hostId);
   if (spec) pulse.touch(spec.id, "task");
 }
 

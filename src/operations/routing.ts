@@ -2,7 +2,7 @@ import type { HostCtx } from "../host/registry";
 import { untilAborted } from "../lib/abort";
 import { AppError, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
-import { msg } from "../lib/messages";
+import { type FeatureKey, msg } from "../lib/messages";
 import type { OperationContext } from "./types";
 
 /** The host with this id. An id no host carries is a 404. */
@@ -61,7 +61,7 @@ export async function fromEveryHost<T>(hosts: readonly HostCtx[], read: (host: H
 }
 
 /** Refuses a feature that has no remote form yet. The local host always passes. */
-export function localOnly(host: HostCtx, feature: string): void {
+export function localOnly(host: HostCtx, feature: FeatureKey): void {
   if (host.host.transport === "local") return;
   throw new AppError(501, "unsupported", msg("host_unsupported", { feature }));
 }

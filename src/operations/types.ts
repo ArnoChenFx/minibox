@@ -13,7 +13,7 @@ import type { TokenStore } from "../tokens/store";
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
 
-export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild";
+export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild" | "move";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -145,9 +145,10 @@ export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> ex
   readonly precondition?: (ctx: OperationContext, input: z.output<I>) => Promise<void>;
   /**
    * Picks the host the operation runs on, from its validated input. Runs before `precondition`, so the capacity check,
-   * the access check and the audit event all see that host. Without it, the operation runs on the request's host.
+   * the access check and the audit event all see that host. Without it, the operation runs on the request's host. It may
+   * be async, as a placement that reads the hosts' engines is.
    */
-  readonly hostFor?: (ctx: OperationContext, input: z.output<I>) => HostCtx;
+  readonly hostFor?: (ctx: OperationContext, input: z.output<I>) => HostCtx | Promise<HostCtx>;
   /** Finds the target, so that a missing one is a 404 before the handler runs. */
   readonly resolve?: (ctx: OperationContext, input: z.output<I>) => Promise<R>;
   /**
@@ -177,7 +178,7 @@ export interface Operation extends OperationMeta {
   readonly output: z.ZodType;
   parse(raw: unknown): Record<string, unknown>;
   precondition?(ctx: OperationContext, input: unknown): Promise<void>;
-  hostFor?(ctx: OperationContext, input: unknown): HostCtx;
+  hostFor?(ctx: OperationContext, input: unknown): HostCtx | Promise<HostCtx>;
   resolve?(ctx: OperationContext, input: unknown): Promise<unknown>;
   beforeTask?(ctx: OperationContext, input: unknown, resolved: unknown): Promise<void>;
   activity?: {

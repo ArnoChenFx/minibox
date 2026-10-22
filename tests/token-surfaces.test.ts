@@ -8,7 +8,7 @@ import { silenceLogs } from "./support/app";
 import { SseReader } from "./support/sse";
 import { call, type Harness, mint, principalOf, refused, startHarness } from "./support/tokens";
 
-const ALL_TOOLSETS = "core,session,network,storage,tools,meta,rebuild";
+const ALL_TOOLSETS = "core,session,network,storage,tools,meta,rebuild,move";
 
 let harness: Harness;
 let restoreLogs: () => void;
@@ -350,5 +350,22 @@ describe("events about a box name", () => {
 
     const after = await call(harness.base, "/api/events?limit=100", { token: agent.secret });
     expect(ownerEventsNamedWeb(after.json.events ?? [])).toEqual(["box.action"]);
+  });
+});
+
+describe("moving a box to another host", () => {
+  test("only the owner or a credential granted every host and box may move a box", async () => {
+    const operator = mint(harness.app, { name: "mover-operator", preset: "operator" });
+    const admin = mint(harness.app, { name: "mover-admin", preset: "admin" });
+    const created = await createBox(operator.secret, "moving-box");
+    const id = created.json.box?.id ?? "";
+    const headers = { "if-match": String(created.json.box?.revision ?? 1) };
+    const body = { host: "lab", confirm: true };
+
+    const byOperator = await call(harness.base, `/api/boxes/${id}/move`, { token: operator.secret, body, headers });
+    expect(refused(byOperator)).toEqual({ status: 403, key: "move_owner_only" });
+
+    const byAdmin = await call(harness.base, `/api/boxes/${id}/move`, { token: admin.secret, body, headers });
+    expect(refused(byAdmin)).toEqual({ status: 404, key: "host_not_found" });
   });
 });

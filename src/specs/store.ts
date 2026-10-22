@@ -119,8 +119,23 @@ export class SpecStore {
     return this.list().find((spec) => spec.name === name) ?? null;
   }
 
-  findByContainer(containerId: string, containerName: string): BoxSpec | null {
-    return this.list().find((spec) => spec.containerId === containerId || spec.containerName === containerName) ?? null;
+  /**
+   * The spec that names a container by id or name. Hosts that share an engine see the same containers, so pass the
+   * host id to get only that host's spec: a spec of another host is then never returned.
+   */
+  findByContainer(containerId: string, containerName: string, hostId?: string): BoxSpec | null {
+    return (
+      this.list().find(
+        (spec) =>
+          (hostId === undefined || spec.hostId === hostId) &&
+          (spec.containerId === containerId || spec.containerName === containerName),
+      ) ?? null
+    );
+  }
+
+  /** Every spec that names a container by id or name, whichever host it belongs to. */
+  holdersOf(containerId: string, containerName: string): BoxSpec[] {
+    return this.list().filter((spec) => spec.containerId === containerId || spec.containerName === containerName);
   }
 
   write(spec: BoxSpec): void {
