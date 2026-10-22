@@ -2,7 +2,7 @@ name: Project homepage
 
 on:
   push:
-    branches: [main, website]
+    branches: [main]
     paths:
       - "site/**"
       - "scripts/build-site.ts"
@@ -27,6 +27,7 @@ on:
 permissions:
   contents: read
 
+# Validation runs per ref, and a newer pull request push replaces an older one.
 concurrency:
   group: homepage-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -36,6 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.3"
@@ -44,10 +47,15 @@ jobs:
       - run: bun run test:site
 
   deploy:
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/website') && github.event_name != 'pull_request'
+    # Pages publishes from main only. Every deploy shares one queue, and none is cancelled midway.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -55,6 +63,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.3"
