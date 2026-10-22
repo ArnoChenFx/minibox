@@ -23,6 +23,7 @@ import { assertCapacity, assertRoom } from "./capacity";
 import { type Progress, underBox } from "./checkpoints";
 import { beginMove } from "./moving";
 import { assertFresh, containerSpec, movedTag } from "./rebuild";
+import { launchStartup } from "./startup";
 
 /** What a move keeps. Volumes are copied to the target, or attached again where the storage is shared. */
 export const MOVE_KEEPS = ["id", "name", "volumes", "env", "history"] as const;
@@ -353,6 +354,7 @@ async function runMove(
     }
     throwIfCancelled(progress);
     await commitMove(from, to, spec.id, revision, { containerId: created.id, containerName: name, mounts, template });
+    if (plan.starts) await launchStartup(to, created.id, spec.startupCommand);
     say(`The box now runs on ${to.host.id}.`);
   } catch (e) {
     await undoMove(from, to, spec, state, changes, oldId);

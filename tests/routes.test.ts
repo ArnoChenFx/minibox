@@ -182,6 +182,7 @@ describe("box validation and error mapping", () => {
   });
 
   test("a missing template image is a 400 that names the template field", async () => {
+    runtime.unpullable.add("ghost:1");
     const res = await post("/api/boxes", { name: "beta", template: "ghost:1", cpus: 1, memoryMb: 256 });
     expect(res.status).toBe(400);
     expect(await errorOf(res)).toMatchObject({

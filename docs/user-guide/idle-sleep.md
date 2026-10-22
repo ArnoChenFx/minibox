@@ -27,6 +27,8 @@ Looking at a box does not count as use. Reading its details, stats or logs does 
 
 A session with no client attached does not keep its box awake. If a background job runs in a session that nobody is watching, it ends when the box sleeps. Run long jobs as a background `exec`, or keep a terminal open.
 
+A [startup command](boxes.md#startup-command) runs in a session named `minibox-init`, and it follows the same rule. It does not keep its box awake, and it ends when the box sleeps. Running it again by hand, with **Run again**, **Run it now as well** or `minibox box startup-command run`, restarts the idle timer, as an `exec` does.
+
 ### Waking a box
 
 - `exec` starts a stopped box.
@@ -36,6 +38,7 @@ A session with no client attached does not keep its box awake. If a background j
 - A port preview wakes a box that is asleep, but not one that you stopped.
 - Reading, sending to, closing or listing sessions does not wake a box.
 - Reading or changing files in a volume never starts a box.
+- A box that wakes runs its startup command again. See [Startup command](boxes.md#startup-command).
 
 ## TTL
 

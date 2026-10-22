@@ -5,11 +5,13 @@ import { eventOperations } from "./events";
 import { execOperations } from "./exec";
 import { fileOperations } from "./files";
 import { hostOperations } from "./hosts";
+import { imageOperations } from "./images";
 import { operationIdOf } from "./openapi";
 import { portOperations } from "./ports";
 import { secretOperations } from "./secrets";
 import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
+import { startupOperations } from "./startup";
 import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
 import { tokenOperations } from "./tokens";
@@ -20,6 +22,7 @@ import { volumeOperations } from "./volumes";
 /** Every operation the API serves. REST routes, OpenAPI, MCP tools and CLI commands are all derived from this list. */
 export const OPERATIONS: readonly Operation[] = [
   ...boxOperations,
+  ...startupOperations,
   ...execOperations,
   ...portOperations,
   ...fileOperations,
@@ -31,6 +34,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...checkpointOperations,
   ...checkpointPackageOperations,
   ...templateOperations,
+  ...imageOperations,
   ...taskOperations,
   ...eventOperations,
   ...tokenOperations,

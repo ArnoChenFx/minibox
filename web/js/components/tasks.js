@@ -45,7 +45,7 @@ let follow = true;
 let wrap = false;
 let copyTimer = null;
 let detailRequest = 0;
-const TEMPLATE_OPS = new Set(["template.build", "template.save"]);
+const TEMPLATE_OPS = new Set(["template.build", "template.save", "template.create", "template.rebuild"]);
 const seenTemplateTask = new Set();
 
 /** Prefer the translated `err.*` key. The stored message is always English. */

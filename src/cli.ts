@@ -45,6 +45,26 @@ Environment:
 Commands:
   minibox box ls [--json]              List boxes
   minibox box list [--json]            Same as box ls
+  minibox box create <name> [--template IMAGE] [--cpus N] [--memory MB] [--profile P]
+                       [--repo URL [--branch BRANCH] [--secret NAME]]
+                       [--startup-command TEXT | --startup-command-stdin] [--no-wait] [--json]
+                                       Create and start a box. --repo clones into /workspace on the first create.
+                                       A startup command runs at every start of the box.
+  minibox box startup-command get <box> [--json]
+                                       Print the startup command; its status and last output lines go to stderr
+  minibox box startup-command set <box> (--command TEXT | --stdin) [--apply] [--json]
+                                       Set the command. It runs at the next start, or now with --apply on a running box
+  minibox box startup-command rm <box> [--json]
+                                       Remove the command. A run already going keeps going until the box stops
+  minibox box startup-command run <box> [--json]
+                                       Run the command again now. The box must be running and have a command
+  minibox template create <name> (--dockerfile FILE | --repo URL | --context URL | --devcontainer URL)
+                       [--description TEXT] [source options] [--no-wait] [--json]
+                                       Build a template in the background, and print its ref
+  minibox template rebuild <ref> [--no-wait] [--json]
+                                       Rebuild a template from the source it was built from
+  minibox image pull <ref> [--no-wait] [--json]
+                                       Pull an image from its registry, when the engine does not have it
   minibox exec <box> [options] -- <argv...>
       --cwd DIR         Working directory (default /workspace)
       --user USER       Container user (default dev; the strict profile allows only dev or 1000)
@@ -94,6 +114,9 @@ cp, upload and download reach a box's volumes the same way, so they work while t
 uploaded folder are skipped, and an existing file is kept unless --overwrite is given.
 files:* scopes only matter for a token that does not have exec.
 A session is a tmux session in the box. A person can take it over in the console, and then session send fails with taken_over; session read still works.
+Template source options: --branch and --secret with --repo or --devcontainer; --subdir and --dockerfile-path with --repo;
+--dockerfile-path with --context; --devcontainer-path with --devcontainer. --dockerfile - reads the Dockerfile from stdin.
+A command that starts a task waits for it and prints the task log to stderr. --no-wait prints the task id and returns at once.
 `;
 
 function flagValue(argv: string[], index: number, name: string): string {
@@ -114,8 +137,10 @@ async function request(
   method: string,
   path: string,
   body?: unknown,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; json: unknown; text: string; headers: Headers }> {
-  const { base, headers } = serverOf(env);
+  const { base, headers: serverHeaders } = serverOf(env);
+  const headers: Record<string, string> = { ...serverHeaders, ...extraHeaders };
   let payload: string | undefined;
   if (body !== undefined) {
     headers["content-type"] = "application/json";
@@ -175,6 +200,88 @@ async function boxLs(argv: string[], env: Record<string, string | undefined>, io
     );
   }
   return 0;
+}
+
+interface ParsedFlags {
+  readonly positional: string[];
+  readonly values: Map<string, string>;
+  readonly switches: Set<string>;
+}
+
+function parseBoxFlags(argv: string[], valued: string[], switches: string[]): ParsedFlags {
+  const positional: string[] = [];
+  const values = new Map<string, string>();
+  const on = new Set<string>();
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i] ?? "";
+    if (switches.includes(token)) on.add(token);
+    else if (valued.includes(token)) {
+      values.set(token, flagValue(argv, i, token));
+      i += 1;
+    } else if (token.startsWith("--")) throw new Error(`Unknown option ${token}`);
+    else positional.push(token);
+  }
+  return { positional, values, switches: on };
+}
+
+interface StartupCommandState {
+  readonly revision: number;
+  readonly command: string | null;
+  readonly status: string;
+  readonly exitCode: number | null;
+  readonly log: string[];
+  readonly error: { message: string } | null;
+}
+
+function startupStatus(state: StartupCommandState): string {
+  if (state.status === "exited") return `exited with code ${state.exitCode ?? "unknown"}`;
+  if (state.status === "failed") return `failed: ${state.error?.message ?? "unknown error"}`;
+  return state.status;
+}
+
+/** The command as typed goes to stdout, and the status and the newest output lines to stderr, so a script can read the command. */
+function printStartup(io: CliIo, state: StartupCommandState): number {
+  if (state.command !== null) io.stdout(state.command.endsWith("\n") ? state.command : `${state.command}\n`);
+  io.stderr(`status: ${startupStatus(state)}\n`);
+  for (const line of state.log) io.stderr(`${line}\n`);
+  return 0;
+}
+
+const STARTUP_SUBCOMMANDS = ["get", "set", "rm", "run"];
+
+async function boxStartupCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub === undefined || !STARTUP_SUBCOMMANDS.includes(sub)) {
+    throw new Error(`minibox box startup-command needs one of ${STARTUP_SUBCOMMANDS.join(", ")}`);
+  }
+  const flags = parseBoxFlags(rest, ["--command"], ["--stdin", "--apply", "--json"]);
+  const [box, ...more] = flags.positional;
+  if (!box || more.length > 0) throw new Error(`minibox box startup-command ${sub} needs one box name or id`);
+  const changes = flags.values.has("--command") || flags.switches.has("--stdin") || flags.switches.has("--apply");
+  if (sub !== "set" && changes)
+    throw new Error(`minibox box startup-command ${sub} takes no --command, --stdin or --apply`);
+  const path = `/api/boxes/${encodeURIComponent(box)}/startup-command`;
+  const asJson = flags.switches.has("--json");
+  const finish = (res: { status: number; json: unknown; text: string }) => {
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+    if (asJson) return printJson(io, res.json);
+    return printStartup(io, res.json as StartupCommandState);
+  };
+
+  if (sub === "get") return finish(await request(env, "GET", path));
+  if (sub === "run") return finish(await request(env, "POST", `${path}/run`));
+
+  const inline = flags.values.get("--command");
+  const fromStdin = flags.switches.has("--stdin");
+  if (sub === "set" && fromStdin === (inline !== undefined)) {
+    throw new Error("minibox box startup-command set needs exactly one of --command TEXT or --stdin");
+  }
+  const command = fromStdin ? await readStdinText(io) : inline;
+  const current = await request(env, "GET", path);
+  if (current.status >= 400) return fail(io, current.status, current.json, current.text);
+  const ifMatch = { "if-match": String((current.json as StartupCommandState).revision) };
+  if (sub === "rm") return finish(await request(env, "DELETE", path, undefined, ifMatch));
+  return finish(await request(env, "PUT", path, { command, applyNow: flags.switches.has("--apply") }, ifMatch));
 }
 
 async function execCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
@@ -1133,6 +1240,289 @@ async function toolCommand(argv: string[], env: Record<string, string | undefine
   return 0;
 }
 
+interface Options {
+  positional: string[];
+  values: Map<string, string>;
+  switches: Set<string>;
+}
+
+interface TaskOutcome {
+  id: string;
+  status: string;
+  output?: string;
+  result?: unknown;
+  error?: { code?: string; message?: string };
+}
+
+const TASK_POLL_MS = 500;
+/** The server keeps only the newest tail of a log, so the text already shown is found again by its last characters. */
+const LOG_ANCHOR_CHARS = 200;
+const OUTPUT_SWITCHES = ["--json", "--no-wait"];
+const BOX_CREATE_VALUE_FLAGS = [
+  "--template",
+  "--cpus",
+  "--memory",
+  "--profile",
+  "--repo",
+  "--branch",
+  "--secret",
+  "--startup-command",
+];
+const BOX_CREATE_SWITCHES = [...OUTPUT_SWITCHES, "--startup-command-stdin"];
+const TEMPLATE_CREATE_VALUE_FLAGS = [
+  "--dockerfile",
+  "--repo",
+  "--context",
+  "--devcontainer",
+  "--description",
+  "--branch",
+  "--subdir",
+  "--dockerfile-path",
+  "--devcontainer-path",
+  "--secret",
+];
+
+interface SourceFlag {
+  flag: string;
+  kind: string;
+  takes: readonly string[];
+}
+
+const TEMPLATE_SOURCES: readonly SourceFlag[] = [
+  { flag: "--dockerfile", kind: "dockerfile", takes: [] },
+  { flag: "--repo", kind: "git", takes: ["--branch", "--subdir", "--dockerfile-path", "--secret"] },
+  { flag: "--context", kind: "context", takes: ["--dockerfile-path"] },
+  { flag: "--devcontainer", kind: "devcontainer", takes: ["--branch", "--devcontainer-path", "--secret"] },
+];
+
+/** The request field each source option is sent as. */
+const SOURCE_KEYS = new Map([
+  ["--branch", "branch"],
+  ["--subdir", "subdir"],
+  ["--dockerfile-path", "dockerfile"],
+  ["--devcontainer-path", "path"],
+  ["--secret", "secretRef"],
+]);
+
+function parseOptions(argv: string[], valueFlags: readonly string[], switchFlags: readonly string[]): Options {
+  const options: Options = { positional: [], values: new Map(), switches: new Set() };
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i] ?? "";
+    if (switchFlags.includes(token)) options.switches.add(token);
+    else if (valueFlags.includes(token)) {
+      options.values.set(token, flagValue(argv, i, token));
+      i += 1;
+    } else if (token.startsWith("--")) throw new Error(`Unknown option ${token}`);
+    else options.positional.push(token);
+  }
+  return options;
+}
+
+function numberOption(options: Options, flag: string): number | undefined {
+  const raw = options.values.get(flag);
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n)) throw new Error(`${flag} needs a number`);
+  return n;
+}
+
+/** The part of a task's log that is new since `shown`. Text trimmed from the start of the tail is skipped over. */
+function unshownLog(shown: string, output: string): string {
+  if (output.startsWith(shown)) return output.slice(shown.length);
+  const anchor = shown.slice(-LOG_ANCHOR_CHARS);
+  const at = anchor === "" ? -1 : output.indexOf(anchor);
+  return at === -1 ? output : output.slice(at + anchor.length);
+}
+
+/** Polls a task until it ends, and writes its log to stderr as it grows. Undefined when a poll fails, after printing why. */
+async function followTask(
+  env: Record<string, string | undefined>,
+  io: CliIo,
+  taskId: string,
+): Promise<TaskOutcome | undefined> {
+  let shown = "";
+  for (;;) {
+    const res = await request(env, "GET", `/api/tasks/${encodeURIComponent(taskId)}`);
+    if (res.status >= 400) {
+      fail(io, res.status, res.json, res.text);
+      return undefined;
+    }
+    const task = res.json as TaskOutcome;
+    const output = task.output ?? "";
+    const fresh = unshownLog(shown, output);
+    if (fresh !== "") io.stderr(fresh);
+    shown = output;
+    if (task.status !== "running") return task;
+    await new Promise((resolve) => setTimeout(resolve, TASK_POLL_MS));
+  }
+}
+
+/** Ends a command whose task has finished. Prints the task as JSON with --json, or `line` on success. */
+function endTask(io: CliIo, task: TaskOutcome, asJson: boolean, line: (task: TaskOutcome) => string): number {
+  if (asJson) io.stdout(`${JSON.stringify(task)}\n`);
+  if (task.status !== "succeeded") {
+    io.stderr(`${task.error?.message ?? `The task ended as ${task.status}`}\n`);
+    return 1;
+  }
+  if (!asJson) io.stdout(`${line(task)}\n`);
+  return 0;
+}
+
+/** A command that started a task. With --no-wait it prints the task id; otherwise it follows the task to its end. */
+async function awaitStarted(
+  env: Record<string, string | undefined>,
+  io: CliIo,
+  accepted: unknown,
+  options: Options,
+  line: (task: TaskOutcome) => string,
+): Promise<number> {
+  const { taskId } = accepted as { taskId: string };
+  const asJson = options.switches.has("--json");
+  if (options.switches.has("--no-wait")) {
+    io.stdout(asJson ? `${JSON.stringify(accepted)}\n` : `${taskId}\n`);
+    return 0;
+  }
+  const task = await followTask(env, io, taskId);
+  return task ? endTask(io, task, asJson, line) : 1;
+}
+
+async function boxCreateCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const options = parseOptions(argv, BOX_CREATE_VALUE_FLAGS, BOX_CREATE_SWITCHES);
+  const [name, ...more] = options.positional;
+  if (!name || more.length > 0) throw new Error("minibox box create needs one box name");
+  const inline = options.values.get("--startup-command");
+  const fromStdin = options.switches.has("--startup-command-stdin");
+  if (inline !== undefined && fromStdin) {
+    throw new Error("minibox box create takes --startup-command or --startup-command-stdin, not both");
+  }
+  const url = options.values.get("--repo");
+  if (url === undefined && (options.values.has("--branch") || options.values.has("--secret"))) {
+    throw new Error("minibox box create takes --branch and --secret only with --repo");
+  }
+  const body: Record<string, unknown> = { name };
+  const template = options.values.get("--template");
+  if (template !== undefined) body.template = template;
+  const cpus = numberOption(options, "--cpus");
+  if (cpus !== undefined) body.cpus = cpus;
+  const memoryMb = numberOption(options, "--memory");
+  if (memoryMb !== undefined) body.memoryMb = memoryMb;
+  const profile = options.values.get("--profile");
+  if (profile !== undefined) body.profile = profile;
+  if (url !== undefined) {
+    const repo: Record<string, string> = { url };
+    const branch = options.values.get("--branch");
+    const secret = options.values.get("--secret");
+    if (branch !== undefined) repo.branch = branch;
+    if (secret !== undefined) repo.secretRef = secret;
+    body.repo = repo;
+  }
+  if (inline !== undefined) body.startupCommand = inline;
+  if (fromStdin) body.startupCommand = await readStdinText(io);
+
+  const res = await request(env, "POST", "/api/boxes", body);
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  const created = res.json as { box: { name: string }; clone?: { taskId: string } };
+  const asJson = options.switches.has("--json");
+  io.stdout(asJson ? `${JSON.stringify(res.json)}\n` : `${created.box.name}\n`);
+  if (!created.clone) return 0;
+  if (options.switches.has("--no-wait")) {
+    io.stderr(`The clone runs as task ${created.clone.taskId}\n`);
+    return 0;
+  }
+  const task = await followTask(env, io, created.clone.taskId);
+  if (!task) return 1;
+  if (task.status === "succeeded") return 0;
+  io.stderr(`${created.box.name} was created, but its clone did not finish: ${task.error?.message ?? task.status}\n`);
+  return 1;
+}
+
+async function readDockerfile(io: CliIo, file: string): Promise<string> {
+  if (file === "-") return readStdinText(io);
+  try {
+    return await readFile(file, "utf8");
+  } catch {
+    throw new Error(`minibox template create cannot read ${file}`);
+  }
+}
+
+async function templateCreateCommand(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+): Promise<number> {
+  const options = parseOptions(argv, TEMPLATE_CREATE_VALUE_FLAGS, OUTPUT_SWITCHES);
+  const [name, ...more] = options.positional;
+  if (!name || more.length > 0) throw new Error("minibox template create needs one template name");
+  const chosen = TEMPLATE_SOURCES.filter((source) => options.values.has(source.flag));
+  const source = chosen[0];
+  if (chosen.length !== 1 || source === undefined) {
+    throw new Error(
+      "minibox template create needs exactly one of --dockerfile FILE, --repo URL, --context URL or --devcontainer URL",
+    );
+  }
+  const value = options.values.get(source.flag) ?? "";
+  const payload: Record<string, unknown> = { kind: source.kind };
+  if (source.kind === "dockerfile") payload.text = await readDockerfile(io, value);
+  else payload.url = value;
+  for (const [flag, key] of SOURCE_KEYS) {
+    const given = options.values.get(flag);
+    if (given === undefined) continue;
+    if (!source.takes.includes(flag)) throw new Error(`${flag} does not apply to ${source.flag}`);
+    payload[key] = given;
+  }
+  const body: Record<string, unknown> = { name, source: payload };
+  const description = options.values.get("--description");
+  if (description !== undefined) body.description = description;
+
+  const started = await request(env, "POST", "/api/templates", body);
+  if (started.status >= 400) return fail(io, started.status, started.json, started.text);
+  return awaitStarted(
+    env,
+    io,
+    started.json,
+    options,
+    (task) => (task.result as { template: { ref: string } }).template.ref,
+  );
+}
+
+async function templateRebuildCommand(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+): Promise<number> {
+  const options = parseOptions(argv, [], OUTPUT_SWITCHES);
+  const [ref, ...more] = options.positional;
+  if (!ref || more.length > 0) throw new Error("minibox template rebuild needs one template ref");
+  const started = await request(env, "POST", `/api/templates/${encodeURIComponent(ref)}/rebuild`);
+  if (started.status >= 400) return fail(io, started.status, started.json, started.text);
+  return awaitStarted(
+    env,
+    io,
+    started.json,
+    options,
+    (task) => (task.result as { template: { ref: string } }).template.ref,
+  );
+}
+
+/** `template create` and `template rebuild`. Templates are built from a source, and the build runs as a task. */
+async function templateCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub === "create") return templateCreateCommand(rest, env, io);
+  if (sub === "rebuild") return templateRebuildCommand(rest, env, io);
+  throw new Error("minibox template needs create or rebuild");
+}
+
+async function imageCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub !== "pull") throw new Error("minibox image needs pull");
+  const options = parseOptions(rest, [], OUTPUT_SWITCHES);
+  const [ref, ...more] = options.positional;
+  if (!ref || more.length > 0) throw new Error("minibox image pull needs one image reference");
+  const started = await request(env, "POST", "/api/images/pull", { ref });
+  if (started.status >= 400) return fail(io, started.status, started.json, started.text);
+  return awaitStarted(env, io, started.json, options, (task) => (task.result as { image: { ref: string } }).image.ref);
+}
+
 /** `--help` anywhere before a `--`, so `minibox exec box -- npm --help` still runs npm. */
 function asksForHelp(args: readonly string[]): boolean {
   const end = args.indexOf("--");
@@ -1166,6 +1556,10 @@ export async function runCli(
       return 0;
     }
     if (command === "box" && (sub === "ls" || sub === "list")) return await boxLs(rest, env, io);
+    if (command === "box" && sub === "create") return await boxCreateCommand(rest, env, io);
+    if (command === "box" && sub === "startup-command") return await boxStartupCommand(rest, env, io);
+    if (command === "template") return await templateCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "image") return await imageCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "exec") return await execCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "session") return await sessionCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "files") return await filesCommand(sub === undefined ? [] : [sub, ...rest], env, io);

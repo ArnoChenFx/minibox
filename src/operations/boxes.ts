@@ -23,6 +23,7 @@ import {
   updateBox,
 } from "../services/boxes";
 import { assertCapacity, assertNewBox, assertResizeRoom } from "../services/capacity";
+import { assertRepoSecretSet, cloneIntoWorkspace, WORKSPACE } from "../services/git-clone";
 import { moveBox, moveConfirmation, previewMove } from "../services/move";
 import { placeBox } from "../services/placement";
 import { rebuildBox } from "../services/rebuild";
@@ -33,7 +34,7 @@ import { underQuota } from "../tokens/quota";
 import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
 import { hostById, hostOfBox } from "./routing";
-import { BoxSchema, BoxWithStatsSchema, StatSampleSchema, StatsSchema } from "./schemas";
+import { BoxSchema, BoxWithStatsSchema, CloneStartedSchema, OkSchema, StatSampleSchema, StatsSchema } from "./schemas";
 import type { OperationContext } from "./types";
 import {
   boxEnv,
@@ -51,6 +52,7 @@ import {
   optionalMemoryMb,
   optionalPids,
   rebuildEnv,
+  repoSource,
   rebuildMounts,
   rebuildNetwork,
   requireResources,
@@ -59,6 +61,7 @@ import {
   hostId,
   hostOrAuto,
   statsFlag,
+  startupCommandOption,
   storageConfirmFlag,
   tail,
   templateImage,
@@ -146,6 +149,42 @@ function grantedHosts(ctx: OperationContext): HostCtx[] {
   return granted;
 }
 
+/**
+ * Clones the repository of a new box into its workspace. Box create starts it as a child task, so the create answers
+ * before a large clone finishes. It is not in the registry: the API reaches it only through box create.
+ */
+const CLONE_INPUT = z.object({
+  id: z.string(),
+  repo: z.object({ url: z.string(), branch: z.string().optional(), secretRef: z.string().optional() }),
+});
+
+const cloneOperation = defineOperation<typeof CLONE_INPUT, typeof OkSchema, Box>({
+  name: "box.clone",
+  tag: "boxes",
+  summary: "Clone a repository into a box's workspace",
+  kind: "write",
+  scope: "box:write",
+  async: true,
+  input: CLONE_INPUT,
+  output: OkSchema,
+  rest: [],
+  exclusive: (_ctx, _input, box) => `box.clone:${box.boxId}`,
+  activity: { action: () => "box.clone", target: (_input, box) => box.name },
+  audit: { target: (_input, box) => box && boxTarget(box) },
+  run: async ({ host, task }, input) => {
+    await cloneIntoWorkspace(host, input.id, input.repo, (text) => task?.log(text));
+    return { ok: true as const };
+  },
+});
+
+/** A clone writes into the workspace, so the new box must mount one writable. The default mounts create an empty one. */
+function assertCloneWorkspace(input: { mounts?: { path: string; mode: "rw" | "ro" }[]; repo?: unknown }): void {
+  if (input.repo === undefined || input.mounts === undefined) return;
+  if (!input.mounts.some((mount) => mount.path === WORKSPACE && mount.mode === "rw")) {
+    throw badRequest(msg("repo_needs_workspace"), { field: "repo" });
+  }
+}
+
 export const boxCreate = defineOperation({
   name: "box.create",
   tag: "boxes",
@@ -154,6 +193,7 @@ export const boxCreate = defineOperation({
   scope: "box:write",
   async: false,
   conflicts: true,
+  longSync: true,
   input: z.object({
     name: boxName(),
     template: templateImage(),
@@ -195,15 +235,17 @@ export const boxCreate = defineOperation({
         description:
           "Catalog tool ids to record on the box spec (version latest). After create, call reconcile_tools (or install_tool) to install them onto the shared tools volume.",
       }),
+    startupCommand: startupCommandOption(),
+    repo: repoSource(),
   }),
-  output: z.object({ box: BoxSchema }),
+  output: z.object({ box: BoxSchema, clone: CloneStartedSchema.optional() }),
   rest: [{ method: "POST", path: "/api/boxes", body: true, status: 201 }],
   cli: "box create",
   mcp: {
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional repo clones a Git repository into /workspace once, on this first create: url, optional branch, and secretRef for a token or base64 deploy key, which is read from the secret store and never stored in the box. The clone runs as a task, returned as clone.taskId, and needs a writable /workspace. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Optional startupCommand is a shell command the box runs at every start, through bash -lc in /workspace; it needs the exec and secret:use scopes, and get_startup_command reads it back. A box created from a template does not inherit a startup command unless one is passed. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
   hostFor: (ctx, input) => {
     if (input.host !== AUTO_HOST) return hostById(ctx, input.host ?? LOCAL_HOST_ID);
@@ -213,11 +255,19 @@ export const boxCreate = defineOperation({
       image: input.template ?? ctx.host.baseTemplateTag,
     });
   },
-  precondition: ({ host }, input) => assertNewBox(host, input),
+  precondition: async ({ host }, input) => {
+    assertCloneWorkspace(input);
+    assertRepoSecretSet(host, input.repo);
+    await assertNewBox(host, input);
+  },
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: {
     target: ({ name }, _box, result) => ({ kind: "box", id: result?.box.id, name }),
-    detail: (input) => ({ ...input, env: envNames(input.env) }),
+    detail: ({ startupCommand, ...input }) => ({
+      ...input,
+      env: envNames(input.env),
+      ...(startupCommand === undefined ? {} : { startupCommand: "set" }),
+    }),
   },
   run: async (ctx, input) => {
     const { host, principal, record } = ctx;
@@ -226,7 +276,7 @@ export const boxCreate = defineOperation({
     } else {
       await assertCanCreateDefaultMounts(ctx, input.name);
     }
-    return underQuota(ctx, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
+    const created = await underQuota(ctx, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
       box: await createBox(
         host,
         {
@@ -241,10 +291,15 @@ export const boxCreate = defineOperation({
           idleTimeoutSec: input.idleTimeoutSec,
           ttlSec: ttlFor(principal, input.ttlSec),
           tools: input.tools,
+          startupCommand: input.startupCommand,
         },
         record,
       ),
     }));
+    if (input.repo === undefined) return created;
+    if (!ctx.startTask) throw new Error("box.create needs the executor to start a clone");
+    const clone = await ctx.startTask(cloneOperation, { id: created.box.boxId, repo: input.repo }, created.box);
+    return { ...created, clone };
   },
 });
 
@@ -440,6 +495,7 @@ export const boxRebuild = defineOperation({
   scope: "box:write",
   async: false,
   conflicts: true,
+  longSync: true,
   input: z.object({
     id: boxId(),
     template: templateImage(),

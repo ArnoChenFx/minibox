@@ -5,13 +5,29 @@ import { labelChange } from "../labels";
 import { conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
+import { NAME_RE } from "../lib/validation";
 import { isRuntimeError } from "../runtime";
 import { getBox } from "./boxes";
 import { type Progress, underBox } from "./checkpoints";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 import { createSnapshot, deleteSnapshot } from "./snapshots";
+import { type BuildKind, buildKindOf, removeRecipe } from "./template-builds";
 
-export const listTemplates = (host: HostCtx): Promise<ImageItem[]> => listImagesByLabel(host, host.keys.template);
+export type TemplateItem = ImageItem & { buildKind?: BuildKind };
+
+/**
+ * The templates on this host. `buildKind` is set on a template built from a declared source, so a client can offer a
+ * rebuild, and is left out for one saved from a box or made by other tools.
+ */
+export async function listTemplates(host: HostCtx): Promise<TemplateItem[]> {
+  const images = await listImagesByLabel(host, host.keys.template);
+  const prefix = `${host.prefix}-template:`;
+  return images.map((image) => {
+    const tag = image.tags.find((t) => t.startsWith(prefix));
+    const buildKind = tag === undefined ? null : buildKindOf(host, tag.slice(prefix.length), image.id);
+    return buildKind === null ? image : { ...image, buildKind };
+  });
+}
 
 export const BASE_DESCRIPTION = "Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user";
 
@@ -30,14 +46,14 @@ export async function assertTemplateNameAvailable(host: HostCtx, name: string): 
   if (taken) throw conflict(msg("template_name_taken", { name }));
 }
 
-/** Template names a save or a promotion is writing right now, as `<host id>:<name>`. */
+/** Template names a save, a promotion or a declared build is writing right now, as `<host id>:<name>`. */
 const writing = new Set<string>();
 
 /**
- * Runs `fn` holding `name` for this host, so two saves or promotions to one name cannot both pass the check and have the
+ * Runs `fn` holding `name` for this host, so two saves, promotions or builds to one name cannot both pass the check and have the
  * second commit move the tag over the first (which would leave the first image untagged). The name must also be free.
  */
-async function holdingTemplateName<T>(host: HostCtx, name: string, fn: () => Promise<T>): Promise<T> {
+export async function holdingTemplateName<T>(host: HostCtx, name: string, fn: () => Promise<T>): Promise<T> {
   const key = `${host.host.id}:${name}`;
   if (writing.has(key)) throw conflict(msg("template_name_taken", { name }));
   writing.add(key);
@@ -146,6 +162,9 @@ export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> 
     log.warn("template.base_deleted", { ref });
   }
   await removeLabeledImage(host, ref, host.keys.template, "template_not_found");
+  const prefix = `${host.prefix}-template:`;
+  const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : "";
+  if (NAME_RE.test(name)) removeRecipe(host, name);
 }
 
 /**

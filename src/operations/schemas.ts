@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { BOX_PROFILES } from "../box-profile";
 import { CONSISTENCY_MODES } from "../checkpoints/types";
+import { BUILD_KINDS } from "../services/template-builds";
 import { VOLUME_ROLES } from "../volumes/types";
 
 export const StatsSchema = z.object({
@@ -227,6 +228,21 @@ export const ImageSchema = z.object({
 export const PromotedTemplateSchema = z.object({
   ref: z.string(),
   name: z.string(),
+});
+
+/** A template as the list reports it. `buildKind` is present only on a template built from a declared source. */
+export const TemplateSchema = ImageSchema.extend({
+  buildKind: z.enum(BUILD_KINDS).optional(),
+});
+
+export const ImagePulledSchema = z.object({
+  ref: z.string(),
+  id: z.string(),
+});
+
+/** The task that clones a new box's repository into its workspace. */
+export const CloneStartedSchema = z.object({
+  taskId: z.string(),
 });
 
 /** The image the build produced. The build log is kept on the task, not in this result. */

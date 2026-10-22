@@ -9,7 +9,7 @@ export type MountMode = "rw" | "ro";
 export type RecoverySource = "claim" | "degraded";
 
 /** Mutable fields that are not on the container, so a recovered spec puts them back to defaults. */
-export const RESET_FIELDS = ["idleTimeout", "ttl", "labels", "tools", "env"] as const;
+export const RESET_FIELDS = ["idleTimeout", "ttl", "labels", "tools", "env", "startupCommand"] as const;
 
 export interface BoxMount {
   volume: string;
@@ -72,6 +72,11 @@ export interface BoxSpec {
   mounts: BoxMount[];
   env: BoxEnv[];
   tools: BoxTool[];
+  /**
+   * Shell command run in the box's init session at every start, as typed. Absent when none is set. A command may hold
+   * secrets, so it is returned only to callers that may use them, and it stays out of events and audit records.
+   */
+  startupCommand?: string;
   /** User labels. Mutable, and never copied onto the container. */
   labels: Record<string, string>;
   lifecycle: {

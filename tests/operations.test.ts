@@ -58,6 +58,10 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.move": (id) => ({ id, host: "lab", confirm: true, expectedRevision: "1" }),
   "box.logs": (id) => ({ id, tail: 10 }),
   "box.stats": (id) => ({ id }),
+  "box.startup.get": (id) => ({ id }),
+  "box.startup.set": (id) => ({ id, command: "echo ready", expectedRevision: "1" }),
+  "box.startup.delete": (id) => ({ id, expectedRevision: "1" }),
+  "box.startup.run": (id) => ({ id }),
   "exec.run": (id) => ({ id, argv: ["true"] }),
   "exec.get": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "exec.kill": () => ({ execId: `ex_${"0".repeat(26)}` }),
@@ -147,8 +151,11 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.save": (id) => ({ id, name: "silver" }),
+  "template.create": () => ({ name: "sample", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" } }),
+  "template.rebuild": () => ({ ref: "mbtest-template:sample" }),
   "template.build": () => ({}),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
+  "image.pull": () => ({ ref: "alpine:3.20" }),
   "task.list": () => ({}),
   "task.get": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "task.cancel": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
@@ -248,6 +255,10 @@ async function preparedInput(
   operation: Operation,
   boxId: string,
 ): Promise<{ input: unknown; release?: () => void; body?: RawBody }> {
+  if (operation.name === "template.rebuild") {
+    await app.operations.run("template.create", ctx, SAMPLES["template.create"]?.(boxId, app));
+    await app.tasks.drain();
+  }
   if (operation.name === "task.get") {
     const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
     await app.tasks.drain();
@@ -264,6 +275,9 @@ async function preparedInput(
   }
   if (["session.read", "session.send", "session.close"].includes(operation.name)) {
     await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+  }
+  if (operation.name === "box.startup.run") {
+    await app.operations.run("box.startup.set", ctx, { id: boxId, command: "echo ready", expectedRevision: "1" });
   }
   if (operation.name === "secret.delete") {
     await app.operations.run("secret.set", ctx, { name: "vault", value: "s3cret-value" });
@@ -924,6 +938,10 @@ describe("projections", () => {
       "delete_box",
       "box_action",
       "update_box",
+      "get_startup_command",
+      "set_startup_command",
+      "delete_startup_command",
+      "run_startup_command",
       "exec",
       "exec_get",
       "exec_kill",
@@ -963,11 +981,14 @@ describe("projections", () => {
         .map((tool) => tool.name)
         .toSorted(),
     ).toEqual([
+      "create_template",
       "delete_custom_tool",
       "install_tool",
       "list_custom_tools",
       "list_tools",
+      "pull_image",
       "put_custom_tool",
+      "rebuild_template",
       "reconcile_tools",
       "save_template",
       "uninstall_tool",
@@ -1004,6 +1025,8 @@ describe("projections", () => {
       "ttlSec",
       "host",
       "tools",
+      "startupCommand",
+      "repo",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });
     expect(create?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });

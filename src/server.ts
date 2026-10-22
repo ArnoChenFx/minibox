@@ -31,9 +31,10 @@ import { handleCli } from "./routes/cli";
 import { matchRoute, routeAllows } from "./routes/router";
 import { type Box, hostOfSpecRef, locateBox, wakeIfSleeping } from "./services/boxes";
 import { reconcileHost } from "./services/reconcile";
+import { INIT_SESSION } from "./startup/command";
 import { serveFile } from "./static";
 import { isSessionName } from "./tmux/format";
-import { boxVisible, scopeAllowed, viewOfBox } from "./tokens/model";
+import { boxVisible, mayUseSecrets, refusal, scopeAllowed, viewOfBox } from "./tokens/model";
 import { resolveVersion } from "./version";
 import type { AgentSocketData } from "./ws/agent";
 import { type SocketData, socketHandlers } from "./ws/socket";
@@ -189,6 +190,7 @@ export function startServer(app: App): Server<SocketData> {
           ) {
             throw new AppError(403, "forbidden", msg("box_out_of_scope"));
           }
+          if (name === INIT_SESSION && !mayUseSecrets(principal)) throw refusal("startup_session_forbidden");
           // The hold spans the wake and the attach, so the idle sweep cannot stop the box in between (#12).
           const release = app.pulse.hold(found.boxId);
           let box: Box;

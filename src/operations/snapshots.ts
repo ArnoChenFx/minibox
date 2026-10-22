@@ -19,6 +19,7 @@ import {
   memoryWithDefault,
   snapshotName,
   snapshotRef,
+  startupCommandOption,
   ttl,
 } from "./validation";
 
@@ -62,6 +63,7 @@ export const snapshotFork = defineOperation({
     memoryMb: memoryWithDefault(DEFAULT_RESOURCES.memoryMb),
     profile: boxProfile(),
     ttlSec: ttl("create"),
+    startupCommand: startupCommandOption(),
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/snapshots/:ref/boxes", body: true, status: 201 }],
@@ -84,6 +86,7 @@ export const snapshotFork = defineOperation({
           templateLabel: `snapshot:${input.ref}`,
           createdBy: principal.id,
           ttlSec: ttlFor(principal, input.ttlSec),
+          startupCommand: input.startupCommand,
         },
         record,
       ),

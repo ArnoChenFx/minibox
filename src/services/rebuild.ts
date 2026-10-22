@@ -22,7 +22,9 @@ import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox, refuseExpired } from "./boxes";
+import { assertImageAvailable, ensureImageOn } from "./images";
 import { beginChange } from "./moving";
+import { launchStartup } from "./startup";
 import { alignVolumeRoot, type RecordNote, restoreVolumeRoot, writableWorkspaceVolume } from "./volume-owner";
 
 interface SwapState {
@@ -87,29 +89,22 @@ async function rebuildChanging(
     assertSecretsSet(host.secrets, planned.env);
     await assertRebuildAttachments(host, spec, planned.mounts, planned.network);
 
-    let template = spec.template;
-    if (planned.templateRef) {
-      const details = await ensureImage(host, planned.templateRef);
-      template = { ref: planned.templateRef, image: planned.templateRef, digest: details.id };
-    }
+    if (planned.templateRef) await assertImageAvailable(host, planned.templateRef);
     if (!confirm) {
       const diff = await host.runtime.containerDiff(spec.containerId);
       throw new AppError(409, "confirmation_required", msg("rebuild_confirm_required"), {
         preview: previewOf(spec, planned, diff),
       });
     }
+    let template = spec.template;
+    if (planned.templateRef) {
+      const details = await ensureImageOn(host, planned.templateRef);
+      template = { ref: planned.templateRef, image: planned.templateRef, digest: details.id };
+    }
     await swap(host, previous, planned, template, request, record);
   });
   await host.sampler.observe(box.id, host.specs.read(box.boxId)?.containerId ?? box.id);
   return getBox(host, box.boxId);
-}
-
-async function ensureImage(host: HostCtx, image: string): Promise<ImageDetails> {
-  try {
-    return await host.runtime.inspectImage(image);
-  } catch {
-    throw badRequest(msg("template_image_missing", { image }), { field: "template" });
-  }
 }
 
 /** Creates the host's box network when a rebuild joins it. Mounts and networks are checked before the preview. */
@@ -389,6 +384,7 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
         previous.mounts.map((mount) => mount.volume),
       );
       await host.runtime.startContainer(previous.containerId);
+      await launchStartup(host, previous.containerId, previous.startupCommand);
     });
   }
   await state.changes.rollback();
@@ -465,6 +461,7 @@ async function swap(
       await host.runtime.stopContainer(created.id, { timeoutSec: host.stopTimeoutSec });
     }
     await host.runtime.removeContainer(previous.containerId, { force: true });
+    if (previous.lifecycle.desired === "running") await launchStartup(host, created.id, previous.startupCommand);
     log.info("box.rebuilt", {
       id: previous.id,
       name: previous.name,

@@ -357,6 +357,13 @@ function bridgeMatches(network: Docker.NetworkInspectInfo, interContainerComm: b
   return network.Driver === "bridge" && enabled === interContainerComm;
 }
 
+/** The registry's answer for a reference it does not serve, or will not serve without a login, is `not_found`. */
+const PULL_NOT_FOUND = /not found|manifest unknown|pull access denied|repository does not exist/i;
+
+function pullFailure(message: string): RuntimeError {
+  return new RuntimeError(PULL_NOT_FOUND.test(message) ? "not_found" : "engine", message);
+}
+
 function networkConflict(name: string, interContainerComm: boolean): RuntimeError {
   const message = `network ${name} exists but is not a bridge with inter-container communication ${interContainerComm ? "on" : "off"}`;
   return new RuntimeError("conflict", message, message);
@@ -589,7 +596,9 @@ async function stageSecrets(docker: Docker, spec: HelperSpec): Promise<string> {
     );
     const container = docker.getContainer(stage.id);
     try {
-      await call(() => container.putArchive(secretsArchive(spec.secrets ?? []), { path: HELPER_SECRETS_DIR }));
+      await call(() =>
+        container.putArchive(secretsArchive(spec.secrets ?? [], spec.secretsOwner), { path: HELPER_SECRETS_DIR }),
+      );
     } finally {
       await container.remove({ force: true }).catch(() => undefined);
     }
@@ -950,7 +959,7 @@ export function createDockerRuntime(target: string | EngineTarget): Runtime {
       };
     },
 
-    async pullImage(ref) {
+    async pullImage(ref, opts) {
       try {
         await call(() => docker.getImage(ref).inspect());
         return;
@@ -960,11 +969,17 @@ export function createDockerRuntime(target: string | EngineTarget): Runtime {
       await call(async () => {
         const stream = await docker.pull(ref);
         await new Promise<void>((resolve, reject) => {
+          const statuses = new Map<string, string>();
           docker.modem.followProgress(
             stream,
-            (err: Error | null) => (err ? reject(new RuntimeError("engine", err.message)) : resolve()),
-            (ev: { error?: string }) => {
-              if (ev.error) reject(new RuntimeError("engine", ev.error));
+            (err: Error | null) => (err ? reject(pullFailure(err.message)) : resolve()),
+            (ev: { id?: string; status?: string; error?: string }) => {
+              if (ev.error) reject(pullFailure(ev.error));
+              if (!ev.status || !opts?.onLog) return;
+              const layer = ev.id ?? "";
+              if (statuses.get(layer) === ev.status) return;
+              statuses.set(layer, ev.status);
+              opts.onLog(layer ? `${layer}: ${ev.status}\n` : `${ev.status}\n`);
             },
           );
         });
@@ -998,8 +1013,8 @@ export function createDockerRuntime(target: string | EngineTarget): Runtime {
       if (spec.signal?.aborted) throw abortError();
       return call(async () => {
         const stream = await docker.buildImage(
-          { context: spec.contextDir, src: [spec.dockerfile] },
-          { t: spec.tag, labels: spec.labels },
+          { context: spec.contextDir, src: spec.src ?? [spec.dockerfile] },
+          { t: spec.tag, labels: spec.labels, dockerfile: spec.dockerfile, buildargs: spec.args },
         );
         return await new Promise<string>((resolve, reject) => {
           let out = "";

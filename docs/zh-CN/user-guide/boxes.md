@@ -21,13 +21,33 @@ Box 是一个隔离的 Docker 容器，拥有独立的文件和进程。你的�
    使用**内存**可设置精确数值（MB），范围 128 到界面显示的上限。
 
 5. 若 MiniBox 有多台宿主机，选择 Box 运行的**宿主机**。见 [宿主机](hosts.md)。
-6. 要更改安全档位，打开**高级**并选择档位。默认为 `standard`。
-7. 要在 Box 中安装 Agent CLI 或其他工具，在**工具**下勾选。见 [工具](tools.md)。
-8. 打开**卷：默认**，然后选择**默认**以挂载 workspace、home、cache 和 tools 卷，或选择**自定义**自行挑选卷。见 [卷与存储](volumes-and-storage.md)。
-9. 要设置环境变量，打开**环境变量**。见 [环境变量与密钥](environment-and-secrets.md)。
-10. 点击**创建并启动**。
+6. 要更改安全档位，打开**高级**并选择档位。默认为 `standard`。同一区域还可以设置可选的**启动命令**。见 [启动命令](#启动命令)。
+7. 要把 Git 代码仓库克隆进 `/workspace`，打开**克隆代码仓库到 /workspace**。见[克隆代码仓库](#克隆代码仓库)。
+8. 要在 Box 中安装 Agent CLI 或其他工具，在**工具**下勾选。见 [工具](tools.md)。
+9. 打开**卷：默认**，然后选择**默认**以挂载 workspace、home、cache 和 tools 卷，或选择**自定义**自行挑选卷。见 [卷与存储](volumes-and-storage.md)。
+10. 要设置环境变量，打开**环境变量**。见 [环境变量与密钥](environment-and-secrets.md)。
+11. 点击**创建并启动**。
 
 Box 会出现在列表中并显示状态。打开它可查看详情。
+
+## 克隆代码仓库
+
+新 Box 可以在 `/workspace` 中以一份 Git 代码仓库作为起点。在创建对话框中打开**克隆代码仓库到 /workspace**，并填写以下字段：
+
+- **代码仓库地址** 是 HTTPS 或 SSH 地址，例如 `https://github.com/org/app.git` 或 `git@github.com:org/app.git`。不要把令牌或密码写进 HTTPS 地址。
+- **分支** 可以是分支或标签名。留空则使用默认分支。
+- **私有仓库的密钥** 指向一个密钥，其中保存 HTTPS 使用的令牌，或 SSH 使用的 base64 部署密钥。请先设置该密钥。参见[环境变量与密钥](environment-and-secrets.md)。
+
+同样的字段在 API 中是 `repo` 对象；在命令行中是 `minibox box create` 的 `--repo`、`--branch` 和 `--secret` 选项；在 MCP 中是 `create_box` 工具的 `repo` 参数。参见 [REST API（英文）](../../reference/api.md)、[CLI 参考（英文）](../../reference/cli.md) 和 [MCP 工具（英文）](../../reference/mcp.md)。
+
+克隆只在创建 Box 时运行一次：
+
+- 克隆为浅克隆。工作区只获得分支的最新提交，不含历史。
+- 先创建 Box，然后克隆作为独立任务**克隆代码仓库**运行。在**任务**面板中查看进度。若克隆失败，Box 会保留，任务会说明原因。
+- 启动、停止、重启和重建 Box 都不会再次克隆。
+- `/workspace` 必须可写。默认卷会为新 Box 提供空的工作区。若你选择**自定义**，并把一个已有文件的卷挂载到 `/workspace`，克隆会失败。
+
+密钥的值只在克隆时读取。它永远不会写入 Box 或其镜像，任务日志中的克隆输出会把该值替换掉。若所选密钥未设置，创建会在任何内容生成之前被拒绝。关于克隆能访问的范围以及 SSH 主机密钥的校验方式，参见[安全（英文）](../../admin/security.md#template-builds-and-repository-clones)。
 
 ## 打开 Box
 
@@ -35,7 +55,7 @@ Box 会出现在列表中并显示状态。打开它可查看详情。
 
 | 标签页 | 内容 |
 |---|---|
-| **概览** | 详情、环境变量、挂载、空闲超时与 TTL，以及**重建**按钮 |
+| **概览** | 详情、环境变量、启动命令、挂载、空闲超时与 TTL，以及**重建**按钮 |
 | **终端** | Box 内的 shell。见 [终端与会话](terminal-and-sessions.md)。 |
 | **活动** | 近期命令、容器事件和终端会话。其下方**容器输出（docker logs）**显示 Box 日志，带**自动刷新**。 |
 | **资源** | CPU 与内存限制、当前用量，以及**调整配额**按钮 |
@@ -53,6 +73,50 @@ Box 会出现在列表中并显示状态。打开它可查看详情。
 - **重启**先停止再启动 Box。
 
 Box 也可能自行停止。空闲的 Box 可以休眠，带 TTL 的 Box 到期后会停止。见 [空闲休眠与 TTL](idle-sleep.md)。
+
+## 启动命令
+
+启动命令是每次 Box 的容器启动时都会运行的一条 shell 命令。它适合用于需要随 Box 一起恢复的任务，例如开发服务器。
+
+以下情况会运行该命令：创建、启动或从休眠中唤醒、重启、重建，以及从检查点恢复。从模板、快照或检查点创建的 Box 不会获得源 Box 的命令，如有需要，请在新 Box 上另行设置。模板本身不携带启动命令。
+
+要设置命令，打开**概览**标签页中的**启动命令**卡片，点击**设置命令**或**编辑**，然后点击**保存**。也可以在创建对话框的**高级**中填写。你可以随时更改或移除命令，包括 Box 停止或休眠时，且无需重建。改动在下次启动时生效。Box 运行中时，保存前勾选**现在也运行一次**，新命令会立即运行。**重新运行**会按已保存的命令再运行一次，不会更改命令。
+
+命令的运行方式如下：
+
+- 以用户 `dev` 的身份在 `/workspace` 中运行，使用 `bash -lc` 与 Box 的环境变量。命令按你输入的原样保存。
+- 在名为 `minibox-init` 的 tmux 会话中运行。要查看它，请打开 Box 的终端，或通过 SSH 连接，然后运行 `tmux attach -t minibox-init`。按 `Ctrl+B`，再按 `D` 即可分离。
+- 不会阻塞启动。MiniBox 最多等待五秒让命令启动，命令失败也不会阻止 Box 启动。
+
+卡片会显示命令的状态：
+
+| 状态 | 含义 |
+|---|---|
+| **未设置** | Box 没有启动命令。 |
+| **等待下次启动** | 已设置命令，但自 Box 上次启动以来尚未运行。 |
+| **运行中** | 命令正在运行。 |
+| **已退出（代码 N）** | 最近一次运行以退出代码 N 结束。卡片还会显示结束时间与输出的末尾。 |
+| **启动失败** | MiniBox 无法启动该命令。卡片会显示原因。 |
+
+若卡片提示最近一次运行使用的是命令的旧版本，请重新运行，以使用当前版本。
+
+命令最长 4096 字节。可以跨多行，也可以包含制表符，但不能包含其他控制字符。
+
+启动命令不会让 Box 保持唤醒。其 `minibox-init` 会话只有在有人 attach 到它时才算使用。使用**重新运行**或**现在也运行一次**再次运行命令，会重新开始空闲计时，与 `exec` 相同。见 [空闲休眠与 TTL](idle-sleep.md)。
+
+读取启动命令需要访问令牌具有 `secret:use` 权限范围。设置、移除或运行命令还需要 `exec`。命令及其输出可能包含密钥，因此活动日志与事件只记录命令已被更改，不记录其内容。见 [访问与令牌](access-and-tokens.md)。
+
+在命令行中：
+
+```bash
+minibox box create my-box --startup-command "python3 -m http.server 8000"
+minibox box startup-command get my-box
+minibox box startup-command set my-box --command "python3 -m http.server 9000" --apply
+minibox box startup-command run my-box
+minibox box startup-command rm my-box
+```
+
+[REST API（英文）](../../reference/api.md) 以及 MCP 工具 `get_startup_command`、`set_startup_command`、`delete_startup_command` 和 `run_startup_command` 提供相同的功能。
 
 ## 更改 CPU 与内存
 

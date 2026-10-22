@@ -7,6 +7,7 @@ import { mountEnvCard } from "../components/env-card.js";
 import { mountFiles } from "../components/files.js";
 import { openSaveTemplate } from "../components/save-template.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
+import { mountStartupCard } from "../components/startup-card.js";
 import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
@@ -100,6 +101,8 @@ export function render(view, id, tab = "overview") {
   let disposed = false;
   let painted = false;
   let missing = false;
+  /** Set while this page deletes its own box, so the remove frame doesn't refetch a box that is gone. */
+  let leaving = false;
   let mounts = 0;
   let tabCleanup = null;
   let frames = 0;
@@ -180,6 +183,7 @@ export function render(view, id, tab = "overview") {
   };
 
   const refresh = async () => {
+    if (leaving) return;
     if (missing) return rerender();
     try {
       await fetchBox();
@@ -251,7 +255,14 @@ export function render(view, id, tab = "overview") {
     },
     move: () => openMove(box),
     delete: async () => {
-      if (await deleteBox(box)) location.hash = "#/boxes";
+      const framesAtDelete = frames;
+      leaving = true;
+      if (await deleteBox(box)) {
+        location.hash = "#/boxes";
+        return;
+      }
+      leaving = false;
+      if (frames !== framesAtDelete) void rerender();
     },
     resources: () => editResources(box, rerender),
     "attach-volume": () =>
@@ -272,6 +283,7 @@ export function render(view, id, tab = "overview") {
     subscribe("box", (frame) => {
       if (!box || frame.boxId !== box.boxId) return;
       frames += 1;
+      if (leaving) return;
       if (frame.op === "remove" || missing) {
         void rerender();
         return;
@@ -550,8 +562,9 @@ function toolRow(tool, isCustom) {
 
 const TAB_RENDER = {
   overview(root, { box, onChange }) {
-    root.innerHTML = `<div id="ovMain"></div><div id="ovEnv"></div><div id="ovMounts"></div>`;
+    root.innerHTML = `<div id="ovMain"></div><div id="ovEnv"></div><div id="ovStartup"></div><div id="ovMounts"></div>`;
     const env = mountEnvCard(root.querySelector("#ovEnv"), { box });
+    const startup = mountStartupCard(root.querySelector("#ovStartup"), { box });
     const draw = () => {
       const b = box();
       const s = b.stats;
@@ -594,10 +607,12 @@ const TAB_RENDER = {
     const off = onChange(() => {
       draw();
       env.onBoxChange();
+      startup.onBoxChange();
     });
     return () => {
       off();
       env.dispose();
+      startup.dispose();
     };
   },
 
