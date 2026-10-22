@@ -16,7 +16,8 @@ export async function secretNames() {
 
 /**
  * The inner markup of one env row: a name, a kind (a plain value or a secret), the value field or the secret chooser, and
- * a remove button. The value is a password input, so a plain value stays masked until its reveal button is pressed.
+ * a remove button. The value is a password input, so a plain value stays masked until its reveal button is pressed; the
+ * button sits inside the input, so the value field is as wide as the secret chooser and every row has the same columns.
  * `secrets` lists the names to choose from, or is `null` when they could not be read.
  */
 export function envRowHtml(row, secrets) {
@@ -29,9 +30,9 @@ export function envRowHtml(row, secrets) {
       <option value="value"${secret ? "" : " selected"}>${esc(t("env.kindValue"))}</option>
       <option value="secret"${secret ? " selected" : ""}>${esc(t("env.kindSecret"))}</option>
     </select>
-    <div class="env-field" data-env-field="value"${secret ? " hidden" : ""}>
+    <div class="env-field env-field-reveal" data-env-field="value"${secret ? " hidden" : ""}>
       <input class="input mono" data-env-value type="password" value="${esc(row.value)}" aria-label="${esc(t("env.value"))}" autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <button type="button" class="icon-btn" data-env-reveal aria-pressed="false" aria-label="${esc(t("env.reveal"))}" title="${esc(t("env.reveal"))}">${icon("eye")}</button>
+      <button type="button" class="icon-btn env-reveal" data-env-reveal aria-pressed="false" aria-label="${esc(t("env.reveal"))}" title="${esc(t("env.reveal"))}">${icon("eye")}</button>
     </div>
     <div class="env-field" data-env-field="secret"${secret ? "" : " hidden"}>
       <select class="select" data-env-secret aria-label="${esc(t("env.secret"))}">
