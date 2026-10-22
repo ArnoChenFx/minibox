@@ -61,12 +61,11 @@ function serverOf(raw: string): string {
   return url.toString();
 }
 
+/** The one call of `fetch` the pairing makes, so a test can stand in for it without the rest of the fetch type. */
+export type Fetcher = (input: URL | string, init?: RequestInit) => Promise<Response>;
+
 /** Exchanges a pairing code and the agent's public key for an agent id. The code is spent whether or not this succeeds. */
-export async function pairWith(
-  server: string,
-  request: PairRequest,
-  fetcher: typeof fetch = fetch,
-): Promise<PairResponse> {
+export async function pairWith(server: string, request: PairRequest, fetcher: Fetcher = fetch): Promise<PairResponse> {
   let res: Response;
   try {
     res = await fetcher(new URL(AGENT_PAIR_PATH, server), {
@@ -93,7 +92,7 @@ export async function pairWith(
 }
 
 export interface AgentDeps {
-  readonly fetch?: typeof fetch;
+  readonly fetch?: Fetcher;
   readonly runtime?: Runtime;
   readonly now?: () => Date;
 }
