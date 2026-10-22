@@ -157,6 +157,7 @@ export async function ensureSpec(host: HostCtx, info: ContainerInfo): Promise<{ 
     if (labeled && (labeled.containerId === info.id || labeled.containerName === info.name)) {
       return { spec: labeled, created: false };
     }
+    if (host.specs.isRetired(info.id)) throw new ClaimError(`container ${info.name} was removed with its box`);
     if (labeled) {
       log.warn("box.spec_id_taken", {
         id: labeledId,

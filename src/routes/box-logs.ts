@@ -7,7 +7,7 @@ import { logStream } from "../logs/stream";
 import { boxLogs, boxTarget } from "../operations/boxes";
 import type { Principal } from "../operations/types";
 import { parseInput, tail } from "../operations/validation";
-import { type Box, readBox } from "../services/boxes";
+import { type Box, hostOfSpecRef, readBox } from "../services/boxes";
 import { boxVisible, refusal, viewOfBox } from "../tokens/model";
 import { abortWhenEnded, principalOf, type Route, route, scopedAccess } from "./router";
 
@@ -51,7 +51,8 @@ export const boxLogRoutes: Route[] = [
     "GET",
     "/api/boxes/:id/logs/stream",
     async (ctx) => {
-      const { app, host, req, url, params, server, caller } = ctx;
+      const { app, req, url, params, server, caller } = ctx;
+      const host = hostOfSpecRef(app.hosts, params.id ?? "") ?? ctx.host;
       const principal = principalOf(ctx);
       const { tail: lines } = parseInput(streamInput, Object.fromEntries(url.searchParams));
       const box = await readBox(host, params.id ?? "");

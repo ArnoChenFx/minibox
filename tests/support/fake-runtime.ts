@@ -325,6 +325,8 @@ export class FakeRuntime implements Runtime {
   readonly execs: FakeExec[] = [];
   /** When true, every call fails as if the engine socket were unreachable. */
   down = false;
+  /** The size `info()` reports for the engine, which bounds a box's CPU and memory on it. */
+  engine = { cpus: 8, memoryBytes: 16 * 1024 * 1024 * 1024 };
   /** Output returned by the next and later builds. */
   buildLog = "Successfully built fake\n";
   /** Bytes reported by `diskUsage`. Tests shrink `freeBytes` to exercise the low-space flag. */
@@ -646,6 +648,8 @@ export class FakeRuntime implements Runtime {
       rootDir: "/fake/docker",
       containers: { running, total: this.containers.size },
       images: this.images.size,
+      cpus: this.engine.cpus,
+      memoryBytes: this.engine.memoryBytes,
     };
   }
 

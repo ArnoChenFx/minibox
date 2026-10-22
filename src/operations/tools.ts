@@ -13,6 +13,7 @@ import { type CatalogEntry, isToolCategory, TOOL_CATEGORIES, type ToolCategory }
 import { assertCanAdministerCatalog } from "./authz";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
+import { hostOfBox } from "./routing";
 import type { OperationContext } from "./types";
 import { boxId, field } from "./validation";
 
@@ -101,6 +102,7 @@ export const toolInstall = defineOperation({
     description:
       "Install a tool from the catalog into the shared tools volume for a box. Updates BoxSpec.tools. Long-running; returns a task id.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }) => `tool.write:${host.host.id}`,
   subject: (input) => input.tool,
@@ -130,6 +132,7 @@ export const toolUpgrade = defineOperation({
     name: "upgrade_tool",
     description: "Upgrade a tool already recorded on a box. Returns a task id.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }) => `tool.write:${host.host.id}`,
   subject: (input) => input.tool,
@@ -159,6 +162,7 @@ export const toolUninstall = defineOperation({
     name: "uninstall_tool",
     description: "Remove a tool from the shared tools volume and from the box spec. Returns a task id.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }) => `tool.write:${host.host.id}`,
   subject: (input) => input.tool,
@@ -189,6 +193,7 @@ export const toolReconcile = defineOperation({
     description:
       "Idempotently install every tool listed on the box spec that is not detected on the shared tools volume. Used after create and rebuild.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   exclusive: ({ host }) => `tool.write:${host.host.id}`,
   activity: { action: () => "tool.reconcile", target: (_input, box) => box.name },

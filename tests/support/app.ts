@@ -71,6 +71,7 @@ export function createTestApp(
   const checkpoints = new FakeCheckpointEngine(runtime);
   const app = createApp(cfg, "0.0.0-test", {
     runtime,
+    connect: () => new FakeRuntime(),
     hooks,
     eventsPath: ":memory:",
     checkpointEngine: checkpoints,

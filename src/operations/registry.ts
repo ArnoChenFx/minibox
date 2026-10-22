@@ -3,6 +3,7 @@ import { checkpointOperations } from "./checkpoints";
 import { eventOperations } from "./events";
 import { execOperations } from "./exec";
 import { fileOperations } from "./files";
+import { hostOperations } from "./hosts";
 import { operationIdOf } from "./openapi";
 import { portOperations } from "./ports";
 import { secretOperations } from "./secrets";
@@ -31,6 +32,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...taskOperations,
   ...eventOperations,
   ...tokenOperations,
+  ...hostOperations,
 ];
 
 const OPERATION_NAME = /^[a-z]+(\.[a-z]+)+$/;

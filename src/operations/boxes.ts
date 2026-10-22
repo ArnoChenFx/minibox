@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { EventTarget } from "../events/types";
-import type { HostCtx } from "../host/registry";
+import { type HostCtx, LOCAL_HOST_ID } from "../host/registry";
 import { AppError, badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
 import {
@@ -13,7 +13,7 @@ import {
   getLogs,
   getStats,
   getStatsWithHistory,
-  listBoxes,
+  listAllBoxes,
   readBox,
   restartBox,
   startBox,
@@ -29,6 +29,7 @@ import { boxVisible, ttlFor, viewOfBox } from "../tokens/model";
 import { underQuota } from "../tokens/quota";
 import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
+import { hostById, hostOfBox } from "./routing";
 import { BoxSchema, BoxWithStatsSchema, StatSampleSchema, StatsSchema } from "./schemas";
 import {
   boxEnv,
@@ -51,6 +52,7 @@ import {
   requireResources,
   requireUpdate,
   historyFlag,
+  hostId,
   statsFlag,
   tail,
   templateImage,
@@ -78,19 +80,22 @@ export const boxList = defineOperation({
   kind: "read",
   scope: "box:read",
   async: false,
-  input: z.object({ stats: statsFlag() }),
+  input: z.object({ stats: statsFlag(), host: hostId().optional() }),
   output: z.object({ boxes: z.array(BoxWithStatsSchema) }),
-  rest: [{ method: "GET", path: "/api/boxes", query: ["stats"] }],
+  rest: [{ method: "GET", path: "/api/boxes", query: ["stats", "host"] }],
   cli: "box list",
   mcp: {
     toolset: "core",
     name: "list_boxes",
-    description: "List the boxes on this host, with the current resource usage of running boxes.",
+    description:
+      "List the boxes with the current resource usage of running boxes. Boxes on every host are listed; pass host to list one host. A box on a host that cannot be reached is listed with state unreachable.",
   },
-  run: async ({ host, principal }, input) => {
-    const boxes = await listBoxes(host, { withStats: input.stats });
+  run: async (ctx, input) => {
+    const { principal } = ctx;
+    if (input.host !== undefined) hostById(ctx, input.host);
+    const boxes = await listAllBoxes(ctx.allHosts?.() ?? [ctx.host], { withStats: input.stats, host: input.host });
     if (principal.type === "owner") return { boxes };
-    return { boxes: boxes.filter((box) => boxVisible(principal, viewOfBox(box, host.host.id))) };
+    return { boxes: boxes.filter((box) => boxVisible(principal, viewOfBox(box, box.hostId ?? LOCAL_HOST_ID))) };
   },
 });
 
@@ -110,6 +115,7 @@ export const boxGet = defineOperation({
     name: "get_box",
     description: "Get one box by container id, container name, stable id or box name, with its current resource usage.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: (_input, box) => box && boxTarget(box) },
   run: async ({ host }, _input, box) => ({
@@ -151,6 +157,9 @@ export const boxCreate = defineOperation({
     env: boxEnv("create"),
     idleTimeoutSec: idleTimeout(),
     ttlSec: ttl("create"),
+    host: hostId()
+      .optional()
+      .meta({ description: "Host to create the box on. Omitted, the box goes on the local host." }),
     tools: z
       .array(
         z
@@ -174,8 +183,9 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional host names the machine to create it on (default local, see list_hosts). Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
+  hostFor: (ctx, input) => hostById(ctx, input.host ?? LOCAL_HOST_ID),
   precondition: ({ host }, input) => assertCapacity(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: {
@@ -228,6 +238,7 @@ export const boxDelete = defineOperation({
     description:
       "Delete a box and its container. Pass deleteVolume to remove volumes that this box owns and that no other box mounts. Independent volumes, including the shared tools volume, are kept.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.delete", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
@@ -254,6 +265,7 @@ export const boxAction = defineOperation({
     name: "box_action",
     description: "Start, stop or restart a box. Stopping keeps the workspace volume.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: (input) => `box.${input.action}`, target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
@@ -280,6 +292,7 @@ export const boxResources = defineOperation({
   rest: [{ method: "PATCH", path: "/api/boxes/:id/resources", body: true, ifMatch: true }],
   cli: "box resize",
   precondition: ({ host }, input) => assertCapacity(host, input),
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.resources", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
@@ -349,6 +362,7 @@ export const boxUpdate = defineOperation({
       "Change a box in place: name, CPU, memory, process limit, labels, idle timeout or TTL. Pass expectedRevision, the box's current revision. Container labels are not changed. Template, mounts, env, network and profile are not applied in place: a difference returns 409 confirmation_required with a preview. Apply those with rebuild_box and confirm true. Attaching or detaching a volume rebuilds the box the same way, through attach_volume and detach_volume.",
   },
   precondition: ({ host }, input) => assertCapacity(host, input),
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.update", target: (_input, box) => box.name },
   audit: {
@@ -414,6 +428,7 @@ export const boxRebuild = defineOperation({
     description:
       "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). A box whose template is a tag follows the tag: when the tag names another image, the preview lists it as a template change, and a confirmed rebuild runs the box on that image. A secret's value is read at rebuild, so a secret changed since the box was built takes effect here. Pass expectedRevision, the box's current revision.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "box.rebuild", target: (_input, box) => box.name },
   audit: {
@@ -459,6 +474,7 @@ export const boxLogs = defineOperation({
   output: z.object({ logs: z.string() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/logs", query: ["tail"] }],
   cli: "box logs",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: ({ id }) => ({ kind: "box", name: id }) },
   run: async ({ host }, input) => ({ logs: await getLogs(host, input.id, input.tail) }),
@@ -475,6 +491,7 @@ export const boxStats = defineOperation({
   output: z.object({ stats: StatsSchema.nullable(), history: z.array(StatSampleSchema).optional() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/stats", query: ["history"] }],
   cli: "box stats",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: ({ id }) => ({ kind: "box", name: id }) },
   run: async ({ host }, input) => {

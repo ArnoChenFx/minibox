@@ -4,6 +4,7 @@ import { getBox } from "../services/boxes";
 import { exposeBoxPort, listBoxPorts, unexposeBoxPort } from "../services/ports";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
+import { hostOfBox } from "./routing";
 import { boxId } from "./validation";
 
 const PortSchema = z.object({
@@ -37,6 +38,7 @@ export const portList = defineOperation({
     description:
       "List TCP ports listening inside a running box (from /proc/net/tcp) plus ports you exposed manually for preview. Each entry includes a path-mode preview URL under /box/<name>/<port>/.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   run: async ({ host }, input) => {
     const { ports } = await listBoxPorts(host, input.id);
@@ -61,6 +63,7 @@ export const portExpose = defineOperation({
     description:
       "Add a TCP port to the box's manual preview list. Does not publish a host port. Open the returned url (path /box/<name>/<port>/) while signed in. Automatic discovery still lists listening ports without this call.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "port.expose", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box), detail: (input) => ({ port: input.port }) },
@@ -81,6 +84,7 @@ export const portUnexpose = defineOperation({
   output: z.object({ port: z.number().int() }),
   rest: [{ method: "DELETE", path: "/api/boxes/:id/ports/:port" }],
   cli: "port unexpose",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "port.unexpose", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box), detail: (input) => ({ port: input.port }) },

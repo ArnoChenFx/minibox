@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { BOX_PROFILES, type BoxProfile, isBoxProfile } from "../box-profile";
+import { HOST_ID_RE } from "../host/store";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import {
@@ -120,6 +121,10 @@ export const boxId = () =>
   z.string().meta({
     description: "Box id: a container id, a container name, a stable box id (bx_…), or the box name.",
   });
+
+/** A host id: `local`, or the id of a host added in Settings. Which hosts exist is checked where the id is used. */
+export const hostId = () =>
+  z.string().regex(HOST_ID_RE).meta({ description: "Host id: local, or the id of a host added under Settings." });
 
 export const boxName = () =>
   field((value) => checkName(value, "boxName"), {

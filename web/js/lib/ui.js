@@ -190,6 +190,7 @@ const STATE = {
   restarting: "badge-warning",
   removing: "badge-warning",
   dead: "badge-danger",
+  unreachable: "badge-danger",
   sleeping: "badge-warning",
   expired: "badge-warning",
 };

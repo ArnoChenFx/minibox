@@ -1576,6 +1576,22 @@ input[type="range"] {
 }
 
 /* ---------- Activity ---------- */
+[data-cred][hidden],
+.host-filter[hidden] {
+  display: none;
+}
+/* The custom dropdown's trigger sits right after the native select and takes the same size. */
+.host-filter,
+.host-filter + .dropdown-trigger {
+  width: auto;
+  min-width: 140px;
+  max-width: 200px;
+  height: 32px;
+}
+.is-unreachable > td,
+.activity li.is-unreachable {
+  opacity: 0.55;
+}
 .activity {
   list-style: none;
   margin: 0;

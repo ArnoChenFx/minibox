@@ -1998,5 +1998,109 @@
     "status": 409,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"“uv” is a built-in tool with no custom entry, so there is nothing to delete.\",\"retryable\":false,\"key\":\"tool_custom_builtin_delete\",\"params\":{\"id\":\"uv\"}}}"
+  },
+  {
+    "step": "list hosts before any is added",
+    "method": "GET",
+    "path": "/api/hosts",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null}]}"
+  },
+  {
+    "step": "test a tcp host without credentials",
+    "method": "POST",
+    "path": "/api/hosts/test",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":false,\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"hostKeyFingerprint\":null,\"error\":{\"key\":\"host_credentials_missing\",\"params\":{\"field\":\"ca\"},\"message\":\"The ca is required for this host.\"}}"
+  },
+  {
+    "step": "test a host with a bad endpoint",
+    "method": "POST",
+    "path": "/api/hosts/test",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":false,\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"hostKeyFingerprint\":null,\"error\":{\"key\":\"host_endpoint_invalid\",\"params\":{\"reason\":\"the scheme must be unix://, tcp:// or ssh://\"},\"message\":\"The endpoint is not valid: the scheme must be unix://, tcp:// or ssh://\"}}"
+  },
+  {
+    "step": "test a unix host",
+    "method": "POST",
+    "path": "/api/hosts/test",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true,\"status\":\"online\",\"hostKeyFingerprint\":null,\"error\":null,\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\"}"
+  },
+  {
+    "step": "add a host with a bad id",
+    "method": "POST",
+    "path": "/api/hosts",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A host id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.\",\"retryable\":false,\"key\":\"host_id_invalid\",\"details\":{\"field\":\"id\"}}}"
+  },
+  {
+    "step": "add the lab host",
+    "method": "POST",
+    "path": "/api/hosts",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"host\":{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\"}}"
+  },
+  {
+    "step": "add the lab host again",
+    "method": "POST",
+    "path": "/api/hosts",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A host with the id “lab” already exists.\",\"retryable\":false,\"key\":\"host_exists\",\"params\":{\"host\":\"lab\"}}}"
+  },
+  {
+    "step": "add a host named local",
+    "method": "POST",
+    "path": "/api/hosts",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A host with the id “local” already exists.\",\"retryable\":false,\"key\":\"host_exists\",\"params\":{\"host\":\"local\"}}}"
+  },
+  {
+    "step": "list hosts after adding lab",
+    "method": "GET",
+    "path": "/api/hosts",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null},{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\"}]}"
+  },
+  {
+    "step": "remove the local host",
+    "method": "DELETE",
+    "path": "/api/hosts/local",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"The local host cannot be removed.\",\"retryable\":false,\"key\":\"host_is_local\"}}"
+  },
+  {
+    "step": "remove the lab host",
+    "method": "DELETE",
+    "path": "/api/hosts/lab",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"host\":{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\"}}"
+  },
+  {
+    "step": "remove a missing host",
+    "method": "DELETE",
+    "path": "/api/hosts/missing",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “missing” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"missing\"}}}"
+  },
+  {
+    "step": "list hosts after removing lab",
+    "method": "GET",
+    "path": "/api/hosts",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null}]}"
   }
 ]

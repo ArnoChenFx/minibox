@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### 新增
+- 多宿主机（[#21](https://github.com/ArnoChenFx/minibox/issues/21) 第一部分）：可以在控制台「设置 → 宿主机」或 API 中添加其它 Docker 引擎作为宿主机，创建箱子时选择宿主机（缺省 `local`）。三种连接方式：`unix://` 套接字、`tcp://`（必须双向 TLS）与 `ssh://user@host`（经 SSH 转发引擎套接字，添加前须确认主机密钥指纹）。
+- 宿主机登记在 `DATA_DIR/hosts.json`（权限 600），凭据存放在 `DATA_DIR/hosts/<id>/`（目录 700，文件 600）。凭据不出现在任何 API 响应、日志或审计中。没有 `hosts.json` 时只有本机，既有数据无需迁移。
+- 宿主机管理仅所有者可用：`GET /api/hosts`、`POST /api/hosts/test`、`POST /api/hosts`、`DELETE /api/hosts/:id`，对应 MCP 工具 `list_hosts`、`test_host`、`add_host`、`remove_host`（`meta` 工具集，默认开启）；CLI 暂无宿主机命令。添加、测试与删除都写入审计日志。仍有箱子、卷或检查点的宿主机不能删除（`409`），本机也不能删除。
+- 令牌的 `hosts` 授权限定其可用的宿主机（`local`、一个列表或 `*`）。`admin` 预设可用全部宿主机，其它预设只可用 `local`。授权之外的宿主机返回 `403`（`host_not_granted`）。
+- 宿主机多于一台时，箱子带有 `hostId`，控制台显示宿主机卡片、顶栏的宿主机筛选与「不可达」状态。远端宿主机离线或超过 5 秒未响应时，列表仍然返回，其箱子显示为不可达，不阻塞其它宿主机。
+- 远端宿主机暂不支持端口预览、快照与存为模板（返回 `501`）。模板与检查点不复制到其它宿主机，缺少模板镜像时创建返回 `400`。`host: "auto"` 调度与跨机迁移留到后续部分。
 - Box 的环境变量可以在创建时设置（创建对话框中默认折叠的「环境变量」），也可以在概览页编辑。保存通过重建完成，沿用预览与确认；普通值以掩码显示，可点击显示。`POST /api/boxes` 接受 `env`，最多 64 项。
 - 宿主机密钥：`GET /api/secrets`、`PUT /api/secrets/:name` 与 `DELETE /api/secrets/:name`，以及「设置」中的「密钥」卡片。环境变量的 `secretRef` 在创建与重建时注入容器；缺少的密钥返回 `400`（`env_secret_missing`），不会以空值启动。删除正在使用的密钥返回 `409` 并列出 Box，`force=true` 可强制删除。替换密钥的值在下一次重建时生效，启动不会读取它。
 - 盒子详情页新增「存为模板」：把 Box 的系统层（apt 与 sudo 安装的软件、系统文件的改动）保存为模板，并记录来源 Box。不包含 `/workspace` 与 home 卷，数据请使用检查点。接口为 `POST /api/boxes/:id/template`，MCP 工具为 `save_template`（`tools` 工具集），CLI 为 `template save`。权限与提升为模板相同；名称已存在时返回 `409`（#15）。

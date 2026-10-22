@@ -631,12 +631,13 @@ export class HostSampler {
 
   /**
    * Gives every container that has no spec one, as the list endpoint always did. A container whose id label names a box
-   * that now lives in another container is the leftover of a rebuild, and is left alone.
+   * that now lives in another container is the leftover of a rebuild, and is left alone. So is a container whose box
+   * was removed: the engine is shared by every host, so its cache can still hold a box another host just deleted.
    */
   private async claimUnclaimed(): Promise<void> {
     const host = this.currentHost();
     for (const info of this.containers.values()) {
-      if (this.specOf(info) || this.isStale(info)) continue;
+      if (this.specOf(info) || this.isStale(info) || host.specs.isRetired(info.id)) continue;
       try {
         await ensureSpec(host, info);
       } catch (e) {

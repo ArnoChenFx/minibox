@@ -44,7 +44,8 @@ export function normalize(text: string): string {
     .replace(/\/api\/tasks\/[0-9A-HJKMNP-TV-Z]{26}/g, "/api/tasks/<ulid>")
     .replace(/"cursor":"[0-9a-f]{12}\./g, '"cursor":"<epoch>.')
     .replace(/"ts":\d+/g, '"ts":0')
-    .replace(/"durationMs":\d+/g, '"durationMs":0');
+    .replace(/"durationMs":\d+/g, '"durationMs":0')
+    .replace(/"latencyMs":\d+/g, '"latencyMs":0');
 }
 
 function boxId(json: Record<string, unknown> | null): string {
@@ -718,9 +719,26 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("delete the custom tool", "DELETE", "/api/tools/custom/parity-tool");
     await send("delete a missing custom tool", "DELETE", "/api/tools/custom/parity-tool");
     await send("delete a built-in tool with no custom entry", "DELETE", "/api/tools/custom/uv");
+    await send("list hosts before any is added", "GET", "/api/hosts");
+    await post("test a tcp host without credentials", "/api/hosts/test", {
+      id: "edge",
+      endpoint: "tcp://engine.example:2376",
+    });
+    await post("test a host with a bad endpoint", "/api/hosts/test", { id: "edge", endpoint: "http://engine.example" });
+    await post("test a unix host", "/api/hosts/test", { id: "lab", endpoint: "unix:///var/run/lab.sock" });
+    await post("add a host with a bad id", "/api/hosts", { id: "Lab One", endpoint: "unix:///var/run/lab.sock" });
+    await post("add the lab host", "/api/hosts", { id: "lab", endpoint: "unix:///var/run/lab.sock", name: "Lab" });
+    await post("add the lab host again", "/api/hosts", { id: "lab", endpoint: "unix:///var/run/lab.sock" });
+    await post("add a host named local", "/api/hosts", { id: "local", endpoint: "unix:///var/run/lab.sock" });
+    await send("list hosts after adding lab", "GET", "/api/hosts");
+    await send("remove the local host", "DELETE", "/api/hosts/local");
+    await send("remove the lab host", "DELETE", "/api/hosts/lab");
+    await send("remove a missing host", "DELETE", "/api/hosts/missing");
+    await send("list hosts after removing lab", "GET", "/api/hosts");
   } finally {
     server.stop(true);
     app.throttle.stop();
+    app.hostAdmin.close();
     restoreLogs();
   }
   return exchanges;

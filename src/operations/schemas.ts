@@ -88,6 +88,8 @@ export const BoxSchema = z.object({
   tools: z.array(z.object({ id: z.string(), version: z.string() })),
   /** `unreachable` when a pool behind a mount could not be probed. The engine state stays in `state`. */
   storage: StorageStatusSchema,
+  /** The host the box runs on. Present only when the control plane holds more than one host. */
+  hostId: z.string().optional(),
 });
 
 /** One sample of a box's usage. `t` is epoch milliseconds. */

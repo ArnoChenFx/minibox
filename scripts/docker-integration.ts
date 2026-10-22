@@ -1,7 +1,7 @@
 /**
  * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-checkpoint.test.ts,
- * tests/docker-sessions.test.ts, tests/docker-ssh.test.ts, tests/docker-templates.test.ts and
- * tests/docker-tools.test.ts) against the local Docker engine, one file per process.
+ * tests/docker-sessions.test.ts, tests/docker-ssh.test.ts, tests/docker-templates.test.ts,
+ * tests/docker-tools.test.ts and tests/docker-hosts.test.ts) against the local Docker engine, one file per process.
  *
  *   bun run test:docker
  *
@@ -81,9 +81,14 @@ const TEST_FILES = [
   "tests/docker-ssh.test.ts",
   "tests/docker-templates.test.ts",
   "tests/docker-tools.test.ts",
+  "tests/docker-hosts.test.ts",
 ];
 
-/** Runs each file in its own process, so each one's cleanup sees only what it made. The first failure is the status. */
+/**
+ * Runs each file in its own process and sweeps after it, so a file starts on an engine with nothing the file before it
+ * left behind. A leftover volume with this prefix would be claimed by any host whose records do not know it. The first
+ * failure is the status.
+ */
 async function runTests(): Promise<number> {
   let status = 0;
   for (const file of TEST_FILES) {
@@ -100,6 +105,7 @@ async function runTests(): Promise<number> {
       stderr: "inherit",
     });
     const code = await tests.exited;
+    await sweep();
     if (code !== 0 && status === 0) status = code;
   }
   return status;

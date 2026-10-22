@@ -37,6 +37,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | 检查点 | 把 Box 的工作区和主目录复制到 restic 仓库，再从副本派生新 Box，或把 Box 回滚到副本，并确认或撤销这次回滚。适用保留策略与容量上限。可通过 REST 使用，也可在控制台 Box 详情的「检查点」标签页中操作。MCP 工具暂未提供。见[检查点](#检查点) |
 | 模板 | 新 Box 使用的环境：内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及从 Box 页面存为模板的自定义模板。保存的是系统层（apt 与 sudo 安装的软件、系统文件的改动），不含 `/workspace` 与 home 数据，数据请使用检查点 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
+| 多宿主机 | 可以通过 unix 套接字、双向 TLS 或 SSH 添加其它 Docker 引擎，并在其中任一台上创建 Box。添加宿主机时确认 SSH 主机密钥。添加与移除宿主机仅所有者可用，可在设置页或 API 中操作。见 [多宿主机](#多宿主机) |
 | Box 监控 | 每个 Box 的实时 CPU / 内存占用（相对配额）与历史曲线 |
 | 实时更新 | Box 状态、资源采样、宿主机指标、任务进度与 Box 日志通过 SSE 推送：`GET /api/events/stream` 与 `GET /api/boxes/:id/logs/stream`。控制台只在对应的流断开时轮询 |
 | 网页终端 | 基于 xterm.js + WebSocket 的交互式 bash，随窗口自适应。具名的 tmux 会话在刷新页面或连接断开后仍然保留。Agent 发起的会话默认只读，接管后才能输入 |
@@ -116,7 +117,7 @@ flowchart LR
 ### 目标架构（规划中）
 
 > [!NOTE]
-> exec、`/mcp` 与 CLI 客户端、会话、路径模式的端口预览代理、检查点（拍摄、派生、回滚、保留策略与控制台的检查点标签页），以及图中的存储池和数据卷已经实现。定时检查点、检查点的导入导出与 MCP 工具、多宿主机，以及卷准备之外的辅助容器用途仍在规划中。完整设计见 [`docs/design.md`](docs/design.md)。
+> exec、`/mcp` 与 CLI 客户端、会话、路径模式的端口预览代理、检查点（拍摄、派生、回滚、保留策略与控制台的检查点标签页），以及图中的存储池和数据卷已经实现。定时检查点、检查点的导入导出与 MCP 工具、多宿主机的调度、Agent 与迁移（直连 TLS 与 SSH 已可用），以及卷准备之外的辅助容器用途仍在规划中。完整设计见 [`docs/design.md`](docs/design.md)。
 
 ```mermaid
 flowchart LR
@@ -452,6 +453,8 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 | `secrets/` | `700` | 宿主机密钥与仓库密钥。每个密钥是一个文件 `env/<名称>`（权限 `600`），只在构建 Box 的容器时读取。`checkpoint-repo.key`（权限 `600`）是检查点仓库的密码，首次使用时生成。需与仓库卷一起保存：没有它，检查点无法读取 |
 | `volumes/` | `700` | 每只卷一个记录文件 `vol_….json`（权限 `600`）。写入该文件不会改 Docker 卷名 |
 | `pools.json` | `600` | 存储池，以及角色到池的默认对应。文件不存在时使用隐式的本地池；文件损坏则保留原文件，并按缺失处理 |
+| `hosts.json` | `600` | 远端宿主机：id、名称、不含凭据的端点、SSH 主机密钥指纹，以及添加时间。文件不存在时只有 `local` |
+| `hosts/` | `700` | 每台远端宿主机一个目录 `hosts/<id>/`，内含权限为 `600` 的凭据文件：`tcp://` 用 `ca.pem`、`cert.pem` 与 `key.pem`，`ssh://` 用 `ssh_key`。API 从不返回它们，移除宿主机时一并删除 |
 | `events.db`（旁边还有 `events.db-wal` 与 `events.db-shm`） | 位于 `DATA_DIR` 内 | 事件库，SQLite WAL 模式。见[事件](#事件) |
 | `tasks.db`（旁边还有 `tasks.db-wal` 与 `tasks.db-shm`） | 位于 `DATA_DIR` 内 | 任务状态，以及每个任务最新的 64 KB 输出。见[任务](#任务) |
 
@@ -568,6 +571,42 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 定时检查点、除回滚之外的自动检查点、重建前的检查点、导入导出（含加密导出包）、单文件浏览、MCP 工具、独立的卷快照、按 Box 覆盖的保留策略与回收站，都计划在 [#11](https://github.com/ArnoChenFx/minibox/issues/11) 中完成。
 
+## 多宿主机
+
+运行 MiniBox 的这台机器始终是宿主机 `local`。你可以在 **设置 → 宿主机** 中或通过 API 添加其它 Docker 引擎，创建 Box 时选择宿主机。每个 Box 都记录其所在的宿主机，对 Box 的全部操作都在该宿主机上执行。
+
+访问引擎有三种方式：
+
+| 端点 | 连接方式 | MiniBox 需要 |
+|---|---|---|
+| `unix:///var/run/docker.sock` | 本机上的套接字，或挂载进容器的套接字 | 无 |
+| `tcp://host:2376` | 引擎的 TLS 端口，双向 TLS | 签发引擎证书的 CA，以及引擎信任的客户端证书与私钥。引擎需以 `--tlsverify` 启动 |
+| `ssh://user@host` | 经 SSH 转发引擎的 Docker 套接字，因此只需开放 SSH 端口。除非路径另有指定，套接字为 `/var/run/docker.sock` | 用户可以登录的密钥。添加宿主机时确认 SSH 主机密钥 |
+
+添加宿主机的步骤：
+
+1. 先测试连接。设置页与 `POST /api/hosts/test` 都会连接引擎、读取其版本与容量，SSH 还会显示宿主机出示的主机密钥。测试不保存任何内容。
+2. SSH 需将指纹（`SHA256:…`）与宿主机自己的密钥核对，再用该指纹添加宿主机。没有提供指纹时，添加会被 `host_key_unconfirmed` 拒绝，且在登录或发出任何 Docker 请求之前就被拒绝。密钥不一致时返回 `host_key_mismatch`。
+3. 添加。凭据写入 `DATA_DIR/hosts/<id>/`（目录 `700`，文件 `600`），API 从不返回它们。
+
+行为：
+
+- **路由。** Box 的操作在其所在的宿主机上执行。在请求体中加入 `host`，即可在另一台宿主机上创建 Box，缺省为 `local`。没有 `/api/hosts/:host/...` 这类路由，因为 Box 的 id 与名称在所有宿主机之间都是唯一的。
+- **列表。** Box、卷与检查点的列表同时读取所有宿主机。离线或 5 秒内未响应的宿主机不会拖慢其它宿主机：它的 Box 以 `unreachable` 状态列出，显示规格中的名称与镜像，没有实时数据；它的卷与检查点不列出。本机失败时，列表仍然失败。
+- **控制台。** 有多台宿主机时，每个 Box 标明所在的宿主机，概览页为每台宿主机显示一张卡片，顶栏可按宿主机筛选，不可达的 Box 显示为灰色。
+- **令牌。** 令牌的 `hosts` 授权列出它可以使用的宿主机：`local`（`readonly`、`operator` 与 `sandboxed-agent` 预设的缺省值）、宿主机 id，或 `*`（`admin` 预设）。令牌访问其它宿主机上的 Box 时返回 `403`（键 `host_not_granted`）。
+- **移除。** 仍有 Box、卷或检查点的宿主机不能移除（`409`，键 `host_in_use`）。`local` 不能移除（`409`，键 `host_is_local`）。
+- **审计。** 添加、测试与移除宿主机都会写入审计日志，凭据从不写入。
+
+本版本的限制：
+
+- 远端宿主机上的端口预览与快照返回 `501`。端口预览需要 MiniBox 直接访问容器的 IP，远端宿主机上暂时做不到。
+- 模板与检查点不会在宿主机之间复制。远端宿主机的引擎上需要有模板镜像，否则在那里创建 Box 返回 `400`（`template_image_missing`）。每台宿主机保留各自的检查点仓库。
+- 宿主机层面的 CPU 与内存使用率只来自本机的 `/proc`。远端宿主机显示其引擎报告的核数与内存（`docker info`），以及其上 Box 的占用。
+- 尚未支持：从远端机器主动连回的 Agent、`host: "auto"` 调度，以及把 Box 迁移到另一台宿主机。
+
+MCP 工具 `list_hosts`、`test_host`、`add_host` 与 `remove_host` 的功能相同，属于默认开启的 `meta` 工具集。CLI 暂无宿主机命令。
+
 ## 环境变量与密钥
 
 Box 的环境变量是一组条目。创建时设置，重建时整体替换。每个条目要么是普通值 `{ "name", "value" }`，由 Box 规格保存；要么是密钥引用 `{ "name", "secretRef" }`，指向一个宿主机密钥。容器在创建或重建时获得密钥的值，规格中只保存名称。
@@ -620,12 +659,21 @@ Box 的环境变量是一组条目。创建时设置，重建时整体替换。�
 | `GET` | `/api/host/metrics` | 宿主机指标与历史采样 |
 | `GET` | `/api/activity` | 最近操作记录（保存在内存中，重启后清空） |
 
+### 宿主机
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/hosts` | **仅所有者。** 每台宿主机的 `status`、`latencyMs`、`capacity`、`dockerVersion`、`boxes` 与 `error`（最近一次失败的检查）。离线的宿主机保留其条目 |
+| `POST` | `/api/hosts/test` | **仅所有者。** 检查连接，不保存任何内容。请求体为 `{ "id", "endpoint", "ca"?, "cert"?, "key"?, "privateKey"?, "hostKeyFingerprint"? }`，附带端点所需的凭据。返回 `200` 与 `ok`、`latencyMs`、`capacity`、`dockerVersion`；SSH 还返回宿主机出示的 `hostKeyFingerprint`。失败记录在 `error` 中 |
+| `POST` | `/api/hosts` | **仅所有者。** 连接检查通过后添加宿主机。请求体与测试相同，另加 `name`。返回 `201` 与宿主机信息。无效的 id、端点或凭据返回 `400`；键为 `host_exists`、`host_key_unconfirmed` 或 `host_key_mismatch` 时返回 `409`；宿主机无法连接时返回 `503`（`docker_unavailable`） |
+| `DELETE` | `/api/hosts/{id}` | **仅所有者。** 移除宿主机并删除其凭据。仍有 Box、卷或检查点时返回 `409`（键 `host_in_use`）；移除 `local` 返回 `409`（键 `host_is_local`） |
+
 ### Box
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET` | `/api/boxes?stats=false` | 从主机的缓存列出 Box，缓存由引擎事件保持最新。缓存就绪时列表不调用引擎；除非 `stats=false`，否则运行中的 Box 附带最近一次采样 |
-| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载。`idleTimeoutSec` 为 `0` 时该 Box 永不休眠；省略或 `null` 继承 `BOX_IDLE_TIMEOUT_SEC`。`ttlSec` 为自创建起的绝对寿命。`env` 为最多 64 项的列表，每项为 `{ "name", "value" }` 或 `{ "name", "secretRef" }`，见[环境变量与密钥](#环境变量与密钥) |
+| `GET` | `/api/boxes?stats=false` | 从主机的缓存列出 Box，缓存由引擎事件保持最新。缓存就绪时列表不调用引擎；除非 `stats=false`，否则运行中的 Box 附带最近一次采样。列表涵盖所有宿主机；`?host=<id>` 只列出该宿主机上的 Box |
+| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "host"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载。`idleTimeoutSec` 为 `0` 时该 Box 永不休眠；省略或 `null` 继承 `BOX_IDLE_TIMEOUT_SEC`。`ttlSec` 为自创建起的绝对寿命。`host` 指定 Box 所在的宿主机，缺省为 `local`（见[多宿主机](#多宿主机)）。`env` 为最多 64 项的列表，每项为 `{ "name", "value" }` 或 `{ "name", "secretRef" }`，见[环境变量与密钥](#环境变量与密钥) |
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除 Box。`deleteVolume=true` 还会删除没有被其他 Box 挂载的自有卷。独立卷会留下 |
@@ -877,7 +925,7 @@ minibox/
 │   ├── tmux/                # tmux 命令行、会话名称，以及 tmux 输出的解析
 │   ├── mcp/                 # /mcp 上的 Streamable HTTP MCP
 │   ├── cli.ts               # 瘦客户端：box ls、exec、mcp 的 stdio 代理
-│   ├── host/                # 主机注册表（隐式 local）、procfs 解析、HostSampler（盒子缓存与采样）、HostMonitor
+│   ├── host/                # 宿主机注册表、HostManager（添加、测试、移除）、端点与连接（unix、TLS、SSH）、procfs 解析、HostSampler（盒子缓存与采样）、HostMonitor
 │   ├── events/              # 事件库（SQLite）、脱敏、保留策略、输出存储、SSE 流、实时帧、范围钩子
 │   ├── tasks/               # 任务库（SQLite）、管理器、走事件总线的进度流
 │   ├── operations/          # 操作注册表：定义、执行器、OpenAPI 与 MCP / CLI 投影
@@ -1018,7 +1066,7 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 ### M4 · 多宿主机与优化
 
-- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) 多宿主机（仅 SSH / TLS 直连）
+- [ ] [#21](https://github.com/ArnoChenFx/minibox/issues/21) 多宿主机（仅 SSH / TLS 直连）（第一部分已完成：直连与控制台；Agent、调度与迁移仍待完成）
 - [ ] [#12](https://github.com/ArnoChenFx/minibox/issues/12) 空闲自动休眠与按需唤醒
 - [ ] [#15](https://github.com/ArnoChenFx/minibox/issues/15) 模板增强与预热池
 

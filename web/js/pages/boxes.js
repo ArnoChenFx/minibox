@@ -5,6 +5,8 @@ import { api } from "../lib/api.js";
 import { applyBoxFrame, applySamples, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { cpus, gbOrMb, mem, pct, relTime } from "../lib/format.js";
+import { boxesOnHost, hostOfBox, isUnreachable } from "../lib/host-list.js";
+import { hostFilter, hostName, multiHost, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
@@ -30,8 +32,10 @@ export function render(view) {
   const body = view.querySelector("#bxBody");
   const find = (id) => boxes.find((b) => b.id === id);
 
+  let loaded = false;
   const draw = () => {
-    const list = boxes.filter(
+    const scoped = boxesOnHost(boxes, hostFilter());
+    const list = scoped.filter(
       (b) => !filter || b.name.toLowerCase().includes(filter) || b.template.toLowerCase().includes(filter),
     );
     if (!boxes.length) {
@@ -43,6 +47,10 @@ export function render(view) {
       })}</td></tr>`;
       return;
     }
+    if (!scoped.length) {
+      body.innerHTML = `<tr><td colspan="8">${emptyState({ iconName: "box", title: t("bx.noHostBoxes"), text: t("bx.noHostBoxesText", { host: esc(hostName(hostFilter())) }) })}</td></tr>`;
+      return;
+    }
     if (!list.length) {
       body.innerHTML = `<tr><td colspan="8">${emptyState({ iconName: "search", title: t("bx.noMatch"), text: t("bx.noMatchText", { q: esc(filter) }) })}</td></tr>`;
       return;
@@ -51,15 +59,17 @@ export function render(view) {
       .map((b) => {
         const s = b.stats;
         const cpuP = s && b.cpus ? s.cpuPercent / b.cpus : s?.cpuPercent;
-        return `<tr class="clickable" data-action="open" data-id="${esc(b.id)}">
-          <td><div class="name-cell"><span class="avatar">${icon("box")}</span><div class="truncate"><strong>${esc(b.name)}</strong><span class="subtle mono">${esc(b.id.slice(0, 12))}</span></div></div></td>
+        const unreachable = isUnreachable(b);
+        const where = multiHost() ? ` · ${esc(hostName(hostOfBox(b)))}` : "";
+        return `<tr class="clickable${unreachable ? " is-unreachable" : ""}" data-action="open" data-id="${esc(b.id)}">
+          <td><div class="name-cell"><span class="avatar">${icon("box")}</span><div class="truncate"><strong>${esc(b.name)}</strong><span class="subtle mono">${esc(b.id.slice(0, 12))}${where}</span></div></div></td>
           <td>${stateBadge(boxState(b))}${b.storage?.status === "unreachable" ? ` <span class="badge badge-danger">${esc(t("vol.unreachable"))}</span>` : ""}</td>
           <td class="hide-sm"><span class="tag truncate" title="${esc(b.template)}">${esc(b.template.replace(/^minibox-template:/, "") || "—")}</span></td>
           <td class="hide-sm num nowrap">${cpus(b.cpus)} · ${mem(b.memory)}</td>
           <td>${s ? usageBar("", cpuP, pct(s.cpuPercent)) : '<span class="subtle">—</span>'}</td>
           <td>${s ? usageBar("", s.memPercent, gbOrMb(s.memUsage), "mem") : '<span class="subtle">—</span>'}</td>
           <td class="hide-sm subtle nowrap" title="${esc(b.createdAt)}">${relTime(b.createdAt)}</td>
-          <td><div class="actions">${actionButtons(b)}</div></td>
+          <td><div class="actions">${unreachable ? `<span class="subtle">${t("bx.unreachableHint")}</span>` : actionButtons(b)}</div></td>
         </tr>`;
       })
       .join("");
@@ -68,6 +78,7 @@ export function render(view) {
   const load = async () => {
     try {
       boxes = (await api("/api/boxes")).boxes;
+      loaded = true;
       draw();
     } catch (e) {
       body.innerHTML = `<tr><td colspan="8">${emptyState({ iconName: "alert", title: t("bx.loadFailed"), text: esc(e.message) })}</td></tr>`;
@@ -108,6 +119,7 @@ export function render(view) {
     subscribe("sample", (frame) => {
       if (applySamples(boxes, frame.boxes)) draw();
     }),
+    onHosts(() => loaded && draw()),
   ];
   load().catch((e) => toastError(t("bx.loadFailedToast"), e));
   const stopPolling = pollWhileDown(load, 5000);

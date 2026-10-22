@@ -17,19 +17,23 @@ import { StreamSlots } from "./events/slots";
 import { EventStore, type StoredEvent } from "./events/store";
 import { ulid } from "./events/ulid";
 import type { LiveTopics } from "./host/live";
+import { HostManager } from "./host/manager";
 import type { HostMonitor } from "./host/metrics";
-import { createLocalHost, HostRegistry } from "./host/registry";
+import { createLocalHost, type HostCtx, HostRegistry } from "./host/registry";
+import { HostStore } from "./host/store";
 import { Bus } from "./lib/bus";
 import { log } from "./lib/logger";
 import { McpSessions } from "./mcp/sessions";
 import { type AuditEvent, Executor, type ExecutorHooks, logAudit } from "./operations/executor";
 import { OPERATIONS } from "./operations/registry";
-import type { Runtime } from "./runtime";
+import type { EngineTarget, Runtime } from "./runtime";
+import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
 import { CheckpointSweep } from "./services/checkpoint-retention";
 import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
+import { reconcileHost } from "./services/reconcile";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
@@ -61,6 +65,8 @@ export type AppTopics = {
 export interface App {
   cfg: Config;
   hosts: HostRegistry;
+  /** Adds, tests, removes and probes the hosts beyond the local one. */
+  hostAdmin: HostManager;
   monitor: HostMonitor;
   activity: ActivityLog;
   events: EventStore;
@@ -95,6 +101,8 @@ export interface App {
 /** Collaborators a caller may replace. Anything omitted is built from the config. */
 export interface AppDeps {
   runtime?: Runtime;
+  /** Builds the engine client of a host added at runtime. Defaults to the Docker adapter. Tests pass a fake. */
+  connect?: (target: EngineTarget) => Runtime;
   /** Where checkpoint volume contents go. Defaults to restic in a helper image. Tests pass an in-memory engine. */
   checkpointEngine?: SnapshotEngine;
   throttle?: LoginLimiter;
@@ -161,6 +169,18 @@ function touchSettledBox(hosts: HostRegistry, pulse: ActivityPulse, subject: Tas
   if (spec) pulse.touch(spec.id, "task");
 }
 
+/**
+ * Makes a remote host's boxes match their specs each time its engine becomes reachable again. The engine's restart policy
+ * is off, so a host that rebooted needs this pass to start its boxes. The pass is logged rather than awaited, so the
+ * link that reported the host live is not held up.
+ */
+function reconcileOnLive(host: HostCtx): void {
+  reconcileHost(host).then(
+    (report) => log.info("box.reconciled", { host: host.host.id, ...report }),
+    (e: unknown) => log.error("box.reconcile_failed", { host: host.host.id, error: String(e) }),
+  );
+}
+
 function openTaskStore(path: string): TaskStore {
   try {
     return new TaskStore(path);
@@ -178,6 +198,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const pulse = new ActivityPulse();
   const checkpoints = new CheckpointStore(cfg.dataDir);
   const checkpointEngine = deps.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir });
+  const multiHost = () => hosts.list().length > 1;
+  const secrets = new SecretStore(cfg.dataDir);
   const local = createLocalHost(
     cfg,
     deps.runtime ?? createDockerRuntime(cfg.dockerSocket),
@@ -185,7 +207,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     volumes,
     bus,
     pulse,
-    { checkpoints, checkpointEngine },
+    { checkpoints, checkpointEngine, multiHost, secrets },
   );
   hosts.add(local);
   const activity = new ActivityLog();
@@ -215,6 +237,25 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   });
   const audit = deps.hooks?.audit ?? recordAudit(events, bus);
   const recordNote = recordNoteWith(audit);
+  const containers = new ContainerWatch(hosts, recordNote);
+  const hostAdmin = new HostManager({
+    cfg,
+    registry: hosts,
+    store: new HostStore(cfg.dataDir),
+    shared: { specs, volumes, secrets, live: bus, pulse, checkpoints, checkpointEngine, multiHost },
+    connect: deps.connect ?? createDockerRuntime,
+    attach: (host) => {
+      containers.watch(host);
+      host.sampler.start();
+    },
+    detach: (host) => {
+      containers.unwatch(host.host.id);
+      host.sampler.stop();
+    },
+    onLive: reconcileOnLive,
+  });
+  hostAdmin.load();
+  bus.subscribe("link", (frame) => hostAdmin.onLink(frame));
   const terminals = new TerminalService({
     record: recordNote,
     takeoverIdleMs: cfg.takeoverIdleSec * 1000,
@@ -236,13 +277,14 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   return {
     cfg,
     hosts,
+    hostAdmin,
     monitor: local.monitor,
     activity,
     events,
     outputs,
     execs,
     terminals,
-    containers: new ContainerWatch(hosts, recordNote),
+    containers,
     recordNote,
     mcpSessions: new McpSessions((id, listener) => tokens.watch(id, listener)),
     bus,
@@ -253,6 +295,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       activity,
       tasks,
       hosts,
+      hostAdmin,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,
         audit,

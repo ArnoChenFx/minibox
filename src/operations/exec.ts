@@ -13,6 +13,7 @@ import {
 } from "../services/exec";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
+import { hostOfBox, hostOfExec } from "./routing";
 import { addFailure, boxId, field } from "./validation";
 
 const CMD_MAX = 16 * 1024;
@@ -257,6 +258,7 @@ export const execRun = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/exec", body: true }],
   cli: "exec",
   mcp: { toolset: "core", name: "exec", description: EXEC_DESCRIPTION },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: {
     action: (input) => (input.background ? "exec.background" : "exec.run"),
@@ -304,6 +306,7 @@ export const execGet = defineOperation({
     description:
       "Read an exec started with background true. waitMs long-polls while it is running, up to 25000 milliseconds. status is running, exited or killed. A non-zero exitCode is the program's status.",
   },
+  hostFor: (ctx, input) => hostOfExec(ctx, input.execId),
   resolve: async ({ execs }, input) => {
     const found = targetOf(execs, input.execId);
     if (!found) throw notFoundMissing();
@@ -334,6 +337,7 @@ export const execKill = defineOperation({
     description:
       "Kill a running exec and its process tree, from inside the box. An exec that has already exited returns a conflict. If a process survives, or the exec does not end, the call fails with 502 and the exec keeps running, so it can be killed again.",
   },
+  hostFor: (ctx, input) => hostOfExec(ctx, input.execId),
   resolve: async ({ execs }, input) => {
     const found = targetOf(execs, input.execId);
     if (!found) throw notFoundMissing();
@@ -368,6 +372,7 @@ export const execOutput = defineOperation({
   }),
   rest: [{ method: "GET", path: "/api/execs/:execId/output" }],
   cli: "exec output",
+  hostFor: (ctx, input) => hostOfExec(ctx, input.execId),
   resolve: async ({ execs }, input): Promise<ExecTarget | undefined> => targetOf(execs, input.execId),
   audit: {
     target: (input, found) =>

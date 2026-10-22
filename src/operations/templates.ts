@@ -12,6 +12,7 @@ import {
 } from "../services/templates";
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
+import { hostOfBox, localOnly } from "./routing";
 import { BuildResultSchema, ImageSchema, OkSchema, PromotedTemplateSchema } from "./schemas";
 import { boxId, snapshotRef, templateDescription, templateName, templateRef } from "./validation";
 
@@ -71,6 +72,8 @@ export const templateSave = defineOperation({
     description:
       "Save a box as a template: the packages it installed and the system files it changed. /workspace and home volumes are not included, so use a checkpoint for data. Long-running; returns a task id.",
   },
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
+  precondition: async ({ host }) => localOnly(host, "Templates"),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, input, box) => {
     assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []);

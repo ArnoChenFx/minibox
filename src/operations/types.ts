@@ -2,6 +2,7 @@ import type { z } from "zod";
 
 import type { EventReader } from "../events/store";
 import type { AuditNote, EventRefs, EventTarget, Source } from "../events/types";
+import type { HostManager } from "../host/manager";
 import type { HostCtx } from "../host/registry";
 import type { ExecService } from "../services/exec";
 import type { TerminalService } from "../services/terminals";
@@ -62,6 +63,8 @@ export interface OperationContext {
   readonly boxViews?: () => readonly BoxView[];
   /** Every host, for an operation that acts on objects wherever they are. Without it, only `host` is known. */
   readonly allHosts?: () => readonly HostCtx[];
+  /** Adds, tests and removes hosts. Only the host operations use it. */
+  readonly hostAdmin?: HostManager;
   /** Set on the background run of an async operation, so the handler can log and watch for cancellation. */
   readonly task?: TaskHandle;
   /** The task manager. The executor fills it in; task operations read it. */
@@ -140,6 +143,11 @@ export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> ex
   readonly output: O;
   /** Runs after validation and before the target is resolved, for example the host capacity check. */
   readonly precondition?: (ctx: OperationContext, input: z.output<I>) => Promise<void>;
+  /**
+   * Picks the host the operation runs on, from its validated input. Runs before `precondition`, so the capacity check,
+   * the access check and the audit event all see that host. Without it, the operation runs on the request's host.
+   */
+  readonly hostFor?: (ctx: OperationContext, input: z.output<I>) => HostCtx;
   /** Finds the target, so that a missing one is a 404 before the handler runs. */
   readonly resolve?: (ctx: OperationContext, input: z.output<I>) => Promise<R>;
   /**
@@ -169,6 +177,7 @@ export interface Operation extends OperationMeta {
   readonly output: z.ZodType;
   parse(raw: unknown): Record<string, unknown>;
   precondition?(ctx: OperationContext, input: unknown): Promise<void>;
+  hostFor?(ctx: OperationContext, input: unknown): HostCtx;
   resolve?(ctx: OperationContext, input: unknown): Promise<unknown>;
   beforeTask?(ctx: OperationContext, input: unknown, resolved: unknown): Promise<void>;
   activity?: {

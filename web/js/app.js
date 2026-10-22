@@ -3,6 +3,7 @@ import { mountTasks } from "./components/tasks.js";
 import { api } from "./lib/api.js";
 import { $, $$, esc } from "./lib/dom.js";
 import { pct } from "./lib/format.js";
+import { onHosts, refreshHosts, setHostFilter } from "./lib/hosts.js";
 import { applyI18n, bindLangButton, t } from "./lib/i18n.js";
 import { icon } from "./lib/icons.js";
 import { setCrumbs } from "./lib/layout.js";
@@ -66,6 +67,20 @@ function renderThemeBtn() {
   $("#themeBtn").innerHTML = icon(currentTheme() === "dark" ? "sun" : "moon");
 }
 
+function initHostFilter() {
+  const select = $("#hostFilter");
+  select.addEventListener("change", () => setHostFilter(select.value));
+  onHosts((list, current) => {
+    select.hidden = list.length < 2;
+    select.innerHTML = [`<option value="">${esc(t("shell.allHosts"))}</option>`]
+      .concat(list.map((host) => `<option value="${esc(host.id)}">${esc(host.name)}</option>`))
+      .join("");
+    select.value = current;
+  });
+  void refreshHosts();
+  setInterval(refreshHosts, 15000);
+}
+
 function init() {
   applyI18n();
   applyTheme();
@@ -103,6 +118,7 @@ function init() {
   bindLangButton($("#langBtn"), icon);
   initDropdowns();
   mountTasks();
+  initHostFilter();
   api("/api/system")
     .then((s) => {
       $("#sidebarVersion").textContent = `MiniBox v${s.version}`;

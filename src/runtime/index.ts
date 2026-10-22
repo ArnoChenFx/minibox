@@ -311,7 +311,19 @@ export interface RuntimeInfo {
   rootDir: string | null;
   containers: { running: number; total: number };
   images: number;
+  /** CPUs the engine can schedule on. Null when the engine does not report it. */
+  cpus: number | null;
+  /** Memory the engine can allocate, in bytes. Null when the engine does not report it. */
+  memoryBytes: number | null;
 }
+
+/**
+ * Where a runtime connects. A socket path for a local daemon or a tunnel, or a TCP endpoint that must present a
+ * certificate the client trusts and accept the client's own certificate (mutual TLS).
+ */
+export type EngineTarget =
+  | { readonly socketPath: string }
+  | { readonly host: string; readonly port: number; readonly ca: string; readonly cert: string; readonly key: string };
 
 export type RuntimeErrorKind = "not_found" | "conflict" | "invalid" | "unavailable" | "engine";
 

@@ -1,6 +1,7 @@
 import { type ActivityLog, tracked } from "../activity";
 import type { AuditNote, EventInput, EventRefs, EventStatus, EventTarget } from "../events/types";
 import { ulid } from "../events/ulid";
+import type { HostManager } from "../host/manager";
 import type { HostCtx } from "../host/registry";
 import { isAbortError } from "../lib/abort";
 import { AppError, toAppError } from "../lib/errors";
@@ -84,6 +85,8 @@ export interface ExecutorDeps {
   readonly tasks?: TaskManager;
   /** Every host, so `boxViews` and `allHosts` cover boxes on all of them. Without it, only the request's host counts. */
   readonly hosts?: { list(): readonly HostCtx[] };
+  /** Adds, tests and removes hosts. Host operations read it from the context. */
+  readonly hostAdmin?: HostManager;
 }
 
 /** What the executor knows when one execution ends. Fields the run never reached stay undefined. */
@@ -166,9 +169,10 @@ export class Executor {
     const started = { ts: Date.now(), at: performance.now() };
     const id = ulid(started.ts);
     const hosts = this.deps.hosts;
-    const bound: OperationContext = {
+    let bound: OperationContext = {
       ...ctx,
       tasks: ctx.tasks ?? this.deps.tasks,
+      hostAdmin: ctx.hostAdmin ?? this.deps.hostAdmin,
       boxViews: ctx.boxViews ?? (() => (hosts ? allBoxViews(hosts.list()) : specViews(ctx.host.specs.list()))),
       allHosts: ctx.allHosts ?? (() => (hosts ? hosts.list() : [ctx.host])),
       authorize: (request) =>
@@ -176,7 +180,7 @@ export class Executor {
           principal: ctx.principal,
           operation,
           phase: "resource",
-          host: ctx.host,
+          host: bound.host,
           scope: request.scope,
           resource: request.resource,
         }),
@@ -192,9 +196,10 @@ export class Executor {
       }
       const parsed = operation.parse(raw);
       input = parsed;
+      if (operation.hostFor) bound = { ...bound, host: operation.hostFor(bound, parsed) };
       if (operation.precondition) await operation.precondition(bound, parsed);
       resolved = operation.resolve ? await operation.resolve(bound, parsed) : undefined;
-      const access = { principal: bound.principal, operation, phase: "access" as const, host: ctx.host };
+      const access = { principal: bound.principal, operation, phase: "access" as const, host: bound.host };
       if (!(await this.deps.hooks.authorize({ ...access, input: parsed, resolved }))) {
         denied = true;
         throw new AppError(403, "forbidden", msg("operation_forbidden", { op: name }));
