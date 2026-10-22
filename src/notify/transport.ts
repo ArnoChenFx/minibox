@@ -1,5 +1,6 @@
+import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
-import { request as httpRequest } from "node:http";
+import { type ClientRequest, request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 
@@ -22,7 +23,10 @@ export class DeliveryError extends Error {
 export interface SendOptions {
   /** Addresses that are not public may be called, as a self-hosted ntfy or a LAN webhook needs. */
   readonly allowPrivate: boolean;
+  /** Bounds the whole delivery, name resolution included. */
   readonly timeoutMs: number;
+  /** Replaces the system resolver. Tests pass one that hangs or fails, to prove the timeout covers it. */
+  readonly resolve?: (hostname: string) => Promise<LookupAddress[]>;
 }
 
 /** The address a request is sent to, chosen once and used for the whole request, so a second lookup cannot change it. */
@@ -70,18 +74,20 @@ function isPublicIPv6(address: string): boolean {
   return !first.startsWith("ff");
 }
 
+const systemResolve = (hostname: string) => lookup(hostname, { all: true, verbatim: true });
+
 /** Where the request goes: an address from the URL, or the first address the name resolves to that is allowed. */
-async function pin(hostname: string, allowPrivate: boolean): Promise<Pinned> {
+async function pin(hostname: string, options: SendOptions): Promise<Pinned> {
   const bare = hostname.replace(/^\[|\]$/g, "");
   const family = isIP(bare);
   const found =
     family === 0
-      ? await lookup(bare, { all: true, verbatim: true }).catch(() => {
+      ? await (options.resolve ?? systemResolve)(bare).catch(() => {
           throw new DeliveryError("dns_failed");
         })
       : [{ address: bare, family }];
   if (found.length === 0) throw new DeliveryError("dns_failed");
-  const allowed = found.find((candidate) => allowPrivate || isPublicAddress(candidate.address));
+  const allowed = found.find((candidate) => options.allowPrivate || isPublicAddress(candidate.address));
   if (!allowed) throw new DeliveryError("blocked_address");
   return allowed;
 }
@@ -89,50 +95,64 @@ async function pin(hostname: string, allowPrivate: boolean): Promise<Pinned> {
 /**
  * Sends one request and returns its status. The connection is made to the address the policy checked, with the name kept
  * for the Host header and TLS, so a name that resolves differently on the second lookup cannot reach another machine.
- * Bodies of responses are discarded: only the status is used.
+ * The status is the only thing read: the body of the answer is discarded, and the request is closed once it arrives.
  */
-export async function send(request: Outgoing, options: SendOptions): Promise<number> {
+export function send(request: Outgoing, options: SendOptions): Promise<number> {
   let url: URL;
   try {
     url = new URL(request.url);
   } catch {
-    throw new DeliveryError("bad_url");
+    return Promise.reject(new DeliveryError("bad_url"));
   }
   if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
-    throw new DeliveryError("bad_url");
+    return Promise.reject(new DeliveryError("bad_url"));
   }
-  const pinned = await pin(url.hostname, options.allowPrivate);
-  const client = url.protocol === "https:" ? httpsRequest : httpRequest;
   return new Promise<number>((resolve, reject) => {
     let settled = false;
-    const settle = (fn: () => void) => {
+    let outgoing: ClientRequest | null = null;
+    const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       fn();
     };
-    const outgoing = client(
-      {
-        hostname: url.hostname.replace(/^\[|\]$/g, ""),
-        port: url.port === "" ? undefined : url.port,
-        path: `${url.pathname}${url.search}`,
-        method: "POST",
-        headers: { ...request.headers, "content-length": String(Buffer.byteLength(request.body)) },
-        lookup: (_name, lookupOptions, callback) => {
-          const all = typeof lookupOptions === "object" && lookupOptions !== null && "all" in lookupOptions;
-          if (all && lookupOptions.all) callback(null, [pinned]);
-          else callback(null, pinned.address, pinned.family);
-        },
+    const timer = setTimeout(() => {
+      finish(() => reject(new DeliveryError("timeout")));
+      outgoing?.destroy();
+    }, options.timeoutMs);
+    pin(url.hostname, options).then(
+      (pinned) => {
+        if (settled) return;
+        const client = url.protocol === "https:" ? httpsRequest : httpRequest;
+        const req = client(
+          {
+            hostname: url.hostname.replace(/^\[|\]$/g, ""),
+            port: url.port === "" ? undefined : url.port,
+            path: `${url.pathname}${url.search}`,
+            method: "POST",
+            headers: { ...request.headers, "content-length": String(Buffer.byteLength(request.body)) },
+            lookup: (_name, lookupOptions, callback) => {
+              const all = typeof lookupOptions === "object" && lookupOptions !== null && "all" in lookupOptions;
+              if (all && lookupOptions.all) callback(null, [pinned]);
+              else callback(null, pinned.address, pinned.family);
+            },
+          },
+          (response) => {
+            const status = response.statusCode ?? 0;
+            response.resume();
+            finish(() => resolve(status));
+            req.destroy();
+          },
+        );
+        outgoing = req;
+        req.on("error", (error) => {
+          finish(() => reject(error instanceof DeliveryError ? error : new DeliveryError("network")));
+        });
+        req.end(request.body);
       },
-      (response) => {
-        response.resume();
-        settle(() => resolve(response.statusCode ?? 0));
+      (error: unknown) => {
+        finish(() => reject(error instanceof DeliveryError ? error : new DeliveryError("dns_failed")));
       },
     );
-    const timer = setTimeout(() => outgoing.destroy(new DeliveryError("timeout")), options.timeoutMs);
-    outgoing.once("close", () => clearTimeout(timer));
-    outgoing.once("error", (error) => {
-      settle(() => reject(error instanceof DeliveryError ? error : new DeliveryError("network")));
-    });
-    outgoing.end(request.body);
   });
 }
