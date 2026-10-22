@@ -118,6 +118,7 @@ img {
   height: 86px;
 }
 .wordmark {
+  color: var(--ink);
   display: inline-flex;
   letter-spacing: -1px;
   align-items: center;
@@ -128,8 +129,8 @@ img {
 .wordmark img {
   display: block;
 }
-.wordmark-dot {
-  color: var(--purple);
+.wordmark-box {
+  color: #6e6af6;
 }
 .desktop-nav {
   display: flex;
