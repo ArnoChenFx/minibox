@@ -192,32 +192,7 @@ img {
   padding-block-start: 85px;
   padding-block-end: 76px;
 }
-.eyebrow {
-  display: flex;
-  font-family: var(--mono);
-  letter-spacing: 1.6px;
-  text-transform: uppercase;
-  color: #77707f;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 20px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.7;
-}
-.release-link {
-  width: -moz-fit-content;
-  width: fit-content;
-}
-.release-link .icon {
-  color: #a29ba9;
-  width: 12px;
-  height: 12px;
-  transition: transform 0.2s;
-}
-.release-link:hover .icon {
-  transform: translate(3px);
-}
+
 .status-dot {
   display: inline-block;
   background: var(--purple);
@@ -295,13 +270,7 @@ h1 > span {
   width: 16px;
   height: 16px;
 }
-.hero-note {
-  font-family: var(--mono);
-  color: #8e8797;
-  margin: 22px 0 0;
-  font-size: 9px;
-  line-height: 1.8;
-}
+
 .workspace-illustration {
   position: relative;
   isolation: isolate;
@@ -481,43 +450,7 @@ h1 > span {
   width: 6px;
   height: 12px;
 }
-.workspace-sticker {
-  position: absolute;
-  display: flex;
-  background: #fff;
-  border: 1px solid #e6e0ef;
-  border-radius: 9px;
-  align-items: center;
-  gap: 10px;
-  padding: 13px 18px;
-  bottom: 2px;
-  left: 2px;
-  transform: rotate(-3deg);
-  box-shadow: 0 8px 25px #3f2b4f08;
-}
-.workspace-sticker > .icon {
-  color: var(--purple);
-}
-.workspace-sticker div {
-  display: grid;
-  gap: 3px;
-}
-.workspace-sticker strong {
-  font-size: 11px;
-  font-weight: 550;
-}
-.workspace-sticker span {
-  color: #918799;
-  font-size: 9px;
-}
-.workspace-illustration figcaption {
-  position: absolute;
-  color: #9b91a5;
-  font-size: 8px;
-  font-family: var(--mono);
-  bottom: -25px;
-  right: 0;
-}
+
 .agent-strip {
   border-block: 1px solid var(--line);
   display: flex;
@@ -527,11 +460,7 @@ h1 > span {
   padding-block-start: 24px;
   padding-block-end: 24px;
 }
-.agent-strip .eyebrow {
-  letter-spacing: 1px;
-  margin: 0;
-  font-size: 9px;
-}
+
 .agent-name {
   display: inline-flex;
   letter-spacing: -0.3px;
@@ -570,9 +499,7 @@ a.agent-name:hover {
   gap: 30px;
   margin-bottom: 34px;
 }
-.section .eyebrow {
-  margin-bottom: 13px;
-}
+
 h2 {
   letter-spacing: -1.5px;
   text-wrap: balance;
@@ -587,22 +514,7 @@ h3 {
   font-weight: 580;
   line-height: 1.4;
 }
-.section-description {
-  color: var(--muted);
-  text-wrap: pretty;
-  max-width: 510px;
-  margin: 13px 0 0;
-  font-size: 13px;
-  line-height: 1.85;
-}
-.section-aside {
-  color: var(--muted);
-  text-align: right;
-  white-space: pre-line;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.8;
-}
+
 .screenshot-tabs {
   display: inline-flex;
   background: #fff9;
@@ -652,18 +564,7 @@ h3 {
   padding-inline-start: 15px;
   padding-inline-end: 15px;
 }
-.browser-address {
-  display: flex;
-  font-size: 9px;
-  font-family: var(--mono);
-  color: #9c93aa;
-  align-items: center;
-  gap: 6px;
-}
-.browser-address .icon {
-  width: 11px;
-  height: 11px;
-}
+
 .icon-button {
   display: inline-flex;
   color: #82758f;
@@ -689,21 +590,7 @@ h3 {
   width: 100%;
   height: auto;
 }
-.screenshot-caption {
-  display: flex;
-  color: #8c7e9f;
-  font-size: 9px;
-  font-family: var(--mono);
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  padding: 17px;
-}
-.screenshot-caption .status-dot {
-  background: #9b88c8;
-  width: 4px;
-  height: 4px;
-}
+
 .features-section {
   padding-top: 3px;
 }
@@ -965,10 +852,7 @@ h3 {
   align-items: center;
   gap: 20px 75px;
 }
-.start-copy .section-description {
-  max-width: 370px;
-  margin: 18px 0 20px;
-}
+
 .start-copy h2 {
   white-space: pre-line;
   font-size: 41px;
@@ -1072,9 +956,7 @@ h3 {
   padding-block-start: 55px;
   padding-block-end: 80px;
 }
-.faq-section .eyebrow {
-  margin-bottom: 12px;
-}
+
 .faq-section h2 {
   font-size: 30px;
 }
@@ -1135,19 +1017,11 @@ h3 {
   width: 42px;
   height: 42px;
 }
-.closing-section .eyebrow {
-  justify-content: center;
-  margin-bottom: 12px;
-  font-size: 9px;
-}
+
 .closing-section h2 {
   font-size: 36px;
 }
-.closing-section > p:not(.eyebrow) {
-  color: #94849f;
-  margin: 14px 0 25px;
-  font-size: 12px;
-}
+
 .site-footer {
   display: flex;
   justify-content: space-between;
@@ -1166,10 +1040,7 @@ h3 {
   gap: 7px;
   font-size: 17px;
 }
-.footer-note {
-  color: #a59aa9;
-  font-size: 9px;
-}
+
 .site-footer nav {
   display: flex;
   color: #8f8199;
@@ -1238,9 +1109,7 @@ h3 {
   font-size: clamp(48px, 5vw, 68px);
   line-height: 1.25;
 }
-:lang(zh-CN) .eyebrow {
-  letter-spacing: 2px;
-}
+
 :lang(zh-CN) .hero-description {
   max-width: 420px;
   line-height: 2;
@@ -1287,9 +1156,7 @@ h3 {
   .agent-name {
     font-size: 14px;
   }
-  .agent-strip .eyebrow {
-    max-width: 150px;
-  }
+
   .section-heading {
     align-items: start;
   }
@@ -1304,10 +1171,6 @@ h3 {
   }
   .requirements {
     gap: 8px;
-  }
-  .footer-note {
-    max-width: 200px;
-    line-height: 1.8;
   }
 }
 @media (max-width: 860px) {
@@ -1339,9 +1202,7 @@ h3 {
   .hero-description {
     font-size: 13px;
   }
-  .hero-note {
-    font-size: 8px;
-  }
+
   .hero-actions {
     gap: 10px;
   }
@@ -1356,10 +1217,7 @@ h3 {
     margin-left: -130px;
     transform: scale(0.74);
   }
-  .agent-strip .eyebrow {
-    max-width: 105px;
-    font-size: 8px;
-  }
+
   .agent-name {
     gap: 5px;
     font-size: 12px;
@@ -1377,10 +1235,7 @@ h3 {
   .section-heading {
     gap: 22px;
   }
-  .section-aside {
-    max-width: 160px;
-    font-size: 10px;
-  }
+
   .screenshot-tabs button {
     padding: 8px 10px;
   }
@@ -1531,11 +1386,7 @@ h3 {
     font-size: clamp(47px, 11vw, 66px);
     line-height: 1.07;
   }
-  .eyebrow {
-    letter-spacing: 1.3px;
-    margin-bottom: 22px;
-    font-size: 9px;
-  }
+
   .hero-description {
     max-width: 440px;
     font-size: 13px;
@@ -1549,10 +1400,7 @@ h3 {
     padding: 12px 16px;
     font-size: 11px;
   }
-  .hero-note {
-    margin-top: 18px;
-    font-size: 8px;
-  }
+
   .workspace-illustration {
     width: 100%;
     height: 350px;
@@ -1623,20 +1471,7 @@ h3 {
   .terminal-result {
     margin-bottom: 6px;
   }
-  .workspace-sticker {
-    padding: 11px 14px;
-    bottom: 3px;
-  }
-  .workspace-sticker strong {
-    font-size: 9px;
-  }
-  .workspace-sticker span {
-    font-size: 8px;
-  }
-  .workspace-illustration figcaption {
-    font-size: 7px;
-    bottom: -18px;
-  }
+
   .agent-strip {
     flex-wrap: wrap;
     justify-content: space-between;
@@ -1644,14 +1479,7 @@ h3 {
     padding-block-start: 23px;
     padding-block-end: 23px;
   }
-  .agent-strip .eyebrow {
-    text-align: center;
-    flex-basis: 100%;
-    justify-content: center;
-    max-width: none;
-    margin: 0;
-    font-size: 8px;
-  }
+
   .agent-name {
     width: calc(50% - 10px);
     font-size: 11px;
@@ -1668,13 +1496,7 @@ h3 {
     letter-spacing: -1px;
     font-size: 28px;
   }
-  .section .eyebrow {
-    margin-bottom: 12px;
-  }
-  .section-description {
-    font-size: 12px;
-    line-height: 1.8;
-  }
+
   .section-heading {
     display: block;
     margin-bottom: 25px;
@@ -1702,10 +1524,7 @@ h3 {
     width: 4px;
     height: 4px;
   }
-  .browser-address {
-    gap: 3px;
-    font-size: 6px;
-  }
+
   .icon-button {
     padding: 6px;
   }
@@ -1713,20 +1532,11 @@ h3 {
     width: 13px;
     height: 13px;
   }
-  .screenshot-caption {
-    gap: 5px;
-    padding: 12px 3px;
-    font-size: 7px;
-  }
+
   .features-section {
     padding-top: 0;
   }
-  .section-aside {
-    text-align: left;
-    max-width: none;
-    margin-top: 15px;
-    font-size: 11px;
-  }
+
   .features-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
@@ -1795,9 +1605,7 @@ h3 {
   .start-copy h2 {
     font-size: 34px;
   }
-  .start-copy .section-description {
-    max-width: none;
-  }
+
   .requirements {
     gap: 12px;
   }
@@ -1836,14 +1644,7 @@ h3 {
   .closing-section h2 {
     font-size: 28px;
   }
-  .closing-section > p:not(.eyebrow) {
-    font-size: 11px;
-    line-height: 1.8;
-  }
-  .closing-section .eyebrow {
-    letter-spacing: 1px;
-    font-size: 8px;
-  }
+
   .closing-mark {
     margin-bottom: 20px;
   }
@@ -1863,9 +1664,7 @@ h3 {
     align-items: start;
     gap: 10px;
   }
-  .footer-note {
-    max-width: none;
-  }
+
   .site-footer nav {
     justify-content: space-between;
     width: 100%;
@@ -1909,9 +1708,7 @@ h3 {
   .workspace-heading {
     font-size: 8px;
   }
-  .workspace-sticker {
-    bottom: 12px;
-  }
+
   .terminal-body {
     padding: 12px;
   }
@@ -1925,4 +1722,12 @@ h3 {
   *:after {
     transition-duration: 0s !important;
   }
+}
+
+.closing-section .button {
+  margin-top: 24px;
+}
+.start-copy > .text-link {
+  display: inline-flex;
+  margin-top: 20px;
 }

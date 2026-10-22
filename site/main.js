@@ -8,15 +8,12 @@ const translationsZh = {
     navWorkflow: "使用流程",
     navDocs: "文档",
     menu: "菜单",
-    heroEyebrow: "小小的 Box，装得下大大的想法",
     heroLine1: "你的 Agent。",
     heroLine2: "你的机器。",
     heroLine3: "你说了算。",
-    heroDescription:
-      "为 AI 编程 Agent 准备的个人工作空间。创建 Docker Box，让它们放手构建，自己随时观察与接管。一切都运行在你自己的机器上。",
+    heroDescription: "在自己的机器上，为 AI 编程 Agent 提供独立的 Docker 工作空间。",
     getStarted: "开始使用",
     exploreProject: "了解开源项目",
-    heroNote: "开源 · 自托管 · 无平台订阅费",
     illustrationLabel: "个人 Docker 工作空间与终端的示意图",
     running: "运行中",
     compute: "计算资源",
@@ -25,25 +22,14 @@ const translationsZh = {
     workspace: "工作空间",
     yourFiles: "给文件一个家",
     terminalComment: "# 给下一个想法，一个干净的开始。",
-    stickerTitle: "放心尝试。",
-    stickerDescription: "给 Agent 独立的工作空间。",
-    illustrationCaption: "工作空间示意图。一切由你掌握。",
-    agentsEyebrow: "带上你喜欢的 Agent",
     anyMcp: "任意 MCP 客户端",
-    productEyebrow: "一扇窗口，掌握全局",
     productTitle: "让 Agent 忙碌，让自己心里有数。",
-    productDescription: "Box、资源用量、终端会话。在一个清爽的控制台里，看看一切进展如何。",
     screenshotsLabel: "控制台截图",
     tabOverview: "概览",
     tabBoxes: "Box 列表",
     tabTerminal: "终端",
-    browserAddress: "你的机器 / minibox",
     enlarge: "放大截图",
-    screenshotCaption: "真实的 MiniBox 控制台，无需注册云平台账号。",
-    featuresEyebrow: "轻量运行，用心打磨",
     featuresTitle: "给 Agent 一个能安心干活的家。",
-    featuresAside: `一个 Bun 进程，一个 Docker Engine。
-装得下许多可能。`,
     storageTitle: "留下成果，告别杂乱。",
     storageDescription:
       "工作区与 home 独立保存在持久卷里，重建后代码和配置依然在。多个 Box 可以共享存储，也可以接入你的 NAS。",
@@ -61,32 +47,25 @@ const translationsZh = {
     lifecycleDescription:
       "空闲 Box 自动休眠、按需唤醒。配合 CPU 与内存配额、TTL、系统快照和检查点，让工作空间井井有条。",
     lifecycleLink: "了解生命周期",
-    workflowEyebrow: "从想法，到工作空间",
     workflowTitle: "一个 Box，一个 Agent，开工。",
     workflowLink: "阅读 Agent 接入指南",
     step1Title: "先腾出一点空间。",
-    step1Description: "选择模板、给 Box 起个名字、选好工具。一个全新的工作空间，不用再多维护一台虚拟机。",
+    step1Description: "选择模板、给 Box 起名、选好工具。",
     ready: "已就绪",
     step2Title: "带上你的 Agent。",
-    step2Description: "创建受限令牌，连接 MCP 客户端，或者使用 CLI 和 API。让 Agent 有自己的地方来构建。",
+    step2Description: "创建受限令牌，通过 MCP、CLI 或 REST API 接入。",
     step3Title: "随时看看进展。",
     step3Description: "跟进终端、预览应用，需要时接管。在尝试新想法之前，用检查点保存当前成果。",
     step3Code: "观察 · 接管 · 交还",
-    startEyebrow: "下一个想法，从这里开始",
     startTitle: `简单的开始。
 自己的空间。`,
-    startDescription:
-      "在安装了 Docker Engine 和 Bun 1.4.3 或更高版本的 Linux 机器上启动 MiniBox。前端已经包含在内，无需额外的数据库服务。",
     installationGuide: "完整安装指南",
-    noDatabase: "无需数据库服务",
     installHeading: "从源码启动",
     copy: "复制",
     copied: "已复制安装命令",
     copyFailed: "浏览器未允许复制，请手动选中并复制命令。",
     installFooter: "然后在自己的机器上打开 127.0.0.1:3920。",
-    setupNote:
-      "首次启动时，MiniBox 会在 data/access_key 中保存自动生成的访问密钥。用它登录控制台，给 Agent 使用受限令牌。远程访问请通过 HTTPS 或私有网络。",
-    faqEyebrow: "你可能还想知道",
+    setupNote: "使用 data/access_key 中自动生成的密钥登录。远程访问请使用 HTTPS 或私有网络。",
     faqTitle: "开始之前，聊几句。",
     faq1Question: "MiniBox 是托管云服务吗？",
     faq1Answer:
@@ -100,10 +79,7 @@ const translationsZh = {
     faq4Question: "能连接我正在使用的编程 Agent 吗？",
     faq4Answer:
       "支持 Streamable HTTP MCP 的客户端都可以连接 MiniBox，也可以通过 CLI 和 REST API 接入。工具目录支持在 Box 里安装已适配的 Agent CLI。请给 Agent 分配受限令牌，而不是所有者主密钥。",
-    closingEyebrow: "小小的 Box，大大的可能",
     closingTitle: "给下一个大想法，腾一点空间。",
-    closingDescription: "你的机器，你喜欢的 Agent，一个可以放手构建的地方。",
-    footerNote: "为个人机器与好奇心而造。",
     issues: "问题与想法",
     dialogTitle: "走进 MiniBox",
     closePreview: "关闭截图",
@@ -113,7 +89,7 @@ const translationsZh = {
     copyFailed: "Copy isn't available. Select and copy the commands manually.",
   };
 for (const element of document.querySelectorAll("[data-i18n]"))
-  translationsEn[element.dataset.i18n] ??= element.innerText;
+  translationsEn[element.dataset.i18n] ??= element.innerText || element.textContent;
 for (const element of document.querySelectorAll("[data-i18n-aria]"))
   translationsEn[element.dataset.i18nAria] ??= element.getAttribute("aria-label");
 const screenshots = {
