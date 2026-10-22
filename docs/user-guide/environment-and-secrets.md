@@ -33,7 +33,7 @@ To delete a secret, click **Delete**. If a box uses the secret, MiniBox lists th
 
 - **A missing secret stops the box from being created, rebuilt or started.** MiniBox does not start a box with an empty value.
 - **Snapshots, templates and checkpoints with system layers refuse secrets.** Saving a box that holds a secret as a template fails. Remove the secret from the box first.
-- **Only the owner and tokens with the `secret:use` scope can refer to a secret.** Only the `admin` preset has that scope.
+- **Only the owner and tokens with the `secret:use` scope can refer to a secret.** Only the `admin` preset has that scope. A repository clone at box create refers to a secret too, when it names one.
 - **Anyone who can run commands in a box can read its environment.** This includes `exec`, SSH and the terminal. Give those permissions only for boxes that should hold the secret.
 - **Secret values never appear in events, the audit log or the server log.** They show only the name.
 
