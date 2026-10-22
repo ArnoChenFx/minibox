@@ -50,6 +50,10 @@ export const MESSAGES = {
     "Secret {name} is used by {boxes}. Those boxes cannot be rebuilt or started until the secret is set again. Send force to delete it anyway.",
   secret_reference_forbidden:
     "This credential may not put secrets into a box. Give it the secret:use scope, or use the admin preset.",
+  secret_in_image:
+    "Environment variable {env} refers to secret {name}. A snapshot or system image keeps the box's environment, so it would store the secret's value.",
+  secret_in_image_hint:
+    "Remove the variable, then try again. A checkpoint without a system image keeps no environment, so it can still be taken.",
   network_invalid:
     "Network name must start with a letter or digit and contain only letters, digits, dots, underscores and hyphens.",
   rebuild_empty: "Nothing in this request changes the template, mounts, environment, network or security profile.",

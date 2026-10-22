@@ -2,6 +2,7 @@ import type { HostCtx } from "../host/registry";
 import { labelChange } from "../labels";
 import { abortError } from "../lib/abort";
 import { log } from "../lib/logger";
+import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "./boxes";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 
@@ -21,6 +22,7 @@ export async function createSnapshot(
 ): Promise<{ ref: string; source: string }> {
   const box = await getBox(host, boxId);
   if (progress?.signal?.aborted) throw abortError();
+  assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []);
   const { repo, tag } = snapshotTag(host.prefix, name ?? box.name);
   const k = host.keys;
   progress?.log?.(`Committing ${box.name}…\n`);

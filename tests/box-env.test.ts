@@ -381,6 +381,48 @@ describe("the secret:use scope", () => {
   });
 });
 
+describe("snapshots and system images", () => {
+  test("a snapshot of a box that names a secret is refused before anything is committed or queued", async () => {
+    setSecret("vault", SECRET_VALUE);
+    const { box } = await run("box.create", createInput("alpha", [{ name: "TOKEN", secretRef: "vault" }]));
+    const error = await rejectionOf(
+      app.operations.run("snapshot.create", contextFor(OWNER), { id: box.boxId, name: "nightly" }),
+    );
+    expect(error).toMatchObject({ status: 409, key: "secret_in_image", params: { env: "TOKEN", name: "vault" } });
+    expect(runtime.callsTo("commitContainer")).toEqual([]);
+    expect(app.tasks.list({ limit: 10 })).toEqual([]);
+    expect(JSON.stringify(error)).not.toContain(SECRET_VALUE);
+  });
+
+  test("a checkpoint with a system image of a box that names a secret is refused before any backup starts", async () => {
+    setSecret("vault", SECRET_VALUE);
+    const { box } = await run("box.create", createInput("alpha", [{ name: "TOKEN", secretRef: "vault" }]));
+    const error = await rejectionOf(
+      run("checkpoint.create", {
+        id: box.boxId,
+        label: "before",
+        include: { system: true, volumes: [] },
+      }),
+    );
+    expect(error).toMatchObject({ status: 409, key: "secret_in_image" });
+    expect(runtime.callsTo("commitContainer")).toEqual([]);
+    expect(app.tasks.list({ limit: 10 })).toEqual([]);
+  });
+
+  test("a checkpoint without a system image is still taken for that box, and commits no image", async () => {
+    setSecret("vault", SECRET_VALUE);
+    const { box } = await run("box.create", createInput("alpha", [{ name: "TOKEN", secretRef: "vault" }]));
+    const started = await run<{ taskId: string }>("checkpoint.create", {
+      id: box.boxId,
+      label: "before",
+      include: { system: false, volumes: [] },
+    });
+    await app.tasks.done(started.taskId);
+    expect(app.tasks.get(started.taskId, { output: false })?.status).toBe("succeeded");
+    expect(runtime.callsTo("commitContainer")).toEqual([]);
+  });
+});
+
 describe("REST", () => {
   let harness: Harness;
 

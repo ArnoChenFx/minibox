@@ -31,6 +31,18 @@ export function assertSecretsStartable(store: SecretStore, env: readonly BoxEnv[
 }
 
 /**
+ * Refuses a snapshot or a system image of a box whose env names a secret. An image keeps its container's environment,
+ * so the value would be stored in it, and every box made from that image would start with it.
+ */
+export function assertNoSecretInImage(env: readonly BoxEnv[]): void {
+  const entry = env.find((item) => item.secretRef !== undefined);
+  if (!entry) return;
+  throw conflict(msg("secret_in_image", { name: entry.secretRef ?? "", env: entry.name }), {
+    hint: msg("secret_in_image_hint"),
+  });
+}
+
+/**
  * The `NAME=value` entries a container is created with. A secret's value is read here and goes into the container
  * only. Nothing built from this list is stored, logged or returned. A missing secret is refused, never an empty value.
  */

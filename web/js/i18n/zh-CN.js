@@ -98,6 +98,9 @@ export default {
   "err.secret_in_use":
     "密钥 {name} 正被 {boxes} 使用。在重新设置该密钥之前，这些 Box 无法重建或启动。发送 force 参数即可仍然删除。",
   "err.secret_reference_forbidden": "此令牌不能把密钥放入 Box。请授予 secret:use 范围，或使用 admin 预设。",
+  "err.secret_in_image":
+    "环境变量 {env} 引用了密钥 {name}。快照或系统镜像会保存 Box 的环境变量，因此会保存该密钥的值。",
+  "err.secret_in_image_hint": "请删除这个环境变量后重试。不含系统镜像的检查点不保存环境变量，仍可创建。",
   "err.network_invalid": "网络名必须以字母或数字开头，且只能包含字母、数字、点、下划线和连字符。",
   "err.rebuild_empty": "这次请求没有改变模板、挂载、环境变量、网络或安全档位。",
   "err.rebuild_confirm_required":
