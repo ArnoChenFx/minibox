@@ -187,6 +187,7 @@ export const MESSAGES = {
   payload_too_large: "The request body is larger than the limit of {limit} MB.",
   schedule_rule_invalid:
     "A schedule runs every 1 to 720 hours, or once a day at a time such as 02:30. Send either everyHours or at, not both.",
+  schedule_timezone_invalid: "The time zone must be an IANA name such as Asia/Shanghai or UTC.",
   rollback_pending:
     "Box {box} has a rollback that waits for its confirm or undo. Confirm or undo it before rolling back again.",
   rollback_none: "Box {box} has no rollback that waits for its confirm or undo.",

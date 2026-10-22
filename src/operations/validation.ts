@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { BOX_PROFILES, type BoxProfile, isBoxProfile } from "../box-profile";
-import { SCHEDULE_HOURS_MAX, SCHEDULE_HOURS_MIN, SCHEDULE_TIME_RE } from "../checkpoints/schedule";
+import { canonicalTimezone, SCHEDULE_HOURS_MAX, SCHEDULE_HOURS_MIN, SCHEDULE_TIME_RE } from "../checkpoints/schedule";
 import { AUTO_HOST, HOST_ID_RE } from "../host/store";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
@@ -265,6 +265,12 @@ function checkScheduleTime(value: unknown): Checked<string | undefined> {
   return reject(msg("schedule_rule_invalid"), "at");
 }
 
+function checkScheduleTimezone(value: unknown): Checked<string | undefined> {
+  if (value === undefined || value === null) return accept(undefined);
+  const zone = canonicalTimezone(value);
+  return zone ? accept(zone) : reject(msg("schedule_timezone_invalid"), "timezone");
+}
+
 export const scheduleEveryHours = () =>
   field(checkScheduleHours, {
     type: "integer",
@@ -278,7 +284,15 @@ export const scheduleAt = () =>
     type: "string",
     pattern: SCHEDULE_TIME_RE.source,
     description:
-      "Take a checkpoint once a day at this time, HH:MM on the server's clock, such as 02:30. Send either this or everyHours.",
+      "Take a checkpoint once a day at this time, HH:MM in timezone, such as 02:30. Send either this or everyHours.",
+  }).optional();
+
+export const scheduleTimezone = () =>
+  field(checkScheduleTimezone, {
+    type: "string",
+    maxLength: 64,
+    description:
+      "IANA time zone of the daily time, such as Asia/Shanghai. Defaults to UTC. An every-hours schedule has no zone, so it is not stored for one.",
   }).optional();
 
 export const cpusWithDefault = (defaultValue: number) =>

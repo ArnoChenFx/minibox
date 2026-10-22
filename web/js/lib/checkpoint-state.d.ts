@@ -55,9 +55,11 @@ export declare function kindsOf(checkpoint: CheckpointRow): string[];
 export declare function contentsOf(checkpoint: CheckpointRow): { roles: string[]; others: number; system: boolean };
 export declare function rowActions(checkpoint: CheckpointRow, state?: RowState): RowActions;
 export declare function passphraseOk(value: string): boolean;
+export declare function scheduleZone(schedule: { timezone?: string | null } | null | undefined): string;
+export declare function browserTimezone(): string;
 export declare function scheduleBody(
   mode: "interval" | "daily",
-  input: { hours?: string | number; at?: string },
-): { everyHours: number } | { at: string } | null;
+  input: { hours?: string | number; at?: string; timezone?: string },
+): { everyHours: number } | { at: string; timezone: string } | null;
 export declare function newestFirst<T extends { createdAt: string }>(checkpoints: readonly T[]): T[];
 export declare function usedPercent(usage: Usage): number | null;
