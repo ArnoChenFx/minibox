@@ -41,6 +41,19 @@ function pad(data: Buffer): Buffer {
   return padding === 0 ? data : Buffer.concat([data, Buffer.alloc(padding)]);
 }
 
+const USTAR_NAME_MAX = 100;
+
+/**
+ * One entry's header. A name past the 100-byte ustar field goes in a GNU `L` record ahead of it, which the engine's tar
+ * reader applies, so a long folder or file name is kept whole rather than cut short.
+ */
+function entry(name: string, type: string, size: number, mode: number, uid: number, gid: number): Buffer {
+  const own = header(name, type, size, mode, uid, gid);
+  if (Buffer.byteLength(name) <= USTAR_NAME_MAX) return own;
+  const data = Buffer.from(`${name}\0`);
+  return Buffer.concat([header("././@LongLink", "L", data.length, 0o644, 0, 0), pad(data), own]);
+}
+
 /** A single-file archive for `putArchive` into the file's parent directory. Entry name is the basename. */
 export function fileArchive(
   basename: string,
@@ -50,7 +63,21 @@ export function fileArchive(
   const uid = opts?.uid ?? DEV_UID;
   const gid = opts?.gid ?? DEV_GID;
   const mode = opts?.mode ?? 0o644;
-  return Buffer.concat([header(basename, "0", data.length, mode, uid, gid), pad(data), Buffer.alloc(BLOCK * 2)]);
+  return Buffer.concat([entry(basename, "0", data.length, mode, uid, gid), pad(data), Buffer.alloc(BLOCK * 2)]);
+}
+
+/** The header of one regular file whose body is streamed after it. */
+export function fileHeader(
+  basename: string,
+  size: number,
+  opts?: { mode?: number; uid?: number; gid?: number },
+): Buffer {
+  return entry(basename, "0", size, opts?.mode ?? 0o644, opts?.uid ?? DEV_UID, opts?.gid ?? DEV_GID);
+}
+
+/** What follows a streamed body: the padding to the next block, then the two zero blocks that end an archive. */
+export function fileTrailer(size: number): Buffer {
+  return Buffer.alloc(((BLOCK - (size % BLOCK)) % BLOCK) + BLOCK * 2);
 }
 
 /** A directory entry archive (empty dir) for creating parents via putArchive. */
@@ -59,7 +86,7 @@ export function dirArchive(basename: string, opts?: { mode?: number; uid?: numbe
   const gid = opts?.gid ?? DEV_GID;
   const mode = opts?.mode ?? 0o755;
   const name = basename.endsWith("/") ? basename : `${basename}/`;
-  return Buffer.concat([header(name, "5", 0, mode, uid, gid), Buffer.alloc(BLOCK * 2)]);
+  return Buffer.concat([entry(name, "5", 0, mode, uid, gid), Buffer.alloc(BLOCK * 2)]);
 }
 
 export interface TarEntry {

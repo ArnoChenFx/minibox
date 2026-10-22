@@ -99,9 +99,14 @@ describe("OpenAPI document", () => {
       "exec.output",
       "exec.run",
       "files.copy",
+      "files.delete",
       "files.download",
       "files.list",
+      "files.mkdir",
+      "files.move",
       "files.read",
+      "files.stream.download",
+      "files.stream.upload",
       "files.upload",
       "files.write",
       "host.add",
@@ -203,8 +208,20 @@ describe("recorded HTTP transcript", () => {
     }
   });
 
+  test("each stream success is the raw bytes its binding declares, not JSON", () => {
+    const streamed = matched.filter(({ binding, exchange }) => binding.stream && exchange.status < 400);
+    expect(streamed.length).toBeGreaterThan(0);
+    for (const { exchange } of streamed) {
+      expect({ step: exchange.step, contentType: exchange.contentType?.split(";")[0] }).toEqual({
+        step: exchange.step,
+        contentType: expect.stringMatching(/^application\/(octet-stream|gzip)$/),
+      });
+    }
+  });
+
   test("each body is JSON that matches the output schema, or the error schema for 4xx and 5xx", () => {
-    for (const { exchange, operation } of matched) {
+    for (const { exchange, operation, binding } of matched) {
+      if (binding.stream && exchange.status < 400) continue;
       expect({ step: exchange.step, contentType: exchange.contentType?.split(";")[0] }).toEqual({
         step: exchange.step,
         contentType: "application/json",
