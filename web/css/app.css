@@ -2048,6 +2048,13 @@ input[type="range"] {
   border-radius: var(--radius-sm);
   padding: 10px 12px;
 }
+/* A command wraps at its spaces and scrolls sideways past a long word, so a URL or token is never split mid-word. */
+.token-snippet {
+  word-break: normal;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
 textarea.token-lines {
   height: auto;
   min-height: 72px;
@@ -2101,11 +2108,6 @@ textarea.token-lines {
 }
 .ssh-cmd .token-snippet {
   margin: 0;
-  white-space: pre-wrap;
-  word-break: normal;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
 }
 .ssh-cmd .token-snippet:focus-visible {
   outline: 2px solid var(--accent);

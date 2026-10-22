@@ -26,9 +26,21 @@ function Add-UserPathEntry {
     $merged = Merge-PathEntry -Path $current -Directory $Directory
     if ($merged -eq $current) { return $false }
     $environment.SetValue('Path', $merged, [Microsoft.Win32.RegistryValueKind]::ExpandString)
-    return $true
   } finally {
     $environment.Close()
+  }
+  Send-EnvironmentChange
+  return $true
+}
+
+# Tells running programs, Explorer included, that the user environment changed, so a terminal opened from the Start menu
+# sees the new PATH. Setting and clearing a user variable through .NET sends that broadcast without native code.
+function Send-EnvironmentChange {
+  try {
+    [System.Environment]::SetEnvironmentVariable('MINIBOX_INSTALL_REFRESH', '1', 'User')
+    [System.Environment]::SetEnvironmentVariable('MINIBOX_INSTALL_REFRESH', $null, 'User')
+  } catch {
+    # The PATH is already saved; without the broadcast only a new sign-in picks it up.
   }
 }
 
@@ -83,8 +95,15 @@ function Install-MiniBoxCli {
     Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
   }
 
-  $version = & $target --version
-  if ($LASTEXITCODE -ne 0) {
+  # A binary Windows cannot start throws instead of setting an exit code, and both cases restore the previous file.
+  $runs = $false
+  try {
+    $version = & $target --version
+    $runs = $LASTEXITCODE -eq 0
+  } catch {
+    $runs = $false
+  }
+  if (-not $runs) {
     if ($movedAside) {
       Move-Item -Force -LiteralPath "$target.old" -Destination $target
       throw "The new $fileName does not run on this machine, so the previous minibox.exe was kept."
