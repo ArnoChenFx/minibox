@@ -28,7 +28,7 @@ import * as boxes from "../src/services/boxes";
 import { ExecManager } from "../src/services/exec";
 import { rebuildBox } from "../src/services/rebuild";
 import { createSnapshot, deleteSnapshot } from "../src/services/snapshots";
-import { deleteTemplate, promoteSnapshot } from "../src/services/templates";
+import { deleteTemplate, promoteSnapshot, saveBoxAsTemplate } from "../src/services/templates";
 import { attachVolume, createVolume, measureVolume } from "../src/services/volumes";
 import type { RebuildRequest } from "../src/specs/plan";
 import type { BoxMount } from "../src/specs/types";
@@ -914,6 +914,40 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         await deleteSnapshot(host, ref);
         await deleteTemplate(host, promoted.ref);
         expect(await rejectionOf(runtime.inspectImage(promoted.ref))).toMatchObject({ kind: "not_found" });
+      } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a value given to a box reaches neither a template saved from it nor a box made from that template",
+    async () => {
+      const restore = silenceLogs();
+      try {
+        const alpha = await boxes.createBox(host, { name: "env-a", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const given = await rebuildBox(
+          host,
+          alpha.boxId,
+          alpha.revision,
+          { env: [{ name: "MB_SCRUB_PROBE", value: "s3cret-probe-value" }] },
+          true,
+        );
+        expect(await shell(given.id, "echo $MB_SCRUB_PROBE")).toBe("s3cret-probe-value");
+
+        const saved = await saveBoxAsTemplate(host, given.boxId, { name: "scrubbed" }, "owner");
+
+        const image = await runtime.inspectImage(saved.ref);
+        expect(image.env.some((entry) => entry.includes("s3cret-probe-value"))).toBe(false);
+        expect(image.env).toContain("MB_SCRUB_PROBE=");
+
+        const beta = await boxes.createBox(host, { name: "env-b", image: saved.ref, cpus: 0.5, memoryMb: 64 });
+        expect(await shell(beta.id, 'echo "[$MB_SCRUB_PROBE]"')).toBe("[]");
+
+        expect(await boxes.deleteBox(host, given.boxId, true)).toEqual({ name: "env-a", volumeDeleted: true });
+        expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "env-b", volumeDeleted: true });
+        await deleteTemplate(host, saved.ref);
       } finally {
         restore();
       }

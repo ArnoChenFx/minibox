@@ -657,6 +657,10 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("read the rollback after confirm", "GET", rollbackAt(rolledAgain));
     await send("read the checkpoint repository usage", "GET", "/api/checkpoints/usage");
 
+    const saved = await post("save a box as a template", `/api/boxes/${rolledAgain}/template`, { name: "saved" });
+    await waitTask(base, saved.json);
+    await post("save a box under a taken template name", `/api/boxes/${rolledAgain}/template`, { name: "saved" });
+    await post("save a missing box as a template", "/api/boxes/missing/template", { name: "other" });
     const customTool = {
       name: "Parity tool",
       description: "A custom entry for the transcript.",

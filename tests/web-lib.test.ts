@@ -23,6 +23,7 @@ import {
   validMountPath,
   volumeChoices,
 } from "../web/js/lib/mounts.js";
+import { retiredRedirect } from "../web/js/lib/retired-routes.js";
 
 const LIB = join(ROOT, "web", "js", "lib");
 const I18N = join(ROOT, "web", "js", "i18n");
@@ -824,6 +825,18 @@ describe("box state badges", () => {
       running: "running",
     });
     expect(badges.expired).toContain("TTL expired");
+  });
+});
+
+describe("retired console addresses", () => {
+  test("the old Snapshots address opens Templates, which lists the snapshots that remain", () => {
+    expect(retiredRedirect("/snapshots")).toBe("#/templates");
+  });
+
+  test("a path that still has a page is not redirected", () => {
+    for (const path of ["/templates", "/templates/python-ml", "/boxes/bx_1", "/snapshotsx", "/constructor"]) {
+      expect([path, retiredRedirect(path)]).toEqual([path, ""]);
+    }
   });
 });
 

@@ -45,7 +45,8 @@ let follow = true;
 let wrap = false;
 let copyTimer = null;
 let detailRequest = 0;
-const seenBuild = new Set();
+const TEMPLATE_OPS = new Set(["template.build", "template.save"]);
+const seenTemplateTask = new Set();
 
 /** Prefer the translated `err.*` key. The stored message is always English. */
 export function taskErrorText(error) {
@@ -292,9 +293,10 @@ function listen(task) {
   });
 }
 
+/** A template task that succeeded drops the cached template list, and tells the open pages to load it again. */
 function noteFinished(task) {
-  if (task.op !== "template.build" || task.status !== "succeeded" || seenBuild.has(task.id)) return;
-  seenBuild.add(task.id);
+  if (!TEMPLATE_OPS.has(task.op) || task.status !== "succeeded" || seenTemplateTask.has(task.id)) return;
+  seenTemplateTask.add(task.id);
   invalidateTemplates();
   window.dispatchEvent(new CustomEvent("minibox-task-done", { detail: { op: task.op, id: task.id } }));
 }

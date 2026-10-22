@@ -4,15 +4,17 @@ import { lang, t } from "./i18n.js";
 import { icon } from "./icons.js";
 
 // ---------- Toasts ----------
-export function toast(title, { type = "success", message = "", timeout = 4000 } = {}) {
+export function toast(title, { type = "success", message = "", timeout = 4000, link = null } = {}) {
   let root = $("#toasts");
   if (!root) {
     root = el('<div id="toasts" class="toasts" role="status" aria-live="polite"></div>');
     document.body.append(root);
   }
   const ic = type === "error" ? "alertCircle" : type === "info" ? "info" : "checkCircle";
+  const text = message ? `<div class="muted">${esc(message)}</div>` : "";
+  const action = link ? `<a class="toast-link" href="${esc(link.href)}">${esc(link.text)}</a>` : "";
   const node = el(
-    `<div class="toast ${type}">${icon(ic)}<div><strong>${esc(title)}</strong>${message ? `<div class="muted">${esc(message)}</div>` : ""}</div></div>`,
+    `<div class="toast ${type}">${icon(ic)}<div><strong>${esc(title)}</strong>${text}${action}</div></div>`,
   );
   root.append(node);
   setTimeout(

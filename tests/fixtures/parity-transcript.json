@@ -1800,6 +1800,30 @@
     "body": "{\"bytes\":0,\"limitBytes\":null,\"state\":\"unlimited\",\"policy\":{\"keepLast\":20,\"keepDays\":30}}"
   },
   {
+    "step": "save a box as a template",
+    "method": "POST",
+    "path": "/api/boxes/<id>/template",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "save a box under a taken template name",
+    "method": "POST",
+    "path": "/api/boxes/<id>/template",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A template named “saved” already exists.\",\"retryable\":false,\"key\":\"template_name_taken\",\"params\":{\"name\":\"saved\"}}}"
+  },
+  {
+    "step": "save a missing box as a template",
+    "method": "POST",
+    "path": "/api/boxes/missing/template",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
+  },
+  {
     "step": "list custom tools",
     "method": "GET",
     "path": "/api/tools/custom",

@@ -126,6 +126,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.rollback.undo": (id) => ({ id, confirm: true, expectedRevision: "2" }),
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
+  "template.save": (id) => ({ id, name: "silver" }),
   "template.build": () => ({}),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
   "task.list": () => ({}),
@@ -857,6 +858,7 @@ describe("projections", () => {
       "list_tools",
       "put_custom_tool",
       "reconcile_tools",
+      "save_template",
       "uninstall_tool",
       "upgrade_tool",
     ]);

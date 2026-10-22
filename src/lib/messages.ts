@@ -123,6 +123,7 @@ export const MESSAGES = {
   session_not_found: "Session not found.",
   snapshot_not_found: "Snapshot not found.",
   template_not_found: "Template not found.",
+  template_name_taken: "A template named “{name}” already exists.",
   template_image_missing:
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   box_exists: "A box named “{name}” already exists.",

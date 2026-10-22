@@ -4,8 +4,14 @@
 
 ## [Unreleased]
 
+### 新增
+- 盒子详情页新增「存为模板」：把 Box 的系统层（apt 与 sudo 安装的软件、系统文件的改动）保存为模板，并记录来源 Box。不包含 `/workspace` 与 home 卷，数据请使用检查点。接口为 `POST /api/boxes/:id/template`，MCP 工具为 `save_template`（`tools` 工具集），CLI 为 `template save`。权限与提升为模板相同；名称已存在时返回 `409`（#15）。
+
 ### 变更
 - 工具目录已不只包含 Agent CLI：控制台、API 说明、MCP 说明与 README 中的「Agent CLI 工具」统一改称「工具」（Tools），接口与 id 不变（#8）。
+- 侧边栏的「快照」并入「模板」：旧快照显示在模板页的「旧快照」折叠区域，可提升为模板、从它创建 Box 或删除。`#/snapshots` 会打开模板页。快照的 REST、MCP 与 CLI 接口保持不变，作为底层方式（#15）。
+- 登录页与 README 的说明统一为：检查点保存数据，模板保存环境（#15）。
+- 快照提升为模板时，若名称已被占用，`POST /api/snapshots/:ref/promote` 返回 `409`（`template_name_taken`），不再覆盖同名模板。
 - 任务面板更易读：桌面端加宽到约 900px，左侧每项显示操作、工具或模板名、Box 与相对时间，右侧标题显示操作、对象与 Box、状态、开始时间与用时。命令收在可展开的「命令」一行中并可复制；输出为 12px 等宽字体的深色区域，默认不换行、可切换自动换行，运行中自动跟随到底部，手动向上滚动后停止跟随。ANSI 颜色与粗体安全渲染，其他控制序列与 `\r` 重绘不再显示为乱码。任务接口新增 `subject` 字段，记录工具 id、模板或快照名（旧任务为空）。
 
 ### 文档
@@ -22,6 +28,7 @@
 - 写请求声明的 `Content-Type` 必须是 `application/json`，否则返回 `415`。既没有请求体也没有声明 `Content-Type` 的写请求不受影响；以前用 `curl -d ''` 发送的空表单请求现在会被拒绝，请去掉表单类型或改为 JSON（#3）。
 
 ### 安全
+- 快照与检查点不再保存 Box 设置的环境变量值：`docker commit` 会把容器的环境变量复制进镜像，此前由快照或检查点创建的 Box 能读到这些值。之后的提交会为每个已设置的名称写入空值（镜像自带该变量时保留镜像的值）。升级前制作的快照与检查点仍含原值，若其中有敏感信息，请删除它们。
 - 检查点仓库的密码以只读文件 `/run/secrets/repo.key` 交给 restic 辅助容器（`RESTIC_PASSWORD_FILE`），不进入环境变量或容器配置，`docker inspect` 看不到它（#11）。
 - Agent API 令牌与访问密钥分开（#13）。明文（`mbx_…`）只在创建时返回一次，`DATA_DIR/tokens.json` 只保存 SHA-256。scope 包括 `box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`。资源范围默认是该令牌创建的 Box（`created-by-me`），也可以指定 id、标签或全部 Box；卷必须显式列出；宿主机默认只有 `local`。预设为 `readonly`、`operator`、`sandboxed-agent` 与 `admin`。`sandboxed-agent` 默认最多 5 个 Box、合计 8 个 CPU 与 16384 MB、TTL 最长 4 小时、每分钟 60 次请求。超出配额返回 `403`（`quota_*`），速率超限返回 `429`。吊销立即生效；`DELETE /api/tokens/:id?deleteCreated=true` 同时删除该令牌创建的 Box。`exec` 可以读写该令牌有权使用的 Box 上的全部挂载。创建 Box 时若工作区卷已经存在，或更新挂载指向已有卷，缺少对该卷的 `volume:attach` 会返回 `403`。签发与吊销令牌只有所有者可以做，`admin` 预设不能签发令牌。更换 `ACCESS_KEY` 不会吊销这些令牌。审计日志会打码本进程内创建的令牌，以及形如 `mbx_` 再加至少 20 个字符的值。同一枚令牌也可以作为 `/mcp` 的 Bearer 使用，`tools/list` 与每次调用都受其 scope 约束；吊销会结束它的 MCP 会话、终端、事件流与任务流，并在 `failedBoxes` 中列出无法删除的 Box。TTL 到期后 Box 会停止、不删除（#12）。
 - 错误的 `Authorization: Bearer` 密钥计入登录限流：`/api/`、`/mcp` 与终端 WebSocket 和登录共用同一计数，超限后返回 `429`。正确的密钥不计入，也不会被拒绝。此前 Bearer 密钥的错误不受限制。

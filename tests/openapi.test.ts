@@ -119,6 +119,7 @@ describe("OpenAPI document", () => {
       "template.delete",
       "template.list",
       "template.promote",
+      "template.save",
       "token.create",
       "token.list",
       "token.revoke",
