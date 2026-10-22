@@ -270,6 +270,23 @@ describe("streamed download", () => {
   });
 });
 
+describe("reads", () => {
+  test("a file that is not UTF-8 text is refused as text, and reads back exactly as base64", async () => {
+    const vol = await volume();
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
+    await streamUpload(host, vol.id, {
+      path: "notes/image.bin",
+      overwrite: false,
+      body: { stream: new Response(bytes).body, length: bytes.length },
+      maxBytes: LIMIT,
+    });
+    const refused = await rejectionOf(readFile(host, vol.id, { path: "notes/image.bin" }));
+    expect(refused as AppError).toMatchObject({ status: 400, key: "file_not_text" });
+    const read = await readFile(host, vol.id, { path: "notes/image.bin", encoding: "base64" });
+    expect(Buffer.from(read.content, "base64")).toEqual(bytes);
+  });
+});
+
 describe("folders", () => {
   test("creates a folder and its parents once, then reports it as already there", async () => {
     const vol = await volume();
