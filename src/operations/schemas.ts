@@ -142,6 +142,32 @@ export const CheckpointSchema = z.object({
   updatedAt: z.string(),
 });
 
+/** The checkpoint repository's size against its limit. `limitBytes` is null when no limit is set. */
+export const CheckpointUsageSchema = z.object({
+  bytes: z.number(),
+  limitBytes: z.number().nullable(),
+  state: z.enum(["unlimited", "ok", "warning", "exceeded"]),
+  policy: z.object({ keepLast: z.number(), keepDays: z.number() }),
+});
+
+/** A volume a rollback replaced or restored, and the path the box mounts it at. */
+export const RollbackVolumeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+});
+
+/** A rollback waiting for its confirm or undo. `null` in the response when the box has none. */
+export const PendingRollbackSchema = z.object({
+  boxId: z.string(),
+  checkpoint: z.object({ id: z.string(), label: z.string() }),
+  safetyCheckpointId: z.string(),
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  replaced: z.array(RollbackVolumeSchema),
+  restored: z.array(RollbackVolumeSchema),
+});
+
 /** A snapshot or template image, as the image list shows it. */
 export const ImageSchema = z.object({
   id: z.string(),

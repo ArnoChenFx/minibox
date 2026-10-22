@@ -1,12 +1,30 @@
-import { readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
-import { ensureDataDir, writeFileAtomic } from "../data-dir";
+import { DIR_MODE, ensureDataDir, writeFileAtomic } from "../data-dir";
 import { log } from "../lib/logger";
+import { isBoxId } from "../specs/revision";
 import { isCheckpointId, newCheckpointId } from "./id";
-import { CHECKPOINT_VERSION, type CheckpointRecord } from "./types";
+import { CHECKPOINT_VERSION, type CheckpointRecord, type PendingRollback, ROLLBACK_VERSION } from "./types";
 
 const isEnoent = (e: unknown): boolean => typeof e === "object" && e !== null && "code" in e && e.code === "ENOENT";
+
+function isPendingRollback(value: unknown): value is PendingRollback {
+  if (typeof value !== "object" || value === null) return false;
+  const pending = value as Partial<PendingRollback>;
+  return (
+    pending.version === ROLLBACK_VERSION &&
+    typeof pending.boxId === "string" &&
+    isBoxId(pending.boxId) &&
+    typeof pending.hostId === "string" &&
+    typeof pending.checkpointId === "string" &&
+    isCheckpointId(pending.checkpointId) &&
+    typeof pending.safetyCheckpointId === "string" &&
+    isCheckpointId(pending.safetyCheckpointId) &&
+    Array.isArray(pending.replaced) &&
+    Array.isArray(pending.restored)
+  );
+}
 
 function isRecord(value: unknown): value is CheckpointRecord {
   if (typeof value !== "object" || value === null) return false;
@@ -40,6 +58,50 @@ export class CheckpointStore {
   pathFor(id: string): string {
     if (!isCheckpointId(id)) throw new Error(`refusing a checkpoint path for ${id}`);
     return join(this.dir(), `${id}.json`);
+  }
+
+  /** `DATA_DIR/checkpoints/rollbacks`: one file per box whose rollback still waits for a confirm or an undo. */
+  rollbackDir(): string {
+    return join(this.dir(), "rollbacks");
+  }
+
+  pendingRollback(boxId: string): PendingRollback | null {
+    if (!isBoxId(boxId)) return null;
+    return this.readPending(boxId);
+  }
+
+  pendingRollbacks(): PendingRollback[] {
+    let names: string[];
+    try {
+      names = readdirSync(this.rollbackDir());
+    } catch (e) {
+      if (isEnoent(e)) return [];
+      throw e;
+    }
+    const pending: PendingRollback[] = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const boxId = name.slice(0, -".json".length);
+      if (!isBoxId(boxId)) continue;
+      const record = this.readPending(boxId);
+      if (record) pending.push(record);
+    }
+    return pending;
+  }
+
+  writePendingRollback(record: PendingRollback): void {
+    ensureDataDir(this.dataDir);
+    mkdirSync(this.rollbackDir(), { recursive: true, mode: DIR_MODE });
+    writeFileAtomic(this.pendingPath(record.boxId), `${JSON.stringify(record, null, 2)}\n`);
+  }
+
+  removePendingRollback(boxId: string): void {
+    if (!isBoxId(boxId)) return;
+    try {
+      unlinkSync(this.pendingPath(boxId));
+    } catch (e) {
+      if (!isEnoent(e)) throw e;
+    }
   }
 
   /**
@@ -97,6 +159,31 @@ export class CheckpointStore {
       unlinkSync(this.pathFor(id));
     } catch (e) {
       if (!isEnoent(e)) throw e;
+    }
+  }
+
+  private pendingPath(boxId: string): string {
+    if (!isBoxId(boxId)) throw new Error(`refusing a rollback path for ${boxId}`);
+    return join(this.rollbackDir(), `${boxId}.json`);
+  }
+
+  /** A corrupt file is left in place and skipped, so the box reads as having no rollback waiting. Nothing is deleted. */
+  private readPending(boxId: string): PendingRollback | null {
+    let text: string;
+    try {
+      text = readFileSync(this.pendingPath(boxId), "utf8");
+    } catch (e) {
+      if (isEnoent(e)) return null;
+      throw e;
+    }
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (isPendingRollback(parsed) && parsed.boxId === boxId) return parsed;
+      log.warn("checkpoint.rollback_unreadable", { box: boxId, error: "not a rollback record" });
+      return null;
+    } catch (e) {
+      log.warn("checkpoint.rollback_unreadable", { box: boxId, error: String(e) });
+      return null;
     }
   }
 

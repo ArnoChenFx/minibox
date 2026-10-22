@@ -267,6 +267,7 @@ function createToken(view) {
           <label class="field">${t("st.tokenQuotaMemory")}<input class="input" name="maxMemoryMb" inputmode="numeric" /></label>
           <label class="field">${t("st.tokenQuotaTtl")}<input class="input" name="maxTtlHours" inputmode="numeric" /></label>
           <label class="field">${t("st.tokenQuotaRate")}<input class="input" name="rateLimit" inputmode="numeric" /></label>
+          <label class="field">${t("st.tokenQuotaCheckpoints")}<input class="input" name="maxCheckpoints" inputmode="numeric" /></label>
         </div>
       </form>`,
     footer: `<button class="btn" data-close type="button">${t("common.cancel")}</button><button class="btn btn-primary" id="stTokenSave" type="button">${t("st.tokenCreate")}</button>`,
@@ -316,11 +317,13 @@ async function submitToken(view, form, close) {
   const maxMemoryMb = numberOrSkip(String(data.get("maxMemoryMb") ?? ""));
   const maxTtlHours = numberOrSkip(String(data.get("maxTtlHours") ?? ""));
   const rateLimit = numberOrSkip(String(data.get("rateLimit") ?? ""));
+  const maxCheckpoints = numberOrSkip(String(data.get("maxCheckpoints") ?? ""));
   if (maxBoxes !== undefined) quotas.maxBoxes = maxBoxes;
   if (maxCpus !== undefined) quotas.maxCpus = maxCpus;
   if (maxMemoryMb !== undefined) quotas.maxMemoryMb = maxMemoryMb;
   if (maxTtlHours !== undefined) quotas.maxTtlSec = Math.round(maxTtlHours * 3600);
   if (rateLimit !== undefined) quotas.rateLimit = rateLimit;
+  if (maxCheckpoints !== undefined) quotas.maxCheckpoints = maxCheckpoints;
   if (Object.keys(quotas).length) body.quotas = quotas;
   let created;
   try {

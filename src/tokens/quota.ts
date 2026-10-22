@@ -104,3 +104,35 @@ export function underQuota<T>(
     return work();
   });
 }
+
+/**
+ * Refuses a manual checkpoint once the token holds its limit of them. Automatic checkpoints do not count: the retention
+ * policy bounds those per box, and a rollback takes them, not the token. The store is shared by every host, so one
+ * listing counts them all.
+ */
+export function assertCheckpointQuota(ctx: Pick<OperationContext, "principal" | "host">): void {
+  const { principal } = ctx;
+  if (principal.type !== "token") return;
+  const max = principal.grants.quotas.maxCheckpoints;
+  if (max === null) return;
+  const taken = ctx.host.checkpoints
+    .list()
+    .filter((record) => !record.auto && record.createdBy === principal.id).length;
+  if (taken + 1 > max) throw refusal("quota_checkpoints", { max });
+}
+
+/**
+ * Checks the token's checkpoint quota and then runs `work`, both inside the token's queue for checkpoints, so two takes
+ * by one token cannot both pass the last place. The owner, and a token with no checkpoint limit, run `work` directly.
+ */
+export function underCheckpointQuota<T>(
+  ctx: Pick<OperationContext, "principal" | "host">,
+  work: () => Promise<T>,
+): Promise<T> {
+  const { principal } = ctx;
+  if (principal.type !== "token" || principal.grants.quotas.maxCheckpoints === null) return work();
+  return serialized(`checkpoint-quota:${principal.id}`, async () => {
+    assertCheckpointQuota(ctx);
+    return work();
+  });
+}

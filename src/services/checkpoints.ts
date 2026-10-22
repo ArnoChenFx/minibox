@@ -6,6 +6,9 @@ import {
   type CheckpointSpec,
   type Consistency,
   type DataLayer,
+  type PendingRollback,
+  ROLLBACK_VERSION,
+  type RolledVolume,
   type SystemLayer,
 } from "../checkpoints/types";
 import type { HostCtx } from "../host/registry";
@@ -21,7 +24,8 @@ import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { createRestoredVolume, provisionDefaultMounts } from "../volumes/provision";
 import { ROLE_MOUNT, type VolumeRecord, type VolumeRole } from "../volumes/types";
-import { type Box, createBox, getBox, locked, refuseExpired, startLocked, stopLocked } from "./boxes";
+import { type Box, createBox, getBox, locked, refuseExpired, startLocked } from "./boxes";
+import { assertAutomaticAllowed } from "./checkpoint-capacity";
 import { holdVolumeBoxes } from "./files";
 import type { ImageItem } from "./images";
 import { rebuildBox } from "./rebuild";
@@ -97,8 +101,13 @@ export interface RollbackPreview {
 
 export interface RollbackResult {
   box: Box;
-  /** The volumes the rollback replaced. They are kept, unmounted and still owned by the box, until someone deletes them. */
+  /**
+   * The volumes the rollback replaced. They are kept, unmounted and still owned by the box, until the rollback is
+   * confirmed or undone.
+   */
   replaced: { id: string; name: string }[];
+  /** The automatic checkpoint taken first. It holds the data the replaced volumes held. */
+  safety: { id: string; label: string };
 }
 
 export function viewOf(record: CheckpointRecord): CheckpointView {
@@ -196,6 +205,22 @@ export async function updateCheckpoint(host: HostCtx, id: string, patch: Checkpo
 }
 
 /**
+ * The safety checkpoints of rollbacks that wait for their confirm or undo. Each is the only copy of the data its rollback
+ * replaced, so it is never deleted, by hand or by retention.
+ */
+export function heldCheckpointIds(host: HostCtx): Set<string> {
+  return new Set(host.checkpoints.pendingRollbacks().map((pending) => pending.safetyCheckpointId));
+}
+
+/**
+ * Refuses to delete the safety checkpoint of a rollback that waits for its confirm or undo. A confirm deletes the
+ * replaced volumes, so that checkpoint is the last copy of their data.
+ */
+export function assertNotHeld(host: HostCtx, id: string): void {
+  if (heldCheckpointIds(host).has(id)) throw conflict(msg("checkpoint_held_by_rollback", { id }));
+}
+
+/**
  * Deletes a checkpoint's snapshots and system image, then its record. A pinned checkpoint is kept until it is unpinned.
  * Each snapshot is forgotten and the record rewritten before the next, so a failure part way can be retried.
  */
@@ -209,6 +234,7 @@ export async function deleteCheckpoint(host: HostCtx, id: string): Promise<void>
     const record = ownRecord(host, id);
     if (!record) throw notFound(msg("checkpoint_not_found", { id }));
     if (record.pinned) throw conflict(msg("checkpoint_pinned", { id }));
+    assertNotHeld(host, id);
     let current = record;
     for (const layer of record.data) {
       await host.checkpointEngine.forget(host, layer.snapshotId);
@@ -258,6 +284,9 @@ function tagsFor(checkpointId: string, boxId: string, volume: VolumeRecord): str
  * Makes the box consistent for the backup, and returns what undoes it. `pause` freezes a running box. `stop` stops it
  * and starts it again afterwards, when it was running. `live` leaves it alone. A stopped or sleeping box is read as it
  * is and nothing is started for it, so a checkpoint never wakes a box.
+ *
+ * Neither mode changes the box's desired state. A crash in the middle leaves the container paused, or stopped while
+ * its desired state is still `running`, and startup reconciliation puts both right (see `reconcileHost`).
  */
 async function quiesce(
   host: HostCtx,
@@ -272,7 +301,8 @@ async function quiesce(
     return () => resumeStep(box, progress, "Unpausing the box…\n", () => host.runtime.unpauseContainer(box.id));
   }
   progress?.log?.("Stopping the box…\n");
-  await stopLocked(host, box, "manual");
+  await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
+  await host.sampler.observe(box.id);
   return () =>
     resumeStep(box, progress, "Starting the box again…\n", async () => {
       await startLocked(host, await getBox(host, box.boxId), {});
@@ -303,7 +333,7 @@ async function resumeStep(
  * Runs `fn` under the box's power lock, and holds the box awake while it runs, so the idle watcher cannot sleep it and
  * its end counts as activity (#12). The box is read again under the lock, so a change made while this call waited is seen.
  */
-async function underBox<T>(host: HostCtx, boxId: string, fn: (box: Box) => Promise<T>): Promise<T> {
+export async function underBox<T>(host: HostCtx, boxId: string, fn: (box: Box) => Promise<T>): Promise<T> {
   const release = host.pulse.hold(boxId);
   try {
     return await locked(host, boxId, fn);
@@ -378,20 +408,24 @@ export async function takeCheckpoint(
   return underBox(host, boxId, (box) => backupBox(host, box, input, createdBy, progress));
 }
 
-/** Holds every box that mounts a volume the backup reads, so the backup counts as activity for each of them (decision 56). */
+/**
+ * Holds every box that mounts a volume the backup reads, so the backup counts as activity for each of them (decision 56).
+ * `auto` marks a checkpoint an automatic trigger took, such as the safety point of a rollback.
+ */
 async function backupBox(
   host: HostCtx,
   box: Box,
   input: TakeCheckpointInput,
-  createdBy: string,
+  createdBy: string | null,
   progress?: Progress,
+  auto = false,
 ): Promise<CheckpointView> {
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
   const layers = planLayers(host, spec, input.include.volumes);
   const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume));
   try {
-    return await writeCheckpoint(host, box, spec, layers, input, createdBy, progress);
+    return await writeCheckpoint(host, box, spec, layers, input, createdBy, auto, progress);
   } finally {
     for (const release of releases) release();
   }
@@ -403,7 +437,8 @@ async function writeCheckpoint(
   spec: BoxSpec,
   layers: PlannedLayer[],
   input: TakeCheckpointInput,
-  createdBy: string,
+  createdBy: string | null,
+  auto: boolean,
   progress?: Progress,
 ): Promise<CheckpointView> {
   const id = host.checkpoints.allocateId();
@@ -444,7 +479,7 @@ async function writeCheckpoint(
       reason: input.reason?.trim() ?? "",
       createdBy,
       pinned: input.pinned,
-      auto: false,
+      auto,
       consistency: input.consistency,
       specRevision: spec.revision,
       spec: {
@@ -613,6 +648,7 @@ interface RollbackPlan {
 /**
  * Matches each owned layer of the checkpoint to the box's current owned volume at the same path. Shared volumes are not
  * part of a rollback, so they are never matched. A checkpoint of another box, or one with no volume data, is refused.
+ * A box with a rollback still waiting for its confirm or undo is refused too: that rollback's volumes are not replaced.
  */
 export async function planRollback(
   host: HostCtx,
@@ -624,6 +660,7 @@ export async function planRollback(
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
   if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
+  if (host.checkpoints.pendingRollback(box.boxId)) throw conflict(msg("rollback_pending", { box: box.name }));
   const checkpoint = await getCheckpoint(host, checkpointRef);
   const owned = checkpoint.data.filter((layer) => layer.ownership === "owned");
   if (owned.length === 0) throw conflict(msg("checkpoint_no_data", { id: checkpoint.id }));
@@ -631,7 +668,8 @@ export async function planRollback(
   const restores = owned.map((layer) => {
     const mount = spec.mounts.find((item) => item.path === layer.path);
     const volume = mount ? host.volumes.findByEngine(host.host.id, mount.volume) : null;
-    if (!mount || !volume || volume.ownership !== "owned" || volume.ownerBoxId !== box.boxId) {
+    // A volume outside checkpoints has no safety copy, so a rollback never replaces one.
+    if (!mount || !volume || !volume.checkpoint || volume.ownership !== "owned" || volume.ownerBoxId !== box.boxId) {
       throw conflict(msg("checkpoint_path_not_mounted", { path: layer.path }));
     }
     return { layer, mount, volume };
@@ -669,8 +707,9 @@ export function rollbackConfirmation(preview: RollbackPreview): AppError {
 
 /**
  * Rolls a box back to one of its own checkpoints. Each owned volume's data is restored into a new volume, and the box is
- * rebuilt onto those volumes, which keeps the rebuild's checks. The replaced volumes are not deleted. Without `confirm`
- * nothing changes, and a 409 carries the preview.
+ * rebuilt onto those volumes, which keeps the rebuild's checks. The volumes it replaces are kept until the rollback is
+ * confirmed, which deletes them, or undone (see `services/rollback.ts`). Without `confirm` nothing changes, and a 409
+ * carries the preview.
  */
 export async function rollbackBox(
   host: HostCtx,
@@ -687,7 +726,13 @@ export async function rollbackBox(
 
 /**
  * A confirmed rollback, run under the box's power lock. The box is refused first when its lifetime has ended, before any
- * volume is made, as a rebuild starts the box too (decision 53).
+ * volume is made, as a rebuild starts the box too (decision 53). The box's owned volumes are then backed up as an
+ * automatic safety checkpoint, with the box stopped (design §7.2), so the data the rollback replaces survives whatever
+ * follows.
+ *
+ * The rollback record is written only once the box runs on the restored volumes. Written earlier, it would name volumes
+ * the box still mounts. A crash before that leaves the replaced volumes unlisted and unharmed, and nothing is deleted
+ * without a record. A failure to write it must not undo the rebuild, because the box already mounts the restored volumes.
  */
 async function restoreUnderLock(
   host: HostCtx,
@@ -698,10 +743,48 @@ async function restoreUnderLock(
   record: RecordNote | undefined,
 ): Promise<RollbackResult> {
   refuseExpired(host, boxId);
+  const first = await planRollback(host, boxId, input.checkpoint, input.revision);
+  await assertAutomaticAllowed(host);
+  progress?.log?.("Taking a safety checkpoint…\n");
+  const safety = await backupBox(host, first.box, safetyInput(first.checkpoint), createdBy, progress, true);
   const plan = await planRollback(host, boxId, input.checkpoint, input.revision);
+  const { box, restored } = await mountRestored(host, plan, createdBy, progress, record);
+  const pending: PendingRollback = {
+    version: ROLLBACK_VERSION,
+    hostId: host.host.id,
+    boxId: plan.spec.id,
+    boxName: plan.spec.name,
+    checkpointId: plan.checkpoint.id,
+    checkpointLabel: plan.checkpoint.label,
+    safetyCheckpointId: safety.id,
+    createdBy,
+    createdAt: new Date().toISOString(),
+    replaced: plan.restores.map(({ mount, volume }) => rolledOf(volume, mount.path)),
+    restored,
+  };
+  host.checkpoints.writePendingRollback(pending);
+  log.info("checkpoint.rolled_back", { checkpoint: plan.checkpoint.id, box: plan.spec.name, safety: safety.id });
+  return {
+    box,
+    replaced: plan.restores.map(({ volume }) => ({ id: volume.id, name: volume.name })),
+    safety: { id: safety.id, label: safety.label },
+  };
+}
+
+/**
+ * Restores each owned layer into a new volume, then rebuilds the box onto them. A failure takes back the volumes made
+ * here. The rebuild has already put the box back as it was, so nothing else needs undoing.
+ */
+async function mountRestored(
+  host: HostCtx,
+  plan: RollbackPlan,
+  createdBy: string | null,
+  progress: Progress | undefined,
+  record: RecordNote | undefined,
+): Promise<{ box: Box; restored: RolledVolume[] }> {
   const known = new Set<string>();
   const changes = new VolumeChanges();
-  const replacement = new Map<string, VolumeRecord>();
+  const restored: RolledVolume[] = [];
   try {
     for (const { layer, mount, volume } of plan.restores) {
       progress?.log?.(`Restoring ${mount.path}…\n`);
@@ -717,20 +800,31 @@ async function restoreUnderLock(
         changes,
       );
       await restoreLayer(host, layer, fresh);
-      replacement.set(mount.path, fresh);
+      restored.push(rolledOf(fresh, mount.path));
     }
     const mounts = plan.spec.mounts.map((mount) => {
-      const fresh = replacement.get(mount.path);
+      const fresh = restored.find((item) => item.path === mount.path);
       return fresh ? { ...mount, volume: fresh.engineName } : mount;
     });
     const box = await rebuildBox(host, plan.spec.id, plan.spec.revision, { mounts }, true, record);
-    log.info("checkpoint.rolled_back", { checkpoint: plan.checkpoint.id, box: plan.spec.name });
-    return {
-      box,
-      replaced: plan.restores.map(({ volume }) => ({ id: volume.id, name: volume.name })),
-    };
+    return { box, restored };
   } catch (e) {
     await changes.rollback();
     throw e;
   }
+}
+
+function rolledOf(volume: VolumeRecord, path: string): RolledVolume {
+  return { volumeId: volume.id, name: volume.name, engineName: volume.engineName, path };
+}
+
+/** The checkpoint a rollback takes before it replaces anything. The box is stopped for it, as design §7.2 requires. */
+function safetyInput(target: CheckpointView): TakeCheckpointInput {
+  return {
+    label: `Before rollback to ${target.label}`,
+    reason: `Taken automatically before a rollback to ${target.id}`,
+    pinned: false,
+    include: { system: false, volumes: [] },
+    consistency: "stop",
+  };
 }

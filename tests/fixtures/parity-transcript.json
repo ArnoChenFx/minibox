@@ -1461,7 +1461,7 @@
     "path": "/api/tokens",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
   },
   {
     "step": "list tokens",
@@ -1469,7 +1469,7 @@
     "path": "/api/tokens",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"tokens\":[{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}]}"
+    "body": "{\"tokens\":[{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}]}"
   },
   {
     "step": "create a token with no scope",
@@ -1493,7 +1493,7 @@
     "path": "/api/tokens/<tokenId>?deleteCreated=false",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"token\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"},\"deletedBoxes\":[],\"failedBoxes\":[]}"
+    "body": "{\"token\":{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"},\"deletedBoxes\":[],\"failedBoxes\":[]}"
   },
   {
     "step": "revoke the readonly token again",
@@ -1613,7 +1613,7 @@
     "path": "/api/boxes/<id>/rollback",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"Rolling back replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The current volumes are kept; delete them yourself once you no longer need them. Send confirm: true to continue.\",\"retryable\":false,\"key\":\"checkpoint_rollback_confirm\",\"details\":{\"preview\":{\"checkpoint\":{\"id\":\"ck_<checkpoint>\",\"label\":\"before refactor\",\"createdAt\":\"<time>\"},\"restores\":[{\"path\":\"/workspace\",\"role\":\"workspace\",\"volume\":\"ckbox-workspace\"},{\"path\":\"/home/dev\",\"role\":\"home\",\"volume\":\"ckbox-home\"}],\"keeps\":[\"id\",\"name\",\"history\",\"shared volumes\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"diff\":[],\"revision\":{\"current\":1,\"next\":2}}}}}"
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"Rolling back first takes a checkpoint of the current data, then replaces the volumes at the checkpoint's paths with copies of the checkpoint's data. The replaced volumes are kept until you confirm the rollback, which deletes them, or undo it. Send confirm: true to continue.\",\"retryable\":false,\"key\":\"checkpoint_rollback_confirm\",\"details\":{\"preview\":{\"checkpoint\":{\"id\":\"ck_<checkpoint>\",\"label\":\"before refactor\",\"createdAt\":\"<time>\"},\"restores\":[{\"path\":\"/workspace\",\"role\":\"workspace\",\"volume\":\"ckbox-workspace\"},{\"path\":\"/home/dev\",\"role\":\"home\",\"volume\":\"ckbox-home\"}],\"keeps\":[\"id\",\"name\",\"history\",\"shared volumes\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"diff\":[],\"revision\":{\"current\":1,\"next\":2}}}}}"
   },
   {
     "step": "roll back with confirm",
@@ -1654,5 +1654,149 @@
     "status": 404,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Checkpoint ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"checkpoint_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "read the rolled back box",
+    "method": "GET",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"ckbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"ckbox-workspace-local\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"ckbox-home-local\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"ckbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}}"
+  },
+  {
+    "step": "read the rollback that waits",
+    "method": "GET",
+    "path": "/api/boxes/<id>/rollback",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"rollback\":{\"boxId\":\"<boxId>\",\"checkpoint\":{\"id\":\"ck_<checkpoint>\",\"label\":\"before refactor\"},\"safetyCheckpointId\":\"ck_<checkpoint>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"replaced\":[{\"id\":\"<volumeId>\",\"name\":\"ckbox-workspace\",\"path\":\"/workspace\"},{\"id\":\"<volumeId>\",\"name\":\"ckbox-home\",\"path\":\"/home/dev\"}],\"restored\":[{\"id\":\"<volumeId>\",\"name\":\"ckbox-workspace-local\",\"path\":\"/workspace\"},{\"id\":\"<volumeId>\",\"name\":\"ckbox-home-local\",\"path\":\"/home/dev\"}]}}"
+  },
+  {
+    "step": "confirm a rollback without confirm",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rollback/confirm",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"Confirming deletes the volumes the rollback replaced. The box cannot switch back to them, but the checkpoint taken before the rollback still holds their data. Send confirm: true to continue.\",\"retryable\":false,\"key\":\"rollback_confirm_required\",\"details\":{\"preview\":{\"action\":\"confirm_rollback\",\"box\":\"ckbox\",\"safetyCheckpointId\":\"ck_<checkpoint>\",\"delete\":[{\"id\":\"<volumeId>\",\"name\":\"ckbox-workspace\",\"path\":\"/workspace\",\"bytes\":null},{\"id\":\"<volumeId>\",\"name\":\"ckbox-home\",\"path\":\"/home/dev\",\"bytes\":null}]}}}}"
+  },
+  {
+    "step": "undo a rollback without a revision",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rollback/undo",
+    "status": 428,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"precondition_required\",\"message\":\"Send the request header If-Match with this box's current revision.\",\"retryable\":false,\"key\":\"revision_required\"}}"
+  },
+  {
+    "step": "undo a rollback from a stale revision",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rollback/undo",
+    "status": 412,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"precondition_failed\",\"message\":\"This box is at revision 2, not 7. Refresh it and try again.\",\"retryable\":false,\"key\":\"revision_mismatch\",\"params\":{\"revision\":2,\"expected\":7},\"details\":{\"revision\":2,\"expected\":7}}}"
+  },
+  {
+    "step": "undo a rollback without confirm",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rollback/undo",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"Undoing mounts the replaced volumes again and deletes the volumes the rollback restored. Anything written since the rollback is lost. Send confirm: true to continue.\",\"retryable\":false,\"key\":\"rollback_undo_confirm\",\"details\":{\"preview\":{\"action\":\"undo_rollback\",\"box\":\"ckbox\",\"remount\":[{\"path\":\"/workspace\",\"volume\":\"ckbox-workspace\"},{\"path\":\"/home/dev\",\"volume\":\"ckbox-home\"}],\"delete\":[{\"id\":\"<volumeId>\",\"name\":\"ckbox-workspace-local\",\"path\":\"/workspace\",\"bytes\":null},{\"id\":\"<volumeId>\",\"name\":\"ckbox-home-local\",\"path\":\"/home/dev\",\"bytes\":null}],\"revision\":{\"current\":2,\"next\":3}}}}}"
+  },
+  {
+    "step": "undo the rollback",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rollback/undo",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the rollback after undo",
+    "method": "GET",
+    "path": "/api/boxes/<id>/rollback",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"rollback\":null}"
+  },
+  {
+    "step": "confirm with nothing to confirm",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rollback/confirm",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Box ckbox has no rollback that waits for its confirm or undo.\",\"retryable\":false,\"key\":\"rollback_none\",\"params\":{\"box\":\"ckbox\"}}}"
+  },
+  {
+    "step": "take a checkpoint before a second rollback",
+    "method": "POST",
+    "path": "/api/boxes/<id>/checkpoints",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the box before the second rollback",
+    "method": "GET",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"ckbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":3,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"ckbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"ckbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"ckbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}}"
+  },
+  {
+    "step": "roll back again",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rollback",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "delete the safety checkpoint of a waiting rollback",
+    "method": "DELETE",
+    "path": "/api/checkpoints/ck_<checkpoint>",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Checkpoint ck_<checkpoint> is the safety point of a rollback that waits for its confirm or undo. Confirm or undo that rollback before deleting it.\",\"retryable\":false,\"key\":\"checkpoint_held_by_rollback\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "read the rollback that waits again",
+    "method": "GET",
+    "path": "/api/boxes/<id>/rollback",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"rollback\":{\"boxId\":\"<boxId>\",\"checkpoint\":{\"id\":\"ck_<checkpoint>\",\"label\":\"before the second rollback\"},\"safetyCheckpointId\":\"ck_<checkpoint>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"replaced\":[{\"id\":\"<volumeId>\",\"name\":\"ckbox-workspace\",\"path\":\"/workspace\"},{\"id\":\"<volumeId>\",\"name\":\"ckbox-home\",\"path\":\"/home/dev\"}],\"restored\":[{\"id\":\"<volumeId>\",\"name\":\"ckbox-workspace-local\",\"path\":\"/workspace\"},{\"id\":\"<volumeId>\",\"name\":\"ckbox-home-local\",\"path\":\"/home/dev\"}]}}"
+  },
+  {
+    "step": "confirm the rollback",
+    "method": "POST",
+    "path": "/api/boxes/<id>/rollback/confirm",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "delete the safety checkpoint after confirm",
+    "method": "DELETE",
+    "path": "/api/checkpoints/ck_<checkpoint>",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the rollback after confirm",
+    "method": "GET",
+    "path": "/api/boxes/<id>/rollback",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"rollback\":null}"
+  },
+  {
+    "step": "read the checkpoint repository usage",
+    "method": "GET",
+    "path": "/api/checkpoints/usage",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"bytes\":0,\"limitBytes\":null,\"state\":\"unlimited\",\"policy\":{\"keepLast\":20,\"keepDays\":30}}"
   }
 ]

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 
-import { firstEntryOwner, readFirstEntryOwner } from "../src/docker/archive";
+import { firstEntryOwner, readFirstEntryOwner, secretsArchive } from "../src/docker/archive";
+import { parseTar } from "../src/services/files-tar";
 import { archive, entry, gnuLongName, header, paxEntry, paxGlobal, seal } from "./support/tar";
 
 const root = (uid: number, gid: number) => entry({ name: "workspace/", type: "5", uid, gid });
@@ -114,5 +115,30 @@ describe("readFirstEntryOwner", () => {
     const stream = Readable.from([Buffer.alloc(100)]);
     await expect(readFirstEntryOwner(stream)).rejects.toThrow("the archive ends before its first entry");
     expect(stream.destroyed).toBe(true);
+  });
+});
+
+describe("secretsArchive", () => {
+  test("writes each secret as a root-only regular file, in an archive that parses back exactly", () => {
+    const bytes = secretsArchive([
+      { name: "repo.key", value: "a".repeat(64) },
+      { name: "other", value: "multi\nline" },
+    ]);
+    const entries = parseTar(bytes);
+    expect(entries.map(({ name, type, uid, gid, size }) => ({ name, type, uid, gid, size }))).toEqual([
+      { name: "repo.key", type: "file", uid: 0, gid: 0, size: 64 },
+      { name: "other", type: "file", uid: 0, gid: 0, size: 10 },
+    ]);
+    expect(bytes.subarray(100, 108).toString("ascii")).toBe("0000400\0");
+    expect(bytes.subarray(1024 + 100, 1024 + 108).toString("ascii")).toBe("0000400\0");
+    expect(entries[0]?.data.toString("utf8")).toBe("a".repeat(64));
+    expect(entries[1]?.data.toString("utf8")).toBe("multi\nline");
+    expect(bytes.length % 512).toBe(0);
+  });
+
+  test("a name that could leave the directory is refused, and an empty list is an empty archive", () => {
+    expect(() => secretsArchive([{ name: "../escape", value: "x" }])).toThrow("not a secret file name");
+    expect(() => secretsArchive([{ name: "a/b", value: "x" }])).toThrow("not a secret file name");
+    expect(parseTar(secretsArchive([]))).toEqual([]);
   });
 });
