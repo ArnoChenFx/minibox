@@ -95,7 +95,7 @@ bun run build:site      # writes dist/site
 bun run preview:site    # builds the site, then serves it at http://127.0.0.1:4173/minibox/
 ```
 
-`SITE_PORT` changes the preview port. The build copies the three site source files, the logo and favicon from `web/assets/`, the agent logos from `site/assets/agents/`, and three console screenshots from `docs/screenshots/`. It also writes `.nojekyll`, `robots.txt` and `sitemap.xml`.
+`SITE_PORT` changes the preview port. The build copies the three site source files, `LICENSE` and `NOTICE` from the repository root, the logo and favicon from `web/assets/`, the agent logos from `site/assets/agents/`, and three console screenshots from `docs/screenshots/`. It also writes `.nojekyll`, `robots.txt` and `sitemap.xml`.
 
 To run the browser tests, install Chromium once, then run them:
 
@@ -141,6 +141,8 @@ minibox/
 ├── docs/                The documentation
 ├── .github/workflows/   CI, integration, homepage and release workflows
 ├── Dockerfile           The release image
+├── LICENSE              The Apache License 2.0
+├── NOTICE               Copyright and licenses of the vendored third-party components
 ├── .env.example         An example configuration, with the defaults in comments
 └── CHANGELOG.md         Release notes
 ```
