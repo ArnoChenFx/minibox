@@ -696,26 +696,30 @@ h3 {
   padding: 3px 6px;
   font-size: 8px;
 }
-.volume-lines {
-  display: flex;
-  justify-content: space-around;
-  height: 22px;
-}
-.volume-lines span {
-  border-left: 1px dashed #c7bcda;
-}
 .volume-labels {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  margin-top: 22px;
 }
 .volume-labels code {
+  position: relative;
+  white-space: nowrap;
   color: #8b7b9e;
   background: #faf8ff;
   border: 1px solid #e4dced;
   border-radius: 5px;
   padding: 8px 10px;
   font-size: 9px;
+}
+/* Each mount's dashed connector starts at the box and ends at the centre of its own label. */
+.volume-labels code::before {
+  content: "";
+  position: absolute;
+  bottom: calc(100% + 1px);
+  left: 50%;
+  height: 22px;
+  border-left: 1px dashed #c7bcda;
 }
 .handoff-diagram {
   display: flex;
@@ -1714,6 +1718,12 @@ h3 {
 
   .terminal-body {
     padding: 12px;
+  }
+  .volume-labels {
+    gap: 6px;
+  }
+  .volume-labels code {
+    padding: 8px 6px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

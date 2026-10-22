@@ -11,6 +11,8 @@ test("loads from the Pages subpath without broken assets or runtime errors", asy
   await expect(page.locator("h1")).toHaveText("Your agents.Your machine.Your rules.");
   await page.locator("#product").scrollIntoViewIfNeeded();
   await expect(page.locator("#product-screenshot")).toHaveJSProperty("naturalWidth", 2880);
+  await expect(page.locator(".volume-labels")).toContainText("/opt/minibox/tools");
+  await expect(page.locator(".agent-strip")).toContainText("Pi coding agent");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const brokenAnchors = await page
     .locator('a[href^="#"]')
