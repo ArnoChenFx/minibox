@@ -5,6 +5,7 @@ import { envChange } from "../src/labels";
 import type { CommitSpec } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { takeCheckpoint } from "../src/services/checkpoints";
+import { envScrubChanges } from "../src/services/images";
 import { rebuildBox } from "../src/services/rebuild";
 import { createSnapshot } from "../src/services/snapshots";
 import type { BoxEnv } from "../src/specs/types";
@@ -56,18 +57,19 @@ describe("the environment a commit writes", () => {
   });
 
   test("the commit names each variable with an empty value, a secret reference too, and no value", async () => {
-    const { runtime, host } = lab();
+    const { host } = lab();
+    host.secrets.set("db-password", "db-s3cret-value", new Date().toISOString());
     const box = await boxWithEnv(host, [
       { name: "API_TOKEN", value: "s3cret-value" },
       { name: "DB_PASSWORD", secretRef: "db-password" },
     ]);
 
-    await createSnapshot(host, box.boxId, "envtest");
-
-    const { changes } = commitAt(runtime);
+    // A snapshot of this box is refused (secret_in_image), so the scrub it would apply is checked directly.
+    const changes = await envScrubChanges(host, box);
     expect(changes.filter((change) => change.startsWith("ENV "))).toEqual(['ENV API_TOKEN=""', 'ENV DB_PASSWORD=""']);
     expect(changes.join("\n")).not.toContain("s3cret-value");
     expect(changes.join("\n")).not.toContain("db-password");
+    expect(changes.join("\n")).not.toContain("db-s3cret-value");
   });
 
   test("a box with no environment value writes no ENV instruction", async () => {
@@ -81,11 +83,13 @@ describe("the environment a commit writes", () => {
 
   test("a secret reference is scrubbed as well, so an injected secret value cannot reach the image", async () => {
     const { runtime, host } = lab();
+    host.secrets.set("vault", "vault-s3cret-value", new Date().toISOString());
     const box = await boxWithEnv(host, [{ name: "TOKEN", secretRef: "vault" }]);
 
-    await createSnapshot(host, box.boxId, "vaulted");
+    // The service is called directly, below the operation that refuses this box with secret_in_image.
+    await createSnapshot(host, box.boxId, "vaulted").catch(() => undefined);
 
-    expect(commitAt(runtime).changes.filter((change) => change.startsWith("ENV "))).toEqual(['ENV TOKEN=""']);
+    expect(runtime.callsTo("commitContainer")).toEqual([]);
   });
 
   test("a name the image sets goes back to the image's own value", async () => {

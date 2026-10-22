@@ -33,6 +33,7 @@ MiniBox 让你在自己的机器上创建隔离的 **Box**：每个 Box 是一�
 | 数据卷 | 独立的 Volume 与存储池（`local`、`nfs`、`path`）。新建 Box 会挂载工作区、主目录、一只共享只读的工具卷，以及本地缓存。见[数据卷与存储池](#数据卷与存储池) |
 | 资源配额 | 按预设（小型 2 核 4 GB / 中型 4 核 8 GB / 大型 8 核 16 GB）或自定义设置 CPU、内存，并按宿主机容量校验；运行中可热更新（`docker update`） |
 | Box 用户 | Box 以非 root 用户 `dev`（uid/gid 1000）运行；Web 终端与 `docker exec` 默认以 `dev` 进入。三个[安全档位](#安全档位)决定 Box 能做什么：默认的「标准」档位保留无密码 `sudo`，「严格」档位禁止提权。见[基础模板](#基础模板) |
+| 环境变量 | Box 的普通环境变量，以及按名称注入的宿主机密钥（`secretRef`）。密钥在「设置」中设置，之后任何接口都不会返回其值。见[环境变量与密钥](#环境变量与密钥) |
 | 检查点 | 把 Box 的工作区和主目录复制到 restic 仓库，再从副本派生新 Box，或把 Box 回滚到副本，并确认或撤销这次回滚。适用保留策略与容量上限。可通过 REST 使用，也可在控制台 Box 详情的「检查点」标签页中操作。MCP 工具暂未提供。见[检查点](#检查点) |
 | 模板 | 新 Box 使用的环境：内置基础模板（Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · 非 root 用户 `dev`），以及从 Box 页面存为模板的自定义模板。保存的是系统层（apt 与 sudo 安装的软件、系统文件的改动），不含 `/workspace` 与 home 数据，数据请使用检查点 |
 | 宿主机监控 | CPU 使用率、负载、内存、磁盘（系统盘 / Docker 数据目录）、运行时长、Docker 状态、Box 配额与宿主机容量对比，CPU / 内存迷你折线图 |
@@ -448,7 +449,7 @@ MiniBox 把自己管理的状态保存在 `DATA_DIR` 里：一个普通文件目
 | `boxes/` | `700` | 每个 Box 一个规格文件 `<id>.json`（权限 `600`）。可变状态写在这里；标签只是创建时的副本 |
 | `checkpoints/` | `700` | 每个检查点一个记录文件 `ck_….json`（权限 `600`）：记录拍摄时的 Box 规格、各卷的数据层及其 restic 快照 id。数据本身在仓库卷中，不在这里 |
 | `exec/` | `700` | `exec` 命令保存的输出，每个 exec 一个 JSON 文件。进程重启后内存中的记录消失，文件保留到清理策略删除它 |
-| `secrets/` | `700` | 密钥值与仓库密钥。`checkpoint-repo.key`（权限 `600`）是检查点仓库的密码，首次使用时生成。需与仓库卷一起保存：没有它，检查点无法读取 |
+| `secrets/` | `700` | 宿主机密钥与仓库密钥。每个密钥是一个文件 `env/<名称>`（权限 `600`），只在构建 Box 的容器时读取。`checkpoint-repo.key`（权限 `600`）是检查点仓库的密码，首次使用时生成。需与仓库卷一起保存：没有它，检查点无法读取 |
 | `volumes/` | `700` | 每只卷一个记录文件 `vol_….json`（权限 `600`）。写入该文件不会改 Docker 卷名 |
 | `pools.json` | `600` | 存储池，以及角色到池的默认对应。文件不存在时使用隐式的本地池；文件损坏则保留原文件，并按缺失处理 |
 | `events.db`（旁边还有 `events.db-wal` 与 `events.db-shm`） | 位于 `DATA_DIR` 内 | 事件库，SQLite WAL 模式。见[事件](#事件) |
@@ -567,6 +568,29 @@ sudo touch /mnt/minibox/.minibox-mounted
 
 定时检查点、除回滚之外的自动检查点、重建前的检查点、导入导出（含加密导出包）、单文件浏览、MCP 工具、独立的卷快照、按 Box 覆盖的保留策略与回收站，都计划在 [#11](https://github.com/ArnoChenFx/minibox/issues/11) 中完成。
 
+## 环境变量与密钥
+
+Box 的环境变量是一组条目。创建时设置，重建时整体替换。每个条目要么是普通值 `{ "name", "value" }`，由 Box 规格保存；要么是密钥引用 `{ "name", "secretRef" }`，指向一个宿主机密钥。容器在创建或重建时获得密钥的值，规格中只保存名称。
+
+| 条目 | 保存位置 | API 与控制台显示 |
+|---|---|---|
+| `{ "name", "value" }` | Box 规格，`DATA_DIR/boxes/<id>.json` | 值。控制台默认掩码，点击显示后可见 |
+| `{ "name", "secretRef" }` | `DATA_DIR/secrets/env/<名称>`（权限 `600`） | 只显示名称，控制台中为 `🔒 密钥：NAME`。值从不返回 |
+
+在创建对话框的「环境变量」（默认折叠）中，或在 Box 的概览页设置变量。在概览页保存会重建 Box，并先显示预览、再请求确认，因此可写层与运行中的进程会丢失。重建对话框编辑的是同一组行。
+
+所有者在「设置」的「密钥」中设置密钥。添加或替换时，值只发送一次，通过密码输入框输入，之后任何页面都不再显示它。REST 接口见[密钥](#密钥)。没有 CLI 或 MCP 工具可以读取或写入密钥。
+
+- **缺少密钥会使请求失败。** 创建、重建，或会重建 Box 的更新，若引用了未设置的密钥，会在任何改动之前以 `400`（`env_secret_missing`）拒绝。不会有 Box 以空值启动。启动或重启已停止的 Box 时，若其已存储的环境引用了未设置的密钥，返回 `409`，错误键相同。
+- **新值在下次重建或创建时生效。** 替换密钥不会改变运行中的容器，启动 Box 也不会再次读取密钥。重建预览会列出每个值与容器中现有值不同的密钥。
+- **删除正在使用的密钥会被拒绝。** `DELETE /api/secrets/:name` 返回 `409` 以及引用它的 Box 名称。控制台会先询问、列出这些 Box，并提供强制删除。强制删除后，这些 Box 在重新设置该密钥之前无法重建或启动。
+- **快照、模板与系统镜像拒绝密钥。** `docker commit` 会保留容器的环境，因此引用了密钥的 Box 若制作快照、存为模板（`POST /api/boxes/:id/template`），或拍摄带系统镜像的检查点，其值就会被保存。三者都会在任务开始前返回 `409`（`secret_in_image`）。不带系统镜像的检查点仍可拍摄。普通值也不会写进镜像：每次提交都会为 Box 设置的每个变量名写入空值，镜像本身定义了该变量时保留镜像的值。
+- **谁可以引用密钥。** 创建或重建时引用 `secretRef`，以及对持有密钥引用的 Box 挂载或卸载卷，都需要 `secret:use` scope。只有 `admin` 预设具有它，因此 Agent 令牌无法把宿主机密钥挂进它控制的 Box。没有该 scope 时返回 `403`（`secret_reference_forbidden`）。不重建 Box 的原地更新不需要额外权限。所有者的访问密钥拥有全部 scope。
+- **谁能读到值。** Box 内的进程可以读取自己的环境，通过 `exec`、`box:ssh` 或终端进入该 Box 的人也可以。只为应当持有该密钥的 Box 授予这些 scope。
+- **其他地方不含密钥值。** 实时帧、事件、审计日志、容器标签和服务端日志只出现密钥的名称，从不出现值。普通值只出现在 Box 规格出现的地方：Box 详情、规格版本与重建预览。
+- **限制。** 一个 Box 最多 64 项。变量名以字母或下划线开头，后接字母、数字或下划线，最长 128 个字符。普通值最长 8192 个字符，且不能包含控制字符。密钥值为 1 到 8192 个字符，且不能包含控制字符。
+- **Docker 自己的错误信息不做脱敏。** 引擎返回的错误信息原样传出。
+
 ## API 参考
 
 请求与响应均为 JSON。除标注**公开**的接口外，都需要登录 Cookie（由 `/api/auth/login` 写入）或 `Authorization: Bearer` 请求头。Bearer 密钥可以是访问密钥，也可以是在设置页或 `POST /api/tokens` 创建的 Agent API 令牌（`mbx_…`）。写请求必须使用 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外；其他声明的类型返回 `415`），来自其他网站的浏览器请求返回 `403`。
@@ -601,7 +625,7 @@ sudo touch /mnt/minibox/.minibox-mounted
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/boxes?stats=false` | 从主机的缓存列出 Box，缓存由引擎事件保持最新。缓存就绪时列表不调用引擎；除非 `stats=false`，否则运行中的 Box 附带最近一次采样 |
-| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载。`idleTimeoutSec` 为 `0` 时该 Box 永不休眠；省略或 `null` 继承 `BOX_IDLE_TIMEOUT_SEC`。`ttlSec` 为自创建起的绝对寿命 |
+| `POST` | `/api/boxes` | 创建并启动。`{ "name", "template"?, "cpus"?, "memoryMb"?, "profile"?, "mounts"?, "idleTimeoutSec"?, "ttlSec"? }`，`profile` 为 `standard`、`strict` 或 `relaxed`；默认 2 核 / 4096 MB。每条挂载为 `{ "volume", "path", "mode" }`，`mode` 为 `rw` 或 `ro`。省略 `mounts` 时使用四个角色的默认挂载。`idleTimeoutSec` 为 `0` 时该 Box 永不休眠；省略或 `null` 继承 `BOX_IDLE_TIMEOUT_SEC`。`ttlSec` 为自创建起的绝对寿命。`env` 为最多 64 项的列表，每项为 `{ "name", "value" }` 或 `{ "name", "secretRef" }`，见[环境变量与密钥](#环境变量与密钥) |
 | `GET` | `/api/boxes/:id` | 详情（含实时占用）。响应带 `ETag: "<revision>"` |
 | `PATCH` | `/api/boxes/:id` | 原地更新 `{ "name"?, "cpus"?, "memoryMb"?, "pids"?, "labels"?, "idleTimeoutSec"?, "ttlSec"? }`。必须带 `If-Match`。不修改容器标签。`template`、`mounts`、`env`、`network` 和 `profile` 不会原地生效：与当前值不同时返回 `409 confirmation_required` 和预览，同一请求里的原地字段也不应用 |
 | `DELETE` | `/api/boxes/:id?deleteVolume=true` | 删除 Box。`deleteVolume=true` 还会删除没有被其他 Box 挂载的自有卷。独立卷会留下 |
@@ -635,7 +659,17 @@ sudo touch /mnt/minibox/.minibox-mounted
 | `GET` | `/api/pools?refresh=true` | 存储池、角色默认值与可达性。不可达的池会在结果里说明，列表本身不会失败 |
 | `PUT` | `/api/pools` | 整体替换 `{ "pools", "roles"?, "confirm"? }`。如果省略，本地池会被补回。不带 `"confirm": true` 时返回 `409` `confirmation_required`，列出将新增和移除的池，且不保存任何内容。需要 `pool:admin` |
 
-重建会保留已挂载的卷、稳定 ID、Box 名称和最近 20 个规格版本。未写入卷的可写层、运行中的进程（包括 tmux）和容器 IP 会丢失。认领不改名；改成 `<LABEL_PREFIX>-<id>` 发生在重建时（决策 D6）。`secretRef` 只存储、不注入。第一阶段创建时仍只有一个工作区卷；增删挂载属于重建，不是卷池。重建前的检查点不在这一步。对外的容器 ID 会变，稳定 ID 和 Box 名称不变。重启策略保持 `no`。
+重建会保留已挂载的卷、稳定 ID、Box 名称和最近 20 个规格版本。未写入卷的可写层、运行中的进程（包括 tmux）和容器 IP 会丢失。认领不改名；改成 `<LABEL_PREFIX>-<id>` 发生在重建时（决策 D6）。重建会再次读取每个 `secretRef`，因此值已变化的密钥在这里生效，而不是在启动时。缺少的密钥会在任何改动之前以 `400` 拒绝。第一阶段创建时仍只有一个工作区卷；增删挂载属于重建，不是卷池。重建前的检查点不在这一步。对外的容器 ID 会变，稳定 ID 和 Box 名称不变。重启策略保持 `no`。
+
+### 密钥
+
+只有所有者（访问密钥或已登录的会话）可以调用这些接口，Agent 令牌不能。密钥名称由字母、数字、点、下划线和连字符组成，以字母或数字开头，最长 128 个字符。值从不返回。见[环境变量与密钥](#环境变量与密钥)。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/secrets` | 密钥列表，每项为 `{ "name", "createdAt", "updatedAt", "boxes" }`，`boxes` 列出环境中引用该密钥的 Box。不含值 |
+| `PUT` | `/api/secrets/:name` | 创建或替换密钥。请求体 `{ "value" }`：1 到 8192 个字符，不能包含控制字符。返回 `{ "secret", "created" }`。新值在 Box 下次重建或创建时生效 |
+| `DELETE` | `/api/secrets/:name` | 删除密钥。有 Box 引用时返回 `409 conflict`，并附 `details.boxes`。`?force=true` 强制删除；这些 Box 在重新设置该密钥之前无法重建或启动 |
 
 ### 会话
 
@@ -806,6 +840,7 @@ minibox mcp
 - 先 `list_boxes` 或 `create_box`。`exec` 会启动已停止的 Box，这会改变它的版本号（revision）；若该 Box 的 TTL 已到期，`exec` 不会启动它，而是返回 `box_ttl_expired`。在发送 `expectedRevision` 的更新之前重新读取版本号。
 - `argv` 不经过 shell，`cmd` 经 `/bin/sh -c`。默认用户 `dev`，默认目录 `/workspace`。严格 Box 只允许 `dev` 或 `1000` 作为用户。Box 需要 `/bin/sh`、`cat`、`rm` 和 `sleep`。
 - 把密钥放在 `env` 里，不要放在 `argv` 或 `cmd` 中。审计日志会记录命令与 argv，但从不记录 env 的值。
+- 要给 Box 一个宿主机密钥，请在 `create_box` 中传入 `env`，条目为 `{ "name", "secretRef" }`。调用只接受密钥的名称，从不接受值。没有 `secret:use` 的令牌会被拒绝；密钥未设置时创建失败。
 - 结果包含 `status`、`exitCode`、`stdout`、`stderr`、`truncated` 与 `durationMs`。非零退出码是程序自己的状态。
 - 内联输出保留每个流头尾各约 16 KiB。`truncated` 为 true 时，`outputRef` 指向 `GET /api/execs/{execId}/output`。
 - 前台 exec 的 `timeoutSec` 最大为 55。更长的命令使用 `background: true` 并把 `timeoutSec` 设到最大 3600，再用 `exec_get` 的 `waitMs`（最大 25000）轮询。`exec_kill` 结束进程树。
@@ -827,6 +862,7 @@ minibox/
 │   ├── app.ts               # 组合根：配置、Runtime、主机注册表、监控、操作记录
 │   ├── config.ts            # 环境变量 / .env 配置、访问密钥优先级
 │   ├── data-dir.ts          # DATA_DIR 布局与密钥文件（600）
+│   ├── secrets/             # 宿主机密钥存储（600 文件）及由其构建的容器环境
 │   ├── auth.ts              # 调用方校验（Bearer 或会话）、会话 Cookie、登录限流
 │   ├── sessions.ts          # 浏览器会话：令牌哈希、过期、sessions.json 持久化
 │   ├── tokens/              # Agent API 令牌：scope、预设、配额、鉴权钩子
@@ -911,7 +947,8 @@ MiniBox 的设计前提是**一个可信用户在自己的机器上使用**。�
 - **容器以 root 运行。** 容器需要使用 Docker Socket，而 Docker Socket 等同于 root。要缩小这部分权限，可以在 Socket 前放一个只转发 MiniBox 所需 Docker API 的 Socket 代理，并把 `DOCKER_SOCKET` 指向代理的 Unix Socket；也可以让 MiniBox 连接 rootless Docker 或 Podman 的 Socket。
 - **访问密钥是唯一门禁。** 没有用户体系，密钥一旦泄露就等于完全失守。密钥比对是恒定时间的。登录限流只拒绝错误的密钥：正确的密钥总能登录，即使错误的密钥正在被拒绝。以 `Authorization: Bearer` 发送的错误密钥（发往 `/api/`、`/mcp` 或终端）计入同一限流。同一客户端地址 5 分钟内失败 10 次（IPv6 按 /64 计），或全部地址合计 50 次后，之后的错误密钥会被拒绝。限流不会阻止猜测，因为每个密钥仍会被校验，所以密钥的长度和随机性才是关键：请使用至少 20 位的随机字符，例如 `openssl rand -hex 32` 生成的密钥（自动生成的密钥为 64 位十六进制）。启动时，若密钥短于 20 位，或明显低熵（只用一类字符且不足 24 位，或只重复同一个字符），会记录 `auth.weak_key` 警告。MiniBox 仍会正常启动，已有部署不受影响。更换密钥：修改 `.env` 中的 `ACCESS_KEY`，或删除 `DATA_DIR/access_key` 以生成新密钥，然后重启服务；使用新密钥启动时，全部浏览器会话随之结束。
 - **会话可以撤销。** 登录后密钥不会保存在浏览器里：Cookie 中是随机生成的 32 字节会话令牌，`DATA_DIR/sessions.json` 只保存它的 SHA-256 哈希，因此拿到该文件也无法用来伪造登录 Cookie。文件中还有一个用于检测密钥变更的 scrypt 校验值，所以访问密钥的强度依然重要。会话在登出、在设置页撤销、到期（`SESSION_TTL_DAYS`，默认 30 天）或访问密钥变更时结束；会话结束时，它打开的终端和事件流也会关闭。
-- **Agent API 令牌与访问密钥分开。** 在设置页或用 `POST /api/tokens` 创建。明文（`mbx_…`）只显示一次；`DATA_DIR/tokens.json` 只保存 SHA-256。令牌带有 scope（`box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`）、Box 选择器（默认 `created-by-me`，也可以是 id、标签或 `*`）、显式的卷列表、允许的宿主机，以及可选配额。预设为 `readonly`、`operator`、`sandboxed-agent` 和 `admin`。`sandboxed-agent` 的起点是最多 5 个 Box、合计 8 个 CPU 与 16 GB 内存、4 小时 TTL、每分钟 60 次请求，以及 20 个手动检查点。吊销立即生效，也可以同时删除该令牌创建的 Box。`exec` 与 `box:ssh` 可以读写该令牌有权使用的 Box 上的全部挂载。挂载一个已经存在的卷需要对该卷的 `volume:attach`。更换 `ACCESS_KEY` 会结束浏览器会话，不会吊销 API 令牌。没有任何预设可以签发令牌：那仍属于访问密钥或已登录的会话。到期后 Box 会停止、不删除（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。同一枚令牌也是 `/mcp` 的 Bearer，`tools/list` 与每次调用都受其 scope 约束。吊销时，它的 MCP 会话、终端、事件流与任务流随之结束；删除它创建的 Box 时覆盖所有宿主机，无法删除的 Box 列在 `failedBoxes` 中。只读且限制在自己创建的 Box 上的令牌，在授予 `*` 或具体 id 之前看不到任何 Box，因为它不能创建 Box。
+- **Agent API 令牌与访问密钥分开。** 在设置页或用 `POST /api/tokens` 创建。明文（`mbx_…`）只显示一次；`DATA_DIR/tokens.json` 只保存 SHA-256。令牌带有 scope（`box:read`、`box:write`、`box:delete`、`exec`、`box:ssh`、`files:read`、`files:write`、`port:expose`、`checkpoint:create`、`checkpoint:restore`、`volume:read`、`volume:write`、`volume:attach`、`tool:install`、`secret:use`）、Box 选择器（默认 `created-by-me`，也可以是 id、标签或 `*`）、显式的卷列表、允许的宿主机，以及可选配额。预设为 `readonly`、`operator`、`sandboxed-agent` 和 `admin`。`sandboxed-agent` 的起点是最多 5 个 Box、合计 8 个 CPU 与 16 GB 内存、4 小时 TTL、每分钟 60 次请求，以及 20 个手动检查点。吊销立即生效，也可以同时删除该令牌创建的 Box。`exec` 与 `box:ssh` 可以读写该令牌有权使用的 Box 上的全部挂载。挂载一个已经存在的卷需要对该卷的 `volume:attach`。在 Box 中引用宿主机密钥需要 `secret:use`，只有 `admin` 预设具有该 scope。更换 `ACCESS_KEY` 会结束浏览器会话，不会吊销 API 令牌。没有任何预设可以签发令牌：那仍属于访问密钥或已登录的会话。到期后 Box 会停止、不删除（[#12](https://github.com/ArnoChenFx/minibox/issues/12)）。同一枚令牌也是 `/mcp` 的 Bearer，`tools/list` 与每次调用都受其 scope 约束。吊销时，它的 MCP 会话、终端、事件流与任务流随之结束；删除它创建的 Box 时覆盖所有宿主机，无法删除的 Box 列在 `failedBoxes` 中。只读且限制在自己创建的 Box 上的令牌，在授予 `*` 或具体 id 之前看不到任何 Box，因为它不能创建 Box。
+- **宿主机密钥留在宿主机上。** 密钥只写入一次，保存到 `DATA_DIR/secrets/env/<名称>`（权限 `600`），任何接口都不返回其值。它只会作为该容器的环境进入 Box，因此 Box 内的进程，以及有 `exec`、`box:ssh` 或终端进入该 Box 的人，都能读到它。只有所有者能设置或删除密钥，只有带 `secret:use` 的令牌能引用密钥。见[环境变量与密钥](#环境变量与密钥)。
 - **跨站请求会被拒绝。** WebSocket 终端以及 `/api/` 下的所有写操作（`POST`、`PATCH`、`DELETE`）必须来自 MiniBox 自己的来源，或来自 `ALLOWED_ORIGINS` 中列出的来源。不带 `Origin` 请求头的请求（如使用 `Authorization: Bearer` 的脚本）不受此限制。写请求必须声明 `Content-Type: application/json`（既没有请求体也没有声明 `Content-Type` 的写请求除外），这也挡住了 HTML 表单提交。登录 Cookie 为 `SameSite=Strict`，因此从其他网站打开的链接可能需要再登录一次。
 - **严格的内容安全策略（CSP）。** 脚本只会从 MiniBox 自身加载（`script-src 'self'`），页面没有内联脚本，且禁止被嵌入 iframe（`frame-ancestors 'none'`）。通过 HTTPS 访问（直接访问、请求带有 `https://` Origin，或在 `TRUST_PROXY=true` 时经由代理）的请求还会带上 `Strict-Transport-Security`，有效期一年，不包含子域名。
 - **只监听 `127.0.0.1`**（默认值）。在有公网 IP 的机器上不要设置 `HOST=0.0.0.0`。
@@ -997,7 +1034,6 @@ Box 的安全档位在创建时确定。可以在创建对话框的「高级」�
 
 - [#28](https://github.com/ArnoChenFx/minibox/issues/28) MiniBox Agent 框架：配对、mTLS 与出站通道
 - [#29](https://github.com/ArnoChenFx/minibox/issues/29) 存储节点角色：NAS 与 Linux 存储服务器上的目录、配额与快照
-- 宿主机侧密钥注入：API Key 只保存在宿主机上，不写入 Box 的环境变量（暂无对应 issue）
 
 ## 许可证
 

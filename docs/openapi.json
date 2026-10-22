@@ -28,6 +28,9 @@
       "name": "tools"
     },
     {
+      "name": "secrets"
+    },
+    {
       "name": "sessions"
     },
     {
@@ -673,6 +676,33 @@
                         "mode"
                       ]
                     }
+                  },
+                  "env": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+                          "maxLength": 128
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 8192
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+                          "maxLength": 128
+                        }
+                      }
+                    },
+                    "description": "Environment variables of the new box. Each entry is { name, value } for a plain value or { name, secretRef } for a secret set with secret.set. Give one or the other. A secret's value goes into the container when it is created and is never returned. A secret that is not set is refused with 400."
                   },
                   "idleTimeoutSec": {
                     "description": "Idle timeout in seconds. 0 disables idle sleep for this box; null inherits the global default (BOX_IDLE_TIMEOUT_SEC). A positive number of seconds, at most 365 days, or null to clear. Omitted, the current value stays.",
@@ -2038,7 +2068,29 @@
                   "env": {
                     "type": "array",
                     "maxItems": 64,
-                    "description": "Environment entries that replace the box's env list. Each entry is { name, value? , secretRef? } and needs a value or a secretRef. secretRef is stored and not injected yet. Omitted, the current env stays. Values are not written to container labels."
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+                          "maxLength": 128
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 8192
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+                          "maxLength": 128
+                        }
+                      }
+                    },
+                    "description": "Environment entries that replace the box's env list. Each entry is { name, value } for a plain value or { name, secretRef } for a secret set with secret.set. Give one or the other. Omitted, the current env stays. A secret's value goes into the new container when the box is rebuilt, so a changed secret takes effect on the next rebuild. A secret that is not set is refused with 400. Values are not written to container labels."
                   },
                   "network": {
                     "type": "string",
@@ -4805,7 +4857,29 @@
                   "env": {
                     "type": "array",
                     "maxItems": 64,
-                    "description": "Environment entries that replace the box's env list. Each entry is { name, value? , secretRef? } and needs a value or a secretRef. secretRef is stored and not injected yet. Omitted, the current env stays. Values are not written to container labels."
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+                          "maxLength": 128
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 8192
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+                          "maxLength": 128
+                        }
+                      }
+                    },
+                    "description": "Environment entries that replace the box's env list. Each entry is { name, value } for a plain value or { name, secretRef } for a secret set with secret.set. Give one or the other. Omitted, the current env stays. A secret's value goes into the new container when the box is rebuilt, so a changed secret takes effect on the next rebuild. A secret that is not set is refused with 400. Values are not written to container labels."
                   },
                   "network": {
                     "type": "string",
@@ -13074,6 +13148,498 @@
         }
       }
     },
+    "/api/secrets": {
+      "get": {
+        "operationId": "secret.list",
+        "tags": [
+          "secrets"
+        ],
+        "summary": "List secrets",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "secrets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "boxes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Names of the boxes whose environment refers to this secret."
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "createdAt",
+                          "updatedAt",
+                          "boxes"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "secrets"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "secret:manage",
+        "x-async": false,
+        "x-cli": "secret ls"
+      }
+    },
+    "/api/secrets/{name}": {
+      "put": {
+        "operationId": "secret.set",
+        "tags": [
+          "secrets"
+        ],
+        "summary": "Create or replace a secret",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+              "description": "Secret name: letters, digits, dots, underscores and hyphens, starting with a letter or digit."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "description": "The value to store. It is written to the secret store and is never returned. A box that uses the secret gets the new value when it is next rebuilt."
+                  }
+                },
+                "required": [
+                  "value"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "secret": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "boxes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Names of the boxes whose environment refers to this secret."
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "createdAt",
+                        "updatedAt",
+                        "boxes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "created": {
+                      "type": "boolean",
+                      "description": "True when the secret is new, false when its value was replaced."
+                    }
+                  },
+                  "required": [
+                    "secret",
+                    "created"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "secret:manage",
+        "x-async": false,
+        "x-cli": "secret set"
+      },
+      "delete": {
+        "operationId": "secret.delete",
+        "tags": [
+          "secrets"
+        ],
+        "summary": "Delete a secret",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+              "description": "Secret name: letters, digits, dots, underscores and hyphens, starting with a letter or digit."
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Delete the secret even when boxes still refer to it. Those boxes cannot be rebuilt or started until the secret is set again. Defaults to false."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "boxes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Boxes that still refer to the deleted secret. Empty unless force was sent to delete a secret in use."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "boxes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "secret:manage",
+        "x-async": false,
+        "x-cli": "secret rm"
+      }
+    },
     "/api/boxes/{id}/sessions": {
       "get": {
         "operationId": "session.list",
@@ -21322,7 +21888,8 @@
                                 "volume:read",
                                 "volume:write",
                                 "volume:attach",
-                                "tool:install"
+                                "tool:install",
+                                "secret:use"
                               ]
                             }
                           },
@@ -21723,11 +22290,12 @@
                         "volume:read",
                         "volume:write",
                         "volume:attach",
-                        "tool:install"
+                        "tool:install",
+                        "secret:use"
                       ]
                     },
-                    "maxItems": 14,
-                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install."
+                    "maxItems": 15,
+                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install, secret:use."
                   },
                   "boxes": {
                     "description": "Which boxes this token may use. \"created-by-me\" (the default), \"*\" for every box, {\"ids\":[\"bx_…\"]}, or {\"tags\":[\"env=prod\"]}. A tag is a label key, or key=value."
@@ -21865,7 +22433,8 @@
                               "volume:read",
                               "volume:write",
                               "volume:attach",
-                              "tool:install"
+                              "tool:install",
+                              "secret:use"
                             ]
                           }
                         },
@@ -22318,7 +22887,8 @@
                               "volume:read",
                               "volume:write",
                               "volume:attach",
-                              "tool:install"
+                              "tool:install",
+                              "secret:use"
                             ]
                           }
                         },

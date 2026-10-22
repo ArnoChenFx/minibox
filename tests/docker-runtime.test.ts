@@ -1195,6 +1195,50 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "a secret reaches the box's environment, stays out of the engine labels and the spec, and a rotated value needs a rebuild",
+    async () => {
+      const restore = silenceLogs();
+      const first = "secret-first-value";
+      const second = "secret-second-value";
+      try {
+        host.secrets.set("vault", first, new Date().toISOString());
+        const box = await boxes.createBox(host, {
+          name: "envbox",
+          image: IMAGE,
+          cpus: 0.5,
+          memoryMb: 64,
+          profile: "standard",
+          env: [
+            { name: "TOKEN", secretRef: "vault" },
+            { name: "GREETING", value: "hi there" },
+          ],
+        });
+        expect(await shell(box.id, 'echo "$TOKEN|$GREETING"')).toBe(`${first}|hi there`);
+
+        const engine = await docker.getContainer(box.id).inspect();
+        expect(JSON.stringify(engine.Config.Labels)).not.toContain(first);
+        expect(JSON.stringify(host.specs.read(box.boxId))).not.toContain(first);
+        expect(await runtime.inspectEnv(box.id)).toEqual(expect.arrayContaining([`TOKEN=${first}`]));
+
+        expect(await rejectionOf(rebuildBox(host, box.id, box.revision, {}, true))).toMatchObject({
+          status: 400,
+          key: "rebuild_empty",
+        });
+        host.secrets.set("vault", second, new Date().toISOString());
+        const rebuilt = await rebuildBox(host, box.id, box.revision, {}, true);
+        expect(await shell(rebuilt.id, 'echo "$TOKEN"')).toBe(second);
+        expect(JSON.stringify(rebuilt)).not.toContain(second);
+
+        await boxes.deleteBox(host, rebuilt.id, true);
+      } finally {
+        host.secrets.remove("vault");
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
     "another box's workspace, the data volume, pool roots and reserved names are refused on the real engine",
     async () => {
       const restore = silenceLogs();

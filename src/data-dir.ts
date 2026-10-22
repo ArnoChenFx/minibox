@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { log } from "./lib/logger";
 
@@ -53,7 +53,8 @@ export function tokensPath(dataDir: string): string {
  * exactly: the umask only narrows the mode passed to open, so the chmod is what makes 0644 hold under any umask.
  */
 export function writeFileAtomic(path: string, contents: string, mode = SECRET_FILE_MODE): void {
-  const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
+  // A dot-prefixed temporary name cannot be taken for a record: a listing that filters on the name never sees one.
+  const tmp = join(dirname(path), `.${basename(path)}.${randomBytes(6).toString("hex")}.tmp`);
   try {
     const fd = openSync(tmp, "wx", mode);
     try {

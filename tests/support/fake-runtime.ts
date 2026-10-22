@@ -672,6 +672,13 @@ export class FakeRuntime implements Runtime {
     return info;
   }
 
+  async inspectEnv(id: string): Promise<string[]> {
+    this.enter("inspectEnv", [id]);
+    const env = [...(this.getContainer(id).spec.env ?? [])];
+    await this.gate("inspectEnv", [id]);
+    return env;
+  }
+
   async createContainer(spec: CreateContainerSpec): Promise<{ id: string }> {
     this.enter("createContainer", [spec]);
     const image = this.getImage(spec.image);

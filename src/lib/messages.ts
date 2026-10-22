@@ -52,7 +52,22 @@ export const MESSAGES = {
   mount_invalid:
     "Each mount needs a volume name, an absolute path and a mode of rw or ro. At most {max} mounts, and each path once.",
   env_invalid:
-    "Each environment entry needs a name and a value or a secretRef. At most {max} entries, and each name once.",
+    "Each environment entry needs a name and either a value or a secretRef, not both. At most {max} entries, and each name once.",
+  env_secret_missing: "Environment variable {env} refers to secret {name}, which is not set.",
+  env_secret_missing_hint: "Set the secret under Settings, Secrets, or remove the variable, then try again.",
+  secret_name_invalid:
+    "A secret name starts with a letter or digit, holds only letters, digits, dots, underscores and hyphens, and is at most 128 characters.",
+  secret_value_invalid:
+    "A secret value is between 1 and {max} characters and holds no control characters, such as line breaks or tabs.",
+  secret_not_found: "Secret {name} was not found.",
+  secret_in_use:
+    "Secret {name} is used by {boxes}. Those boxes cannot be rebuilt or started until the secret is set again. Send force to delete it anyway.",
+  secret_reference_forbidden:
+    "This credential may not put secrets into a box. Give it the secret:use scope, or use the admin preset.",
+  secret_in_image:
+    "Environment variable {env} refers to secret {name}. A snapshot, a template or a checkpoint's system image keeps the box's environment, so it would store the secret's value.",
+  secret_in_image_hint:
+    "Remove the variable, then try again. A checkpoint without a system image keeps no environment, so it can still be taken.",
   network_invalid:
     "Network name must start with a letter or digit and contain only letters, digits, dots, underscores and hyphens.",
   rebuild_empty: "Nothing in this request changes the template, mounts, environment, network or security profile.",

@@ -23,7 +23,10 @@ export interface BoxResources {
   pids: number | null;
 }
 
-/** Plain env vars and references to values stored under `DATA_DIR/secrets`. The value itself is never a container label. */
+/**
+ * A plain env var (`value`) or a reference to a secret under `DATA_DIR/secrets/env` (`secretRef`). A secret's value is
+ * never stored on the spec, so it is not in the spec's revisions or in an API answer.
+ */
 export interface BoxEnv {
   name: string;
   value?: string;

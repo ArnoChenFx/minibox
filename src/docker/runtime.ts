@@ -702,6 +702,11 @@ export function createDockerRuntime(socketPath: string): Runtime {
       return toContainerInfo(await call(() => docker.getContainer(id).inspect(withSignal({}, opts?.signal))));
     },
 
+    async inspectEnv(id) {
+      const info = await call(() => docker.getContainer(id).inspect());
+      return info.Config?.Env ?? [];
+    },
+
     async createContainer(spec) {
       const container = await mutate(() => docker.createContainer(toCreateOptions(spec)));
       return { id: container.id };

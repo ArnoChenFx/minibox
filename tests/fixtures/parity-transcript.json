@@ -1656,6 +1656,118 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Checkpoint ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"checkpoint_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
   },
   {
+    "step": "list secrets with none",
+    "method": "GET",
+    "path": "/api/secrets",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secrets\":[]}"
+  },
+  {
+    "step": "set a secret",
+    "method": "PUT",
+    "path": "/api/secrets/vault",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secret\":{\"name\":\"vault\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"boxes\":[]},\"created\":true}"
+  },
+  {
+    "step": "set a secret with an empty value",
+    "method": "PUT",
+    "path": "/api/secrets/vault",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A secret value is between 1 and 8192 characters and holds no control characters, such as line breaks or tabs.\",\"retryable\":false,\"key\":\"secret_value_invalid\",\"params\":{\"max\":8192},\"details\":{\"field\":\"value\"}}}"
+  },
+  {
+    "step": "set a secret with a bad name",
+    "method": "PUT",
+    "path": "/api/secrets/-bad",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A secret name starts with a letter or digit, holds only letters, digits, dots, underscores and hyphens, and is at most 128 characters.\",\"retryable\":false,\"key\":\"secret_name_invalid\",\"details\":{\"field\":\"name\"}}}"
+  },
+  {
+    "step": "list secrets",
+    "method": "GET",
+    "path": "/api/secrets",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secrets\":[{\"name\":\"vault\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"boxes\":[]}]}"
+  },
+  {
+    "step": "delete a secret no box uses",
+    "method": "DELETE",
+    "path": "/api/secrets/vault",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"vault\",\"boxes\":[]}"
+  },
+  {
+    "step": "delete a missing secret",
+    "method": "DELETE",
+    "path": "/api/secrets/vault",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Secret vault was not found.\",\"retryable\":false,\"key\":\"secret_not_found\",\"params\":{\"name\":\"vault\"}}}"
+  },
+  {
+    "step": "set the secret a box uses",
+    "method": "PUT",
+    "path": "/api/secrets/vault",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"secret\":{\"name\":\"vault\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"boxes\":[]},\"created\":true}"
+  },
+  {
+    "step": "create a box that names a missing secret",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Environment variable TOKEN refers to secret absent, which is not set.\",\"retryable\":false,\"hint\":\"Set the secret under Settings, Secrets, or remove the variable, then try again.\",\"key\":\"env_secret_missing\",\"params\":{\"name\":\"absent\",\"env\":\"TOKEN\"},\"hintKey\":\"env_secret_missing_hint\",\"details\":{\"field\":\"env\"}}}"
+  },
+  {
+    "step": "create a box with a secret",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"secretbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-secretbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[{\"name\":\"TOKEN\",\"secretRef\":\"vault\"},{\"name\":\"GREETING\",\"value\":\"hello\"}],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "read the box with a secret",
+    "method": "GET",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"secretbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-secretbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"secretbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[{\"name\":\"TOKEN\",\"secretRef\":\"vault\"},{\"name\":\"GREETING\",\"value\":\"hello\"}],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"stats\":{\"cpuPercent\":1.5,\"memUsage\":67108864,\"memLimit\":268435456,\"memPercent\":25}}}"
+  },
+  {
+    "step": "delete a secret in use",
+    "method": "DELETE",
+    "path": "/api/secrets/vault",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Secret vault is used by secretbox. Those boxes cannot be rebuilt or started until the secret is set again. Send force to delete it anyway.\",\"retryable\":false,\"key\":\"secret_in_use\",\"params\":{\"name\":\"vault\",\"boxes\":\"secretbox\"},\"details\":{\"boxes\":[\"secretbox\"]}}}"
+  },
+  {
+    "step": "delete a secret in use with force",
+    "method": "DELETE",
+    "path": "/api/secrets/vault?force=true",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"vault\",\"boxes\":[\"secretbox\"]}"
+  },
+  {
+    "step": "delete the secret box",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"secretbox\",\"volumeDeleted\":false}"
+  },
+  {
     "step": "read the rolled back box",
     "method": "GET",
     "path": "/api/boxes/<id>",

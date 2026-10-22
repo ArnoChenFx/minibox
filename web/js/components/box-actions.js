@@ -1,11 +1,13 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
+import { canonicalEnv, checkEnvRows, envRowsOf } from "../lib/env.js";
 import { gbOrMb } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { canonicalMounts } from "../lib/mounts.js";
 import { hostNow, refreshHost } from "../lib/store.js";
 import { confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
 
 const LIFECYCLE = {
@@ -107,46 +109,7 @@ export function editResources(box, onSaved) {
   });
 }
 
-function envKey(env) {
-  return JSON.stringify(
-    [...(env ?? [])]
-      .map((item) => ({ name: item.name, value: item.value ?? null, secretRef: item.secretRef ?? null }))
-      .toSorted((a, b) => a.name.localeCompare(b.name)),
-  );
-}
-
-function formatEnv(env) {
-  return (env ?? []).map((item) => (item.value !== undefined ? `${item.name}=${item.value}` : item.name)).join("\n");
-}
-
-function readEnv(text, existing) {
-  const previous = new Map((existing ?? []).map((item) => [item.name, item]));
-  const env = [];
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    const eq = line.indexOf("=");
-    if (eq === -1) {
-      const prior = previous.get(line);
-      if (prior?.secretRef) {
-        const entry = { name: line, secretRef: prior.secretRef };
-        if (prior.value !== undefined) entry.value = prior.value;
-        env.push(entry);
-      } else {
-        env.push({ name: line, value: "" });
-      }
-      continue;
-    }
-    const name = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1);
-    const prior = previous.get(name);
-    const entry = { name, value };
-    if (prior?.secretRef && prior.value === value) entry.secretRef = prior.secretRef;
-    env.push(entry);
-  }
-  return env;
-}
-
+/** The rebuild body the dialog's fields describe, or the first env row the server would refuse. */
 function rebuildBody(root, box) {
   const body = {};
   const template = root.querySelector("#rbTemplate").value.trim();
@@ -156,17 +119,47 @@ function rebuildBody(root, box) {
   if (network !== box.network) body.network = network;
   const profile = root.querySelector("#rbProfile").value;
   if (profile && profile !== (box.profile ?? "")) body.profile = profile;
-  const env = readEnv(root.querySelector("#rbEnv").value, box.env);
-  if (envKey(env) !== envKey(box.env)) body.env = env;
+  const checked = checkEnvRows(readEnvRows(root.querySelector("#rbEnvRows")));
+  if ("problem" in checked) return { problem: checked.problem };
+  if (canonicalEnv(checked.env) !== canonicalEnv(box.env)) body.env = checked.env;
   const mounts = readMountRows(root.querySelector("#rbMounts"));
   if (canonicalMounts(mounts) !== canonicalMounts(box.mounts)) body.mounts = mounts;
-  return body;
+  return { body };
+}
+
+/**
+ * An environment change as the preview holds it: a JSON list of entries, or a note about a rotated secret, which is not
+ * JSON. A secret shows its name only.
+ */
+function envChangeText(text) {
+  let entries;
+  try {
+    entries = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (!Array.isArray(entries)) return text;
+  if (!entries.length) return "—";
+  return entries
+    .map((entry) =>
+      entry.secretRef
+        ? `${entry.name}=${t("env.secretLabel", { name: entry.secretRef })}`
+        : `${entry.name}=${entry.value ?? ""}`,
+    )
+    .join(", ");
+}
+
+function changeText(change, text) {
+  return change.field === "env" ? envChangeText(text) : text;
 }
 
 /** The HTML for a rebuild preview: the planned changes, the writable layer, what is kept and what is lost. */
 export function rebuildPreviewHtml(preview) {
   const changes = (preview.changes ?? [])
-    .map((change) => `${t(`rebuild.field.${change.field}`)}: ${change.from} → ${change.to}`)
+    .map(
+      (change) =>
+        `${t(`rebuild.field.${change.field}`)}: ${changeText(change, change.from)} → ${changeText(change, change.to)}`,
+    )
     .join("\n");
   const diff = preview.diff?.length
     ? preview.diff.map((change) => `${t(`rebuild.diff.${change.kind}`)} ${change.path}`).join("\n")
@@ -194,7 +187,8 @@ function showPreview(root, preview) {
  * Preview, then confirm, a rebuild. The container id changes, so success opens the new box. `box` must come from a REST
  * read: a live frame names the environment variables without their values, and this dialog writes back what it shows.
  */
-export function openRebuild(box) {
+export async function openRebuild(box) {
+  const secrets = await secretNames();
   const profiles = ["standard", "strict", "relaxed"];
   const profileOptions = [
     box.profile ? "" : `<option value="">${esc(t("bd.profileLegacy"))}</option>`,
@@ -215,8 +209,9 @@ export function openRebuild(box) {
         <select class="select" id="rbProfile">${profileOptions}</select></div>
       <div class="field"><label class="label" for="rbNetwork">${esc(t("rb.network"))}</label>
         <input class="input" id="rbNetwork" value="${esc(box.network || "")}" /></div>
-      <div class="field"><label class="label" for="rbEnv">${esc(t("rb.env"))}</label>
-        <textarea class="input" id="rbEnv" rows="4">${esc(formatEnv(box.env))}</textarea>
+      <div class="field"><span class="label">${esc(t("rb.env"))}</span>
+        <div class="env-rows" id="rbEnvRows"></div>
+        <button type="button" class="btn" id="rbAddEnv">${icon("plus")}${esc(t("env.add"))}</button>
         <div class="help">${esc(t("rb.envHelp"))}</div></div>
       <div class="field"><span class="label">${esc(t("rb.mounts"))}</span>
         <div class="rebuild-mounts" id="rbMounts"></div>
@@ -234,6 +229,21 @@ export function openRebuild(box) {
     mounts.append(mountRow({ volume: "", path: "/data", mode: "rw" }));
   });
 
+  const envRows = root.querySelector("#rbEnvRows");
+  for (const row of envRowsOf(box.env)) envRows.append(envRow(row, secrets));
+  const resetPreview = () => {
+    root.querySelector("#rbPreview").hidden = true;
+    root.querySelector("#rbApply").hidden = true;
+  };
+  bindEnvRows(envRows, resetPreview);
+  root.querySelector("#rbAddEnv").addEventListener("click", () => {
+    envRows.append(envRow({ name: "", kind: "value", value: "", secretRef: "" }, secrets));
+    resetPreview();
+  });
+  const dialogBody = root.querySelector(".dialog-body");
+  dialogBody.addEventListener("input", resetPreview);
+  dialogBody.addEventListener("change", resetPreview);
+
   const post = (body) =>
     api(`/api/boxes/${enc(box.id)}/rebuild`, {
       method: "POST",
@@ -244,8 +254,13 @@ export function openRebuild(box) {
   root.querySelector("#rbPreviewBtn").addEventListener("click", async (event) => {
     root.querySelector("#rbErr").textContent = "";
     root.querySelector("#rbApply").hidden = true;
+    const built = rebuildBody(root, box);
+    if (built.problem) {
+      root.querySelector("#rbErr").textContent = envProblemText(built.problem);
+      return;
+    }
     try {
-      await withBusy(event.currentTarget, () => post(rebuildBody(root, box)));
+      await withBusy(event.currentTarget, () => post(built.body));
       root.querySelector("#rbErr").textContent = t("err.rebuild_empty");
     } catch (err) {
       if (err?.code === "confirmation_required" && err.details?.preview) {
@@ -258,8 +273,13 @@ export function openRebuild(box) {
 
   root.querySelector("#rbApply").addEventListener("click", async (event) => {
     root.querySelector("#rbErr").textContent = "";
+    const built = rebuildBody(root, box);
+    if (built.problem) {
+      root.querySelector("#rbErr").textContent = envProblemText(built.problem);
+      return;
+    }
     try {
-      const result = await withBusy(event.currentTarget, () => post({ ...rebuildBody(root, box), confirm: true }));
+      const result = await withBusy(event.currentTarget, () => post({ ...built.body, confirm: true }));
       close();
       toast(t("rb.done"), { message: t("rb.doneText", { name: box.name }) });
       refreshHost();

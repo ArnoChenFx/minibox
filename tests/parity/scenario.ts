@@ -610,6 +610,39 @@ async function recordScenario(): Promise<Exchange[]> {
     await waitTask(base, (await send("delete the checkpoint", "DELETE", `/api/checkpoints/${ckId}`)).json);
     await send("read the deleted checkpoint", "GET", `/api/checkpoints/${ckId}`);
 
+    await send("list secrets with none", "GET", "/api/secrets");
+    await raw("set a secret", "PUT", "/api/secrets/vault", JSON.stringify({ value: "parity-value" }));
+    await raw("set a secret with an empty value", "PUT", "/api/secrets/vault", JSON.stringify({ value: "" }));
+    await raw("set a secret with a bad name", "PUT", "/api/secrets/-bad", JSON.stringify({ value: "x" }));
+    await send("list secrets", "GET", "/api/secrets");
+    await send("delete a secret no box uses", "DELETE", "/api/secrets/vault");
+    await send("delete a missing secret", "DELETE", "/api/secrets/vault");
+
+    await raw("set the secret a box uses", "PUT", "/api/secrets/vault", JSON.stringify({ value: "parity-value" }));
+    await post("create a box that names a missing secret", "/api/boxes", {
+      name: "secretbox",
+      cpus: 1,
+      memoryMb: 256,
+      env: [{ name: "TOKEN", secretRef: "absent" }],
+    });
+    const secretBox = boxId(
+      (
+        await post("create a box with a secret", "/api/boxes", {
+          name: "secretbox",
+          cpus: 1,
+          memoryMb: 256,
+          env: [
+            { name: "TOKEN", secretRef: "vault" },
+            { name: "GREETING", value: "hello" },
+          ],
+        })
+      ).json,
+    );
+    await send("read the box with a secret", "GET", `/api/boxes/${secretBox}`);
+    await send("delete a secret in use", "DELETE", "/api/secrets/vault");
+    await send("delete a secret in use with force", "DELETE", "/api/secrets/vault?force=true");
+    await send("delete the secret box", "DELETE", `/api/boxes/${secretBox}`);
+
     const afterRollback = await send("read the rolled back box", "GET", `/api/boxes/${rolledBox}`);
     const rolledRevision = (afterRollback.json?.box as { revision?: number } | undefined)?.revision ?? 1;
     await send("read the rollback that waits", "GET", rollbackAt(rolledBox));

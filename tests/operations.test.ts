@@ -104,6 +104,9 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
     writeFileSync(join(app.cfg.dataDir, "tools.d", `${CUSTOM_TOOL.id}.json`), JSON.stringify(CUSTOM_TOOL_FILE));
     return { id: CUSTOM_TOOL.id };
   },
+  "secret.list": () => ({}),
+  "secret.set": () => ({ name: "vault", value: "s3cret-value" }),
+  "secret.delete": () => ({ name: "vault", force: false }),
   "session.list": (id) => ({ id }),
   "session.start": (id) => ({ id, name: "work" }),
   "session.read": (id) => ({ id, name: "work", lines: 10 }),
@@ -203,6 +206,9 @@ async function preparedInput(
   }
   if (["session.read", "session.send", "session.close"].includes(operation.name)) {
     await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+  }
+  if (operation.name === "secret.delete") {
+    await app.operations.run("secret.set", ctx, { name: "vault", value: "s3cret-value" });
   }
   if (CHECKPOINT_OPERATIONS_ON_AN_EXISTING.includes(operation.name)) {
     const checkpoint = await takeCheckpointOf(app, ctx, boxId);
@@ -882,6 +888,7 @@ describe("projections", () => {
       "memoryMb",
       "profile",
       "mounts",
+      "env",
       "idleTimeoutSec",
       "ttlSec",
       "tools",

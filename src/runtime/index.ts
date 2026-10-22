@@ -99,7 +99,7 @@ export interface CreateContainerSpec {
   hostname?: string;
   labels?: Record<string, string>;
   mounts?: Mount[];
-  /** `NAME=value` entries merged over the image environment. Secrets are not passed here. */
+  /** `NAME=value` entries merged over the image environment. The caller resolves a box's secrets into these. */
   env?: string[];
   restart?: "no" | "unless-stopped";
   cpus?: number;
@@ -352,6 +352,11 @@ export interface Runtime {
   listContainers(filter: { labels: Record<string, string> }, opts?: { signal?: AbortSignal }): Promise<ContainerInfo[]>;
   /** An aborted `signal` rejects with `AbortError` once the engine call is cancelled. */
   inspectContainer(id: string, opts?: { signal?: AbortSignal }): Promise<ContainerInfo>;
+  /**
+   * The `NAME=value` entries the container was created with. The values are for a caller that compares them in memory:
+   * they are never stored, logged or returned.
+   */
+  inspectEnv(id: string): Promise<string[]>;
   createContainer(spec: CreateContainerSpec): Promise<{ id: string }>;
   /** Starting a running container succeeds. Fails with `not_found` while the container's network is missing. */
   startContainer(id: string): Promise<void>;

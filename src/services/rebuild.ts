@@ -12,10 +12,11 @@ import {
   RuntimeError,
   type VolumeOwner,
 } from "../runtime";
+import { assertSecretsSet, containerEnv } from "../secrets/env";
 import { pushHistory } from "../specs/history";
 import { type MovedTag, planRebuild, previewOf, type PlannedRebuild, type RebuildRequest } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
-import type { BoxMount, BoxRecovery, BoxSpec } from "../specs/types";
+import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
@@ -58,8 +59,15 @@ export async function rebuildBox(
     const previous = structuredClone(spec);
     const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;
     // An empty request is allowed: a moved tag alone is still a rebuild. rebuild_empty only when nothing changed.
-    const planned = planRebuild(host.prefix, spec, named, await movedTag(host, spec));
+    const planned = planRebuild(
+      host.prefix,
+      spec,
+      named,
+      await movedTag(host, spec),
+      await rotatedSecrets(host, spec, named.env ?? spec.env),
+    );
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
+    assertSecretsSet(host.secrets, planned.env);
     await assertRebuildAttachments(host, spec, planned.mounts, planned.network);
 
     let template = spec.template;
@@ -125,6 +133,33 @@ async function movedTag(host: HostCtx, spec: BoxSpec): Promise<MovedTag | null> 
   const running = await inspectOld(host, spec.containerId);
   if (running.imageId === tagged.id) return null;
   return { tag: spec.template.image, from: running.imageId, to: tagged.id };
+}
+
+/**
+ * The secrets a planned env names whose value is not the one the box's container was created with. A new value only
+ * reaches a box on a rebuild, so a rebuild with a rotated secret is a change. The values are compared here and nowhere
+ * else. A secret that is not set counts as rotated, so the rebuild is refused for it by the missing-secret check.
+ */
+async function rotatedSecrets(host: HostCtx, spec: BoxSpec, env: readonly BoxEnv[]): Promise<string[]> {
+  const refs = env.flatMap((entry) =>
+    entry.secretRef === undefined ? [] : [{ name: entry.name, ref: entry.secretRef }],
+  );
+  if (refs.length === 0) return [];
+  const held = new Map<string, string>();
+  for (const entry of await heldEnv(host, spec.containerId)) {
+    const at = entry.indexOf("=");
+    if (at > 0) held.set(entry.slice(0, at), entry.slice(at + 1));
+  }
+  return refs.flatMap(({ name, ref }) => (host.secrets.value(ref) === held.get(name) ? [] : [name]));
+}
+
+async function heldEnv(host: HostCtx, id: string): Promise<string[]> {
+  try {
+    return await host.runtime.inspectEnv(id);
+  } catch (e) {
+    if (isRuntimeError(e, "not_found")) throw notFound(msg("box_not_found"));
+    throw e;
+  }
 }
 
 /**
@@ -217,8 +252,8 @@ function containerSpec(
   planned: PlannedRebuild,
   template: BoxSpec["template"],
   name: string,
+  env: string[],
 ): CreateContainerSpec {
-  const env = planned.env.flatMap((entry) => (entry.value !== undefined ? [`${entry.name}=${entry.value}`] : []));
   const workspace = planned.mounts.some((mount) => mount.path === "/workspace");
   const hardening = hardeningOf(host, spec, planned.profile);
   const created: CreateContainerSpec = {
@@ -370,6 +405,7 @@ async function swap(
   const scratch = `${formal}-new`;
   const oldAlias = `${previous.containerName}-old`;
   try {
+    const env = containerEnv(host.secrets, planned.env);
     const old = await inspectOld(host, previous.containerId);
     state.wasRunning = old.running;
     if (planned.network === host.security.network) await ensureBoxNetwork(host);
@@ -383,7 +419,7 @@ async function swap(
       host,
       resolved.mounts.map((mount) => mount.volume),
     );
-    const created = await host.runtime.createContainer(containerSpec(host, previous, resolved, template, scratch));
+    const created = await host.runtime.createContainer(containerSpec(host, previous, resolved, template, scratch, env));
     state.createdId = created.id;
     const fresh = await assertFresh(host, created.id, template, resolved);
     writeNext(host, previous, resolved, template, created.id, request);

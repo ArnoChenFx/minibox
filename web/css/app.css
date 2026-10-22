@@ -1739,6 +1739,44 @@ input[type="range"] {
   gap: 8px;
   align-items: center;
 }
+.env-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.env-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 112px minmax(0, 1.6fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.env-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.env-field[hidden] {
+  display: none;
+}
+.env-field > .input,
+.env-field > .select {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+.env-value {
+  letter-spacing: 0.12em;
+}
+.env-secret {
+  font-family: var(--font-mono);
+}
+.env-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .rebuild-preview pre {
   white-space: pre-wrap;
   word-break: break-word;
@@ -2062,7 +2100,8 @@ input[type="range"] {
   .grid-4 {
     grid-template-columns: 1fr;
   }
-  .rebuild-mount {
+  .rebuild-mount,
+  .env-row {
     grid-template-columns: 1fr;
   }
 }

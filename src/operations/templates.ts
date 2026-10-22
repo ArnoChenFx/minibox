@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
 import {
   assertTemplateNameAvailable,
@@ -71,7 +72,10 @@ export const templateSave = defineOperation({
       "Save a box as a template: the packages it installed and the system files it changed. /workspace and home volumes are not included, so use a checkpoint for data. Long-running; returns a task id.",
   },
   resolve: ({ host }, input) => getBox(host, input.id),
-  beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
+  beforeTask: async ({ host }, input, box) => {
+    assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []);
+    await assertTemplateNameAvailable(host, input.name);
+  },
   exclusive: ({ host }, _input, box) => `template.save:${host.host.id}:${box.boxId}`,
   activity: { action: () => "template.save", target: (_input, box) => box.name },
   audit: { target: (input) => ({ kind: "template", name: input.name }) },

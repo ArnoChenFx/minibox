@@ -19,6 +19,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision, unless the box's TTL has passed: then exec fails with box_ttl_expired. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
 - Pass secrets in env, not in argv or cmd. The audit log keeps commands and argv, but never env values.
+- To give a box a host secret, pass `env` with `{ "name", "secretRef" }` entries to `create_box`. The call takes the secret's name, never its value. A token without `secret:use` is refused, and a secret that is not set fails the create.
 - The result includes status, exitCode, stdout, stderr, truncated and durationMs. A non-zero exit code is the program's status.
 - Inline output keeps about 16 KiB from the start and 16 KiB from the end of each stream. When truncated is true, outputRef names the rest: GET /api/execs/{execId}/output.
 - A foreground exec may set timeoutSec up to 55. For a longer command, use exec with background true and a larger timeoutSec (up to 3600), then exec_get with waitMs (max 25000). exec_kill stops the process tree.

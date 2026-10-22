@@ -2,6 +2,7 @@ import { mountActivity } from "../components/activity-panel.js";
 import { deleteBox, editResources, lifecycle, openRebuild, rebuildPreviewHtml } from "../components/box-actions.js";
 import { mountCheckpoints, takeCheckpoint } from "../components/checkpoints.js";
 import { deleteCustomTool, openCustomToolDialog } from "../components/custom-tool-dialog.js";
+import { mountEnvCard } from "../components/env-card.js";
 import { openSaveTemplate } from "../components/save-template.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks } from "../components/tasks.js";
@@ -238,7 +239,7 @@ export function render(view, id, tab = "overview") {
     rebuild: async () => {
       try {
         const { box: fresh } = await api(`/api/boxes/${enc(ref())}`);
-        openRebuild(fresh);
+        await openRebuild(fresh);
       } catch (err) {
         toastError(t("bd.loadFailed"), err);
       }
@@ -542,10 +543,12 @@ function toolRow(tool, isCustom) {
 
 const TAB_RENDER = {
   overview(root, { box, onChange }) {
+    root.innerHTML = `<div id="ovMain"></div><div id="ovEnv"></div><div id="ovMounts"></div>`;
+    const env = mountEnvCard(root.querySelector("#ovEnv"), { box });
     const draw = () => {
       const b = box();
       const s = b.stats;
-      root.innerHTML = `
+      root.querySelector("#ovMain").innerHTML = `
         ${specBanners(b)}
         <div class="grid grid-3">
           <div class="card metric"><div class="metric-top"><span>CPU</span>${icon("cpu")}</div>
@@ -573,16 +576,22 @@ const TAB_RENDER = {
           <dt>${t("bd.template")}</dt><dd class="mono">${esc(b.template || "—")}</dd>
           <dt>${t("bd.profile")}</dt><dd>${b.profile ? t(`profile.${b.profile}`) : t("bd.profileLegacy")}</dd>
           <dt>${t("bd.network")}</dt><dd class="mono">${esc(b.network)}</dd>
-          <dt>${t("bd.env")}</dt><dd>${(b.env ?? []).length ? esc((b.env ?? []).map((item) => item.name).join(", ")) : t("bd.envNone")}</dd>
           <dt>${t("bd.tools")}</dt><dd>${(b.tools ?? []).length ? esc((b.tools ?? []).map((item) => item.id).join(", ")) : t("bd.toolsNone")}</dd>
           <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume || "—")}</span></dd>
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
           <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(b.containerName || `minibox-${b.name}`)} bash</code></dd>
-        </dl></div></div>
-        ${mountsCard(b)}`;
+        </dl></div></div>`;
+      root.querySelector("#ovMounts").innerHTML = mountsCard(b);
     };
     draw();
-    return onChange(draw);
+    const off = onChange(() => {
+      draw();
+      env.onBoxChange();
+    });
+    return () => {
+      off();
+      env.dispose();
+    };
   },
 
   terminal(root, { box, onChange, rerender }) {

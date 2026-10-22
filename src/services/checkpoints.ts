@@ -18,6 +18,7 @@ import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { type ContainerChange, type ImageDetails, isRuntimeError } from "../runtime";
+import { assertNoSecretInImage } from "../secrets/env";
 import { REBUILD_LOSES } from "../specs/plan";
 import { newBoxId, revisionMismatch } from "../specs/revision";
 import type { BoxMount, BoxSpec } from "../specs/types";
@@ -391,6 +392,7 @@ export function assertTakeable(host: HostCtx, box: Box, input: TakeCheckpointInp
   const spec = host.specs.read(box.boxId);
   if (!spec) throw notFound(msg("box_not_found"));
   planLayers(host, spec, input.include.volumes);
+  if (input.include.system) assertNoSecretInImage(spec.env);
 }
 
 /**
@@ -449,6 +451,7 @@ async function writeCheckpoint(
   let system: SystemLayer | null = null;
   try {
     if (input.include.system) {
+      assertNoSecretInImage(spec.env);
       progress?.log?.(`Committing ${box.name}…\n`);
       system = await commitSystemLayer(host, box, id, progress?.signal);
     }
