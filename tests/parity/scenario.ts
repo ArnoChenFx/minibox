@@ -1027,7 +1027,7 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("read the purge task", "GET", `/api/tasks/${String(purged.json?.taskId ?? "")}`);
     await send("purge a recycle bin entry that is gone", "DELETE", `/api/trash/${kept}`);
     await send("purge a missing recycle bin entry", "DELETE", "/api/trash/ck_0000000000000000000000000");
->  } finally {
+  } finally {
     server.stop(true);
     app.throttle.stop();
     app.hostAdmin.close();
