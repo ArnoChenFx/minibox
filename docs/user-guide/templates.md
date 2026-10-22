@@ -125,7 +125,7 @@ Building a template, rebuilding one and pulling an image are for the owner only.
 
 ## devcontainer.json
 
-Build a template from a repository's `devcontainer.json` when the repository already describes its environment in that file. MiniBox looks for `.devcontainer/devcontainer.json`, then `.devcontainer.json`, unless you give a path. If a repository has both, the file in `.devcontainer/` is used, and a path picks the other one.
+Build a template from a repository's `devcontainer.json` when the repository already describes its environment in that file. MiniBox looks for `.devcontainer/devcontainer.json`, then `.devcontainer.json`, unless you give a path. If the repository has both, `.devcontainer/devcontainer.json` is used. To build from `.devcontainer.json` instead, give its path.
 
 MiniBox reads these settings:
 
@@ -138,7 +138,7 @@ MiniBox reads these settings:
 | `containerEnv` | One `ENV` instruction per entry, written into the image. |
 | `$schema`, `name` | Metadata only. They change nothing. |
 
-The file sets `image` or `build.dockerfile`, never both. A value cannot use a `${…}` reference, because MiniBox does not expand variables. The `devcontainer.json` file is limited to 256 KB. When `containerEnv` is set, MiniBox copies the Dockerfile to add the `ENV` lines, and that copy is limited to 256 KB too. The repository's own file is not changed.
+The file sets either `image` or `build`, never both, and a `build` needs `build.dockerfile`. A value cannot use a `${…}` reference, because MiniBox does not expand variables. The `devcontainer.json` file is limited to 256 KB. When `containerEnv` is set, MiniBox copies the Dockerfile to add the `ENV` lines, and that copy is limited to 256 KB too. The repository's own file is not changed.
 
 Not supported:
 

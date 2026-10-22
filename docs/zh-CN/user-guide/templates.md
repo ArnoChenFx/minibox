@@ -125,7 +125,7 @@ MiniBox 从不拉取它自己的模板、快照和检查点镜像。这些镜像
 
 ## devcontainer.json
 
-当代码仓库已把运行环境描述在 `devcontainer.json` 中时，可以从该文件构建模板。除非你给出路径，否则 MiniBox 会依次查找 `.devcontainer/devcontainer.json` 和 `.devcontainer.json`。若代码仓库两者都有，使用 `.devcontainer/` 中的文件；给出路径则可以指定另一个文件。
+当代码仓库已把运行环境描述在 `devcontainer.json` 中时，可以从该文件构建模板。除非你给出路径，否则 MiniBox 会依次查找 `.devcontainer/devcontainer.json` 和 `.devcontainer.json`。若代码仓库两者都有，使用 `.devcontainer/devcontainer.json`。如需使用 `.devcontainer.json`，请给出它的路径。
 
 MiniBox 读取以下配置项：
 
@@ -138,7 +138,7 @@ MiniBox 读取以下配置项：
 | `containerEnv` | 每个条目对应镜像中的一条 `ENV` 指令。 |
 | `$schema`、`name` | 仅作元数据，不改变任何内容。 |
 
-该文件只能设置 `image` 或 `build.dockerfile` 之一，不能同时设置。取值中不能使用 `${…}` 引用，因为 MiniBox 不展开变量。`devcontainer.json` 文件限制为 256 KB。设置了 `containerEnv` 时，MiniBox 会复制 Dockerfile 以添加 `ENV` 行，该副本同样限制为 256 KB。代码仓库中的原文件不会被修改。
+该文件只能设置 `image` 或 `build` 之一，不能同时设置；设置 `build` 时必须同时给出 `build.dockerfile`。取值中不能使用 `${…}` 引用，因为 MiniBox 不展开变量。`devcontainer.json` 文件限制为 256 KB。设置了 `containerEnv` 时，MiniBox 会复制 Dockerfile 以添加 `ENV` 行，该副本同样限制为 256 KB。代码仓库中的原文件不会被修改。
 
 不支持的内容：
 
