@@ -320,9 +320,12 @@ Framework tip: many bundlers assume `/` as the public base. For path-mode previe
 
 ## SSH access
 
-`ssh`, `scp`, `sftp` and `ssh -L` reach a box through MiniBox over a WebSocket on the server's own address, so no host port is published. On the machine that runs `ssh`, build the CLI with `bun run build:cli` and put `dist/minibox` on your `PATH`.
+`ssh`, `scp`, `sftp` and `ssh -L` reach a box through MiniBox over a WebSocket on the server's own address, so no host port is published. The server also distributes its CLI, so the machine that runs `ssh` needs no checkout: install the CLI from the server first.
 
 ```sh
+# once: install minibox into ~/.local/bin (macOS or Linux; on Windows, in PowerShell: irm https://minibox.example.com/cli/install.ps1 | iex)
+curl -fsSL https://minibox.example.com/cli/install.sh | sh
+
 # once: the access key, or an agent token with box:ssh
 MINIBOX_URL=https://minibox.example.com MINIBOX_ACCESS_KEY=... minibox ssh-config --append
 ssh mybox.minibox
@@ -330,6 +333,8 @@ scp ./build.tar.gz mybox.minibox:/workspace/
 sftp mybox.minibox
 ssh -N -L 8080:127.0.0.1:8080 mybox.minibox
 ```
+
+The installer detects the OS and CPU, downloads `minibox-<os>-<arch>` from the server, checks it against `/cli/checksums.txt` and installs it into `~/.local/bin` (or `MINIBOX_INSTALL_DIR`). It needs no sudo and prints a `PATH` line when that folder is not on `PATH`. The server builds each binary with `bun build --compile` on the first request for its version and keeps it under `DATA_DIR/cli`. A platform other than the server's first needs Bun's runtime for it, about 90 MB downloaded from npm once per server, so a server that cannot reach npm answers `503` with the reason and a fallback. Set `HTTPS_PROXY` for MiniBox in that case. To build the CLI yourself instead, run `bun run build:cli` in a checkout and put `dist/minibox` on your `PATH`.
 
 `ssh-config --append` writes a `Host *.minibox` block at the top of `~/.ssh/config`, pins the server's host key in `~/.ssh/minibox_known_hosts`, and saves the server address and key to `~/.config/minibox/ssh-credentials.json` (mode 600). The `ProxyCommand` (`minibox ssh-proxy %h`) reads that file when `MINIBOX_ACCESS_KEY` is not set, so ssh started from any shell or an IDE's Remote-SSH works. Exported `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` still take precedence.
 
@@ -638,7 +643,18 @@ The terminal socket sends output as binary frames and `state` or `error` frames 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/ssh/host-key` | The gateway's host key: `algorithm` (`ssh-ed25519`), `fingerprint` and `publicKey`. A token needs `box:ssh` |
-| `GET` | `/api/ssh/:box` | With `Upgrade: websocket`, carries one SSH connection to the box, by name or id. Without it, runs the same checks and returns `204`, or the refusal as JSON. Bearer credentials only |
+| `GET` | `/api/ssh/:box` | With `Upgrade: websocket`, carries one SSH connection to the box, by name or id. Without it, runs the same checks and returns `204`, or the refusal as JSON, with `x-minibox-version` naming this server's version. Bearer credentials only |
+
+### CLI downloads
+
+Public and read-only: no key is needed, and the binaries hold no secrets. Each client may make 120 requests a minute to these routes, then gets `429` with `retry-after`.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/cli/install.sh` | The installer for macOS and Linux, with this server's address written in. It verifies the binary and needs no sudo |
+| `GET` | `/cli/install.ps1` | The installer for Windows PowerShell, the same steps |
+| `GET` | `/cli/checksums.txt` | `sha256sum` lines for the binaries built so far, which the installers check against |
+| `GET` | `/cli/minibox-<os>-<arch>` | One CLI binary, as an attachment: `minibox-linux-x64`, `minibox-linux-arm64`, `minibox-darwin-x64`, `minibox-darwin-arm64` or `minibox-windows-x64.exe`. Built on the first request for this version and cached under `DATA_DIR/cli`. A name not in this list gets `404`. A build that fails gets `503` with the reason and a fallback |
 
 ### Snapshots & templates
 
@@ -742,8 +758,8 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 # { "mcpServers": { "minibox": { "url": "http://127.0.0.1:3920/mcp",
 #   "headers": { "Authorization": "Bearer mbx_…" } } } }
 
-# Or from the CLI (bun run build:cli writes dist/minibox):
-MINIBOX_ACCESS_KEY=$KEY dist/minibox exec agent-dev -- npm test
+# Or from the CLI (installed from the server, see SSH access):
+MINIBOX_ACCESS_KEY=$KEY minibox exec agent-dev -- npm test
 ```
 
 A foreground exec may use `timeoutSec` up to 55 seconds, because the server closes an idle connection after 60. Longer commands use `background: true` with a `timeoutSec` up to 3600, or `minibox exec --background --timeout SEC`, and are read with `GET /api/execs/:execId` (`waitMs` up to 25000) or `exec_get`. At most 8 background execs run per box and 64 across MiniBox; a call over either limit gets `429` and does not start a stopped box. A timeout stops the process tree and the CLI exits 124. If the stop fails, the exec keeps running with `status: running`. The stop is retried after a growing delay (1 s, then 2 s, 4 s, up to 30 s), and `POST /api/execs/:execId/kill` can retry at any time. Pass secrets in `env`, not in `cmd` or `argv`: the audit log records the command and argv (redacted as described under Events) and only the names of the `env` variables.
@@ -758,7 +774,7 @@ A foreground exec may use `timeoutSec` up to 55 seconds, because the server clos
 
 The design catalog has 27 tools, 15 of them in the default toolsets, and it does not list `rebuild_box`. This server exposes the tools that exist today: `list_boxes`, `get_box`, `create_box`, `update_box`, `box_action`, `delete_box`, `exec`, `exec_get`, `exec_kill`, `read_file`, `write_file`, `list_files` and `copy_files` in the default toolsets (13 tools), `rebuild_box` in `rebuild`, `session_start`, `session_send` and `session_read` in `session`, the nine volume and pool tools in `storage`, and `list_tools` / `install_tool` / `upgrade_tool` / `uninstall_tool` / `reconcile_tools` in `tools` (`list_volumes`, `get_volume`, `create_volume`, `delete_volume`, `attach_volume`, `detach_volume`, `measure_volume`, `list_pools` and `replace_pools`). `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools` need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`. `measure_volume` only refreshes the cached size, so it has no confirm. `network` (`list_ports`, `expose_port`) and `meta` are accepted; enable `tools` for tool install operations. See [`docs/agents.md`](docs/agents.md).
 
-Build the CLI with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). It talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token.
+Install the CLI from the server with the one-line installer in [SSH access](#ssh-access), or build it from a checkout with `bun run build:cli` (`bun build --compile`, output `dist/minibox`, not committed). `minibox --version` prints the version the binary was built from, and `minibox <command> --help` prints the help and exits 0. The CLI talks to a running server. `MINIBOX_URL` defaults to `http://127.0.0.1:3920`. `MINIBOX_ACCESS_KEY` or `ACCESS_KEY` is the bearer token. When `ssh-proxy` finds the server newer than the CLI, it prints one line that says how to update.
 
 ```bash
 minibox box ls
@@ -814,12 +830,13 @@ minibox/
 │   ├── services/            # Business logic on Runtime: boxes / exec / volumes / rebuild / images / snapshots / templates / reconcile / terminals
 │   ├── tmux/                # tmux command lines, session names and parsing of tmux output
 │   ├── mcp/                 # Streamable HTTP MCP at /mcp
-│   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy
+│   ├── cli.ts               # Thin client: box ls, exec, mcp stdio proxy, ssh-config and ssh-proxy, --version
+│   ├── cli-dist/            # Serves the CLI: target whitelist, bun build runner, single-flight cache, installer scripts
 │   ├── host/                # Host registry (implicit local), procfs parsers, HostSampler (box cache and samples), HostMonitor
 │   ├── events/              # Event store (SQLite), redaction, retention, output store, SSE stream, live frames, scope hook
 │   ├── tasks/               # Task store (SQLite), manager, progress stream on the event bus
 │   ├── operations/          # Operation registry: definitions, executor, OpenAPI and MCP / CLI projections
-│   ├── routes/              # Router, route groups (auth / system / images) and the REST adapter for operations
+│   ├── routes/              # Router, route groups (auth / system / images / cli) and the REST adapter for operations
 │   ├── ws/terminal.ts       # WebSocket terminal: attach, control frames, heartbeat, backpressure
 │   ├── ssh/                 # SSH over WebSocket: host key, policy, one ssh2 server per connection
 │   └── lib/                 # errors / http / logger / bus (in-process event bus) / validation
