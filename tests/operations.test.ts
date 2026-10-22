@@ -58,6 +58,10 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.move": (id) => ({ id, host: "lab", confirm: true, expectedRevision: "1" }),
   "box.logs": (id) => ({ id, tail: 10 }),
   "box.stats": (id) => ({ id }),
+  "box.startup.get": (id) => ({ id }),
+  "box.startup.set": (id) => ({ id, command: "echo ready", expectedRevision: "1" }),
+  "box.startup.delete": (id) => ({ id, expectedRevision: "1" }),
+  "box.startup.run": (id) => ({ id }),
   "exec.run": (id) => ({ id, argv: ["true"] }),
   "exec.get": () => ({ execId: `ex_${"0".repeat(26)}` }),
   "exec.kill": () => ({ execId: `ex_${"0".repeat(26)}` }),
@@ -271,6 +275,9 @@ async function preparedInput(
   }
   if (["session.read", "session.send", "session.close"].includes(operation.name)) {
     await app.operations.run("session.start", ctx, { id: boxId, name: "work" });
+  }
+  if (operation.name === "box.startup.run") {
+    await app.operations.run("box.startup.set", ctx, { id: boxId, command: "echo ready", expectedRevision: "1" });
   }
   if (operation.name === "secret.delete") {
     await app.operations.run("secret.set", ctx, { name: "vault", value: "s3cret-value" });
@@ -916,6 +923,10 @@ describe("projections", () => {
       "delete_box",
       "box_action",
       "update_box",
+      "get_startup_command",
+      "set_startup_command",
+      "delete_startup_command",
+      "run_startup_command",
       "exec",
       "exec_get",
       "exec_kill",
@@ -999,6 +1010,7 @@ describe("projections", () => {
       "ttlSec",
       "host",
       "tools",
+      "startupCommand",
       "repo",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });

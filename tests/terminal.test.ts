@@ -274,6 +274,31 @@ describe("terminal authentication and origin", () => {
   });
 });
 
+describe("the minibox-init session is kept for a credential that may use secrets", () => {
+  test("an operator token, which may open terminals, is refused it with 403, and no exec starts", async () => {
+    const id = await createBox("alpha");
+    const operator = mint(app, { name: "operator", preset: "operator", boxes: { type: "all" } });
+    const execsBefore = runtime.callsTo("startExec").length;
+    const res = await fetch(`${base}/api/boxes/${id}/terminal?session=minibox-init`, {
+      headers: { ...UPGRADE, ...bearer(operator.secret) },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: { code: "forbidden", key: "startup_session_forbidden" } });
+    expect(runtime.callsTo("startExec")).toHaveLength(execsBefore);
+  });
+
+  test("a token with exec and secret:use opens it", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "minibox-init", "rest");
+    const holder = mint(app, { name: "holder", scopes: ["exec", "box:read", "secret:use"], boxes: { type: "all" } });
+    const term = connect(`/api/boxes/${id}/terminal?session=minibox-init`, bearer(holder.secret));
+    await term.opened;
+    await waitFor(() => lastState(term) !== undefined, "the state frame");
+    term.ws.close(1000, "done");
+    await term.closed;
+  });
+});
+
 describe("parseControl", () => {
   test("reads resize frames and clamps them to the terminal limits", () => {
     expect(parseControl('{"type":"resize","cols":80,"rows":24}')).toEqual({ type: "resize", cols: 80, rows: 24 });

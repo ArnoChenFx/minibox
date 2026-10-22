@@ -130,7 +130,10 @@ export interface TokenDraft {
 }
 
 const READ_SCOPES: readonly Scope[] = ["box:read", "files:read"];
-/** Every scope but `secret:use`: a box that receives a host secret is the owner's decision, so only the admin preset has it. */
+/**
+ * Every scope but `secret:use`. A box that receives a host secret, and a startup command that may hold one, is the owner's
+ * decision, so only the admin preset has it.
+ */
 const OPERATOR_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "secret:use");
 const SANDBOX_SCOPES: readonly Scope[] = OPERATOR_SCOPES.filter(
   (scope) => scope !== "volume:attach" && scope !== "tool:install" && scope !== "box:ssh",
@@ -306,9 +309,29 @@ export function requiredScopes(operationScope: string): readonly Scope[] | "owne
       return ["files:write", "exec"];
     case "port:expose":
       return ["port:expose"];
+    case "secret:use":
+      return ["secret:use"];
     default:
       return "owner";
   }
+}
+
+/**
+ * Whether a principal may read and set the values the owner keeps out of reach of agents: the owner, and a token that
+ * holds `secret:use`, which only the admin preset does. A startup command and the output of its session are such values.
+ */
+export function mayUseSecrets(principal: Subject): boolean {
+  if (principal.type === "owner") return true;
+  return principal.type === "token" && principal.grants?.scopes.includes("secret:use") === true;
+}
+
+/**
+ * Whether a principal may set, remove or run a startup command. The command runs as code in the box at every start, so
+ * this needs exec as well as secret:use. Reading one needs only secret:use.
+ */
+export function mayGiveStartupCommand(principal: Subject): boolean {
+  if (principal.type === "owner") return true;
+  return mayUseSecrets(principal) && principal.grants?.scopes.includes("exec") === true;
 }
 
 export function scopeAllowed(grants: TokenGrants, operationScope: string): boolean {

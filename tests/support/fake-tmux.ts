@@ -20,6 +20,11 @@ interface FakeSession {
   /** The pane transcript. The last line is the one being typed on. */
   readonly lines: string[];
   readonly clients: Set<TmuxClient>;
+  /** The command the pane was started with, as the arguments after `--`. Empty for a plain shell. */
+  readonly command: readonly string[];
+  /** True once the pane's command has ended and the pane is kept (`remain-on-exit`). */
+  dead: boolean;
+  deadStatus: number | null;
 }
 
 /** Rows a pane shows. `capture-pane` returns history followed by this many rows, blank rows included. */
@@ -104,6 +109,41 @@ export class FakeTmux {
   /** Runs `tmux <args>` inside container `containerId`. A leading `-u` is accepted and ignored. */
   run(containerId: string, argv: readonly string[]): TmuxRun {
     const args = argv[0] === "-u" ? argv.slice(1) : argv;
+    let result = ok();
+    for (const command of splitCommands(args)) {
+      result = this.runCommand(containerId, command);
+      if (result.code !== 0) return result;
+    }
+    return result;
+  }
+
+  /** The command a pane was started with. Undefined when there is no such session. */
+  commandOf(containerId: string, name: string): readonly string[] | undefined {
+    return this.servers.get(containerId)?.get(name)?.command;
+  }
+
+  /** Appends text to a pane, as its command would print it. */
+  print(containerId: string, name: string, text: string): void {
+    const session = this.servers.get(containerId)?.get(name);
+    if (session) write(session, text);
+  }
+
+  /**
+   * The pane's command has ended with `code`. A kept pane (`remain-on-exit`) stays, marked dead with its status. Without
+   * that option, tmux closes the pane and its session with it.
+   */
+  exitPane(containerId: string, name: string, code: number): void {
+    const session = this.servers.get(containerId)?.get(name);
+    if (!session) return;
+    if (session.options.get("remain-on-exit") !== "on") {
+      this.kill(containerId, session);
+      return;
+    }
+    session.dead = true;
+    session.deadStatus = code;
+  }
+
+  private runCommand(containerId: string, args: readonly string[]): TmuxRun {
     const [command = "", ...rest] = args;
     if (command === "-V") return ok(`tmux ${this.version}\n`);
     const sessions = this.servers.get(containerId);
@@ -197,6 +237,9 @@ export class FakeTmux {
       options: new Map(),
       lines: [""],
       clients: new Set(),
+      command: parsed.positional,
+      dead: false,
+      deadStatus: null,
     });
     return ok();
   }
@@ -221,6 +264,19 @@ export class FakeTmux {
   }
 }
 
+/**
+ * The commands in one tmux invocation. A standalone `;` argument ends a command, as it does for tmux, so a chain such as
+ * `new-session ... \; set-option ...` runs as two commands.
+ */
+function splitCommands(args: readonly string[]): string[][] {
+  const commands: string[][] = [[]];
+  for (const arg of args) {
+    if (arg === ";") commands.push([]);
+    else commands[commands.length - 1]?.push(arg);
+  }
+  return commands.filter((command) => command.length > 0);
+}
+
 function write(session: FakeSession, text: string): void {
   const normalized = text.replace(/\r\n?/g, "\n");
   const parts = normalized.split("\n");
@@ -243,6 +299,8 @@ function expand(format: string, session: FakeSession): string {
     if (key === "session_id") return session.id;
     if (key === "session_created") return String(session.created);
     if (key === "session_attached") return String(session.clients.size);
+    if (key === "pane_dead") return session.dead ? "1" : "0";
+    if (key === "pane_dead_status") return session.deadStatus === null ? "" : String(session.deadStatus);
     return session.options.get(key) ?? "";
   });
 }

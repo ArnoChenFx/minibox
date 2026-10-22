@@ -56,13 +56,37 @@ Creates and starts a box. It starts from the base template unless you choose ano
 | `--repo URL` | Clones a Git repository into `/workspace` on the first create. See [Clone a repository](../user-guide/boxes.md#clone-a-repository). |
 | `--branch BRANCH` | With `--repo`: a branch or tag. Default: the repository's default branch. |
 | `--secret NAME` | With `--repo`: the secret that holds a token or deploy key |
+| `--startup-command TEXT` | A command that runs at every start of the box. See [Startup command](../user-guide/boxes.md#startup-command). |
+| `--startup-command-stdin` | Reads the startup command from standard input. Use it for a command that holds a secret, so the text stays out of the shell history. |
 | `--no-wait` | Prints the clone's task ID and returns without waiting for the clone |
 | `--json` | Prints the server's JSON response |
 
-With `--repo`, the command waits for the clone. If the clone fails, the box is kept, and the command reports the reason and exits with `1`.
+With `--repo`, the command waits for the clone. If the clone fails, the box is kept, and the command reports the reason and exits with `1`. `--startup-command` and `--startup-command-stdin` cannot be used together.
 
 ```bash
 minibox box create my-app --template node-tools --repo https://github.com/example/app.git --branch main --secret GITHUB_TOKEN
+minibox box create my-box --cpus 2 --memory 4096 --startup-command "python3 -m http.server 8000"
+```
+
+### `minibox box startup-command <subcommand> <box> [options]`
+
+Reads, sets, removes or runs a box's startup command. The subcommands are:
+
+| Subcommand | Meaning |
+|---|---|
+| `get` | Prints the command on standard output. Its status and the newest lines of output go to standard error. |
+| `set` | Sets the command, which runs at the box's next start. Give the text with `--command TEXT`, or with `--stdin`. Give exactly one. |
+| `set --apply` | Also runs the new command now, when the box is running. |
+| `rm` | Removes the command. A run already going keeps going until the box stops. |
+| `run` | Runs the command again now. The box must be running, and it must have a command. |
+
+`--json` prints the response as JSON. Reading the command needs the `secret:use` scope on the token, and changing or running it needs `exec` as well.
+
+```bash
+minibox box startup-command set my-box --command "python3 -m http.server 9000" --apply
+minibox box startup-command get my-box
+minibox box startup-command run my-box
+minibox box startup-command rm my-box
 ```
 
 ### `minibox exec <box> [options] -- <argv...>`

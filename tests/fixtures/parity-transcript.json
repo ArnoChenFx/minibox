@@ -2288,6 +2288,174 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
   },
   {
+    "step": "create a box with a startup command",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"startbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-startbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "create a box with a startup command that is not text",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The startup command must be text.\",\"retryable\":false,\"key\":\"startup_command_invalid\",\"details\":{\"field\":\"startupCommand\"}}}"
+  },
+  {
+    "step": "read the startup command",
+    "method": "GET",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"revision\":1,\"command\":\"echo ready\",\"status\":\"running\",\"exitCode\":null,\"startedAt\":null,\"exitedAt\":null,\"stale\":false,\"log\":[],\"error\":null}"
+  },
+  {
+    "step": "read the startup command of a missing box",
+    "method": "GET",
+    "path": "/api/boxes/missing/startup-command",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Box not found.\",\"retryable\":false,\"key\":\"box_not_found\"}}"
+  },
+  {
+    "step": "set the startup command without a revision",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 428,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"precondition_required\",\"message\":\"Send the request header If-Match with this box's current revision.\",\"retryable\":false,\"key\":\"revision_required\"}}"
+  },
+  {
+    "step": "set the startup command with a stale revision",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 412,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"precondition_failed\",\"message\":\"This box is at revision 1, not 9. Refresh it and try again.\",\"retryable\":false,\"key\":\"revision_mismatch\",\"params\":{\"revision\":1,\"expected\":9},\"details\":{\"revision\":1,\"expected\":9}}}"
+  },
+  {
+    "step": "set a startup command of only spaces",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The startup command is empty. Enter a command, or remove it.\",\"retryable\":false,\"key\":\"startup_command_empty\",\"details\":{\"field\":\"command\"}}}"
+  },
+  {
+    "step": "set a startup command with a control character",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The startup command has a control character. Only tabs and line breaks are allowed.\",\"retryable\":false,\"key\":\"startup_command_control\",\"details\":{\"field\":\"command\"}}}"
+  },
+  {
+    "step": "set the startup command",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"revision\":2,\"command\":\"echo two\",\"status\":\"running\",\"exitCode\":null,\"startedAt\":null,\"exitedAt\":null,\"stale\":false,\"log\":[],\"error\":null}"
+  },
+  {
+    "step": "set the same startup command again",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"revision\":2,\"command\":\"echo two\",\"status\":\"running\",\"exitCode\":null,\"startedAt\":null,\"exitedAt\":null,\"stale\":false,\"log\":[],\"error\":null}"
+  },
+  {
+    "step": "set the startup command and apply it now",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"revision\":3,\"command\":\"echo three\",\"status\":\"running\",\"exitCode\":null,\"startedAt\":null,\"exitedAt\":null,\"stale\":false,\"log\":[],\"error\":null}"
+  },
+  {
+    "step": "run the startup command again",
+    "method": "POST",
+    "path": "/api/boxes/<id>/startup-command/run",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"revision\":3,\"command\":\"echo three\",\"status\":\"running\",\"exitCode\":null,\"startedAt\":null,\"exitedAt\":null,\"stale\":false,\"log\":[],\"error\":null}"
+  },
+  {
+    "step": "stop the startup box",
+    "method": "POST",
+    "path": "/api/boxes/<id>/stop",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"startbox\",\"state\":\"exited\",\"status\":\"exited\",\"running\":false,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":4,\"desired\":\"stopped\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":\"manual\",\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-startbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "set the startup command while stopped",
+    "method": "PUT",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"revision\":5,\"command\":\"echo four\",\"status\":\"waiting\",\"exitCode\":null,\"startedAt\":null,\"exitedAt\":null,\"stale\":false,\"log\":[],\"error\":null}"
+  },
+  {
+    "step": "run the startup command while stopped",
+    "method": "POST",
+    "path": "/api/boxes/<id>/startup-command/run",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"The box is stopped, so the startup command cannot run now.\",\"retryable\":false,\"hint\":\"Start the box. The command runs at every start.\",\"key\":\"startup_command_box_stopped\",\"hintKey\":\"startup_command_box_stopped_hint\"}}"
+  },
+  {
+    "step": "start the startup box",
+    "method": "POST",
+    "path": "/api/boxes/<id>/start",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"startbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":6,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-startbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"startbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "remove the startup command with a stale revision",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 412,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"precondition_failed\",\"message\":\"This box is at revision 6, not 4. Refresh it and try again.\",\"retryable\":false,\"key\":\"revision_mismatch\",\"params\":{\"revision\":6,\"expected\":4},\"details\":{\"revision\":6,\"expected\":4}}}"
+  },
+  {
+    "step": "remove the startup command",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"revision\":7,\"command\":null,\"status\":\"none\",\"exitCode\":null,\"startedAt\":null,\"exitedAt\":null,\"stale\":false,\"log\":[],\"error\":null}"
+  },
+  {
+    "step": "run the startup command with none set",
+    "method": "POST",
+    "path": "/api/boxes/<id>/startup-command/run",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"No startup command is set on this box.\",\"retryable\":false,\"key\":\"startup_command_none\"}}"
+  },
+  {
+    "step": "read the startup command after removal",
+    "method": "GET",
+    "path": "/api/boxes/<id>/startup-command",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"revision\":7,\"command\":null,\"status\":\"none\",\"exitCode\":null,\"startedAt\":null,\"exitedAt\":null,\"stale\":false,\"log\":[],\"error\":null}"
+  },
+  {
+    "step": "delete the startup box",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"startbox\",\"volumeDeleted\":false}"
+  },
+  {
     "step": "create a pairing code for an agent host",
     "method": "POST",
     "path": "/api/hosts/pairing",

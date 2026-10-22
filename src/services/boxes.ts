@@ -35,6 +35,7 @@ import { assertMountAllowed, mountTarget } from "./attachments";
 import { projectBox, unreachableBox } from "./box-view";
 import { ensureImageOn } from "./images";
 import { beginChange } from "./moving";
+import { launchStartup } from "./startup";
 import { desiredToolsOf } from "./tools";
 import { alignVolumeRoot, type RecordNote, writableWorkspaceVolume } from "./volume-owner";
 
@@ -62,6 +63,8 @@ export interface CreateBoxInput {
   ttlSec?: number | null;
   /** Catalog tool ids to record on the spec (`version: latest`). Install via tool.reconcile. */
   tools?: string[];
+  /** Runs in the box's init session at every start. Absent means none. Templates and snapshots never pass one. */
+  startupCommand?: string;
 }
 
 export interface BoxUpdate {
@@ -541,6 +544,7 @@ async function buildBox(
       mounts,
       env,
       tools: desiredToolsOf(input.tools, loadCatalog(dirname(host.specs.dir()))),
+      ...(input.startupCommand !== undefined ? { startupCommand: input.startupCommand } : {}),
       labels: {},
       lifecycle: {
         desired: "running",
@@ -566,6 +570,7 @@ async function buildBox(
   await runtime.startContainer(containerId);
   await host.sampler.observe(containerId);
   host.pulse.touch(id, "create");
+  await launchStartup(host, containerId, input.startupCommand);
   log.info("box.created", { name: input.name, image, profile, cpus: input.cpus, memoryMb: input.memoryMb });
   return containerId;
 }
@@ -630,6 +635,7 @@ export async function startLocked(host: HostCtx, box: Box, options: StartOptions
   await setDesired(host, box.boxId, "running", null);
   await host.sampler.observe(box.id);
   host.pulse.touch(box.boxId, "wake");
+  if (!box.running) await launchStartup(host, box.id, host.specs.read(box.boxId)?.startupCommand);
   if (options.record && (previousReason === "idle" || previousReason === "ttl")) {
     options.record({
       op: "box.wake",
@@ -709,6 +715,7 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
     await host.sampler.observe(box.id);
     // Same as a start: clear a stale idle heartbeat so LifecycleWatcher does not re-sleep the box at once.
     host.pulse.touch(box.boxId, "wake");
+    await launchStartup(host, box.id, host.specs.read(box.boxId)?.startupCommand);
     return getBox(host, box.boxId);
   });
 }

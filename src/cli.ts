@@ -46,8 +46,18 @@ Commands:
   minibox box ls [--json]              List boxes
   minibox box list [--json]            Same as box ls
   minibox box create <name> [--template IMAGE] [--cpus N] [--memory MB] [--profile P]
-                       [--repo URL [--branch BRANCH] [--secret NAME]] [--no-wait] [--json]
+                       [--repo URL [--branch BRANCH] [--secret NAME]]
+                       [--startup-command TEXT | --startup-command-stdin] [--no-wait] [--json]
                                        Create and start a box. --repo clones into /workspace on the first create.
+                                       A startup command runs at every start of the box.
+  minibox box startup-command get <box> [--json]
+                                       Print the startup command; its status and last output lines go to stderr
+  minibox box startup-command set <box> (--command TEXT | --stdin) [--apply] [--json]
+                                       Set the command. It runs at the next start, or now with --apply on a running box
+  minibox box startup-command rm <box> [--json]
+                                       Remove the command. A run already going keeps going until the box stops
+  minibox box startup-command run <box> [--json]
+                                       Run the command again now. The box must be running and have a command
   minibox template create <name> (--dockerfile FILE | --repo URL | --context URL | --devcontainer URL)
                        [--description TEXT] [source options] [--no-wait] [--json]
                                        Build a template in the background, and print its ref
@@ -127,8 +137,10 @@ async function request(
   method: string,
   path: string,
   body?: unknown,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; json: unknown; text: string; headers: Headers }> {
-  const { base, headers } = serverOf(env);
+  const { base, headers: serverHeaders } = serverOf(env);
+  const headers: Record<string, string> = { ...serverHeaders, ...extraHeaders };
   let payload: string | undefined;
   if (body !== undefined) {
     headers["content-type"] = "application/json";
@@ -188,6 +200,88 @@ async function boxLs(argv: string[], env: Record<string, string | undefined>, io
     );
   }
   return 0;
+}
+
+interface ParsedFlags {
+  readonly positional: string[];
+  readonly values: Map<string, string>;
+  readonly switches: Set<string>;
+}
+
+function parseBoxFlags(argv: string[], valued: string[], switches: string[]): ParsedFlags {
+  const positional: string[] = [];
+  const values = new Map<string, string>();
+  const on = new Set<string>();
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i] ?? "";
+    if (switches.includes(token)) on.add(token);
+    else if (valued.includes(token)) {
+      values.set(token, flagValue(argv, i, token));
+      i += 1;
+    } else if (token.startsWith("--")) throw new Error(`Unknown option ${token}`);
+    else positional.push(token);
+  }
+  return { positional, values, switches: on };
+}
+
+interface StartupCommandState {
+  readonly revision: number;
+  readonly command: string | null;
+  readonly status: string;
+  readonly exitCode: number | null;
+  readonly log: string[];
+  readonly error: { message: string } | null;
+}
+
+function startupStatus(state: StartupCommandState): string {
+  if (state.status === "exited") return `exited with code ${state.exitCode ?? "unknown"}`;
+  if (state.status === "failed") return `failed: ${state.error?.message ?? "unknown error"}`;
+  return state.status;
+}
+
+/** The command as typed goes to stdout, and the status and the newest output lines to stderr, so a script can read the command. */
+function printStartup(io: CliIo, state: StartupCommandState): number {
+  if (state.command !== null) io.stdout(state.command.endsWith("\n") ? state.command : `${state.command}\n`);
+  io.stderr(`status: ${startupStatus(state)}\n`);
+  for (const line of state.log) io.stderr(`${line}\n`);
+  return 0;
+}
+
+const STARTUP_SUBCOMMANDS = ["get", "set", "rm", "run"];
+
+async function boxStartupCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub === undefined || !STARTUP_SUBCOMMANDS.includes(sub)) {
+    throw new Error(`minibox box startup-command needs one of ${STARTUP_SUBCOMMANDS.join(", ")}`);
+  }
+  const flags = parseBoxFlags(rest, ["--command"], ["--stdin", "--apply", "--json"]);
+  const [box, ...more] = flags.positional;
+  if (!box || more.length > 0) throw new Error(`minibox box startup-command ${sub} needs one box name or id`);
+  const changes = flags.values.has("--command") || flags.switches.has("--stdin") || flags.switches.has("--apply");
+  if (sub !== "set" && changes)
+    throw new Error(`minibox box startup-command ${sub} takes no --command, --stdin or --apply`);
+  const path = `/api/boxes/${encodeURIComponent(box)}/startup-command`;
+  const asJson = flags.switches.has("--json");
+  const finish = (res: { status: number; json: unknown; text: string }) => {
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+    if (asJson) return printJson(io, res.json);
+    return printStartup(io, res.json as StartupCommandState);
+  };
+
+  if (sub === "get") return finish(await request(env, "GET", path));
+  if (sub === "run") return finish(await request(env, "POST", `${path}/run`));
+
+  const inline = flags.values.get("--command");
+  const fromStdin = flags.switches.has("--stdin");
+  if (sub === "set" && fromStdin === (inline !== undefined)) {
+    throw new Error("minibox box startup-command set needs exactly one of --command TEXT or --stdin");
+  }
+  const command = fromStdin ? await readStdinText(io) : inline;
+  const current = await request(env, "GET", path);
+  if (current.status >= 400) return fail(io, current.status, current.json, current.text);
+  const ifMatch = { "if-match": String((current.json as StartupCommandState).revision) };
+  if (sub === "rm") return finish(await request(env, "DELETE", path, undefined, ifMatch));
+  return finish(await request(env, "PUT", path, { command, applyNow: flags.switches.has("--apply") }, ifMatch));
 }
 
 async function execCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
@@ -1164,7 +1258,17 @@ const TASK_POLL_MS = 500;
 /** The server keeps only the newest tail of a log, so the text already shown is found again by its last characters. */
 const LOG_ANCHOR_CHARS = 200;
 const OUTPUT_SWITCHES = ["--json", "--no-wait"];
-const BOX_CREATE_VALUE_FLAGS = ["--template", "--cpus", "--memory", "--profile", "--repo", "--branch", "--secret"];
+const BOX_CREATE_VALUE_FLAGS = [
+  "--template",
+  "--cpus",
+  "--memory",
+  "--profile",
+  "--repo",
+  "--branch",
+  "--secret",
+  "--startup-command",
+];
+const BOX_CREATE_SWITCHES = [...OUTPUT_SWITCHES, "--startup-command-stdin"];
 const TEMPLATE_CREATE_VALUE_FLAGS = [
   "--dockerfile",
   "--repo",
@@ -1283,9 +1387,14 @@ async function awaitStarted(
 }
 
 async function boxCreateCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
-  const options = parseOptions(argv, BOX_CREATE_VALUE_FLAGS, OUTPUT_SWITCHES);
+  const options = parseOptions(argv, BOX_CREATE_VALUE_FLAGS, BOX_CREATE_SWITCHES);
   const [name, ...more] = options.positional;
   if (!name || more.length > 0) throw new Error("minibox box create needs one box name");
+  const inline = options.values.get("--startup-command");
+  const fromStdin = options.switches.has("--startup-command-stdin");
+  if (inline !== undefined && fromStdin) {
+    throw new Error("minibox box create takes --startup-command or --startup-command-stdin, not both");
+  }
   const url = options.values.get("--repo");
   if (url === undefined && (options.values.has("--branch") || options.values.has("--secret"))) {
     throw new Error("minibox box create takes --branch and --secret only with --repo");
@@ -1307,6 +1416,8 @@ async function boxCreateCommand(argv: string[], env: Record<string, string | und
     if (secret !== undefined) repo.secretRef = secret;
     body.repo = repo;
   }
+  if (inline !== undefined) body.startupCommand = inline;
+  if (fromStdin) body.startupCommand = await readStdinText(io);
 
   const res = await request(env, "POST", "/api/boxes", body);
   if (res.status >= 400) return fail(io, res.status, res.json, res.text);
@@ -1446,6 +1557,7 @@ export async function runCli(
     }
     if (command === "box" && (sub === "ls" || sub === "list")) return await boxLs(rest, env, io);
     if (command === "box" && sub === "create") return await boxCreateCommand(rest, env, io);
+    if (command === "box" && sub === "startup-command") return await boxStartupCommand(rest, env, io);
     if (command === "template") return await templateCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "image") return await imageCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "exec") return await execCommand(sub === undefined ? [] : [sub, ...rest], env, io);

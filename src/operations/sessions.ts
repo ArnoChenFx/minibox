@@ -5,7 +5,9 @@ import { msg } from "../lib/messages";
 import { accept, type Checked, reject } from "../lib/validation";
 import { getBox, readBox } from "../services/boxes";
 import { READ_LINES_MAX, SESSIONS_PER_BOX_MAX, type TerminalService } from "../services/terminals";
+import { INIT_SESSION } from "../startup/command";
 import { isKeyName, isSessionName, SESSION_NAME_RE } from "../tmux/format";
+import { mayUseSecrets } from "../tokens/model";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
 import { hostOfBox } from "./routing";
@@ -130,18 +132,20 @@ export const sessionList = defineOperation({
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: async ({ host, terminals }, _input, box) => {
+  run: async ({ host, terminals, principal }, _input, box) => {
     requireTerminals(terminals);
     const sessions = await terminals.list(host, box);
     return {
-      sessions: sessions.map((session) => ({
-        name: session.name,
-        origin: session.origin,
-        controller: session.controller,
-        takenOver: session.takenOver,
-        createdAt: new Date(session.createdAt).toISOString(),
-        attached: session.attached,
-      })),
+      sessions: sessions
+        .filter((session) => session.name !== INIT_SESSION || mayUseSecrets(principal))
+        .map((session) => ({
+          name: session.name,
+          origin: session.origin,
+          controller: session.controller,
+          takenOver: session.takenOver,
+          createdAt: new Date(session.createdAt).toISOString(),
+          attached: session.attached,
+        })),
     };
   },
 });

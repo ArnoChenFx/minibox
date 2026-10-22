@@ -9,6 +9,7 @@ import { type Runtime, RuntimeError } from "../runtime";
 import { SecretStore } from "../secrets/store";
 import { ActivityPulse } from "../services/activity-pulse";
 import { BoxPower } from "../services/power";
+import { StartupLaunches } from "../services/startup";
 import { SpecStore } from "../specs/store";
 import { VolumeStore } from "../volumes/store";
 import { type LiveSink, NO_LIVE } from "./live";
@@ -85,6 +86,8 @@ export interface HostCtx {
   checkpointPolicy: CheckpointPolicy;
   /** Serializes start, stop, sleep and wake of this host's boxes (#12). */
   power: BoxPower;
+  /** Startup commands whose last launch failed, by container. Each host keeps its own. */
+  startup: StartupLaunches;
   /** How far the CPU and memory booked on this host may exceed its capacity. See `HOST_OVERCOMMIT`. */
   capacityPolicy: CapacityPolicy;
   /** CPU and memory a single box may take on this host. The local host reads the machine, others read the engine. */
@@ -170,6 +173,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
       capacityBytes: cfg.checkpointCapacityMb * 1024 * 1024,
     },
     power: new BoxPower(),
+    startup: new StartupLaunches(),
     capacityPolicy: { overcommit: cfg.hostOvercommit },
     capacity: async () => {
       if (identity.transport !== "local") return engineCapacity(runtime);

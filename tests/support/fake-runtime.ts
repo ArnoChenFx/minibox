@@ -1032,6 +1032,7 @@ export class FakeRuntime implements Runtime {
 
   async startExec(containerId: string, spec: ExecSpec): Promise<ExecSession> {
     this.enter("startExec", [containerId, spec]);
+    await this.gate("startExec", [containerId, spec]);
     const c = this.getContainer(containerId);
     if (!c.running) throw new RuntimeError("conflict", `Container ${c.id} is not running`);
     const tty = spec.tty !== false;

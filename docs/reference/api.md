@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 99 operations in 15 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 103 operations in 15 groups.
 
 ## Authentication
 
@@ -37,9 +37,10 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `files:read` | `files:read` or `exec` |
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
+| `secret:use` | `secret:use`. Setting, removing or running a box's startup command also needs `exec`. |
 | `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 
-The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` and `secret:use` are token scopes with no operation of their own: `box:ssh` allows the SSH gateway, and `secret:use` allows a create or rebuild that refers to a secret, including the secret of a repository clone.
+The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
 
 ## Requests
 
@@ -134,6 +135,10 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/boxes/{id}/move` | Move a box to another host. Needs `If-Match`. Without `confirm: true` it returns `409 confirmation_required` with a preview |
 | `GET` | `/api/boxes/{id}/logs` | Read the recent log output of a box |
 | `GET` | `/api/boxes/{id}/stats` | Read the current resource usage of a box |
+| `GET` | `/api/boxes/{id}/startup-command` | Read a box's startup command and its status. Needs `secret:use` |
+| `PUT` | `/api/boxes/{id}/startup-command` | Set a box's startup command, as `{ "command", "applyNow" }`. Needs `If-Match`, `exec` and `secret:use` |
+| `DELETE` | `/api/boxes/{id}/startup-command` | Remove a box's startup command. Needs `If-Match`, `exec` and `secret:use` |
+| `POST` | `/api/boxes/{id}/startup-command/run` | Run a box's startup command again now. The box must be running. Needs `exec` and `secret:use` |
 
 ### exec
 

@@ -29,6 +29,7 @@ import {
   reject,
 } from "../lib/validation";
 import type { BoxEnv, BoxMount } from "../specs/types";
+import { STARTUP_COMMAND_MAX_BYTES, startupCommandProblem, startupProblemMessage } from "../startup/command";
 
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
@@ -600,6 +601,52 @@ export const secretValue = () =>
     description:
       "The value to store. It is written to the secret store and is never returned. A box that uses the secret gets the new value when it is next rebuilt.",
   });
+
+const STARTUP_COMMAND_META: Meta = {
+  type: "string",
+  minLength: 1,
+  maxLength: STARTUP_COMMAND_MAX_BYTES,
+  description:
+    "A shell command the box runs at every start, once its container has started: as its user, with bash -lc in /workspace and the box's env, in the minibox-init tmux session. It is stored as typed, up to 4096 bytes. It may hold secrets, so only a credential with the secret:use scope reads it back.",
+};
+
+function checkStartupCommand(key: string, value: unknown): Checked<string> {
+  if (typeof value !== "string") {
+    return value === undefined || value === null
+      ? reject(msg("startup_command_empty"), key)
+      : reject(msg("startup_command_invalid"), key);
+  }
+  const problem = startupCommandProblem(value);
+  return problem ? reject(startupProblemMessage(problem), key) : accept(value);
+}
+
+/** The command a set stores. A missing or empty one is refused. */
+export const startupCommandRequired = () =>
+  field((value) => checkStartupCommand("command", value), STARTUP_COMMAND_META);
+
+/** The command a create may store. Omitted or null creates the box with none. */
+export const startupCommandOption = () =>
+  field(
+    (value) =>
+      value === undefined || value === null ? accept(undefined) : checkStartupCommand("startupCommand", value),
+    STARTUP_COMMAND_META,
+  ).optional();
+
+function checkApplyNow(value: unknown): Checked<boolean> {
+  if (value === undefined || value === null || value === "") return accept(false);
+  if (value === true || value === "true" || value === "1") return accept(true);
+  if (value === false || value === "false" || value === "0") return accept(false);
+  return reject(msg("not_boolean", { field: "applyNow" }), "applyNow");
+}
+
+export const applyNowFlag = () =>
+  field(checkApplyNow, {
+    type: "boolean",
+    description: withDefault(
+      "Run the new command now when the box is running, instead of at its next start. A stopped box is not started.",
+      false,
+    ),
+  }).default(false);
 
 function checkForce(value: unknown): Checked<boolean> {
   if (value === undefined || value === null || value === "") return accept(false);

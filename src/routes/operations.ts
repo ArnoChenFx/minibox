@@ -52,12 +52,15 @@ function inputOf(
   return { ...body, ...query, ...params, ...revision, ...binding.fixed };
 }
 
-/** Single-box responses carry the revision as an entity tag so a client can send it back as If-Match. */
+/**
+ * Single-box responses carry the revision as an entity tag so a client can send it back as If-Match. A startup command
+ * answers with its box's revision at the top level, and gets the same tag.
+ */
 function entityTag(result: unknown): Record<string, string> {
-  if (typeof result !== "object" || result === null || !("box" in result)) return {};
-  const box = result.box;
-  if (typeof box !== "object" || box === null || !("revision" in box)) return {};
-  const revision = box.revision;
+  if (typeof result !== "object" || result === null) return {};
+  const source = "box" in result ? result.box : result;
+  if (typeof source !== "object" || source === null || !("revision" in source)) return {};
+  const revision = source.revision;
   return typeof revision === "number" ? { etag: `"${revision}"` } : {};
 }
 
