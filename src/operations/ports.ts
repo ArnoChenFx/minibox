@@ -36,12 +36,12 @@ export const portList = defineOperation({
     toolset: "network",
     name: "list_ports",
     description:
-      "List TCP ports listening inside a running box (from /proc/net/tcp) plus ports you exposed manually for preview. Each entry includes a path-mode preview URL under /box/<name>/<port>/.",
+      "List TCP ports listening inside a running box (from /proc/net/tcp) plus ports you exposed manually for preview. Each entry's url opens the port in a browser signed in to MiniBox: a path under /box/<name>/<port>/ in path mode, or a sign-in link that redirects to the port's own preview host when PREVIEW_BASE_DOMAIN is set.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
-  run: async ({ host }, input) => {
-    const { ports } = await listBoxPorts(host, input.id);
+  run: async (ctx, input) => {
+    const { ports } = await listBoxPorts(ctx.host, input.id, ctx.previewBaseDomain ?? null);
     return { ports };
   },
 });
@@ -49,7 +49,7 @@ export const portList = defineOperation({
 export const portExpose = defineOperation({
   name: "port.expose",
   tag: "ports",
-  summary: "Remember a port for path-mode preview",
+  summary: "Remember a port for preview",
   kind: "write",
   scope: "port:expose",
   async: false,
@@ -61,14 +61,14 @@ export const portExpose = defineOperation({
     toolset: "network",
     name: "expose_port",
     description:
-      "Add a TCP port to the box's manual preview list. Does not publish a host port. Open the returned url (path /box/<name>/<port>/) while signed in. Automatic discovery still lists listening ports without this call.",
+      "Add a TCP port to the box's manual preview list. Does not publish a host port. Open the returned url in a browser signed in to MiniBox. Automatic discovery still lists listening ports without this call.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "port.expose", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box), detail: (input) => ({ port: input.port }) },
-  run: async ({ host }, input) => {
-    const { port } = await exposeBoxPort(host, input.id, input.port);
+  run: async (ctx, input) => {
+    const { port } = await exposeBoxPort(ctx.host, input.id, input.port, ctx.previewBaseDomain ?? null);
     return { port };
   },
 });

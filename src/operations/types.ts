@@ -67,6 +67,8 @@ export interface OperationContext {
   readonly allHosts?: () => readonly HostCtx[];
   /** Adds, tests and removes hosts. Only the host operations use it. */
   readonly hostAdmin?: HostManager;
+  /** The base domain of subdomain previews, or null in path mode. Port operations build their preview links from it. */
+  readonly previewBaseDomain?: string | null;
   /** Notification channels and their test sends. Only the notify operations use it. */
   readonly notify?: Notifications;
   /** Set on the background run of an async operation, so the handler can log and watch for cancellation. */

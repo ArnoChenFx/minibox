@@ -5,7 +5,7 @@ import { JSON_BODY_MAX_BYTES, limitedBody } from "../lib/http";
 import { msg } from "../lib/messages";
 import type { ActivityPulse } from "../services/activity-pulse";
 import { type Box, hostOfSpecRef, locateBox, wakeIfSleeping } from "../services/boxes";
-import { filterRequestHeaders, filterResponseHeaders } from "./headers";
+import { filterRequestHeaders, filterResponseHeaders, type PreviewIsolation } from "./headers";
 import { type PreviewTarget, parsePreviewPath } from "./path";
 
 export interface PreviewResolve {
@@ -24,13 +24,24 @@ export interface PreviewDeps {
 }
 
 /**
- * Resolves a preview request to a box and its container IP. A box asleep for idle or TTL is woken; a box a person
- * stopped is refused with 409. Does not check auth, the caller does. The box is held awake until `release` is called,
- * so an idle sweep cannot stop it while the response is streaming (#12).
+ * Resolves a path-mode preview request to a box and its container IP. Does not check auth, the caller does.
  */
 export async function resolvePreview(hosts: HostRegistry, url: URL, deps: PreviewDeps): Promise<PreviewResolve> {
   const target = parsePreviewPath(url.pathname, url.search);
   if (!target) throw new AppError(404, "not_found", msg("preview_path_invalid"));
+  return resolveTarget(hosts, target, deps);
+}
+
+/**
+ * Resolves a preview target to a box and its container IP. A box asleep for idle or TTL is woken; a box a person
+ * stopped is refused with 409. The box is held awake until `release` is called, so an idle sweep cannot stop it while
+ * the response is streaming (#12).
+ */
+export async function resolveTarget(
+  hosts: HostRegistry,
+  target: PreviewTarget,
+  deps: PreviewDeps,
+): Promise<PreviewResolve> {
   const named = hostOfSpecRef(hosts, target.ref);
   if (named && named.host.transport !== "local") {
     throw new AppError(501, "unsupported", msg("preview_remote_unsupported"));
@@ -51,12 +62,23 @@ export async function resolvePreview(hosts: HostRegistry, url: URL, deps: Previe
   }
 }
 
+/** The WebSocket address of the box for a preview request, with the same path and query as the request. */
+export function upstreamSocketUrl(resolved: PreviewResolve): string {
+  const { forwardPath } = resolved.target;
+  const path = forwardPath.startsWith("/") ? forwardPath : `/${forwardPath}`;
+  return resolved.upstreamOrigin.replace(/^http/, "ws") + path;
+}
+
 /** Forwards an HTTP (non-upgrade) preview request to the box and returns the filtered response. */
-export async function proxyHttp(req: Request, resolved: PreviewResolve): Promise<Response> {
+export async function proxyHttp(
+  req: Request,
+  resolved: PreviewResolve,
+  isolation: PreviewIsolation = "path",
+): Promise<Response> {
   const { target, upstreamOrigin } = resolved;
   const path = target.forwardPath.startsWith("/") ? target.forwardPath : `/${target.forwardPath}`;
   const upstreamUrl = `${upstreamOrigin}${path}`;
-  const headers = filterRequestHeaders(req.headers, new URL(upstreamOrigin).host);
+  const headers = filterRequestHeaders(req.headers, new URL(upstreamOrigin).host, isolation);
   headers.set("x-forwarded-prefix", target.prefix);
 
   const init: RequestInit = {
@@ -84,7 +106,7 @@ export async function proxyHttp(req: Request, resolved: PreviewResolve): Promise
   return new Response(holdUntilDone(upstream.body, resolved.release), {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: filterResponseHeaders(upstream.headers, target.prefix),
+    headers: filterResponseHeaders(upstream.headers, target.prefix, isolation),
   });
 }
 

@@ -96,19 +96,19 @@ for (const element of document.querySelectorAll("[data-i18n-aria]"))
   translationsEn[element.dataset.i18nAria] ??= element.getAttribute("aria-label");
 const screenshots = {
   overview: {
-    src: "./assets/screenshots/overview-light.png",
+    file: "overview-light.png",
     en: "MiniBox overview with CPU, memory and disk metrics, resource quotas, and running boxes",
     zh: "MiniBox 概览：CPU、内存、磁盘指标、资源配额与运行中的 Box",
   },
   boxes: {
-    src: "./assets/screenshots/boxes-light.png",
+    file: "boxes-light.png",
     en: "MiniBox box list with running status, resource limits, and box actions",
     zh: "MiniBox 的 Box 列表：运行状态、资源限制与管理操作",
   },
   terminal: {
-    src: "./assets/screenshots/terminal-light.png",
-    en: "MiniBox web terminal inside a Docker box",
-    zh: "MiniBox 中连接到 Docker Box 的网页终端",
+    file: "box-terminal-light.png",
+    en: "MiniBox box page with a terminal session that an agent is driving",
+    zh: "MiniBox Box 页面，显示 Agent 正在操作的终端会话",
   },
 };
 
@@ -118,8 +118,9 @@ let toastTimeout;
 
 function updateScreenshot() {
   const screenshot = screenshots[selectedScreenshot];
+  const folder = language === "zh" ? "zh-CN" : "en";
   for (const image of document.querySelectorAll("#product-screenshot, #dialog-screenshot")) {
-    image.src = screenshot.src;
+    image.src = `./assets/screenshots/${folder}/${screenshot.file}`;
     image.alt = screenshot[language];
   }
 }
