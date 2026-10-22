@@ -237,7 +237,7 @@ NAS 维护（重启、升级固件）之前，先停掉使用它的 Box。
 
 写这篇文档的测试中发现：
 
-- 前台的 `exec` 设了 `timeoutSec` 时，即使 `hard` 挂载被冻结，超时后最多 2 秒调用也会返回。若终止仍未完成，调用返回 `status: running` 与 `timedOut: true`。MiniBox 在后台继续尝试终止进程，两次尝试之间依次等待 1、2、4 秒，以此类推，最多 30 秒。终止成功后，exec 记为 `killed`。进程若仍卡在被冻结的挂载上，exec 会一直是 `running`，直到服务器恢复。测试中，卡在被冻结的 `hard` 挂载上的 `cat` 在 `timeoutSec` 为 3 秒时，3.2 秒后被终止，记为 `killed`；位于 `/workspace` 的 exec 在冻结期间于 5 秒时返回 `status: running`，服务器恢复后记为 `killed`。
+- 前台的 `exec` 设了 `timeoutSec` 时，即使 `hard` 挂载被冻结，超时后最多 2 秒调用也会返回。若终止仍未完成，调用返回 `status: running` 与 `timedOut: true`。MiniBox 在后台继续尝试终止进程，两次尝试之间依次等待 1、2、4 秒，以此类推，最多 30 秒。终止结束了进程时，exec 记为 `killed`；命令若先自行结束，则记为 `exited` 并保留它自己的退出码，`timedOut` 仍为 true。进程若仍卡在被冻结的挂载上，exec 会一直是 `running`，直到服务器恢复。测试中，卡在被冻结的 `hard` 挂载上的 `cat` 在 `timeoutSec` 为 3 秒时，3.2 秒后被终止，记为 `killed`；位于 `/workspace` 的 exec 在冻结期间于 5 秒时返回 `status: running`。服务器恢复后，一次测试中它记为 `killed`；另一次测试中它的 `touch` 先完成，记为 `exited`，退出码 0。
 - `timeoutSec` 不限制引擎自己启动 exec 的过程：超时从引擎启动进程之后才开始计算，启动若被阻塞，调用会等待它完成，不会被截断。测试中启动都立即返回，包括位于被冻结挂载上的 `/workspace` 中的 exec。
 - 服务器无应答期间，MiniBox 保留一个探测在等待该池的挂载。之后对该池的探测共用它，不会再另起一个。
 

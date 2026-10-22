@@ -133,6 +133,8 @@ const EXPIRE_RETRY_MAX_MS = 30_000;
  * running with timedOut set, and the stop carries on in the background.
  */
 const STOP_GRACE_MS = 2000;
+/** Exit codes from 128 up are a process ended by a signal, as a kill ends it (137 for SIGKILL). */
+const SIGNAL_EXIT_MIN = 128;
 
 /** Resolves when `done` does or after `ms`, and never leaves the timer running. */
 function settleWithin(done: Promise<void>, ms: number): Promise<void> {
@@ -523,6 +525,8 @@ export class ExecManager implements ExecService {
       });
       throw err;
     }
+    // A stop that finds the exec already recorded as exited leaves that record alone.
+    if (live.settled && !live.killed) return;
     live.killed = true;
     if (live.timer) {
       clearTimeout(live.timer);
@@ -540,8 +544,9 @@ export class ExecManager implements ExecService {
     }
     live.settled = true;
     live.endedAt = Date.now();
-    // A stop asked for before the exec ended counts as a kill, even when the process exits on its own while it runs.
-    if (live.stopping) live.killed = true;
+    // An exec that ends while a stop is running ended by the kill when it reports no exit code or a signal (128 and
+    // up). A normal exit code means the command finished on its own, so it is recorded as exited with that code.
+    if (live.stopping && (live.exitCode === null || live.exitCode >= SIGNAL_EXIT_MIN)) live.killed = true;
     if (live.killed && live.exitCode === null) live.exitCode = 137;
     const durationMs = live.endedAt - live.startedAt;
     const state: Exclude<ExecState, "running"> = live.killed ? "killed" : "exited";

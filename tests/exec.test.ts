@@ -362,7 +362,7 @@ describe("exec", () => {
     });
   });
 
-  test("a process that exits while its timeout's kill is still running is killed, and keeps its exit code", async () => {
+  test("a process that exits on its own while its timeout's kill is still running is recorded as exited", async () => {
     const { app, runtime, ctx } = setup();
     runtime.execScript = null;
     const id = await createBox(app, ctx);
@@ -371,7 +371,28 @@ describe("exec", () => {
     await Bun.sleep(1500);
     runtime.execs.at(-1)?.exit(0);
 
-    expect(await pending).toMatchObject({ status: "killed", exitCode: 0, timedOut: true });
+    const result = (await pending) as { execId: string };
+    expect(result).toMatchObject({ status: "exited", exitCode: 0, timedOut: true });
+    gate.release();
+    await Bun.sleep(50);
+    // The stop that finishes later finds the exec ended, and does not turn the record into a kill.
+    expect(await app.operations.run("exec.get", ctx, { execId: result.execId })).toMatchObject({
+      status: "exited",
+      exitCode: 0,
+      timedOut: true,
+    });
+  });
+
+  test("an exec that ends with a signal while its timeout's kill is still running is recorded as killed", async () => {
+    const { app, runtime, ctx } = setup();
+    runtime.execScript = null;
+    const id = await createBox(app, ctx);
+    const gate = runtime.holdExecKill();
+    const pending = app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 });
+    await Bun.sleep(1500);
+    runtime.execs.at(-1)?.exit(137);
+
+    expect(await pending).toMatchObject({ status: "killed", exitCode: 137, timedOut: true });
     gate.release();
   });
 
