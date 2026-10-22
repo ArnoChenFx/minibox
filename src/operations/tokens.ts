@@ -4,7 +4,7 @@ import { notFound, toAppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { accept, type Checked, NAME_RE, reject } from "../lib/validation";
-import { deleteBox } from "../services/boxes";
+import { deleteBoxToTrash } from "../services/trash";
 import {
   type BoxScope,
   compileToken,
@@ -420,7 +420,8 @@ export const tokenRevoke = defineOperation({
     id: z.string().meta({ description: "Token id (tok_…), not the secret." }),
     deleteCreated: field(checkDeleteCreated, {
       type: "boolean",
-      description: "Also delete boxes this token created, including their workspace volumes.",
+      description:
+        "Also delete boxes this token created, including their workspace volumes. Their data is kept in the recycle bin for the retention period.",
     }).default(false),
   }),
   output: z.object({
@@ -437,7 +438,7 @@ export const tokenRevoke = defineOperation({
     target: ({ id }, _resolved, result) => ({ kind: "token", id, name: result?.token.name ?? id }),
     detail: (input) => ({ id: input.id, deleteCreated: input.deleteCreated }),
   },
-  run: async ({ host, allHosts, tokens }, input) => {
+  run: async ({ host, allHosts, tokens, principal, record }, input) => {
     const token = tokens.revoke(input.id);
     if (!token) throw notFound(msg("token_not_found"));
     const deletedBoxes: string[] = [];
@@ -449,7 +450,11 @@ export const tokenRevoke = defineOperation({
           .filter((spec) => spec.createdBy === input.id && spec.hostId === target.host.id);
         for (const spec of specs) {
           try {
-            const removed = await deleteBox(target, spec.id, true);
+            const removed = await deleteBoxToTrash(target, spec.id, true, {
+              skipTrash: false,
+              createdBy: principal.id,
+              record,
+            });
             deletedBoxes.push(removed.name);
           } catch (error) {
             const message = toAppError(error).message;

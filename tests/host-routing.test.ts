@@ -37,6 +37,14 @@ async function errorOf(res: Response): Promise<ErrorBody> {
   return ((await res.json()) as { error: ErrorBody }).error;
 }
 
+async function waitForTask(taskId: string): Promise<string> {
+  for (;;) {
+    const view = (await (await api(`/api/tasks/${taskId}`)).json()) as { status: string };
+    if (view.status !== "running") return view.status;
+    await Bun.sleep(5);
+  }
+}
+
 async function boxOn(host: string | undefined, name: string, extra: Record<string, unknown> = {}) {
   const res = await post("/api/boxes", { name, cpus: 1, memoryMb: 256, host, ...extra });
   expect(res.status).toBe(201);
@@ -188,6 +196,18 @@ describe("a host that still holds boxes cannot be removed", () => {
     expect(app.hosts.has("edge")).toBe(true);
 
     expect((await api(`/api/boxes/${box.boxId}`, { method: "DELETE" })).status).toBe(200);
+    const kept = await api("/api/hosts/edge", { method: "DELETE" });
+    expect(kept.status).toBe(409);
+    expect(await errorOf(kept)).toMatchObject({
+      key: "host_in_use",
+      details: { boxes: 0, volumes: 0, checkpoints: 1, total: 1 },
+    });
+
+    const entries = (await (await api("/api/trash")).json()) as { trash: { id: string }[] };
+    const purge = await api(`/api/trash/${entries.trash[0]?.id ?? ""}`, { method: "DELETE" });
+    expect(purge.status).toBe(202);
+    expect(await waitForTask(((await purge.json()) as { taskId: string }).taskId)).toBe("succeeded");
+
     const removed = await api("/api/hosts/edge", { method: "DELETE" });
     expect(removed.status).toBe(200);
     expect(app.hosts.has("edge")).toBe(false);

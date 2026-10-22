@@ -157,6 +157,9 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "checkpoint.schedule.get": (id) => ({ id }),
   "checkpoint.schedule.set": (id) => ({ id, everyHours: 6 }),
   "checkpoint.schedule.clear": (id) => ({ id }),
+  "trash.list": () => ({}),
+  "trash.restore": () => ({ id: CHECKPOINT_PLACEHOLDER, name: "restored" }),
+  "trash.purge": () => ({ id: CHECKPOINT_PLACEHOLDER }),
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.save": (id) => ({ id, name: "silver" }),
@@ -197,6 +200,20 @@ const CHECKPOINT_OPERATIONS_ON_AN_EXISTING = [
   "checkpoint.export",
   "box.rollback",
 ];
+
+/** Deletes a box of its own, so its data is kept in the recycle bin, and returns that entry's id. */
+async function trashedBoxOf(app: App, ctx: OperationContext): Promise<string> {
+  const { box } = (await app.operations.run("box.create", ctx, { name: "doomed", cpus: 1, memoryMb: 256 })) as {
+    box: { id: string };
+  };
+  await app.operations.run("box.delete", ctx, { id: box.id, deleteVolume: true });
+  const { trash } = (await app.operations.run("trash.list", ctx, {})) as {
+    trash: { id: string; sourceName: string }[];
+  };
+  const entry = trash.find((item) => item.sourceName === "doomed");
+  if (!entry) throw new Error("the sample box was not kept in the recycle bin");
+  return entry.id;
+}
 
 /** Operations that act on a rollback waiting for its confirm or undo, so `preparedInput` rolls a box back first. */
 const ROLLBACK_OPERATIONS_ON_A_PENDING = ["box.rollback.get", "box.rollback.confirm", "box.rollback.undo"];
@@ -302,6 +319,10 @@ async function preparedInput(
   if (operation.name === "checkpoint.import") {
     const id = await packageOfCheckpoint(app, ctx, boxId);
     return { input: { id, passphrase: PASSPHRASE } };
+  }
+  if (operation.name === "trash.restore" || operation.name === "trash.purge") {
+    const id = await trashedBoxOf(app, ctx);
+    return { input: operation.name === "trash.purge" ? { id } : { id, name: "restored" } };
   }
   if (CHECKPOINT_OPERATIONS_ON_AN_EXISTING.includes(operation.name)) {
     const checkpoint = await takeCheckpointOf(app, ctx, boxId);
@@ -725,6 +746,7 @@ describe("executor", () => {
       name: "alpha",
       volumeDeleted: false,
       volumeError: "device busy",
+      trash: { id: expect.any(String), expiresAt: expect.any(String) },
     });
     expect(runtime.containers.size).toBe(0);
   });
@@ -993,9 +1015,12 @@ describe("projections", () => {
       "get_volume",
       "import_checkpoint",
       "list_pools",
+      "list_trash",
       "list_volumes",
       "measure_volume",
+      "purge_trash",
       "replace_pools",
+      "restore_trash",
       "set_checkpoint_schedule",
       "set_volume_limits",
     ]);

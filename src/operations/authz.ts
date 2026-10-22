@@ -46,6 +46,12 @@ export async function assertCanWrite(ctx: OperationContext, volume?: VolumeRef):
   throw new AuthorizationDenied(error);
 }
 
+/** A delete that skips the recycle bin keeps no copy, so a token needs `trash:skip` to ask for one. The owner always may. */
+export async function assertCanSkipTrash(ctx: OperationContext): Promise<void> {
+  if (await allowed(ctx, "trash:skip")) return;
+  throw new AuthorizationDenied(new AppError(403, "forbidden", msg("trash_skip_forbidden")));
+}
+
 /** Replacing storage pools changes where every new volume goes, so only an administrator may do it. */
 export async function assertCanAdministerPools(ctx: OperationContext): Promise<void> {
   if (await allowed(ctx, "pool:admin")) return;

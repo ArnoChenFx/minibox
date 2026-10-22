@@ -17,6 +17,7 @@ import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
 import { tokenOperations } from "./tokens";
 import { toolOperations } from "./tools";
+import { trashOperations } from "./trash";
 import type { Operation } from "./types";
 import { volumeOperations } from "./volumes";
 
@@ -34,6 +35,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...snapshotOperations,
   ...checkpointOperations,
   ...checkpointPackageOperations,
+  ...trashOperations,
   ...templateOperations,
   ...imageOperations,
   ...taskOperations,
