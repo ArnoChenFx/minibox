@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -278,6 +278,23 @@ describe("exporting a checkpoint", () => {
     expect(packagesOf(harness).list()).toEqual([]);
     expect(harness.app.hosts.get().checkpoints.exporting.size).toBe(0);
     expect((await call(harness.base, `/api/checkpoints/${checkpoint.id}`)).status).toBe(200);
+  });
+
+  test("an export runs on the host its checkpoint was taken on, not on the local host", async () => {
+    const harness = open();
+    const local = harness.app.hosts.get();
+    harness.app.hosts.add({ ...local, host: { ...local.host, id: "lab", name: "Lab" } });
+    const boxId = await makeBox(harness, "alpha");
+    const checkpoint = await take(harness, boxId);
+    const record = local.checkpoints.read(checkpoint.id);
+    if (!record) throw new Error("the checkpoint has no record");
+    local.checkpoints.write({ ...record, hostId: "lab" });
+    const pack = spyOn(local.checkpointEngine, "pack");
+
+    const pkg = await exportOf(harness, checkpoint.id);
+
+    expect(pkg.checkpointId).toBe(checkpoint.id);
+    expect(pack.mock.calls.map(([host]) => host.host.id)).toEqual(["lab"]);
   });
 
   test("only the owner exports: an admin token that holds every checkpoint scope is refused with operation_forbidden", async () => {
