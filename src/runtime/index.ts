@@ -127,6 +127,8 @@ export interface ImageSummary {
 
 export interface ImageDetails {
   id: string;
+  /** The `repo:tag` references the engine holds for the image. A dangling image has none. */
+  tags: string[];
   labels: Record<string, string>;
   /** The image's own `NAME=value` entries, as the engine reports them in the image configuration. */
   env: string[];

@@ -1233,7 +1233,7 @@ export class FakeRuntime implements Runtime {
   async inspectImage(ref: string): Promise<ImageDetails> {
     this.enter("inspectImage", [ref]);
     const img = this.getImage(ref);
-    return { id: img.id, labels: { ...img.labels }, env: [...img.env] };
+    return { id: img.id, tags: [...img.tags], labels: { ...img.labels }, env: [...img.env] };
   }
 
   /** Any reference the registry is assumed to have. A test that needs a missing registry image fails the pull with `fail`. */
@@ -1268,12 +1268,14 @@ export class FakeRuntime implements Runtime {
       createdAt: img.createdAt,
       size: img.size,
     };
+    await this.gate("saveImage", [ref]);
     return Readable.from([Buffer.from(JSON.stringify(archive))]);
   }
 
   async loadImage(archive: Readable): Promise<void> {
     this.enter("loadImage", [archive]);
     const loaded = JSON.parse((await collect(archive)).toString("utf8")) as FakeImageArchive;
+    await this.gate("loadImage", [archive]);
     const image = this.images.get(loaded.id) ?? {
       id: loaded.id,
       tags: [],

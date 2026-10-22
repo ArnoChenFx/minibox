@@ -942,7 +942,12 @@ export function createDockerRuntime(target: string | EngineTarget): Runtime {
 
     async inspectImage(ref) {
       const info = await call(() => docker.getImage(ref).inspect());
-      return { id: info.Id, labels: info.Config?.Labels ?? {}, env: info.Config?.Env ?? [] };
+      return {
+        id: info.Id,
+        tags: (info.RepoTags ?? []).filter((tag) => tag !== "<none>:<none>"),
+        labels: info.Config?.Labels ?? {},
+        env: info.Config?.Env ?? [],
+      };
     },
 
     async pullImage(ref) {
