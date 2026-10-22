@@ -18,6 +18,7 @@
     "fmt:check": "oxfmt --check",
     "test": "bun test",
     "test:docker": "bun scripts/docker-integration.ts",
+    "screenshots": "bun scripts/screenshots.ts",
     "check": "bun run fmt:check && bun run lint && bun run typecheck && bun test",
     "openapi": "bun scripts/export-openapi.ts",
     "build:cli": "bun build --compile --outfile dist/minibox src/cli.ts",
