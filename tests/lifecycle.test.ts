@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
+import type { AuditNote } from "../src/events/types";
 import type { HostCtx } from "../src/host/registry";
 import * as boxes from "../src/services/boxes";
 import { effectiveIdleSec, LifecycleWatcher } from "../src/services/lifecycle";
@@ -208,5 +209,100 @@ describe("LifecycleWatcher", () => {
     expect(report.slept).not.toContain(box.boxId);
     expect((await boxes.getBox(host, box.boxId)).running).toBe(true);
     expect((await boxes.getBox(host, box.boxId)).sleeping).toBe(false);
+  });
+});
+
+describe("warnings ahead of a TTL end or an idle sleep", () => {
+  const MINUTE = 60_000;
+
+  function watcherAt(clock: () => number, notes: AuditNote[]): LifecycleWatcher {
+    return new LifecycleWatcher({
+      hosts: app.hosts,
+      pulse: app.pulse,
+      terminals: app.terminals,
+      execs: app.execs,
+      tasks: app.tasks,
+      cfg: app.cfg,
+      record: (_hostId, _source, _principal, note) => notes.push(note),
+      now: clock,
+    });
+  }
+
+  test("a running box gets one TTL warning, five minutes before its end, and no more", async () => {
+    const box = await newBox("ttl-warn", { ttlSec: 600, idleTimeoutSec: 0 });
+    const spec = host.specs.read(box.boxId)!;
+    const ends = Date.parse(spec.createdAt) + 600_000;
+    const notes: AuditNote[] = [];
+    let clock = ends - 6 * MINUTE;
+    const watcher = watcherAt(() => clock, notes);
+
+    await watcher.tick();
+    expect(notes).toEqual([]);
+
+    clock = ends - 4 * MINUTE;
+    await watcher.tick();
+    clock = ends - 3 * MINUTE;
+    await watcher.tick();
+    expect(notes).toEqual([
+      expect.objectContaining({
+        op: "box.ttl_soon",
+        kind: "write",
+        status: "ok",
+        target: { kind: "box", id: spec.containerId, name: "ttl-warn" },
+        detail: { boxId: box.boxId, deadline: new Date(ends).toISOString() },
+      }),
+    ]);
+
+    clock = ends + 1;
+    const report = await watcher.tick();
+    expect(report.expired).toContain(box.boxId);
+    expect(notes.map((note) => note.op)).toEqual(["box.ttl_soon", "box.ttl_expire"]);
+  });
+
+  test("a box that is already stopped gets no TTL warning", async () => {
+    const box = await newBox("ttl-stopped", { ttlSec: 600, idleTimeoutSec: 0 });
+    await boxes.stopBox(host, box.boxId, "manual");
+    const ends = Date.parse(host.specs.read(box.boxId)!.createdAt) + 600_000;
+    const notes: AuditNote[] = [];
+
+    await watcherAt(() => ends - 2 * MINUTE, notes).tick();
+    expect(notes).toEqual([]);
+  });
+
+  test("a quiet box is warned before it sleeps, once per idle deadline, and not while something holds it", async () => {
+    const box = await newBox("idle-warn", { idleTimeoutSec: 600, ttlSec: null });
+    const heartbeat = Date.now();
+    app.pulse.touch(box.boxId, "create", heartbeat);
+    const deadline = heartbeat + 600_000;
+    const notes: AuditNote[] = [];
+    let clock = deadline - 4 * MINUTE;
+    const watcher = watcherAt(() => clock, notes);
+
+    const release = app.pulse.hold(box.boxId, { quiet: true });
+    await watcher.tick();
+    expect(notes).toEqual([]);
+    release();
+
+    await watcher.tick();
+    await watcher.tick();
+    expect(notes.map((note) => note.op)).toEqual(["box.idle_soon"]);
+    expect(notes[0]?.detail).toEqual({ boxId: box.boxId, deadline: new Date(deadline).toISOString() });
+
+    const renewed = clock;
+    app.pulse.touch(box.boxId, "terminal", renewed);
+    clock = renewed + 600_000 - 4 * MINUTE;
+    await watcher.tick();
+    expect(notes.map((note) => note.op)).toEqual(["box.idle_soon", "box.idle_soon"]);
+  });
+
+  test("a quiet box far from its idle deadline is not warned", async () => {
+    const box = await newBox("idle-far", { idleTimeoutSec: 600, ttlSec: null });
+    const heartbeat = Date.now();
+    app.pulse.touch(box.boxId, "create", heartbeat);
+    const notes: AuditNote[] = [];
+
+    const report = await watcherAt(() => heartbeat + MINUTE, notes).tick();
+    expect(notes).toEqual([]);
+    expect(report.slept).toEqual([]);
   });
 });
