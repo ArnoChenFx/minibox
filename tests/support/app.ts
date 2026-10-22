@@ -63,6 +63,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     hostOvercommit: 1,
     previewBaseDomain: null,
     notifyAllowPrivate: false,
+    volumeUsageIntervalSec: 600,
+    hostDiskMinFreePercent: 10,
     ...overrides,
   };
 }

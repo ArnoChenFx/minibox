@@ -10,6 +10,7 @@ import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { mountStartupCard } from "../components/startup-card.js";
 import { openTasks } from "../components/tasks.js";
 import { mountTerminal } from "../components/terminal-panel.js";
+import { usageInlineHtml } from "../components/volume-usage.js";
 import { api, enc } from "../lib/api.js";
 import { applySamples } from "../lib/box-state.js";
 import { copyText, delegate, esc } from "../lib/dom.js";
@@ -315,7 +316,7 @@ const ROLE_LABEL = {
   cache: "vol.roleCache",
 };
 
-function mountsCard(box) {
+function mountsCard(box, volumes) {
   const rows = (box.mounts ?? [])
     .map((mount) => {
       const detach = mount.volumeId
@@ -327,6 +328,7 @@ function mountsCard(box) {
         <td>${mount.role ? esc(t(ROLE_LABEL[mount.role])) : "—"}</td>
         <td>${esc(mount.mode)}</td>
         <td>${esc(mount.pool || "—")}</td>
+        <td>${usageInlineHtml(volumes.get(mount.volumeId))}</td>
         <td>${detach}</td>
       </tr>`;
     })
@@ -335,7 +337,7 @@ function mountsCard(box) {
     <button class="btn btn-sm" data-action="attach-volume">${icon("plus")}${t("vol.attach")}</button></div>
     <div class="table-wrap">${
       rows
-        ? `<table class="table"><thead><tr><th>${t("vol.colPath")}</th><th>${t("vol.choose")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colMode")}</th><th>${t("vol.colPool")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        ? `<table class="table"><thead><tr><th>${t("vol.colPath")}</th><th>${t("vol.choose")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colMode")}</th><th>${t("vol.colPool")}</th><th>${t("vol.colBytes")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : `<div class="card-body"><p class="subtle">${t("vol.noMounts")}</p></div>`
     }</div>
     <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;
@@ -565,6 +567,8 @@ const TAB_RENDER = {
     root.innerHTML = `<div id="ovMain"></div><div id="ovEnv"></div><div id="ovStartup"></div><div id="ovMounts"></div>`;
     const env = mountEnvCard(root.querySelector("#ovEnv"), { box });
     const startup = mountStartupCard(root.querySelector("#ovStartup"), { box });
+    let volumes = new Map();
+    let open = true;
     const draw = () => {
       const b = box();
       const s = b.stats;
@@ -601,15 +605,23 @@ const TAB_RENDER = {
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
           <dt>${t("bd.cli")}</dt><dd><code>docker exec -it ${esc(b.containerName || `minibox-${b.name}`)} bash</code></dd>
         </dl></div></div>`;
-      root.querySelector("#ovMounts").innerHTML = mountsCard(b);
+      root.querySelector("#ovMounts").innerHTML = mountsCard(b, volumes);
     };
     draw();
+    api("/api/volumes")
+      .then(({ volumes: listed }) => {
+        if (!open) return;
+        volumes = new Map(listed.map((volume) => [volume.id, volume]));
+        draw();
+      })
+      .catch(() => undefined);
     const off = onChange(() => {
       draw();
       env.onBoxChange();
       startup.onBoxChange();
     });
     return () => {
+      open = false;
       off();
       env.dispose();
       startup.dispose();

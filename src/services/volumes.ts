@@ -2,15 +2,27 @@ import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
-import { RuntimeError } from "../runtime";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, MountMode } from "../specs/types";
-import { assertVolumesPresent, claimEngineVolumes } from "../volumes/engine";
+import { claimEngineVolumes } from "../volumes/engine";
 import { probePools } from "../volumes/health";
+import { type LimitPatch, mergeLimits, usageLevel } from "../volumes/limits";
 import { validMountPath } from "../volumes/mounts";
 import { normalizePools, type PoolDraft, type RoleDraft } from "../volumes/pools";
 import { createIndependentVolume, planIndependentVolume, removeEngine } from "../volumes/provision";
-import type { PoolBackend, PoolHealth, PoolsFile, RolePools, VolumeRecord, VolumeRole } from "../volumes/types";
+import type {
+  PoolBackend,
+  PoolHealth,
+  PoolsFile,
+  RolePools,
+  UsageLevel,
+  UsagePoint,
+  UsageScope,
+  VolumeLimits,
+  VolumeRecord,
+  VolumeRole,
+} from "../volumes/types";
+import { recordSample, sampleWithin } from "../volumes/usage";
 import { type Box, getBox, readSpec } from "./boxes";
 import { rebuildBox } from "./rebuild";
 import type { RecordNote } from "./volume-owner";
@@ -20,6 +32,16 @@ export interface VolumeMountView {
   boxName: string;
   path: string;
   mode: MountMode;
+}
+
+/** The usage a volume view shows. The trend is what this process has sampled, so it starts empty after a restart. */
+export interface VolumeUsageView {
+  /** `share` for an NFS volume, whose figure is the usage of the whole share rather than of the volume. */
+  scope: UsageScope;
+  level: UsageLevel;
+  history: UsagePoint[];
+  /** Why the last sample failed, or null when it worked or none has run yet. */
+  lastError: string | null;
 }
 
 export interface VolumeView {
@@ -36,6 +58,8 @@ export interface VolumeView {
   engineName: string;
   bytes: number | null;
   bytesAt: string | null;
+  limits: VolumeLimits;
+  usage: VolumeUsageView;
   createdAt: string;
   mounts: VolumeMountView[];
   unattached: boolean;
@@ -67,15 +91,28 @@ function mountsOf(host: HostCtx, volume: VolumeRecord): VolumeMountView[] {
   return mounts;
 }
 
+function usageOf(host: HostCtx, volume: VolumeRecord, backend: PoolBackend): VolumeUsageView {
+  const memory = host.volumes.usageMemory(volume.id);
+  const lastKnown: UsagePoint[] =
+    volume.bytes !== null && volume.bytesAt ? [{ at: volume.bytesAt, bytes: volume.bytes }] : [];
+  return {
+    scope: backend === "nfs" ? "share" : "volume",
+    level: usageLevel(volume.bytes, volume.limits),
+    history: memory.points.length > 0 ? [...memory.points] : lastKnown,
+    lastError: memory.lastError,
+  };
+}
+
 function viewOf(host: HostCtx, volume: VolumeRecord): VolumeView {
   const mounts = mountsOf(host, volume);
   const pool = host.volumes.readPools().pools.find((item) => item.name === volume.pool);
+  const backend = pool?.backend ?? "local";
   return {
     id: volume.id,
     name: volume.name,
     hostId: volume.hostId,
     pool: volume.pool,
-    backend: pool?.backend ?? "local",
+    backend,
     role: volume.role,
     ownership: volume.ownership,
     ownerBoxId: volume.ownerBoxId,
@@ -84,6 +121,8 @@ function viewOf(host: HostCtx, volume: VolumeRecord): VolumeView {
     engineName: volume.engineName,
     bytes: volume.bytes,
     bytesAt: volume.bytesAt,
+    limits: volume.limits,
+    usage: usageOf(host, volume, backend),
     createdAt: volume.createdAt,
     mounts,
     unattached: mounts.length === 0,
@@ -268,40 +307,28 @@ async function applyMounts(
   return rebuildBox(host, boxId, revision, { mounts }, confirm, record);
 }
 
+/** Measures a volume now, the same sample the periodic sampler takes. A failed measurement is thrown after it is recorded. */
 export async function measureVolume(host: HostCtx, ref: string): Promise<VolumeView> {
   const volume = requireVolume(host, ref);
-  await assertVolumesPresent(host, [volume.engineName]);
-  let image: string;
-  try {
-    await host.runtime.inspectImage(host.baseTemplateTag);
-    image = host.baseTemplateTag;
-  } catch (e) {
-    if (e instanceof RuntimeError && e.kind === "not_found") {
-      throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
-    }
-    throw e;
-  }
-  const result = await host.runtime.runHelper({
-    image,
-    user: "0:0",
-    capAdd: ["DAC_READ_SEARCH"],
-    cmd: ["du", "-sb", "/mnt"],
-    mounts: [{ source: volume.engineName, target: "/mnt" }],
-    timeoutSec: 120,
-    labels: { [host.keys.internal]: "true" },
-  });
-  if (result.exitCode !== 0) {
-    throw badRequest(
-      msg("volume_prepare_failed", { detail: result.logs.trim().slice(0, 400) || String(result.exitCode) }),
-    );
-  }
-  const bytes = Number(result.logs.trim().split(/\s+/)[0]);
-  const now = new Date().toISOString();
+  const sample = await sampleWithin(host, volume);
+  const next = recordSample(host, volume.id, sample);
+  if (!sample.ok) throw sample.error instanceof Error ? sample.error : new Error(sample.message);
+  if (!next) throw notFound(msg("volume_not_found", { volume: ref }));
+  return viewOf(host, next);
+}
+
+/**
+ * Sets a volume's usage limits. A field left out keeps its value and null clears one. An NFS volume is refused, since
+ * its usage is the whole share's: a quota belongs on the NAS export.
+ */
+export function setVolumeLimits(host: HostCtx, ref: string, patch: LimitPatch): VolumeView {
+  const volume = requireVolume(host, ref);
+  const pool = host.volumes.readPools().pools.find((item) => item.name === volume.pool);
+  if (pool?.backend === "nfs") throw badRequest(msg("volume_limit_nfs", { volume: volume.name }));
   const next: VolumeRecord = {
     ...volume,
-    bytes: Number.isFinite(bytes) ? bytes : null,
-    bytesAt: now,
-    updatedAt: now,
+    limits: mergeLimits(volume.limits, patch),
+    updatedAt: new Date().toISOString(),
   };
   host.volumes.write(next);
   return viewOf(host, next);

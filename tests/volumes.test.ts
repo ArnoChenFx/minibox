@@ -222,6 +222,7 @@ describe("volumes and storage pools", () => {
     const pools = await getPools(host, { force: true });
     expect(pools.health.find((item) => item.pool === "local")).toMatchObject({ status: "reachable", lowSpace: true });
 
+    runtime.disk = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
     await newBox("alpha");
     const record = host.volumes.list().find((volume) => volume.role === "workspace");
     expect(record).toBeTruthy();

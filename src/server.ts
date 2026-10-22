@@ -360,6 +360,7 @@ async function boot(): Promise<void> {
   app.checkpointScheduler.start();
   app.containers.start();
   app.lifecycle.start();
+  app.volumeUsage.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
 
@@ -377,6 +378,7 @@ async function boot(): Promise<void> {
     app.checkpointScheduler.stop();
     app.containers.stop();
     app.lifecycle.stop();
+    app.volumeUsage.stop();
     app.notify.stop();
     app.throttle.stop();
     app.sessions.stop();

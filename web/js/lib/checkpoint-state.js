@@ -20,6 +20,7 @@ export const SKIP_REASON_KEYS = Object.freeze({
   sleeping: "ck.skip.sleeping",
   stopped: "ck.skip.stopped",
   capacity: "ck.skip.capacity",
+  disk: "ck.skip.disk",
   gone: "ck.skip.gone",
 });
 
