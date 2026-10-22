@@ -44,19 +44,31 @@ export interface FakeEngine {
   stop(): void;
 }
 
+export interface TlsFakeEngine {
+  readonly port: number;
+  /** Every request answered so far, as `METHOD /path`. */
+  readonly requests: string[];
+  stop(): void;
+}
+
+interface Routes {
+  readonly requests: string[];
+  readonly fetch: (req: Request) => Response;
+  close(): void;
+}
+
 /**
- * A Docker Engine API that answers the calls a host check and its periodic probe make: ping, version, info, an empty
- * container list and an event stream that stays open. Anything else is a 404, so a test sees a call it did not expect.
+ * The Docker Engine API calls a host check and its periodic probe make: ping, version, info, an empty container list and
+ * an event stream that stays open. Anything else is a 404, so a test sees a call it did not expect.
  */
-export function startFakeEngine(dir: string, options: FakeEngineOptions = {}): FakeEngine {
-  const socketPath = join(dir, "engine.sock");
+function engineRoutes(options: FakeEngineOptions): Routes {
   const requests: string[] = [];
   const cpus = options.cpus ?? 4;
   const memoryBytes = options.memoryBytes ?? 8 * 1024 ** 3;
   const version = options.version ?? "27.0.0-fake";
   const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-  const server = Bun.serve({
-    unix: socketPath,
+  return {
+    requests,
     fetch(req) {
       const { pathname } = new URL(req.url);
       requests.push(`${req.method} ${pathname}`);
@@ -83,7 +95,6 @@ export function startFakeEngine(dir: string, options: FakeEngineOptions = {}): F
               start(controller) {
                 streams.add(controller);
               },
-              cancel() {},
             }),
             { headers: { "content-type": "application/json" } },
           );
@@ -91,13 +102,48 @@ export function startFakeEngine(dir: string, options: FakeEngineOptions = {}): F
           return Response.json({ message: `no route for ${req.method} ${pathname}` }, { status: 404 });
       }
     },
-  });
-  return {
-    socketPath,
-    requests,
-    stop() {
+    close() {
       for (const controller of streams) controller.close();
       streams.clear();
+    },
+  };
+}
+
+/** A Docker Engine API on a Unix socket in `dir`, for a host reached over SSH or a socket path. */
+export function startFakeEngine(dir: string, options: FakeEngineOptions = {}): FakeEngine {
+  const socketPath = join(dir, "engine.sock");
+  const routes = engineRoutes(options);
+  const server = Bun.serve({ unix: socketPath, fetch: routes.fetch });
+  return {
+    socketPath,
+    requests: routes.requests,
+    stop() {
+      routes.close();
+      server.stop(true);
+    },
+  };
+}
+
+/**
+ * A Docker Engine API on 127.0.0.1 over TLS. It requires a client certificate signed by the CA it is given, as an engine
+ * set up for mutual TLS does.
+ */
+export function startTlsFakeEngine(
+  pki: { readonly ca: string; readonly cert: string; readonly key: string },
+  options: FakeEngineOptions = {},
+): TlsFakeEngine {
+  const routes = engineRoutes(options);
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: routes.fetch,
+    tls: { cert: pki.cert, key: pki.key, ca: pki.ca, requestCert: true, rejectUnauthorized: true },
+  });
+  return {
+    port: server.port ?? 0,
+    requests: routes.requests,
+    stop() {
+      routes.close();
       server.stop(true);
     },
   };
