@@ -38,6 +38,7 @@ export default {
     "这次变更会重建 Box，尚未应用。请在相同请求中带上 confirm 为 true 以应用预览。卷、稳定 ID 和名称会保留。可写层、运行中的进程和容器 IP 会丢失。",
   "err.rebuild_start_failed": "新容器没有启动。已恢复之前的容器和规格。",
   "err.rebuild_name_conflict": "重建时 {name} 仍被占用。请先移除该容器再试。",
+  "err.rebuild_failed_safety_kept": "重建失败，且无法把 Box 原样恢复。安全检查点 {id} 已保留，可据此恢复该 Box。",
   "err.pids_range": "进程数上限须为 {min} 到 {max} 之间的整数。",
   "err.idle_timeout_invalid": "空闲超时须为 0 到 {max} 的整数秒（0 表示永不休眠），或用 null 继承全局默认。",
   "err.ttl_invalid": "TTL 须为不超过 {max} 的正整数秒，或用 null 清除。",
@@ -155,9 +156,16 @@ export default {
   "err.checkpoint_exporting": "检查点 {id} 正在导出。导出完成后才能删除。",
   "err.checkpoint_export_legacy": "快照 {id} 早于检查点功能创建，没有可导出的数据。",
   "err.checkpoint_export_empty": "检查点 {id} 没有卷数据，无需导出。",
+  "err.checkpoint_export_no_box": "检查点 {id} 没有所属的 Box，无法生成包来描述它。",
+  "err.checkpoint_no_spec": "检查点 {id} 没有记录 Box 的设置，无法据此创建 Box。",
   "err.checkpoint_export_system":
     "检查点 {id} 包含系统层，而包目前不携带系统层。请先创建一个不含系统层的检查点，再导出它。",
   "err.checkpoint_import_exists": "本实例已存在检查点 {id}，因此没有导入该包。请先删除现有检查点，或保留它。",
+  "err.trash_not_found": "找不到回收站条目 {id}。",
+  "err.trash_capacity_exceeded":
+    "保留这份数据到回收站需要 {need} MB，但检查点仓库已用 {used} MB，上限为 {limit} MB，清空回收站也没能腾出足够空间。请删除部分检查点，或不保留副本直接删除。",
+  "err.trash_skip_forbidden":
+    "当前凭据不能在不保留副本的情况下删除。请向所有者申请 trash:skip 权限，或去掉 skipTrash 后再删除。",
   "err.package_invalid": "这不是有效的 MiniBox 检查点包：{reason}",
   "err.package_passphrase_wrong": "口令无法打开此包。",
   "err.package_passphrase_invalid": "口令长度须为 12 到 1024 个字符，不能以空格开头或结尾，也不能包含换行。",
