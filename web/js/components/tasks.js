@@ -6,7 +6,7 @@ import { has, t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { isLive, onLiveState, subscribe } from "../lib/live.js";
 import { invalidateTemplates } from "../lib/store.js";
-import { splitTaskLog } from "../lib/task-log.js";
+import { capLog, splitTaskLog } from "../lib/task-log.js";
 import { subjectOf } from "../lib/task-subject.js";
 import { toastError } from "../lib/ui.js";
 
@@ -15,6 +15,8 @@ const TICK_MS = 1000;
 /** Within this many pixels of the bottom, the log counts as followed. */
 const FOLLOW_SLACK_PX = 24;
 const COPY_FEEDBACK_MS = 1500;
+/** The most log text kept while streaming. The server keeps 64 KiB, so this leaves room without growing forever. */
+const LOG_MAX_CHARS = 128 * 1024;
 
 const BADGE = {
   running: "badge-accent",
@@ -280,7 +282,7 @@ function listen(task) {
       return;
     }
     if (data.kind === "log" && data.text) {
-      logText += data.text;
+      logText = capLog(logText + data.text, LOG_MAX_CHARS);
       queueOutput();
     }
     if (data.kind === "status") void refresh();

@@ -18,3 +18,18 @@ export function splitTaskLog(text) {
   });
   return { commands, output: kept.join("\n") };
 }
+
+/** The marker the server puts in front of a log it has trimmed. */
+export const LOG_OMITTED = "… earlier output omitted …\n";
+
+/**
+ * Keeps at most `max` characters from the end of a streamed log, so a long build does not grow the panel's text, and
+ * the cost of re-rendering it, without bound. The cut moves to the next line break, and the result starts with the
+ * marker the server uses when it trims.
+ */
+export function capLog(text, max) {
+  if (text.length <= max) return text;
+  const tail = text.slice(text.length - max);
+  const cut = tail.indexOf("\n");
+  return LOG_OMITTED + (cut === -1 ? tail : tail.slice(cut + 1));
+}

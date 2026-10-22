@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { splitTaskLog } from "../web/js/lib/task-log.js";
+import { capLog, LOG_OMITTED, splitTaskLog } from "../web/js/lib/task-log.js";
 
 describe("splitTaskLog", () => {
   test("a tool install's banner and command are taken apart from its output", () => {
@@ -64,5 +64,23 @@ describe("splitTaskLog", () => {
 
   test("an empty log has no commands and no output", () => {
     expect(splitTaskLog("")).toEqual({ commands: [], output: "" });
+  });
+});
+
+describe("capLog", () => {
+  test("a log within the cap is returned as is", () => {
+    expect(capLog("a\nb\n", 10)).toBe("a\nb\n");
+  });
+
+  test("a log over the cap keeps whole lines from the end, behind the omitted marker", () => {
+    const log = `${"x".repeat(50)}\nkeep 1\nkeep 2\n`;
+    expect(capLog(log, 20)).toBe(`${LOG_OMITTED}keep 1\nkeep 2\n`);
+  });
+
+  test("a streamed log stays bounded however much is appended", () => {
+    let log = "";
+    for (let i = 0; i < 5000; i += 1) log = capLog(`${log}line ${i} ${"y".repeat(40)}\n`, 4096);
+    expect(log.length).toBeLessThanOrEqual(4096 + LOG_OMITTED.length);
+    expect(log.endsWith(`line 4999 ${"y".repeat(40)}\n`)).toBe(true);
   });
 });

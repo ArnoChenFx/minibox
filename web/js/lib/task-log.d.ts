@@ -12,3 +12,5 @@ export interface SplitTaskLog {
 }
 
 export declare function splitTaskLog(text: string): SplitTaskLog;
+export declare const LOG_OMITTED: string;
+export declare function capLog(text: string, max: number): string;
