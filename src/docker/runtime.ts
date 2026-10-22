@@ -970,6 +970,25 @@ export function createDockerRuntime(target: string | EngineTarget): Runtime {
       await call(() => docker.getImage(ref).remove({ force }));
     },
 
+    async saveImage(ref) {
+      return call(async () => (await docker.getImage(ref).get()) as Readable);
+    },
+
+    async loadImage(archive) {
+      await call(async () => {
+        const stream = await docker.loadImage(archive);
+        await new Promise<void>((resolve, reject) => {
+          docker.modem.followProgress(
+            stream,
+            (err: Error | null) => (err ? reject(new RuntimeError("engine", err.message)) : resolve()),
+            (ev: { error?: string }) => {
+              if (ev.error) reject(new RuntimeError("engine", ev.error));
+            },
+          );
+        });
+      });
+    },
+
     async buildImage(spec) {
       if (spec.signal?.aborted) throw abortError();
       return call(async () => {

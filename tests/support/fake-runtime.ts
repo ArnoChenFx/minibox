@@ -72,6 +72,16 @@ export interface FakeImage {
   size: number;
 }
 
+/** What `saveImage` writes in place of the tar archive, and `loadImage` reads back. */
+interface FakeImageArchive {
+  id: string;
+  tags: string[];
+  labels: Record<string, string>;
+  env: string[];
+  createdAt: string;
+  size: number;
+}
+
 export interface FakeFsEntry {
   type: "file" | "dir" | "symlink";
   content?: Buffer;
@@ -1246,6 +1256,36 @@ export class FakeRuntime implements Runtime {
     if (remaining.length === 0 && !inUse) this.images.delete(img.id);
   }
 
+  /** The image as its JSON record, which stands in for the tar `docker save` writes. */
+  async saveImage(ref: string): Promise<Readable> {
+    this.enter("saveImage", [ref]);
+    const img = this.getImage(ref);
+    const archive: FakeImageArchive = {
+      id: img.id,
+      tags: [...img.tags],
+      labels: { ...img.labels },
+      env: [...img.env],
+      createdAt: img.createdAt,
+      size: img.size,
+    };
+    return Readable.from([Buffer.from(JSON.stringify(archive))]);
+  }
+
+  async loadImage(archive: Readable): Promise<void> {
+    this.enter("loadImage", [archive]);
+    const loaded = JSON.parse((await collect(archive)).toString("utf8")) as FakeImageArchive;
+    const image = this.images.get(loaded.id) ?? {
+      id: loaded.id,
+      tags: [],
+      labels: { ...loaded.labels },
+      env: [...loaded.env],
+      createdAt: loaded.createdAt,
+      size: loaded.size,
+    };
+    this.images.set(image.id, image);
+    for (const ref of loaded.tags) this.tag(image, ref);
+  }
+
   async buildImage(spec: BuildSpec): Promise<string> {
     this.enter("buildImage", [spec]);
     spec.onLog?.(this.buildLog);
@@ -1421,8 +1461,9 @@ function* chunked(bytes: Buffer, onChunk: (n: number) => void): Generator<Buffer
 
 function resolveMountPath(
   c: FakeContainer,
-  absPath: string,
+  requested: string,
 ): { volume: string; relative: string; root: string } | null {
+  const absPath = requested.replace(/\/\.$/, "") || "/";
   const mounts = [...(c.spec.mounts ?? [])].toSorted((a, b) => b.target.length - a.target.length);
   for (const mount of mounts) {
     const root = mount.target.replace(/\/+$/, "") || "/";
