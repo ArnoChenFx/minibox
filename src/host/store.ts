@@ -18,6 +18,9 @@ function endpointOrNull(raw: string): Endpoint | null {
 /** A host id is the only name a host has in the API and in every record, so it is short and stable. */
 export const HOST_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
+/** The value a box create takes to have a host picked for it. No host may use it as its id. */
+export const AUTO_HOST = "auto";
+
 /** What `hosts.json` records about one remote host. The credentials are not in it. */
 export interface StoredHost {
   readonly id: string;
@@ -82,7 +85,7 @@ export class HostStore {
     }
     const seen = new Set<string>();
     for (const host of parsed.data.hosts) {
-      if (host.id === LOCAL_HOST_ID || seen.has(host.id)) {
+      if (host.id === LOCAL_HOST_ID || host.id === AUTO_HOST || seen.has(host.id)) {
         throw new HostsFileError(
           `${path} lists host ${host.id} more than once or uses a reserved id. Fix or remove it.`,
         );

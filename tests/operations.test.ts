@@ -49,6 +49,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.resources": (id) => ({ id, cpus: 1, expectedRevision: "1" }),
   "box.update": (id) => ({ id, idleTimeoutSec: 120, expectedRevision: "1" }),
   "box.rebuild": (id) => ({ id, profile: "strict", confirm: true, expectedRevision: "1" }),
+  "box.move": (id) => ({ id, host: "lab", confirm: true, expectedRevision: "1" }),
   "box.logs": (id) => ({ id, tail: 10 }),
   "box.stats": (id) => ({ id }),
   "exec.run": (id) => ({ id, argv: ["true"] }),
@@ -142,6 +143,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
     id: app.tokens.create(compileToken({ name: "gone", preset: "readonly" }), "owner").record.id,
   }),
   "host.list": () => ({}),
+  "host.usage": () => ({}),
   "host.add": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.test": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.remove": () => ({ id: "lab" }),
@@ -254,7 +256,7 @@ async function preparedInput(
     const input = sample(boxId, app) as Record<string, unknown>;
     return { input: { ...input, id: volumeId } };
   }
-  if (operation.name === "host.remove") {
+  if (operation.name === "host.remove" || operation.name === "box.move") {
     await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });
   }
   const sample = SAMPLES[operation.name];
@@ -845,6 +847,7 @@ describe("projections", () => {
       "list_files",
       "copy_files",
       "list_hosts",
+      "get_host_usage",
       "add_host",
       "test_host",
       "remove_host",
@@ -884,6 +887,12 @@ describe("projections", () => {
   test("rebuild_box is outside the default toolsets and only in the rebuild toolset", () => {
     expect(mcpTools(OPERATIONS, ["rebuild"]).map((tool) => tool.name)).toEqual(["rebuild_box"]);
     expect(mcpTools(OPERATIONS, ["rebuild"])[0]?.toolset).toBe("rebuild");
+  });
+
+  test("move_box is outside the default toolsets and only in the move toolset", () => {
+    expect(mcpTools(OPERATIONS).map((tool) => tool.name)).not.toContain("move_box");
+    expect(mcpTools(OPERATIONS, ["move"]).map((tool) => tool.name)).toEqual(["move_box"]);
+    expect(mcpTools(OPERATIONS, ["move"])[0]?.toolset).toBe("move");
   });
 
   test("each tool carries the operation's input and output schemas and its read or destructive hint", () => {

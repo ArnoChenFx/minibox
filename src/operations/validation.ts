@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { BOX_PROFILES, type BoxProfile, isBoxProfile } from "../box-profile";
-import { HOST_ID_RE } from "../host/store";
+import { AUTO_HOST, HOST_ID_RE } from "../host/store";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import {
@@ -125,6 +125,9 @@ export const boxId = () =>
 /** A host id: `local`, or the id of a host added in Settings. Which hosts exist is checked where the id is used. */
 export const hostId = () =>
   z.string().regex(HOST_ID_RE).meta({ description: "Host id: local, or the id of a host added under Settings." });
+
+/** A host id, or `auto`, which a box create uses to pick the host itself. */
+export const hostOrAuto = () => z.union([z.literal(AUTO_HOST), hostId()]);
 
 export const boxName = () =>
   field((value) => checkName(value, "boxName"), {

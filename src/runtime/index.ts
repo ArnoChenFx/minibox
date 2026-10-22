@@ -127,6 +127,8 @@ export interface ImageSummary {
 
 export interface ImageDetails {
   id: string;
+  /** The `repo:tag` references the engine holds for the image. A dangling image has none. */
+  tags: string[];
   labels: Record<string, string>;
   /** The image's own `NAME=value` entries, as the engine reports them in the image configuration. */
   env: string[];
@@ -446,6 +448,16 @@ export interface Runtime {
    */
   pullImage(ref: string): Promise<void>;
   removeImage(ref: string, opts: { force: boolean }): Promise<void>;
+  /**
+   * The image `ref` as a tar archive, the form `docker save` writes, with the tags it has. The caller reads the stream
+   * and destroys it when it stops early.
+   */
+  saveImage(ref: string): Promise<Readable>;
+  /**
+   * Loads an archive written by `saveImage`, on this engine. The image keeps its id, and the tags in the archive name it
+   * here, so a tag the engine already holds for another image moves to the loaded one.
+   */
+  loadImage(archive: Readable): Promise<void>;
   /**
    * Resolves with the build log. `onLog` receives the same text as it arrives. An aborted `signal` rejects with
    * `AbortError` rather than a RuntimeError, once the connection to the engine has closed.

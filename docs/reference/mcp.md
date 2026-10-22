@@ -34,6 +34,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `meta` | Hosts. On by default. |
 | `session` | Terminal sessions in boxes |
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
+| `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
 | `storage` | Volumes and storage pools |
 | `tools` | Installing tools, custom tools and saving templates |
 | `network` | Preview ports |
@@ -65,6 +66,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | Tool | Operation it calls |
 |---|---|
 | `list_hosts` | `GET /api/hosts` |
+| `get_host_usage` | `GET /api/hosts/usage` |
 | `add_host` | `POST /api/hosts` |
 | `test_host` | `POST /api/hosts/test` |
 | `remove_host` | `DELETE /api/hosts/{id}` |
@@ -74,6 +76,12 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | Tool | Operation it calls |
 |---|---|
 | `rebuild_box` | `POST /api/boxes/{id}/rebuild` |
+
+### move
+
+| Tool | Operation it calls |
+|---|---|
+| `move_box` | `POST /api/boxes/{id}/move` |
 
 ### session
 
@@ -123,7 +131,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 Some tools change things that are hard to undo. They need `confirm: true` in their arguments. Without it, the call changes nothing, and returns `confirmation_required` with `details.preview`, which describes what would change. These tools need confirmation:
 
 - `create_volume`, `delete_volume`, `attach_volume`, `detach_volume` and `replace_pools`.
-- `rebuild_box`.
+- `rebuild_box` and `move_box`.
 
 `measure_volume` only refreshes a cached size, so it needs no confirmation. `attach_volume` and `detach_volume` rebuild the box, so the same mount rules apply as for `rebuild_box`.
 

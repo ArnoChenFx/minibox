@@ -31,7 +31,7 @@ For a client that starts a command, run `minibox mcp`. Set `MINIBOX_URL` and `MI
 
 The MCP endpoint offers its tools in groups called toolsets. The default is `core,meta`. To use more toolsets, add them to the URL, such as `http://127.0.0.1:3920/mcp?toolsets=core,session`.
 
-The `rebuild_box` tool is in the `rebuild` toolset, so it is available only when you add `rebuild`. Each toolset and its tools are listed in the [MCP reference](../reference/mcp.md).
+The `rebuild_box` tool is in the `rebuild` toolset, so it is available only when you add `rebuild`. In the same way, `move_box` is in the `move` toolset. Each toolset and its tools are listed in the [MCP reference](../reference/mcp.md).
 
 ## What an agent can do in a box
 
@@ -69,6 +69,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - A foreground exec may set timeoutSec up to 55. For a longer command, use exec with background true and a larger timeoutSec (up to 3600), then exec_get with waitMs (max 25000). exec_kill stops the process tree.
 - exec can read and write every volume mounted on that box.
 - rebuild_box is in the rebuild toolset (`/mcp?toolsets=rebuild`) and needs confirm true.
+- move_box is in the move toolset (`/mcp?toolsets=move`) and needs confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. It moves a box to another host: volumes are copied or attached there, the box is recreated and started if it runs, and the old container is removed once the new one runs. Only the owner or an admin credential can move a box.
 - session_start, session_send and session_read drive a tmux session in the box. They are in the session toolset (`/mcp?toolsets=core,session`). A session keeps running after you disconnect. Use exec for one-off commands and a session for long-running or interactive programs. Listing and closing sessions are in the REST API and the CLI only.
 - A session started through MCP has origin agent. A person can take it over in the console. While they hold it, session_send fails with taken_over and retryable true: wait a little, read the session with session_read, and send again. session_read still works during a takeover.
 - session_read returns lines and a cursor. Pass the newest cursor as since to read only what is new. reset true means the screen was redrawn, and lines is the current window.

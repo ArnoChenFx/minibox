@@ -31,13 +31,13 @@ const NAME_ATTEMPTS = 100;
  * A free display name for a box's role volume: `<box>-<role>`, then `<box>-<role>-<pool>`, then numbered. Deleting a box
  * keeps its volumes by default, so recreating a box of the same name several times must not run out of names.
  */
-function freeName(host: HostCtx, base: string, pool: string): string {
+export function freeName(host: HostCtx, base: string, pool: string): string {
   const candidates = [base, `${base}-${pool}`];
   for (let n = 2; n <= NAME_ATTEMPTS; n++) candidates.push(`${base}-${n}`);
   return candidates.find((name) => !nameTaken(host, name)) ?? base;
 }
 
-async function materialize(
+export async function materialize(
   host: HostCtx,
   input: NewVolume,
   known: Set<string>,

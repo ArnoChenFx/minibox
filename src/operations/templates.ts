@@ -73,7 +73,7 @@ export const templateSave = defineOperation({
       "Save a box as a template: the packages it installed and the system files it changed. /workspace and home volumes are not included, so use a checkpoint for data. Long-running; returns a task id.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
-  precondition: async ({ host }) => localOnly(host, "Templates"),
+  precondition: async ({ host }) => localOnly(host, "templates"),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, input, box) => {
     assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []);

@@ -28,6 +28,13 @@ export const LABELS = {
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
+/** Features a `host_unsupported` error names. The UI translates each key through `feature.<key>`. */
+export const FEATURES = {
+  snapshots: "Snapshots",
+  templates: "Templates",
+} as const;
+export type FeatureKey = keyof typeof FEATURES;
+
 export const MESSAGES = {
   invalid_json_object: "Request body must be a JSON object.",
   invalid_json: "Request body is not valid JSON.",
@@ -185,6 +192,9 @@ export const MESSAGES = {
   network_not_managed: "Boxes cannot join network {network}. Boxes join {managed}.",
   cpu_over_host: "CPU cores exceed the host limit ({cores} cores).",
   memory_over_host: "Memory exceeds the host limit ({gb} GB).",
+  cpu_booked_over_host: "Running boxes on this host would take {booked} CPUs, more than its limit of {limit}.",
+  memory_booked_over_host:
+    "Running boxes on this host would take {booked} GB of memory, more than its limit of {limit} GB.",
   token_preset_invalid: "Preset must be one of readonly, operator, sandboxed-agent or admin.",
   token_scope_invalid: "Scopes must be a list of known scope names, with at most {max} entries.",
   token_scope_required: "Choose a preset or at least one scope.",
@@ -202,6 +212,9 @@ export const MESSAGES = {
   volume_not_granted: "This credential cannot mount the volume “{volume}”. It needs volume:attach on that volume.",
   host_not_granted: "This credential cannot use host “{host}”.",
   host_id_invalid: "A host id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.",
+  host_id_reserved: "“{host}” is reserved and cannot be a host id.",
+  host_auto_offline: "No host is online to place the box on.",
+  host_auto_no_room: "No online host that holds the template has room for a box of {cpus} CPUs and {memoryMb} MB.",
   host_exists: "A host with the id “{host}” already exists.",
   host_not_found: "Host “{host}” was not found.",
   host_is_local: "The local host cannot be removed.",
@@ -218,6 +231,21 @@ export const MESSAGES = {
   host_unreachable: "The host could not be reached: {detail}",
   host_unsupported: "{feature} is not supported on remote hosts yet.",
   preview_remote_unsupported: "Port preview is not supported on remote hosts yet.",
+  box_moving: "This box is moving to another host. Try again when the move finishes.",
+  box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
+  move_confirm:
+    "Moving copies the box's volumes to {to}, starts it there if it runs now, and removes it from {from} once it runs there. Send confirm: true to continue.",
+  move_same_host: "The box already runs on host {host}, so it cannot move there.",
+  move_owner_only: "Only the owner or an admin credential may move a box.",
+  move_changed: "The box changed while it was moving, so the move was undone. Refresh the box and try again.",
+  move_template_moved:
+    "Template {tag} now names a newer image than this box runs. Rebuild the box onto it, then move the box.",
+  move_template_differs:
+    "Host {host} already has a different image under {tag}, so the template cannot be sent there. Remove or retag that image, then try again.",
+  move_start_failed: "The box did not start on host {host}, so the move was undone.",
+  move_bind_volume: "Volume {volume} is a bind mount, which a move cannot carry to another host.",
+  move_shared_volume:
+    "Volume {volume} is also mounted by another box on this host, so a move cannot copy it for this box alone.",
   profile_not_allowed: "This credential may not use the {profile} security profile.",
   quota_boxes: "This token may have at most {max} boxes.",
   quota_cpus: "This token's boxes would use {used} CPU cores, above its limit of {max}.",
@@ -391,12 +419,23 @@ export interface Msg {
   text: string;
 }
 
+/**
+ * The English text of one parameter. A `label` or `feature` names a key of its table, and the text is that entry's
+ * English name. Anything else is shown as it is.
+ */
+function paramText(name: string, value: string | number): string {
+  if (typeof value !== "string") return String(value);
+  if (name === "label" && Object.hasOwn(LABELS, value)) return LABELS[value as LabelKey];
+  if (name === "feature" && Object.hasOwn(FEATURES, value)) return FEATURES[value as FeatureKey];
+  return value;
+}
+
 /** Build a message: English text for logs/API clients plus key/params for UI translation. */
 export function msg(key: MessageKey, params?: Params): Msg {
   const text = MESSAGES[key].replace(/\{(\w+)\}/g, (m, k: string) => {
     const v = params?.[k];
     if (v === undefined) return m;
-    return k === "label" && typeof v === "string" && v in LABELS ? LABELS[v as LabelKey] : String(v);
+    return paramText(k, v);
   });
   return { key, params, text };
 }
