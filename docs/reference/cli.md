@@ -212,6 +212,10 @@ Only the owner can use these commands. See [Tools](../user-guide/tools.md).
 | `minibox tool custom put <id> (--file FILE \| --stdin) [--override-builtin] [--json]` | Saves an entry from a JSON document. `--override-builtin` replaces a built-in tool's entry. |
 | `minibox tool custom delete <id> [--json]` | Removes the entry. Nothing is uninstalled from the shared tools volume. |
 
+## Notifications
+
+Notification channels have no commands yet. Set them up in **Settings**, or through the [REST API](api.md#notify) and the [MCP tools](mcp.md#meta). See [Notifications](../user-guide/notifications.md).
+
 ## SSH
 
 | Command | Meaning |

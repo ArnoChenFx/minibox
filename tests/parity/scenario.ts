@@ -955,6 +955,33 @@ async function recordScenario(): Promise<Exchange[]> {
     await waitTask(base, absent.json);
     await send("read the failed pull task", "GET", `/api/tasks/${String(absent.json?.taskId ?? "")}`);
     await post("pull an image with a bad reference", "/api/images/pull", { ref: "bad ref" });
+    await send("list notification channels when there are none", "GET", "/api/notify/channels");
+    const alerts = "/api/notify/channels/alerts";
+    await put("create a webhook channel with a signing key", alerts, {
+      name: "Alerts",
+      type: "webhook",
+      events: ["box.oom"],
+      url: "http://127.0.0.1:9/hook",
+      secret: "signing-key-1",
+    });
+    await put("create a webhook channel with a URL that is not http", "/api/notify/channels/bad", {
+      name: "Bad",
+      type: "webhook",
+      events: ["box.oom"],
+      url: "ftp://example.com/hook",
+    });
+    await put("create a telegram channel without a bot token", "/api/notify/channels/chat", {
+      name: "Chat",
+      type: "telegram",
+      events: ["host.offline"],
+      chatId: "-1001234567890",
+    });
+    await send("list notification channels", "GET", "/api/notify/channels");
+    await send("send a test notice to a channel on a private address", "POST", `${alerts}/test`);
+    await send("list notification deliveries", "GET", "/api/notify/deliveries?limit=10");
+    await send("list notification deliveries with a zero limit", "GET", "/api/notify/deliveries?limit=0");
+    await send("delete the webhook channel", "DELETE", alerts);
+    await send("delete the webhook channel again", "DELETE", alerts);
   } finally {
     server.stop(true);
     app.throttle.stop();

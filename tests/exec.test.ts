@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 
 import { REDACTED } from "../src/events/redact";
 import type { StoredEvent } from "../src/events/store";
@@ -8,6 +8,7 @@ import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import { sleepBox } from "../src/services/boxes";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
+import { advance, settle, turn } from "./support/clock";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 
@@ -53,7 +54,10 @@ describe("exec", () => {
   beforeEach(() => {
     restoreLogs = silenceLogs();
   });
-  afterEach(() => restoreLogs());
+  afterEach(() => {
+    jest.useRealTimers();
+    restoreLogs();
+  });
 
   test("runs argv as the dev user, returns the real exit code, and audits start and finish", async () => {
     const { app, runtime, ctx } = setup();
@@ -288,7 +292,8 @@ describe("exec", () => {
     const { app, runtime, ctx } = setup();
     runtime.execScript = null;
     const id = await createBox(app, ctx);
-    const result = await app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 });
+    jest.useFakeTimers();
+    const result = await settle(app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 }));
     expect(result).toMatchObject({ timedOut: true, exitCode: 137, status: "killed", background: false });
   });
 
@@ -325,14 +330,17 @@ describe("exec", () => {
     runtime.execScript = null;
     const id = await createBox(app, ctx);
     runtime.failExecKill(new RuntimeError("engine", "a process survived the kill"));
-    const result = (await app.operations.run("exec.run", ctx, {
-      id,
-      argv: ["sleep", "30"],
-      timeoutSec: 1,
-    })) as { execId: string };
+    jest.useFakeTimers();
+    const result = (await settle(
+      app.operations.run("exec.run", ctx, {
+        id,
+        argv: ["sleep", "30"],
+        timeoutSec: 1,
+      }),
+    )) as { execId: string };
     expect(result).toMatchObject({ status: "running", exitCode: null, timedOut: true });
 
-    await app.operations.run("exec.kill", ctx, { execId: result.execId });
+    await settle(app.operations.run("exec.kill", ctx, { execId: result.execId }));
     expect(await app.operations.run("exec.get", ctx, { execId: result.execId, waitMs: 0 })).toMatchObject({
       status: "killed",
       exitCode: 137,
@@ -345,17 +353,26 @@ describe("exec", () => {
     runtime.execScript = null;
     const id = await createBox(app, ctx);
     const gate = runtime.holdExecKill();
+    jest.useFakeTimers();
     const started = Date.now();
-    const result = (await app.operations.run("exec.run", ctx, {
-      id,
-      argv: ["sleep", "30"],
-      timeoutSec: 1,
-    })) as { execId: string };
-    expect(Date.now() - started).toBeLessThan(4000);
-    expect(result).toMatchObject({ status: "running", exitCode: null, timedOut: true });
+    let returned = false;
+    const pending = app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 }).then((value) => {
+      returned = true;
+      return value;
+    });
+    await turn();
 
+    await advance(1000);
+    await advance(1999);
+    expect(returned).toBe(false);
+    await advance(1);
+    expect(returned).toBe(true);
+    expect(Date.now() - started).toBe(3000);
+
+    const result = (await pending) as { execId: string };
+    expect(result).toMatchObject({ status: "running", exitCode: null, timedOut: true });
     gate.release();
-    expect(await app.operations.run("exec.get", ctx, { execId: result.execId, waitMs: 2000 })).toMatchObject({
+    expect(await settle(app.operations.run("exec.get", ctx, { execId: result.execId, waitMs: 2000 }))).toMatchObject({
       status: "killed",
       exitCode: 137,
       timedOut: true,
@@ -367,14 +384,16 @@ describe("exec", () => {
     runtime.execScript = null;
     const id = await createBox(app, ctx);
     const gate = runtime.holdExecKill();
+    jest.useFakeTimers();
     const pending = app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 });
-    await Bun.sleep(1500);
+    await turn();
+    await advance(1000);
     runtime.execs.at(-1)?.exit(0);
 
-    const result = (await pending) as { execId: string };
+    const result = (await settle(pending)) as { execId: string };
     expect(result).toMatchObject({ status: "exited", exitCode: 0, timedOut: true });
     gate.release();
-    await Bun.sleep(50);
+    await advance(50);
     // The stop that finishes later finds the exec ended, and does not turn the record into a kill.
     expect(await app.operations.run("exec.get", ctx, { execId: result.execId })).toMatchObject({
       status: "exited",
@@ -388,11 +407,13 @@ describe("exec", () => {
     runtime.execScript = null;
     const id = await createBox(app, ctx);
     const gate = runtime.holdExecKill();
+    jest.useFakeTimers();
     const pending = app.operations.run("exec.run", ctx, { id, argv: ["sleep", "30"], timeoutSec: 1 });
-    await Bun.sleep(1500);
+    await turn();
+    await advance(1000);
     runtime.execs.at(-1)?.exit(137);
 
-    expect(await pending).toMatchObject({ status: "killed", exitCode: 137, timedOut: true });
+    expect(await settle(pending)).toMatchObject({ status: "killed", exitCode: 137, timedOut: true });
     gate.release();
   });
 
@@ -402,34 +423,34 @@ describe("exec", () => {
     const id = await createBox(app, ctx);
     runtime.failExecKill(new RuntimeError("engine", "a process survived the kill"));
     runtime.failExecKill(new RuntimeError("engine", "a process survived the kill"));
+    jest.useFakeTimers();
     const started = (await app.operations.run("exec.run", ctx, {
       id,
       argv: ["sleep", "30"],
       background: true,
       timeoutSec: 1,
     })) as { execId: string };
-
     const session = runtime.execs.at(-1);
-    const attempts: number[] = [];
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      while (attempts.length < (session?.kills ?? 0)) attempts.push(Date.now());
-      const view = (await app.operations.run("exec.get", ctx, { execId: started.execId, waitMs: 0 })) as {
-        status: string;
-      };
-      if (view.status === "killed" || Date.now() > deadline) break;
-      await Bun.sleep(10);
-    }
 
-    expect(attempts).toHaveLength(3);
-    expect(attempts[1] as number).toBeGreaterThanOrEqual((attempts[0] as number) + 900);
-    expect(attempts[2] as number).toBeGreaterThanOrEqual((attempts[1] as number) + 1900);
-    expect(await app.operations.run("exec.get", ctx, { execId: started.execId, waitMs: 0 })).toMatchObject({
+    await advance(999);
+    expect(session?.kills).toBe(0);
+    await advance(1);
+    expect(session?.kills).toBe(1);
+    await advance(999);
+    expect(session?.kills).toBe(1);
+    await advance(1);
+    expect(session?.kills).toBe(2);
+    await advance(1999);
+    expect(session?.kills).toBe(2);
+    await advance(1);
+    expect(session?.kills).toBe(3);
+
+    expect(await settle(app.operations.run("exec.get", ctx, { execId: started.execId, waitMs: 2000 }))).toMatchObject({
       status: "killed",
       exitCode: 137,
       timedOut: true,
     });
-  }, 15_000);
+  });
 
   test("kills that overlap share one stop", async () => {
     const { app, runtime, ctx } = setup();

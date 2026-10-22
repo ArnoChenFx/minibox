@@ -20,6 +20,7 @@
     "test:docker": "bun scripts/docker-integration.ts",
     "screenshots": "bun scripts/screenshots.ts",
     "check": "bun run fmt:check && bun run lint && bun run typecheck && bun test",
+    "check:quick": "bun run fmt:check && bun run lint && bun run typecheck && bun test --bail --changed=origin/main",
     "openapi": "bun scripts/export-openapi.ts",
     "build:cli": "bun build --compile --outfile dist/minibox src/cli.ts",
     "build:site": "bun scripts/build-site.ts",

@@ -9,6 +9,7 @@ import { type Config, DEFAULT_SESSION_TTL_MS, ROOT } from "../../src/config";
 import type { ExecutorHooks } from "../../src/operations/executor";
 import { FakeRuntime } from "./fake-runtime";
 import { FakeCheckpointEngine } from "./fake-snapshots";
+import { memoizeScryptSync } from "./scrypt";
 
 export const TEST_KEY = "k".repeat(64);
 
@@ -21,6 +22,7 @@ process.on("exit", () => rmSync(DATA_ROOT, { recursive: true, force: true }));
  */
 export function testConfig(overrides: Partial<Config> = {}): Config {
   const labelPrefix = overrides.labelPrefix ?? "mbtest";
+  memoizeScryptSync();
   return {
     host: "127.0.0.1",
     port: 0,
@@ -59,6 +61,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     checkpointPackageMaxMb: 2048,
     fileUploadMaxMb: 1024,
     hostOvercommit: 1,
+    notifyAllowPrivate: false,
     ...overrides,
   };
 }
@@ -67,10 +70,9 @@ export function createTestApp(
   overrides: Partial<Config> = {},
   runtime = new FakeRuntime(),
   hooks: Partial<ExecutorHooks> = {},
-  deps: Pick<AppDeps, "cliBuild"> = {},
+  deps: Pick<AppDeps, "cliBuild" | "notify"> = {},
 ): { app: App; runtime: FakeRuntime; checkpoints: FakeCheckpointEngine } {
   const cfg = testConfig(overrides);
-  if (overrides.dataDir === undefined) cfg.dataDir = mkdtempSync(join(tmpdir(), "minibox-test-"));
   const checkpoints = new FakeCheckpointEngine(runtime);
   const app = createApp(cfg, "0.0.0-test", {
     runtime,

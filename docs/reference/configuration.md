@@ -68,6 +68,12 @@ MiniBox reads its settings from environment variables. The precedence is:
 |---|---|---|
 | `FILE_UPLOAD_MAX_MB` | `1024` | The largest file that can be uploaded to a volume, in MB. A whole number from 1 to 65536; any other value falls back to 1024. A larger upload is refused with `413` before its bytes are read. Only the volume file upload (`PUT /api/volumes/{id}/files/stream`) and the package upload may exceed 128 MB. See [Files](../user-guide/files.md). |
 
+## Notifications
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NOTIFY_ALLOW_PRIVATE` | `false` | Lets notification channels send to addresses that are not public: loopback, private network, link-local, shared and reserved addresses. Use it for a self-hosted ntfy server or a webhook on your network. `1`, `true`, `yes` and `on` turn it on, and any other value leaves it off. See [Notifications](../user-guide/notifications.md#private-addresses). |
+
 ## Events and logs
 
 | Variable | Default | Meaning |

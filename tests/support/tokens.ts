@@ -14,7 +14,10 @@ export interface Harness {
 }
 
 /** An app with its base template seeded, served on an ephemeral port. `stop` ends every watcher the app opened. */
-export function startHarness(overrides: Partial<Config> = {}, deps: Pick<AppDeps, "cliBuild"> = {}): Harness {
+export function startHarness(
+  overrides: Partial<Config> = {},
+  deps: Pick<AppDeps, "cliBuild" | "notify"> = {},
+): Harness {
   const { app, runtime } = createTestApp({ labelPrefix: "mbtest", ...overrides }, undefined, {}, deps);
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });

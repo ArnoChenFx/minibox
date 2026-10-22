@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 103 operations in 15 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 108 operations in 16 groups.
 
 ## Authentication
 
@@ -38,7 +38,7 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
 | `secret:use` | `secret:use`. Setting, removing or running a box's startup command also needs `exec`. |
-| `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+| `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 
 The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
 
@@ -301,3 +301,19 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `DELETE` | `/api/hosts/{id}` | Remove a host |
 
 An agent connects on its own: it exchanges the pairing code at `POST /api/agent/pair`, then keeps a WebSocket open at `/api/agent/connect`. Both are used by the agent, not by clients. See [Agent](agent.md).
+
+### notify
+
+Notification channels. Only the owner can use these operations, because no token holds the `notify:manage` scope. See [Notifications](../user-guide/notifications.md).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/notify/channels` | List channels. A secret is never returned: `hasSecret` says whether one is stored |
+| `PUT` | `/api/notify/channels/{id}` | Create or change a channel, as `{ "name", "type", "events", "boxes", "enabled", "url", "server", "topic", "chatId", "secret" }`. `type` is `webhook`, `ntfy` or `telegram`, and `events` lists at least one notice kind. Returns `200`. The answer's `created` says whether the channel is new, and `valueChange` says whether its secret was `set`, `cleared` or `kept`. Returns `409` when 32 channels exist |
+| `DELETE` | `/api/notify/channels/{id}` | Delete a channel and its stored secret. Its deliveries stay in the event log |
+| `POST` | `/api/notify/channels/{id}/test` | Send one test notice, with no retries, and return `{ "ok", "status", "attempts", "error" }`. A send that fails still answers `200`, with `ok` set to `false` |
+| `GET` | `/api/notify/deliveries?limit=N` | List recent deliveries, newest first. `limit` is 1 to 200 and defaults to 50 |
+
+A `webhook` channel needs `url`. An `ntfy` channel needs `topic`, and takes an optional `server` that defaults to `https://ntfy.sh`. A `telegram` channel needs `chatId`, and a new one needs its bot token as `secret`. `boxes` limits the channel to the named boxes or ids, and host notices are never filtered by it.
+
+`secret` is the webhook signing key, the ntfy access token or the Telegram bot token. Omit it to keep the stored value, send `null` to clear it, or send a string of 8 to 512 characters to replace it. The value is never copied into an answer or an event.

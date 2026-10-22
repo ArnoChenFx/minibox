@@ -360,6 +360,7 @@ async function boot(): Promise<void> {
     app.checkpointScheduler.stop();
     app.containers.stop();
     app.lifecycle.stop();
+    app.notify.stop();
     app.throttle.stop();
     app.sessions.stop();
     app.terminals.shutdown();
