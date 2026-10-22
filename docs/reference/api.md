@@ -1,0 +1,251 @@
+# REST API reference
+
+Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
+
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 82 operations in 15 groups.
+
+## Authentication
+
+Send one of these with each request:
+
+- The session cookie that `POST /api/auth/login` sets in a browser.
+- An `Authorization: Bearer` header. The value is the access key, or an agent token (`mbx_…`). Create agent tokens in **Settings** or with `POST /api/tokens`.
+
+Operations marked **public** need no credentials. A token can call only the operations its scopes allow. See [Access, sessions and tokens](../user-guide/access-and-tokens.md).
+
+```bash
+curl -s -H "Authorization: Bearer $MINIBOX_ACCESS_KEY" http://127.0.0.1:3920/api/boxes
+```
+
+## Requests
+
+- Send JSON bodies, and set `Content-Type: application/json` on every write. A write with another content type gets `415`. A write with neither a body nor a `Content-Type` is accepted.
+- Cross-site browser requests that upgrade a WebSocket, change state through the API, or read the event or box log streams are refused with `403`. See [Security](../admin/security.md).
+- A request may send an `X-Minibox-Run` header that names the client session it belongs to. The audit events of one session share this value. It takes 1 to 64 letters, digits, dots, colons, underscores or hyphens, and starts with a letter or digit. Any other value gets `400`.
+- Some writes need the box's current revision. Send it in the `If-Match` header. A missing header gets `428`, a stale revision gets `412`, and a malformed value gets `400`. The box's `revision` field shows the current value.
+
+## Long-running operations
+
+Some operations take a while, such as template builds, checkpoints, forks, rollbacks and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
+
+- `GET /api/tasks/{id}` shows the task, including its status and result.
+- `GET /api/tasks/{id}/events` streams its progress as server-sent events. It is not in the OpenAPI document.
+- A task has the status `running`, `succeeded`, `failed`, `cancelled` or `interrupted`. After a restart, tasks that were running become `interrupted`.
+
+## Errors
+
+Errors have the same shape, with the matching HTTP status:
+
+```json
+{ "error": { "code": "validation_failed", "message": "…", "hint": "…", "retryable": false, "details": { "field": "cpus" } } }
+```
+
+- `retryable` is always present. It is `true` for `408`, `429` and `5xx` responses, unless a handler sets it otherwise.
+- `hint` appears when a next step would help. `hintKey` is the key the console uses to translate it.
+
+| Code | Status | Meaning |
+|---|---|---|
+| `validation_failed` | 400 | A field is invalid. `details.field` names it. |
+| `unauthorized` | 401 | No valid credentials |
+| `forbidden` | 403 | The credentials lack the scope, or the request came from another site |
+| `not_found` | 404 | The object does not exist |
+| `method_not_allowed` | 405 | The method is not supported on this path |
+| `conflict` | 409 | The request conflicts with the current state |
+| `confirmation_required` | 409 | A change needs `confirm: true`. `details.preview` shows what would change. |
+| `precondition_failed` | 412 | The `If-Match` revision is stale |
+| `unsupported_media_type` | 415 | The `Content-Type` is not JSON |
+| `insufficient_capacity` | 422 | The host does not have enough capacity for the request |
+| `precondition_required` | 428 | A required `If-Match` header is missing |
+| `too_many_requests` | 429 | A limit was reached. Try again later. |
+| `docker_error` | 502 | The Docker engine returned an error |
+| `bad_gateway` | 502 | A storage server or another upstream refused the request |
+| `docker_unavailable` | 503 | The Docker engine, or a storage pool, cannot be reached |
+
+Error messages are in English. The `code` is stable, so scripts should check it rather than the message.
+
+## Operations that are not in the OpenAPI document
+
+These are streams, sockets and file routes. They are not described in the OpenAPI document.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/events/stream` | Live events, as server-sent events. Accepts the same filters as `GET /api/events`. A stream without filters also carries live state. |
+| `GET` | `/api/boxes/{id}/logs/stream?tail=N` | A box's log, as server-sent events. Sends the newest `N` lines first, then new lines as they arrive. |
+| `GET` | `/api/tasks/{id}/events` | A task's progress, as server-sent events |
+| `GET` | `/api/boxes/{id}/terminal` | A WebSocket for a terminal in a box. The `session` query parameter names the tmux session to attach to. Used by the console. A Bearer caller can read the output, but its input is refused, and its terminal needs tmux 3.2 or later in the box. |
+| `GET` | `/api/ssh/{box}` | A WebSocket that carries one SSH connection to a box. Used by `ssh-proxy`. With a plain GET, it runs the checks and returns `204`, or the refusal as JSON. |
+| `GET` | `/api/ssh/host-key` | The SSH gateway's host key |
+| `POST` | `/mcp` | The MCP endpoint. See [MCP tools](mcp.md). |
+| `GET` | `/box/{name-or-id}/{port}/…` | Port preview. Proxies HTTP and WebSocket to a port in a box. See [Port preview](../user-guide/port-preview.md). |
+| `GET` | `/cli/install.sh`, `/cli/install.ps1` | The CLI installers. Public. |
+| `GET` | `/cli/checksums.txt`, `/cli/minibox-<os>-<arch>` | Checksums and CLI binaries. Public. |
+
+## Events and tasks
+
+The event log records every operation that changes state, and it can be searched.
+
+- `GET /api/events` lists events, newest first. Filter by `box`, `principal`, `op`, `status`, `run` or `since`, and page with `cursor` and `limit` (default 50, maximum 200).
+- `GET /api/events/stream` sends the same events live. A client that reconnects sends its last `id` as `Last-Event-ID`, and receives the events it missed.
+
+Events are kept according to the retention settings in [Configuration](configuration.md#events-and-logs).
+
+## Operations
+
+The tables below list every operation in [`openapi.json`](../openapi.json), grouped by tag. Each row is one operation. Paths use `{id}` for a box or volume ID.
+
+### boxes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/boxes` | List boxes |
+| `POST` | `/api/boxes` | Create and start a box |
+| `GET` | `/api/boxes/{id}` | Get one box |
+| `PATCH` | `/api/boxes/{id}` | Update a box in place |
+| `DELETE` | `/api/boxes/{id}` | Delete a box |
+| `POST` | `/api/boxes/{id}/start` | Start a box |
+| `POST` | `/api/boxes/{id}/stop` | Stop a box |
+| `POST` | `/api/boxes/{id}/restart` | Restart a box |
+| `PATCH` | `/api/boxes/{id}/resources` | Change the CPU, memory or process limit of a box |
+| `POST` | `/api/boxes/{id}/rebuild` | Rebuild a box from its spec |
+| `GET` | `/api/boxes/{id}/logs` | Read the recent log output of a box |
+| `GET` | `/api/boxes/{id}/stats` | Read the current resource usage of a box |
+
+### exec
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/boxes/{id}/exec` | Run a command in a box |
+| `GET` | `/api/execs/{execId}` | Read an exec |
+| `POST` | `/api/execs/{execId}/kill` | Kill an exec |
+| `GET` | `/api/execs/{execId}/output` | Read saved exec output |
+
+### ports
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/boxes/{id}/ports` | List listening and manually exposed ports on a box |
+| `POST` | `/api/boxes/{id}/ports` | Remember a port for path-mode preview |
+| `DELETE` | `/api/boxes/{id}/ports/{port}` | Remove a manually exposed preview port |
+
+### files
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/volumes/{id}/files/content` | Read a file from a volume |
+| `PUT` | `/api/volumes/{id}/files/content` | Write a file on a volume |
+| `GET` | `/api/volumes/{id}/files` | List files on a volume |
+| `POST` | `/api/volumes/{id}/files/copy` | Copy files within a volume |
+| `GET` | `/api/volumes/{id}/files/archive` | Download a volume path as tar |
+| `PUT` | `/api/volumes/{id}/files/archive` | Upload a tar onto a volume path |
+
+### volumes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/volumes` | List volumes |
+| `POST` | `/api/volumes` | Create an independent volume |
+| `GET` | `/api/volumes/{id}` | Get a volume |
+| `DELETE` | `/api/volumes/{id}` | Delete a volume |
+| `POST` | `/api/volumes/{id}/attach` | Mount a volume on a box |
+| `POST` | `/api/volumes/{id}/detach` | Unmount a volume from a box |
+| `POST` | `/api/volumes/{id}/usage` | Measure a volume |
+| `GET` | `/api/pools` | List storage pools |
+| `PUT` | `/api/pools` | Replace storage pool configuration |
+
+### tools
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/tools/catalog` | List the tool catalog without install status |
+| `GET` | `/api/tools` | List tool catalog and install status |
+| `POST` | `/api/boxes/{id}/tools/install` | Install a tool into the shared tools volume |
+| `POST` | `/api/boxes/{id}/tools/upgrade` | Upgrade a tool on the shared tools volume |
+| `POST` | `/api/boxes/{id}/tools/uninstall` | Uninstall a tool from the shared tools volume |
+| `POST` | `/api/boxes/{id}/tools/reconcile` | Install missing tools from the box spec |
+| `GET` | `/api/tools/custom` | List the custom tool entries in DATA_DIR/tools.d |
+| `PUT` | `/api/tools/custom/{id}` | Create or replace a custom tool entry in DATA_DIR/tools.d |
+| `DELETE` | `/api/tools/custom/{id}` | Delete a custom tool entry from tools.d. Nothing is uninstalled from the shared tools volume. |
+
+### secrets
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/secrets` | List secrets |
+| `PUT` | `/api/secrets/{name}` | Create or replace a secret |
+| `DELETE` | `/api/secrets/{name}` | Delete a secret |
+
+### sessions
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/boxes/{id}/sessions` | List the terminal sessions of a box |
+| `POST` | `/api/boxes/{id}/sessions` | Start a terminal session in a box |
+| `GET` | `/api/boxes/{id}/sessions/{name}` | Read a terminal session |
+| `DELETE` | `/api/boxes/{id}/sessions/{name}` | Close a terminal session |
+| `POST` | `/api/boxes/{id}/sessions/{name}/input` | Send keys or text to a terminal session |
+
+### snapshots
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/snapshots` | List snapshots |
+| `POST` | `/api/boxes/{id}/snapshots` | Snapshot a box |
+| `POST` | `/api/snapshots/{ref}/boxes` | Create a box from a snapshot |
+| `DELETE` | `/api/snapshots/{ref}` | Delete a snapshot |
+
+### checkpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/checkpoints` | List checkpoints |
+| `GET` | `/api/checkpoints/usage` | Read the checkpoint repository's size against its limit |
+| `GET` | `/api/checkpoints/{id}` | Get one checkpoint |
+| `PATCH` | `/api/checkpoints/{id}` | Pin or relabel a checkpoint |
+| `DELETE` | `/api/checkpoints/{id}` | Delete a checkpoint |
+| `POST` | `/api/boxes/{id}/checkpoints` | Take a checkpoint of a box |
+| `POST` | `/api/checkpoints/{id}/fork` | Create a box from a checkpoint |
+| `GET` | `/api/boxes/{id}/rollback` | Read the rollback of a box that waits for its confirm or undo |
+| `POST` | `/api/boxes/{id}/rollback` | Roll a box back to one of its checkpoints |
+| `POST` | `/api/boxes/{id}/rollback/confirm` | Confirm a rollback: delete the volumes it replaced |
+| `POST` | `/api/boxes/{id}/rollback/undo` | Undo a rollback: mount the volumes it replaced again |
+
+### templates
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/templates` | List templates |
+| `POST` | `/api/snapshots/{ref}/promote` | Promote a snapshot to a template |
+| `POST` | `/api/boxes/{id}/template` | Save a box as a template |
+| `POST` | `/api/templates/base/build` | Build the bundled base template |
+| `DELETE` | `/api/templates/{ref}` | Delete a template |
+
+### tasks
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/tasks` | List tasks |
+| `GET` | `/api/tasks/{id}` | Get a task |
+| `POST` | `/api/tasks/{id}/cancel` | Cancel a task |
+
+### events
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/events` | List recorded events, newest first |
+
+### tokens
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/tokens` | List agent API tokens |
+| `POST` | `/api/tokens` | Create an agent API token |
+| `DELETE` | `/api/tokens/{id}` | Revoke an agent API token |
+
+### hosts
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/hosts` | List hosts |
+| `POST` | `/api/hosts` | Add a host |
+| `POST` | `/api/hosts/test` | Test a host connection |
+| `DELETE` | `/api/hosts/{id}` | Remove a host |
