@@ -78,6 +78,8 @@ export interface Config {
    * its own origin. Null keeps the path-mode previews under `/box/`.
    */
   previewBaseDomain: string | null;
+  /** Lets a notification channel send to an address that is not public, such as a self-hosted ntfy or a LAN webhook. */
+  notifyAllowPrivate: boolean;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -254,6 +256,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     fileUploadMaxMb: intInRange(get("FILE_UPLOAD_MAX_MB"), 1024, 1, 65536),
     hostOvercommit: parseHostOvercommit(get("HOST_OVERCOMMIT")),
     previewBaseDomain: parsePreviewBaseDomain(get("PREVIEW_BASE_DOMAIN")),
+    notifyAllowPrivate: isTruthy(get("NOTIFY_ALLOW_PRIVATE")),
   };
 }
 

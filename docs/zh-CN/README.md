@@ -24,6 +24,7 @@
 - [SSH 访问与 CLI](user-guide/ssh-and-cli.md)：使用 `ssh`、`scp` 与 `sftp`，安装 CLI（含 Windows）。
 - [宿主机](user-guide/hosts.md)：在其他 Docker Engine 上运行 Box。
 - [访问与令牌](user-guide/access-and-tokens.md)：访问密钥、浏览器会话与 Agent 令牌。
+- [通知](user-guide/notifications.md)：有需要关注的事件时，向 Webhook、ntfy 或 Telegram 发送消息。
 - [设置](user-guide/settings.md)：设置页。
 - [连接 AI Agent](user-guide/agents.md)：MCP、CLI 代理与 `AGENTS.md` 片段。
 

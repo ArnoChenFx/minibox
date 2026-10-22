@@ -5,6 +5,7 @@ import type { AuditNote, EventRefs, EventTarget, Source } from "../events/types"
 import type { HostManager } from "../host/manager";
 import type { HostCtx } from "../host/registry";
 import type { RawBody } from "../lib/body";
+import type { Notifications } from "../notify/service";
 import type { ExecService } from "../services/exec";
 import type { TerminalService } from "../services/terminals";
 import type { TaskHandle, TaskReader } from "../tasks/types";
@@ -68,6 +69,8 @@ export interface OperationContext {
   readonly hostAdmin?: HostManager;
   /** The base domain of subdomain previews, or null in path mode. Port operations build their preview links from it. */
   readonly previewBaseDomain?: string | null;
+  /** Notification channels and their test sends. Only the notify operations use it. */
+  readonly notify?: Notifications;
   /** Set on the background run of an async operation, so the handler can log and watch for cancellation. */
   readonly task?: TaskHandle;
   /** The task manager. The executor fills it in; task operations read it. */

@@ -24,6 +24,7 @@ For people who use MiniBox every day.
 - [SSH access and the CLI](user-guide/ssh-and-cli.md): use `ssh`, `scp` and `sftp`, and install the CLI, including on Windows.
 - [Hosts](user-guide/hosts.md): run boxes on other Docker engines.
 - [Access and tokens](user-guide/access-and-tokens.md): the access key, browser sessions and agent tokens.
+- [Notifications](user-guide/notifications.md): send a message to a webhook, ntfy or Telegram when something needs attention.
 - [Settings](user-guide/settings.md): the Settings page.
 - [Connecting AI agents](user-guide/agents.md): MCP, the CLI proxy and the `AGENTS.md` snippet.
 

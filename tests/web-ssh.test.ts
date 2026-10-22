@@ -55,19 +55,27 @@ describe("SSH dialog commands", () => {
     }
   });
 
-  test.skipIf(PWSH === null)("the PowerShell commands parse without errors", () => {
-    for (const text of [windowsInstallCommands(ORIGIN), windowsSetupCommands(ORIGIN)]) {
-      const checked = spawnSync(
-        PWSH ?? "pwsh",
-        [
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          "$errors = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($env:SAMPLE, [ref]$null, [ref]$errors); exit $errors.Count",
-        ],
-        { env: { ...process.env, SAMPLE: text }, encoding: "utf8" },
-      );
-      expect({ text, status: checked.status, stderr: checked.stderr }).toEqual({ text, status: 0, stderr: "" });
-    }
-  });
+  // A real pwsh process: its first start on a cold CI runner alone can take over 5 s, so this test gets more time.
+  test.skipIf(PWSH === null)(
+    "the PowerShell commands parse without errors",
+    () => {
+      for (const text of [windowsInstallCommands(ORIGIN), windowsSetupCommands(ORIGIN)]) {
+        const checked = spawnSync(
+          PWSH ?? "pwsh",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$errors = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($env:SAMPLE, [ref]$null, [ref]$errors); exit $errors.Count",
+          ],
+          {
+            env: { ...process.env, SAMPLE: text, POWERSHELL_TELEMETRY_OPTOUT: "1", POWERSHELL_UPDATECHECK: "Off" },
+            encoding: "utf8",
+          },
+        );
+        expect({ text, status: checked.status, stderr: checked.stderr }).toEqual({ text, status: 0, stderr: "" });
+      }
+    },
+    30_000,
+  );
 });

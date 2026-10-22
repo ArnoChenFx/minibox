@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { setLogLevel } from "../src/lib/logger";
 import { MAX_SESSIONS, SessionStore, type SessionStoreOptions } from "../src/sessions";
+import { memoizeScryptSync } from "./support/scrypt";
 
 const KEY = "k".repeat(64);
 const HOUR = 60 * 60 * 1000;
@@ -21,6 +22,7 @@ let opened: SessionStore[];
 let logs: string[];
 
 beforeEach(() => {
+  memoizeScryptSync();
   dir = mkdtempSync(join(tmpdir(), "minibox-sessions-"));
   file = join(dir, "sessions.json");
   clock = START;

@@ -628,8 +628,7 @@ describe("terminal with a browser session", () => {
     await term.opened;
     await waitFor(() => lastState(term) !== undefined, "the state frame");
 
-    await Bun.sleep(600);
-    app.sessions.sweep();
+    app.sessions.sweep(Date.now() + 600);
     const close = await term.closed;
     expect(close.code).toBe(1008);
     expect(close.reason).toBe("signed out");

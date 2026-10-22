@@ -27,7 +27,11 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - run: bunx playwright install --with-deps chromium
-      - run: bun test
+      - name: Test
+        run: bun test --timings="$RUNNER_TEMP/test-timings.json" --update-timings
+      - name: Test file durations
+        if: always()
+        run: bun scripts/test-durations.ts "$RUNNER_TEMP/test-timings.json"
 
   docker:
     name: Docker build (smoke)
