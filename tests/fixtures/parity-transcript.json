@@ -789,7 +789,7 @@
     "path": "/api/boxes/<id>?deleteVolume=0",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"name\":\"beta\",\"volumeDeleted\":false}"
+    "body": "{\"name\":\"beta\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
     "step": "delete beta again",
@@ -813,7 +813,7 @@
     "path": "/api/boxes/<id>?deleteVolume=true",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"name\":\"restored\",\"volumeDeleted\":true}"
+    "body": "{\"name\":\"restored\",\"volumeDeleted\":true,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
     "step": "delete restored-2",
@@ -821,7 +821,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"name\":\"restored-2\",\"volumeDeleted\":false}"
+    "body": "{\"name\":\"restored-2\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
     "step": "rebuild alpha without confirm",
@@ -837,7 +837,7 @@
     "path": "/api/boxes/<id>/rebuild",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"strict\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":7,\"desired\":\"running\",\"idleTimeoutSec\":60,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"alpha\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"strict\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":805306368,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":7,\"desired\":\"running\",\"idleTimeoutSec\":60,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"alpha-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}},\"safety\":{\"id\":\"ck_<checkpoint>\",\"label\":\"Before rebuild\"}}"
   },
   {
     "step": "delete alpha, keeping its volume",
@@ -845,7 +845,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"name\":\"alpha\",\"volumeDeleted\":false}"
+    "body": "{\"name\":\"alpha\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
     "step": "delete nightly snapshot",
@@ -1029,7 +1029,7 @@
     "path": "/api/volumes/<volumeId>/attach",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"gamma\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-cache\",\"role\":\"cache\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/srv/data\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"spare\",\"role\":null,\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-workspace\",\"role\":\"workspace\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}},\"warning\":null}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"gamma\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-cache\",\"role\":\"cache\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/srv/data\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"spare\",\"role\":null,\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"gamma-workspace\",\"role\":\"workspace\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}},\"safety\":{\"id\":\"ck_<checkpoint>\",\"label\":\"Before rebuild\"},\"warning\":null}"
   },
   {
     "step": "detach spare",
@@ -1101,7 +1101,7 @@
     "path": "/api/events?op=box.create&limit=2",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"events\":[{\"seq\":100,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"ok\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: gamma\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"gamma\"},\"detail\":{\"name\":\"gamma\",\"cpus\":1,\"memoryMb\":256}},{\"seq\":20,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: beta\",\"target\":{\"kind\":\"box\",\"name\":\"beta\"},\"detail\":{\"name\":\"beta\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}}],\"nextCursor\":20}"
+    "body": "{\"events\":[{\"seq\":104,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"ok\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: gamma\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"gamma\"},\"detail\":{\"name\":\"gamma\",\"cpus\":1,\"memoryMb\":256}},{\"seq\":20,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: beta\",\"target\":{\"kind\":\"box\",\"name\":\"beta\"},\"detail\":{\"name\":\"beta\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}}],\"nextCursor\":20}"
   },
   {
     "step": "older events of box creation",
@@ -1125,7 +1125,7 @@
     "path": "/api/events?box=alpha&status=error",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"events\":[{\"seq\":96,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.rebuild\",\"kind\":\"destructive\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Rebuild a box from its spec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"confirm\":false,\"profile\":\"strict\"},\"error\":{\"code\":\"confirmation_required\",\"status\":409}},{\"seq\":51,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"1\"},\"error\":{\"code\":\"precondition_failed\",\"status\":412}},{\"seq\":50,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"\"},\"error\":{\"code\":\"precondition_required\",\"status\":428}},{\"seq\":39,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"exec.kill\",\"kind\":\"write\",\"tier\":\"activity\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Kill an exec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"execId\":\"ex_<ulid>\"},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
+    "body": "{\"events\":[{\"seq\":99,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.rebuild\",\"kind\":\"destructive\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Rebuild a box from its spec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"confirm\":false,\"safetyCheckpoint\":true,\"profile\":\"strict\"},\"error\":{\"code\":\"confirmation_required\",\"status\":409}},{\"seq\":51,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"1\"},\"error\":{\"code\":\"precondition_failed\",\"status\":412}},{\"seq\":50,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.resources\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Change the CPU, memory or process limit of a box: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"id\":\"<id>\",\"cpus\":1,\"expectedRevision\":\"\"},\"error\":{\"code\":\"precondition_required\",\"status\":428}},{\"seq\":39,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"exec.kill\",\"kind\":\"write\",\"tier\":\"activity\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Kill an exec: alpha\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"alpha\"},\"detail\":{\"execId\":\"ex_<ulid>\"},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":18,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":256},\"error\":{\"code\":\"conflict\",\"status\":409}},{\"seq\":16,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":1,\"memoryMb\":9216},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":15,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"cpus\":5,\"memoryMb\":256},\"error\":{\"code\":\"insufficient_capacity\",\"status\":422}},{\"seq\":11,\"id\":\"<ulid>\",\"ts\":0,\"durationMs\":0,\"status\":\"error\",\"op\":\"box.create\",\"kind\":\"write\",\"tier\":\"audit\",\"count\":1,\"principal\":{\"type\":\"owner\",\"id\":\"owner\",\"name\":\"owner\"},\"source\":\"rest\",\"hostId\":\"local\",\"summary\":\"Create and start a box: alpha\",\"target\":{\"kind\":\"box\",\"name\":\"alpha\"},\"detail\":{\"name\":\"alpha\",\"template\":\"ghost:1\",\"cpus\":1,\"memoryMb\":4096},\"error\":{\"code\":\"validation_failed\",\"status\":400}}],\"nextCursor\":null}"
   },
   {
     "step": "list tasks",
@@ -1309,7 +1309,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"name\":\"toolsbox\",\"volumeDeleted\":false}"
+    "body": "{\"name\":\"toolsbox\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
     "step": "create the session box",
@@ -1469,7 +1469,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"name\":\"term\",\"volumeDeleted\":false}"
+    "body": "{\"name\":\"term\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
     "step": "create a readonly token",
@@ -1557,7 +1557,7 @@
     "path": "/api/checkpoints",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"checkpoints\":[{\"id\":\"ck_<checkpoint>\",\"legacy\":false,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"boxName\":\"ckbox\",\"label\":\"before refactor\",\"reason\":\"\",\"createdBy\":\"owner\",\"pinned\":false,\"auto\":false,\"consistency\":\"live\",\"specRevision\":1,\"spec\":{\"template\":{\"ref\":\"mbtest-template:base\",\"image\":\"mbtest-template:base\",\"digest\":\"sha256:<image>\"},\"cpus\":1,\"memoryBytes\":268435456,\"profile\":\"standard\"},\"data\":[{\"volumeId\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"role\":\"workspace\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0},{\"volumeId\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"role\":\"home\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0}],\"system\":null,\"bytes\":0,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\"}]}"
+    "body": "{\"checkpoints\":[{\"id\":\"ck_<checkpoint>\",\"legacy\":false,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"boxName\":\"ckbox\",\"label\":\"before refactor\",\"reason\":\"\",\"createdBy\":\"owner\",\"pinned\":false,\"auto\":false,\"consistency\":\"live\",\"specRevision\":1,\"spec\":{\"template\":{\"ref\":\"mbtest-template:base\",\"image\":\"mbtest-template:base\",\"digest\":\"sha256:<image>\"},\"cpus\":1,\"memoryBytes\":268435456,\"profile\":\"standard\"},\"data\":[{\"volumeId\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"role\":\"workspace\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0},{\"volumeId\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"role\":\"home\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0}],\"system\":null,\"bytes\":0,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\"},{\"id\":\"ck_<checkpoint>\",\"legacy\":false,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"boxName\":\"gamma\",\"label\":\"Before rebuild\",\"reason\":\"Taken automatically before a box rebuild\",\"createdBy\":\"owner\",\"pinned\":false,\"auto\":true,\"consistency\":\"pause\",\"specRevision\":1,\"spec\":{\"template\":{\"ref\":\"mbtest-template:base\",\"image\":\"mbtest-template:base\",\"digest\":\"sha256:<image>\"},\"cpus\":1,\"memoryBytes\":268435456,\"profile\":\"standard\"},\"data\":[{\"volumeId\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"role\":\"workspace\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0},{\"volumeId\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"role\":\"home\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0}],\"system\":null,\"bytes\":0,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\"},{\"id\":\"ck_<checkpoint>\",\"legacy\":false,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"boxName\":\"alpha\",\"label\":\"Before rebuild\",\"reason\":\"Taken automatically before a box rebuild\",\"createdBy\":\"owner\",\"pinned\":false,\"auto\":true,\"consistency\":\"pause\",\"specRevision\":6,\"spec\":{\"template\":{\"ref\":\"mbtest-template:base\",\"image\":\"mbtest-template:base\",\"digest\":\"sha256:<image>\"},\"cpus\":1,\"memoryBytes\":805306368,\"profile\":\"standard\"},\"data\":[{\"volumeId\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"role\":\"workspace\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0},{\"volumeId\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"role\":\"home\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0}],\"system\":null,\"bytes\":0,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\"}]}"
   },
   {
     "step": "read the checkpoint",
@@ -1781,7 +1781,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"name\":\"secretbox\",\"volumeDeleted\":false}"
+    "body": "{\"name\":\"secretbox\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
     "step": "read the rolled back box",
@@ -2469,7 +2469,7 @@
     "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"name\":\"startbox\",\"volumeDeleted\":false}"
+    "body": "{\"name\":\"startbox\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
     "step": "create a pairing code for an agent host",
@@ -2776,83 +2776,107 @@
     "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid image reference.\",\"retryable\":false,\"key\":\"image_ref_invalid\",\"details\":{\"field\":\"ref\"}}}"
   },
   {
-    "step": "list notification channels when there are none",
-    "method": "GET",
-    "path": "/api/notify/channels",
-    "status": 200,
-    "contentType": "application/json; charset=utf-8",
-    "body": "{\"channels\":[]}"
-  },
-  {
-    "step": "create a webhook channel with a signing key",
-    "method": "PUT",
-    "path": "/api/notify/channels/alerts",
-    "status": 200,
-    "contentType": "application/json; charset=utf-8",
-    "body": "{\"channel\":{\"id\":\"alerts\",\"type\":\"webhook\",\"name\":\"Alerts\",\"enabled\":true,\"events\":[\"box.oom\"],\"boxes\":[],\"url\":\"http://127.0.0.1:9/…\",\"server\":null,\"topic\":null,\"chatId\":null,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"hasSecret\":true},\"created\":true,\"valueChange\":\"set\"}"
-  },
-  {
-    "step": "create a webhook channel with a URL that is not http",
-    "method": "PUT",
-    "path": "/api/notify/channels/bad",
-    "status": 400,
-    "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The webhook URL must be an http or https address with no user name or password, at most 2048 characters.\",\"retryable\":false,\"key\":\"notify_url_invalid\",\"details\":{\"field\":\"url\"}}}"
-  },
-  {
-    "step": "create a telegram channel without a bot token",
-    "method": "PUT",
-    "path": "/api/notify/channels/chat",
-    "status": 400,
-    "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A Telegram channel needs its bot token as the secret.\",\"retryable\":false,\"key\":\"notify_secret_required\",\"details\":{\"field\":\"secret\"}}}"
-  },
-  {
-    "step": "list notification channels",
-    "method": "GET",
-    "path": "/api/notify/channels",
-    "status": 200,
-    "contentType": "application/json; charset=utf-8",
-    "body": "{\"channels\":[{\"id\":\"alerts\",\"type\":\"webhook\",\"name\":\"Alerts\",\"enabled\":true,\"events\":[\"box.oom\"],\"boxes\":[],\"url\":\"http://127.0.0.1:9/…\",\"server\":null,\"topic\":null,\"chatId\":null,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"hasSecret\":true}]}"
-  },
-  {
-    "step": "send a test notice to a channel on a private address",
+    "step": "create a box to delete into the recycle bin",
     "method": "POST",
-    "path": "/api/notify/channels/alerts/test",
-    "status": 200,
+    "path": "/api/boxes",
+    "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"ok\":false,\"status\":null,\"attempts\":1,\"error\":\"blocked_address\"}"
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"doomed\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-doomed\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"doomed-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"doomed-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"doomed-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
   },
   {
-    "step": "list notification deliveries",
-    "method": "GET",
-    "path": "/api/notify/deliveries?limit=10",
-    "status": 200,
-    "contentType": "application/json; charset=utf-8",
-    "body": "{\"deliveries\":[{\"id\":\"<ulid>\",\"ts\":0,\"status\":\"error\",\"channel\":\"alerts\",\"type\":\"webhook\",\"notice\":\"notify.test\",\"title\":\"MiniBox test notification\",\"attempts\":1,\"httpStatus\":null,\"error\":\"blocked_address\"}]}"
-  },
-  {
-    "step": "list notification deliveries with a zero limit",
-    "method": "GET",
-    "path": "/api/notify/deliveries?limit=0",
-    "status": 400,
-    "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"limit must be an integer between 1 and 200.\",\"retryable\":false,\"key\":\"event_limit_range\",\"params\":{\"max\":200},\"details\":{\"field\":\"limit\"}}}"
-  },
-  {
-    "step": "delete the webhook channel",
+    "step": "delete the doomed box",
     "method": "DELETE",
-    "path": "/api/notify/channels/alerts",
+    "path": "/api/boxes/<id>",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"id\":\"alerts\"}"
+    "body": "{\"name\":\"doomed\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   },
   {
-    "step": "delete the webhook channel again",
-    "method": "DELETE",
-    "path": "/api/notify/channels/alerts",
+    "step": "list the recycle bin",
+    "method": "GET",
+    "path": "/api/trash",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"trash\":[{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"doomed\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"startbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"secretbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"term\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"toolsbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"alpha\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"restored-2\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"restored\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"beta\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"}]}"
+  },
+  {
+    "step": "restore the recycle bin entry as a new box",
+    "method": "POST",
+    "path": "/api/trash/ck_<checkpoint>/restore",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the restore task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"trash.restore\",\"status\":\"succeeded\",\"summary\":\"Restore a recycle bin entry as a new box or volume: doomed\",\"hostId\":\"local\",\"target\":{\"kind\":\"trash\",\"id\":\"ck_<checkpoint>\",\"name\":\"doomed\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"doomed-copy\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-doomed-copy\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"doomed-copy-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"doomed-copy-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"doomed-copy-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}},\"volume\":null},\"output\":\"Restoring workspace…\\nRestoring home…\\n\",\"truncated\":false,\"logSeq\":3}"
+  },
+  {
+    "step": "restore a recycle bin entry that is gone",
+    "method": "POST",
+    "path": "/api/trash/ck_<checkpoint>/restore",
     "status": 404,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Notification channel alerts was not found.\",\"retryable\":false,\"key\":\"notify_channel_not_found\",\"params\":{\"channel\":\"alerts\"}}}"
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Recycle bin entry ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"trash_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "create a box to keep in the recycle bin",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"spare-box\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-spare-box\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"spare-box-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"spare-box-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"spare-box-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "delete the spare box",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"spare-box\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
+  },
+  {
+    "step": "list the recycle bin again",
+    "method": "GET",
+    "path": "/api/trash",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"trash\":[{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"spare-box\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"startbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"secretbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"term\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"toolsbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"alpha\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"restored-2\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"restored\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"beta\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"}]}"
+  },
+  {
+    "step": "purge a recycle bin entry",
+    "method": "DELETE",
+    "path": "/api/trash/ck_<checkpoint>",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the purge task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"trash.purge\",\"status\":\"succeeded\",\"summary\":\"Purge a recycle bin entry now: spare-box\",\"hostId\":\"local\",\"target\":{\"kind\":\"trash\",\"id\":\"ck_<checkpoint>\",\"name\":\"spare-box\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"ok\":true},\"output\":\"\",\"truncated\":false,\"logSeq\":1}"
+  },
+  {
+    "step": "purge a recycle bin entry that is gone",
+    "method": "DELETE",
+    "path": "/api/trash/ck_<checkpoint>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Recycle bin entry ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"trash_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "purge a missing recycle bin entry",
+    "method": "DELETE",
+    "path": "/api/trash/ck_<checkpoint>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Recycle bin entry ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"trash_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
   }
 ]

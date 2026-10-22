@@ -30,6 +30,11 @@ Commands:
                                        Rebuild a template from the source it was built from
   minibox image pull <ref> [--no-wait] [--json]
                                        Pull an image from its registry, when the engine does not have it
+  minibox trash ls [--json]            List the recycle bin: deleted boxes and volumes, kept until they expire
+  minibox trash restore <id> [--name NAME] [--cpus N] [--memory MB] [--no-wait] [--json]
+                                       Restore an entry as a new box or volume, and remove the entry
+  minibox trash purge <id> [--no-wait] [--json]
+                                       Remove an entry and the data it keeps, before it expires
   minibox exec <box> [options] -- <argv...>
       --cwd DIR         Working directory (default /workspace)
       --user USER       Container user (default dev; the strict profile allows only dev or 1000)

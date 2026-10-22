@@ -40,6 +40,9 @@
       "name": "checkpoints"
     },
     {
+      "name": "trash"
+    },
+    {
       "name": "templates"
     },
     {
@@ -1902,6 +1905,15 @@
             }
           },
           {
+            "name": "skipTrash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Delete without keeping a copy of the data in the recycle bin. Owner only; a token needs the trash:skip scope. Accepts true, false, 1 or 0. Defaults to false."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -1930,11 +1942,36 @@
                     },
                     "volumeError": {
                       "type": "string"
+                    },
+                    "trash": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "expiresAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "expiresAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The recycle bin entry that kept the box's data until expiresAt, or null when none was kept."
                     }
                   },
                   "required": [
                     "name",
-                    "volumeDeleted"
+                    "volumeDeleted",
+                    "trash"
                   ],
                   "additionalProperties": false
                 }
@@ -1983,6 +2020,16 @@
           },
           "415": {
             "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5000,6 +5047,10 @@
                   "confirm": {
                     "type": "boolean",
                     "description": "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false."
+                  },
+                  "safetyCheckpoint": {
+                    "type": "boolean",
+                    "description": "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0. Defaults to true."
                   }
                 }
               }
@@ -5401,10 +5452,35 @@
                         "storage"
                       ],
                       "additionalProperties": false
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The checkpoint taken before the rebuild, which a rollback can use, or null when none was taken."
                     }
                   },
                   "required": [
-                    "box"
+                    "box",
+                    "safety"
                   ],
                   "additionalProperties": false
                 }
@@ -11884,6 +11960,15 @@
             }
           },
           {
+            "name": "skipTrash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Delete without keeping a copy of the data in the recycle bin. Owner only; a token needs the trash:skip scope. Accepts true, false, 1 or 0. Defaults to false."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -11906,10 +11991,35 @@
                   "properties": {
                     "name": {
                       "type": "string"
+                    },
+                    "trash": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "expiresAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "expiresAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The recycle bin entry that kept the volume's data until expiresAt, or null when none was kept."
                     }
                   },
                   "required": [
-                    "name"
+                    "name",
+                    "trash"
                   ],
                   "additionalProperties": false
                 }
@@ -11968,6 +12078,16 @@
           },
           "415": {
             "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12083,6 +12203,10 @@
                   "confirm": {
                     "type": "boolean",
                     "description": "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false."
+                  },
+                  "safetyCheckpoint": {
+                    "type": "boolean",
+                    "description": "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0. Defaults to true."
                   }
                 },
                 "required": [
@@ -12502,11 +12626,36 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The checkpoint taken before the rebuild, or null when none was taken."
                     }
                   },
                   "required": [
                     "box",
-                    "warning"
+                    "warning",
+                    "safety"
                   ],
                   "additionalProperties": false
                 }
@@ -12692,6 +12841,10 @@
                   "confirm": {
                     "type": "boolean",
                     "description": "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false."
+                  },
+                  "safetyCheckpoint": {
+                    "type": "boolean",
+                    "description": "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0. Defaults to true."
                   }
                 },
                 "required": [
@@ -13097,10 +13250,35 @@
                         "storage"
                       ],
                       "additionalProperties": false
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The checkpoint taken before the rebuild, or null when none was taken."
                     }
                   },
                   "required": [
-                    "box"
+                    "box",
+                    "safety"
                   ],
                   "additionalProperties": false
                 }
@@ -19216,66 +19394,73 @@
                             ]
                           },
                           "spec": {
-                            "type": "object",
-                            "properties": {
-                              "template": {
+                            "anyOf": [
+                              {
                                 "type": "object",
                                 "properties": {
-                                  "ref": {
-                                    "type": "string"
+                                  "template": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "image": {
+                                        "type": "string"
+                                      },
+                                      "digest": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ref",
+                                      "image",
+                                      "digest"
+                                    ],
+                                    "additionalProperties": false
                                   },
-                                  "image": {
-                                    "type": "string"
-                                  },
-                                  "digest": {
+                                  "cpus": {
                                     "type": [
-                                      "string",
+                                      "number",
                                       "null"
+                                    ]
+                                  },
+                                  "memoryBytes": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "profile": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "standard",
+                                          "strict",
+                                          "relaxed"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
                                     ]
                                   }
                                 },
                                 "required": [
-                                  "ref",
-                                  "image",
-                                  "digest"
+                                  "template",
+                                  "cpus",
+                                  "memoryBytes",
+                                  "profile"
                                 ],
                                 "additionalProperties": false
                               },
-                              "cpus": {
-                                "type": [
-                                  "number",
-                                  "null"
-                                ]
-                              },
-                              "memoryBytes": {
-                                "type": [
-                                  "number",
-                                  "null"
-                                ]
-                              },
-                              "profile": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "enum": [
-                                      "standard",
-                                      "strict",
-                                      "relaxed"
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                              {
+                                "type": "null"
                               }
-                            },
-                            "required": [
-                              "template",
-                              "cpus",
-                              "memoryBytes",
-                              "profile"
-                            ],
-                            "additionalProperties": false
+                            ]
                           },
                           "data": {
                             "type": "array",
@@ -19727,66 +19912,73 @@
                           ]
                         },
                         "spec": {
-                          "type": "object",
-                          "properties": {
-                            "template": {
+                          "anyOf": [
+                            {
                               "type": "object",
                               "properties": {
-                                "ref": {
-                                  "type": "string"
+                                "template": {
+                                  "type": "object",
+                                  "properties": {
+                                    "ref": {
+                                      "type": "string"
+                                    },
+                                    "image": {
+                                      "type": "string"
+                                    },
+                                    "digest": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "ref",
+                                    "image",
+                                    "digest"
+                                  ],
+                                  "additionalProperties": false
                                 },
-                                "image": {
-                                  "type": "string"
-                                },
-                                "digest": {
+                                "cpus": {
                                   "type": [
-                                    "string",
+                                    "number",
                                     "null"
+                                  ]
+                                },
+                                "memoryBytes": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "profile": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "standard",
+                                        "strict",
+                                        "relaxed"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
                                   ]
                                 }
                               },
                               "required": [
-                                "ref",
-                                "image",
-                                "digest"
+                                "template",
+                                "cpus",
+                                "memoryBytes",
+                                "profile"
                               ],
                               "additionalProperties": false
                             },
-                            "cpus": {
-                              "type": [
-                                "number",
-                                "null"
-                              ]
-                            },
-                            "memoryBytes": {
-                              "type": [
-                                "number",
-                                "null"
-                              ]
-                            },
-                            "profile": {
-                              "anyOf": [
-                                {
-                                  "type": "string",
-                                  "enum": [
-                                    "standard",
-                                    "strict",
-                                    "relaxed"
-                                  ]
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
+                            {
+                              "type": "null"
                             }
-                          },
-                          "required": [
-                            "template",
-                            "cpus",
-                            "memoryBytes",
-                            "profile"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         "data": {
                           "type": "array",
@@ -20233,66 +20425,73 @@
                   ]
                 },
                 "spec": {
-                  "type": "object",
-                  "properties": {
-                    "template": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "ref": {
-                          "type": "string"
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
                         },
-                        "image": {
-                          "type": "string"
-                        },
-                        "digest": {
+                        "cpus": {
                           "type": [
-                            "string",
+                            "number",
                             "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
                           ]
                         }
                       },
                       "required": [
-                        "ref",
-                        "image",
-                        "digest"
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
                       ],
                       "additionalProperties": false
                     },
-                    "cpus": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "memoryBytes": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "profile": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "standard",
-                            "strict",
-                            "relaxed"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "template",
-                    "cpus",
-                    "memoryBytes",
-                    "profile"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "data": {
                   "type": "array",
@@ -20861,66 +21060,73 @@
                   ]
                 },
                 "spec": {
-                  "type": "object",
-                  "properties": {
-                    "template": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "ref": {
-                          "type": "string"
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
                         },
-                        "image": {
-                          "type": "string"
-                        },
-                        "digest": {
+                        "cpus": {
                           "type": [
-                            "string",
+                            "number",
                             "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
                           ]
                         }
                       },
                       "required": [
-                        "ref",
-                        "image",
-                        "digest"
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
                       ],
                       "additionalProperties": false
                     },
-                    "cpus": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "memoryBytes": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "profile": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "standard",
-                            "strict",
-                            "relaxed"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "template",
-                    "cpus",
-                    "memoryBytes",
-                    "profile"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "data": {
                   "type": "array",
@@ -23799,66 +24005,73 @@
                   ]
                 },
                 "spec": {
-                  "type": "object",
-                  "properties": {
-                    "template": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "ref": {
-                          "type": "string"
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
                         },
-                        "image": {
-                          "type": "string"
-                        },
-                        "digest": {
+                        "cpus": {
                           "type": [
-                            "string",
+                            "number",
                             "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
                           ]
                         }
                       },
                       "required": [
-                        "ref",
-                        "image",
-                        "digest"
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
                       ],
                       "additionalProperties": false
                     },
-                    "cpus": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "memoryBytes": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "profile": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "standard",
-                            "strict",
-                            "relaxed"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "template",
-                    "cpus",
-                    "memoryBytes",
-                    "profile"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "data": {
                   "type": "array",
@@ -24704,6 +24917,1056 @@
         "x-cli": "checkpoint schedule-clear",
         "x-mcp": {
           "name": "clear_checkpoint_schedule",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/trash": {
+      "get": {
+        "operationId": "trash.list",
+        "tags": [
+          "trash"
+        ],
+        "summary": "List the recycle bin",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trash": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "hostId": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "box",
+                              "volume"
+                            ]
+                          },
+                          "sourceId": {
+                            "type": "string"
+                          },
+                          "sourceName": {
+                            "type": "string"
+                          },
+                          "deletedAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "type": "number"
+                          },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "hostId",
+                          "kind",
+                          "sourceId",
+                          "sourceName",
+                          "deletedAt",
+                          "expiresAt",
+                          "bytes",
+                          "createdBy"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "trash"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "trash:read",
+        "x-async": false,
+        "x-cli": "trash ls",
+        "x-mcp": {
+          "name": "list_trash",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/trash/{id}/restore": {
+      "post": {
+        "operationId": "trash.restore",
+        "tags": [
+          "trash"
+        ],
+        "summary": "Restore a recycle bin entry as a new box or volume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Recycle bin entry id (ck_…), as trash.list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+                    "description": "New name for the restored box or volume: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Defaults to the name it had when it was deleted."
+                  },
+                  "cpus": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 64,
+                    "description": "CPU cores, between 0.1 and 64, rounded to two decimals."
+                  },
+                  "memoryMb": {
+                    "type": "integer",
+                    "minimum": 128,
+                    "maximum": 262144,
+                    "description": "Memory in MB, an integer between 128 and 262144."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "trash:restore",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "box": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "boxId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "image": {
+                      "type": "string"
+                    },
+                    "template": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "standard",
+                            "strict",
+                            "relaxed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "network": {
+                      "type": "string"
+                    },
+                    "cpus": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "memory": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "pids": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "volume": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "number"
+                    },
+                    "desired": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "stopped"
+                      ]
+                    },
+                    "idleTimeoutSec": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "ttlSec": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "stopReason": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "idle",
+                            "ttl",
+                            "manual"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sleeping": {
+                      "type": "boolean"
+                    },
+                    "lastActivityAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "labels": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "containerName": {
+                      "type": "string"
+                    },
+                    "drift": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "expected": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "expected",
+                          "actual"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "recovery": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "claim",
+                                "degraded"
+                              ]
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "needsReset": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "observedRestart": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "at",
+                            "needsReset",
+                            "observedRestart"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "volume": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "rw",
+                              "ro"
+                            ]
+                          },
+                          "volumeId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "volumeName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "role": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "workspace",
+                                  "home",
+                                  "tools",
+                                  "cache"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "pool": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "volume",
+                          "path",
+                          "mode",
+                          "volumeId",
+                          "volumeName",
+                          "role",
+                          "pool"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "env": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "secretRef": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "version"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "storage": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unreachable",
+                            "unknown"
+                          ]
+                        },
+                        "pools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "reachable",
+                                  "unreachable",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "pools"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "hostId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "boxId",
+                    "name",
+                    "state",
+                    "status",
+                    "running",
+                    "image",
+                    "template",
+                    "profile",
+                    "network",
+                    "cpus",
+                    "memory",
+                    "pids",
+                    "createdAt",
+                    "startedAt",
+                    "volume",
+                    "revision",
+                    "desired",
+                    "idleTimeoutSec",
+                    "ttlSec",
+                    "stopReason",
+                    "sleeping",
+                    "lastActivityAt",
+                    "labels",
+                    "createdBy",
+                    "containerName",
+                    "drift",
+                    "recovery",
+                    "mounts",
+                    "env",
+                    "tools",
+                    "storage"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "volume": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "hostId": {
+                      "type": "string"
+                    },
+                    "pool": {
+                      "type": "string"
+                    },
+                    "backend": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "workspace",
+                            "home",
+                            "tools",
+                            "cache"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ownership": {
+                      "type": "string",
+                      "enum": [
+                        "owned",
+                        "independent"
+                      ]
+                    },
+                    "ownerBoxId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sensitive": {
+                      "type": "boolean"
+                    },
+                    "checkpoint": {
+                      "type": "boolean"
+                    },
+                    "engineName": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "bytesAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "mounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "boxId": {
+                            "type": "string"
+                          },
+                          "boxName": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "rw",
+                              "ro"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "boxId",
+                          "boxName",
+                          "path",
+                          "mode"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "unattached": {
+                      "type": "boolean"
+                    },
+                    "rwMounts": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "hostId",
+                    "pool",
+                    "backend",
+                    "role",
+                    "ownership",
+                    "ownerBoxId",
+                    "sensitive",
+                    "checkpoint",
+                    "engineName",
+                    "bytes",
+                    "bytesAt",
+                    "createdAt",
+                    "mounts",
+                    "unattached",
+                    "rwMounts"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "box",
+            "volume"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "trash restore",
+        "x-mcp": {
+          "name": "restore_trash",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/trash/{id}": {
+      "delete": {
+        "operationId": "trash.purge",
+        "tags": [
+          "trash"
+        ],
+        "summary": "Purge a recycle bin entry now",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Recycle bin entry id (ck_…), as trash.list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "trash:purge",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "trash purge",
+        "x-mcp": {
+          "name": "purge_trash",
           "toolset": "storage"
         }
       }
@@ -27367,7 +28630,8 @@
                                 "volume:write",
                                 "volume:attach",
                                 "tool:install",
-                                "secret:use"
+                                "secret:use",
+                                "trash:skip"
                               ]
                             }
                           },
@@ -27769,11 +29033,12 @@
                         "volume:write",
                         "volume:attach",
                         "tool:install",
-                        "secret:use"
+                        "secret:use",
+                        "trash:skip"
                       ]
                     },
-                    "maxItems": 15,
-                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install, secret:use."
+                    "maxItems": 16,
+                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install, secret:use, trash:skip."
                   },
                   "boxes": {
                     "description": "Which boxes this token may use. \"created-by-me\" (the default), \"*\" for every box, {\"ids\":[\"bx_…\"]}, or {\"tags\":[\"env=prod\"]}. A tag is a label key, or key=value."
@@ -27912,7 +29177,8 @@
                               "volume:write",
                               "volume:attach",
                               "tool:install",
-                              "secret:use"
+                              "secret:use",
+                              "trash:skip"
                             ]
                           }
                         },
@@ -28295,7 +29561,7 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Also delete boxes this token created, including their workspace volumes."
+              "description": "Also delete boxes this token created, including their workspace volumes. Their data is kept in the recycle bin for the retention period."
             }
           },
           {
@@ -28366,7 +29632,8 @@
                               "volume:write",
                               "volume:attach",
                               "tool:install",
-                              "secret:use"
+                              "secret:use",
+                              "trash:skip"
                             ]
                           }
                         },
