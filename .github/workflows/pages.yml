@@ -1,0 +1,112 @@
+name: Project homepage
+
+on:
+  push:
+    branches: [main, website]
+    paths:
+      - "site/**"
+      - "scripts/build-site.ts"
+      - "scripts/serve-site.ts"
+      - "docs/screenshots/**"
+      - "web/assets/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "scripts/build-site.ts"
+      - "scripts/serve-site.ts"
+      - "docs/screenshots/**"
+      - "web/assets/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homepage-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.3"
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run test:site
+
+  deploy:
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/website') && github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.3"
+      - run: bun run build:site
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Upload the static site
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: ./dist/site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+      - name: Verify the published homepage and assets
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          node --input-type=module <<'JS'
+          const base = new URL(process.env.PAGE_URL);
+          const paths = [
+            ["", "text/html", "Your agents."],
+            ["styles.css", "text/css"],
+            ["main.js", "javascript"],
+            ["assets/logo-mark.svg", "image/svg+xml"],
+            ["assets/favicon.svg", "image/svg+xml"],
+            ["assets/agents/claude-code.svg", "image/svg+xml"],
+            ["assets/agents/codex.svg", "image/svg+xml"],
+            ["assets/agents/opencode.svg", "image/svg+xml"],
+            ["assets/agents/pi.svg", "image/svg+xml"],
+            ["assets/screenshots/overview-light.png", "image/png"],
+            ["assets/screenshots/boxes-light.png", "image/png"],
+            ["assets/screenshots/terminal-light.png", "image/png"],
+          ];
+          for (const [path, type, expected] of paths) {
+            const url = new URL(path, base);
+            let error;
+            for (let attempt = 0; attempt < 10; attempt++) {
+              try {
+                const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                if (!response.headers.get("content-type")?.includes(type)) throw new Error("Unexpected content type");
+                const content = new Uint8Array(await response.arrayBuffer());
+                if (!content.length) throw new Error("Empty response");
+                if (expected && !new TextDecoder().decode(content).includes(expected)) throw new Error("Homepage content missing");
+                console.log(`Verified ${url} (${content.length} bytes)`);
+                error = undefined;
+                break;
+              } catch (failure) {
+                error = failure;
+                await new Promise(resolve => setTimeout(resolve, 3000));
+              }
+            }
+            if (error) throw error;
+          }
+          JS

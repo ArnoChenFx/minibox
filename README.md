@@ -969,6 +969,8 @@ minibox/
 
 ## Development
 
+The standalone project homepage lives in [`site/`](site/). Run `bun run preview:site` to preview it, or `bun run test:site` for its browser checks. See [homepage development and GitHub Pages deployment](docs/homepage.md).
+
 ```bash
 bun run dev        # Restart on file changes
 bun run fmt        # Format with oxfmt (writes files)

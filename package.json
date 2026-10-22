@@ -21,6 +21,9 @@
     "check": "bun run fmt:check && bun run lint && bun run typecheck && bun test",
     "openapi": "bun scripts/export-openapi.ts",
     "build:cli": "bun build --compile --outfile dist/minibox src/cli.ts",
+    "build:site": "bun scripts/build-site.ts",
+    "preview:site": "bun run build:site && bun scripts/serve-site.ts",
+    "test:site": "playwright test --config site/playwright.config.ts",
     "build:template": "docker build -t minibox-template:base --label minibox.template=true --label minibox.template.name=base --label \"minibox.template.description=Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user\" templates/base",
     "check:template": "scripts/check-box-image.sh"
   },
@@ -30,6 +33,7 @@
     "zod": "^4"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@readme/openapi-parser": "^9.1.0",
     "@types/bun": "^1.4.3",
     "@types/dockerode": "^4.0.2",
