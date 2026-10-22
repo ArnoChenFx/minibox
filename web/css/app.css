@@ -375,6 +375,9 @@ button {
 .btn-block {
   width: 100%;
 }
+.btn[hidden] {
+  display: none;
+}
 .icon-btn {
   display: inline-grid;
   place-items: center;
@@ -803,6 +806,19 @@ table.table {
 .form-grid > .field + .field {
   margin-top: 0;
 }
+.form-grid > .field-wide {
+  grid-column: 1 / -1;
+}
+/* Commands are shell text: monospace, several lines, and the box grows to fit what is typed. */
+.textarea.command-input {
+  height: auto;
+  min-height: 64px;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
 .section-intro {
   display: flex;
   flex-direction: column;
@@ -1000,7 +1016,8 @@ table.table {
 .dropdown-option[aria-selected="true"] .dropdown-check {
   visibility: visible;
 }
-.input.invalid {
+.input.invalid,
+.textarea.invalid {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-soft);
 }
@@ -1058,9 +1075,37 @@ table.table {
   font-size: 13px;
   cursor: pointer;
 }
-.checkbox input {
-  margin-top: 3px;
-  accent-color: var(--danger);
+/* Drawn by hand like every other control: the native box is replaced, the input stays focusable and clickable. */
+.checkbox input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elev) center / 12px 12px no-repeat;
+  cursor: pointer;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s;
+}
+.checkbox input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+.checkbox input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-4.9' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.checkbox input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.checkbox input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 input[type="range"] {
   width: 100%;
@@ -1769,6 +1814,10 @@ input[type="range"] {
   background: var(--bg-subtle);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
+.dialog-foot .error-text {
+  margin-right: auto;
+  align-self: center;
+}
 @keyframes fade {
   from {
     opacity: 0;
@@ -2404,7 +2453,8 @@ textarea.token-lines {
   align-items: center;
   gap: 6px;
 }
-.tool-action-cell {
+.tool-action-cell,
+.tool-missing {
   white-space: nowrap;
 }
 .tool-actions {

@@ -2,14 +2,19 @@ import { dirname } from "node:path";
 
 import { z } from "zod";
 
+import { type LabelKey, msg } from "../lib/messages";
+import { type Checked, accept, checkName, NAME_RE, reject } from "../lib/validation";
 import { getBox } from "../services/boxes";
 import { installTool, listToolStatuses, reconcileTools, uninstallTool, upgradeTool } from "../services/tools";
-import { loadCatalog } from "../tools/catalog";
+import { loadCatalog, TOOL_ID_RE } from "../tools/catalog";
 import { TOOL_VERSION_RE } from "../tools/commands";
-import { TOOL_CATEGORIES } from "../tools/types";
+import { type CustomEntry, deleteCustomEntry, listCustomEntries, saveCustomEntry } from "../tools/custom";
+import { type CatalogEntry, isToolCategory, TOOL_CATEGORIES, type ToolCategory } from "../tools/types";
+import { assertCanAdministerCatalog } from "./authz";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
-import { boxId } from "./validation";
+import type { OperationContext } from "./types";
+import { boxId, field } from "./validation";
 
 const ToolStatusSchema = z.object({
   id: z.string(),
@@ -228,4 +233,329 @@ export const toolCatalog = defineOperation({
   run: async ({ host }) => ({ tools: catalogSummary(dirname(host.specs.dir())) }),
 });
 
-export const toolOperations = [toolCatalog, toolList, toolInstall, toolUpgrade, toolUninstall, toolReconcile];
+const CUSTOM_LIMITS = {
+  name: 80,
+  description: 300,
+  requires: 600,
+  package: 214,
+  command: 16_000,
+  estimatedMb: 102_400,
+};
+const PACKAGE_RE = /^[A-Za-z0-9@][A-Za-z0-9@._/+-]*$/;
+const PLACEHOLDER_RE = /\{\{([^{}]*)\}\}/g;
+const PLACEHOLDERS: readonly string[] = ["prefix", "version", "package", "package_spec", "bin"];
+
+/** Control characters, C1 included. `allowed` lists the ones a field may still hold. */
+function hasControlCharacter(value: string, allowed: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if ((code < 0x20 || (code >= 0x7f && code < 0xa0)) && !allowed.includes(char)) return true;
+  }
+  return false;
+}
+
+function checkCustomId(value: unknown): Checked<string> {
+  const id = typeof value === "string" ? value.trim() : "";
+  return TOOL_ID_RE.test(id) ? accept(id) : reject(msg("tool_id_invalid"), "id");
+}
+
+function checkLine(value: unknown, key: string, label: LabelKey, max: number): Checked<string> {
+  if (typeof value !== "string" || !value.trim()) return reject(msg("field_required", { label }), key);
+  const text = value.trim();
+  if ([...text].length > max || hasControlCharacter(text, "")) {
+    return reject(msg("tool_custom_text_invalid", { label, max }), key);
+  }
+  return accept(text);
+}
+
+function checkOptionalLine(value: unknown, key: string, label: LabelKey, max: number): Checked<string | undefined> {
+  if (value === undefined || value === null || (typeof value === "string" && !value.trim())) return accept(undefined);
+  const checked = checkLine(value, key, label, max);
+  return checked.ok ? accept(checked.value) : checked;
+}
+
+/** A command is `sh -c` text, so line breaks and tabs are real content. Every other control character is refused. */
+function checkCommand(value: unknown, key: string, label: LabelKey): Checked<string> {
+  if (typeof value !== "string" || !value.trim()) return reject(msg("field_required", { label }), key);
+  const text = value.trim();
+  if ([...text].length > CUSTOM_LIMITS.command || hasControlCharacter(text, "\n\t")) {
+    return reject(msg("tool_custom_command_invalid", { label, max: CUSTOM_LIMITS.command }), key);
+  }
+  for (const match of text.matchAll(PLACEHOLDER_RE)) {
+    const name = match[1] ?? "";
+    if (!PLACEHOLDERS.includes(name)) {
+      return reject(msg("tool_custom_placeholder_invalid", { label, placeholder: `{{${name}}}` }), key);
+    }
+  }
+  return accept(text);
+}
+
+function checkOptionalCommand(value: unknown, key: string, label: LabelKey): Checked<string | undefined> {
+  if (value === undefined || value === null || (typeof value === "string" && !value.trim())) return accept(undefined);
+  const checked = checkCommand(value, key, label);
+  return checked.ok ? accept(checked.value) : checked;
+}
+
+/** The package is spliced unquoted into the install command, so only characters that are inert in `sh` pass. */
+function checkPackage(value: unknown): Checked<string> {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return reject(msg("field_required", { label: "toolPackage" }), "package");
+  return text.length <= CUSTOM_LIMITS.package && PACKAGE_RE.test(text)
+    ? accept(text)
+    : reject(msg("tool_custom_package_invalid", { label: "toolPackage" }), "package");
+}
+
+function checkBin(value: unknown): Checked<string> {
+  const checked = checkName(value, "toolBin");
+  return checked.ok ? checked : reject(checked.failure.message, "bin");
+}
+
+function checkCategory(value: unknown): Checked<ToolCategory> {
+  return typeof value === "string" && isToolCategory(value)
+    ? accept(value)
+    : reject(msg("tool_category_invalid"), "category");
+}
+
+function checkSource(value: unknown): Checked<CatalogEntry["source"]> {
+  return value === "npm" || value === "pip" || value === "script"
+    ? accept(value)
+    : reject(msg("tool_source_invalid"), "source");
+}
+
+function checkEstimatedMb(value: unknown): Checked<number> {
+  const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= CUSTOM_LIMITS.estimatedMb
+    ? accept(n)
+    : reject(msg("tool_estimated_invalid", { max: CUSTOM_LIMITS.estimatedMb }), "estimatedMb");
+}
+
+function checkFlag(value: unknown, key: string): Checked<boolean> {
+  return typeof value === "boolean" ? accept(value) : reject(msg("not_boolean", { field: key }), key);
+}
+
+const customId = () =>
+  field(checkCustomId, {
+    type: "string",
+    maxLength: 63,
+    pattern: TOOL_ID_RE.source,
+    description:
+      "Entry id: a lowercase letter, then lowercase letters, digits or hyphens, at most 63 characters. It is the file name, tools.d/<id>.json.",
+  });
+
+const COMMAND_HELP =
+  "Shell command run with sh -c in a helper on the tools volume. Placeholders: {{prefix}} (/opt/minibox/tools), {{version}}, {{package}}, {{package_spec}} (package plus the pin) and {{bin}}. Line breaks are allowed. At most 16000 characters.";
+
+const customInput = z.object({
+  id: customId(),
+  name: field((value) => checkLine(value, "name", "toolName", CUSTOM_LIMITS.name), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.name,
+    description: `Display name, one line, at most ${CUSTOM_LIMITS.name} characters.`,
+  }),
+  description: field((value) => checkLine(value, "description", "toolDescription", CUSTOM_LIMITS.description), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.description,
+    description: `Short description, one line, at most ${CUSTOM_LIMITS.description} characters.`,
+  }),
+  category: field(checkCategory, {
+    type: "string",
+    enum: [...TOOL_CATEGORIES],
+    description: "UI group: agents, languages, terminal or networking. Defaults to agents.",
+  }).default("agents"),
+  source: field(checkSource, {
+    type: "string",
+    enum: ["npm", "pip", "script"],
+    description: "Where the package comes from. A script takes no version pin, so only latest installs.",
+  }),
+  package: field(checkPackage, {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.package,
+    description:
+      "npm or pip package name, or a short label for a script. Letters, digits, @, dots, underscores, slashes, plus and hyphen.",
+  }),
+  bin: field(checkBin, {
+    type: "string",
+    maxLength: 63,
+    pattern: NAME_RE.source,
+    description: "Command name the install puts on the tools volume's bin directory.",
+  }),
+  needsRoot: field((value) => checkFlag(value, "needsRoot"), {
+    type: "boolean",
+    description:
+      "True when the install needs root. MiniBox never runs root, so the entry is listed and every write is refused. Defaults to false.",
+  }).default(false),
+  estimatedMb: field(checkEstimatedMb, {
+    type: "integer",
+    minimum: 1,
+    maximum: CUSTOM_LIMITS.estimatedMb,
+    description: "Rough installed size in MB for the UI, from 1 to 102400. Defaults to 50.",
+  }).default(50),
+  requires: field((value) => checkOptionalLine(value, "requires", "toolRequires", CUSTOM_LIMITS.requires), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.requires,
+    description: `Dependency note shown under the entry, such as Node ≥ 20. At most ${CUSTOM_LIMITS.requires} characters.`,
+  }).optional(),
+  install: field((value) => checkCommand(value, "install", "toolInstall"), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.command,
+    description: `Install. ${COMMAND_HELP}`,
+  }),
+  upgrade: field((value) => checkCommand(value, "upgrade", "toolUpgrade"), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.command,
+    description: `Upgrade. ${COMMAND_HELP}`,
+  }),
+  uninstall: field((value) => checkCommand(value, "uninstall", "toolUninstall"), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.command,
+    description: `Uninstall. ${COMMAND_HELP}`,
+  }),
+  stop: field((value) => checkOptionalCommand(value, "stop", "toolStop"), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.command,
+    description:
+      "Optional. Runs as the box user (dev) inside the running box before an uninstall, so a daemon the tool started exits before its binary is removed. A failure keeps the tool installed. Placeholders as for install.",
+  }).optional(),
+  detect: field((value) => checkCommand(value, "detect", "toolDetect"), {
+    type: "string",
+    maxLength: CUSTOM_LIMITS.command,
+    description:
+      "Prints one line with the version (or nothing) and exits 0 when the tool is present. It runs in each box's image. Placeholders as for install.",
+  }),
+  overrideBuiltin: field((value) => checkFlag(value, "overrideBuiltin"), {
+    type: "boolean",
+    description:
+      "Required to replace a built-in id, because the built-in entry would stop being used. Ignored for any other id. Defaults to false.",
+  }).default(false),
+});
+
+const CustomToolSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  category: z.enum(TOOL_CATEGORIES),
+  source: z.enum(["npm", "pip", "script"]),
+  package: z.string(),
+  bin: z.string(),
+  needsRoot: z.boolean(),
+  estimatedMb: z.number().int(),
+  requires: z.string().nullable(),
+  install: z.string(),
+  upgrade: z.string(),
+  uninstall: z.string(),
+  stop: z.string().nullable(),
+  detect: z.string(),
+  overridesBuiltin: z.boolean().meta({
+    description: "True when the id is a built-in tool and this entry replaces its catalog entry.",
+  }),
+});
+
+const dataDirOf = (ctx: OperationContext) => dirname(ctx.host.specs.dir());
+
+function customOutput(entry: CustomEntry) {
+  return { ...entry, requires: entry.requires ?? null, stop: entry.stop ?? null };
+}
+
+export const toolCustomList = defineOperation({
+  name: "tool.custom.list",
+  tag: "tools",
+  summary: "List the custom tool entries in DATA_DIR/tools.d",
+  kind: "read",
+  scope: "tool:custom",
+  async: false,
+  input: z.object({}),
+  output: z.object({ tools: z.array(CustomToolSchema) }),
+  rest: [{ method: "GET", path: "/api/tools/custom" }],
+  cli: "tool custom list",
+  mcp: {
+    toolset: "tools",
+    name: "list_custom_tools",
+    description:
+      "List the custom tool entries in DATA_DIR/tools.d, with their commands. overridesBuiltin marks an entry that replaces a built-in id. Owner only.",
+  },
+  run: async (ctx) => {
+    await assertCanAdministerCatalog(ctx);
+    return { tools: listCustomEntries(dataDirOf(ctx)).map(customOutput) };
+  },
+});
+
+export const toolCustomPut = defineOperation({
+  name: "tool.custom.put",
+  tag: "tools",
+  summary: "Create or replace a custom tool entry in DATA_DIR/tools.d",
+  kind: "write",
+  scope: "tool:custom",
+  async: false,
+  conflicts: true,
+  input: customInput,
+  output: z.object({ tool: CustomToolSchema }),
+  rest: [{ method: "PUT", path: "/api/tools/custom/:id", body: true }],
+  cli: "tool custom put",
+  mcp: {
+    toolset: "tools",
+    name: "put_custom_tool",
+    description:
+      "Create or replace a custom tool entry, saved as DATA_DIR/tools.d/<id>.json. It takes effect for every later install, upgrade and detect. A built-in id needs overrideBuiltin true. Owner only.",
+  },
+  activity: { action: () => "tool.custom.put", target: (input) => input.id },
+  audit: {
+    target: (input) => ({ kind: "tool", name: input.id }),
+    detail: (input) => ({
+      id: input.id,
+      category: input.category,
+      source: input.source,
+      package: input.package,
+      bin: input.bin,
+      needsRoot: input.needsRoot,
+      overrideBuiltin: input.overrideBuiltin,
+    }),
+  },
+  run: async (ctx, input) => {
+    await assertCanAdministerCatalog(ctx);
+    const { overrideBuiltin, ...entry } = input;
+    return { tool: customOutput(saveCustomEntry(dataDirOf(ctx), entry, { overrideBuiltin })) };
+  },
+});
+
+export const toolCustomDelete = defineOperation({
+  name: "tool.custom.delete",
+  tag: "tools",
+  summary: "Delete a custom tool entry from tools.d. Nothing is uninstalled from the shared tools volume.",
+  kind: "destructive",
+  scope: "tool:custom",
+  async: false,
+  conflicts: true,
+  input: z.object({ id: customId() }),
+  output: z.object({
+    id: z.string(),
+    restoredBuiltin: z.boolean().meta({
+      description: "True when a built-in entry with this id is back in the catalog after the delete.",
+    }),
+  }),
+  rest: [{ method: "DELETE", path: "/api/tools/custom/:id" }],
+  cli: "tool custom delete",
+  mcp: {
+    toolset: "tools",
+    name: "delete_custom_tool",
+    description:
+      "Delete the tools.d file of a custom tool entry. It does not uninstall the tool from the shared tools volume. A built-in id with no tools.d file cannot be deleted. Owner only.",
+  },
+  activity: { action: () => "tool.custom.delete", target: (input) => input.id },
+  audit: { target: (input) => ({ kind: "tool", name: input.id }) },
+  run: async (ctx, input) => {
+    await assertCanAdministerCatalog(ctx);
+    return { id: input.id, ...deleteCustomEntry(dataDirOf(ctx), input.id) };
+  },
+});
+
+export const toolOperations = [
+  toolCatalog,
+  toolList,
+  toolInstall,
+  toolUpgrade,
+  toolUninstall,
+  toolReconcile,
+  toolCustomList,
+  toolCustomPut,
+  toolCustomDelete,
+];

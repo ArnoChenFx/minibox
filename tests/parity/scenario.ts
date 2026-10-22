@@ -167,6 +167,8 @@ async function recordScenario(): Promise<Exchange[]> {
   const JSON_TYPE = "application/json";
   const post = (step: string, path: string, body: unknown) =>
     send(step, "POST", path, { body: JSON.stringify(body), contentType: JSON_TYPE });
+  const put = (step: string, path: string, body: unknown) =>
+    send(step, "PUT", path, { body: JSON.stringify(body), contentType: JSON_TYPE });
   const patch = (step: string, path: string, body: unknown, headers?: Record<string, string>) =>
     send(step, "PATCH", path, { body: JSON.stringify(body), contentType: JSON_TYPE, headers });
   const raw = (step: string, method: string, path: string, body: string) =>
@@ -654,6 +656,31 @@ async function recordScenario(): Promise<Exchange[]> {
     await waitTask(base, freed.json);
     await send("read the rollback after confirm", "GET", rollbackAt(rolledAgain));
     await send("read the checkpoint repository usage", "GET", "/api/checkpoints/usage");
+
+    const customTool = {
+      name: "Parity tool",
+      description: "A custom entry for the transcript.",
+      category: "terminal",
+      source: "npm",
+      package: "parity-tool",
+      bin: "parity-tool",
+      requires: "Node ≥ 20",
+      install: "npm install -g --prefix {{prefix}} {{package_spec}}",
+      upgrade: "npm install -g --prefix {{prefix}} {{package_spec}}",
+      uninstall: "npm uninstall -g --prefix {{prefix}} {{package}}",
+      detect: "command -v parity-tool >/dev/null && parity-tool --version 2>/dev/null",
+    };
+    await send("list custom tools", "GET", "/api/tools/custom");
+    await put("save a custom tool", "/api/tools/custom/parity-tool", customTool);
+    await send("list custom tools after a save", "GET", "/api/tools/custom");
+    await put("save a custom tool with an unknown placeholder", "/api/tools/custom/parity-tool", {
+      ...customTool,
+      install: "npm install -g {{home}}",
+    });
+    await put("save a custom tool over a built-in id", "/api/tools/custom/uv", customTool);
+    await send("delete the custom tool", "DELETE", "/api/tools/custom/parity-tool");
+    await send("delete a missing custom tool", "DELETE", "/api/tools/custom/parity-tool");
+    await send("delete a built-in tool with no custom entry", "DELETE", "/api/tools/custom/uv");
   } finally {
     server.stop(true);
     app.throttle.stop();

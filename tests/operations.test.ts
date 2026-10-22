@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { z } from "zod";
 
@@ -23,6 +25,19 @@ const SNAPSHOT_REF = "mbtest-snap:nightly";
 const TEMPLATE_REF = "mbtest-template:gold";
 const CHECKPOINT_PLACEHOLDER = `ck_${"0".repeat(16)}`;
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+const CUSTOM_TOOL = {
+  id: "sample-tool",
+  name: "Sample tool",
+  description: "A sample entry.",
+  source: "npm",
+  package: "sample-tool",
+  bin: "sample-tool",
+  install: "npm install -g --prefix {{prefix}} {{package_spec}}",
+  upgrade: "npm install -g --prefix {{prefix}} {{package_spec}}",
+  uninstall: "npm uninstall -g --prefix {{prefix}} {{package}}",
+  detect: "command -v sample-tool >/dev/null && sample-tool --version 2>/dev/null",
+};
+const CUSTOM_TOOL_FILE = { ...CUSTOM_TOOL, category: "agents", needsRoot: false, estimatedMb: 50 };
 
 /** One valid input for each operation, given the id of a box that exists; see `withBox`. */
 const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
@@ -82,6 +97,13 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "tool.upgrade": (id) => ({ id, tool: "claude-code", version: "latest" }),
   "tool.uninstall": (id) => ({ id, tool: "claude-code" }),
   "tool.reconcile": (id) => ({ id }),
+  "tool.custom.list": () => ({}),
+  "tool.custom.put": () => ({ ...CUSTOM_TOOL }),
+  "tool.custom.delete": (_boxId, app) => {
+    mkdirSync(join(app.cfg.dataDir, "tools.d"), { recursive: true });
+    writeFileSync(join(app.cfg.dataDir, "tools.d", `${CUSTOM_TOOL.id}.json`), JSON.stringify(CUSTOM_TOOL_FILE));
+    return { id: CUSTOM_TOOL.id };
+  },
   "session.list": (id) => ({ id }),
   "session.start": (id) => ({ id, name: "work" }),
   "session.read": (id) => ({ id, name: "work", lines: 10 }),
@@ -828,7 +850,16 @@ describe("projections", () => {
       mcpTools(OPERATIONS, ["tools"])
         .map((tool) => tool.name)
         .toSorted(),
-    ).toEqual(["install_tool", "list_tools", "reconcile_tools", "uninstall_tool", "upgrade_tool"]);
+    ).toEqual([
+      "delete_custom_tool",
+      "install_tool",
+      "list_custom_tools",
+      "list_tools",
+      "put_custom_tool",
+      "reconcile_tools",
+      "uninstall_tool",
+      "upgrade_tool",
+    ]);
   });
 
   test("rebuild_box is outside the default toolsets and only in the rebuild toolset", () => {
