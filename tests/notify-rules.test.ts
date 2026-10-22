@@ -200,6 +200,16 @@ describe("volume and host notices", () => {
       }),
     );
     expect(warned?.body).toBe("Reason: over the hard limit of 4 MB, with 5 MB used. Action: warn.");
+
+    const fractional = noticeOfEvent(
+      eventOf({
+        op: "volume.usage_limit",
+        status: "error",
+        target: notes,
+        detail: { bytes: 3 * MB, hardBytes: 2.5 * MB, action: "warn", reason: "volume_limit", boxes: [] },
+      }),
+    );
+    expect(fractional?.body).toBe("Reason: over the hard limit of 2.5 MB, with 3 MB used. Action: warn.");
   });
 
   test("a low host disk is host.disk_low, named by the host, with its free share and the minimum", () => {

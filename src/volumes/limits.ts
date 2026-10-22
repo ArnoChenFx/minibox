@@ -6,6 +6,11 @@ import { type LimitAction, UNLIMITED, type UsageLevel, type VolumeLimits, type V
 
 const MB = 1024 * 1024;
 
+/** A byte count in MiB to one decimal, so a 2.5 MB limit is not reported as 2 MB. */
+export function mebibytes(bytes: number): number {
+  return Math.round((bytes / MB) * 10) / 10;
+}
+
 export interface LimitPatch {
   softBytes?: number | null;
   hardBytes?: number | null;
@@ -64,8 +69,8 @@ export function assertMountsWithinLimits(host: HostCtx, mounts: readonly BoxMoun
     throw conflict(
       msg("volume_over_limit", {
         volume: volume.name,
-        used: Math.round((volume.bytes ?? 0) / MB),
-        limit: Math.round((volume.limits.hardBytes ?? 0) / MB),
+        used: mebibytes(volume.bytes ?? 0),
+        limit: mebibytes(volume.limits.hardBytes ?? 0),
       }),
       { hint: msg("volume_over_limit_hint") },
     );

@@ -1,4 +1,5 @@
 import type { StoredEvent } from "../events/store";
+import { mebibytes } from "../volumes/limits";
 import { type Notice, type NoticeBox, type NoticeKind } from "./types";
 
 type Fields = Readonly<Record<string, unknown>>;
@@ -52,10 +53,8 @@ function hostDiskNotice(event: StoredEvent): Notice | null {
   };
 }
 
-const MB = 1024 * 1024;
-
 function megabytes(bytes: unknown): string {
-  return typeof bytes === "number" ? `${Math.round(bytes / MB)} MB` : "an unknown amount";
+  return typeof bytes === "number" ? `${mebibytes(bytes)} MB` : "an unknown amount";
 }
 
 function usageHighBody(detail: Fields): string {
