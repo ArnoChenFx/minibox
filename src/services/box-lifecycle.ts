@@ -8,6 +8,7 @@ import { ttlExpired } from "../specs/lifetime";
 import type { DesiredState, StopReason, BoxEnv } from "../specs/types";
 import { poolsUsed, assertVolumesPresent } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
+import { assertMountsWithinLimits } from "../volumes/limits";
 import { removeEngine } from "../volumes/provision";
 import type { VolumeRecord } from "../volumes/types";
 import type { Box, StartOptions, EnsureResult, DeleteBoxResult } from "./box-model";
@@ -80,6 +81,7 @@ export async function startLocked(host: HostCtx, box: Box, options: StartOptions
   if (!box.running) {
     refuseExpired(host, box.boxId);
     assertSecretsStartable(host.secrets, storedEnv(host, box.boxId));
+    assertMountsWithinLimits(host, host.specs.read(box.boxId)?.mounts ?? box.mounts);
   }
   const previousReason = (host.specs.read(box.boxId)?.lifecycle.stopReason ?? null) as StopReason | null;
   await ensureRunningStorage(host, box);
@@ -161,6 +163,7 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   return locked(host, ref, async (box) => {
     refuseExpired(host, box.boxId);
     assertSecretsStartable(host.secrets, storedEnv(host, box.boxId));
+    assertMountsWithinLimits(host, host.specs.read(box.boxId)?.mounts ?? box.mounts);
     await ensureRunningStorage(host, box);
     await attachToBoxNetwork(host, box);
     await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });

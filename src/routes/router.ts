@@ -32,7 +32,10 @@ export interface Route {
   pattern: RegExp;
   keys: string[];
   handler: Handler;
-  /** Callable without signing in. Only the health check sets this. */
+  /**
+   * Callable without a Bearer credential: only the session cookie is read, and the route checks `caller` itself if it
+   * needs a sign-in. Sign-in, the health check, the CLI downloads and the preview launcher set this.
+   */
   public?: boolean;
   access: RouteAccess;
 }

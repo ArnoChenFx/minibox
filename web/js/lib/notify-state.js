@@ -12,6 +12,9 @@ export const NOTICE_KINDS = Object.freeze([
   "box.idle_soon",
   "session.takeover",
   "host.offline",
+  "volume.usage_high",
+  "volume.usage_limit",
+  "host.disk_low",
 ]);
 
 export const CHANNEL_TYPES = Object.freeze(["webhook", "ntfy", "telegram"]);

@@ -78,6 +78,8 @@ describe("createBox", () => {
       "inspectImage",
       "ensureBridgeNetwork",
       "inspectVolume",
+      "info",
+      "diskUsage",
       "inspectVolume",
       "info",
       "diskUsage",

@@ -75,6 +75,43 @@ export interface VolumeRecord {
   updatedAt: string;
   bytes: number | null;
   bytesAt: string | null;
+  limits: VolumeLimits;
+}
+
+export type LimitAction = "warn" | "stop";
+
+/**
+ * A volume's usage limits, in bytes. Null is no limit. Soft limits are best effort: they are checked on each sample,
+ * so usage can pass one between samples. `action` is what happens over the hard limit.
+ */
+export interface VolumeLimits {
+  softBytes: number | null;
+  hardBytes: number | null;
+  action: LimitAction;
+}
+
+export const UNLIMITED: Readonly<VolumeLimits> = { softBytes: null, hardBytes: null, action: "warn" };
+
+/** Where a usage figure falls against the limits. `unknown` until the volume has been sampled. */
+export type UsageLevel = "unknown" | "ok" | "soft" | "hard";
+
+/**
+ * What a sample measured. A volume on a local or path pool is measured with `du`, so it is the volume's own tree. An NFS
+ * volume is measured with `df` on the pool root, so it is the usage of the whole share it sits in.
+ */
+export type UsageScope = "volume" | "share";
+
+export interface UsagePoint {
+  at: string;
+  bytes: number;
+}
+
+/** The last reading of the host's disk, as the engine host reports it. */
+export interface HostDisk {
+  totalBytes: number;
+  freeBytes: number;
+  /** Epoch milliseconds of the reading. */
+  at: number;
 }
 
 export interface PoolHealth {
@@ -85,6 +122,7 @@ export interface PoolHealth {
   checkedAt: string | null;
   totalBytes: number | null;
   freeBytes: number | null;
+  usedBytes: number | null;
   /** Free space under 10% or under 5 GiB. */
   lowSpace: boolean;
 }

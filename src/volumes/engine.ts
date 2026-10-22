@@ -9,7 +9,7 @@ import { VolumeChanges } from "./changes";
 import { assertPoolsReachable, poolRootVolume } from "./health";
 import { nfsDriverOpts, pathDriverOpts, poolForRole } from "./pools";
 import type { StoragePool, VolumeOwnership, VolumeRecord, VolumeRole } from "./types";
-import { DEV_OWNER, LOCAL_POOL, ROLE_MOUNT } from "./types";
+import { DEV_OWNER, LOCAL_POOL, ROLE_MOUNT, UNLIMITED } from "./types";
 
 export interface NewVolume {
   name: string;
@@ -277,6 +277,7 @@ export function blankRecord(host: HostCtx, input: NewVolume, id: string, now: st
     updatedAt: now,
     bytes: null,
     bytesAt: null,
+    limits: { ...UNLIMITED },
   };
 }
 
@@ -324,6 +325,7 @@ export function claimInfo(host: HostCtx, info: VolumeInfo, specs: BoxSpec[], now
     updatedAt: now,
     bytes: null,
     bytesAt: null,
+    limits: { ...UNLIMITED },
   };
 }
 

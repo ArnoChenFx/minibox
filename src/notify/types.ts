@@ -12,6 +12,21 @@ export const NOTICE_KINDS = {
   "box.idle_soon": { summary: "A box is about to sleep for being idle.", priority: 3, tag: "zzz" },
   "session.takeover": { summary: "A person took over an agent's terminal session.", priority: 3, tag: "eyes" },
   "host.offline": { summary: "A host stopped answering.", priority: 4, tag: "warning" },
+  "volume.usage_high": {
+    summary: "A volume passed its soft usage limit. The limit is best effort, not a quota.",
+    priority: 3,
+    tag: "chart_with_upwards_trend",
+  },
+  "volume.usage_limit": {
+    summary: "A volume is over its hard usage limit. Boxes set to stop on it are stopped.",
+    priority: 4,
+    tag: "warning",
+  },
+  "host.disk_low": {
+    summary: "A host's disk is below its free-space minimum, so it refuses new volumes and checkpoints.",
+    priority: 4,
+    tag: "warning",
+  },
 } as const;
 
 export type NoticeKind = keyof typeof NOTICE_KINDS;

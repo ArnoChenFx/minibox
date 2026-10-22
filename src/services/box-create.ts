@@ -14,6 +14,7 @@ import { loadCatalog } from "../tools/catalog";
 import { VolumeChanges } from "../volumes/changes";
 import { trackPoolRoots, poolsUsed, assertVolumesPresent } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
+import { assertMountsWithinLimits } from "../volumes/limits";
 import { validMountPath } from "../volumes/mounts";
 import { provisionDefaultMounts } from "../volumes/provision";
 import { assertMountAllowed, mountTarget } from "./attachments";
@@ -144,6 +145,7 @@ async function buildBox(
   const mounts = input.mounts
     ? await resolveCreateMounts(host, input.mounts)
     : await provisionDefaultMounts(host, { id, name: input.name, createdBy }, known, attempt.changes);
+  assertMountsWithinLimits(host, mounts);
   await trackPoolRoots(host, poolsUsed(host, mounts), attempt.changes);
   await assertPoolsReachable(host, poolsUsed(host, mounts));
 

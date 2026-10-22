@@ -4,8 +4,29 @@ import { join } from "node:path";
 import { ensureDataDir, writeFileAtomic } from "../data-dir";
 import { log } from "../lib/logger";
 import { isVolumeId, newVolumeId } from "./id";
+import { normalizeLimits } from "./limits";
 import { implicitPools } from "./pools";
-import { type PoolHealth, type PoolsFile, POOLS_VERSION, type VolumeRecord, VOLUME_VERSION } from "./types";
+import {
+  type HostDisk,
+  type PoolHealth,
+  type PoolsFile,
+  POOLS_VERSION,
+  type UsagePoint,
+  type VolumeRecord,
+  VOLUME_VERSION,
+} from "./types";
+
+/** How many samples a volume keeps in memory for its trend. */
+const USAGE_HISTORY = 24;
+
+export interface VolumeUsageMemory {
+  /** Recent good samples, oldest first. Lost on restart, when the record's `bytes` is the one figure left. */
+  readonly points: readonly UsagePoint[];
+  /** Why the last sample failed, or null when the last one worked or none has run yet. */
+  readonly lastError: string | null;
+}
+
+const NO_USAGE: VolumeUsageMemory = { points: [], lastError: null };
 
 const isEnoent = (e: unknown): boolean => typeof e === "object" && e !== null && "code" in e && e.code === "ENOENT";
 
@@ -49,6 +70,8 @@ interface RecordSnapshot {
 export class VolumeStore {
   private tail: Promise<void> = Promise.resolve();
   private readonly health = new Map<string, PoolHealth>();
+  private readonly usage = new Map<string, { points: UsagePoint[]; lastError: string | null }>();
+  private readonly disks = new Map<string, HostDisk>();
   private snapshot: RecordSnapshot | null = null;
 
   constructor(private readonly dataDir: string) {}
@@ -132,6 +155,7 @@ export class VolumeStore {
       if (!isEnoent(e)) throw e;
     } finally {
       this.snapshot = null;
+      this.usage.delete(id);
     }
   }
 
@@ -152,6 +176,31 @@ export class VolumeStore {
 
   rememberHealth(health: PoolHealth): void {
     this.health.set(`${health.hostId}\0${health.pool}`, health);
+  }
+
+  usageMemory(volumeId: string): VolumeUsageMemory {
+    const memory = this.usage.get(volumeId);
+    return memory ? { points: memory.points, lastError: memory.lastError } : NO_USAGE;
+  }
+
+  /** A good sample adds a point and clears the last error. A failed one only records why it failed. */
+  rememberUsage(volumeId: string, change: { point: UsagePoint } | { error: string }): void {
+    const memory = this.usage.get(volumeId) ?? { points: [], lastError: null };
+    if ("point" in change) {
+      memory.points = [...memory.points, change.point].slice(-USAGE_HISTORY);
+      memory.lastError = null;
+    } else {
+      memory.lastError = change.error;
+    }
+    this.usage.set(volumeId, memory);
+  }
+
+  diskOf(hostId: string): HostDisk | null {
+    return this.disks.get(hostId) ?? null;
+  }
+
+  rememberDisk(hostId: string, disk: HostDisk): void {
+    this.disks.set(hostId, disk);
   }
 
   /** The current snapshot, read again when this store wrote or the directory changed since it was taken. */
@@ -184,7 +233,7 @@ export class VolumeStore {
       const id = name.slice(0, -".json".length);
       if (!isVolumeId(id)) continue;
       const record = this.readJson(this.pathFor(id), isRecord, "volume.unreadable", id);
-      if (record) records.push(Object.freeze(record));
+      if (record) records.push(Object.freeze({ ...record, limits: normalizeLimits(record.limits) }));
     }
     return records;
   }
