@@ -99,6 +99,8 @@ export default {
   "ck.reasonEmpty": "此检查点没有卷数据，无需导出。",
   "ck.reasonHeld": "它是一次等待确认或撤销的回滚的安全检查点。请先确认或撤销该回滚。",
   "ck.reasonPinned": "请先取消置顶再删除。",
+  "ck.reasonOtherHost": "此检查点在其他宿主机上。把 Box 迁回该宿主机后才能回滚。",
+  "ck.storedOn": "保存在 {host}",
   "ck.reasonSystem": "它包含系统层，而包目前不携带系统层。请不含系统层重新创建后再导出。",
   "ck.export": "导出",
   "ck.exportTitle": "导出「{label}」",

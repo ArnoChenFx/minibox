@@ -7,14 +7,15 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoices } from "../lib/mounts.js";
 import { STARTUP_COMMAND_MAX_BYTES, startupProblem, startupProblemKey } from "../lib/startup.js";
-import { getTemplates, hostNow, refreshHost } from "../lib/store.js";
+import { getTemplates, hostNow, invalidateTemplates, refreshHost } from "../lib/store.js";
+import { needsSync, syncSizeMb, templateCards } from "../lib/template-list.js";
 import { cloneRepo } from "../lib/template-source.js";
 import { filterTools, groupTools } from "../lib/tool-list.js";
 import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretChoicesHtml, secretNames } from "./env-editor.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "./search-box.js";
-import { openTasks } from "./tasks.js";
+import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
 const PRESETS = [
   { id: "small", label: "cb.small", cpus: 2, memoryMb: 4096 },
@@ -27,6 +28,8 @@ const PROFILES = ["standard", "strict", "relaxed"];
 
 /** The host value that lets the control plane pick the host for the box. */
 const AUTO_HOST = "auto";
+
+const agentHost = (id) => hostsNow().find((h) => h.id === id)?.transport === "agent";
 
 /** The text for a custom row the dialog refuses before sending. Paths use the server's own messages. */
 function problemText(problem) {
@@ -63,6 +66,25 @@ async function loadChoices() {
 }
 
 /**
+ * Copies a template to the host the box will be created on. The copy runs as a task, which the drawer shows with its
+ * progress, and the create waits for it, so the box starts from the image it names. A copy already running for the same
+ * template is joined.
+ */
+async function syncTemplateTo(ref, hostId) {
+  let taskId;
+  try {
+    ({ taskId } = await api(`/api/templates/${enc(ref)}/sync`, { method: "POST", body: { host: hostId } }));
+  } catch (e) {
+    if (!e.details?.taskId) throw e;
+    taskId = e.details.taskId;
+  }
+  const task = await waitTask(taskId);
+  invalidateTemplates();
+  if (task.status === "running") throw new Error(t("cb.syncStillRunning"));
+  if (task.status !== "succeeded") throw new Error(taskErrorText(task.error) || t("cb.syncFailed"));
+}
+
+/**
  * Create-box dialog. When `snapshot` is given the image is fixed and the box is created from it.
  * `onCreated(box)` runs after success.
  */
@@ -74,7 +96,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   let templates = [];
   if (!snapshot) {
     try {
-      templates = await getTemplates(true);
+      templates = templateCards(await getTemplates(true));
     } catch {
       templates = [];
     }
@@ -141,7 +163,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
               (h) => `<option value="${esc(h.id)}"${h.id === initialHost ? " selected" : ""}>${esc(h.name)}</option>`,
             )
             .join("")}</select>
-          <div class="help" id="cbHostHelp">${t("cb.hostHelp")}</div></div>`
+          <div class="help" id="cbHostHelp">${t("cb.hostHelp")}</div>
+          <div class="callout info" id="cbSync" hidden>${icon("info")}<span id="cbSyncText"></span></div></div>`
       : "";
 
   const volumesSection = snapshot
@@ -297,6 +320,23 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   const setCustom = () => {
     state.preset = "custom";
   };
+  /**
+   * The template and host of a copy the create must make first: the picked host lacks the template. Automatic placement
+   * picks only hosts that hold it, and an agent host takes no copy, so neither needs one.
+   */
+  const pendingCopy = () => {
+    const pick = q("#cbHost")?.value;
+    if (!pick || pick === AUTO_HOST || agentHost(pick)) return undefined;
+    const card = templates.find((tp) => tp.ref === state.template);
+    return needsSync(card, pick) ? { card, host: pick } : undefined;
+  };
+  const syncNote = () => {
+    const note = q("#cbSync");
+    if (!note) return;
+    const copy = pendingCopy();
+    note.hidden = !copy;
+    if (copy) q("#cbSyncText").textContent = t("cb.syncHint", { mb: syncSizeMb(copy.card) });
+  };
 
   q("#cbPresets").addEventListener("click", (e) => {
     const b = e.target.closest(".seg");
@@ -322,12 +362,14 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   q("#cbHost")?.addEventListener("change", () => {
     q("#cbHostHelp").textContent = t(q("#cbHost").value === AUTO_HOST ? "cb.hostAutoHelp" : "cb.hostHelp");
     validateRes();
+    syncNote();
   });
   q("#cbTemplates")?.addEventListener("click", (e) => {
     const o = e.target.closest(".option");
     if (!o) return;
     state.template = o.dataset.ref;
     $$(".option", root).forEach((x) => x.setAttribute("aria-checked", String(x === o)));
+    syncNote();
   });
   q("#cbProfiles").addEventListener("click", (e) => {
     const b = e.target.closest(".seg");
@@ -467,6 +509,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     drawTools();
   }
   sync();
+  syncNote();
   if (!snapshot) {
     const rows = q("#cbEnvRows");
     const refreshEnv = () => {
@@ -552,6 +595,12 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       if (q("#cbSelfToken")?.checked) body.selfToken = true;
       const selectedToolIds = [...selectedTools];
       if (selectedToolIds.length) body.tools = selectedToolIds;
+      const copy = pendingCopy();
+      if (copy) {
+        btn.innerHTML = `<span class="spinner"></span>${t("cb.syncing")}`;
+        await syncTemplateTo(copy.card.ref, copy.host);
+        btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
+      }
       const res = snapshot
         ? await api(`/api/snapshots/${enc(snapshot)}/boxes`, { method: "POST", body })
         : await api("/api/boxes", { method: "POST", body: { ...body, template: state.template } });

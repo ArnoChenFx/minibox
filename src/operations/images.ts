@@ -2,9 +2,9 @@ import { z } from "zod";
 
 import { assertImageAvailable, pullImageInto } from "../services/images";
 import { defineOperation } from "./define";
-import { localOnly } from "./routing";
+import { hostNamed, refuseAgent } from "./routing";
 import { ImagePulledSchema } from "./schemas";
-import { pullRef } from "./validation";
+import { hostId, pullRef } from "./validation";
 
 export const imagePull = defineOperation({
   name: "image.pull",
@@ -14,7 +14,7 @@ export const imagePull = defineOperation({
   scope: "template:build",
   async: true,
   conflicts: true,
-  input: z.object({ ref: pullRef() }),
+  input: z.object({ ref: pullRef(), host: hostId().optional() }),
   output: z.object({ image: ImagePulledSchema }),
   rest: [{ method: "POST", path: "/api/images/pull", body: true, status: 202 }],
   cli: "image pull",
@@ -24,7 +24,8 @@ export const imagePull = defineOperation({
     description:
       "Pull an image from its registry onto this engine, so a box or a template can start from it. An image that is already present is left alone. MiniBox's own template, snapshot and checkpoint images are never pulled. Owner only. Returns a task id; the task log shows each layer.",
   },
-  precondition: async ({ host }) => localOnly(host, "templates"),
+  hostFor: (ctx, input) => hostNamed(ctx, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
   beforeTask: async ({ host }, input) => assertImageAvailable(host, input.ref),
   exclusive: ({ host }, input) => `image.pull:${host.host.id}:${input.ref}`,
   subject: (input) => input.ref,

@@ -115,4 +115,13 @@ export default {
   "tp.rebuildStarted": "Rebuilding template",
   "tp.rebuildStartedText": "Watch the build log in the Tasks panel.",
   "tp.rebuildFailed": "Couldn't rebuild template",
+  "tp.hosts": "Hosts",
+  "tp.present": "Present",
+  "tp.absent": "Missing",
+  "tp.copyHere": "Copy here",
+  "tp.hostOffline": "This host is not online.",
+  "tp.syncStarted": "Copying template",
+  "tp.syncStartedText": "Watch the copy in the Tasks panel.",
+  "tp.syncFailed": "Couldn't copy template",
+  "tp.deleteHostsExtra": "Removes the copy on {hosts}. ",
 };

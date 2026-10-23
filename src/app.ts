@@ -33,6 +33,7 @@ import { type AuditEvent, Executor, type ExecutorHooks, logAudit } from "./opera
 import { OPERATIONS } from "./operations/registry";
 import { OWNER } from "./operations/types";
 import { PreviewGrants } from "./preview/grants";
+import { PreviewRelay } from "./preview/relay";
 import { type PreviewProbe, systemProbe } from "./preview/selfcheck";
 import { QuestionStore } from "./questions/store";
 import type { EngineTarget, Runtime } from "./runtime";
@@ -112,6 +113,8 @@ export interface App {
   sessions: SessionStore;
   /** Tickets and grants that open subdomain previews. Tied to the console sessions that minted them. */
   previewGrants: PreviewGrants;
+  /** Carries previews of boxes on other hosts through an exec in the box. Stopped on shutdown. */
+  previewRelay: PreviewRelay;
   /** The network the preview self-check uses. Tests replace it. */
   previewProbe: PreviewProbe;
   tokens: TokenStore;
@@ -414,6 +417,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     throttle: deps.throttle ?? new LoginLimiter(),
     sessions,
     previewGrants: new PreviewGrants({ sessionLive: (id) => sessions.hasLive(id) }),
+    previewRelay: new PreviewRelay(),
     previewProbe: deps.previewProbe ?? systemProbe,
     tokens,
     selfTokens,

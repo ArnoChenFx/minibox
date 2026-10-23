@@ -247,9 +247,10 @@ export const PendingRollbackSchema = z.object({
   restored: z.array(RollbackVolumeSchema),
 });
 
-/** A snapshot or template image, as the image list shows it. */
+/** A snapshot or template image, as the image list shows it. `hostId` is the host whose engine holds the image. */
 export const ImageSchema = z.object({
   id: z.string(),
+  hostId: z.string(),
   ref: z.string(),
   tags: z.array(z.string()),
   name: z.string(),
@@ -274,6 +275,13 @@ export const TemplateSchema = ImageSchema.extend({
 export const ImagePulledSchema = z.object({
   ref: z.string(),
   id: z.string(),
+});
+
+/** A template copied to a host. `sent` is false when the host already held the same image, so nothing was copied. */
+export const TemplateSyncedSchema = z.object({
+  ref: z.string(),
+  host: z.string(),
+  sent: z.boolean(),
 });
 
 /** The task that clones a new box's repository into its workspace. */

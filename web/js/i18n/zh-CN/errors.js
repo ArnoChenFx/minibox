@@ -59,6 +59,8 @@ export default {
   "err.preview_box_stopped": "请先启动 Box，再打开端口预览。",
   "err.preview_no_ip": "Box 还没有容器 IP。等它完全启动后再试。",
   "err.preview_upstream_failed": "无法连上 Box 内的服务：{detail}",
+  "err.preview_bridge_failed": "无法经由 Box 所在引擎打开预览：{detail}",
+  "err.preview_bridge_hint": "位于其他宿主机上的 Box 需要 python3 才能提供预览。",
   "err.preview_port_invalid": "端口须为 1 到 65535 的整数。",
   "err.preview_port_not_manual": "该端口不在手动预览列表中。",
   "err.preview_unauthorized": "请先登录再打开 Box 端口预览。",
@@ -245,7 +247,7 @@ export default {
   "err.host_key_unconfirmed": "尚未确认 SSH 主机密钥 {fingerprint}。请与宿主机核对后，用该指纹添加宿主机。",
   "err.host_key_mismatch": "SSH 主机密钥 {presented} 与您确认的密钥（{expected}）不一致。未向宿主机发送任何凭据。",
   "err.host_unreachable": "无法连接宿主机：{detail}",
-  "err.host_unsupported": "远程宿主机暂不支持{feature}。",
+  "err.agent_host_unsupported": "Agent 宿主机暂不支持{feature}。",
   "err.host_endpoint_agent": "Agent 宿主机通过配对码加入，不能用地址添加。请先生成配对码，再在宿主机上运行 Agent。",
   "err.host_not_agent": "宿主机「{host}」不是 Agent 宿主机。",
   "err.agent_pairing_unknown": "配对码无效。请到「设置 → 宿主机」重新生成。",
@@ -262,7 +264,7 @@ export default {
   "err.runtime_unsupported": "该宿主机无法执行此操作：{detail}",
   "err.move_agent_unsupported":
     "箱子暂时不能迁移到 Agent 宿主机或从其迁出，因为 Agent 不复制镜像和卷。请直接在 Agent 宿主机上创建箱子。",
-  "err.preview_remote_unsupported": "远程宿主机暂不支持端口预览。",
+  "err.preview_agent_unsupported": "Agent 宿主机暂不支持端口预览。",
   "err.box_moving": "此 Box 正在迁移到另一台宿主机，请等迁移完成后再试。",
   "err.box_changing": "此 Box 正在重建或更新，请等它完成后再迁移。",
   "err.move_confirm":

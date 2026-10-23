@@ -72,6 +72,8 @@ export default {
   "err.preview_box_stopped": "Start the box before opening a port preview.",
   "err.preview_no_ip": "The box has no container IP yet. Wait until it is fully started, then try again.",
   "err.preview_upstream_failed": "Could not reach the service inside the box: {detail}",
+  "err.preview_bridge_failed": "Could not open the preview through the box's engine: {detail}",
+  "err.preview_bridge_hint": "A box on another host needs python3 to serve a preview.",
   "err.preview_port_invalid": "Port must be an integer between 1 and 65535.",
   "err.preview_port_not_manual": "That port is not on the manual preview list.",
   "err.preview_unauthorized": "Sign in to open a box port preview.",
@@ -293,7 +295,7 @@ export default {
   "err.host_key_mismatch":
     "The SSH host key {presented} is not the key you confirmed ({expected}). No credentials were sent to the host.",
   "err.host_unreachable": "The host could not be reached: {detail}",
-  "err.host_unsupported": "{feature} is not supported on remote hosts yet.",
+  "err.agent_host_unsupported": "{feature} is not supported on agent hosts yet.",
   "err.host_endpoint_agent":
     "Agent hosts are paired with a code, not added by endpoint. Create a pairing code, then run the agent on the host.",
   "err.host_not_agent": "Host “{host}” is not an agent host.",
@@ -313,7 +315,7 @@ export default {
   "err.runtime_unsupported": "This host cannot run that operation: {detail}",
   "err.move_agent_unsupported":
     "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
-  "err.preview_remote_unsupported": "Port preview is not supported on remote hosts yet.",
+  "err.preview_agent_unsupported": "Port preview is not supported on agent hosts yet.",
   "err.box_moving": "This box is moving to another host. Try again when the move finishes.",
   "err.box_changing": "This box is being rebuilt or updated. Try the move again when that finishes.",
   "err.move_confirm":
