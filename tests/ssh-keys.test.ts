@@ -19,6 +19,7 @@ import {
 import { compileToken } from "../src/tokens/model";
 import { TokenStore } from "../src/tokens/store";
 import { silenceLogs } from "./support/app";
+import { ed25519Pair } from "./support/ssh";
 
 let dir: string;
 let restoreLogs: () => void;
@@ -42,7 +43,7 @@ const statusOf = (fn: () => unknown): number => {
 
 describe("public key parsing", () => {
   test("reads an authorized_keys line and names it by its comment", () => {
-    const pair = utils.generateKeyPairSync("ed25519", { comment: "me@laptop" });
+    const pair = ed25519Pair("me@laptop");
     const parsed = parsePublicKey(`  ${pair.public}\n`);
     expect(parsed.algorithm).toBe("ssh-ed25519");
     expect(parsed.comment).toBe("me@laptop");
@@ -50,7 +51,7 @@ describe("public key parsing", () => {
     expect(parsed.publicKey).not.toContain("me@laptop");
   });
   test("refuses a private key, two keys at once, junk and an unsupported type", () => {
-    const pair = utils.generateKeyPairSync("ed25519");
+    const pair = ed25519Pair();
     const other = utils.generateKeyPairSync("ecdsa", { bits: 256 });
     expect(statusOf(() => parsePublicKey(pair.private))).toBe(400);
     expect(statusOf(() => parsePublicKey(`${pair.public}\n${other.public}`))).toBe(400);
@@ -64,7 +65,7 @@ describe("public key parsing", () => {
 describe("SSH key store", () => {
   test("keeps keys in a 600 file across restarts, refuses duplicates, and removes by id", () => {
     const store = new SshKeyStore(dir);
-    const pair = utils.generateKeyPairSync("ed25519", { comment: "phone" });
+    const pair = ed25519Pair("phone");
     const key = store.add(pair.public);
     expect(key).toMatchObject({ label: "phone", algorithm: "ssh-ed25519", lastUsedAt: null });
     expect(key.id).toMatch(/^sk_[0-9a-f]{16}$/);
@@ -78,13 +79,13 @@ describe("SSH key store", () => {
   });
   test(`holds at most ${SSH_KEYS_MAX} keys`, () => {
     const store = new SshKeyStore(dir);
-    for (let i = 0; i < SSH_KEYS_MAX; i++) store.add(utils.generateKeyPairSync("ed25519").public);
-    expect(statusOf(() => store.add(utils.generateKeyPairSync("ed25519").public))).toBe(409);
+    for (let i = 0; i < SSH_KEYS_MAX; i++) store.add(ed25519Pair().public);
+    expect(statusOf(() => store.add(ed25519Pair().public))).toBe(409);
   });
   test("a signature verifies only with the registered key, and last use is written at most once a minute", () => {
     let now = 1_000_000;
     const store = new SshKeyStore(dir, () => now);
-    const pair = utils.generateKeyPairSync("ed25519");
+    const pair = ed25519Pair();
     const key = store.add(pair.public);
     const priv = utils.parseKey(pair.private);
     if (priv instanceof Error || Array.isArray(priv)) throw new Error("bad key");

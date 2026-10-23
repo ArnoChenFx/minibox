@@ -19,7 +19,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Server } from "bun";
-import { utils } from "ssh2";
 
 import { type App, createApp } from "../src/app";
 import { createDockerRuntime } from "../src/docker/runtime";
@@ -29,6 +28,7 @@ import { startDirectSsh, startServer } from "../src/server";
 import { type Box, createBox, getBox, stopBox } from "../src/services/boxes";
 import type { SocketData } from "../src/ws/socket";
 import { TEST_KEY, testConfig } from "./support/app";
+import { ed25519Pair } from "./support/ssh";
 import { mint } from "./support/tokens";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
@@ -391,7 +391,7 @@ describe.skipIf(!enabled)("direct SSH to the server's SSH port with the OpenSSH 
   });
 
   test("a private key whose public half the owner added logs in", async () => {
-    const pair = utils.generateKeyPairSync("ed25519", { comment: "laptop" });
+    const pair = ed25519Pair("laptop");
     app.sshKeys.add(pair.public, "laptop");
     const identity = join(home, ".ssh", "id_direct");
     writeFileSync(identity, pair.private, { mode: 0o600 });
