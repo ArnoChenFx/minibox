@@ -25,7 +25,7 @@ import {
   setStartupCommand,
 } from "../src/services/startup-command";
 import type { BoxRecovery, BoxSpec } from "../src/specs/types";
-import { digestOf, encodeCommand, INIT_SESSION, RUNNER_SCRIPT } from "../src/startup/command";
+import { digestOf, encodeCommand, INIT_SESSION, RUNNER_SCRIPT, TREE_SWEEP_SCRIPT } from "../src/startup/command";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 
@@ -83,6 +83,15 @@ function launchesOf(containerId: string): ExecSpec[] {
     .map((call) => call.args as [string, ExecSpec])
     .filter(([id, spec]) => id === containerId && spec.cmd.includes("new-session"))
     .map(([, spec]) => spec);
+}
+
+/** Every end of a run's process tree the container got: the user it ran as, and the pid of the pane it started from. */
+function treeSweepsOf(containerId: string): { user: string; anchor: string }[] {
+  return runtime
+    .callsTo("startExec")
+    .map((call) => call.args as [string, ExecSpec])
+    .filter(([id, spec]) => id === containerId && spec.cmd.includes(TREE_SWEEP_SCRIPT))
+    .map(([, spec]) => ({ user: spec.user ?? "", anchor: spec.cmd[4] ?? "" }));
 }
 
 function paneOption(containerId: string, option: string): string {
@@ -595,5 +604,33 @@ describe("startup command: a rebuild's launch", () => {
       containerId: rebuilt.id,
       key: "session_image_unsupported",
     });
+  });
+});
+
+describe("startup command: the processes a run leaves", () => {
+  test("a run ends its process tree from its pane's pid, as root in a standard box", async () => {
+    const box = await newBox("sweep-standard", "npm run dev");
+    expect(treeSweepsOf(box.id)).toEqual([]);
+    const pane = paneOption(box.id, "pane_pid");
+
+    await runStartupCommand(host, box.boxId);
+
+    expect(treeSweepsOf(box.id)).toEqual([{ user: "root", anchor: pane }]);
+  });
+
+  test("a strict box ends its process tree as dev, since all of its processes belong to dev", async () => {
+    const box = await createBox(host, {
+      name: "sweep-strict",
+      cpus: 1,
+      memoryMb: 256,
+      startupCommand: "npm run dev",
+      profile: "strict",
+    });
+    await host.startup.settle();
+    const pane = paneOption(box.id, "pane_pid");
+
+    await runStartupCommand(host, box.boxId);
+
+    expect(treeSweepsOf(box.id)).toEqual([{ user: "dev", anchor: pane }]);
   });
 });

@@ -38,6 +38,7 @@ const prefix = process.env.MINIBOX_TEST_PREFIX ?? `mbit${Date.now().toString(36)
 if (enabled && !PREFIX_PATTERN.test(prefix)) throw new Error(`MINIBOX_TEST_PREFIX must match ${PREFIX_PATTERN}`);
 const FIXTURE = `${prefix}-tmux:fixture`;
 const MARKS = "/workspace/marks.txt";
+const PIDS = "/workspace/pids.txt";
 const owned = { [prefix]: "true" };
 const runtime: Runtime = createDockerRuntime(SOCKET);
 const docker = new Docker({ socketPath: SOCKET });
@@ -121,6 +122,17 @@ async function marks(box: Box): Promise<string[]> {
 
 async function waitForMarks(box: Box, count: number): Promise<void> {
   await waitFor(async () => (await marks(box)).length >= count, `${count} run(s) of the command`);
+}
+
+/** The pids the command wrote, one per run, for the process each run started with `sudo`. */
+async function pidsOf(box: Box): Promise<string[]> {
+  return (await shell(box.id, `cat ${PIDS} 2>/dev/null || true`)).split("\n").filter(Boolean);
+}
+
+/** `alive` unless the process is gone or a zombie, which is how /proc reports a process that has ended. */
+async function stateOfPid(box: Box, pid: string): Promise<"alive" | "dead"> {
+  const state = await shell(box.id, `awk '{print $3}' /proc/${pid}/stat 2>/dev/null`);
+  return state === "" || state === "Z" || state === "X" ? "dead" : "alive";
 }
 
 async function stateOf(box: Box): Promise<StartupCommandState> {
@@ -222,5 +234,21 @@ describe.skipIf(!enabled)("startup command on a real engine", () => {
     await waitForMarks(box, 3);
     expect(await marks(box)).toEqual(["one", "two", "two"]);
     expect(await stateOf(box)).toMatchObject({ status: "running" });
+  });
+
+  test("a process a sudo started for the run, and the run's own processes, end when the command runs again", async () => {
+    // The sudo'd process ignores the hangup that ending the pane's session sends, so only the sweep ends it.
+    const box = await newBox(
+      "init-sudo",
+      `echo run >> ${MARKS}; sudo sh -c 'nohup sleep 1234 >/dev/null 2>&1 & echo $! >> ${PIDS}; wait' & sleep 600 & echo $! >> ${PIDS}; wait`,
+    );
+    await waitForMarks(box, 1);
+    await waitFor(async () => (await pidsOf(box)).length === 2, "the two processes the run started");
+    const pids = await pidsOf(box);
+    for (const pid of pids) expect(await stateOfPid(box, pid)).toBe("alive");
+
+    await runStartupCommand(host, box.boxId);
+    await waitForMarks(box, 2);
+    for (const pid of pids) expect(await stateOfPid(box, pid)).toBe("dead");
   });
 });

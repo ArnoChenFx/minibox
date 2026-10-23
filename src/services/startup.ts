@@ -3,7 +3,15 @@ import { AppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg, type Msg } from "../lib/messages";
 import type { BoxSpec, StartupFailure } from "../specs/types";
-import { digestOf, encodeCommand, INIT_SESSION, type PaneState, RUNNER_SCRIPT, SWEEP_SCRIPT } from "../startup/command";
+import {
+  digestOf,
+  encodeCommand,
+  INIT_SESSION,
+  type PaneState,
+  RUNNER_SCRIPT,
+  SWEEP_SCRIPT,
+  TREE_SWEEP_SCRIPT,
+} from "../startup/command";
 import { classifyTmuxFailure, paneLines, paneTarget, sessionTarget } from "../tmux/format";
 import { type BoxRun, runInBox, runTmux, unsupportedImage, within } from "./tmux-exec";
 
@@ -116,7 +124,7 @@ async function launchIfMissing(host: HostCtx, boxId: string): Promise<void> {
     await recordLaunch(host, boxId, spec.containerId, failureOf(e));
     return;
   }
-  await relaunch(host, boxId, spec.containerId, spec.startupCommand);
+  await relaunch(host, boxId, spec.containerId, spec.startupCommand, spec.profile);
 }
 
 /**
@@ -168,7 +176,7 @@ export async function runNow(host: HostCtx, boxId: string, budgetMs = STARTUP_LA
     host.startup.launch(boxId, async () => {
       const current = host.specs.read(boxId);
       if (current?.startupCommand === undefined) return;
-      await relaunch(host, boxId, current.containerId, current.startupCommand);
+      await relaunch(host, boxId, current.containerId, current.startupCommand, current.profile);
     }),
     budgetMs,
   );
@@ -230,18 +238,37 @@ export function failureOf(e: unknown): Msg {
  * Starts the command in a new init session and records the outcome on the spec, so a restarted server still says why it did
  * not start. It never rejects.
  */
-async function relaunch(host: HostCtx, boxId: string, containerId: string, command: string): Promise<void> {
+async function relaunch(
+  host: HostCtx,
+  boxId: string,
+  containerId: string,
+  command: string,
+  profile: BoxSpec["profile"],
+): Promise<void> {
   try {
-    const failure = await launchOnce(host, containerId, command);
+    const failure = await launchOnce(host, containerId, command, stopAsOf(profile));
     await recordLaunch(host, boxId, containerId, failure);
   } catch (e) {
     log.warn("startup.record_failed", { id: boxId, container: containerId, error: String(e) });
   }
 }
 
-async function launchOnce(host: HostCtx, containerId: string, command: string): Promise<Msg | null> {
+/**
+ * The user the run's processes are ended as. A standard or relaxed box lets `sudo` start a process only root can signal, so
+ * the sweep runs as root there. A strict box cannot escalate, so its processes all belong to `dev`.
+ */
+function stopAsOf(profile: BoxSpec["profile"]): "dev" | "root" {
+  return profile === "strict" ? "dev" : "root";
+}
+
+async function launchOnce(
+  host: HostCtx,
+  containerId: string,
+  command: string,
+  stopAs: "dev" | "root",
+): Promise<Msg | null> {
   try {
-    await endRuns(host, containerId);
+    await endRuns(host, containerId, stopAs);
     const run = await runTmux(host, containerId, launchArgs(command));
     if (run.code === 0) return null;
     if (classifyTmuxFailure(run.code, run.stderr) === "unrunnable") return msg("session_image_unsupported");
@@ -253,10 +280,32 @@ async function launchOnce(host: HostCtx, containerId: string, command: string): 
   }
 }
 
-/** Ends the run before a new one: its init session goes, and then the processes that carry the runner's variable. */
-async function endRuns(host: HostCtx, containerId: string): Promise<void> {
+/**
+ * Ends the run before a new one. Its process tree goes first, found from its pane while the pane still exists, and it is
+ * signalled as `stopAs` so a process a `sudo` started is included. Then the init session goes, and last the processes that
+ * carry the runner's variable, which finds a process that detached from the tree with `setsid`.
+ */
+async function endRuns(host: HostCtx, containerId: string, stopAs: "dev" | "root"): Promise<void> {
+  const anchor = await paneProcessOf(host, containerId);
+  if (anchor !== null) {
+    await runInBox(host, containerId, ["sh", "-c", TREE_SWEEP_SCRIPT, "minibox-sweep", String(anchor)], stopAs);
+  }
   await runTmux(host, containerId, ["kill-session", "-t", sessionTarget(INIT_SESSION)]);
   await runInBox(host, containerId, ["sh", "-c", SWEEP_SCRIPT]);
+}
+
+/** The process id of the init session's pane. tmux keeps it on a pane whose command has ended, while the pane is kept. */
+async function paneProcessOf(host: HostCtx, containerId: string): Promise<number | null> {
+  const probe = await runTmux(host, containerId, [
+    "display-message",
+    "-p",
+    "-t",
+    paneTarget(INIT_SESSION),
+    "#{pane_pid}",
+  ]);
+  if (probe.code !== 0) return null;
+  const pid = Number(probe.stdout.trim());
+  return Number.isInteger(pid) && pid > 1 ? pid : null;
 }
 
 async function hasSession(host: HostCtx, containerId: string): Promise<boolean> {

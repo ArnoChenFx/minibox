@@ -15,6 +15,8 @@ interface FakeSession {
   readonly name: string;
   /** tmux's session id, such as `$3`. A session made again under the same name gets a new one. */
   readonly id: string;
+  /** The pid of the pane's process, as `#{pane_pid}` reports it. */
+  readonly pid: number;
   readonly created: number;
   readonly options: Map<string, string>;
   /** The pane transcript. The last line is the one being typed on. */
@@ -30,6 +32,8 @@ interface FakeSession {
 /** Rows a pane shows. `capture-pane` returns history followed by this many rows, blank rows included. */
 const SCREEN_ROWS = 24;
 const NO_SERVER = "no server running on /tmp/tmux-1000/default";
+/** The pid of the first session's pane. Each session made after it gets the next pid. */
+const FIRST_PANE_PID = 1000;
 
 /** Which flags take a value, and which are switches, for each command the service runs. */
 const SYNTAX: Record<string, { values: string[]; switches: string[] }> = {
@@ -230,9 +234,11 @@ export class FakeTmux {
       sessions = new Map();
       this.servers.set(containerId, sessions);
     }
+    const serial = this.nextSessionId++;
     sessions.set(name, {
       name,
-      id: `$${this.nextSessionId++}`,
+      id: `$${serial}`,
+      pid: FIRST_PANE_PID + serial,
       created: Math.floor(Date.now() / 1000),
       options: new Map(),
       lines: [""],
@@ -297,6 +303,7 @@ function expand(format: string, session: FakeSession): string {
   return format.replace(/#\{([^}]+)\}/g, (_match, key: string) => {
     if (key === "session_name") return session.name;
     if (key === "session_id") return session.id;
+    if (key === "pane_pid") return String(session.pid);
     if (key === "session_created") return String(session.created);
     if (key === "session_attached") return String(session.clients.size);
     if (key === "pane_dead") return session.dead ? "1" : "0";
