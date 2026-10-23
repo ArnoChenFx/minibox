@@ -27,8 +27,9 @@ const image = process.env.MINIBOX_TEST_IMAGE ?? "alpine:3.20";
 const SSH_FIXTURE_BASE = "debian:bookworm-slim";
 /** The FROM image of templates/base/Dockerfile. A build pulls it anyway, so this only moves the pull earlier. */
 const TEMPLATE_BASE = "node:26-bookworm-slim";
-/** The engine image of tests/docker-remote-host.test.ts, and the base of the templates that test builds on both engines. */
+/** The image of the two engines that tests/docker-remote-host.test.ts starts. */
 const SECOND_ENGINE_IMAGE = "docker:dind";
+/** The FROM image of the templates that test builds, pulled up front so the build does not wait on it. */
 const REMOTE_TEMPLATE_BASE = "python:3.12-alpine";
 const prefix = `mbit${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
 
