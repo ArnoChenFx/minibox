@@ -5,6 +5,7 @@ export declare const NOTICE_KINDS: readonly [
   "box.ttl_soon",
   "box.idle_soon",
   "session.takeover",
+  "agent.question",
   "host.offline",
   "volume.usage_high",
   "volume.usage_limit",

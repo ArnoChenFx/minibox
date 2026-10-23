@@ -91,6 +91,7 @@ export default {
   "st.notifyKind.box.ttl_soon": "Box 即将到期",
   "st.notifyKind.box.idle_soon": "Box 即将休眠",
   "st.notifyKind.session.takeover": "终端被接管",
+  "st.notifyKind.agent.question": "Agent 提出了问题",
   "st.notifyKind.host.offline": "宿主机离线",
   "st.notifyKind.volume.usage_high": "卷超过软上限",
   "st.notifyKind.volume.usage_limit": "卷超过硬上限",
