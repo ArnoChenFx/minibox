@@ -74,6 +74,16 @@
   border-top: 1px solid var(--border);
   white-space: nowrap;
 }
+a.sidebar-foot {
+  text-decoration: none;
+}
+a.sidebar-foot:hover {
+  color: var(--text-2);
+  text-decoration: none;
+}
+a.sidebar-foot.active {
+  color: var(--accent-text);
+}
 
 .main {
   min-width: 0;

@@ -152,7 +152,7 @@ export default {
   "cb.customHint": "按需调整",
   "cb.presetSpec": "{cpus} 核 · {gb} GB",
   "cb.fromSnapshotHint": "从旧快照创建，只包含拍摄快照时的系统层",
-  "cb.noTemplates": '当前没有可用模板。请先到 <a href="#/templates">模板</a> 页构建基础模板。',
+  "cb.noTemplates": '当前没有可用模板。请先到 <a href="#/library/templates">模板</a> 页构建基础模板。',
   "cb.titleSnapshot": "从旧快照创建 Box",
   "cb.title": "创建 Box",
   "cb.desc": "Box 是一个独立的 Docker 容器，工作区 /workspace 保存在专属数据卷中。",

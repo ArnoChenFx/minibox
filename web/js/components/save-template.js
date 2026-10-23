@@ -86,7 +86,7 @@ export function openSaveTemplate(box) {
     invalidateTemplates();
     toast(t("tp.saved"), {
       message: value,
-      link: { href: `#/templates/${enc(value)}`, text: t("tp.openTemplate") },
+      link: { href: `#/library/templates/${enc(value)}`, text: t("tp.openTemplate") },
       timeout: 15000,
     });
   };
