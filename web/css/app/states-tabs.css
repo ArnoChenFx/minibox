@@ -101,6 +101,13 @@
   margin-bottom: 18px;
   flex-wrap: wrap;
 }
+.detail-head .detail-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.detail-head .page-actions {
+  margin-left: auto;
+}
 .detail-head .avatar {
   width: 44px;
   height: 44px;

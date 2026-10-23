@@ -14,8 +14,8 @@ const SECTIONS = {
 const SECTION_RE = /^\/(storage|library)(?:\/([^/]+)(?:\/([^/]+))?)?$/;
 
 /**
- * A box's address: `/boxes/:id` opens its overview, `/boxes/:id/:tab` one of its tabs, and `/boxes/:id/terminal/:session`
- * one terminal session. Only the terminal names a session, so the address of any other tab drops it.
+ * A box's address: `/boxes/:id` opens its overview, `/boxes/:id/:tab` one of its tabs, `/boxes/:id/terminal/:session`
+ * one terminal session and `/boxes/:id/settings/:section` one settings section. Any other tab drops a third segment.
  */
 const BOX_RE = /^\/boxes\/([^/]+)(?:\/(\w+)(?:\/([^/]+))?)?$/;
 
@@ -41,12 +41,18 @@ const PAGES = [
   { re: /^\/about$/, page: "about", nav: "about", crumbs: ["nav.about"] },
 ];
 
-/** The addresses that moved. Each one maps the path it matches to the address that opens now. */
+/**
+ * The addresses that moved. Each one maps the path it matches to the address that opens now. The box tabs that became
+ * settings sections keep their links working here, so a bookmark made before the change still opens the same content.
+ */
 const MOVED = [
   { re: /^\/volumes$/, to: () => "/storage/volumes" },
   { re: /^\/templates$/, to: () => "/library/templates" },
   { re: /^\/templates\/([^/]+)$/, to: (m) => `/library/templates/${m[1]}` },
   { re: /^\/snapshots$/, to: () => "/library/templates" },
+  { re: /^\/boxes\/([^/]+)\/(resources|tools|checkpoints)$/, to: (m) => `/boxes/${m[1]}/settings/${m[2]}` },
+  { re: /^\/boxes\/([^/]+)\/snapshots$/, to: (m) => `/boxes/${m[1]}/settings/checkpoints` },
+  { re: /^\/boxes\/([^/]+)\/logs$/, to: (m) => `/boxes/${m[1]}/activity` },
 ];
 
 /**
@@ -57,10 +63,10 @@ export function resolveRoute(path) {
   const address = path || "/overview";
   const section = address.match(SECTION_RE);
   if (section) return resolveSection(section);
-  const box = address.match(BOX_RE);
-  if (box) return resolveBox(box);
   const moved = MOVED.find(({ re }) => re.test(address));
   if (moved) return { redirect: moved.to(address.match(moved.re)) };
+  const box = address.match(BOX_RE);
+  if (box) return resolveBox(box);
   for (const route of PAGES) {
     const m = address.match(route.re);
     if (m) return { page: route.page, nav: route.nav, crumbs: route.crumbs, args: route.args?.(m) ?? [] };
@@ -80,16 +86,36 @@ function resolveSection([, section, tab, arg]) {
   };
 }
 
-function resolveBox([, id, tab, session]) {
-  if (session !== undefined && tab !== "terminal") return { redirect: `/boxes/${id}/${tab}` };
-  const args = [decode(id), tab];
-  if (session !== undefined) args.push(decode(session));
+function resolveBox([, id, tab, sub]) {
+  if (sub !== undefined && tab !== "terminal" && tab !== "settings") return { redirect: `/boxes/${id}/${tab}` };
+  const args = [decode(id), tab, sub === undefined ? undefined : decode(sub)];
   return { page: "boxDetail", nav: "boxes", crumbs: ["nav.boxes"], args };
 }
 
 /** The address of a tab, with the box or template it works on when it names one. */
 export function tabHash(section, tab, arg = "") {
   return `#/${section}/${tab}${arg ? `/${encodeURIComponent(arg)}` : ""}`;
+}
+
+/**
+ * The address of a box's tab. The overview is the box's own address, so a link to the box opens it. The settings tab
+ * takes the section it names, when it names one.
+ */
+export function boxHash(id, tab = "overview", section = "") {
+  const box = `#/boxes/${encodeURIComponent(id)}`;
+  if (tab === "overview") return box;
+  if (tab === "settings" && section) return `${box}/settings/${encodeURIComponent(section)}`;
+  return `${box}/${tab}`;
+}
+
+/**
+ * The address that shows the same tab of a box under its new container id, or null when `hash` is not on that box. A
+ * rebuild or a move gives a box a new id, so the page moves to the new address and keeps the tab it was on.
+ */
+export function movedBoxHash(hash, fromId, toId) {
+  const from = `#/boxes/${encodeURIComponent(fromId)}`;
+  if (hash !== from && !hash.startsWith(`${from}/`)) return null;
+  return `#/boxes/${encodeURIComponent(toId)}${hash.slice(from.length)}`;
 }
 
 /** The address of a box's terminal, on one of its sessions when `session` names one. */

@@ -13,4 +13,8 @@ export declare function resolveRoute(path: string): RouteRedirect | RouteMatch |
 
 export declare function tabHash(section: string, tab: string, arg?: string): string;
 
+export declare function boxHash(id: string, tab?: string, section?: string): string;
+
+export declare function movedBoxHash(hash: string, fromId: string, toId: string): string | null;
+
 export declare function terminalHash(boxId: string, session?: string): string;

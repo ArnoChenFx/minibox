@@ -17,7 +17,7 @@ If the box is asleep, the terminal wakes it. A box that you stopped by hand does
 2. In **Session name**, type a name. Use up to 32 letters, digits, dashes and underscores.
 3. Click **New session**.
 
-The session name is how you find the session again. The **Sessions** list shows every session in the box.
+The session name is how you find the session again. The **Sessions** list shows every session in the box. Each session is marked with who created it: **Created by you** for a session you started in the console, or **Created by agent** for one that an agent or another client started through the API. The session that runs the box's startup command, `minibox-init`, carries no mark, so it also shows **Created by agent**.
 
 To end a session, click **Close session**, and confirm. Programs that run in the session stop.
 

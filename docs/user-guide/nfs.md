@@ -26,7 +26,7 @@ Where each kind of data lives:
 | Data | Where it lives |
 |---|---|
 | Workspace (`/workspace`) and home (`/home/dev`) | The NFS pool, if it is the default pool |
-| Tools (`/opt/minibox/tools`) | The default pool, unless the **Tools** role is set to another pool. Each pool has its own shared tools volume, so a box on the NFS pool starts with an empty one. Install its tools again from the box's **Tools** tab |
+| Tools (`/opt/minibox/tools`) | The default pool, unless the **Tools** role is set to another pool. Each pool has its own shared tools volume, so a box on the NFS pool starts with an empty one. Install its tools again from the box's **Settings**, under **Tools** |
 | Cache (`/home/dev/.cache`) | The local pool. This is the default. |
 | Independent volumes | The pool you choose when you create them |
 | Images, container layers, data directory, checkpoint repository | The compute machine |

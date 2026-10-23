@@ -491,7 +491,7 @@ const CAPTURES: Record<Screen, Capture> = {
     await page.screenshot({ path: out });
   },
   "box-checkpoints": async (page, ctx, out) => {
-    await openRoute(page, ctx, `/boxes/${ctx.demo.api}/checkpoints`, exactText(page, "baseline"));
+    await openRoute(page, ctx, `/boxes/${ctx.demo.api}/settings/checkpoints`, exactText(page, "baseline"));
     await page.screenshot({ path: out });
   },
   "box-files": async (page, ctx, out) => {

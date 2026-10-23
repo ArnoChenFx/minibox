@@ -50,6 +50,16 @@
   flex-direction: column;
   gap: 16px;
 }
+.box-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+/* An empty child, such as a section that did not mount, takes no gap, so the cards that show stay evenly spaced. */
+.box-stack > :empty {
+  display: none;
+}
 .row {
   display: flex;
   align-items: center;

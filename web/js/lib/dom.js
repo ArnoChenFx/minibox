@@ -4,6 +4,16 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ESC[c]);
 
+/**
+ * Scrolls a sideways-scrolling strip, such as a tab bar on a narrow screen, so that `item` is in view. Only the strip
+ * scrolls; the page stays where it is. A strip that fits its width does not move.
+ */
+export function revealInStrip(strip, item) {
+  if (!strip || !item || strip.scrollWidth <= strip.clientWidth) return;
+  const left = item.getBoundingClientRect().left - strip.getBoundingClientRect().left + strip.scrollLeft;
+  strip.scrollLeft = left - (strip.clientWidth - item.offsetWidth) / 2;
+}
+
 /** Parse an HTML string into a single element. */
 export function el(html) {
   const t = document.createElement("template");

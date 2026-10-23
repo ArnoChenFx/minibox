@@ -4,14 +4,14 @@ Environment variables are settings that a box's programs read when they start, s
 
 ## Set variables for a box
 
-You can set variables when you create a box, or later on the box's **Overview** tab.
+You can set variables when you create a box, or later in the box's **Settings** tab, under **Environment variables**.
 
 - In the create dialog, open **Environment variables**. The section is collapsed by default.
-- On the **Overview** tab, the **Environment variables** section lists the box's variables. Edit them there, and click **Save**.
+- In the box's **Settings**, the **Environment variables** section lists the box's variables. Edit them there, and click **Save**.
 
 Each row has a name and a value. Plain values are masked in the box's details until you choose **Show value**.
 
-Saving on the **Overview** tab rebuilds the box, so its writable layer and running processes are lost. MiniBox shows a preview first, and asks you to confirm.
+Saving in **Settings** rebuilds the box, so its writable layer and running processes are lost. MiniBox shows a preview first, and asks you to confirm.
 
 ## Use a secret
 
