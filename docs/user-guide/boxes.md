@@ -65,6 +65,15 @@ Click a box in the list to open it. The box page has these tabs:
 | **Tools** | Tools that you can install, upgrade or remove. See [Tools](tools.md). |
 | **Files** | Browse, upload and download the files in the box's volumes, even while the box is stopped. See [Files](files.md). |
 
+## Overview and the box list
+
+The **Overview** page is the first screen. It has two lists:
+
+- **In progress** shows the boxes an agent is working on. See [Watch an agent on the overview](terminal-and-sessions.md#watch-an-agent-on-the-overview).
+- **Needs attention** shows the problems MiniBox has recorded: a box that ran out of memory, a failed checkpoint, a box whose live settings differ from its spec, a rollback waiting for you to confirm or undo it, a volume over its hard limit, a storage pool that did not answer, an offline host, and a host whose disk is below its free-space minimum. Out-of-memory kills and failed checkpoints stay listed for a day. The other items stay listed while their condition lasts. **View** opens the box tab, the volumes or the host settings where the problem shows.
+
+The **Boxes** list shows **Agent active · 12 seconds ago** beside a box while an agent is working in it. An agent is working in a box when it acted there in the last 10 minutes, or a command it started still runs. The time is when the agent last acted there.
+
 ## Start, stop and restart
 
 Use the **Start**, **Stop** and **Restart** buttons. You find them in the box list and at the top of the box page.
