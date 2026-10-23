@@ -242,6 +242,7 @@ export default {
   "ev.source.rest": "REST API",
   "ev.source.mcp": "MCP",
   "ev.source.cli": "CLI",
+  "ev.source.ssh": "SSH",
   "ev.source.scheduler": "Scheduler",
   "ev.source.system": "System",
   "ev.box.create": "Box created",

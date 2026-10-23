@@ -235,6 +235,7 @@ export default {
   "ev.source.rest": "REST 接口",
   "ev.source.mcp": "MCP",
   "ev.source.cli": "命令行",
+  "ev.source.ssh": "SSH",
   "ev.source.scheduler": "调度器",
   "ev.source.system": "系统",
   "ev.box.create": "Box 已创建",

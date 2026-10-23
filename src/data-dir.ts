@@ -72,6 +72,11 @@ export function targetsPath(dataDir: string): string {
   return join(dataDir, "targets.json");
 }
 
+/** The owner's SSH public keys for direct SSH logins. Mode 600, since the file decides who gets a shell. */
+export function sshKeysPath(dataDir: string): string {
+  return join(dataDir, "ssh_keys.json");
+}
+
 /** Paired host agents: ids, public keys and revocation, never a private key. Mode 600. */
 export function agentsPath(dataDir: string): string {
   return join(dataDir, "agents.json");

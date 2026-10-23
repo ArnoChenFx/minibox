@@ -74,6 +74,8 @@ export default {
   "act.tool.custom.delete": "Deleted custom tool",
   "act.secret.set": "Saved secret",
   "act.secret.delete": "Deleted secret",
+  "act.sshkey.add": "Added SSH key",
+  "act.sshkey.delete": "Deleted SSH key",
   "act.host.add": "Added host",
   "act.host.pairing.create": "Created pairing code",
   "act.host.test": "Tested host connection",

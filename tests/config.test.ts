@@ -497,3 +497,28 @@ describe("unusable DATA_DIR", () => {
     expect(readFileSync(join(dataDir, "access_key"), "utf8")).toBe("\n");
   });
 });
+
+describe("direct SSH", () => {
+  beforeEach(() => setLogLevel("error"));
+  afterEach(() => setLogLevel("info"));
+
+  test("is off unless SSH_PORT is set, and binds where the console does by default", () => {
+    expect(load({ ACCESS_KEY: KEY })).toMatchObject({ sshPort: null, sshBind: "127.0.0.1", sshPublicHost: null });
+    expect(load({ ACCESS_KEY: KEY, HOST: "0.0.0.0", SSH_PORT: "2222" })).toMatchObject({
+      sshPort: 2222,
+      sshBind: "0.0.0.0",
+    });
+    expect(load({ ACCESS_KEY: KEY, SSH_PORT: "2222", SSH_BIND: "10.0.0.5" }).sshBind).toBe("10.0.0.5");
+  });
+  test("SSH_PUBLIC_HOST and SSH_PUBLIC_PORT change only what the console shows", () => {
+    expect(
+      load({ ACCESS_KEY: KEY, SSH_PORT: "2222", SSH_PUBLIC_HOST: "nas.lan", SSH_PUBLIC_PORT: "22022" }),
+    ).toMatchObject({ sshPort: 2222, sshPublicHost: "nas.lan", sshPublicPort: 22022 });
+  });
+  test("a port that is not 1 to 65535, the web port, or a host with a scheme stops startup", () => {
+    expect(() => load({ ACCESS_KEY: KEY, SSH_PORT: "0" })).toThrow(/SSH_PORT/);
+    expect(() => load({ ACCESS_KEY: KEY, SSH_PORT: "22x" })).toThrow(/SSH_PORT/);
+    expect(() => load({ ACCESS_KEY: KEY, SSH_PORT: "3920" })).toThrow(/already the web PORT/);
+    expect(() => load({ ACCESS_KEY: KEY, SSH_PUBLIC_HOST: "ssh://nas" })).toThrow(/SSH_PUBLIC_HOST/);
+  });
+});

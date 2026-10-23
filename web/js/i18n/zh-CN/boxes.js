@@ -74,6 +74,8 @@ export default {
   "act.tool.custom.delete": "删除自定义工具",
   "act.secret.set": "保存密钥",
   "act.secret.delete": "删除密钥",
+  "act.sshkey.add": "添加 SSH 公钥",
+  "act.sshkey.delete": "删除 SSH 公钥",
   "act.host.add": "添加宿主机",
   "act.host.pairing.create": "生成配对码",
   "act.host.test": "测试宿主机连接",

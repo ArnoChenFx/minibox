@@ -323,6 +323,23 @@ export function startServer(app: App): Server<SocketData> {
   });
 }
 
+/**
+ * Opens the direct SSH port when SSH_PORT is set. A port that cannot be bound is logged and left off: the web console
+ * still starts, so the owner can read the log and fix the setting.
+ */
+export async function startDirectSsh(app: App): Promise<number | null> {
+  const { sshDirect, cfg } = app;
+  if (!sshDirect || cfg.sshPort === null) return null;
+  try {
+    const port = await sshDirect.listen(cfg.sshBind, cfg.sshPort);
+    log.info("ssh.direct_listening", { bind: cfg.sshBind, port, fingerprint: app.ssh.hostKeyView().fingerprint });
+    return port;
+  } catch (e) {
+    log.error("ssh.direct_listen_failed", { bind: cfg.sshBind, port: cfg.sshPort, error: String(e) });
+    return null;
+  }
+}
+
 /** Fields of the `server.started` log line. None of them may carry any part of the access key. */
 export function startupFields(cfg: Config, version: string) {
   return {
@@ -384,6 +401,7 @@ async function boot(): Promise<void> {
   app.volumeUsage.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
+  await startDirectSsh(app);
 
   let stopping = false;
   const shutdown = async (signal: string) => {
@@ -406,6 +424,8 @@ async function boot(): Promise<void> {
     app.sessions.stop();
     app.terminals.shutdown();
     const force = setTimeout(() => process.exit(1), 5000);
+    await app.sshDirect?.close();
+    app.ssh.disconnectAll("server stopping");
     await server.stop(true);
     clearTimeout(force);
     app.previewRelay.stop();
