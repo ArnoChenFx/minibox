@@ -4,6 +4,7 @@ import type { Config } from "../src/config";
 import type { HostMetrics } from "../src/host/metrics";
 import { RuntimeError } from "../src/runtime";
 import { CheckpointSweep } from "../src/services/checkpoint-retention";
+import { remeasureHostDisk } from "../src/volumes/disk";
 import { silenceLogs } from "./support/app";
 import {
   call,
@@ -334,6 +335,45 @@ describe("the recycle bin capacity", () => {
     expect(refused(refusedDelete)).toEqual({ status: 409, key: "trash_capacity_exceeded" });
     expect((await call(harness.base, `/api/boxes/${big}`)).status).toBe(200);
     expect(await trashOf(harness)).toEqual([]);
+  });
+});
+
+describe("the recycle bin and the host disk", () => {
+  let harness: Harness;
+  let restoreLogs: () => void;
+
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+    harness = start();
+  });
+
+  afterEach(() => {
+    harness.stop();
+    restoreLogs();
+  });
+
+  test("a delete that would keep a copy is refused with 507 while the host disk is below its floor, and the box stays", async () => {
+    const boxId = await makeBox(harness, "low");
+    harness.runtime.disk = { totalBytes: 100 * GB, freeBytes: 1 * GB };
+    await remeasureHostDisk(harness.app.hosts.get());
+
+    const refusedDelete = await removeBox(harness, boxId);
+
+    expect(refused(refusedDelete)).toEqual({ status: 507, key: "host_disk_low" });
+    expect((await call(harness.base, `/api/boxes/${boxId}`)).status).toBe(200);
+    expect(await trashOf(harness)).toEqual([]);
+  });
+
+  test("a delete with skipTrash goes ahead while the host disk is below its floor, since it keeps no copy", async () => {
+    const boxId = await makeBox(harness, "quick");
+    harness.runtime.disk = { totalBytes: 100 * GB, freeBytes: 1 * GB };
+    await remeasureHostDisk(harness.app.hosts.get());
+
+    const deleted = await removeBox(harness, boxId, "?skipTrash=true");
+
+    expect(deleted.status).toBe(200);
+    expect(keptId(deleted)).toBe("");
+    expect((await call(harness.base, `/api/boxes/${boxId}`)).status).toBe(404);
   });
 });
 

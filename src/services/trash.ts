@@ -5,6 +5,7 @@ import { conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { VolumeChanges } from "../volumes/changes";
+import { assertHostDiskRoom } from "../volumes/disk";
 import { inspectVolumeOrNull } from "../volumes/engine";
 import { createRestoredVolume, planIndependentVolume } from "../volumes/provision";
 import type { VolumeRecord } from "../volumes/types";
@@ -187,6 +188,7 @@ async function keepInBin(
     deletedAt: new Date(now).toISOString(),
     expiresAt: trashExpiresAt(now, host.checkpointPolicy.trashKeepDays),
   };
+  await assertHostDiskRoom(host);
   await makeRoom(host, layers, record);
   const view = await backupLayers(
     host,
