@@ -4,20 +4,25 @@ import type { Server } from "bun";
 
 import { type App, createApp } from "../src/app";
 import type { LabelKeys } from "../src/labels";
-import { RuntimeError } from "../src/runtime";
+import { type ExecSpec, RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
+import { createDeclaredTemplate, readRecipe, removeRecipe, templateSetupOf } from "../src/services/template-builds";
 import type { SocketData } from "../src/ws/socket";
 import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
+import { DEVCONTAINER_WITH_SETUP, serveRepository } from "./support/repository";
 
 const GIB = 1024 ** 3;
 const EDGE_SOCKET = "/run/minibox-test/edge-docker.sock";
 const GOLD = "mbtest-template:gold";
+const DEV = "mbtest-template:dev";
+const DEV_SETUP = { postCreate: ["/bin/sh", "-c", "npm install"], forwardPorts: [3000] };
 
 interface CreateResponse {
   box: { hostId?: string };
   sync?: { taskId: string };
+  setup?: { taskId: string };
 }
 
 let app: App;
@@ -60,6 +65,12 @@ function seedGold(): void {
 
 function createOn(host: string, name: string, template = GOLD) {
   return post("/api/boxes", { name, cpus: 1, memoryMb: 256, host, template, mounts: [] });
+}
+
+async function syncTo(ref: string, host: string): Promise<string> {
+  const started = await post(`/api/templates/${encodeURIComponent(ref)}/sync`, { host });
+  expect(started.status).toBe(202);
+  return (await json<{ taskId: string }>(started)).taskId;
 }
 
 beforeEach(async () => {
@@ -220,5 +231,64 @@ describe("template sync copies a template to a host on request", () => {
     const res = await post(`/api/templates/${encodeURIComponent(GOLD)}/sync`, { host: "nowhere" });
     expect(res.status).toBe(404);
     expect(await errorKeyOf(res)).toBe("host_not_found");
+  });
+});
+
+describe("a declared template keeps its setup on the hosts it is copied to", () => {
+  beforeEach(async () => {
+    serveRepository(local, new Map([[".devcontainer/devcontainer.json", DEVCONTAINER_WITH_SETUP]]));
+    await createDeclaredTemplate(
+      app.hosts.get(),
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      {},
+    );
+  });
+
+  test("a sync copies the recipe, so the copy reports the setup of the declared template", async () => {
+    await syncTo(DEV, "edge");
+    await app.tasks.drain();
+
+    const edgeHost = app.hosts.get("edge");
+    expect(readRecipe(edgeHost, "dev")).toEqual(readRecipe(app.hosts.get(), "dev"));
+    expect(await templateSetupOf(edgeHost, DEV)).toEqual(DEV_SETUP);
+  });
+
+  test("a box created where the template has to be copied first runs its setup on that host, as dev", async () => {
+    const res = await createOn("edge", "alpha", DEV);
+    expect(res.status).toBe(201);
+    const { sync, setup } = await json<CreateResponse>(res);
+    expect(sync?.taskId).toBeString();
+    await app.tasks.drain();
+
+    expect(app.tasks.get(setup?.taskId ?? "", { output: false })).toMatchObject({
+      op: "box.setup",
+      status: "succeeded",
+    });
+    const execs = edge
+      .callsTo("startExec")
+      .map((entry) => entry.args[1] as ExecSpec)
+      .filter((spec) => JSON.stringify(spec.cmd) === JSON.stringify(DEV_SETUP.postCreate));
+    expect(execs).toEqual([expect.objectContaining({ user: "dev", workingDir: "/" })]);
+  });
+
+  test("a host that holds the image but not its recipe gets the recipe on the next sync", async () => {
+    await syncTo(DEV, "edge");
+    await app.tasks.drain();
+    removeRecipe(app.hosts.get("edge"), "dev");
+    expect(await templateSetupOf(app.hosts.get("edge"), DEV)).toBeNull();
+
+    const again = await syncTo(DEV, "edge");
+    await app.tasks.drain();
+    expect(app.tasks.get(again, { output: false })).toMatchObject({ status: "succeeded", result: { sent: false } });
+    expect(await templateSetupOf(app.hosts.get("edge"), DEV)).toEqual(DEV_SETUP);
+  });
+
+  test("a template that no recipe built is copied without one, so its copy has no setup", async () => {
+    seedGold();
+    await syncTo(GOLD, "edge");
+    await app.tasks.drain();
+
+    expect(readRecipe(app.hosts.get("edge"), "gold")).toBeNull();
+    expect(await templateSetupOf(app.hosts.get("edge"), GOLD)).toBeNull();
   });
 });

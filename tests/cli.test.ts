@@ -956,7 +956,7 @@ describe("CLI templates, images and box clones", () => {
         ),
       ).toBe(1);
       expect(failed.out).toBe("beta\n");
-      expect(failed.err).toContain("beta was created, but its clone did not finish");
+      expect(failed.err).toContain("beta was created, but its setup did not finish");
       const listed = io();
       expect(await runCli(["box", "ls"], env.env, listed, lines([]))).toBe(0);
       expect(listed.out).toContain("beta");
@@ -971,7 +971,7 @@ describe("CLI templates, images and box clones", () => {
         ),
       ).toBe(0);
       expect(detached.out).toBe("gamma\n");
-      expect(detached.err).toMatch(/The clone runs as task [0-9A-HJKMNP-TV-Z]{26}/);
+      expect(detached.err).toMatch(/The setup runs as task [0-9A-HJKMNP-TV-Z]{26}/);
       await settleTasks(env);
     } finally {
       env.stop();

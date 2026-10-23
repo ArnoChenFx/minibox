@@ -1,5 +1,6 @@
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
+import type { TemplateInit } from "../services/template-builds";
 import type { BoxMount } from "../specs/types";
 import { findSharedTools, leftoverWorkspace } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
@@ -65,6 +66,19 @@ export async function assertCanAdministerPools(ctx: OperationContext): Promise<v
 export async function assertCanAdministerCatalog(ctx: OperationContext): Promise<void> {
   if (await allowed(ctx, "tool:custom")) return;
   throw new AuthorizationDenied(new AppError(403, "forbidden", msg("tool_custom_forbidden")));
+}
+
+/**
+ * A declared template's setup runs a command in the new box and opens its ports, so a box made from it needs what those
+ * need: `exec` for the postCreateCommand and `port:expose` for the forwarded ports. The owner always passes.
+ */
+export async function assertTemplateSetupAllowed(ctx: OperationContext, setup: TemplateInit | null): Promise<void> {
+  if (setup?.postCreate !== undefined && !(await allowed(ctx, "exec"))) {
+    throw new AuthorizationDenied(new AppError(403, "forbidden", msg("template_command_forbidden")));
+  }
+  if (setup?.forwardPorts?.length && !(await allowed(ctx, "port:expose"))) {
+    throw new AuthorizationDenied(new AppError(403, "forbidden", msg("template_ports_forbidden")));
+  }
 }
 
 /**

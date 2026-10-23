@@ -63,10 +63,10 @@ Creates and starts a box. It starts from the base template unless you choose ano
 | `--startup-command TEXT` | A command that runs at every start of the box. See [Startup command](../user-guide/boxes.md#startup-command). |
 | `--startup-command-stdin` | Reads the startup command from standard input. Use it for a command that holds a secret, so the text stays out of the shell history. |
 | `--self-token` | Gives the box's agent a token for this box alone, written to `/run/minibox/self-token`. Off by default. See [A box's own agent](../user-guide/agents.md#a-boxs-own-agent). |
-| `--no-wait` | Prints the clone's task ID and returns without waiting for the clone |
+| `--no-wait` | Prints the setup task's ID and returns without waiting for it |
 | `--json` | Prints the server's JSON response |
 
-With `--repo`, the command waits for the clone. If the clone fails, the box is kept, and the command reports the reason and exits with `1`. `--startup-command` and `--startup-command-stdin` cannot be used together.
+The command waits for the box's setup task: its clone with `--repo`, and the `postCreateCommand` of a template that sets one. If the setup fails, the box is kept, and the command reports the reason and exits with `1`. `--startup-command` and `--startup-command-stdin` cannot be used together.
 
 ```bash
 minibox box create my-app --template node-tools --repo https://github.com/example/app.git --branch main --secret GITHUB_TOKEN

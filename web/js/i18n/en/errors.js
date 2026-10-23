@@ -155,19 +155,29 @@ export default {
     "A clone needs an empty, writable /workspace in the box. Leave the default mounts in place, or mount a writable workspace volume.",
   "err.clone_failed": "Could not clone the repository: {detail}",
   "err.devcontainer_missing": "There is no devcontainer.json at {path} in the repository.",
-  "err.devcontainer_invalid": "The devcontainer.json file is not valid JSON with comments: {detail}",
-  "err.devcontainer_unsupported": "devcontainer.json uses {keys}, which MiniBox does not support.",
-  "err.devcontainer_unsupported_hint":
-    "MiniBox reads image, build.dockerfile, build.context, build.args and containerEnv. Move other settings into the Dockerfile, remove them, then try again.",
-  "err.devcontainer_post_create":
-    "MiniBox does not run postCreateCommand or other lifecycle commands. Add the install steps to the Dockerfile as RUN instructions, remove the key, then try again.",
+  "err.devcontainer_invalid": "devcontainer.json is not valid: {detail}",
   "err.devcontainer_source": "devcontainer.json must set image or build.dockerfile, and not both.",
   "err.devcontainer_build_invalid":
     "build.dockerfile must be a path to the Dockerfile, and build.context a path to the build context, both relative to devcontainer.json.",
+  "err.devcontainer_target_invalid":
+    "build.target must be a stage name of the Dockerfile, with only letters, digits, dots, underscores and hyphens.",
+  "err.devcontainer_target_missing":
+    "build.target {target} is not a stage of the Dockerfile, so the template cannot be built. Name a stage the Dockerfile declares with FROM … AS {target}, or remove build.target.",
+  "err.devcontainer_variable":
+    "{name} uses {variable}, a devcontainer variable that MiniBox does not expand. Write the value it stands for, then try again.",
   "err.devcontainer_path_invalid":
     "build.dockerfile and build.context must stay inside the repository, and the Dockerfile must be inside the build context.",
   "err.devcontainer_value_invalid":
-    "{name} must be a string on one line without a ${…} variable reference, because MiniBox does not expand variables.",
+    "{name} is not valid. A name must be a valid variable name, and a value must have no control characters, such as a line break, and no ${…} reference, because MiniBox does not expand variables.",
+  "err.post_create_failed": "postCreateCommand exited with code {code}. The box was created and is kept.",
+  "err.post_create_timeout":
+    "postCreateCommand did not finish within {max} minutes, so it was stopped. The box was created and is kept.",
+  "err.post_create_box_stopped":
+    "The box stopped before postCreateCommand could run, so the command did not run. The box is kept.",
+  "err.template_command_forbidden":
+    "This token may not create a box from this template, because its devcontainer.json runs postCreateCommand, which needs the exec scope.",
+  "err.template_ports_forbidden":
+    "This token may not create a box from this template, because its devcontainer.json forwards ports, which needs the port:expose scope.",
   "err.box_exists": "A box named “{name}” already exists.",
   "err.box_id_taken": "Box id {id} is already in use.",
   "err.checkpoint_not_found": "Checkpoint {id} was not found.",

@@ -146,7 +146,7 @@ export const templateCreate = defineOperation({
     toolset: "tools",
     name: "create_template",
     description:
-      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv is kept, and any other devcontainer.json setting is refused. Optional host builds on that host, default local. Owner only. Returns a task id; the task log shows the build.",
+      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv and remoteEnv are set in the image, and postCreateCommand and forwardPorts are stored with the template. Any other devcontainer.json setting is listed as a warning in the task log and not applied. Optional host builds on that host, default local. Owner only. Returns a task id; the task log shows the build.",
   },
   hostFor: (ctx, input) => hostNamed(ctx, input.host),
   precondition: async ({ host }) => refuseAgent(host, "templates"),
@@ -249,7 +249,7 @@ export const templateSync = defineOperation({
     toolset: "tools",
     name: "sync_template",
     description:
-      "Copy a template from a host that holds it to another host, so a box can be created there. The image keeps its id, and the copy is skipped when the target already holds it. Owner only. Returns a task id; the task log shows the transfer.",
+      "Copy a template from a host that holds it to another host, so a box can be created there. The image keeps its id, and is not sent again when the target already holds it. A declared template's recipe is copied too, so its setup and rebuild come along. Owner only. Returns a task id; the task log shows the transfer.",
   },
   hostFor: (ctx, input) => hostById(ctx, input.host),
   precondition: async ({ host }) => refuseAgent(host, "templates"),

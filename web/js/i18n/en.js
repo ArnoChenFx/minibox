@@ -90,7 +90,7 @@ export default {
   "tp.kindHelpContext":
     "MiniBox downloads a .tar or .tar.gz build context and builds from it. A rebuild downloads it again.",
   "tp.kindHelpDevcontainer":
-    "MiniBox reads image, build.dockerfile, build.context, build.args and containerEnv. It refuses other settings and never runs lifecycle commands such as postCreateCommand.",
+    "MiniBox reads image, build (dockerfile, context, args, target), containerEnv, remoteEnv, postCreateCommand and forwardPorts. A box created from the template runs postCreateCommand once, as dev, in /workspace if the box mounts it. Other settings are listed as warnings in the build log and not applied.",
   "tp.dockerfile": "Dockerfile",
   "tp.dockerfileHelp": "Sent as typed. Use FROM to choose the base image. At most 64 KB.",
   "tp.contextUrl": "Build context URL",

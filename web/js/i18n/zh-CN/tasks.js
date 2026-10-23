@@ -29,6 +29,7 @@ export default {
   "task.op.template.sync": "同步模板",
   "task.op.image.pull": "拉取镜像",
   "task.op.box.clone": "克隆代码仓库",
+  "task.op.box.setup": "设置 Box",
   "task.op.snapshot.create": "创建快照",
   "task.op.checkpoint.create": "拍摄检查点",
   "task.op.checkpoint.fork": "派生检查点",
