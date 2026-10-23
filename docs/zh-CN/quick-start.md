@@ -100,3 +100,4 @@ Box 从模板启动。MiniBox 镜像不包含基础模板，因此需要构建�
 - [终端与会话](user-guide/terminal-and-sessions.md)：在浏览器中操作 Box，或让 Agent 使用它。
 - [工具](user-guide/tools.md)：在 Box 中安装 Claude Code、Codex 等工具。
 - [远程访问与 TLS（英文）](../admin/remote-access.md)：从另一台计算机打开 MiniBox。
+- [SSH 访问](user-guide/ssh-and-cli.md)：用 `ssh`、VS Code Remote-SSH 或 Termius 等 SSH 应用连接。使用 SSH 应用时，启动 MiniBox 时加上 `-p 2222:2222 -e SSH_PORT=2222`，见 [直连 SSH（英文）](../admin/install.md#direct-ssh)。

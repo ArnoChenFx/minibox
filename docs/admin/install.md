@@ -26,6 +26,24 @@ docker run -d --name minibox --restart unless-stopped \
 - The `minibox-data` volume holds the [data directory](data-directory.md), including the generated access key. Without it, that state is lost when the container is removed.
 - The port is published on `127.0.0.1` only. Inside the container, MiniBox listens on `0.0.0.0:3920`. For remote access, use HTTPS. See [Remote access and TLS](remote-access.md).
 
+### Direct SSH
+
+To let SSH apps such as Termius connect to boxes without the command-line tool, set `SSH_PORT` and publish that port:
+
+```bash
+docker run -d --name minibox --restart unless-stopped \
+  -p 127.0.0.1:3920:3920 \
+  -p 2222:2222 -e SSH_PORT=2222 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v minibox-data:/data \
+  ghcr.io/arnochenfx/minibox:latest
+```
+
+- `-p 2222:2222` makes the port reachable from other machines. Use `-p 127.0.0.1:2222:2222`, or the address of a private network such as Tailscale, to limit who can reach it.
+- If the host port differs from `SSH_PORT`, set `SSH_PUBLIC_PORT` to the host port, so the SSH dialog shows the right one.
+- An HTTPS tunnel or reverse proxy carries only the console. The SSH port needs a TCP route of its own, such as a published port, a private network, or a TCP tunnel. Set `SSH_PUBLIC_HOST` when clients reach it at another address than the console.
+- Read [Direct SSH](security.md#direct-ssh) in the security notes before you open the port to the internet.
+
 ### The access key
 
 If you do not pass `ACCESS_KEY`, MiniBox generates a 64-character key on first start. Read it with:
