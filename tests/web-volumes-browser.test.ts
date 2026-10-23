@@ -13,6 +13,7 @@ import {
 import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
 import { startServer } from "../src/server";
+import * as boxes from "../src/services/boxes";
 import { createVolume } from "../src/services/volumes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 
@@ -227,6 +228,62 @@ describe.skipIf(!executablePath)("the volumes page: batch delete and prune (real
       await page.locator('[data-action="prune"]').click();
       await webExpect(page.locator("#toasts")).toContainText("No orphaned volumes");
       await webExpect(dialog(page)).toHaveCount(0);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe.skipIf(!executablePath)("the volumes page flags a volume that cannot be used as it is (real browser)", () => {
+  let app: App | undefined;
+  let server: ReturnType<typeof startServer> | undefined;
+  let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
+  let page: Page;
+
+  beforeAll(async () => {
+    const harness = createTestApp();
+    app = harness.app;
+    const host = app.hosts.get();
+    harness.runtime.seedImage(app.cfg.baseTemplateTag, {
+      [host.keys.template]: "true",
+      [host.keys.templateName]: "base",
+    });
+
+    const lost = await createVolume(host, { name: "lost-data", role: null, createdBy: "owner" });
+    harness.runtime.volumes.delete(lost.engineName);
+    const gone = await boxes.createBox(host, { name: "beta", cpus: 1, memoryMb: 512 });
+    await boxes.deleteBox(host, gone.id, false);
+
+    server = startServer(app);
+    const consoleUrl = `http://127.0.0.1:${server.port}`;
+    browser = await chromium.launch({ executablePath: executablePath ?? undefined, args: ["--no-sandbox"] });
+    context = await browser.newContext({ viewport: VIEWPORT });
+    const login = await context.request.post(`${consoleUrl}/api/auth/login`, {
+      data: { key: TEST_KEY },
+      headers: { origin: consoleUrl },
+    });
+    expect(login.status()).toBe(200);
+    page = await context.newPage();
+    await page.goto(`${consoleUrl}/#/storage/volumes`);
+  }, 60_000);
+
+  afterAll(async () => {
+    await context?.close();
+    await browser?.close();
+    server?.stop(true);
+    app?.throttle.stop();
+    app?.sessions.stop();
+    app?.tokens.stop();
+    app?.events.close();
+  });
+
+  test(
+    "a volume the engine lost shows Engine volume missing, and one whose box was deleted shows Owner box deleted",
+    async () => {
+      await webExpect(row(page, "lost-data")).toContainText("Engine volume missing");
+      await webExpect(row(page, "lost-data")).not.toContainText("Owner box deleted");
+      await webExpect(row(page, "beta-workspace")).toContainText("Owner box deleted");
+      await webExpect(row(page, "beta-workspace")).not.toContainText("Engine volume missing");
     },
     TIMEOUT_MS,
   );
