@@ -542,6 +542,7 @@ describe("SSH lifecycle", () => {
       algorithm: "ssh-ed25519",
       fingerprint: app.ssh.hostKeyView().fingerprint,
       publicKey: expect.stringMatching(/^ssh-ed25519 [A-Za-z0-9+/=]+$/),
+      direct: null,
     });
     expect(JSON.stringify(reply.json)).not.toContain("PRIVATE KEY");
     const ops = mint(app, { name: "ops", scopes: ["box:ssh"] });

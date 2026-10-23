@@ -10,6 +10,7 @@ import type { BackupService } from "../services/backup";
 import type { ExecService } from "../services/exec";
 import type { TargetService } from "../services/targets";
 import type { TerminalService } from "../services/terminals";
+import type { SshKeyStore } from "../ssh/keys";
 import type { TaskHandle, TaskReader } from "../tasks/types";
 import type { BoxView, TokenGrants } from "../tokens/model";
 import type { TokenStore } from "../tokens/store";
@@ -91,6 +92,8 @@ export interface OperationContext {
   readonly backups?: BackupService;
   /** Off-site targets. The executor fills it in; target operations read it. */
   readonly targets?: TargetService;
+  /** The owner's SSH keys for direct SSH. The executor fills it in; SSH key operations read it. */
+  readonly sshKeys?: SshKeyStore;
   /** Command exec. Present on REST, MCP and the CLI. */
   readonly execs?: ExecService;
   /** Terminal sessions (tmux in the box). Present on REST, MCP and the CLI. */

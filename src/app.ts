@@ -54,8 +54,10 @@ import { type RecordNote, TerminalService } from "./services/terminals";
 import { VolumeUsageWatcher } from "./services/volume-usage";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
+import { DirectSshServer } from "./ssh/direct";
 import { SshGateway } from "./ssh/gateway";
 import { loadHostKey } from "./ssh/host-key";
+import { SshKeyStore } from "./ssh/keys";
 import { TaskManager, type TaskSubject } from "./tasks/manager";
 import { TaskStore } from "./tasks/store";
 import type { TaskStreamEvent } from "./tasks/types";
@@ -131,6 +133,10 @@ export interface App {
   /** Samples each volume's usage and raises the limit and host disk events. See `VOLUME_USAGE_INTERVAL_SEC`. */
   volumeUsage: VolumeUsageWatcher;
   ssh: SshGateway;
+  /** The owner's SSH public keys, which log in to every box over direct SSH. */
+  sshKeys: SshKeyStore;
+  /** The direct SSH listener, when SSH_PORT is set. `startDirectSsh` opens its port. */
+  sshDirect: DirectSshServer | null;
   /** The CLI binaries served under /cli, built on first request for this version. */
   cli: CliDistribution;
   /** Writes an audit note for a request caused by a transport, such as a wake from a terminal or preview. */
@@ -379,6 +385,18 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   });
   const ssh = new SshGateway({ hostKey: loadHostKey(cfg.dataDir), pulse, record: recordNote });
   bus.subscribe("box", (frame) => ssh.onBoxFrame(frame));
+  const sshKeys = new SshKeyStore(cfg.dataDir);
+  const sshDirect =
+    cfg.sshPort === null
+      ? null
+      : new DirectSshServer({
+          gateway: ssh,
+          hosts,
+          keys: sshKeys,
+          tokens,
+          accessKey: cfg.accessKey,
+          record: recordNote,
+        });
   const lifecycle = new LifecycleWatcher({
     hosts,
     pulse,
@@ -423,6 +441,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       notify,
       backups,
       targets,
+      sshKeys,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,
         audit,
@@ -440,6 +459,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     lifecycle,
     volumeUsage,
     ssh,
+    sshKeys,
+    sshDirect,
     cli: new CliDistribution({ dataDir: cfg.dataDir, version, root: ROOT, build: deps.cliBuild }),
     record: recordNote,
     notify,

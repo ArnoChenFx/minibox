@@ -3,6 +3,7 @@ import { loadNotify } from "../components/settings-notify.js";
 import { loadRuntime, loadPreview } from "../components/settings-runtime.js";
 import { loadSecrets } from "../components/settings-secrets.js";
 import { loadSessions } from "../components/settings-sessions.js";
+import { loadSshKeys } from "../components/settings-ssh-keys.js";
 import { loadTargets } from "../components/settings-targets.js";
 import { loadTokens } from "../components/settings-tokens.js";
 import { esc } from "../lib/dom.js";
@@ -16,6 +17,7 @@ const PANELS = {
   sessions: { html: () => `<div class="card" id="stSessions"></div>`, load: loadSessions },
   tokens: { html: () => `<div class="card" id="stTokens"></div>`, load: loadTokens },
   secrets: { html: () => `<div class="card" id="stSecrets"></div>`, load: loadSecrets },
+  "ssh-keys": { html: () => `<div class="card" id="stSshKeys"></div>`, load: loadSshKeys },
   notify: { html: () => `<div class="card" id="stNotify"></div>`, load: loadNotify },
   targets: { html: () => `<div class="card" id="stTargets"></div>`, load: loadTargets },
   hosts: { html: () => `<div class="card" id="stHosts"></div>`, load: loadHosts },

@@ -24,6 +24,17 @@ MiniBox reads its settings from environment variables. The precedence is:
 | `SESSION_IDLE_DAYS` | Off | Ends a sign-in after this many days without use. A number of days above 0 and at most 3650. Off when empty. |
 | `STREAM_MAX_CONNECTIONS` | `256` | Live event, task and log streams open at once. A positive whole number. Further streams get `429`. |
 
+## Direct SSH
+
+Off unless `SSH_PORT` is set. See [SSH access](../user-guide/ssh-and-cli.md#connect-directly-with-any-ssh-client) and [Security](../admin/security.md#direct-ssh).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SSH_PORT` | Off | The TCP port of the direct SSH server, from 1 to 65535. It must differ from `PORT`. Blank keeps direct SSH off; SSH through the command-line tool works either way. A port that cannot be opened is logged as `ssh.direct_listen_failed`, and the console keeps running. An invalid value stops startup. |
+| `SSH_BIND` | `HOST` | The address that the direct SSH server listens on. The release image sets `HOST=0.0.0.0`, so publish the port with `-p` only where you want it reachable. |
+| `SSH_PUBLIC_HOST` | The console's host name | The host that the SSH dialog shows, when clients reach the SSH port at another address than the console, for example behind a tunnel. A host name or an IP address. An invalid value stops startup. |
+| `SSH_PUBLIC_PORT` | `SSH_PORT` | The port that the SSH dialog shows, when a port mapping or forward changes it. |
+
 ## Data and Docker
 
 | Variable | Default | Meaning |

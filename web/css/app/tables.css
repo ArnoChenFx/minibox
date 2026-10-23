@@ -425,3 +425,119 @@ table.table {
     justify-content: flex-end;
   }
 }
+
+/* A box's checkpoint tab: the storage timeline's columns and icon actions, sized for the settings section. The kinds sit
+   on the label line and what the checkpoint holds under it, so no column wraps at 1280px. */
+.ck-card .card-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.table.ck-table {
+  table-layout: fixed;
+  /* The fixed columns take 412px: below this the label column would shrink to nothing, so the table scrolls instead. */
+  min-width: 560px;
+}
+.table.ck-table :is(th, td) {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.table.ck-table td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.table.ck-table .actions-head {
+  text-align: right;
+}
+.ck-c-time {
+  width: 148px;
+}
+.ck-c-size {
+  width: 84px;
+}
+/* Five 32px buttons with 8px between them, plus the cell's padding; six when the copy action shows. */
+.ck-c-actions {
+  width: 216px;
+}
+.ck-c-actions-6 {
+  width: 256px;
+}
+.ck-table td .subtle {
+  font-size: 12px;
+}
+.ck-label-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ck-label-line .truncate {
+  min-width: 0;
+}
+.ck-label-line .ck-badges {
+  flex: none;
+  flex-wrap: nowrap;
+}
+.ck-table .ck-row-actions {
+  flex-wrap: nowrap;
+}
+.ck-more {
+  padding: 4px 12px 8px;
+  border-top: 1px solid var(--border);
+}
+/* On a phone each checkpoint is a small card: label and kinds, then time and size, then the actions on the right. */
+@media (max-width: 640px) {
+  .table.ck-table {
+    min-width: 0;
+  }
+  .table.ck-table colgroup,
+  .table.ck-table thead {
+    display: none;
+  }
+  .table.ck-table,
+  .table.ck-table tbody {
+    display: block;
+  }
+  .table.ck-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label label"
+      "time size"
+      "actions actions";
+    gap: 4px 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .table.ck-table tr:last-child {
+    border-bottom: 0;
+  }
+  .table.ck-table td,
+  .card > .table-wrap > .table.ck-table tr > td:is(:first-child, :last-child) {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .table.ck-table .ck-label {
+    grid-area: label;
+  }
+  .table.ck-table .ck-time {
+    grid-area: time;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+  .table.ck-table .ck-time .subtle {
+    display: inline;
+    margin-left: 6px;
+  }
+  .table.ck-table .ck-size {
+    grid-area: size;
+    align-self: center;
+    font-size: 12px;
+  }
+  .table.ck-table .ck-actions {
+    grid-area: actions;
+    margin-top: 4px;
+  }
+}

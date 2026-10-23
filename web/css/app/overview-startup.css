@@ -127,12 +127,19 @@
   gap: 8px;
   margin-top: 8px;
 }
-.ck-row-actions {
-  flex-wrap: wrap;
-}
+/* The schedule's lines on the left, and its buttons on the right of them; on a narrow screen the buttons go under. */
 .ck-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.ck-schedule-info {
   display: grid;
   gap: 4px;
+  flex: 1 1 280px;
+  min-width: 0;
 }
 .ck-schedule-line {
   display: flex;
@@ -164,8 +171,9 @@
 .ck-schedule-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
-  margin-top: 4px;
+  margin-left: auto;
 }
 .dialog-head {
   display: flex;

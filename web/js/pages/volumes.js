@@ -232,8 +232,10 @@ const healthBadge = (status, low) => {
   return `<span class="badge ${cls}">${esc(label)}</span>${extra}`;
 };
 
-function field(label, inner) {
-  return `<label class="field"><span class="label">${esc(label)}</span>${inner}</label>`;
+/** A labelled control. `help` is trusted HTML shown under the control, inside the field so it sits close to it. */
+function field(label, inner, help = "") {
+  const hint = help ? `<span class="help">${help}</span>` : "";
+  return `<label class="field"><span class="label">${esc(label)}</span>${inner}${hint}</label>`;
 }
 
 const limitInput = (id, value) =>
@@ -276,7 +278,7 @@ function formDialog(title, body) {
     };
     const { root, close } = openDialog({
       title,
-      body,
+      body: `<div class="stack form-stack">${body}</div>`,
       onClose: () => finish(null),
       footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="vol-ok">${t("common.confirm")}</button>`,
     });
@@ -737,8 +739,8 @@ export function render(view) {
             <option value="warn" ${draft.action === "warn" ? "selected" : ""}>${esc(t("vol.actionWarn"))}</option>
             <option value="stop" ${draft.action === "stop" ? "selected" : ""}>${esc(t("vol.actionStop"))}</option>
           </select>`,
-        )}
-        <p class="help">${esc(t("vol.actionHelp"))}</p>`,
+          esc(t("vol.actionHelp")),
+        )}`,
     );
     if (!root) return;
     const parsed = limitsBody({
@@ -854,8 +856,7 @@ export function render(view) {
           ${field(t("vol.poolName"), `<input class="input" id="p-name" />`)}
           ${field(t("vol.server"), `<input class="input" id="p-server" placeholder="192.168.1.10" />`)}
           ${field(t("vol.exportPath"), `<input class="input" id="p-export" placeholder="/volume1/minibox" />`)}
-          ${field(t("vol.options"), `<input class="input" id="p-options" placeholder="nfsvers=4.1, hard" />`)}
-          <p class="help">${t("vol.optionsHelp")}</p>
+          ${field(t("vol.options"), `<input class="input" id="p-options" placeholder="nfsvers=4.1, hard" />`, t("vol.optionsHelp"))}
           <label class="checkbox"><input type="checkbox" id="p-default" /> ${esc(t("vol.makeDefault"))}</label>`;
         const root = await formDialog(t("vol.addNfs"), body);
         if (!root) return;
@@ -881,8 +882,7 @@ export function render(view) {
         const body = `
           ${field(t("vol.poolName"), `<input class="input" id="p-name" />`)}
           ${field(t("vol.root"), `<input class="input" id="p-root" placeholder="/mnt/disk" />`)}
-          ${field(t("vol.marker"), `<input class="input" id="p-marker" value=".minibox-mounted" />`)}
-          <p class="help">${t("vol.markerHelp")}</p>
+          ${field(t("vol.marker"), `<input class="input" id="p-marker" value=".minibox-mounted" />`, t("vol.markerHelp"))}
           <label class="checkbox"><input type="checkbox" id="p-default" /> ${esc(t("vol.makeDefault"))}</label>`;
         const root = await formDialog(t("vol.addPath"), body);
         if (!root) return;
