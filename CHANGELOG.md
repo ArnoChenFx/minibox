@@ -4,9 +4,13 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-23
+
 ### 亮点
 - **回收站与安全检查点**：删除 Box 或卷时，数据先保留在回收站中，默认保留 7 天（`TRASH_RETENTION_DAYS`），可恢复为新的 Box 或卷。重建 Box、挂载或卸载卷前，自动拍摄一个安全检查点。
 - **在线备份与异地目标**：MiniBox 运行时即可把数据目录备份为一个用口令封装的文件，并可离线恢复到空目录。检查点包与备份可推送到 S3 兼容存储桶或 SFTP 服务器，也可从那里拉取。
+- **宿主机功能对等**：模板、快照、存为模板、镜像拉取、回滚与端口预览可在 ssh、tcp 与 Unix 套接字宿主机上使用；创建 Box 时自动把缺少的模板同步到目标宿主机。
+- **Box 内 Agent 自助**：可为 Box 内的 Agent 开启仅限本 Box 的自助令牌，让它拍摄检查点、向人提问并报告状态。
 
 ### 新增
 - 回收站与重建安全检查点（[#115](https://github.com/ArnoChenFx/minibox/issues/115)）：删除 Box 或卷时保留其数据副本，保留期由 `TRASH_RETENTION_DAYS` 设定（默认 7，范围 1 到 365），到期后每小时清理一次。删除 Box 时保留其自有的 `/workspace` 与 home 卷；删除卷时保留卷的数据，缓存卷与工具卷除外。控制台的「回收站」页面列出各条记录，可恢复为新的 Box 或卷，或立即彻底删除。恢复 Box 时需要新名称，Box 保留模板、数据、资源与安全档位，但不保留环境变量、启动命令、标签、网络、TTL 与共享挂载。接口为 `GET /api/trash`、`POST /api/trash/:id/restore`（202，任务，可设置 `name`、`cpus`、`memoryMb`）与 `DELETE /api/trash/:id`（202，任务），仅所有者可用。回收站条目计入 `CHECKPOINT_CAPACITY_MB`：超过上限时先清除最旧的条目，仍不够则拒绝删除并说明原因，且不停止、不删除任何内容。宿主机剩余空间低于下限时，保留副本的删除返回 `507`。`DELETE /api/boxes/:id` 与 `DELETE /api/volumes/:id` 接受 `skipTrash=true`，表示不保留副本，需要所有者或持有新令牌权限 `trash:skip` 的令牌；该权限不属于任何预设。删除响应的 `trash` 字段给出保留的条目，没有保留时为 `null`。重建 Box（`POST /api/boxes/:id/rebuild`）以及挂载与卸载卷（`attach`、`detach`）默认先拍摄「重建前」的安全检查点，`safetyCheckpoint: false` 可关闭它。重建失败且 Box 恢复原状时丢弃该检查点；无法原样恢复时保留它，并在错误中给出 id。新增事件 `box.trashed`、`volume.trashed`、`trash.restored` 与 `trash.purged`。命令行新增 `minibox trash ls`、`restore` 与 `purge`；MCP 新增 `list_trash`、`restore_trash` 与 `purge_trash`，位于 `storage` 工具集，仅所有者可用。
@@ -17,7 +21,7 @@
 - 模板列表按宿主机显示每个模板是否已有，并可用「同步到此宿主机」把模板复制到缺少它的宿主机。
 - 远程宿主机上的端口预览：HTTP 与 WebSocket 经该宿主机的引擎转发，访问休眠中的 Box 会将其唤醒，响应或 WebSocket 打开期间保持唤醒。Box 内需要 `python3`。
 - 检查点显示其所在宿主机。不在 Box 当前宿主机上的检查点不能回滚，迁移预览改为说明检查点留在原宿主机。
-- Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：创建 Box 时可以为其 Agent 开启自助令牌（默认关闭；`POST /api/boxes` 的 `selfToken`、`minibox box create --self-token` 与控制台的创建表单）。令牌只写入 Box 内的 `/run/minibox/self-token`（权限 600，位于内存文件系统），不进入环境变量、事件、审计或镜像，服务器只保存其哈希。每次启动、重启、重建或迁移都会轮换令牌；停止或删除 Box 会使其失效；所有者可在 Box 页面吊销，或调用 `DELETE /api/boxes/{id}/self-token`（吊销后该 Box 的功能关闭，需重新创建才能再次开启）。令牌只能使用本 Box 的 `get_info`、`checkpoint`、`get_task`、`ask_human`、`get_question` 与 `report_status`（REST 位于 `/api/self`）；访问其他 Box、令牌管理、密钥或宿主机时返回 `403`。`self` 工具集只对该 Box 的 Agent 可见，每个令牌每分钟最多 60 次请求。Agent 宿主机无法写入令牌文件，因此在其上创建带令牌的 Box 返回 `501`。
+- Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：创建 Box 时可以为其 Agent 开启自助令牌（默认关闭；`POST /api/boxes` 的 `selfToken`、`minibox box create --self-token` 与控制台的创建表单）。令牌只写入 Box 内的 `/run/minibox/self-token`（权限 600，位于内存文件系统），不进入环境变量、事件、审计或镜像，服务器只保存其哈希。每次启动、重启、重建或迁移都会轮换令牌；停止或删除 Box 会使其失效；所有者可在 Box 页面吊销，或调用 `DELETE /api/boxes/{id}/self-token`（吊销后该 Box 的功能关闭，需重新创建才能再次开启）。令牌只能使用本 Box 的 `get_info`、`checkpoint`、`get_task`、`ask_human`、`get_question` 与 `report_status`（REST 位于 `/api/self`）；访问其他 Box、令牌管理、密钥或宿主机时返回 `403`。`self` 工具集只对该 Box 的 Agent 可见，每个令牌每分钟最多 60 次请求。
 - Agent 提问：`ask_human` 提出的问题保存在 `DATA_DIR/questions.json`，每个 Box 最多 20 个未回答的问题。问题显示在 Box 页面的 **Agent** 卡片中，所有者可以回复；每个新问题发送 `agent.question` 通知。REST 接口为 `GET /api/boxes/{id}/questions` 与 `POST /api/questions/{id}/answer`。
 - Agent 状态：`report_status` 报告的状态记入事件日志，并显示在活动面板中。
 
