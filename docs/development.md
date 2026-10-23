@@ -4,7 +4,7 @@ This page is for people who change MiniBox. To run MiniBox, read [Install](admin
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.4.3 or later. `package.json` sets this as the minimum version.
+- [Bun](https://bun.sh) 1.4.4 or later. `package.json` sets this as the minimum version.
 - Docker Engine, for the template check and the real-engine tests. The unit tests do not need Docker.
 - Chromium, for the homepage browser tests, the preview isolation test and `bun run screenshots`. See [Tests](#tests).
 
@@ -31,7 +31,7 @@ bun run check
 |---|---|
 | `bun run fmt:check` | Checks formatting with oxfmt. `bun run fmt` rewrites the files. |
 | `bun run lint` | Lints with oxlint. Any warning fails the run. |
-| `bun run typecheck` | Type-checks the code with `tsc --noEmit` in strict mode. |
+| `bun run typecheck` | Type-checks the code with `bun check --no-script` in strict mode. |
 | `bun test` | Runs the unit and API tests. These use fake runtimes and need no Docker. |
 
 `bun test` also runs `tests/docs-links.test.ts`, which checks the relative links and anchors in every Markdown file.
