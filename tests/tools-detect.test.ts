@@ -196,10 +196,8 @@ function helperCallsFrom(index: number): HelperSpec[] {
 }
 
 function toolsRecord(): VolumeRecord {
-  const tools = app.hosts
-    .get()
-    .volumes.list()
-    .find((volume) => volume.role === "tools");
+  const local = app.hosts.get();
+  const tools = local.volumes.list().find((volume) => volume.role === "tools" && volume.hostId === local.host.id);
   if (!tools) throw new Error("the shared tools record is missing");
   return tools;
 }

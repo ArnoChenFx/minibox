@@ -54,7 +54,7 @@ const newBox = (name: string, extra: Partial<Parameters<typeof boxes.createBox>[
   boxes.createBox(host, { name, cpus: 1, memoryMb: 256, ...extra });
 
 const sharedToolsRecord = (): VolumeRecord => {
-  const tools = host.volumes.list().find((volume) => volume.role === "tools");
+  const tools = host.volumes.list().find((volume) => volume.role === "tools" && volume.hostId === host.host.id);
   if (!tools) throw new Error("the shared tools record is missing");
   return tools;
 };

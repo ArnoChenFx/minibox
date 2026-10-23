@@ -179,7 +179,7 @@ describe("moving a box to another host", () => {
   test("a move onto a host whose shared tools volume the engine lost recreates it, and the box mounts it there", async () => {
     await boxOn(cluster, "small", "seed", { mounts: undefined });
     const target = cluster.app.hosts.get("small");
-    const tools = target.volumes.list().find((volume) => volume.role === "tools");
+    const tools = target.volumes.list().find((volume) => volume.role === "tools" && volume.hostId === target.host.id);
     if (!tools) throw new Error("the small host has no shared tools record");
     cluster.engines.small.volumes.delete(tools.engineName);
     const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
@@ -193,20 +193,21 @@ describe("moving a box to another host", () => {
 
   test("a move off a host whose shared tools volume the engine lost is not refused for it, and the box takes the target's tools", async () => {
     const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
-    const tools = cluster.app.hosts
-      .get()
-      .volumes.list()
-      .find((volume) => volume.role === "tools");
+    const source = cluster.app.hosts.get();
+    const tools = source.volumes.list().find((volume) => volume.role === "tools" && volume.hostId === source.host.id);
     if (!tools) throw new Error("the local host has no shared tools record");
     cluster.engines.local.volumes.delete(tools.engineName);
 
     expect((await confirmed(box.boxId, "small", box.revision)).status).toBe("succeeded");
     const target = cluster.app.hosts.get("small");
-    const targetTools = target.volumes.list().find((volume) => volume.role === "tools")?.engineName;
+    const targetTools = target.volumes
+      .list()
+      .find((volume) => volume.role === "tools" && volume.hostId === target.host.id);
+    if (!targetTools) throw new Error("the small host has no shared tools record");
     expect(target.specs.read(box.boxId)?.mounts.find((mount) => mount.path === "/opt/minibox/tools")?.volume).toBe(
-      targetTools,
+      targetTools.engineName,
     );
-    expect(cluster.engines.small.volumes.has(targetTools ?? "")).toBe(true);
+    expect(cluster.engines.small.volumes.has(targetTools.engineName)).toBe(true);
   });
 
   test("a start that fails on the target undoes the move: the box stays on its host and runs", async () => {
