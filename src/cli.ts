@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 
+import { backupCommand, restoreCommand } from "./cli/backup";
 import { boxLs, boxCreateCommand } from "./cli/box";
 import { boxStartupCommand } from "./cli/box-startup";
 import { execCommand } from "./cli/exec";
@@ -13,7 +14,6 @@ import { sshConfig, proxyEnv } from "./cli/ssh";
 import { sshProxy } from "./cli/ssh-proxy";
 import { templateCommand } from "./cli/template";
 import { toolCommand } from "./cli/tool";
-import { backupCommand, restoreCommand } from "./cli/backup";
 import { transferCommand } from "./cli/transfer";
 
 /** The server version the binary was compiled from. `bun build --env` inlines it; a run from source reports `dev`. */
