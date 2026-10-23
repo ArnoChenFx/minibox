@@ -84,34 +84,154 @@ table.table {
   color: var(--text-2);
   font-size: 13px;
 }
-/* Volume rows: short labels stay on one line; a long name or mount path ends in an ellipsis and shows in full on hover. */
-.table td.vol-name {
-  max-width: 180px;
+/* Volume rows: every cell keeps to one or two short lines so the table fits a 1280px window without wrapping. A long
+   name, mount or label ends in an ellipsis and shows in full on hover. */
+.table.vol-table :is(th, td) {
+  padding-left: 10px;
+  padding-right: 10px;
+  white-space: nowrap;
 }
-.table td.vol-name strong {
+.table.vol-table td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.table.vol-table .actions-head {
+  text-align: right;
+}
+.table td.vol-name {
+  max-width: 200px;
+}
+.table td.vol-name strong,
+.table td.vol-name .subtle {
   display: block;
 }
+.table td.vol-name .subtle {
+  font-size: 12px;
+}
 .table td.vol-mounts {
-  max-width: 190px;
+  max-width: 150px;
 }
 .vol-mount {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   white-space: nowrap;
+}
+.vol-mount + .vol-mount {
+  margin-top: 3px;
 }
 .vol-mount-path {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.vol-mount .subtle {
+.vol-mount .badge {
   flex: none;
 }
-.table td.vol-usage {
-  width: 110px;
+.vol-mount-more {
+  margin-top: 2px;
+  font-size: 12px;
 }
-.table td.vol-usage .usage-cell {
-  min-width: 100px;
+.table td.vol-pool {
+  max-width: 130px;
+}
+.vol-caps {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.table td.vol-latest-cell {
+  max-width: 110px;
+}
+.vol-latest {
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  text-decoration: none;
+}
+.vol-latest:hover .nowrap {
+  text-decoration: underline;
+}
+.vol-latest .subtle {
+  font-size: 12px;
+}
+.vol-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.vol-staged {
+  color: var(--accent);
+  font-size: 12px;
+}
+.vol-hint {
+  font-size: 12px;
+  color: var(--warning);
+  cursor: help;
+}
+.vol-size {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 116px;
+}
+.vol-size-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.vol-size-failed {
+  color: var(--danger);
+  cursor: help;
+}
+.vol-size .vol-limit {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+}
+.vol-size button.vol-limit {
+  cursor: pointer;
+}
+.vol-size button.vol-limit:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.vol-size .bar {
+  height: 4px;
+}
+.icon-btn.icon-btn-sm {
+  width: 22px;
+  height: 22px;
+}
+.icon-btn.icon-btn-sm svg {
+  width: 13px;
+  height: 13px;
+}
+.table tr.toggle-row > td {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+/* The pools card folds under the volumes table: it is set up once and rarely changed. */
+.vol-pools {
+  margin-top: 16px;
+}
+.vol-head {
+  justify-content: flex-end;
+}
+.vol-browse {
+  min-height: 320px;
+}
+/* The file browser for one volume: wide enough for its toolbar on one line, without the Box-wide note. */
+.dialog.wide:has(.vol-browse) {
+  width: min(880px, 100%);
+}
+.vol-browse .fb-intro {
+  display: none;
 }
 .bulk-bar[hidden] {
   display: none;
@@ -194,4 +314,99 @@ table.table {
 }
 .num {
   font-variant-numeric: tabular-nums;
+}
+/* The storage page's checkpoint timeline: one table, so every box's group lines up under the same columns. */
+.sck-head {
+  align-items: center;
+  margin-bottom: 12px;
+}
+.sck-head .page-actions {
+  margin-left: auto;
+}
+.sck-usage .ck-usage {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.sck-pendings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sck-pending {
+  align-items: center;
+}
+.sck-pending-body {
+  flex: 1;
+  min-width: 0;
+}
+.sck-pending-body > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sck-pending-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+.sck-filter {
+  padding: 10px 18px 0;
+}
+.table.sck-table {
+  table-layout: fixed;
+}
+.table.sck-table :is(th, td) {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.table.sck-table td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.table.sck-table .actions-head {
+  text-align: right;
+}
+.sck-c-time {
+  width: 150px;
+}
+.sck-c-kind {
+  width: 112px;
+}
+.sck-c-contents {
+  width: 170px;
+}
+.sck-c-size {
+  width: 84px;
+}
+.sck-c-actions {
+  width: 160px;
+}
+.sck-table td .subtle {
+  font-size: 12px;
+}
+.sck-kinds {
+  flex-wrap: nowrap;
+}
+.sck-group-head {
+  display: flex;
+  align-items: center;
+  padding-right: 12px;
+}
+.sck-group-head .group-toggle {
+  flex: 1;
+  min-width: 0;
+}
+.sck-group-head .group-toggle:disabled {
+  cursor: default;
+}
+.sck-group-head .group-toggle:disabled .icon {
+  visibility: hidden;
+}
+.sck-group-tools {
+  display: flex;
+  gap: 2px;
+  flex: none;
 }

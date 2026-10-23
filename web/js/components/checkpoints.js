@@ -23,7 +23,7 @@ import { subscribe } from "../lib/live.js";
 import { confirmDialog, emptyState, nameError, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
-const KIND_CLASS = { legacy: "badge-warning", pinned: "badge-success", automatic: "", manual: "badge-accent" };
+export const KIND_CLASS = { legacy: "badge-warning", pinned: "badge-success", automatic: "", manual: "badge-accent" };
 
 const callout = (tone, text) => `<div class="callout ${tone}">${icon("alert")}<span>${esc(text)}</span></div>`;
 
@@ -602,7 +602,7 @@ async function previewedTask({ path, body = {}, headers, title, confirmText, ren
   });
 }
 
-function rollBack(box, checkpoint) {
+export function rollBack(box, checkpoint) {
   return guarded("ck.rollbackFailed", async () => {
     const revision = await currentRevision(box);
     return previewedTask({
@@ -618,7 +618,7 @@ function rollBack(box, checkpoint) {
   });
 }
 
-function confirmPending(box) {
+export function confirmPending(box) {
   return previewedTask({
     path: `/api/boxes/${enc(box.boxId)}/rollback/confirm`,
     title: t("ck.confirmTitle"),
@@ -629,7 +629,7 @@ function confirmPending(box) {
   });
 }
 
-function undoPending(box) {
+export function undoPending(box) {
   return guarded("ck.undoFailed", async () => {
     const revision = await currentRevision(box);
     return previewedTask({
@@ -644,7 +644,7 @@ function undoPending(box) {
   });
 }
 
-function setPinned(checkpoint, pinned) {
+export function setPinned(checkpoint, pinned) {
   return guarded("ck.pinFailed", async () => {
     const started = await api(`/api/checkpoints/${enc(checkpoint.id)}`, { method: "PATCH", body: { pinned } });
     const done = await waitTask(started.taskId);
@@ -654,7 +654,7 @@ function setPinned(checkpoint, pinned) {
   });
 }
 
-async function removeCheckpoint(checkpoint) {
+export async function removeCheckpoint(checkpoint) {
   const agreed = await confirmDialog({
     title: t("ck.deleteTitle", { label: checkpoint.label }),
     message: esc(t("ck.deleteText")),
@@ -696,7 +696,7 @@ export function pendingHtml(pending) {
       </div></div></div>`;
 }
 
-function contentsText(checkpoint) {
+export function contentsText(checkpoint) {
   const { roles, others, system } = contentsOf(checkpoint);
   const parts = roles.map((role) => t(role === "workspace" ? "vol.roleWorkspace" : "vol.roleHome"));
   if (others) parts.push(t("ck.contentsOther", { n: others }));

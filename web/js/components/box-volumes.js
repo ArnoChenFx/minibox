@@ -182,11 +182,20 @@ export async function attachVolume(box) {
   });
   if (!picked) return null;
   const volume = volumes.find((item) => item.id === picked.id);
-  const others = (volume?.mounts ?? []).filter((mount) => mount.boxId !== box.boxId && mount.mode === "rw");
+  return stageMount(box, volume ?? { id: picked.id, name: picked.id, mounts: [] }, picked);
+}
+
+/**
+ * Stages `box` with `volume` mounted at `picked.path` in `picked.mode`, replacing any mount at that path. A writable
+ * mount of a volume another box already writes to is confirmed first. Resolves true once staged, false when staging
+ * failed and null when the person cancelled. `note` is the toast's text once it is staged.
+ */
+export async function stageMount(box, volume, picked, note = t("stg.stagedText")) {
+  const others = (volume.mounts ?? []).filter((mount) => mount.boxId !== box.boxId && mount.mode === "rw");
   if (picked.mode === "rw" && others.length) {
     const ok = await confirmDialog({
       title: t("vol.sharedRwTitle"),
-      message: esc(t("vol.sharedRwMessage", { name: volume?.name ?? picked.id })),
+      message: esc(t("vol.sharedRwMessage", { name: volume.name })),
       confirmText: t("vol.modeRw"),
       danger: true,
     });
@@ -194,9 +203,9 @@ export async function attachVolume(box) {
   }
   try {
     const planned = await plannedMounts(box);
-    const mount = { volume: volume?.engineName ?? picked.id, path: picked.path, mode: picked.mode };
+    const mount = { volume: volume.engineName ?? volume.id, path: picked.path, mode: picked.mode };
     await stageFields(box, { mounts: [...planned.filter((item) => item.path !== mount.path), mount] });
-    toast(t("stg.staged"), { message: t("stg.stagedText") });
+    toast(t("stg.staged"), { message: note });
     return true;
   } catch (e) {
     toastError(t("vol.attachFailed"), e);

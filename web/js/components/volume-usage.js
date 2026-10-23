@@ -1,8 +1,8 @@
 import { esc } from "../lib/dom.js";
 import { bytes } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
-import { sparkline } from "../lib/sparkline.js";
-import { fillPercent, levelClass, levelLabelKey, trendValues, usageSummary } from "../lib/volume-usage.js";
+import { icon } from "../lib/icons.js";
+import { fillPercent, levelClass, levelLabelKey, usageSummary } from "../lib/volume-usage.js";
 
 const LIMIT_KEY = { hard: "vol.limitHard", soft: "vol.limitSoft" };
 
@@ -19,23 +19,29 @@ function levelBadge(level) {
   return key ? `<span class="badge ${level === "hard" ? "badge-danger" : "badge-warning"}">${esc(t(key))}</span>` : "";
 }
 
-/** The volumes table's usage cell: the figure against its limit, the bar, the trend, and the level the volume is at. */
+/**
+ * The volumes table's size cell: the figure with a button that measures it again, the limit as a button that edits it
+ * (plain text on NFS, which takes no limit), the bar against the limit, and the level the volume is at. A note about the
+ * reading, such as a failed check, is the figure's tooltip, so the cell keeps to two lines.
+ */
 export function usageCellHtml(volume) {
   const summary = usageSummary(volume);
   const fill = fillPercent(summary.bytes, summary.scale);
-  const trend = summary.history.length
-    ? sparkline(trendValues(summary.history, summary.scale), { max: 100, height: 26, width: 180, id: volume.id })
-    : "";
   const notes = [
     summary.shared ? t("vol.usageShare") : "",
     volume.usage?.lastError ? t("vol.usageFailed", { error: volume.usage.lastError }) : "",
   ].filter(Boolean);
-  return `<div class="usage-cell">
-    <div class="bar-label"><span>${esc(figureText(summary))}</span><span>${esc(limitText(summary))}</span></div>
+  const tip = notes.length ? ` title="${esc(notes.join(" "))}"` : "";
+  const warn = volume.usage?.lastError ? " vol-size-failed" : "";
+  const measure = esc(t("vol.measure"));
+  const limit =
+    volume.backend === "nfs"
+      ? `<span class="vol-limit" title="${esc(t("vol.limitsNfs"))}">${esc(limitText(summary))}</span>`
+      : `<button type="button" class="vol-limit" data-action="limits" data-id="${esc(volume.id)}" title="${esc(t("vol.limits"))}">${esc(limitText(summary))}</button>`;
+  return `<div class="vol-size">
+    <div class="vol-size-line"><span class="mono${warn}"${tip}>${esc(figureText(summary))}</span><button type="button" class="icon-btn icon-btn-sm" data-action="measure" data-id="${esc(volume.id)}" title="${measure}" aria-label="${measure}">${icon("refresh")}</button>${levelBadge(summary.level)}</div>
+    ${limit}
     ${fill === null ? "" : `<div class="bar ${levelClass(summary.level)}"><span style="width:${fill}%"></span></div>`}
-    ${trend}
-    ${levelBadge(summary.level)}
-    ${notes.map((note) => `<div class="subtle">${esc(note)}</div>`).join("")}
   </div>`;
 }
 

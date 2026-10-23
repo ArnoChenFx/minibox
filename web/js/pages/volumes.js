@@ -1,13 +1,18 @@
+import { stageMount } from "../components/box-volumes.js";
+import { mountFiles } from "../components/files.js";
+import { bindFoldSections, foldSectionHtml } from "../components/fold-section.js";
 import { bindToggles, limitList } from "../components/list-toggle.js";
 import { mountModeLabel } from "../components/mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
+import { waitTask, taskErrorText } from "../components/tasks.js";
 import { usageCellHtml } from "../components/volume-usage.js";
 import { api, enc, errorText } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import { bytes, dateTime } from "../lib/format.js";
+import { bytes, dateTime, relTime } from "../lib/format.js";
 import { hostName, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { validMountPath } from "../lib/mounts.js";
 import { filterBySearch } from "../lib/search.js";
 import {
   checkboxField,
@@ -27,6 +32,7 @@ import {
   saveGroupBy,
   volumeSearchFields,
 } from "../lib/volume-list.js";
+import { latestByVolume, snapshotPlan, stagedMountsByVolume } from "../lib/volume-row.js";
 import {
   headerState,
   keepSelectable,
@@ -45,7 +51,12 @@ const ROLES = [
   ["cache", "vol.roleCache"],
 ];
 
-const VOLUME_COLUMNS = 8;
+const VOLUME_COLUMNS = 9;
+
+/** How many volumes a list or group shows before its "show all" toggle. */
+const VOLUME_LIMIT = 10;
+
+const CAPABILITIES = ["shareable", "snapshots", "quota", "clone", "crossHost"];
 
 const roleLabel = (role) => t(ROLES.find(([name]) => name === role)?.[1] ?? "vol.unknown");
 
@@ -92,8 +103,11 @@ function groupLabel(group) {
   }
 }
 
-/** Flags a record the engine has lost, or whose owner box was deleted and kept it, so the operator can clean it up. */
-function statusBadges(volume) {
+/**
+ * The status cell: a record the engine has lost or whose owner box was deleted, else whether a box mounts it. A volume no
+ * box mounts says it can be cleaned up, except the shared tools volume, which boxes mount on demand.
+ */
+function statusHtml(volume, staged) {
   const badges = [];
   if (volume.engineMissing) {
     badges.push(
@@ -105,38 +119,99 @@ function statusBadges(volume) {
       `<span class="badge badge-warning" title="${esc(t("vol.ownerMissingHint"))}">${esc(t("vol.ownerMissing"))}</span>`,
     );
   }
-  return badges.map((badge) => ` ${badge}`).join("");
+  if (volume.mounts.length) {
+    if (!badges.length) badges.push(`<span class="badge badge-success">${esc(t("vol.statusMounted"))}</span>`);
+  } else {
+    badges.push(`<span class="badge">${esc(t("vol.statusUnmounted"))}</span>`);
+    if (staged?.length) {
+      // Staged on a box: it mounts when that box applies its changes, so it is not one to clean up.
+      badges.push(
+        `<span class="vol-staged" title="${esc(t("vol.statusStagedText", { boxes: staged.join(", ") }))}">${esc(t("vol.statusStaged"))}</span>`,
+      );
+    } else if (volume.role !== "tools") {
+      badges.push(
+        `<span class="vol-hint" title="${esc(t("vol.cleanupHintText"))}">${esc(t("vol.cleanupHint"))}</span>`,
+      );
+    }
+  }
+  return `<div class="vol-status">${badges.join("")}</div>`;
 }
 
-function volumeRow(volume, selected) {
-  const mounts = volume.mounts
-    .map((mount) => {
-      const where = `${mount.boxName}:${mount.path}`;
-      const mode = mountModeLabel(mount.mode);
-      return `<div class="vol-mount" title="${esc(`${where} (${mode})`)}"><span class="vol-mount-path">${esc(where)}</span><span class="subtle">(${esc(mode)})</span></div>`;
-    })
-    .join("");
+function mountLine(mount) {
+  const mode = mountModeLabel(mount.mode);
+  return `<div class="vol-mount" title="${esc(`${mount.boxName}:${mount.path} (${mode})`)}"><span class="vol-mount-path">${esc(mount.boxName)}</span><span class="badge vol-mode vol-mode-${esc(mount.mode)}">${esc(mode)}</span></div>`;
+}
+
+/** Browses the volume's files in a dialog, through the same file browser a box's Files tab has. */
+function browse(volume) {
+  const box = {
+    mounts: [{ path: "/", volumeId: volume.id, volumeName: volume.name, role: null, mode: "rw" }],
+  };
+  let dispose = null;
+  const { root } = openDialog({
+    title: t("vol.browseTitle", { name: volume.name }),
+    iconName: "folder",
+    wide: true,
+    body: `<div class="vol-browse"></div>`,
+    onClose: () => dispose?.(),
+  });
+  dispose = mountFiles(root.querySelector(".vol-browse"), { box: () => box, onChange: () => () => {} });
+}
+
+/** The boxes that mount the volume, each with its mode. Two are listed and the rest are counted; the tooltip has all. */
+function mountsHtml(volume) {
+  if (!volume.mounts.length) return `<span class="subtle">—</span>`;
+  const shown = volume.mounts.slice(0, 2).map(mountLine).join("");
+  const rest = volume.mounts.slice(2);
+  const more = rest.length
+    ? `<div class="subtle vol-mount-more" title="${esc(rest.map((mount) => `${mount.boxName}:${mount.path} (${mountModeLabel(mount.mode)})`).join("\n"))}">${esc(t("vol.mountsMore", { n: rest.length }))}</div>`
+    : "";
+  return shown + more;
+}
+
+/** The pool, and what it can do, as short words under its name. */
+function poolHtml(volume, pool) {
+  const caps = CAPABILITIES.filter((cap) => pool?.capabilities?.[cap]);
+  const words = caps.map((cap) => t(`vol.cap.${cap}`)).join(" · ");
+  const backend =
+    volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : "";
+  return `<div class="nowrap">${esc(volume.pool)}${backend}</div>${caps.length ? `<div class="subtle vol-caps" title="${esc(t("vol.capsTitle", { caps: words }))}">${esc(words)}</div>` : ""}`;
+}
+
+function latestHtml(checkpoint) {
+  if (!checkpoint) return `<span class="subtle">—</span>`;
+  const tip = `${checkpoint.label} · ${dateTime(checkpoint.createdAt)}`;
+  return `<a class="vol-latest" href="#/storage/checkpoints${checkpoint.boxId ? `/${enc(checkpoint.boxId)}` : ""}" title="${esc(tip)}"><span class="nowrap">${esc(relTime(checkpoint.createdAt))}</span><span class="subtle truncate">${esc(checkpoint.label)}</span></a>`;
+}
+
+function rowButton(action, volume, iconName, label, { danger = false, block = "" } = {}) {
+  const title = block ? `${label}: ${t(block)}` : label;
+  return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}" title="${esc(title)}" aria-label="${esc(label)}"${block ? " disabled" : ""}>${icon(iconName)}</button>`;
+}
+
+function volumeRow(volume, { selected, pools, latest, staged }) {
   const over =
     volume.usage?.level === "hard" || volume.usage?.level === "soft" ? ` volume-over-${volume.usage.level}` : "";
-  const limits =
-    volume.backend === "nfs"
-      ? `<button class="btn btn-sm" disabled title="${esc(t("vol.limitsNfs"))}">${t("vol.limits")}</button>`
-      : `<button class="btn btn-sm" data-action="limits" data-id="${esc(volume.id)}">${t("vol.limits")}</button>`;
   const reason = unselectableReason(volume);
   const tip = reason ? ` title="${esc(selectReasonText(reason))}"` : "";
   const pick = `<label class="checkbox"${tip}><input type="checkbox" data-select="${esc(volume.id)}" aria-label="${esc(t("vol.selectOne", { name: volume.name }))}"${selected.has(volume.id) ? " checked" : ""}${reason ? " disabled" : ""} /></label>`;
+  const role = volume.role ? `${roleLabel(volume.role)} · ` : "";
+  const owner = volume.ownership === "owned" ? t("vol.ownedShort") : t("vol.independent");
+  const ownerTip = volume.ownership === "owned" ? ` title="${esc(t("vol.owned"))}"` : "";
   return `<tr class="${over.trim()}">
     <td class="select-cell">${pick}</td>
-    <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong>${statusBadges(volume)}<div class="subtle mono">${esc(volume.id)}</div></td>
-    <td class="nowrap">${volume.role ? esc(roleLabel(volume.role)) : "—"}</td>
-    <td class="nowrap">${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
-    <td class="nowrap">${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>
-    <td class="vol-mounts">${mounts || "—"}</td>
+    <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong><div class="subtle truncate" title="${esc(volume.id)}">${esc(role)}<span class="mono">${esc(volume.id)}</span></div></td>
     <td class="vol-usage">${usageCellHtml(volume)}</td>
+    <td class="vol-mounts">${mountsHtml(volume)}</td>
+    <td class="nowrap"${ownerTip}>${esc(owner)}</td>
+    <td class="vol-pool">${poolHtml(volume, pools.get(volume.pool))}</td>
+    <td class="vol-latest-cell">${latestHtml(latest.get(volume.id))}</td>
+    <td class="nowrap">${statusHtml(volume, staged.get(volume.id))}</td>
     <td class="nowrap"><div class="actions">
-      <button class="btn btn-sm" data-action="measure" data-id="${esc(volume.id)}">${t("vol.measure")}</button>
-      ${limits}
-      <button class="btn btn-sm" data-action="delete" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}">${t("vol.delete")}</button>
+      ${rowButton("browse", volume, "folder", t("vol.browse"))}
+      ${rowButton("snapshot", volume, "camera", t("vol.snapshot"), { block: snapshotPlan(volume).block })}
+      ${rowButton("mount-to", volume, "link", t("vol.mountTo"))}
+      ${rowButton("delete", volume, "trash", t("vol.delete"), { danger: true })}
     </div></td>
   </tr>`;
 }
@@ -301,6 +376,10 @@ export function render(view) {
   let matches = [];
   let selected = new Set();
   let boxNames = new Map();
+  let boxes = [];
+  let latest = new Map();
+  let stagedMounts = new Map();
+  let poolsOpen = false;
   let query = "";
   let groupBy = loadGroupBy();
   const collapsed = new Set();
@@ -308,8 +387,7 @@ export function render(view) {
     (key) => `<option value="${key}" ${key === groupBy ? "selected" : ""}>${esc(t(GROUP_LABELS[key]))}</option>`,
   ).join("");
   view.innerHTML = `
-    <div class="page-head">
-      <div><p>${t("vol.subtitle")}</p></div>
+    <div class="page-head vol-head">
       <div class="page-actions">
         <button class="btn" data-action="refresh">${icon("refresh")}${t("common.refresh")}</button>
         <button class="btn" data-action="add-nfs">${t("vol.addNfs")}</button>
@@ -318,8 +396,7 @@ export function render(view) {
         <button class="btn" data-action="prune">${icon("zap")}${t("vol.prune")}</button>
       </div>
     </div>
-    <div id="volBody">${skeletonRows(3, 4)}</div>
-    <div class="card" style="margin-top:16px">
+    <div class="card">
       <div class="card-head with-tools"><h3>${t("vol.volumes")}</h3>
         <div class="list-tools">
           ${searchBoxHtml({ id: "volSearch", placeholder: t("vol.searchPlaceholder"), label: t("vol.search") })}
@@ -333,11 +410,12 @@ export function render(view) {
           <button class="btn btn-sm btn-danger" data-action="bulk-delete">${icon("trash")}${t("vol.deleteSelected")}</button>
         </div>
       </div>
-      <div class="table-wrap"><table class="table">
-        <thead><tr><th class="select-cell"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th class="nowrap">${t("vol.colRole")}</th><th class="nowrap">${t("vol.colPool")}</th><th class="nowrap">${t("vol.colOwnership")}</th><th>${t("vol.colMounts")}</th><th class="nowrap">${t("vol.colUsage")}</th><th></th></tr></thead>
+      <div class="table-wrap" id="volWrap"><table class="table vol-table">
+        <thead><tr><th class="select-cell"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th class="nowrap">${t("vol.colSize")}</th><th class="nowrap">${t("vol.colMounts")}</th><th class="nowrap">${t("vol.colOwnership")}</th><th class="nowrap">${t("vol.colPool")}</th><th class="nowrap">${t("vol.colLatest")}</th><th class="nowrap">${t("vol.colStatus")}</th><th class="nowrap actions-head">${t("vol.colAction")}</th></tr></thead>
         <tbody id="volRows">${skeletonRows(3, VOLUME_COLUMNS)}</tbody>
       </table></div>
-    </div>`;
+    </div>
+    <div id="volBody" class="vol-pools">${skeletonRows(1, 4)}</div>`;
 
   const healthOf = (name) => health.find((item) => item.pool === name);
 
@@ -371,9 +449,24 @@ export function render(view) {
         .join("");
       return field(t(label), `<select class="select" data-role="${role}">${options}</select>`);
     }).join("");
-    view.querySelector("#volBody").innerHTML = `
-      <div class="card"><div class="card-head"><h3>${t("vol.pools")}</h3>
-        <button class="btn btn-primary btn-sm" data-action="save">${t("vol.save")}</button></div>
+    const unhealthy = pools.filter((pool) => {
+      const item = healthOf(pool.name);
+      return item && (item.status === "unreachable" || item.lowSpace);
+    }).length;
+    const summary = esc(
+      unhealthy
+        ? t("vol.poolsSummaryWarn", { n: pools.length, bad: unhealthy })
+        : t("vol.poolsSummary", { n: pools.length }),
+    );
+    const host = view.querySelector("#volBody");
+    host.innerHTML = foldSectionHtml({
+      id: "volPools",
+      title: esc(t("vol.poolsAndRoles")),
+      summary,
+      open: poolsOpen,
+      body: `<div class="card">
+        <div class="card-head"><p class="help">${t("vol.subtitle")}</p>
+          <button class="btn btn-primary btn-sm" data-action="save">${t("vol.save")}</button></div>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>${t("vol.colName")}</th><th>${t("vol.colBackend")}</th><th>${t("vol.colHealth")}</th><th>${t("vol.colFree")}</th><th></th><th></th></tr></thead>
           <tbody>${poolRows}</tbody>
@@ -382,7 +475,11 @@ export function render(view) {
           <div class="section-intro"><h3>${t("vol.roles")}</h3><p class="help">${t("vol.cacheHint")}</p></div>
           <div class="grid grid-2 form-grid">${roleFields}</div>
         </div>
-      </div>`;
+      </div>`,
+    });
+    bindFoldSections(host, (_id, open) => {
+      poolsOpen = open;
+    });
   };
 
   /** The header checkbox and the bulk bar follow the selection and the matches on screen. */
@@ -416,16 +513,24 @@ export function render(view) {
       })}</td></tr>`;
       return;
     }
+    const poolMap = new Map(pools.map((pool) => [pool.name, pool]));
+    const rowsOf = (key, rows) => {
+      const { shown, toggle } = limitList(view, `vol:${key}`, rows, {
+        keep: (volume) => selected.has(volume.id),
+        searching: Boolean(query),
+        limit: VOLUME_LIMIT,
+      });
+      const html = shown.map((volume) => volumeRow(volume, { selected, pools: poolMap, latest, staged: stagedMounts })).join("");
+      return toggle ? `${html}<tr class="toggle-row"><td colspan="${VOLUME_COLUMNS}">${toggle}</td></tr>` : html;
+    };
     body.innerHTML = groupVolumes(matches, groupBy, { boxNames })
       .map((group) => {
-        if (group.kind === "all") return group.rows.map((volume) => volumeRow(volume, selected)).join("");
+        if (group.kind === "all") return rowsOf("all", group.rows);
         const isCollapsed = collapsed.has(group.id);
-        return (
-          groupRow(group, isCollapsed) +
-          (isCollapsed ? "" : group.rows.map((volume) => volumeRow(volume, selected)).join(""))
-        );
+        return groupRow(group, isCollapsed) + (isCollapsed ? "" : rowsOf(group.id, group.rows));
       })
       .join("");
+    bindToggles(view, body, drawVolumes);
   };
 
   const toggleGroup = (id) => {
@@ -458,19 +563,32 @@ export function render(view) {
   });
 
   const load = async () => {
-    const [poolBody, volumeBody, boxBody] = await Promise.all([
+    const [poolBody, volumeBody, boxBody, checkpointBody] = await Promise.all([
       api("/api/pools?refresh=true"),
       api("/api/volumes"),
       // The owner's name is only a label: without the box list, a mount of the owner still names it. Volumes name
       // boxes by their stable boxId, not by the container id.
       api("/api/boxes?stats=false").catch(() => ({ boxes: [] })),
+      // The latest checkpoint column is a hint: the table still draws without it.
+      api("/api/checkpoints").catch(() => ({ checkpoints: [] })),
     ]);
     pools = poolBody.pools;
     roles = { ...roles, ...poolBody.roles };
     health = poolBody.health;
     volumes = volumeBody.volumes;
     selected = keepSelectable(selected, volumes);
-    boxNames = new Map(boxBody.boxes.map((box) => [box.boxId, box.name]));
+    boxes = boxBody.boxes;
+    boxNames = new Map(boxes.map((box) => [box.boxId, box.name]));
+    latest = latestByVolume(checkpointBody.checkpoints);
+    // A mount staged from here, or on the box, shows as pending rather than as a volume to clean up.
+    const stagedEntries = await Promise.all(
+      boxes.map((box) =>
+        api(`/api/boxes/${enc(box.boxId)}/staged`)
+          .then((body) => ({ box, staged: body.staged }))
+          .catch(() => ({ box, staged: null })),
+      ),
+    );
+    stagedMounts = stagedMountsByVolume(stagedEntries, volumes);
     draw();
     drawVolumes();
   };
@@ -636,6 +754,63 @@ export function render(view) {
     await load();
   };
 
+  /** Snapshots the volume as a checkpoint of the box that mounts it: its owner, or the first box for a shared one. */
+  const snapshot = async (volume) => {
+    const plan = snapshotPlan(volume);
+    if (plan.block) return toast(t("vol.snapshot"), { type: "info", message: t(plan.block) });
+    const boxName = plan.boxName ?? boxNames.get(plan.boxId) ?? plan.boxId;
+    const ok = await confirmDialog({
+      title: t("vol.snapshotTitle", { name: volume.name }),
+      message: esc(t(plan.include.length ? "vol.snapshotSharedText" : "vol.snapshotOwnedText", { box: boxName })),
+      confirmText: t("vol.snapshot"),
+    });
+    if (!ok) return;
+    const label = `${volume.name} ${dateTime(new Date().toISOString())}`.slice(0, 80);
+    const started = await api(`/api/boxes/${enc(plan.boxId)}/checkpoints`, {
+      method: "POST",
+      body: { label, include: { volumes: plan.include } },
+    });
+    toast(t("ck.takeStarted"), { type: "info", message: boxName });
+    const done = await waitTask(started.taskId);
+    if (done.status !== "succeeded") return toastError(t("ck.takeFailed"), { message: taskErrorText(done.error) });
+    toast(t("ck.takeDone"), { message: done.result?.checkpoint?.label ?? label });
+    await load();
+  };
+
+  /** Stages a mount of the volume on a box. It applies with the box's other staged changes, like one added there. */
+  const mountTo = async (volume) => {
+    if (!boxes.length) return toast(t("vol.mountTo"), { type: "info", message: t("vol.mountToNoBoxes") });
+    const owner = volume.ownership === "owned" && !volume.ownerMissing ? volume.ownerBoxId : null;
+    const mountedOn = new Set(volume.mounts.map((mount) => mount.boxId));
+    const options = boxes
+      .map((box) => {
+        const blocked = owner && box.boxId !== owner;
+        const note = mountedOn.has(box.boxId) ? ` (${t("vol.mountToMounted")})` : "";
+        return `<option value="${esc(box.boxId)}"${blocked ? " disabled" : ""}${box.boxId === owner ? " selected" : ""}>${esc(box.name + note)}</option>`;
+      })
+      .join("");
+    const ro = volume.role === "tools";
+    const root = await formDialog(
+      t("vol.mountToTitle", { name: volume.name }),
+      `${owner ? `<p class="help">${esc(t("vol.mountToOwned"))}</p>` : ""}
+       ${field(t("vol.mountToBox"), `<select class="select" id="mt-box">${options}</select>`)}
+       ${field(t("vol.pathLabel"), `<input class="input mono" id="mt-path" value="${esc(`/mnt/${volume.name}`)}" />`)}
+       ${field(t("vol.colMode"), `<select class="select" id="mt-mode"><option value="rw"${ro ? "" : " selected"}>${esc(mountModeLabel("rw"))}</option><option value="ro"${ro ? " selected" : ""}>${esc(mountModeLabel("ro"))}</option></select>`)}`,
+    );
+    if (!root) return;
+    const box = boxes.find((item) => item.boxId === root.querySelector("#mt-box").value);
+    const path = root.querySelector("#mt-path").value.trim();
+    if (!box) return;
+    if (!validMountPath(path)) return toastError(t("vol.attachFailed"), { message: t("vol.mountToBadPath") });
+    const staged = await stageMount(
+      box,
+      volume,
+      { id: volume.id, path, mode: root.querySelector("#mt-mode").value },
+      t("vol.mountStagedText", { box: box.name }),
+    );
+    if (staged) await load();
+  };
+
   view.addEventListener("click", async (event) => {
     const target = event.target.closest("[data-action]");
     if (!target || !view.contains(target)) return;
@@ -764,9 +939,13 @@ export function render(view) {
         const result = await api(`/api/volumes/${enc(target.dataset.id)}/usage`, { method: "POST" });
         toast(t("vol.measure"), { message: t("vol.measured", { bytes: bytes(result.volume.bytes) }) });
         await load();
-      } else if (action === "limits") {
+      } else if (action === "limits" || action === "browse" || action === "snapshot" || action === "mount-to") {
         const volume = volumes?.find((item) => item.id === target.dataset.id);
-        if (volume) await editLimits(volume);
+        if (!volume) return;
+        if (action === "limits") await editLimits(volume);
+        else if (action === "browse") browse(volume);
+        else if (action === "snapshot") await snapshot(volume);
+        else await mountTo(volume);
       }
     } catch (e) {
       toastError(t("vol.loadingFailed"), e);

@@ -1,6 +1,5 @@
-import { mountBoxTab } from "../components/box-tab.js";
-import { mountCheckpoints } from "../components/checkpoints.js";
 import { sectionPanelHtml, sectionTabsHtml } from "../components/section-tabs.js";
+import { mountStorageCheckpoints } from "../components/storage-checkpoints.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import * as volumes from "./volumes.js";
@@ -10,7 +9,7 @@ const TABS = [
   ["checkpoints", "storage.tabCheckpoints", "history"],
 ];
 
-/** Storage: the volumes, and the checkpoints of each box. The recycle bin opens from here. */
+/** Storage: the volumes, and every checkpoint grouped by box. The recycle bin opens from here. */
 export function render(view, tab = "volumes", arg = "") {
   view.innerHTML = `
     <div class="page-head">
@@ -20,6 +19,6 @@ export function render(view, tab = "volumes", arg = "") {
     ${sectionTabsHtml("storage", TABS, tab, arg)}
     ${sectionPanelHtml("storage", tab)}`;
   const body = view.querySelector("#sectionBody");
-  if (tab === "checkpoints") return mountBoxTab(body, { section: "storage", tab, arg, mount: mountCheckpoints });
+  if (tab === "checkpoints") return mountStorageCheckpoints(body, { focus: arg });
   return volumes.render(body);
 }
