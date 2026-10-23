@@ -19,7 +19,14 @@ import { filterBySearch, searchTerms } from "../lib/search.js";
 import { chosenSummary, loadFolded, saveFolded } from "../lib/section-fold.js";
 import { STARTUP_COMMAND_MAX_BYTES, startupProblem, startupProblemKey } from "../lib/startup.js";
 import { getTemplates, hostNow, invalidateTemplates, refreshHost } from "../lib/store.js";
-import { needsSync, syncSizeMb, templateCards, templateSearchFields } from "../lib/template-list.js";
+import {
+  isUnbuilt,
+  needsSync,
+  syncSizeMb,
+  templateCards,
+  templateSearchFields,
+  withOfficialCards,
+} from "../lib/template-list.js";
 import { cloneRepo } from "../lib/template-source.js";
 import { pickerView } from "../lib/tool-list.js";
 import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
@@ -77,7 +84,7 @@ function templateOptionHtml(template, selectedRef) {
   return `<div class="option" role="radio" tabindex="0" aria-checked="${template.ref === selectedRef}" data-ref="${esc(template.ref)}">
     <span class="avatar">${icon("layers")}</span>
     <span class="meta"><strong>${esc(template.name)}</strong><span>${esc(template.description ?? template.ref)}</span></span>
-    <span class="subtle num">${bytes(template.size)}</span></div>`;
+    <span class="subtle num">${isUnbuilt(template) ? esc(t("tp.buildsOnUse")) : bytes(template.size)}</span></div>`;
 }
 
 /** The volumes a custom row can pick, with the ones another live box owns marked unavailable. */
@@ -106,6 +113,26 @@ async function syncTemplateTo(ref, hostId) {
 }
 
 /**
+ * Builds an official template on the host the box will be created on, when no host holds it yet. The build runs as a
+ * task the drawer shows, and the create waits for it. Without a host, the build goes to the local host, as the server's
+ * default does.
+ */
+async function buildOfficialTo(name, hostId) {
+  const query = hostId ? `?host=${enc(hostId)}` : "";
+  let taskId;
+  try {
+    ({ taskId } = await api(`/api/templates/official/${enc(name)}/build${query}`, { method: "POST" }));
+  } catch (e) {
+    if (!e.details?.taskId) throw e;
+    taskId = e.details.taskId;
+  }
+  const task = await waitTask(taskId);
+  invalidateTemplates();
+  if (task.status === "running") throw new Error(t("cb.buildStillRunning"));
+  if (task.status !== "succeeded") throw new Error(taskErrorText(task.error) || t("cb.buildFailed"));
+}
+
+/**
  * Create-box dialog. When `snapshot` is given the image is fixed and the box is created from it.
  * `onCreated(box)` runs after success.
  */
@@ -117,7 +144,14 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   let templates = [];
   if (!snapshot) {
     try {
-      templates = templateCards(await getTemplates(true));
+      const [rows, official] = await Promise.all([
+        getTemplates(true),
+        api("/api/templates/official").then(
+          (body) => body.templates,
+          () => [],
+        ),
+      ]);
+      templates = withOfficialCards(templateCards(rows), official);
     } catch {
       templates = [];
     }
@@ -185,7 +219,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           }),
           body: `<div class="option-list" role="radiogroup" aria-label="${esc(t("cb.template"))}" id="cbTemplates"></div>
           <div id="cbTemplatesEmpty" hidden></div>
-          <div class="list-more" id="cbTemplatesMore"></div>`,
+          <div class="list-more" id="cbTemplatesMore"></div>
+          <div class="callout info" id="cbBuildNote" hidden>${icon("info")}<span>${t("cb.buildHint")}</span></div>`,
         })
       : `<div class="field"><span class="label">${t("cb.template")}</span><div class="callout warn">${icon("alert")}<span>${t("cb.noTemplates")}</span></div></div>`;
 
@@ -392,12 +427,27 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     const card = templates.find((tp) => tp.ref === state.template);
     return needsSync(card, pick) ? { card, host: pick } : undefined;
   };
+  /**
+   * The unbuilt official template the create builds first, and the host it builds on: undefined means the local host, as
+   * a single-host console has no host to pick. Automatic placement builds it inside the create, on the host it picks, and
+   * an agent host builds nothing.
+   */
+  const pendingBuild = () => {
+    const card = templates.find((tp) => tp.ref === state.template);
+    if (!isUnbuilt(card)) return undefined;
+    const pick = q("#cbHost")?.value;
+    if (pick === AUTO_HOST || agentHost(pick)) return undefined;
+    return { card, host: pick };
+  };
   const syncNote = () => {
     const note = q("#cbSync");
-    if (!note) return;
     const copy = pendingCopy();
-    note.hidden = !copy;
-    if (copy) q("#cbSyncText").textContent = t("cb.syncHint", { mb: syncSizeMb(copy.card) });
+    if (note) {
+      note.hidden = !copy;
+      if (copy) q("#cbSyncText").textContent = t("cb.syncHint", { mb: syncSizeMb(copy.card) });
+    }
+    const buildNote = q("#cbBuildNote");
+    if (buildNote) buildNote.hidden = !isUnbuilt(templates.find((tp) => tp.ref === state.template));
   };
 
   q("#cbPresets").addEventListener("click", (e) => {
@@ -750,6 +800,12 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       if (copy) {
         btn.innerHTML = `<span class="spinner"></span>${t("cb.syncing")}`;
         await syncTemplateTo(copy.card.ref, copy.host);
+        btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
+      }
+      const build = pendingBuild();
+      if (build) {
+        btn.innerHTML = `<span class="spinner"></span>${t("cb.building")}`;
+        await buildOfficialTo(build.card.name, build.host);
         btn.innerHTML = `<span class="spinner"></span>${t("cb.creating")}`;
       }
       const res = snapshot

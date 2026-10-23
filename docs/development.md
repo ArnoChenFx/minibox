@@ -84,7 +84,7 @@ bun run openapi
 
 | Workflow | When it runs | What it does |
 |---|---|---|
-| CI (`ci.yml`) | Pushes to `main`, pull requests, and calls from the release workflow | The `check` job installs Chromium with Playwright, then runs `fmt:check`, `lint`, `typecheck` and `bun test`. The `docker` job builds the release image, starts it and probes `/login`. It also builds the base template for `linux/amd64` and `linux/arm64` and runs `scripts/check-box-image.sh` on each. |
+| CI (`ci.yml`) | Pushes to `main`, pull requests, and calls from the release workflow | The `check` job installs Chromium with Playwright, then runs `fmt:check`, `lint`, `typecheck` and `bun test`. The `docker` job builds the release image, starts it and probes `/login`. It also builds the base template for `linux/amd64` and `linux/arm64` and runs `scripts/check-box-image.sh` on each. The `official-templates` job builds each official template for `linux/amd64` and runs the same script on it, with `REQUIRED_TOOLS` set for the minimal template. |
 | Integration (`integration.yml`) | Pushes to `main`, pull requests, and manual runs | Runs `bun run test:docker` on the runner's Docker engine. |
 | Project homepage (`pages.yml`) | Changes to the homepage files, on pushes to `main`, pull requests, and manual runs | Runs the browser tests. On `main` only, deploys `dist/site` to GitHub Pages. |
 | Release (`release.yml`) | Tags that match `v*.*.*` | Runs the CI checks, checks that the tag matches `package.json`, pushes the multi-architecture image to `ghcr.io/arnochenfx/minibox`, and creates a GitHub release from the matching CHANGELOG section. |
@@ -152,6 +152,7 @@ minibox/
 ├── web/                 The console: HTML, CSS, ES modules and vendored xterm.js
 ├── site/                The standalone project homepage
 ├── templates/base/      The Dockerfile of the base template
+├── templates/official/  The Dockerfiles of the official templates: node, python, go and minimal
 ├── catalog/             The built-in tool catalog, one JSON file per tool
 ├── scripts/             Build, check and test scripts
 ├── tests/               Unit and real-engine tests, with fixtures and test support code

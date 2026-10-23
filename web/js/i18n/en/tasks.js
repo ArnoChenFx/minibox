@@ -27,6 +27,7 @@ export default {
   "task.op.template.create": "Build template",
   "task.op.template.rebuild": "Rebuild template",
   "task.op.template.sync": "Sync template",
+  "task.op.template.official.build": "Build official template",
   "task.op.image.pull": "Pull image",
   "task.op.box.clone": "Clone repository",
   "task.op.box.setup": "Set up box",

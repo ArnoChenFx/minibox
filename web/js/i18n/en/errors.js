@@ -315,7 +315,7 @@ export default {
   "err.host_id_reserved": "“{host}” is reserved and cannot be a host id.",
   "err.host_auto_offline": "No host is online to place the box on.",
   "err.host_auto_no_room":
-    "No online host that holds the template has room for a box of {cpus} CPUs and {memoryMb} MB.",
+    "No online host that holds the template, or can build it, has room for a box of {cpus} CPUs and {memoryMb} MB.",
   "err.host_exists": "A host with the id “{host}” already exists.",
   "err.host_not_found": "Host “{host}” was not found.",
   "err.host_is_local": "The local host cannot be removed.",
