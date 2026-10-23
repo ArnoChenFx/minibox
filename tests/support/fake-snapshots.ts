@@ -34,7 +34,7 @@ export interface FakeSnapshot extends Contents {
   host: string;
 }
 
-type EngineCall = "backup" | "restore";
+type EngineCall = "backup" | "restore" | "pack";
 
 const clone = (entry: FakeFsEntry): FakeFsEntry => ({
   ...entry,
@@ -93,7 +93,7 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   /** Every host's snapshots by id. Ids are unique across hosts, so a test can read any of them here. */
   readonly snapshots = new Map<string, FakeSnapshot>();
   readonly failBackupOf = new Set<string>();
-  /** Backups and restores that have begun, held or not. A test waits on this to know a call reached the engine. */
+  /** Backups, restores and packs that have begun, held or not. A test waits on this to know a call reached the engine. */
   started = 0;
   /** The size `usage` reports. Null reports the bytes of the snapshots held. */
   reportedBytes: number | null = null;
@@ -103,8 +103,8 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   private gate: { promise: Promise<void>; kind: EngineCall | null; blocked: number } | null = null;
 
   /**
-   * Holds every backup and restore from now until the returned `release`, or only those of `kind`, so a test can have one
-   * in progress. `blocked` counts the calls waiting at the gate, so a test knows one has arrived.
+   * Holds every backup, restore and pack from now until the returned `release`, or only those of `kind`, so a test can have
+   * one in progress. `blocked` counts the calls waiting at the gate, so a test knows one has arrived.
    */
   hold(kind: EngineCall | null = null): { release(): void; blocked(): number } {
     let openGate: (() => void) | undefined;
@@ -208,6 +208,7 @@ export class FakeCheckpointEngine implements SnapshotEngine {
     maxBytes: number,
     onBytes?: ByteProgress,
   ): Promise<PackageDigest> {
+    await this.enter("pack");
     const entries: TarEntry[] = [
       { name: "repo/config", body: Buffer.from(JSON.stringify({ key: keyOf(input.passphrase) })) },
     ];
