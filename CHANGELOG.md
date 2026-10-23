@@ -34,6 +34,7 @@
 - Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：在 Agent 宿主机上创建带自助令牌的 Box 时，请求在创建流程开始前即返回 `501`（`self_token_host_unsupported`），不再进入后续检查。
 
 ### 工程化
+- 新增 `.cursor/environment.json` 与 `.cursor/install.sh`：Cursor 云端 Agent 构建环境时把 Bun 升到最新版并对照 `engines.bun` 检查，再安装依赖；新增 `AGENTS.md`，要求 Agent 不得降低 Bun 版本或改回 `tsc` 类型检查。
 - 新增真实引擎的出站集成测试 `tests/docker-egress.test.ts`，由 `bun run test:docker` 运行。它覆盖 `none` 的断网、exec、SSH 与端口预览，`proxy-only` 的允许、拒绝、事件与绕过，以及 `BLOCK_HOST_GATEWAY`。测试使用独立的标签前缀、数据目录与网络，并清理其代理、网络、防火墙规则与镜像。
 - 控制台导航的测试：`tests/web-routes.test.ts` 覆盖地址解析、标签页与旧地址的跳转，`tests/web-console-browser.test.ts` 用 Chromium 覆盖导航、标签页切换、刷新后的状态、宿主机筛选器与中文界面。浏览器测试与预览隔离测试一样，未配置 Chromium 时跳过，CI 中缺失则失败。
 
