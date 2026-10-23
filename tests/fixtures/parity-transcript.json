@@ -3278,5 +3278,21 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"name\":\"selfbox\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
+  },
+  {
+    "step": "create a token that reads the overview",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"reader\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+  },
+  {
+    "step": "a token reads the overview",
+    "method": "GET",
+    "path": "/api/overview",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run GET /api/overview.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"GET /api/overview\"}}}"
   }
 ]
