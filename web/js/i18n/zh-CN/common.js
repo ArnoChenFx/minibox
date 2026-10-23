@@ -14,6 +14,7 @@ export default {
   "common.failed": "失败",
   "common.tagline": "为 AI Agent 准备的个人开发环境",
   "common.metaDescription": "MiniBox：为 AI Agent 准备的个人开发环境",
+  "unit.core": "{n} 核",
   "unit.cores": "{n} 核",
   "unit.coresShort": "核",
   "fmt.days": "{d} 天 {h} 小时",

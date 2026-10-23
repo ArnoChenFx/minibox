@@ -14,6 +14,7 @@ export default {
   "common.failed": "Failed",
   "common.tagline": "Personal dev environments for AI agents",
   "common.metaDescription": "MiniBox: personal dev environments for AI agents",
+  "unit.core": "{n} core",
   "unit.cores": "{n} cores",
   "unit.coresShort": "cores",
   "fmt.days": "{d}d {h}h",

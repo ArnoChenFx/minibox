@@ -16,6 +16,10 @@
 - 检查点的容量上限现在也统计回收站条目。
 - 控制台各页面标题栏的按钮改为右对齐，换行到标题下方时也是如此。带搜索框的页面（Box、模板）把工具栏放在标题下方一行，搜索框在左，按钮在右。
 
+### 修复
+- 设置了标记文件（`marker`）的路径存储池不再总被报告为不可达：健康检查原先运行 `test -f -- 文件`，在 busybox、dash 与 bash 中都会失败（[#143](https://github.com/ArnoChenFx/minibox/issues/143)）。
+- 概览的「最近活动」为模板、通知渠道、文件、卷、工具、宿主机等全部操作显示中英文文案与图标，未知操作显示为可读文字而不是原始名称；英文界面 1 核显示为 “1 core” 而不是 “1 cores”（[#144](https://github.com/ArnoChenFx/minibox/issues/144)）。
+
 ### 工程化
 - 工作流中的 GitHub Actions 引用改为各 action 最新的主版本标签（如 `actions/checkout@v7`、`docker/build-push-action@v7`），不再固定到 commit SHA。`docker/build-push-action` 从 v6 升到 v7，`actions/configure-pages` 升到 v6，`actions/upload-pages-artifact` 与 `actions/deploy-pages` 升到 v5；所用输入在新版本中均未变化。
 
