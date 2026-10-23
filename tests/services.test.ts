@@ -288,7 +288,7 @@ describe("deleteBox", () => {
   test("removes the container before its volume so the volume is no longer in use", async () => {
     const box = await newBox("alpha");
 
-    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true, trash: null });
     const ops = runtime.ops();
     expect(ops.indexOf("removeContainer")).toBeLessThan(ops.indexOf("removeVolume"));
     expect(runtime.containers.size).toBe(0);
@@ -299,7 +299,7 @@ describe("deleteBox", () => {
 
   test("keeps the workspace volume unless asked to delete it", async () => {
     const box = await newBox("alpha");
-    expect(await boxes.deleteBox(host, box.id, false)).toEqual({ name: "alpha", volumeDeleted: false });
+    expect(await boxes.deleteBox(host, box.id, false)).toEqual({ name: "alpha", volumeDeleted: false, trash: null });
     expect(runtime.volumes.has(box.volume)).toBe(true);
   });
 
@@ -311,6 +311,7 @@ describe("deleteBox", () => {
       name: "alpha",
       volumeDeleted: false,
       volumeError: "device busy",
+      trash: null,
     });
     expect(runtime.containers.size).toBe(0);
     expect(runtime.volumes.has(box.volume)).toBe(true);
@@ -328,6 +329,7 @@ describe("deleteBox", () => {
       name: "alpha",
       volumeDeleted: false,
       volumeError: `remove ${box.volume}: volume is in use`,
+      trash: null,
     });
     expect(runtime.volumes.has(box.volume)).toBe(true);
   });
@@ -336,7 +338,7 @@ describe("deleteBox", () => {
     const box = await newBox("alpha");
     runtime.volumes.delete(box.volume);
 
-    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true, trash: null });
   });
 
   test("a workspace with no record is never removed, even when its volume is asked for", async () => {
@@ -345,7 +347,7 @@ describe("deleteBox", () => {
     if (!workspace) throw new Error("the workspace has no record");
     host.volumes.remove(workspace.id);
 
-    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true, trash: null });
     expect(runtime.callsTo("removeVolume").map((call) => call.args[0])).not.toContain(box.volume);
     expect(runtime.volumes.has(box.volume)).toBe(true);
   });
@@ -361,7 +363,7 @@ describe("deleteBox", () => {
     host.specs.write({ ...alphaSpec, mounts: alphaSpec.mounts.filter((mount) => mount.path !== "/workspace") });
     host.specs.write({ ...betaSpec, mounts: [...betaSpec.mounts, workspace] });
 
-    expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "beta", volumeDeleted: true });
+    expect(await boxes.deleteBox(host, beta.id, true)).toEqual({ name: "beta", volumeDeleted: true, trash: null });
     expect(runtime.callsTo("removeVolume").map((call) => call.args[0])).not.toContain(alpha.volume);
     expect(runtime.volumes.has(alpha.volume)).toBe(true);
     expect(host.volumes.findByEngine(host.host.id, alpha.volume)).toMatchObject({
@@ -376,7 +378,7 @@ describe("deleteBox", () => {
     if (!workspace) throw new Error("the workspace has no record");
     host.volumes.write({ ...workspace, ownerBoxId: null });
 
-    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(await boxes.deleteBox(host, box.id, true)).toEqual({ name: "alpha", volumeDeleted: true, trash: null });
     expect(runtime.volumes.has(box.volume)).toBe(true);
     expect(host.volumes.read(workspace.id)).toMatchObject({ ownership: "owned", ownerBoxId: null });
   });

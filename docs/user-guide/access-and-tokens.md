@@ -2,7 +2,7 @@
 
 MiniBox has three ways to prove who you are:
 
-- **The access key** signs you in to the console, and it is the owner's key for the REST API, the CLI and MCP.
+- **The access key** signs you in to the console, and it is the owner's key for the REST API, the CLI and MCP. MCP accepts it for now, see [Connecting AI agents](agents.md).
 - **Browser sessions** are the sign-ins that you keep in each browser.
 - **Agent tokens** are keys for agents and scripts. Each token has only the permissions you give it.
 
@@ -46,6 +46,8 @@ A box's own agent has a different token, the self token. The owner gives it to a
 
 After you create the token, MiniBox shows an example for **REST** and the **MCP client config**, with the secret filled in. Copy either one.
 
+The command line can create one too: `minibox token create <name>` prints the secret once. See the [CLI reference](../reference/cli.md#tokens).
+
 ### Presets
 
 | Preset | What it allows |
@@ -75,11 +77,14 @@ Each preset is a set of these scopes:
 | `volume:attach` | Mount existing volumes into boxes |
 | `tool:install` | Install, upgrade and remove tools. Save a box as a template, and delete templates. |
 | `secret:use` | Give a box a host secret, or the secret for a repository clone |
+| `trash:skip` | Delete a box or a volume without keeping a copy in the recycle bin. No preset includes it. |
 
 Only the owner can create, change or revoke tokens. A token cannot create other tokens. Building or rebuilding a template, and pulling an image, are for the owner only. No scope allows them.
+
+A box or volume delete keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) unless the request sets `skipTrash`, which needs `trash:skip`. The recycle bin itself, its list, restore and purge, is for the owner only.
 
 ### Revoke a token
 
 Click **Revoke** on the token, and confirm. Scripts that use the token stop at once. Any open terminal or event stream that uses it closes too.
 
-To delete the boxes that the token created at the same time, tick **Also delete boxes this token created**. Their workspace volumes are deleted as well.
+To delete the boxes that the token created at the same time, tick **Also delete boxes this token created**. Their workspace volumes are deleted as well, and their data is kept in the recycle bin for the retention period, as with any box delete.

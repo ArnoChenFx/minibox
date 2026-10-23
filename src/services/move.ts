@@ -249,7 +249,9 @@ async function containerExists(host: HostCtx, name: string): Promise<boolean> {
 }
 
 function checkpointsOn(host: HostCtx, boxId: string): number {
-  return host.checkpoints.list().filter((record) => record.boxId === boxId && record.hostId === host.host.id).length;
+  return host.checkpoints
+    .list()
+    .filter((record) => record.boxId === boxId && record.hostId === host.host.id && record.trash === null).length;
 }
 
 function volumePlan(from: HostCtx, to: HostCtx, spec: BoxSpec): MoveVolume[] {

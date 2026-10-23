@@ -18,8 +18,8 @@ jobs:
     name: Format, lint, typecheck & test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
@@ -37,10 +37,10 @@ jobs:
     name: Docker build (smoke)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -60,7 +60,7 @@ jobs:
           docker logs minibox-ci
           exit 1
       - name: Base template builds for linux/amd64 and linux/arm64
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@v7
         with:
           context: templates/base
           platforms: linux/amd64,linux/arm64
@@ -69,7 +69,7 @@ jobs:
           cache-from: type=gha,scope=base-template
           cache-to: type=gha,mode=max,scope=base-template
       - name: Base template box checks on linux/amd64
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@v7
         with:
           context: templates/base
           platforms: linux/amd64
@@ -78,7 +78,7 @@ jobs:
           cache-from: type=gha,scope=base-template
       - run: scripts/check-box-image.sh minibox-template:base
       - name: Base template box checks on linux/arm64 (emulated)
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@v7
         with:
           context: templates/base
           platforms: linux/arm64
@@ -91,11 +91,11 @@ jobs:
     name: Agent image (smoke)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: Build the agent for linux/amd64 and linux/arm64
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.agent
@@ -105,7 +105,7 @@ jobs:
           cache-from: type=gha,scope=agent
           cache-to: type=gha,mode=max,scope=agent
       - name: Agent image for linux/amd64
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.agent
@@ -116,7 +116,7 @@ jobs:
           cache-from: type=gha,scope=agent
       - run: scripts/check-agent-image.sh minibox-agent:ci
       - name: Agent image for linux/arm64
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.agent

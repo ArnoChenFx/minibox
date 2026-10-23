@@ -33,7 +33,7 @@ MiniBox is built for one trusted user, on a machine that the user controls. Read
 - Only the owner can create tokens. No preset can create one.
 - A box's self token is not an agent token. It is issued for one box and reaches only that box's `self` operations. MiniBox keeps only its hash and never logs it, and the file in the box is on a memory filesystem. See [A box's own agent](../user-guide/agents.md#a-boxs-own-agent).
 
-**`/mcp` accepts the access key, and the key grants full owner access over MCP.** A client with the key can run `exec` as root in any box that is not `strict`, delete boxes and rebuild them. Give agents an agent token instead. A token's tool list and every call are held to its scopes. See [Connecting AI agents](../user-guide/agents.md).
+**`/mcp` accepts the access key in this release, and the key grants full owner access over MCP.** A client with the key can run `exec` as root in any box that is not `strict`, delete boxes and rebuild them. MiniBox records each use. Set `MCP_ALLOW_OWNER_KEY=false` to refuse the key on `/mcp`. The next minor release refuses it by default. Give agents an agent token instead. A token's tool list and every call are held to its scopes. See [Connecting AI agents](../user-guide/agents.md).
 
 ## Host secrets
 
@@ -51,6 +51,14 @@ A notification channel sends a message to an address that you give it.
 - **What a notice carries.** A title and a body in plain text, with no command output and no secret. A change to a channel is audited with the server's origin only, never the path or the query. A delivery is recorded with its channel, notice, attempts, HTTP status and reason.
 - **Addresses that are not public are refused.** A channel reaches only public addresses, unless `NOTIFY_ALLOW_PRIVATE` is turned on. Loopback, private, link-local, shared (`100.64.0.0/10`) and reserved IPv4 addresses are refused, and so are the IPv6 loopback, unique-local, link-local, site-local and multicast ranges, and IPv4-mapped or NAT64 (`64:ff9b::/96`) forms of a refused IPv4 address. `198.18.0.0/15` is allowed, because fake-IP DNS proxies such as Clash or Surge answer every name from it and connect to the real address themselves. MiniBox resolves the name once, checks the address, and connects to that address, so a second lookup cannot send the request elsewhere. Redirects are not followed. Unlike template builds and repository clones, notifications do not reach private addresses by default.
 - **Bounded.** A send makes at most three attempts, and each attempt has a 10-second timeout that includes the name lookup. At most 256 notices can wait to be sent.
+
+## Backups and off-site targets
+
+- **Backup archives.** A backup is sealed with AES-256-GCM, under a key that scrypt derives from the passphrase. MiniBox never stores the passphrase. The CLI reads it from `MINIBOX_BACKUP_PASSPHRASE` or from standard input, never from an argument. An archive holds the access key and the secrets, so keep it as protected as `DATA_DIR`.
+- **Target credentials.** They are written once, to `DATA_DIR/secrets/env/target.<id>.<field>`, with mode 600. No API returns them. Events, the audit log and the server log show only a target's name and address.
+- **SFTP host keys.** The host key is pinned when a target is added. MiniBox sends nothing to a server that presents another key.
+- **Plain HTTP.** An S3-compatible target accepts `http` only for loopback addresses.
+- **Owner only.** Backups and targets need the access key. No token scope grants them.
 
 ## Template builds and repository clones
 

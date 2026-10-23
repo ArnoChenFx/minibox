@@ -1,4 +1,5 @@
 import type { BoxProfile } from "../box-profile";
+import type { TrashRef } from "../checkpoints/types";
 import type { AuditNote } from "../events/types";
 import type { ContainerStats } from "../runtime";
 import type { BoxMount, BoxEnv, DesiredState, StopReason, BoxRecovery } from "../specs/types";
@@ -127,4 +128,14 @@ export interface DeleteBoxResult {
   volumeDeleted: boolean;
   /** Why the requested volume removal failed. The box itself is always removed first. */
   volumeError?: string;
+  /** The recycle bin entry that kept the box's data, or null when none was kept. */
+  trash: TrashRef | null;
+}
+
+export interface DeleteBoxOptions {
+  /**
+   * Runs under the box's power lock, before the container is removed, and returns what it kept. A throw stops the delete
+   * with the box as it was, so nothing it keeps can be missing from a box that is gone.
+   */
+  keep?: (box: Box) => Promise<TrashRef | null>;
 }

@@ -40,6 +40,15 @@
       "name": "checkpoints"
     },
     {
+      "name": "backups"
+    },
+    {
+      "name": "targets"
+    },
+    {
+      "name": "trash"
+    },
+    {
       "name": "templates"
     },
     {
@@ -1921,6 +1930,15 @@
             }
           },
           {
+            "name": "skipTrash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Delete without keeping a copy of the data in the recycle bin. Owner only; a token needs the trash:skip scope. Accepts true, false, 1 or 0. Defaults to false."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -1949,11 +1967,36 @@
                     },
                     "volumeError": {
                       "type": "string"
+                    },
+                    "trash": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "expiresAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "expiresAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The recycle bin entry that kept the box's data until expiresAt, or null when none was kept."
                     }
                   },
                   "required": [
                     "name",
-                    "volumeDeleted"
+                    "volumeDeleted",
+                    "trash"
                   ],
                   "additionalProperties": false
                 }
@@ -2002,6 +2045,16 @@
           },
           "415": {
             "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5034,6 +5087,10 @@
                   "confirm": {
                     "type": "boolean",
                     "description": "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false."
+                  },
+                  "safetyCheckpoint": {
+                    "type": "boolean",
+                    "description": "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0. Defaults to true."
                   }
                 }
               }
@@ -5438,10 +5495,35 @@
                         "storage"
                       ],
                       "additionalProperties": false
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The checkpoint taken before the rebuild, which a rollback can use, or null when none was taken."
                     }
                   },
                   "required": [
-                    "box"
+                    "box",
+                    "safety"
                   ],
                   "additionalProperties": false
                 }
@@ -11924,6 +12006,15 @@
             }
           },
           {
+            "name": "skipTrash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Delete without keeping a copy of the data in the recycle bin. Owner only; a token needs the trash:skip scope. Accepts true, false, 1 or 0. Defaults to false."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -11946,10 +12037,35 @@
                   "properties": {
                     "name": {
                       "type": "string"
+                    },
+                    "trash": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "expiresAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "expiresAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The recycle bin entry that kept the volume's data until expiresAt, or null when none was kept."
                     }
                   },
                   "required": [
-                    "name"
+                    "name",
+                    "trash"
                   ],
                   "additionalProperties": false
                 }
@@ -12008,6 +12124,16 @@
           },
           "415": {
             "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12123,6 +12249,10 @@
                   "confirm": {
                     "type": "boolean",
                     "description": "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false."
+                  },
+                  "safetyCheckpoint": {
+                    "type": "boolean",
+                    "description": "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0. Defaults to true."
                   }
                 },
                 "required": [
@@ -12545,11 +12675,36 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The checkpoint taken before the rebuild, or null when none was taken."
                     }
                   },
                   "required": [
                     "box",
-                    "warning"
+                    "warning",
+                    "safety"
                   ],
                   "additionalProperties": false
                 }
@@ -12735,6 +12890,10 @@
                   "confirm": {
                     "type": "boolean",
                     "description": "Apply the rebuild. Without true, the call is rejected with 409 confirmation_required and a preview of the docker diff and the planned changes. Defaults to false."
+                  },
+                  "safetyCheckpoint": {
+                    "type": "boolean",
+                    "description": "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0. Defaults to true."
                   }
                 },
                 "required": [
@@ -13143,10 +13302,35 @@
                         "storage"
                       ],
                       "additionalProperties": false
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The checkpoint taken before the rebuild, or null when none was taken."
                     }
                   },
                   "required": [
-                    "box"
+                    "box",
+                    "safety"
                   ],
                   "additionalProperties": false
                 }
@@ -19265,66 +19449,73 @@
                             ]
                           },
                           "spec": {
-                            "type": "object",
-                            "properties": {
-                              "template": {
+                            "anyOf": [
+                              {
                                 "type": "object",
                                 "properties": {
-                                  "ref": {
-                                    "type": "string"
+                                  "template": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "image": {
+                                        "type": "string"
+                                      },
+                                      "digest": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ref",
+                                      "image",
+                                      "digest"
+                                    ],
+                                    "additionalProperties": false
                                   },
-                                  "image": {
-                                    "type": "string"
-                                  },
-                                  "digest": {
+                                  "cpus": {
                                     "type": [
-                                      "string",
+                                      "number",
                                       "null"
+                                    ]
+                                  },
+                                  "memoryBytes": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "profile": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "standard",
+                                          "strict",
+                                          "relaxed"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
                                     ]
                                   }
                                 },
                                 "required": [
-                                  "ref",
-                                  "image",
-                                  "digest"
+                                  "template",
+                                  "cpus",
+                                  "memoryBytes",
+                                  "profile"
                                 ],
                                 "additionalProperties": false
                               },
-                              "cpus": {
-                                "type": [
-                                  "number",
-                                  "null"
-                                ]
-                              },
-                              "memoryBytes": {
-                                "type": [
-                                  "number",
-                                  "null"
-                                ]
-                              },
-                              "profile": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "enum": [
-                                      "standard",
-                                      "strict",
-                                      "relaxed"
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                              {
+                                "type": "null"
                               }
-                            },
-                            "required": [
-                              "template",
-                              "cpus",
-                              "memoryBytes",
-                              "profile"
-                            ],
-                            "additionalProperties": false
+                            ]
                           },
                           "data": {
                             "type": "array",
@@ -19776,66 +19967,73 @@
                           ]
                         },
                         "spec": {
-                          "type": "object",
-                          "properties": {
-                            "template": {
+                          "anyOf": [
+                            {
                               "type": "object",
                               "properties": {
-                                "ref": {
-                                  "type": "string"
+                                "template": {
+                                  "type": "object",
+                                  "properties": {
+                                    "ref": {
+                                      "type": "string"
+                                    },
+                                    "image": {
+                                      "type": "string"
+                                    },
+                                    "digest": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "ref",
+                                    "image",
+                                    "digest"
+                                  ],
+                                  "additionalProperties": false
                                 },
-                                "image": {
-                                  "type": "string"
-                                },
-                                "digest": {
+                                "cpus": {
                                   "type": [
-                                    "string",
+                                    "number",
                                     "null"
+                                  ]
+                                },
+                                "memoryBytes": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "profile": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "standard",
+                                        "strict",
+                                        "relaxed"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
                                   ]
                                 }
                               },
                               "required": [
-                                "ref",
-                                "image",
-                                "digest"
+                                "template",
+                                "cpus",
+                                "memoryBytes",
+                                "profile"
                               ],
                               "additionalProperties": false
                             },
-                            "cpus": {
-                              "type": [
-                                "number",
-                                "null"
-                              ]
-                            },
-                            "memoryBytes": {
-                              "type": [
-                                "number",
-                                "null"
-                              ]
-                            },
-                            "profile": {
-                              "anyOf": [
-                                {
-                                  "type": "string",
-                                  "enum": [
-                                    "standard",
-                                    "strict",
-                                    "relaxed"
-                                  ]
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
+                            {
+                              "type": "null"
                             }
-                          },
-                          "required": [
-                            "template",
-                            "cpus",
-                            "memoryBytes",
-                            "profile"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         "data": {
                           "type": "array",
@@ -20282,66 +20480,73 @@
                   ]
                 },
                 "spec": {
-                  "type": "object",
-                  "properties": {
-                    "template": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "ref": {
-                          "type": "string"
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
                         },
-                        "image": {
-                          "type": "string"
-                        },
-                        "digest": {
+                        "cpus": {
                           "type": [
-                            "string",
+                            "number",
                             "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
                           ]
                         }
                       },
                       "required": [
-                        "ref",
-                        "image",
-                        "digest"
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
                       ],
                       "additionalProperties": false
                     },
-                    "cpus": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "memoryBytes": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "profile": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "standard",
-                            "strict",
-                            "relaxed"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "template",
-                    "cpus",
-                    "memoryBytes",
-                    "profile"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "data": {
                   "type": "array",
@@ -20910,66 +21115,73 @@
                   ]
                 },
                 "spec": {
-                  "type": "object",
-                  "properties": {
-                    "template": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "ref": {
-                          "type": "string"
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
                         },
-                        "image": {
-                          "type": "string"
-                        },
-                        "digest": {
+                        "cpus": {
                           "type": [
-                            "string",
+                            "number",
                             "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
                           ]
                         }
                       },
                       "required": [
-                        "ref",
-                        "image",
-                        "digest"
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
                       ],
                       "additionalProperties": false
                     },
-                    "cpus": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "memoryBytes": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "profile": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "standard",
-                            "strict",
-                            "relaxed"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "template",
-                    "cpus",
-                    "memoryBytes",
-                    "profile"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "data": {
                   "type": "array",
@@ -23581,7 +23793,8 @@
                   "type": "string",
                   "enum": [
                     "export",
-                    "upload"
+                    "upload",
+                    "target"
                   ]
                 },
                 "bytes": {
@@ -23857,66 +24070,73 @@
                   ]
                 },
                 "spec": {
-                  "type": "object",
-                  "properties": {
-                    "template": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "ref": {
-                          "type": "string"
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
                         },
-                        "image": {
-                          "type": "string"
-                        },
-                        "digest": {
+                        "cpus": {
                           "type": [
-                            "string",
+                            "number",
                             "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
                           ]
                         }
                       },
                       "required": [
-                        "ref",
-                        "image",
-                        "digest"
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
                       ],
                       "additionalProperties": false
                     },
-                    "cpus": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "memoryBytes": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "profile": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "standard",
-                            "strict",
-                            "relaxed"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "template",
-                    "cpus",
-                    "memoryBytes",
-                    "profile"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "data": {
                   "type": "array",
@@ -24762,6 +24982,3619 @@
         "x-cli": "checkpoint schedule-clear",
         "x-mcp": {
           "name": "clear_checkpoint_schedule",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/backups": {
+      "post": {
+        "operationId": "backup.create",
+        "tags": [
+          "backups"
+        ],
+        "summary": "Create a backup of DATA_DIR",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "passphrase": {
+                    "type": "string",
+                    "minLength": 12,
+                    "maxLength": 1024,
+                    "description": "Passphrase that seals the backup: 12 to 1024 characters, no leading or trailing spaces, no line breaks. MiniBox never stores it, so a backup cannot be opened without it."
+                  }
+                },
+                "required": [
+                  "passphrase"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "backup:manage",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "backup": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "origin": {
+                  "type": "string",
+                  "enum": [
+                    "create",
+                    "target"
+                  ]
+                },
+                "targetId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "entries": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "origin",
+                "targetId",
+                "createdBy",
+                "bytes",
+                "sha256",
+                "entries",
+                "createdAt",
+                "url"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "backup"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "backup",
+        "x-mcp": {
+          "name": "create_backup",
+          "toolset": "storage"
+        }
+      },
+      "get": {
+        "operationId": "backup.list",
+        "tags": [
+          "backups"
+        ],
+        "summary": "List backups",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "backups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string",
+                            "enum": [
+                              "create",
+                              "target"
+                            ]
+                          },
+                          "targetId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "bytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "sha256": {
+                            "type": "string"
+                          },
+                          "entries": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "origin",
+                          "targetId",
+                          "createdBy",
+                          "bytes",
+                          "sha256",
+                          "entries",
+                          "createdAt",
+                          "url"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "backups"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "backup:manage",
+        "x-async": false,
+        "x-cli": "backup ls",
+        "x-mcp": {
+          "name": "list_backups",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/backups/{id}/download": {
+      "get": {
+        "operationId": "backup.download",
+        "tags": [
+          "backups"
+        ],
+        "summary": "Download a backup archive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Backup id (bk_…), as the backup list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A file's bytes as application/octet-stream, or a folder as a gzip tar (application/gzip). Content-Disposition names the download.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/gzip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "backup:manage",
+        "x-async": false
+      }
+    },
+    "/api/backups/{id}": {
+      "delete": {
+        "operationId": "backup.delete",
+        "tags": [
+          "backups"
+        ],
+        "summary": "Delete a backup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Backup id (bk_…), as the backup list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "backup:manage",
+        "x-async": false,
+        "x-cli": "backup rm",
+        "x-mcp": {
+          "name": "delete_backup",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/targets": {
+      "get": {
+        "operationId": "target.list",
+        "tags": [
+          "targets"
+        ],
+        "summary": "List off-site targets",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "s3",
+                              "sftp"
+                            ]
+                          },
+                          "address": {
+                            "type": "string",
+                            "description": "The endpoint and bucket of an S3 target, or the host and port of an SFTP server."
+                          },
+                          "path": {
+                            "type": "string",
+                            "description": "The folder on the target the objects live in. Empty is the bucket root or the login folder."
+                          },
+                          "hostKeyFingerprint": {
+                            "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "credentials": {
+                            "type": "boolean",
+                            "description": "Whether the target's credentials are stored. The values are never returned."
+                          },
+                          "lastSync": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "at": {
+                                    "type": "string"
+                                  },
+                                  "direction": {
+                                    "type": "string",
+                                    "enum": [
+                                      "push",
+                                      "pull"
+                                    ]
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "package",
+                                      "backup"
+                                    ]
+                                  },
+                                  "object": {
+                                    "type": "string"
+                                  },
+                                  "bytes": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "error": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "at",
+                                  "direction",
+                                  "kind",
+                                  "object",
+                                  "bytes",
+                                  "error"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The last push or pull, or null when there has been none."
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "kind",
+                          "address",
+                          "path",
+                          "hostKeyFingerprint",
+                          "credentials",
+                          "lastSync",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "targets"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "target:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "list_targets",
+          "toolset": "storage"
+        }
+      },
+      "post": {
+        "operationId": "target.add",
+        "tags": [
+          "targets"
+        ],
+        "summary": "Add an off-site target",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "description": "Name of the target, shown in the console. One line of 1 to 64 characters."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "s3",
+                      "sftp"
+                    ],
+                    "description": "s3 for an S3-compatible bucket, sftp for an SFTP server."
+                  },
+                  "path": {
+                    "description": "The folder the objects live in, relative to the target's root. Omitted, they go in the root.",
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "endpoint": {
+                    "description": "S3 only. The https address of the service, such as https://s3.example.com. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "region": {
+                    "description": "S3 only. The region the bucket is in, such as us-east-1.",
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "bucket": {
+                    "description": "S3 only. The bucket that holds the objects.",
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "accessKeyId": {
+                    "description": "S3 only. The access key id. It is stored as a secret and never returned.",
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "secretAccessKey": {
+                    "description": "S3 only. The secret access key. It is stored as a secret and never returned.",
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "host": {
+                    "description": "SFTP only. The host name or address of the server.",
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "port": {
+                    "description": "SFTP only. The port. Defaults to 22.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "user": {
+                    "description": "SFTP only. The user the login is for.",
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "privateKey": {
+                    "description": "SFTP only. The private key that logs in, in OpenSSH or PEM form without a passphrase. It is stored as a secret and never returned.",
+                    "type": "string",
+                    "maxLength": 16384
+                  },
+                  "hostKeyFingerprint": {
+                    "description": "SFTP only. The server's host key, SHA256:…, as a test reported it. Adding a target needs it, and nothing is sent to a server that presents another key.",
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "name",
+                  "kind"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "s3",
+                            "sftp"
+                          ]
+                        },
+                        "address": {
+                          "type": "string",
+                          "description": "The endpoint and bucket of an S3 target, or the host and port of an SFTP server."
+                        },
+                        "path": {
+                          "type": "string",
+                          "description": "The folder on the target the objects live in. Empty is the bucket root or the login folder."
+                        },
+                        "hostKeyFingerprint": {
+                          "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "credentials": {
+                          "type": "boolean",
+                          "description": "Whether the target's credentials are stored. The values are never returned."
+                        },
+                        "lastSync": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "push",
+                                    "pull"
+                                  ]
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "package",
+                                    "backup"
+                                  ]
+                                },
+                                "object": {
+                                  "type": "string"
+                                },
+                                "bytes": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "error": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "direction",
+                                "kind",
+                                "object",
+                                "bytes",
+                                "error"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The last push or pull, or null when there has been none."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "kind",
+                        "address",
+                        "path",
+                        "hostKeyFingerprint",
+                        "credentials",
+                        "lastSync",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "target"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "target:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "add_target",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/targets/test": {
+      "post": {
+        "operationId": "target.test",
+        "tags": [
+          "targets"
+        ],
+        "summary": "Test an off-site target",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "s3",
+                      "sftp"
+                    ],
+                    "description": "s3 for an S3-compatible bucket, sftp for an SFTP server."
+                  },
+                  "path": {
+                    "description": "The folder the objects live in, relative to the target's root. Omitted, they go in the root.",
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "endpoint": {
+                    "description": "S3 only. The https address of the service, such as https://s3.example.com. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "region": {
+                    "description": "S3 only. The region the bucket is in, such as us-east-1.",
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "bucket": {
+                    "description": "S3 only. The bucket that holds the objects.",
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "accessKeyId": {
+                    "description": "S3 only. The access key id. It is stored as a secret and never returned.",
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "secretAccessKey": {
+                    "description": "S3 only. The secret access key. It is stored as a secret and never returned.",
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "host": {
+                    "description": "SFTP only. The host name or address of the server.",
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "port": {
+                    "description": "SFTP only. The port. Defaults to 22.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "user": {
+                    "description": "SFTP only. The user the login is for.",
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "privateKey": {
+                    "description": "SFTP only. The private key that logs in, in OpenSSH or PEM form without a passphrase. It is stored as a secret and never returned.",
+                    "type": "string",
+                    "maxLength": 16384
+                  },
+                  "hostKeyFingerprint": {
+                    "description": "SFTP only. The server's host key, SHA256:…, as a test reported it. Adding a target needs it, and nothing is sent to a server that presents another key.",
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "target:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "test_target",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/targets/{id}/check": {
+      "get": {
+        "operationId": "target.check",
+        "tags": [
+          "targets"
+        ],
+        "summary": "Check that an off-site target answers",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Target id (tgt_…), as the target list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "target:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "check_target",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/targets/{id}/objects": {
+      "get": {
+        "operationId": "target.objects",
+        "tags": [
+          "targets"
+        ],
+        "summary": "List the packages and backups on an off-site target",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Target id (tgt_…), as the target list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "objects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "package",
+                              "backup"
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "sha256": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "id",
+                          "bytes",
+                          "sha256",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "objects"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "target:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "list_target_objects",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/targets/{id}": {
+      "delete": {
+        "operationId": "target.remove",
+        "tags": [
+          "targets"
+        ],
+        "summary": "Remove an off-site target",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Target id (tgt_…), as the target list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "target:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "remove_target",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/targets/{id}/push": {
+      "post": {
+        "operationId": "target.push",
+        "tags": [
+          "targets"
+        ],
+        "summary": "Push a package or backup to an off-site target",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Target id (tgt_…), as the target list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "object": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "The object to move: a package id (pk_…) or a backup id (bk_…)."
+                  }
+                },
+                "required": [
+                  "object"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "target:manage",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "s3",
+                    "sftp"
+                  ]
+                },
+                "address": {
+                  "type": "string",
+                  "description": "The endpoint and bucket of an S3 target, or the host and port of an SFTP server."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "The folder on the target the objects live in. Empty is the bucket root or the login folder."
+                },
+                "hostKeyFingerprint": {
+                  "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "credentials": {
+                  "type": "boolean",
+                  "description": "Whether the target's credentials are stored. The values are never returned."
+                },
+                "lastSync": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "direction": {
+                          "type": "string",
+                          "enum": [
+                            "push",
+                            "pull"
+                          ]
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "package",
+                            "backup"
+                          ]
+                        },
+                        "object": {
+                          "type": "string"
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "error": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "direction",
+                        "kind",
+                        "object",
+                        "bytes",
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The last push or pull, or null when there has been none."
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "kind",
+                "address",
+                "path",
+                "hostKeyFingerprint",
+                "credentials",
+                "lastSync",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            },
+            "object": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "package",
+                "backup"
+              ]
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "skipped": {
+              "type": "boolean",
+              "description": "True when the target already held the same object, so nothing was sent or stored."
+            }
+          },
+          "required": [
+            "target",
+            "object",
+            "kind",
+            "bytes",
+            "skipped"
+          ],
+          "additionalProperties": false
+        },
+        "x-mcp": {
+          "name": "push_to_target",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/targets/{id}/pull": {
+      "post": {
+        "operationId": "target.pull",
+        "tags": [
+          "targets"
+        ],
+        "summary": "Pull a package or backup from an off-site target",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Target id (tgt_…), as the target list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "object": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "The object to move: a package id (pk_…) or a backup id (bk_…)."
+                  }
+                },
+                "required": [
+                  "object"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "target:manage",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "s3",
+                    "sftp"
+                  ]
+                },
+                "address": {
+                  "type": "string",
+                  "description": "The endpoint and bucket of an S3 target, or the host and port of an SFTP server."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "The folder on the target the objects live in. Empty is the bucket root or the login folder."
+                },
+                "hostKeyFingerprint": {
+                  "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "credentials": {
+                  "type": "boolean",
+                  "description": "Whether the target's credentials are stored. The values are never returned."
+                },
+                "lastSync": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "direction": {
+                          "type": "string",
+                          "enum": [
+                            "push",
+                            "pull"
+                          ]
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "package",
+                            "backup"
+                          ]
+                        },
+                        "object": {
+                          "type": "string"
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "error": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "direction",
+                        "kind",
+                        "object",
+                        "bytes",
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The last push or pull, or null when there has been none."
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "kind",
+                "address",
+                "path",
+                "hostKeyFingerprint",
+                "credentials",
+                "lastSync",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            },
+            "object": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "package",
+                "backup"
+              ]
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "skipped": {
+              "type": "boolean",
+              "description": "True when the target already held the same object, so nothing was sent or stored."
+            }
+          },
+          "required": [
+            "target",
+            "object",
+            "kind",
+            "bytes",
+            "skipped"
+          ],
+          "additionalProperties": false
+        },
+        "x-mcp": {
+          "name": "pull_from_target",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/trash": {
+      "get": {
+        "operationId": "trash.list",
+        "tags": [
+          "trash"
+        ],
+        "summary": "List the recycle bin",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trash": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "hostId": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "box",
+                              "volume"
+                            ]
+                          },
+                          "sourceId": {
+                            "type": "string"
+                          },
+                          "sourceName": {
+                            "type": "string"
+                          },
+                          "deletedAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "type": "number"
+                          },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "hostId",
+                          "kind",
+                          "sourceId",
+                          "sourceName",
+                          "deletedAt",
+                          "expiresAt",
+                          "bytes",
+                          "createdBy"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "trash"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "trash:read",
+        "x-async": false,
+        "x-cli": "trash ls",
+        "x-mcp": {
+          "name": "list_trash",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/trash/{id}/restore": {
+      "post": {
+        "operationId": "trash.restore",
+        "tags": [
+          "trash"
+        ],
+        "summary": "Restore a recycle bin entry as a new box or volume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Recycle bin entry id (ck_…), as trash.list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+                    "description": "New name for the restored box or volume: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Defaults to the name it had when it was deleted."
+                  },
+                  "cpus": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 64,
+                    "description": "CPU cores, between 0.1 and 64, rounded to two decimals."
+                  },
+                  "memoryMb": {
+                    "type": "integer",
+                    "minimum": 128,
+                    "maximum": 262144,
+                    "description": "Memory in MB, an integer between 128 and 262144."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "trash:restore",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "box": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "boxId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "image": {
+                      "type": "string"
+                    },
+                    "template": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "standard",
+                            "strict",
+                            "relaxed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "network": {
+                      "type": "string"
+                    },
+                    "cpus": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "memory": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "pids": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "volume": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "number"
+                    },
+                    "desired": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "stopped"
+                      ]
+                    },
+                    "idleTimeoutSec": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "ttlSec": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "stopReason": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "idle",
+                            "ttl",
+                            "manual",
+                            "volume_limit"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sleeping": {
+                      "type": "boolean"
+                    },
+                    "lastActivityAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "labels": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "containerName": {
+                      "type": "string"
+                    },
+                    "drift": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "expected": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "expected",
+                          "actual"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "recovery": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "claim",
+                                "degraded"
+                              ]
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "needsReset": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "observedRestart": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "at",
+                            "needsReset",
+                            "observedRestart"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "volume": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "rw",
+                              "ro"
+                            ]
+                          },
+                          "volumeId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "volumeName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "role": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "workspace",
+                                  "home",
+                                  "tools",
+                                  "cache"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "pool": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "volume",
+                          "path",
+                          "mode",
+                          "volumeId",
+                          "volumeName",
+                          "role",
+                          "pool"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "env": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "secretRef": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "version"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "storage": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unreachable",
+                            "unknown"
+                          ]
+                        },
+                        "pools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "reachable",
+                                  "unreachable",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "pools"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "hostId": {
+                      "type": "string"
+                    },
+                    "selfToken": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "boxId",
+                    "name",
+                    "state",
+                    "status",
+                    "running",
+                    "image",
+                    "template",
+                    "profile",
+                    "network",
+                    "cpus",
+                    "memory",
+                    "pids",
+                    "createdAt",
+                    "startedAt",
+                    "volume",
+                    "revision",
+                    "desired",
+                    "idleTimeoutSec",
+                    "ttlSec",
+                    "stopReason",
+                    "sleeping",
+                    "lastActivityAt",
+                    "labels",
+                    "createdBy",
+                    "containerName",
+                    "drift",
+                    "recovery",
+                    "mounts",
+                    "env",
+                    "tools",
+                    "storage"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "volume": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "hostId": {
+                      "type": "string"
+                    },
+                    "pool": {
+                      "type": "string"
+                    },
+                    "backend": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "workspace",
+                            "home",
+                            "tools",
+                            "cache"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ownership": {
+                      "type": "string",
+                      "enum": [
+                        "owned",
+                        "independent"
+                      ]
+                    },
+                    "ownerBoxId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sensitive": {
+                      "type": "boolean"
+                    },
+                    "checkpoint": {
+                      "type": "boolean"
+                    },
+                    "engineName": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "bytesAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "limits": {
+                      "type": "object",
+                      "properties": {
+                        "softBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "hardBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "warn",
+                            "stop"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "softBytes",
+                        "hardBytes",
+                        "action"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "usage": {
+                      "type": "object",
+                      "properties": {
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "volume",
+                            "share"
+                          ]
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "ok",
+                            "soft",
+                            "hard"
+                          ]
+                        },
+                        "history": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "bytes"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "lastError": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "level",
+                        "history",
+                        "lastError"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "mounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "boxId": {
+                            "type": "string"
+                          },
+                          "boxName": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "rw",
+                              "ro"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "boxId",
+                          "boxName",
+                          "path",
+                          "mode"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "unattached": {
+                      "type": "boolean"
+                    },
+                    "rwMounts": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "hostId",
+                    "pool",
+                    "backend",
+                    "role",
+                    "ownership",
+                    "ownerBoxId",
+                    "sensitive",
+                    "checkpoint",
+                    "engineName",
+                    "bytes",
+                    "bytesAt",
+                    "limits",
+                    "usage",
+                    "createdAt",
+                    "mounts",
+                    "unattached",
+                    "rwMounts"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "box",
+            "volume"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "trash restore",
+        "x-mcp": {
+          "name": "restore_trash",
+          "toolset": "storage"
+        }
+      }
+    },
+    "/api/trash/{id}": {
+      "delete": {
+        "operationId": "trash.purge",
+        "tags": [
+          "trash"
+        ],
+        "summary": "Purge a recycle bin entry now",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Recycle bin entry id (ck_…), as trash.list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "trash:purge",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "trash purge",
+        "x-mcp": {
+          "name": "purge_trash",
           "toolset": "storage"
         }
       }
@@ -27425,7 +31258,8 @@
                                 "volume:write",
                                 "volume:attach",
                                 "tool:install",
-                                "secret:use"
+                                "secret:use",
+                                "trash:skip"
                               ]
                             }
                           },
@@ -27827,11 +31661,12 @@
                         "volume:write",
                         "volume:attach",
                         "tool:install",
-                        "secret:use"
+                        "secret:use",
+                        "trash:skip"
                       ]
                     },
-                    "maxItems": 15,
-                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install, secret:use."
+                    "maxItems": 16,
+                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, tool:install, secret:use, trash:skip."
                   },
                   "boxes": {
                     "description": "Which boxes this token may use. \"created-by-me\" (the default), \"*\" for every box, {\"ids\":[\"bx_…\"]}, or {\"tags\":[\"env=prod\"]}. A tag is a label key, or key=value."
@@ -27970,7 +31805,8 @@
                               "volume:write",
                               "volume:attach",
                               "tool:install",
-                              "secret:use"
+                              "secret:use",
+                              "trash:skip"
                             ]
                           }
                         },
@@ -28353,7 +32189,7 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Also delete boxes this token created, including their workspace volumes."
+              "description": "Also delete boxes this token created, including their workspace volumes. Their data is kept in the recycle bin for the retention period."
             }
           },
           {
@@ -28424,7 +32260,8 @@
                               "volume:write",
                               "volume:attach",
                               "tool:install",
-                              "secret:use"
+                              "secret:use",
+                              "trash:skip"
                             ]
                           }
                         },
@@ -32168,66 +36005,73 @@
                   ]
                 },
                 "spec": {
-                  "type": "object",
-                  "properties": {
-                    "template": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "ref": {
-                          "type": "string"
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
                         },
-                        "image": {
-                          "type": "string"
-                        },
-                        "digest": {
+                        "cpus": {
                           "type": [
-                            "string",
+                            "number",
                             "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
                           ]
                         }
                       },
                       "required": [
-                        "ref",
-                        "image",
-                        "digest"
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
                       ],
                       "additionalProperties": false
                     },
-                    "cpus": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "memoryBytes": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "profile": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "standard",
-                            "strict",
-                            "relaxed"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "template",
-                    "cpus",
-                    "memoryBytes",
-                    "profile"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "data": {
                   "type": "array",

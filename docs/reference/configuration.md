@@ -13,6 +13,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 | Variable | Default | Meaning |
 |---|---|---|
 | `ACCESS_KEY` | Generated into `DATA_DIR/access_key` | The access key for the console and the API. Use at least 20 random characters. A key that you set takes precedence over the generated one. MiniBox never writes this value to `.env`. See [Security](../admin/security.md). |
+| `MCP_ALLOW_OWNER_KEY` | `true` | Whether the access key may call `/mcp`. Agent tokens always may. `true` accepts the key and records each use. `false` refuses it with `401`. The next minor release changes the default to `false`. See [Upgrades](../admin/upgrades.md). |
 | `HOST` | `127.0.0.1` | The address that MiniBox listens on. The release image sets `0.0.0.0`. A box's agent reaches MiniBox at this address, so a self token needs the `minibox-boxes` gateway address or `0.0.0.0`. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent). |
 | `PORT` | `3920` | The port that MiniBox listens on. A positive whole number. Other values use the default. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` from a reverse proxy. Turn it on only behind a proxy that overwrites these headers, and only when the proxy is the only way in. See [Remote access and TLS](../admin/remote-access.md). |
@@ -61,6 +62,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 | `CHECKPOINT_KEEP_LAST` | `20` | Automatic checkpoints kept for each box, newest first. A whole number from 1 to 10000. Manual and pinned checkpoints are never removed. |
 | `CHECKPOINT_KEEP_DAYS` | `30` | Automatic checkpoints older than this many days are removed. A whole number from 0 to 3650. `0` keeps them whatever their age. |
 | `CHECKPOINT_CAPACITY_MB` | `0` | The size limit of the checkpoint repository, in MB. A whole number from 0 to 1000000000. `0` sets no limit. At the limit, MiniBox refuses new automatic checkpoints. |
+| `TRASH_RETENTION_DAYS` | `7` | How many days the data of a deleted box or volume is kept in the [recycle bin](../user-guide/checkpoints.md#recycle-bin) before it is purged. A whole number from 1 to 365. Recycle bin entries count against `CHECKPOINT_CAPACITY_MB`. |
 | `CHECKPOINT_PACKAGE_MAX_MB` | `2048` | The largest checkpoint package, in MB. A whole number from 1 to 65536. An export or upload of a larger package fails. The package upload (`POST /api/packages`) accepts a body up to this size plus 1 MB. Only that upload and the volume file upload may exceed 128 MB; every other request, including JSON bodies and previews, stays capped at 128 MB. See [Export and import](../user-guide/checkpoints.md#export-and-import). |
 
 ## Volumes and storage

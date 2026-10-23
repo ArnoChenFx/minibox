@@ -119,4 +119,8 @@ export default {
   "vol.overHard": "Over hard limit",
   "vol.usageShare": "whole NFS share",
   "vol.usageFailed": "Last check failed: {error}",
+  "vol.skipTrash": "Delete without keeping a copy",
+  "vol.skipTrashHelp":
+    "The data is not kept in the recycle bin, so it cannot be restored. Only the owner, or a token with the trash:skip scope, may do this.",
+  "vol.keptInBin": "Kept in the recycle bin until {date}.",
 };

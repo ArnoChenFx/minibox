@@ -17,6 +17,7 @@ minibox <command> --help
 | `MINIBOX_ACCESS_KEY` | none | The access key, or an agent token. Used as the bearer token. |
 | `ACCESS_KEY` | none | Used when `MINIBOX_ACCESS_KEY` is not set |
 | `MINIBOX_TOOLSETS` | none | Toolsets for `minibox mcp`, such as `core,session` |
+| `MINIBOX_BACKUP_PASSPHRASE` | none | The passphrase for `minibox backup` and `minibox restore`. It is never a command argument. See [Backups](../admin/backups.md). |
 
 Commands that talk to the server need `MINIBOX_ACCESS_KEY` or `ACCESS_KEY`. Otherwise they stop with an error.
 
@@ -213,6 +214,37 @@ Only the owner can use these commands. See [Tools](../user-guide/tools.md).
 | `minibox tool custom put <id> (--file FILE \| --stdin) [--override-builtin] [--json]` | Saves an entry from a JSON document. `--override-builtin` replaces a built-in tool's entry. |
 | `minibox tool custom delete <id> [--json]` | Removes the entry. Nothing is uninstalled from the shared tools volume. |
 
+## Backups
+
+The `backup` commands use the access key, and they are for the owner only. `restore` works on an archive file, and it needs no running server. See [Backups](../admin/backups.md).
+
+| Command | Meaning |
+|---|---|
+| `minibox backup [--out FILE] [--overwrite] [--passphrase-stdin] [--json]` | Backs up DATA_DIR on the server into a sealed archive, while MiniBox runs. With `--out`, it also downloads the archive to `FILE`, and checks its size and checksum. Without `--out`, the backup stays on the server, and the command prints its ID. |
+| `minibox backup ls [--json]` | Lists the backups kept on the server |
+| `minibox backup rm <id> [--json]` | Deletes a backup kept on the server |
+| `minibox restore <file> --data-dir DIR [--passphrase-stdin]` | Restores an archive into an empty `DIR`. Without `--data-dir`, it uses `DATA_DIR`. Stop MiniBox first. |
+
+The passphrase comes from `MINIBOX_BACKUP_PASSPHRASE`, or from the first line of standard input with `--passphrase-stdin`.
+
+```bash
+read -rs -p "Backup passphrase: " MINIBOX_BACKUP_PASSPHRASE && export MINIBOX_BACKUP_PASSPHRASE
+minibox backup --out minibox-backup.mbbak
+minibox restore minibox-backup.mbbak --data-dir /srv/minibox-data
+```
+
+## Recycle bin
+
+The recycle bin keeps the data of deleted boxes and volumes until it expires. Only the owner can use these commands. See [Checkpoints](../user-guide/checkpoints.md#recycle-bin).
+
+| Command | Meaning |
+|---|---|
+| `minibox trash ls [--json]` | Lists the entries, newest deletion first, with each one's ID, name, kind, deletion time, expiry time and size |
+| `minibox trash restore <id> [--name NAME] [--cpus N] [--memory MB] [--no-wait] [--json]` | Restores an entry as a new box or volume, and removes the entry once the restore has finished. `--cpus` and `--memory` apply to a box. |
+| `minibox trash purge <id> [--no-wait] [--json]` | Removes an entry and the data it keeps, before it expires |
+
+A restore and a purge run as tasks. The command waits for the task and prints its log to standard error, unless `--no-wait` is given.
+
 ## Notifications
 
 Notification channels have no commands yet. Set them up in **Settings**, or through the [REST API](api.md#notify) and the [MCP tools](mcp.md#meta). See [Notifications](../user-guide/notifications.md).
@@ -226,10 +258,18 @@ Notification channels have no commands yet. Set them up in **Settings**, or thro
 
 See [SSH access and the command-line tool](../user-guide/ssh-and-cli.md) for the setup steps.
 
+## Tokens
+
+| Command | Meaning |
+|---|---|
+| `minibox token create <name> [--preset P] [--scopes LIST] [--expires-in SEC] [--json]` | Creates an agent token and prints its secret on standard output, once. The summary goes to standard error. `--preset` names a preset, and `--scopes` takes a comma-separated list of scopes instead. With neither, the preset is `sandboxed-agent`. `--expires-in` is in seconds. `--json` prints the response. Only the owner can create a token, so set `MINIBOX_ACCESS_KEY` to the access key. |
+
+See [Access, sessions and tokens](../user-guide/access-and-tokens.md) for the presets and scopes.
+
 ## MCP
 
 | Command | Meaning |
 |---|---|
 | `minibox mcp [--toolsets LIST]` | Runs an MCP server over standard input and output, and forwards it to the server's `/mcp` endpoint. `LIST` is a comma-separated list of toolsets. The default is `core,meta`. |
 
-See [MCP tools](mcp.md) for the toolsets.
+See [MCP tools](mcp.md) for the toolsets. When `MINIBOX_ACCESS_KEY` is the access key, `minibox mcp` warns on standard error. The server refuses the key on `/mcp` once `MCP_ALLOW_OWNER_KEY` is `false`.

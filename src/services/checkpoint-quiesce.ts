@@ -11,14 +11,16 @@ import type { Progress } from "./checkpoint-model";
  *
  * Neither mode changes the box's desired state. A crash in the middle leaves the container paused, or stopped while
  * its desired state is still `running`, and startup reconciliation puts both right (see `reconcileHost`).
+ *
+ * `box` is null for a volume that no box mounts. Nothing runs for it, so there is nothing to pause or stop.
  */
 export async function quiesce(
   host: HostCtx,
-  box: Box,
+  box: Box | null,
   consistency: Consistency,
   progress?: Progress,
 ): Promise<() => Promise<void>> {
-  if (!box.running || consistency === "live") return async () => {};
+  if (box === null || !box.running || consistency === "live") return async () => {};
   if (consistency === "pause") {
     progress?.log?.("Pausing the box…\n");
     await host.runtime.pauseContainer(box.id);

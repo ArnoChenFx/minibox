@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -23,13 +23,18 @@ import { startServer } from "../src/server";
 import { compileToken } from "../src/tokens/model";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
+import { type S3Double, startS3Double } from "./support/s3-double";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
 const TEMPLATE_REF = "mbtest-template:gold";
 const CHECKPOINT_PLACEHOLDER = `ck_${"0".repeat(16)}`;
 const PACKAGE_PLACEHOLDER = `pk_${"0".repeat(16)}`;
+const BACKUP_PLACEHOLDER = `bk_${"0".repeat(16)}`;
+const TARGET_PLACEHOLDER = `tgt_${"0".repeat(16)}`;
 const PASSPHRASE = "correct horse battery staple";
+const SAMPLE_TARGET_KEY = "AKIATESTONLY0003";
+const SAMPLE_TARGET_SECRET = "test-only-secret-key-0003";
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 const CUSTOM_TOOL = {
   id: "sample-tool",
@@ -52,6 +57,40 @@ const NOTIFY_CHANNEL = {
   url: "http://127.0.0.1:9/hook",
   secret: "signing-key-1",
 };
+
+let sampleTarget: S3Double | undefined;
+
+/** The S3 double the sample targets are reached at. It starts on first use and stops when this file's tests are done. */
+function sampleTargetDouble(): S3Double {
+  sampleTarget ??= startS3Double({
+    accessKeyId: SAMPLE_TARGET_KEY,
+    secretAccessKey: SAMPLE_TARGET_SECRET,
+    bucket: "backups",
+  });
+  return sampleTarget;
+}
+
+afterAll(() => sampleTarget?.stop());
+
+function sampleTargetFields() {
+  const double = sampleTargetDouble();
+  return {
+    kind: "s3",
+    path: "minibox",
+    endpoint: double.endpoint,
+    region: double.region,
+    bucket: double.bucket,
+    accessKeyId: SAMPLE_TARGET_KEY,
+    secretAccessKey: SAMPLE_TARGET_SECRET,
+  };
+}
+
+async function storedTargetOf(app: App, ctx: OperationContext): Promise<string> {
+  const added = (await app.operations.run("target.add", ctx, { name: "archive", ...sampleTargetFields() })) as {
+    target: { id: string };
+  };
+  return added.target.id;
+}
 
 /** One valid input for each operation, given the id of a box that exists; see `withBox`. */
 const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
@@ -157,6 +196,21 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "checkpoint.schedule.get": (id) => ({ id }),
   "checkpoint.schedule.set": (id) => ({ id, everyHours: 6 }),
   "checkpoint.schedule.clear": (id) => ({ id }),
+  "backup.create": () => ({ passphrase: PASSPHRASE }),
+  "backup.list": () => ({}),
+  "backup.download": () => ({ id: BACKUP_PLACEHOLDER }),
+  "backup.delete": () => ({ id: BACKUP_PLACEHOLDER }),
+  "target.list": () => ({}),
+  "target.test": () => sampleTargetFields(),
+  "target.add": () => ({ name: "archive", ...sampleTargetFields() }),
+  "target.check": () => ({ id: TARGET_PLACEHOLDER }),
+  "target.objects": () => ({ id: TARGET_PLACEHOLDER }),
+  "target.remove": () => ({ id: TARGET_PLACEHOLDER }),
+  "target.push": () => ({ id: TARGET_PLACEHOLDER, object: BACKUP_PLACEHOLDER }),
+  "target.pull": () => ({ id: TARGET_PLACEHOLDER, object: BACKUP_PLACEHOLDER }),
+  "trash.list": () => ({}),
+  "trash.restore": () => ({ id: CHECKPOINT_PLACEHOLDER, name: "restored" }),
+  "trash.purge": () => ({ id: CHECKPOINT_PLACEHOLDER }),
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.save": (id) => ({ id, name: "silver" }),
@@ -207,6 +261,20 @@ const CHECKPOINT_OPERATIONS_ON_AN_EXISTING = [
   "box.rollback",
 ];
 
+/** Deletes a box of its own, so its data is kept in the recycle bin, and returns that entry's id. */
+async function trashedBoxOf(app: App, ctx: OperationContext): Promise<string> {
+  const { box } = (await app.operations.run("box.create", ctx, { name: "doomed", cpus: 1, memoryMb: 256 })) as {
+    box: { id: string };
+  };
+  await app.operations.run("box.delete", ctx, { id: box.id, deleteVolume: true });
+  const { trash } = (await app.operations.run("trash.list", ctx, {})) as {
+    trash: { id: string; sourceName: string }[];
+  };
+  const entry = trash.find((item) => item.sourceName === "doomed");
+  if (!entry) throw new Error("the sample box was not kept in the recycle bin");
+  return entry.id;
+}
+
 /** Operations that act on a rollback waiting for its confirm or undo, so `preparedInput` rolls a box back first. */
 const ROLLBACK_OPERATIONS_ON_A_PENDING = ["box.rollback.get", "box.rollback.confirm", "box.rollback.undo"];
 
@@ -217,6 +285,16 @@ async function takeCheckpointOf(app: App, ctx: OperationContext, boxId: string):
   const { checkpoints } = (await app.operations.run("checkpoint.list", ctx, {})) as { checkpoints: { id: string }[] };
   const [newest] = checkpoints;
   if (!newest) throw new Error("the sample checkpoint was not listed");
+  return newest.id;
+}
+
+/** Makes a backup of the sample app's data directory and returns its id. */
+async function backupOf(app: App, ctx: OperationContext): Promise<string> {
+  await app.operations.run("backup.create", ctx, { passphrase: PASSPHRASE });
+  await app.tasks.drain();
+  const { backups } = (await app.operations.run("backup.list", ctx, {})) as { backups: { id: string }[] };
+  const [newest] = backups;
+  if (!newest) throw new Error("the sample backup was not listed");
   return newest.id;
 }
 
@@ -354,6 +432,27 @@ async function preparedInput(
   if (operation.name === "checkpoint.import") {
     const id = await packageOfCheckpoint(app, ctx, boxId);
     return { input: { id, passphrase: PASSPHRASE } };
+  }
+  if (operation.name === "backup.download" || operation.name === "backup.delete") {
+    return { input: { id: await backupOf(app, ctx) } };
+  }
+  if (["target.check", "target.objects", "target.remove"].includes(operation.name)) {
+    return { input: { id: await storedTargetOf(app, ctx) } };
+  }
+  if (operation.name === "target.push") {
+    return { input: { id: await storedTargetOf(app, ctx), object: await backupOf(app, ctx) } };
+  }
+  if (operation.name === "target.pull") {
+    const id = await storedTargetOf(app, ctx);
+    const object = await backupOf(app, ctx);
+    await app.operations.run("target.push", ctx, { id, object });
+    await app.tasks.drain();
+    await app.operations.run("backup.delete", ctx, { id: object });
+    return { input: { id, object } };
+  }
+  if (operation.name === "trash.restore" || operation.name === "trash.purge") {
+    const id = await trashedBoxOf(app, ctx);
+    return { input: operation.name === "trash.purge" ? { id } : { id, name: "restored" } };
   }
   if (CHECKPOINT_OPERATIONS_ON_AN_EXISTING.includes(operation.name)) {
     const checkpoint = await takeCheckpointOf(app, ctx, boxId);
@@ -773,6 +872,7 @@ describe("executor", () => {
       name: "alpha",
       volumeDeleted: false,
       volumeError: "device busy",
+      trash: { id: expect.any(String), expiresAt: expect.any(String) },
     });
     expect(runtime.containers.size).toBe(0);
   });
@@ -1027,21 +1127,35 @@ describe("projections", () => {
         .map((tool) => tool.name)
         .toSorted(),
     ).toEqual([
+      "add_target",
       "attach_volume",
+      "check_target",
       "clear_checkpoint_schedule",
+      "create_backup",
       "create_volume",
+      "delete_backup",
       "delete_volume",
       "detach_volume",
       "export_checkpoint",
       "get_checkpoint_schedule",
       "get_volume",
       "import_checkpoint",
+      "list_backups",
       "list_pools",
+      "list_target_objects",
+      "list_targets",
+      "list_trash",
       "list_volumes",
       "measure_volume",
+      "pull_from_target",
+      "purge_trash",
+      "push_to_target",
+      "remove_target",
       "replace_pools",
+      "restore_trash",
       "set_checkpoint_schedule",
       "set_volume_limits",
+      "test_target",
     ]);
     expect(
       mcpTools(OPERATIONS, ["tools"])

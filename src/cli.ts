@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 
+import { backupCommand, restoreCommand } from "./cli/backup";
 import { boxLs, boxCreateCommand } from "./cli/box";
 import { boxStartupCommand } from "./cli/box-startup";
 import { execCommand } from "./cli/exec";
@@ -12,8 +13,10 @@ import type { CliIo } from "./cli/shared";
 import { sshConfig, proxyEnv } from "./cli/ssh";
 import { sshProxy } from "./cli/ssh-proxy";
 import { templateCommand } from "./cli/template";
+import { tokenCommand } from "./cli/token";
 import { toolCommand } from "./cli/tool";
 import { transferCommand } from "./cli/transfer";
+import { trashCommand } from "./cli/trash";
 
 /** The server version the binary was compiled from. `bun build --env` inlines it; a run from source reports `dev`. */
 const BUILT_VERSION = process.env.MINIBOX_CLI_BUILD_VERSION?.trim() || "dev";
@@ -49,6 +52,7 @@ export async function runCli(
     if (command === "box" && sub === "startup-command") return await boxStartupCommand(rest, env, io);
     if (command === "template") return await templateCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "image") return await imageCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "trash") return await trashCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "exec") return await execCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "session") return await sessionCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "files") return await filesCommand(sub === undefined ? [] : [sub, ...rest], env, io);
@@ -56,10 +60,13 @@ export async function runCli(
       return await transferCommand(command, sub === undefined ? [] : [sub, ...rest], env, io);
     }
     if (command === "tool") return await toolCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "token") return await tokenCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "mcp") return await mcpProxy(sub === undefined ? [] : [sub, ...rest], env, io, lines);
     if (command === "ssh-config") return await sshConfig(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "ssh-proxy")
       return await sshProxy(sub === undefined ? [] : [sub, ...rest], await proxyEnv(env), io, version);
+    if (command === "backup") return await backupCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "restore") return await restoreCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     io.stderr(`Unknown command ${command}\n${HELP}`);
     return 2;
   } catch (e) {

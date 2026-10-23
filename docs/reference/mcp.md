@@ -12,7 +12,7 @@ For how to connect an agent, see [Connecting AI agents](../user-guide/agents.md)
 | `GET` | `/mcp` | Returns `405` with `Allow: POST, DELETE`. The server does not open a server-to-client stream. |
 | `DELETE` | `/mcp` | Closes the session named by the `Mcp-Session-Id` header. |
 
-Send `Authorization: Bearer` with the access key, an agent token or a box's self token. A browser sign-in cookie is refused. A wrong bearer key counts toward the same sign-in limit as a wrong login key.
+Send `Authorization: Bearer` with an agent token or a box's self token. The access key is accepted too while `MCP_ALLOW_OWNER_KEY` is `true`, the default in this release, and then each response to it carries `x-minibox-owner-key: accepted`. With `MCP_ALLOW_OWNER_KEY=false` the access key gets `401`. A browser sign-in cookie is refused. A wrong bearer key counts toward the same sign-in limit as a wrong login key.
 
 A session belongs to the credential that opened it. It ends when that token is revoked.
 
@@ -35,7 +35,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `session` | Terminal sessions in boxes |
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
-| `storage` | Volumes, storage pools, and the owner's checkpoint export, import and schedules |
+| `storage` | Volumes, storage pools, the owner's recycle bin, the owner's checkpoint export, import and schedules, and the owner's backups and off-site targets |
 | `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, and pulling images |
 | `network` | Preview ports |
 | `self` | A box's own agent, with its self token. Only that agent is offered it, and it is its default. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent). |
@@ -123,6 +123,20 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `get_checkpoint_schedule` | `GET /api/boxes/{id}/checkpoint-schedule`. Owner only |
 | `set_checkpoint_schedule` | `PUT /api/boxes/{id}/checkpoint-schedule`. Owner only |
 | `clear_checkpoint_schedule` | `DELETE /api/boxes/{id}/checkpoint-schedule`. Owner only |
+| `create_backup` | `POST /api/backups`. Owner only. The task result holds the backup |
+| `list_backups` | `GET /api/backups`. Owner only |
+| `delete_backup` | `DELETE /api/backups/{id}`. Owner only |
+| `list_targets` | `GET /api/targets`. Owner only |
+| `test_target` | `POST /api/targets/test`. Owner only |
+| `add_target` | `POST /api/targets`. Owner only |
+| `check_target` | `GET /api/targets/{id}/check`. Owner only |
+| `list_target_objects` | `GET /api/targets/{id}/objects`. Owner only |
+| `remove_target` | `DELETE /api/targets/{id}`. Owner only |
+| `push_to_target` | `POST /api/targets/{id}/push`. Owner only. Returns a task |
+| `pull_from_target` | `POST /api/targets/{id}/pull`. Owner only. Returns a task |
+| `list_trash` | `GET /api/trash`. Owner only. The recycle bin's entries |
+| `restore_trash` | `POST /api/trash/{id}/restore`. Owner only. Returns a task |
+| `purge_trash` | `DELETE /api/trash/{id}`. Owner only. Returns a task |
 
 ### tools
 
@@ -169,6 +183,8 @@ Some tools change things that are hard to undo. They need `confirm: true` in the
 - `rebuild_box` and `move_box`.
 
 `measure_volume` only refreshes a cached size, so it needs no confirmation. `attach_volume` and `detach_volume` rebuild the box, so the same mount rules apply as for `rebuild_box`.
+
+`rebuild_box`, `attach_volume` and `detach_volume` take `safetyCheckpoint`, which defaults to `true`. Send `false` to skip the checkpoint of the box that is taken before the change. `delete_box` and `delete_volume` take `skipTrash`. Set it to `true` to delete without keeping a copy in the recycle bin. That needs the owner, or a token with the `trash:skip` scope.
 
 ## Session tools
 
@@ -227,3 +243,11 @@ These tools serve a box's own agent. See [Connecting AI agents](../user-guide/ag
 - `report_status` takes `state`, which is `working`, `waiting`, `done` or `failed`, and a `note` of one line, up to 500 characters.
 
 Every self token is limited to 60 calls a minute, counted per box. A call over the limit gets `429` with `too_many_requests` until the minute ends. The endpoint refuses a call to any other tool.
+
+## Backup and target tools
+
+The backup and target tools are for the owner only, so a token does not see them in `tools/list`.
+
+- `create_backup` takes a `passphrase`, so the MCP client that calls it sees the passphrase. Use the [command-line tool](cli.md#backups) with `MINIBOX_BACKUP_PASSPHRASE` when an agent should not see it.
+- `add_target` takes the target's credentials as arguments, so the client sees them as well. MiniBox stores them as secrets, and no tool returns them. For an SFTP server, call `test_target` first. If the server's host key is not yet known, the call fails with the fingerprint the server presented. Pass that fingerprint to `add_target` as `hostKeyFingerprint` once you have confirmed it.
+- `push_to_target` and `pull_from_target` take an object ID, `pk_…` or `bk_…`. See [Backups](../admin/backups.md#push-and-pull).

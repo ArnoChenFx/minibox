@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml"><img src="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0" /></a>
-  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.3-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.4.3" /></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.4-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.4.4" /></a>
   <img src="https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&amp;logoColor=white" alt="Sandbox: Docker" />
 </p>
 
@@ -43,6 +43,7 @@ MiniBox is built for one trusted user. It has no user accounts, so anyone with t
 - **Previews.** Open a web app that runs in a box, through MiniBox, without publishing a host port.
 - **Agent access.** Give each agent its own scoped token, and connect it through MCP, the CLI, SSH or the REST API. A box can also have its own agent, with a self token that reaches only that box.
 - **Notifications.** Send events, such as an out-of-memory stop, a failed command or checkpoint, or an offline host, to a webhook, an ntfy topic or a Telegram chat.
+- **Backups.** Back up MiniBox's data while it runs, into one file sealed with a passphrase, and restore it offline on a new host. Keep copies of checkpoint packages and backups on an S3-compatible bucket or an SFTP server.
 - **Multiple hosts.** Run boxes on other Docker engines, reached through SSH, mutual TLS, a Unix socket, or a host agent that connects out to MiniBox with a one-time pairing code, so the host opens no port. Let MiniBox place a box on the freest host, and move a box to another host with its volumes.
 
 <picture>
@@ -86,7 +87,7 @@ The [documentation index](docs/README.md) lists every page. Chinese documents ar
 ## Requirements
 
 - A Linux host with Docker Engine. MiniBox reads `/proc` for host metrics.
-- For a source install, [Bun](https://bun.sh) 1.4.3 or later.
+- For a source install, [Bun](https://bun.sh) 1.4.4 or later.
 
 ## License
 

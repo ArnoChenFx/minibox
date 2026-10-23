@@ -85,6 +85,14 @@ function api(path: string, init: RequestInit = {}): Promise<Response> {
 
 const post = (path: string, body: unknown) => api(path, { method: "POST", body: JSON.stringify(body) });
 
+async function waitForTask(taskId: string): Promise<string> {
+  for (;;) {
+    const view = (await (await api(`/api/tasks/${taskId}`)).json()) as { status: string };
+    if (view.status !== "running") return view.status;
+    await Bun.sleep(50);
+  }
+}
+
 async function errorOf(res: Response): Promise<ErrorBody> {
   return ((await res.json()) as { error: ErrorBody }).error;
 }
@@ -242,7 +250,11 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
 
       const res = await api(`/api/boxes/${box.id}?deleteVolume=true`, { method: "DELETE" });
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ name: "lab-owned", volumeDeleted: true });
+      expect(await res.json()).toMatchObject({
+        name: "lab-owned",
+        volumeDeleted: true,
+        trash: { id: expect.stringMatching(/^ck_/) },
+      });
       expect(await containersNamed("lab-owned")).toHaveLength(0);
       for (const volume of volumes) {
         expect(await rejectionOf(runtime.inspectVolume(volume))).toMatchObject({ kind: "not_found" });
@@ -252,7 +264,7 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
   );
 
   test(
-    "the host stays while a box or a volume on it exists, and goes once both are removed",
+    "the host stays while a box, a volume or a recycle bin entry on it exists, and goes once all are removed",
     async () => {
       const { hosts } = (await (await api("/api/hosts")).json()) as { hosts: HostJson[] };
       expect(hosts.find((host) => host.id === "lab")).toMatchObject({ status: "online", boxes: 1 });
@@ -262,7 +274,7 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
       expect(await errorOf(refused)).toMatchObject({
         code: "conflict",
         key: "host_in_use",
-        details: { boxes: 1, volumes: 1, checkpoints: 0 },
+        details: { boxes: 1, volumes: 1, checkpoints: 1 },
       });
 
       const { boxes } = (await (await api("/api/boxes")).json()) as { boxes: BoxJson[] };
@@ -272,7 +284,17 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
 
       const stillHeld = await api("/api/hosts/lab", { method: "DELETE" });
       expect(stillHeld.status).toBe(409);
-      expect(await errorOf(stillHeld)).toMatchObject({ key: "host_in_use", details: { boxes: 0, volumes: 1 } });
+      expect(await errorOf(stillHeld)).toMatchObject({
+        key: "host_in_use",
+        details: { boxes: 0, volumes: 1, checkpoints: 2 },
+      });
+
+      const { trash } = (await (await api("/api/trash")).json()) as { trash: { id: string; hostId: string }[] };
+      for (const entry of trash.filter((item) => item.hostId === "lab")) {
+        const purge = await api(`/api/trash/${entry.id}`, { method: "DELETE" });
+        expect(purge.status).toBe(202);
+        expect(await waitForTask(((await purge.json()) as { taskId: string }).taskId)).toBe("succeeded");
+      }
 
       const { volumes } = (await (await api("/api/volumes")).json()) as { volumes: VolumeJson[] };
       const onLab = volumes.filter((volume) => volume.hostId === "lab");

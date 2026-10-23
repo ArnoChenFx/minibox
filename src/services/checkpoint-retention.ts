@@ -1,16 +1,21 @@
 import { expiredAutomatic } from "../checkpoints/policy";
 import type { HostCtx, HostRegistry } from "../host/registry";
 import { log } from "../lib/logger";
+import { OWNER } from "../operations/types";
 import { usageOf } from "./checkpoint-capacity";
 import { deleteCheckpoint, heldCheckpointIds } from "./checkpoints";
+import type { RecordNote as HostRecordNote } from "./terminals";
+import { purgeExpiredTrash } from "./trash";
+import type { RecordNote } from "./volume-owner";
 
 const SWEEP_EVERY_MS = 60 * 60 * 1000;
 
 /**
- * Removes the automatic checkpoints the host's policy no longer keeps, and returns their ids. One that cannot be removed
- * is logged and left for the next pass, so one failure does not stop the others.
+ * Removes the automatic checkpoints the host's policy no longer keeps, and the recycle bin entries whose retention has
+ * ended. Returns their ids. One that cannot be removed is logged and left for the next pass, so one failure does not stop
+ * the others.
  */
-export async function applyRetention(host: HostCtx, now = Date.now()): Promise<string[]> {
+export async function applyRetention(host: HostCtx, now = Date.now(), record?: RecordNote): Promise<string[]> {
   const records = host.checkpoints.list().filter((record) => record.hostId === host.host.id);
   const expired = expiredAutomatic(records, host.checkpointPolicy, now, heldCheckpointIds(host));
   const removed: string[] = [];
@@ -23,7 +28,8 @@ export async function applyRetention(host: HostCtx, now = Date.now()): Promise<s
       log.error("checkpoint.retention_failed", { id: record.id, error: String(e) });
     }
   }
-  return removed;
+  const purged = await purgeExpiredTrash(host, now, record);
+  return [...removed, ...purged];
 }
 
 /** Warns when a host's repository has reached the warning share of its limit. Hosts with no limit are not measured. */
@@ -60,6 +66,7 @@ export class CheckpointSweep {
   constructor(
     private readonly hosts: HostRegistry,
     private readonly everyMs = SWEEP_EVERY_MS,
+    private readonly record?: HostRecordNote,
   ) {}
 
   /** Returns how many checkpoints the pass removed. A host that cannot be swept is logged and skipped. */
@@ -67,7 +74,7 @@ export class CheckpointSweep {
     let removed = 0;
     for (const host of this.hosts.list()) {
       try {
-        removed += (await applyRetention(host, now)).length;
+        removed += (await applyRetention(host, now, this.noteFor(host))).length;
         await warnIfNearLimit(host);
       } catch (e) {
         log.error("checkpoint.sweep_failed", { host: host.host.id, error: String(e) });
@@ -75,6 +82,12 @@ export class CheckpointSweep {
     }
     sweepPackages(this.hosts.list(), now);
     return removed;
+  }
+
+  private noteFor(host: HostCtx): RecordNote | undefined {
+    const record = this.record;
+    if (!record) return undefined;
+    return (note) => record(host.host.id, "system", OWNER, note);
   }
 
   start(): void {

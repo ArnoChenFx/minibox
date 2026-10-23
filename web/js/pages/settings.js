@@ -3,6 +3,7 @@ import { loadNotify } from "../components/settings-notify.js";
 import { loadRuntime, loadPreview } from "../components/settings-runtime.js";
 import { loadSecrets } from "../components/settings-secrets.js";
 import { loadSessions } from "../components/settings-sessions.js";
+import { loadTargets } from "../components/settings-targets.js";
 import { loadTokens } from "../components/settings-tokens.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -30,6 +31,7 @@ export function render(view) {
         <div class="card" id="stTokens"></div>
         <div class="card" id="stSecrets"></div>
         <div class="card" id="stNotify"></div>
+        <div class="card" id="stTargets"></div>
       </div>
     </div>`;
 
@@ -49,5 +51,6 @@ export function render(view) {
   loadTokens(view);
   loadSecrets(view);
   loadNotify(view);
+  loadTargets(view);
   return () => document.removeEventListener("themechange", paintTheme);
 }

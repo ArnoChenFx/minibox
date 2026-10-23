@@ -25,6 +25,18 @@ export const LABELS = {
   toolUninstall: "Uninstall command",
   toolStop: "Stop command",
   toolDetect: "Detect command",
+  targetName: "Target name",
+  endpoint: "Endpoint",
+  region: "Region",
+  bucket: "Bucket",
+  accessKeyId: "Access key id",
+  secretAccessKey: "Secret access key",
+  host: "Host",
+  port: "Port",
+  user: "User",
+  privateKey: "Private key",
+  hostKeyFingerprint: "Host key fingerprint",
+  path: "Path",
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
@@ -82,6 +94,8 @@ export const MESSAGES = {
     "This change rebuilds the box and was not applied. Send the same request with confirm set to true to apply the preview. Volumes, the stable id and the name are kept. The writable layer, running processes and the container IP are lost.",
   rebuild_start_failed: "The new container did not start. The previous container and spec were restored.",
   rebuild_name_conflict: "Cannot rebuild while {name} is still in use. Remove that container and try again.",
+  rebuild_failed_safety_kept:
+    "The rebuild failed, and the box could not be put back exactly as it was. Its safety checkpoint {id} is kept, so the box can be restored from it.",
   pids_range: "Process limit must be an integer between {min} and {max}.",
   idle_timeout_invalid:
     "Idle timeout must be a whole number of seconds from 0 to {max} (0 means never sleep), or null to inherit the global default.",
@@ -228,6 +242,13 @@ export const MESSAGES = {
   checkpoint_exporting: "Checkpoint {id} is being exported. It can be deleted once the export finishes.",
   checkpoint_export_legacy: "Snapshot {id} was made before checkpoints. It has no data to export.",
   checkpoint_export_empty: "Checkpoint {id} holds no volume data, so there is nothing to export.",
+  checkpoint_export_no_box: "Checkpoint {id} names no box, so a package cannot describe it.",
+  checkpoint_no_spec: "Checkpoint {id} records no box settings, so a box cannot be made from it.",
+  trash_not_found: "Recycle bin entry {id} was not found.",
+  trash_capacity_exceeded:
+    "Keeping this data in the recycle bin needs {need} MB, but the checkpoint repository holds {used} MB of its {limit} MB limit, and purging the recycle bin did not free enough. Delete checkpoints, or delete without keeping a copy.",
+  trash_skip_forbidden:
+    "This credential may not delete without keeping a copy in the recycle bin. Ask the owner for the trash:skip scope, or delete without skipTrash.",
   checkpoint_export_system:
     "Checkpoint {id} includes its system layer, which a package does not carry yet. Take a checkpoint without the system layer to export it.",
   checkpoint_import_exists:
@@ -239,6 +260,11 @@ export const MESSAGES = {
   package_too_large:
     "The checkpoint package is larger than the limit of {limit} MB. Raise CHECKPOINT_PACKAGE_MAX_MB to allow it.",
   package_not_found: "Package {id} was not found. Packages are kept for a day, so it may have expired.",
+  backup_not_found: "Backup {id} was not found.",
+  backup_exists: "Backup {id} is already stored here, so it was not stored again.",
+  backup_invalid: "The backup is not valid: {reason}",
+  backup_passphrase_invalid:
+    "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
   package_upload_type: "A package is uploaded as application/octet-stream.",
   payload_too_large: "The request body is larger than the limit of {limit} MB.",
   schedule_rule_invalid:
@@ -471,6 +497,9 @@ export const MESSAGES = {
   mcp_bearer_required: "MCP requires an Authorization Bearer access key or agent token.",
   mcp_bearer_hint:
     "Send the header Authorization: Bearer and the access key or an agent token. A browser session cookie is not accepted on /mcp.",
+  mcp_owner_key_refused: "The owner access key is not accepted on /mcp. Use an agent token.",
+  mcp_owner_key_hint:
+    "Create an agent token in Settings, or with minibox token create, and send it as the Bearer key. The setup is in the agents guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/agents.md#create-a-token-for-an-agent",
   mcp_toolset_invalid: "Unknown MCP toolset.",
   mcp_toolset_hint:
     "Use core, session, network, storage, tools, meta or rebuild, for example /mcp?toolsets=core,session.",
@@ -574,6 +603,33 @@ export const MESSAGES = {
     "A startup command runs in the box and may hold secrets. This credential may not set, remove or run one. It needs the exec and secret:use scopes, or the admin preset.",
   startup_session_forbidden:
     "The minibox-init session shows a box's startup command output. This credential may not use it. It needs the exec and secret:use scopes, or the admin preset.",
+  secret_name_reserved:
+    "Names that start with target. are reserved for a target's credentials. Manage targets in Settings.",
+  target_not_found: "Target {id} was not found.",
+  target_name_taken: "A target named {name} already exists.",
+  target_name_invalid: "A target name is 1 to 64 characters, with no line breaks or control characters.",
+  target_field_not_allowed: "{label} does not apply to this kind of target.",
+  target_field_invalid: "{label} is not valid.",
+  target_endpoint_invalid:
+    "The endpoint must be an https address. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+  target_path_invalid:
+    "The path must be relative to the target's folder, with no . or .. segments and no control characters.",
+  target_key_invalid: "The private key cannot be used: {reason}.",
+  target_host_key_required: "Confirm the server's host key before saving this target.",
+  target_host_key_unconfirmed: "The server presented the host key {fingerprint}, which has not been confirmed.",
+  target_host_key_mismatch:
+    "The server presented the host key {fingerprint}, which is not the one this target was saved with. Nothing was sent to it.",
+  target_unreachable: "The target cannot be reached. Check its address and the network.",
+  target_auth_failed: "The target refused the credentials.",
+  target_forbidden: "The target denied access to its folder.",
+  target_failed: "The target failed: {reason}",
+  target_credentials_missing: "The credentials of target {name} are missing. Remove the target and add it again.",
+  target_object_missing: "{object} is not on the target.",
+  target_object_differs: "{object} is on the target with other contents, so it was not replaced.",
+  target_object_held: "{object} is already stored here with other contents, so it was not replaced.",
+  target_object_invalid: "The object is not valid: {reason}",
+  target_busy: "Target {name} is busy with another transfer. Try again when it finishes.",
+  target_object_busy: "{object} is already being pulled. Try again when that transfer finishes.",
 } as const;
 export type MessageKey = keyof typeof MESSAGES;
 

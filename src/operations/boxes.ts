@@ -9,7 +9,6 @@ import {
   type Box,
   type BoxUpdate,
   createBox,
-  deleteBox,
   getBox,
   getLogs,
   getStats,
@@ -26,16 +25,27 @@ import { assertCapacity, assertNewBox, assertResizeRoom } from "../services/capa
 import { assertRepoSecretSet, cloneIntoWorkspace, WORKSPACE } from "../services/git-clone";
 import { moveBox, moveConfirmation, previewMove } from "../services/move";
 import { placeBox } from "../services/placement";
-import { rebuildBox } from "../services/rebuild";
+import { rebuildBox, rebuildWithSafety } from "../services/rebuild";
+import { preRebuildSafety } from "../services/safety";
+import { deleteBoxToTrash } from "../services/trash";
 import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
 import { boxVisible, hostAllowed, refusal, ttlFor, viewOfBox } from "../tokens/model";
 import { underQuota } from "../tokens/quota";
 import { assertHostDiskRoom } from "../volumes/disk";
-import { assertCanChangeMounts, assertCanCreateDefaultMounts } from "./authz";
+import { assertCanChangeMounts, assertCanCreateDefaultMounts, assertCanSkipTrash } from "./authz";
 import { defineOperation } from "./define";
 import { hostById, hostOfBox } from "./routing";
-import { BoxSchema, BoxWithStatsSchema, CloneStartedSchema, OkSchema, StatSampleSchema, StatsSchema } from "./schemas";
+import {
+  BoxSchema,
+  BoxWithStatsSchema,
+  CloneStartedSchema,
+  OkSchema,
+  SafetyCheckpointSchema,
+  StatSampleSchema,
+  StatsSchema,
+  TrashRefSchema,
+} from "./schemas";
 import type { OperationContext } from "./types";
 import {
   boxEnv,
@@ -47,6 +57,8 @@ import {
   deleteVolumeFlag,
   expectedRevision,
   idleTimeout,
+  safetyCheckpointFlag,
+  skipTrashFlag,
   memoryWithDefault,
   optionalBoxName,
   optionalCpus,
@@ -314,21 +326,37 @@ export const boxDelete = defineOperation({
   kind: "destructive",
   scope: "box:delete",
   async: false,
-  input: z.object({ id: boxId(), deleteVolume: deleteVolumeFlag() }),
-  output: z.object({ name: z.string(), volumeDeleted: z.boolean(), volumeError: z.string().optional() }),
-  rest: [{ method: "DELETE", path: "/api/boxes/:id", query: ["deleteVolume"] }],
+  longSync: true,
+  input: z.object({ id: boxId(), deleteVolume: deleteVolumeFlag(), skipTrash: skipTrashFlag() }),
+  output: z.object({
+    name: z.string(),
+    volumeDeleted: z.boolean(),
+    volumeError: z.string().optional(),
+    trash: TrashRefSchema.nullable().meta({
+      description: "The recycle bin entry that kept the box's data until expiresAt, or null when none was kept.",
+    }),
+  }),
+  rest: [{ method: "DELETE", path: "/api/boxes/:id", query: ["deleteVolume", "skipTrash"] }],
   cli: "box rm",
   mcp: {
     toolset: "core",
     name: "delete_box",
     description:
-      "Delete a box and its container. Pass deleteVolume to remove volumes that this box owns and that no other box mounts. Independent volumes, including the shared tools volume, are kept.",
+      "Delete a box and its container. Its data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new box. Pass deleteVolume to remove volumes that this box owns and that no other box mounts. Independent volumes, including the shared tools volume, are kept. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
+  precondition: async (ctx, input) => {
+    if (input.skipTrash) await assertCanSkipTrash(ctx);
+  },
   activity: { action: () => "box.delete", target: (_input, box) => box.name },
   audit: { target: (_input, box) => box && boxTarget(box) },
-  run: ({ host }, input) => deleteBox(host, input.id, input.deleteVolume),
+  run: ({ host, principal, record }, input) =>
+    deleteBoxToTrash(host, input.id, input.deleteVolume, {
+      skipTrash: input.skipTrash,
+      createdBy: principal.id,
+      record,
+    }),
 });
 
 export const boxAction = defineOperation({
@@ -508,16 +536,22 @@ export const boxRebuild = defineOperation({
     network: rebuildNetwork(),
     profile: boxProfile(),
     confirm: confirmFlag(),
+    safetyCheckpoint: safetyCheckpointFlag(),
     expectedRevision: expectedRevision(),
   }),
-  output: z.object({ box: BoxSchema }),
+  output: z.object({
+    box: BoxSchema,
+    safety: SafetyCheckpointSchema.nullable().meta({
+      description: "The checkpoint taken before the rebuild, which a rollback can use, or null when none was taken.",
+    }),
+  }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rebuild", body: true, ifMatch: true }],
   cli: "box rebuild",
   mcp: {
     toolset: "rebuild",
     name: "rebuild_box",
     description:
-      "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). A box whose template is a tag follows the tag: when the tag names another image, the preview lists it as a template change, and a confirmed rebuild runs the box on that image. A secret's value is read at rebuild, so a secret changed since the box was built takes effect here. Pass expectedRevision, the box's current revision.",
+      "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). A box whose template is a tag follows the tag: when the tag names another image, the preview lists it as a template change, and a confirmed rebuild runs the box on that image. A secret's value is read at rebuild, so a secret changed since the box was built takes effect here. Before a confirmed rebuild, a checkpoint of the box's data is taken unless safetyCheckpoint is false; a failed rebuild is rolled back to the box as it was, and output.safety names the checkpoint. Pass expectedRevision, the box's current revision.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
@@ -526,6 +560,7 @@ export const boxRebuild = defineOperation({
     target: (_input, box) => box && boxTarget(box),
     detail: (input) => ({
       confirm: input.confirm,
+      safetyCheckpoint: input.safetyCheckpoint,
       template: input.template,
       profile: input.profile,
       network: input.network,
@@ -535,22 +570,21 @@ export const boxRebuild = defineOperation({
   },
   run: async (ctx, input, box) => {
     if (input.mounts) await assertCanChangeMounts(ctx, input.mounts, box.mounts);
-    return {
-      box: await rebuildBox(
-        ctx.host,
-        input.id,
-        requireRevision(input.expectedRevision),
-        {
-          template: input.template,
-          mounts: input.mounts,
-          env: input.env,
-          network: input.network,
-          profile: input.profile,
-        },
-        input.confirm,
-        ctx.record,
-      ),
-    };
+    return rebuildWithSafety(
+      ctx.host,
+      input.id,
+      requireRevision(input.expectedRevision),
+      {
+        template: input.template,
+        mounts: input.mounts,
+        env: input.env,
+        network: input.network,
+        profile: input.profile,
+      },
+      input.confirm,
+      ctx.record,
+      input.safetyCheckpoint ? preRebuildSafety(ctx.host, ctx.principal.id) : null,
+    );
   },
 });
 

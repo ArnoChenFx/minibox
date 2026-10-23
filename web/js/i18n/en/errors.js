@@ -47,6 +47,8 @@ export default {
     "This change rebuilds the box and was not applied. Send the same request with confirm set to true to apply the preview. Volumes, the stable id and the name are kept. The writable layer, running processes and the container IP are lost.",
   "err.rebuild_start_failed": "The new container did not start. The previous container and spec were restored.",
   "err.rebuild_name_conflict": "Cannot rebuild while {name} is still in use. Remove that container and try again.",
+  "err.rebuild_failed_safety_kept":
+    "The rebuild failed, and the box could not be put back exactly as it was. Its safety checkpoint {id} is kept, so the box can be restored from it.",
   "err.pids_range": "Process limit must be an integer between {min} and {max}.",
   "err.idle_timeout_invalid":
     "Idle timeout must be a whole number of seconds from 0 to {max} (0 means never sleep), or null to inherit the global default.",
@@ -190,10 +192,17 @@ export default {
   "err.checkpoint_exporting": "Checkpoint {id} is being exported. It can be deleted once the export finishes.",
   "err.checkpoint_export_legacy": "Snapshot {id} was made before checkpoints. It has no data to export.",
   "err.checkpoint_export_empty": "Checkpoint {id} holds no volume data, so there is nothing to export.",
+  "err.checkpoint_export_no_box": "Checkpoint {id} names no box, so a package cannot describe it.",
+  "err.checkpoint_no_spec": "Checkpoint {id} records no box settings, so a box cannot be made from it.",
   "err.checkpoint_export_system":
     "Checkpoint {id} includes its system layer, which a package does not carry yet. Take a checkpoint without the system layer to export it.",
   "err.checkpoint_import_exists":
     "Checkpoint {id} already exists on this instance, so the package was not imported. Delete the existing checkpoint first, or keep this one.",
+  "err.trash_not_found": "Recycle bin entry {id} was not found.",
+  "err.trash_capacity_exceeded":
+    "Keeping this data in the recycle bin needs {need} MB, but the checkpoint repository holds {used} MB of its {limit} MB limit, and purging the recycle bin did not free enough. Delete checkpoints, or delete without keeping a copy.",
+  "err.trash_skip_forbidden":
+    "This credential may not delete without keeping a copy in the recycle bin. Ask the owner for the trash:skip scope, or delete without skipTrash.",
   "err.package_invalid": "The package is not a valid MiniBox checkpoint package: {reason}",
   "err.package_passphrase_wrong": "The passphrase does not open this package.",
   "err.package_passphrase_invalid":
@@ -476,6 +485,9 @@ export default {
   "err.mcp_bearer_required": "MCP requires an Authorization Bearer access key or agent token.",
   "err.mcp_bearer_hint":
     "Send the header Authorization: Bearer and the access key or an agent token. A browser session cookie is not accepted on /mcp.",
+  "err.mcp_owner_key_refused": "The owner access key is not accepted on /mcp. Use an agent token.",
+  "err.mcp_owner_key_hint":
+    "Create an agent token in Settings, or with minibox token create, and send it as the Bearer key. The setup is in the agents guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/agents.md#create-a-token-for-an-agent",
   "err.mcp_toolset_invalid": "Unknown MCP toolset.",
   "err.mcp_toolset_hint":
     "Use core, session, network, storage, tools, meta or rebuild, for example /mcp?toolsets=core,session.",
@@ -552,4 +564,36 @@ export default {
     "tools.d/{file} also defines “{id}”, so the saved entry would not take effect. Remove or rename that file, then try again.",
   "err.tool_custom_file_other":
     "tools.d/{file} defines “{other}”. Saving “{id}” there would replace that entry. Remove or rename that file, then try again.",
+  "err.backup_not_found": "Backup {id} was not found.",
+  "err.backup_exists": "Backup {id} is already stored here, so it was not stored again.",
+  "err.backup_invalid": "The backup is not valid: {reason}",
+  "err.backup_passphrase_invalid":
+    "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
+  "err.secret_name_reserved":
+    "Names that start with target. are reserved for a target's credentials. Manage targets in Settings.",
+  "err.target_not_found": "Target {id} was not found.",
+  "err.target_name_taken": "A target named {name} already exists.",
+  "err.target_name_invalid": "A target name is 1 to 64 characters, with no line breaks or control characters.",
+  "err.target_field_not_allowed": "{label} does not apply to this kind of target.",
+  "err.target_field_invalid": "{label} is not valid.",
+  "err.target_endpoint_invalid":
+    "The endpoint must be an https address. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+  "err.target_path_invalid":
+    "The path must be relative to the target's folder, with no . or .. segments and no control characters.",
+  "err.target_key_invalid": "The private key cannot be used: {reason}.",
+  "err.target_host_key_required": "Confirm the server's host key before saving this target.",
+  "err.target_host_key_unconfirmed": "The server presented the host key {fingerprint}, which has not been confirmed.",
+  "err.target_host_key_mismatch":
+    "The server presented the host key {fingerprint}, which is not the one this target was saved with. Nothing was sent to it.",
+  "err.target_unreachable": "The target cannot be reached. Check its address and the network.",
+  "err.target_auth_failed": "The target refused the credentials.",
+  "err.target_forbidden": "The target denied access to its folder.",
+  "err.target_failed": "The target failed: {reason}",
+  "err.target_credentials_missing": "The credentials of target {name} are missing. Remove the target and add it again.",
+  "err.target_object_missing": "{object} is not on the target.",
+  "err.target_object_differs": "{object} is on the target with other contents, so it was not replaced.",
+  "err.target_object_held": "{object} is already stored here with other contents, so it was not replaced.",
+  "err.target_object_invalid": "The object is not valid: {reason}",
+  "err.target_busy": "Target {name} is busy with another transfer. Try again when it finishes.",
+  "err.target_object_busy": "{object} is already being pulled. Try again when that transfer finishes.",
 };

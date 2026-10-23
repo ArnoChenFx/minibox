@@ -11,7 +11,7 @@ import { isPackageId, newPackageId, PACKAGE_EXTENSION, PACKAGE_TTL_MS, PACKAGE_V
 export const PackageMetaSchema = z.strictObject({
   version: z.literal(PACKAGE_VERSION),
   id: z.string().refine(isPackageId, "not a package id"),
-  origin: z.enum(["export", "upload"]),
+  origin: z.enum(["export", "upload", "target"]),
   checkpointId: z.string().nullable(),
   hostId: z.string().nullable(),
   createdBy: z.string().nullable(),

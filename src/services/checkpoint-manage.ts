@@ -60,14 +60,22 @@ export async function deleteCheckpoint(host: HostCtx, id: string): Promise<void>
     if (record.pinned) throw conflict(msg("checkpoint_pinned", { id }));
     if (host.checkpoints.exporting.has(id)) throw conflict(msg("checkpoint_exporting", { id }));
     assertNotHeld(host, id);
-    let current = record;
-    for (const layer of record.data) {
-      await host.checkpointEngine.forget(host, layer.snapshotId);
-      current = { ...current, data: current.data.filter((item) => item.snapshotId !== layer.snapshotId) };
-      host.checkpoints.write(current);
-    }
-    if (current.system) await removeSystemImage(host, current.system, id);
-    host.checkpoints.remove(id);
+    await discardRecord(host, record);
   });
   log.info("checkpoint.deleted", { id });
+}
+
+/**
+ * Forgets a record's snapshots and system image, then the record. The record is rewritten after each snapshot, so a
+ * failure part way leaves what is still held and a retry finishes it. The caller holds `host.checkpoints.exclusive`.
+ */
+export async function discardRecord(host: HostCtx, record: CheckpointRecord): Promise<void> {
+  let current = record;
+  for (const layer of record.data) {
+    await host.checkpointEngine.forget(host, layer.snapshotId);
+    current = { ...current, data: current.data.filter((item) => item.snapshotId !== layer.snapshotId) };
+    host.checkpoints.write(current);
+  }
+  if (current.system) await removeSystemImage(host, current.system, record.id);
+  host.checkpoints.remove(record.id);
 }

@@ -20,7 +20,7 @@ import { type CheckpointView, type Progress, viewOf } from "./checkpoints";
 export interface PackageView {
   id: string;
   checkpointId: string | null;
-  origin: "export" | "upload";
+  origin: "export" | "upload" | "target";
   bytes: number;
   sha256: string;
   createdAt: string;
@@ -36,6 +36,9 @@ const volumeTag = (volumeId: string): string => `volume:${volumeId}`;
  * host. Snapshot ids are left out, since each instance assigns its own when the package is imported.
  */
 export function manifestOf(record: CheckpointRecord): string {
+  if (record.boxId === null || record.boxName === null || record.specRevision === null || record.spec === null) {
+    throw conflict(msg("checkpoint_export_no_box", { id: record.id }));
+  }
   const manifest: PackageManifest = {
     version: MANIFEST_VERSION,
     id: record.id,
@@ -84,6 +87,9 @@ export function assertExportable(checkpoint: CheckpointView): void {
   if (checkpoint.legacy) throw conflict(msg("checkpoint_export_legacy", { id: checkpoint.id }));
   if (checkpoint.data.length === 0) throw conflict(msg("checkpoint_export_empty", { id: checkpoint.id }));
   if (checkpoint.system) throw conflict(msg("checkpoint_export_system", { id: checkpoint.id }));
+  if (checkpoint.boxId === null || checkpoint.spec === null) {
+    throw conflict(msg("checkpoint_export_no_box", { id: checkpoint.id }));
+  }
 }
 
 function metaOf(
@@ -123,7 +129,9 @@ export async function exportCheckpoint(
   const packages = host.checkpoints.packages;
   const record = await host.checkpoints.exclusive(async () => {
     const found = host.checkpoints.read(id);
-    if (!found || found.hostId !== host.host.id) throw notFound(msg("checkpoint_not_found", { id }));
+    if (!found || found.hostId !== host.host.id || found.trash !== null) {
+      throw notFound(msg("checkpoint_not_found", { id }));
+    }
     assertExportable(viewOf(found));
     host.checkpoints.exporting.add(id);
     return found;
@@ -271,6 +279,7 @@ async function restorePackage(
       spec: manifest.spec,
       data,
       system: null,
+      trash: null,
       createdAt: manifest.createdAt,
       updatedAt: now,
     };

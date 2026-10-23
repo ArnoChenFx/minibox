@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, jest, spyOn, test } from "bun:test";
-import { statSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Config } from "../src/config";
 import type { AuditNote } from "../src/events/types";
@@ -12,7 +14,7 @@ import * as boxes from "../src/services/boxes";
 import { reconcileHost } from "../src/services/reconcile";
 import { attachVolume, createVolume, getPools, listVolumes, measureVolume, savePools } from "../src/services/volumes";
 import { claimEngineVolumes } from "../src/volumes/engine";
-import { probePool, probePools } from "../src/volumes/health";
+import { parseDf, probePool, probePools } from "../src/volumes/health";
 import { DEV_OWNER, type StoragePool } from "../src/volumes/types";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { settle } from "./support/clock";
@@ -46,21 +48,19 @@ describe("volumes and storage pools", () => {
     const shared = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
     const alpha = await newBox("alpha");
     const beta = await newBox("beta");
-    const first = await attachVolume(host, shared.id, {
-      box: alpha.boxId,
-      path: "/srv/notes",
-      mode: "rw",
-      revision: alpha.revision,
-      confirm: true,
-    });
+    const first = await attachVolume(
+      host,
+      shared.id,
+      { box: alpha.boxId, path: "/srv/notes", mode: "rw", revision: alpha.revision, confirm: true },
+      null,
+    );
     expect(first.warning).toBeNull();
-    const second = await attachVolume(host, shared.id, {
-      box: beta.boxId,
-      path: "/srv/notes",
-      mode: "rw",
-      revision: beta.revision,
-      confirm: true,
-    });
+    const second = await attachVolume(
+      host,
+      shared.id,
+      { box: beta.boxId, path: "/srv/notes", mode: "rw", revision: beta.revision, confirm: true },
+      null,
+    );
     expect(second.warning).toBe("shared_rw");
     expect(second.box.mounts.some((mount) => mount.path === "/srv/notes" && mount.mode === "rw")).toBe(true);
 
@@ -82,6 +82,7 @@ describe("volumes and storage pools", () => {
       host,
       notes.id,
       { box: alpha.boxId, path: "/srv/notes", mode: "rw", revision: alpha.revision, confirm: true },
+      null,
       (note) => records.push(note),
     );
 
@@ -149,6 +150,41 @@ describe("volumes and storage pools", () => {
     expect(pools.health.find((item) => item.pool === "disk")?.message).toContain(".minibox-mounted");
   });
 
+  test("the marker probe command passes in a real shell when the marker exists and fails when it does not", async () => {
+    let probe: HelperSpec | null = null;
+    runtime.helperHandler = (spec: HelperSpec) => {
+      if (spec.mounts?.some((mount) => mount.kind === "bind")) probe = spec;
+      return { exitCode: 0, logs: "" };
+    };
+    await savePools(
+      host,
+      [
+        { name: "local", backend: "local" },
+        { name: "disk", backend: "path", root: "/mnt/disk", marker: ".minibox-mounted", default: true },
+      ],
+      undefined,
+    );
+    await getPools(host);
+    const spec = probe as HelperSpec | null;
+    if (!spec) throw new Error("no marker probe ran");
+    const [shell, flag, script, argv0, markerPath] = spec.cmd;
+    expect([shell, flag, argv0, markerPath]).toEqual(["sh", "-c", "minibox", "/mnt/.minibox-mounted"]);
+
+    // Run the exact script against a temp dir standing in for the /mnt bind mount.
+    const root = mkdtempSync(join(tmpdir(), "mbtest-marker-"));
+    try {
+      const run = (path: string) =>
+        Bun.spawnSync(["sh", "-c", script!.replaceAll("/mnt", root), argv0!, path.replace("/mnt", root)]);
+      expect(run(markerPath!).exitCode).not.toBe(0);
+      writeFileSync(join(root, ".minibox-mounted"), "");
+      const ok = run(markerPath!);
+      expect(ok.exitCode).toBe(0);
+      expect(parseDf(ok.stdout.toString())).not.toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("an existing minibox-ws-* volume is recognized and is not relabelled or removed", async () => {
     runtime.volumes.set("mbtest-ws-kept", { name: "mbtest-ws-kept", labels: { keep: "yes" } });
     const found = await listVolumes(host);
@@ -197,13 +233,12 @@ describe("volumes and storage pools", () => {
     const chown = runtime.callsTo("runHelper").map((call) => call.args[0] as HelperSpec);
     expect(chown.some((spec) => spec.user === "0:0" && spec.cmd.join(" ").includes("chown"))).toBe(true);
 
-    const next = await attachVolume(host, notes.id, {
-      box: box.id,
-      path: "/srv/notes",
-      mode: "ro",
-      revision: box.revision,
-      confirm: true,
-    });
+    const next = await attachVolume(
+      host,
+      notes.id,
+      { box: box.id, path: "/srv/notes", mode: "ro", revision: box.revision, confirm: true },
+      null,
+    );
     expect(next.box.containerName).toBe(`${host.prefix}-${box.boxId}`);
     expect(next.box.id).not.toBe(box.id);
     expect(runtime.containers.has(box.id)).toBe(false);
@@ -484,13 +519,12 @@ describe("a volume the engine lost is refused, not recreated", () => {
 
     expect(
       await rejectionOf(
-        attachVolume(host, notes.id, {
-          box: box.boxId,
-          path: "/srv/notes",
-          mode: "rw",
-          revision: box.revision,
-          confirm: true,
-        }),
+        attachVolume(
+          host,
+          notes.id,
+          { box: box.boxId, path: "/srv/notes", mode: "rw", revision: box.revision, confirm: true },
+          null,
+        ),
       ),
     ).toMatchObject({ status: 409, key: "volume_missing", params: { volume: "notes" } });
     expect(runtime.callsTo("createContainer")).toHaveLength(creates);

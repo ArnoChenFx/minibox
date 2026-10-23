@@ -21,7 +21,7 @@ import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
-import { type Box, getBox, refuseExpired } from "./boxes";
+import { type Box, getBox, locked, refuseExpired } from "./boxes";
 import { assertImageAvailable, ensureImageOn } from "./images";
 import { beginChange } from "./moving";
 import { provisionSelfToken, selfTokenTmpfs } from "./self-token";
@@ -40,6 +40,22 @@ interface SwapState {
   aligned: { volume: string; owner: VolumeOwner; image: string } | null;
 }
 
+/** A checkpoint a rebuild takes before it changes anything. It is discarded when the rebuild fails and the box is restored. */
+export interface SafetyPoint {
+  id: string;
+  label: string;
+  discard(): Promise<void>;
+}
+
+/** Takes the safety point of a rebuild, or returns null when the box has nothing to keep. */
+export type SafetyHook = (box: Box) => Promise<SafetyPoint | null>;
+
+export interface RebuildResult {
+  box: Box;
+  /** The checkpoint taken before the rebuild, or null when none was taken. */
+  safety: { id: string; label: string } | null;
+}
+
 /**
  * Rebuilds a box onto a new container. Without `confirm`, returns a 409 whose body is the docker diff and the
  * planned change set. With `confirm`, swaps the containers and rolls both the container and the spec back on failure.
@@ -53,10 +69,51 @@ export async function rebuildBox(
   confirm: boolean,
   record?: RecordNote,
 ): Promise<Box> {
-  const box = await getBox(host, ref);
+  return (await rebuildWithSafety(host, ref, revision, request, confirm, record, null)).box;
+}
+
+/**
+ * `rebuildBox` that also takes a safety point. The hook runs after the preview check and before the swap, under the
+ * box's power lock, so no start or stop lands while the point is taken. A caller that already holds that lock passes null.
+ * The change is marked before the lock is waited for: a move holds that lock for its whole run, so a rebuild queued
+ * behind it would wait instead of being refused, and a move cannot start once the mark is set.
+ */
+export async function rebuildWithSafety(
+  host: HostCtx,
+  ref: string,
+  revision: number,
+  request: RebuildRequest,
+  confirm: boolean,
+  record: RecordNote | undefined,
+  safety: SafetyHook | null,
+): Promise<RebuildResult> {
+  if (safety === null) {
+    const box = await getBox(host, ref);
+    return changeBox(host, box, revision, request, confirm, record, null);
+  }
+  const { boxId } = await getBox(host, ref);
+  const endChange = beginChange(boxId);
+  const endHold = host.pulse.hold(boxId);
+  try {
+    return await locked(host, boxId, (box) => changeBox(host, box, revision, request, confirm, record, safety));
+  } finally {
+    endHold();
+    endChange();
+  }
+}
+
+async function changeBox(
+  host: HostCtx,
+  box: Box,
+  revision: number,
+  request: RebuildRequest,
+  confirm: boolean,
+  record: RecordNote | undefined,
+  safety: SafetyHook | null,
+): Promise<RebuildResult> {
   const release = beginChange(box.boxId);
   try {
-    return await rebuildChanging(host, box, revision, request, confirm, record);
+    return await rebuildChanging(host, box, revision, request, confirm, record, safety);
   } finally {
     release();
   }
@@ -68,9 +125,10 @@ async function rebuildChanging(
   revision: number,
   request: RebuildRequest,
   confirm: boolean,
-  record?: RecordNote,
-): Promise<Box> {
-  await host.specs.exclusive(async () => {
+  record: RecordNote | undefined,
+  safety: SafetyHook | null,
+): Promise<RebuildResult> {
+  const point = await host.specs.exclusive(async () => {
     const spec = host.specs.read(box.boxId);
     if (!spec) throw notFound(msg("box_not_found"));
     if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
@@ -102,10 +160,13 @@ async function rebuildChanging(
       const details = await ensureImageOn(host, planned.templateRef);
       template = { ref: planned.templateRef, image: planned.templateRef, digest: details.id };
     }
-    await swap(host, previous, planned, template, request, record);
+    const taken = safety ? await safety(box) : null;
+    await swap(host, previous, planned, template, request, record, taken);
+    return taken;
   });
   await host.sampler.observe(box.id, host.specs.read(box.boxId)?.containerId ?? box.id);
-  return getBox(host, box.boxId);
+  const rebuilt = await getBox(host, box.boxId);
+  return { box: rebuilt, safety: point ? { id: point.id, label: point.label } : null };
 }
 
 /** Creates the host's box network when a rebuild joins it. Mounts and networks are checked before the preview. */
@@ -356,11 +417,14 @@ function writeNext(
   });
 }
 
-async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?: RecordNote): Promise<void> {
+/** Puts the box back as it was. Returns false when any step could not be undone, so the box may not match its spec. */
+async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?: RecordNote): Promise<boolean> {
+  let clean = true;
   const fail = async (fn: () => Promise<void>) => {
     try {
       await fn();
     } catch (e) {
+      clean = false;
       log.warn("box.rebuild_rollback_failed", { id: previous.id, error: String(e) });
     }
   };
@@ -393,13 +457,15 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
       await launchStartup(host, previous.containerId, previous.startupCommand);
     });
   }
-  await state.changes.rollback();
-  if (!state.specWritten) return;
+  if (!(await state.changes.rollback())) clean = false;
+  if (!state.specWritten) return clean;
   try {
     host.specs.write(previous);
   } catch (e) {
+    clean = false;
     log.warn("box.rebuild_rollback_failed", { id: previous.id, error: String(e) });
   }
+  return clean;
 }
 
 async function swap(
@@ -408,7 +474,8 @@ async function swap(
   planned: PlannedRebuild,
   template: BoxSpec["template"],
   request: RebuildRequest,
-  record?: RecordNote,
+  record: RecordNote | undefined,
+  taken: SafetyPoint | null,
 ): Promise<void> {
   const state: SwapState = {
     createdId: null,
@@ -478,7 +545,17 @@ async function swap(
       containerName: formal,
     });
   } catch (e) {
-    await undo(host, previous, state, record);
+    const clean = await undo(host, previous, state, record);
+    if (taken === null) throw e;
+    if (!clean) {
+      log.error("box.rebuild_safety_kept", { id: previous.id, safety: taken.id, error: String(e) });
+      throw new AppError(502, "docker_error", msg("rebuild_failed_safety_kept", { id: taken.id }));
+    }
+    try {
+      await taken.discard();
+    } catch (discardError) {
+      log.warn("box.rebuild_safety_discard_failed", { id: previous.id, safety: taken.id, error: String(discardError) });
+    }
     throw e;
   }
 }

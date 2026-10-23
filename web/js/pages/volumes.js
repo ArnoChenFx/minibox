@@ -2,7 +2,7 @@ import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { usageCellHtml } from "../components/volume-usage.js";
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import { bytes } from "../lib/format.js";
+import { bytes, dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { filterBySearch } from "../lib/search.js";
@@ -461,15 +461,20 @@ export function render(view) {
         toast(t("vol.created"));
         await load();
       } else if (action === "delete") {
-        const ok = await confirmDialog({
+        const res = await confirmDialog({
           title: t("vol.deleteTitle"),
           message: esc(t("vol.deleteMessage", { name: target.dataset.name })),
           confirmText: t("vol.delete"),
           danger: true,
+          checkboxes: [{ key: "skipTrash", label: t("vol.skipTrash"), help: t("vol.skipTrashHelp") }],
         });
-        if (!ok) return;
-        await api(`/api/volumes/${enc(target.dataset.id)}?confirm=true`, { method: "DELETE" });
-        toast(t("vol.deleted"));
+        if (!res) return;
+        const query = new URLSearchParams({ confirm: "true", skipTrash: String(res.skipTrash) });
+        const deleted = await api(`/api/volumes/${enc(target.dataset.id)}?${query}`, { method: "DELETE" });
+        toast(
+          t("vol.deleted"),
+          deleted.trash ? { message: t("vol.keptInBin", { date: dateTime(deleted.trash.expiresAt) }) } : {},
+        );
         await load();
       } else if (action === "measure") {
         const result = await api(`/api/volumes/${enc(target.dataset.id)}/usage`, { method: "POST" });

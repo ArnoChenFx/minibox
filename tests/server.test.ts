@@ -26,10 +26,20 @@ const KEY = "k".repeat(64);
 const SANDBOX = mkdtempSync(join(tmpdir(), "minibox-server-test-"));
 afterAll(() => rmSync(SANDBOX, { recursive: true, force: true }));
 
-/** Uses a temp DATA_DIR and .env, so the suite never creates the repository's data/ or reads its .env. */
+/**
+ * Uses a temp DATA_DIR and .env, so the suite never creates the repository's data/ or reads its .env. The owner key is
+ * pinned to true, so flipping DEFAULT_MCP_ALLOW_OWNER_KEY does not change these tests.
+ */
 function testConfig(env: Record<string, string> = {}): Config {
   const cfg = loadConfig(
-    { ACCESS_KEY: KEY, HOST: "127.0.0.1", LOG_LEVEL: "error", DATA_DIR: join(SANDBOX, "data"), ...env },
+    {
+      ACCESS_KEY: KEY,
+      HOST: "127.0.0.1",
+      LOG_LEVEL: "error",
+      DATA_DIR: join(SANDBOX, "data"),
+      MCP_ALLOW_OWNER_KEY: "true",
+      ...env,
+    },
     { envFile: join(SANDBOX, ".env") },
   );
   return { ...cfg, port: 0 };
@@ -246,6 +256,13 @@ describe("bearer keys count toward the login limit (end to end)", () => {
       const cookied = await mcpPing(base, null, cookieFor(token));
       expect(cookied.status).toBe(401);
       expect((await login(base, "wrong")).status).toBe(401);
+    });
+  });
+
+  test("a refused owner key on /mcp does not count toward the login limit", async () => {
+    await withServer({ MCP_ALLOW_OWNER_KEY: "false" }, async ({ base }) => {
+      for (let i = 0; i < 12; i++) expect((await mcpPing(base, KEY)).status).toBe(401);
+      expect((await mcpPing(base, "wrong")).status).toBe(401);
     });
   });
 

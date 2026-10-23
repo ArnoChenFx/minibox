@@ -1,42 +1,17 @@
 import { openCreateBox } from "../components/create-box.js";
+import { ACTION_ICON, readableAction } from "../lib/activity.js";
 import { api } from "../lib/api.js";
 import { applyBoxFrame, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, cpus, duration, gbOrMb, mem, pct, relTime } from "../lib/format.js";
 import { boxesOnHost, HOST_BADGE, isUnreachable } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, onHosts } from "../lib/hosts.js";
-import { t } from "../lib/i18n.js";
+import { has, t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
 import { onHost } from "../lib/store.js";
 import { boxState, emptyState, stateBadge } from "../lib/ui.js";
-
-const ACTION_ICON = {
-  "box.create": "plus",
-  "box.delete": "trash",
-  "box.start": "play",
-  "box.stop": "stop",
-  "box.restart": "restart",
-  "box.resources": "sliders",
-  "box.rebuild": "refresh",
-  "box.move": "move",
-  "box.rollback": "history",
-  "box.rollback.confirm": "check",
-  "box.rollback.undo": "refresh",
-  "snapshot.create": "camera",
-  "snapshot.delete": "trash",
-  "checkpoint.create": "camera",
-  "checkpoint.update": "sliders",
-  "checkpoint.delete": "trash",
-  "template.promote": "upload",
-  "template.save": "layers",
-  "template.build": "hammer",
-  "template.delete": "trash",
-  "token.create": "key",
-  "token.revoke": "trash",
-  "task.cancel": "x",
-};
 
 function metricSkeleton() {
   return '<div class="card"><div class="skeleton sk-block"></div></div>';
@@ -157,7 +132,7 @@ function renderMetrics(view, h, failing) {
   view.querySelector("#ovMetrics").innerHTML = `
     <div class="card metric">
       <div class="metric-top"><span>${t("ov.cpuUsage")}</span>${icon("cpu")}</div>
-      <div class="metric-value">${pct(h.cpu.usagePercent)}<small>${t("unit.cores", { n: h.cpu.cores })}</small></div>
+      <div class="metric-value">${pct(h.cpu.usagePercent)}<small>${cpus(h.cpu.cores)}</small></div>
       <div class="metric-sub">${t("ov.load", { load: h.cpu.load.map((n) => n.toFixed(2)).join(" / "), n: Math.max(span, 1) })}</div>
       ${sparkline(cpuHist, { color: "var(--chart-cpu)", id: "cpu" })}
     </div>
@@ -299,7 +274,7 @@ function renderActivity(view, items) {
     .slice(0, 6)
     .map((a) => {
       const ic = ACTION_ICON[a.action] ?? "activity";
-      const label = ACTION_ICON[a.action] ? t(`act.${a.action}`) : a.action;
+      const label = has(`act.${a.action}`) ? t(`act.${a.action}`) : readableAction(a.action);
       return `<li title="${esc(a.message ?? "")}"><span class="ico ${a.ok ? "" : "fail"}">${icon(a.ok ? ic : "alert")}</span>
         <span>${esc(label)} <strong>${esc(a.target)}</strong>${a.ok ? "" : ` <span class="badge badge-danger">${t("common.failed")}</span>`}</span>
         <span class="time">${relTime(a.t)}</span></li>`;

@@ -11,6 +11,7 @@ import { SpecStore } from "../src/specs/store";
 import { VolumeStore } from "../src/volumes/store";
 import { rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
+import { FakeCheckpointEngine } from "./support/fake-snapshots";
 import {
   call,
   finishedTask,
@@ -66,7 +67,18 @@ function addEdgeHost(): { host: HostCtx; runtime: FakeRuntime } {
   const runtime = new FakeRuntime();
   const dir = mkdtempSync(join(tmpdir(), "minibox-edge-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-  const host = createLocalHost(harness.app.cfg, runtime, new SpecStore(dir), new VolumeStore(dir));
+  const host = createLocalHost(
+    harness.app.cfg,
+    runtime,
+    new SpecStore(dir),
+    new VolumeStore(dir),
+    undefined,
+    undefined,
+    {
+      checkpoints: harness.app.hosts.get().checkpoints,
+      checkpointEngine: new FakeCheckpointEngine(runtime),
+    },
+  );
   host.host.id = "edge";
   host.host.name = "Edge";
   harness.app.hosts.add(host);

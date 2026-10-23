@@ -9,6 +9,7 @@ import files from "./en/files.js";
 import settings from "./en/settings.js";
 import tasks from "./en/tasks.js";
 import tools from "./en/tools.js";
+import trash from "./en/trash.js";
 import volumes from "./en/volumes.js";
 
 export default {
@@ -22,6 +23,7 @@ export default {
   ...files,
   ...tasks,
   ...tools,
+  ...trash,
   ...settings,
   // tests/template.test.ts reads this file for the Node.js major, so the templates group stays here.
   "tp.subtitle":

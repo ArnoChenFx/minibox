@@ -14,6 +14,7 @@ export default {
   "common.failed": "Failed",
   "common.tagline": "Personal dev environments for AI agents",
   "common.metaDescription": "MiniBox: personal dev environments for AI agents",
+  "unit.core": "{n} core",
   "unit.cores": "{n} cores",
   "unit.coresShort": "cores",
   "fmt.days": "{d}d {h}h",
@@ -44,6 +45,11 @@ export default {
   "shell.hostFilter": "Show boxes on host",
   "shell.memShort": "Mem",
   "shell.dockerUnavailable": "Docker unavailable",
+  "shell.ownerKeyAccepted":
+    "An agent used the owner access key on /mcp. The last use was at {time}. Give each agent its own agent token. The next minor release refuses the owner key on /mcp by default.",
+  "shell.ownerKeyRefused":
+    "An agent sent the owner access key to /mcp, and MiniBox refused it. The last refusal was at {time}. Give the agent an agent token.",
+  "shell.ownerKeyAction": "Create an agent token",
   "login.title": "Sign in · MiniBox",
   "login.heroTitle": "Personal dev environments<br />for AI agents",
   "login.lead":
@@ -124,4 +130,16 @@ export default {
   "about.license": "License",
   "about.licenseMeta": "Apache License 2.0",
   "nav.volumes": "Volumes",
+  "label.targetName": "Target name",
+  "label.endpoint": "Endpoint",
+  "label.region": "Region",
+  "label.bucket": "Bucket",
+  "label.accessKeyId": "Access key id",
+  "label.secretAccessKey": "Secret access key",
+  "label.host": "Host",
+  "label.port": "Port",
+  "label.user": "User",
+  "label.privateKey": "Private key",
+  "label.hostKeyFingerprint": "Host key fingerprint",
+  "nav.trash": "Recycle bin",
 };
