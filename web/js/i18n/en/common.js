@@ -53,9 +53,9 @@ export default {
   "shell.memShort": "Mem",
   "shell.dockerUnavailable": "Docker unavailable",
   "shell.ownerKeyAccepted":
-    "An agent used the owner access key on /mcp. The last use was at {time}. Give each agent its own agent token. The next minor release refuses the owner key on /mcp by default.",
+    "An agent used the owner access key on /mcp, and MCP_ALLOW_OWNER_KEY=true accepts it. The last use was at {time}. Give each agent its own agent token, then remove MCP_ALLOW_OWNER_KEY=true to refuse the key by default.",
   "shell.ownerKeyRefused":
-    "An agent sent the owner access key to /mcp, and MiniBox refused it. The last refusal was at {time}. Give the agent an agent token.",
+    "An agent used the owner access key on /mcp, and MiniBox now refuses it with 401. The last use was at {time}. Give each agent its own agent token, or set MCP_ALLOW_OWNER_KEY=true to accept the key again.",
   "shell.ownerKeyAction": "Create an agent token",
   "login.title": "Sign in · MiniBox",
   "login.heroTitle": "Personal dev environments<br />for AI agents",

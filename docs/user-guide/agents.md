@@ -31,7 +31,7 @@ Add a server to the client's MCP settings. Use the URL of your MiniBox server, a
 
 For a client that starts a command, run `minibox mcp`. Set `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` to the server address and the agent's token.
 
-`/mcp` still accepts the access key. MiniBox records each use and warns about it in the console and the log, and `minibox mcp` warns when it runs on the key. The next minor release refuses the key on `/mcp` by default, so give each agent a token now. [Upgrading](../admin/upgrades.md) names the `MCP_ALLOW_OWNER_KEY` setting.
+`/mcp` refuses the access key by default, with `401`, so give each agent a token now. MiniBox records each attempt, and the console shows a notice for seven days after the last one. [Upgrading](../admin/upgrades.md) names the `MCP_ALLOW_OWNER_KEY` setting, which accepts the key again.
 
 ## Toolsets
 

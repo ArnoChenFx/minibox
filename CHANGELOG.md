@@ -19,6 +19,7 @@
 - 创建 Box 对话框的「工具」与「模板」两节可在标题前的箭头按钮处整节折叠，折叠状态保存在浏览器中；折叠时标题旁仍显示已选的模板或工具。「模板」一节移到「规格」下方。
 
 ### 变更
+- **破坏性变更：`/mcp` 默认拒绝所有者访问密钥。** `MCP_ALLOW_OWNER_KEY` 的默认值由 `true` 改为 `false`。此后，用访问密钥访问 `/mcp` 的请求返回 `401`（`mcp_owner_key_refused`），Agent 令牌不受影响。升级前请为每个 Agent 创建令牌（控制台的**设置**，或 `minibox token create <name>`），并把它设为 Agent 的 Bearer 密钥或 `MINIBOX_ACCESS_KEY`。若要暂时保留旧行为，设置 `MCP_ALLOW_OWNER_KEY=true`，每次使用仍会被记录。启动时若最近 7 天内有访问密钥访问过 `/mcp`，日志会写入 `mcp.owner_key_now_refused` 警告，控制台横幅也会给出同样的做法。`minibox mcp` 遇到拒绝时会说明原因，并提示 `minibox token create`。见[升级说明](docs/admin/upgrades.md)（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 - 更改已有 Box 的出站档位属于重建：API 与 MCP 先返回预览，带 `confirm: true` 确认后才会重建。Box 保留名称、ID 与卷。
 - 出站档位不为 `open` 的 Box 无法迁移到其他宿主机（返回 `409`，`egress_move_refused`）。回收站恢复与检查点派生会保留出站策略，并为其创建新的私有网络。Box 视图仅在档位不是 `open` 时包含 `egress` 字段。
 - `devcontainer.json` 中不支持的设置不再拒绝整个构建。它们在构建日志中以 `Warning:` 列出，其余设置照常应用。无法按原样应用的设置仍会拒绝构建，例如取值中的 `${…}` 引用，或 `postCreateCommand` 中的 devcontainer 变量（Refs #15）。
@@ -39,6 +40,7 @@
 ### 文档
 - 新增网络出站文档：英文 `docs/admin/network-egress.md` 与中文 `docs/zh-CN/admin/network-egress.md`，说明各档位、白名单、事件、`BLOCK_HOST_GATEWAY` 与限制（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）。安全指南、配置、CLI、检查点与 Box 指南，以及 `.env.example` 同步更新。
 - 模板指南的 `devcontainer.json` 一节改写：列出支持的设置、构建日志中的警告与被拒绝的设置，以及 Box 设置任务的顺序、运行用户、工作目录、时限与失败行为，中英文版本同步。API、CLI、MCP、安全与架构文档同步更新（Refs #15）。
+- `/mcp` 访问密钥的说明更新：安全指南、升级说明、配置、MCP 与 CLI 参考，以及 Agent 与访问和令牌指南，中英文同步（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 - 快速开始、用户指南与管理文档中提到侧栏「模板」「卷」「回收站」的地方，改为新的导航位置，中英文同步。开发文档同步说明新增的控制台导航浏览器测试。
 - Box 内 Agent 与宿主机指南（中英文）说明：Agent 宿主机无法把令牌文件写入 Box，因此不能在其上创建带自助令牌的 Box（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）。
 

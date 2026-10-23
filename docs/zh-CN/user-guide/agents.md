@@ -31,7 +31,7 @@ Box 内还可以有自己的 Agent，它使用只对该 Box 有效的令牌连�
 
 对于启动命令的客户端，运行 `minibox mcp`。将 `MINIBOX_URL` 和 `MINIBOX_ACCESS_KEY` 设为服务器地址和 Agent 的令牌。
 
-`/mcp` 仍接受访问密钥。MiniBox 会记录每次使用，并在控制台和日志中发出警告；`minibox mcp` 在使用该密钥时也会发出警告。下一个次要版本默认拒绝 `/mcp` 上的访问密钥，因此请现在就为每个 Agent 分配令牌。`MCP_ALLOW_OWNER_KEY` 设置见[升级说明（英文）](../../admin/upgrades.md)。
+`/mcp` 默认拒绝访问密钥，返回 `401`，因此请现在就为每个 Agent 分配令牌。MiniBox 会记录每次尝试，并在控制台显示最后一次尝试后 7 天内的提示。[升级说明（英文）](../../admin/upgrades.md)列出了 `MCP_ALLOW_OWNER_KEY` 设置，将它设为 `true` 即可重新接受该密钥。
 
 ## 工具集
 

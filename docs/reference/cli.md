@@ -279,4 +279,4 @@ See [Access, sessions and tokens](../user-guide/access-and-tokens.md) for the pr
 |---|---|
 | `minibox mcp [--toolsets LIST]` | Runs an MCP server over standard input and output, and forwards it to the server's `/mcp` endpoint. `LIST` is a comma-separated list of toolsets. The default is `core,meta`. |
 
-See [MCP tools](mcp.md) for the toolsets. When `MINIBOX_ACCESS_KEY` is the access key, `minibox mcp` warns on standard error. The server refuses the key on `/mcp` once `MCP_ALLOW_OWNER_KEY` is `false`.
+See [MCP tools](mcp.md) for the toolsets. When `MINIBOX_ACCESS_KEY` is the access key, `minibox mcp` reports on standard error what the server does with it. If the server accepts the key, `minibox mcp` warns. If the server refuses it, which is the default, `minibox mcp` explains the refusal. Both suggest `minibox token create <name>`.

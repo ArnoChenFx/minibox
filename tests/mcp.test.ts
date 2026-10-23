@@ -11,7 +11,7 @@ const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const ROOT = join(import.meta.dir, "..");
 
 function setup() {
-  const { app, runtime } = createTestApp({ labelPrefix: "mbtest" });
+  const { app, runtime } = createTestApp({ labelPrefix: "mbtest", mcpAllowOwnerKey: true });
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   const ctx: OperationContext = {
