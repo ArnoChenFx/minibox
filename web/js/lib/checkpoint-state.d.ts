@@ -8,6 +8,10 @@ export declare const REASON_KEYS: readonly [
   "ck.reasonHeld",
   "ck.reasonPinned",
   "ck.reasonSystem",
+  "ck.reasonOtherHost",
+  "ck.reasonCopyLegacy",
+  "ck.reasonCopyEmpty",
+  "ck.reasonCopySystem",
 ];
 export declare const SKIP_REASON_KEYS: Readonly<Record<string, string>>;
 export declare const PASSPHRASE_MIN: number;
@@ -36,6 +40,7 @@ export interface RuleResult {
 export interface RowActions {
   fork: RuleResult;
   export: RuleResult;
+  copy: RuleResult;
   rollback: RuleResult;
   pin: RuleResult;
   delete: RuleResult;

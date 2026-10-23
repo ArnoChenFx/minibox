@@ -54,7 +54,18 @@ function row(overrides: Partial<CheckpointRow> = {}): CheckpointRow {
 describe("checkpoint rules", () => {
   test("an ordinary checkpoint with owned data allows every action", () => {
     const actions = Object.values(rowActions(row()));
-    expect(actions.map((action) => action.allowed)).toEqual([true, true, true, true, true]);
+    expect(actions.map((action) => action.allowed)).toEqual([true, true, true, true, true, true]);
+  });
+
+  test("a checkpoint with owned data can be copied, even while a rollback waits, and a legacy snapshot, one with no data, or one with a system layer says why it cannot", () => {
+    expect(rowActions(row()).copy).toEqual({ allowed: true, reason: "" });
+    expect(rowActions(row(), { pending: true, held: true }).copy.allowed).toBe(true);
+    expect(rowActions(row({ legacy: true, data: [] })).copy).toEqual({ allowed: false, reason: "ck.reasonCopyLegacy" });
+    expect(rowActions(row({ data: [] })).copy).toEqual({ allowed: false, reason: "ck.reasonCopyEmpty" });
+    expect(rowActions(row({ system: { image: "minibox-checkpoint:ck_x" } })).copy).toEqual({
+      allowed: false,
+      reason: "ck.reasonCopySystem",
+    });
   });
 
   test("a legacy snapshot is read-only: it can be forked or deleted, and nothing else", () => {
@@ -433,6 +444,9 @@ const markup = runConsole<Markup>(
     scheduleFormHere: component.scheduleFormHtml(fixtures.dailySchedule, "Asia/Shanghai"),
     scheduleFormMoved: component.scheduleFormHtml(fixtures.dailySchedule, "Europe/Berlin"),
     cardScheduled: component.checkpointCardHtml({ rows: [], pending: null, usage: null, schedule: fixtures.schedule }),
+    copyRow: component.checkpointRowHtml(fixtures.manual, { hosts: fixtures.hosts }),
+    copyLegacy: component.checkpointRowHtml(fixtures.legacy, { hosts: fixtures.hosts }),
+    copyForm: component.copyFormHtml({ hosts: fixtures.hosts, from: "local" }),
   };`,
 );
 
@@ -581,6 +595,28 @@ describe("repository usage and the take form", () => {
     expect(html).toContain('data-hold="live" aria-pressed="true"');
     expect(html).toContain('data-hold="pause" aria-pressed="false"');
     expect(html).toContain('data-hold="stop" aria-pressed="false"');
+  });
+});
+
+describe("copy to host", () => {
+  test("the copy action is offered only when there is more than one host", () => {
+    expect(buttonTags(markup.manual ?? "", "ck-copy")).toEqual([]);
+    expect(buttonTags(markup.copyRow ?? "", "ck-copy")).toHaveLength(1);
+    expect(isDisabled(buttonFor(markup.copyRow ?? "", "ck-copy", "ck_manual"))).toBe(false);
+  });
+
+  test("a legacy snapshot shows the copy action off, with the reason", () => {
+    const legacyCopy = buttonFor(markup.copyLegacy ?? "", "ck-copy", "img_1");
+    expect(isDisabled(legacyCopy)).toBe(true);
+    expect(titleOf(legacyCopy)).toBe(escaped(en["ck.reasonCopyLegacy"] ?? ""));
+  });
+
+  test("the copy form offers every host but the one the checkpoint is kept on, and says what a copy makes", () => {
+    const html = markup.copyForm ?? "";
+    expect(html).not.toContain('<option value="local"');
+    expect(html).toContain('<option value="host_b">Host B</option>');
+    expect(html).toContain(escaped(en["ck.copyHostHelp"] ?? ""));
+    expect(html).toContain(escaped(en["ck.copyHow"] ?? ""));
   });
 });
 
