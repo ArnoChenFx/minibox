@@ -17,6 +17,7 @@ import { gunzipSync } from "node:zlib";
 import { Client } from "ssh2";
 
 import { isNewerVersion, runCli } from "../src/cli";
+import type { Config } from "../src/config";
 import type { OperationContext, Principal } from "../src/operations/types";
 import type { HelperSpec } from "../src/runtime";
 import { startServer } from "../src/server";
@@ -92,8 +93,8 @@ function byteQueue() {
   };
 }
 
-function serve() {
-  const { app, runtime } = createTestApp({ labelPrefix: "mbtest" });
+function serve(overrides: Partial<Config> = {}) {
+  const { app, runtime } = createTestApp({ labelPrefix: "mbtest", ...overrides });
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   const ctx: OperationContext = {
@@ -297,6 +298,127 @@ describe("CLI", () => {
     } finally {
       env.stop();
     }
+  });
+
+  describe("owner access key and token create", () => {
+    const initLine = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {} },
+    });
+
+    test("mcp warns once on stderr when it runs on the owner access key", async () => {
+      const env = serve({ mcpAllowOwnerKey: true });
+      try {
+        const sink = io();
+        expect(await runCli(["mcp"], env.env, sink, lines([initLine, initLine]))).toBe(0);
+        expect(sink.err.match(/owner access key/g)).toHaveLength(1);
+        expect(sink.err).toContain("minibox token create <name>");
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("mcp stays quiet on stderr when it runs on an agent token", async () => {
+      const env = serve();
+      try {
+        const { secret } = mint(env.app, { name: "agent", preset: "sandboxed-agent" });
+        const sink = io();
+        expect(await runCli(["mcp"], { ...env.env, MINIBOX_ACCESS_KEY: secret }, sink, lines([initLine]))).toBe(0);
+        expect(sink.err).toBe("");
+        expect(sink.out).toContain("protocolVersion");
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("mcp exits 1 with the refusal and its hint once the owner access key is refused", async () => {
+      const env = serve({ mcpAllowOwnerKey: false });
+      try {
+        const sink = io();
+        expect(await runCli(["mcp"], env.env, sink, lines([initLine]))).toBe(1);
+        expect(sink.err).toContain("The owner access key is not accepted on /mcp. Use an agent token.");
+        expect(sink.err).toContain("minibox token create");
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("token create prints the secret once on stdout, and the summary on stderr", async () => {
+      const env = serve();
+      try {
+        const out = io();
+        expect(await runCli(["token", "create", "agent-one"], env.env, out, lines([]))).toBe(0);
+        const secret = out.out.trim();
+        expect(secret).toMatch(/^mbx_/);
+        expect(out.err).toContain("Created token agent-one");
+        expect(out.err).not.toContain(secret);
+        expect(env.app.tokens.authenticate(secret, "127.0.0.1")).toMatchObject({ type: "token" });
+        expect(env.app.tokens.list().find((record) => record.name === "agent-one")).toMatchObject({
+          preset: "sandboxed-agent",
+          expiresAt: null,
+        });
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("token create takes a preset, a scope list, an expiry, and --json", async () => {
+      const env = serve();
+      try {
+        const json = io();
+        const args = ["token", "create", "reader", "--preset", "readonly", "--expires-in", "3600", "--json"];
+        expect(await runCli(args, env.env, json, lines([]))).toBe(0);
+        const body = JSON.parse(json.out) as {
+          token: string;
+          record: { name: string; preset: string; expiresAt: string };
+        };
+        expect(body.token).toMatch(/^mbx_/);
+        expect(body.record).toMatchObject({ name: "reader", preset: "readonly" });
+        expect(Date.parse(body.record.expiresAt) - Date.now()).toBeGreaterThan(3500 * 1000);
+
+        const scoped = io();
+        expect(
+          await runCli(["token", "create", "scoped", "--scopes", "box:read,exec"], env.env, scoped, lines([])),
+        ).toBe(0);
+        const record = env.app.tokens.list().find((item) => item.name === "scoped");
+        expect(record?.preset).toBeNull();
+        expect([...(record?.scopes ?? [])].toSorted()).toEqual(["box:read", "exec"]);
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("token create refuses a missing name, a bad expiry and an unknown preset, and creates nothing", async () => {
+      const env = serve();
+      try {
+        const bare = io();
+        expect(await runCli(["token"], env.env, bare, lines([]))).toBe(2);
+        expect(bare.err).toContain("minibox token needs create");
+
+        const noName = io();
+        expect(await runCli(["token", "create"], env.env, noName, lines([]))).toBe(2);
+        expect(noName.err).toContain("needs exactly one name");
+
+        const soon = io();
+        expect(await runCli(["token", "create", "x", "--expires-in", "soon"], env.env, soon, lines([]))).toBe(2);
+        expect(soon.err).toContain("--expires-in needs a number");
+
+        const unknown = io();
+        expect(await runCli(["token", "create", "x", "--preset", "root"], env.env, unknown, lines([]))).toBe(1);
+        expect(unknown.err).not.toBe("");
+        expect(env.app.tokens.list()).toEqual([]);
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("help lists token create", async () => {
+      const help = io();
+      expect(await runCli(["token", "--help"], {}, help, lines([]))).toBe(0);
+      expect(help.out).toContain("minibox token create <name>");
+    });
   });
 
   test("session commands start, read, send, list and close a tmux session", async () => {

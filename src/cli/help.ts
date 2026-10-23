@@ -67,6 +67,8 @@ Commands:
                                        Save an entry from a JSON document (owner only)
   minibox tool custom delete <id> [--json]
                                        Remove an entry from tools.d; nothing is uninstalled
+  minibox token create <name> [--preset P] [--scopes LIST] [--expires-in SEC] [--json]
+                                       Print a new agent token's secret once. The preset defaults to sandboxed-agent.
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
   minibox ssh-config [--append] [--url URL] [--token KEY]
                                        Print the ~/.ssh/config block and host key pin. --append writes both and saves
