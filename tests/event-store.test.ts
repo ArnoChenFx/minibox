@@ -154,6 +154,30 @@ describe("EventStore", () => {
     expect(seqs({ since: NOW + MINUTE + 1 }, 10)).toEqual([]);
   });
 
+  test("an op family matches every operation under its prefix, and reads=failed leaves out only routine reads", () => {
+    const s = open();
+    const start = s.append(input({ op: "exec.start", kind: "write", status: "started", ts: NOW })).event;
+    const finish = s.append(input({ op: "exec.finish", kind: "write", ts: NOW + 1 })).event;
+    const lookalike = s.append(input({ op: "executor.run", ts: NOW + 2 })).event;
+    const okRead = s.append(read({ ts: NOW + 3 })).event;
+    const failedRead = s.append(read({ ts: NOW + 4, status: "error", error: { code: "x", status: 500 } })).event;
+    const refused = s.append(denied()).event;
+    const seqs = (filter: Parameters<typeof s.list>[0]) => s.list(filter, { limit: 50 }).events.map((e) => e.seq);
+
+    expect(seqs({ op: "exec.*" })).toEqual([finish.seq, start.seq]);
+    expect(seqs({ op: "exec.finish" })).toEqual([finish.seq]);
+    expect(matchesFilter(finish, { op: "exec.*" })).toBe(true);
+    expect(matchesFilter(lookalike, { op: "exec.*" })).toBe(false);
+
+    const changes = seqs({ hideOkReads: true });
+    expect(changes).not.toContain(okRead.seq);
+    expect(changes).toEqual(
+      expect.arrayContaining([failedRead.seq, refused.seq, start.seq, finish.seq, lookalike.seq]),
+    );
+    expect(matchesFilter(okRead, { hideOkReads: true })).toBe(false);
+    expect(matchesFilter(failedRead, { hideOkReads: true })).toBe(true);
+  });
+
   test("agents leaves out the owner's events, in reads and in matchesFilter, and keeps tokens and box agents", () => {
     const s = open();
     const owner = s.append(input({ ts: NOW })).event;

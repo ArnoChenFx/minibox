@@ -182,14 +182,33 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     );
 
     test(
-      "Activity opens the overview with its recent-activity card in view, and Activity is the current entry",
+      "Activity opens the activity log, its own page, and Activity is the current entry",
       async () => {
         await page.goto(`${consoleUrl}/#/overview`);
         await page.locator('.sidebar a[data-nav="activity"]').click();
         await webExpect(page).toHaveURL(at("#/activity"));
-        await webExpect(page.locator("#ovRecentCard")).toHaveClass(/is-focus/);
-        await webExpect(page.locator("#ovRecentCard")).toBeInViewport();
+        await webExpect(page.locator("#view h1").first()).toHaveText("Activity");
+        await webExpect(page.locator("#ovRecentCard")).toHaveCount(0);
+        await webExpect(page.locator(".actv-table")).toBeVisible();
+        await webExpect(page.locator("#actvRows tr", { hasText: "alpha" }).first()).toBeVisible();
         await webExpect(currentEntry(page)).toHaveAttribute("data-nav", "activity");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "the activity log's operation filter keeps only that family of operations",
+      async () => {
+        await openFresh("#/activity");
+        const rows = page.locator("#actvRows tr");
+        await webExpect(rows.first()).toBeVisible();
+        await page.locator("#actvCategory + .dropdown-trigger").click();
+        await page.locator('#dd-menu [role="option"]', { hasText: "Boxes" }).click();
+        await webExpect(page.locator("#actvCategory")).toHaveValue("box");
+        await webExpect(rows).toHaveCount(2);
+        await webExpect(rows.filter({ hasText: "Box created" })).toHaveCount(2);
+        await webExpect(page.locator("#actvPage")).toContainText("Page 1");
+        await webExpect(page.locator("#actvPrev")).toBeDisabled();
       },
       TIMEOUT_MS,
     );
@@ -525,7 +544,7 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     );
 
     test(
-      "the overview's box list and recent timeline show five rows each, and their toggles show the rest",
+      "the overview's box list shows five rows and its toggle shows the rest, and its recent activity is a short summary that links to the log",
       async () => {
         await openOverview();
         const boxRows = page.locator("#ovBoxes .activity li");
@@ -538,14 +557,13 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
         await boxToggle.click();
         await webExpect(boxRows).toHaveCount(5);
 
-        const timeline = page.locator("#ovActivity .activity li");
-        const timelineToggle = page.locator("#ovActivity .list-toggle");
-        await webExpect(timeline).toHaveCount(5);
-        await timelineToggle.click();
-        await webExpect(timelineToggle).toHaveText("Show less");
-        expect(await timeline.count()).toBeGreaterThan(5);
-        await timelineToggle.click();
-        await webExpect(timeline).toHaveCount(5);
+        await webExpect(page.locator("#ovActivity .activity li")).toHaveCount(6);
+        await webExpect(page.locator("#ovActivity .list-toggle")).toHaveCount(0);
+        const viewAll = page.locator('#ovRecentCard a[href="#/activity"]');
+        await webExpect(viewAll).toHaveText("View all");
+        await viewAll.click();
+        await webExpect(page).toHaveURL(at("#/activity"));
+        await webExpect(page.locator(".actv-table")).toBeVisible();
       },
       TIMEOUT_MS,
     );

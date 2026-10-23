@@ -152,6 +152,7 @@ describe("GET /api/events", () => {
       "cursor=abc",
       "cursor=0",
       "status=bogus",
+      "reads=none",
       `box=${"x".repeat(201)}`,
     ];
     for (const query of queries) {
@@ -201,6 +202,11 @@ describe("GET /api/events", () => {
     );
     expect(await names("principal=owner&op=box.create")).toHaveLength(3);
     expect(await names("principal=nobody")).toEqual([]);
+    expect(await names("op=box.*&status=error")).toEqual(["Create and start a box: alpha"]);
+    const ops = async (query: string) => (await listEvents(base, query)).events.map((event) => event.op);
+    expect(await ops("op=events.list")).not.toHaveLength(0);
+    expect(await ops("op=events.list&reads=failed")).toEqual([]);
+    expect(await ops("reads=failed")).not.toContain("events.list");
 
     const future = new Date(Date.now() + 3_600_000).toISOString();
     expect(await names(`since=${future}`)).toEqual([]);

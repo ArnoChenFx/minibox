@@ -16,11 +16,14 @@ export interface StoredEvent extends EventInput {
 export interface EventFilter {
   readonly box?: string;
   readonly principal?: string;
+  /** An operation name, or a family written as its prefix and `*`, such as `exec.*`. */
   readonly op?: string;
   readonly status?: EventStatus;
   readonly run?: string;
   /** Epoch milliseconds. Events at or after this time match. */
   readonly since?: number;
+  /** Leaves out reads that succeeded, which are routine; failed and refused reads still match. */
+  readonly hideOkReads?: boolean;
   /** Only events a token or a box's own agent recorded. The owner's events do not match. */
   readonly agents?: boolean;
   /**
@@ -184,6 +187,16 @@ function coalesceKeyOf(event: EventInput): string {
   ].join("\u0000");
 }
 
+/** The prefix an `op` filter such as `exec.*` names, with its dot, or `undefined` for one exact operation. */
+function opFamily(op: string): string | undefined {
+  return op.endsWith(".*") ? op.slice(0, -1) : undefined;
+}
+
+function matchesOp(op: string, wanted: string): boolean {
+  const family = opFamily(wanted);
+  return family === undefined ? op === wanted : op.startsWith(family);
+}
+
 function filterSql(filter: EventFilter): { sql: string; params: (string | number)[] } {
   const clauses: string[] = [];
   const params: (string | number)[] = [];
@@ -196,8 +209,14 @@ function filterSql(filter: EventFilter): { sql: string; params: (string | number
     params.push(filter.principal);
   }
   if (filter.op !== undefined) {
-    clauses.push("op = ?");
-    params.push(filter.op);
+    const family = opFamily(filter.op);
+    if (family === undefined) {
+      clauses.push("op = ?");
+      params.push(filter.op);
+    } else {
+      clauses.push("substr(op, 1, ?) = ?");
+      params.push(family.length, family);
+    }
   }
   if (filter.status !== undefined) {
     clauses.push("status = ?");
@@ -211,6 +230,7 @@ function filterSql(filter: EventFilter): { sql: string; params: (string | number
     clauses.push("ts >= ?");
     params.push(filter.since);
   }
+  if (filter.hideOkReads) clauses.push("NOT (kind = 'read' AND status = 'ok')");
   if (filter.agents) clauses.push("principal_type <> 'owner'");
   if (filter.visible) {
     const visible = visibleSql(filter.visible);
@@ -253,10 +273,11 @@ export function matchesFilter(event: StoredEvent, filter: EventFilter): boolean 
     if (target?.kind !== "box" || (target.id !== filter.box && target.name !== filter.box)) return false;
   }
   if (filter.principal !== undefined && event.principal.id !== filter.principal) return false;
-  if (filter.op !== undefined && event.op !== filter.op) return false;
+  if (filter.op !== undefined && !matchesOp(event.op, filter.op)) return false;
   if (filter.status !== undefined && event.status !== filter.status) return false;
   if (filter.run !== undefined && event.run !== filter.run) return false;
   if (filter.since !== undefined && event.ts < filter.since) return false;
+  if (filter.hideOkReads && event.kind === "read" && event.status === "ok") return false;
   if (filter.agents && event.principal.type === "owner") return false;
   if (filter.visible && !matchesVisible(event, filter.visible)) return false;
   return true;

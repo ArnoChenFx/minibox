@@ -22,13 +22,7 @@ const BOX_RE = /^\/boxes\/([^/]+)(?:\/(\w+)(?:\/([^/]+))?)?$/;
 /** The pages without tabs. `args` gives what the page's render() receives after its view. */
 const PAGES = [
   { re: /^\/overview$/, page: "overview", nav: "overview", crumbs: ["nav.overview"] },
-  {
-    re: /^\/activity$/,
-    page: "overview",
-    nav: "activity",
-    crumbs: ["nav.overview", "nav.activity"],
-    args: () => ["activity"],
-  },
+  { re: /^\/activity$/, page: "activity", nav: "activity", crumbs: ["nav.activity"] },
   { re: /^\/boxes$/, page: "boxes", nav: "boxes", crumbs: ["nav.boxes"] },
   { re: /^\/trash$/, page: "trash", nav: "storage", crumbs: ["nav.storage", "nav.trash"] },
   {
