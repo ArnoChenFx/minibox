@@ -152,17 +152,8 @@ async function rebuildChanging(
     refuseExpired(host, spec.id);
 
     const previous = structuredClone(spec);
-    const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;
     // An empty request is allowed: a moved tag alone is still a rebuild. rebuild_empty only when nothing changed.
-    const planned = planRebuild(
-      host.prefix,
-      spec,
-      named,
-      await movedTag(host, spec),
-      await rotatedSecrets(host, spec, named.env ?? spec.env),
-      await egressAfter(host, spec, named),
-      host.security.network,
-    );
+    const planned = await planChange(host, spec, request);
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
     assertSecretsSet(host.secrets, planned.env);
     await assertRebuildAttachments(host, spec, planned.mounts, planned.network, planned.egress !== null);
@@ -186,6 +177,23 @@ async function rebuildChanging(
   await host.sampler.observe(box.id, host.specs.read(box.boxId)?.containerId ?? box.id);
   const rebuilt = await getBox(host, box.boxId);
   return { box: rebuilt, safety: point ? { id: point.id, label: point.label } : null };
+}
+
+/**
+ * The rebuild a request would perform on a box as its spec stands, without checking or changing anything. Mount names
+ * are read as the engine names them. Staged changes use it to tell which of their fields still differ.
+ */
+export async function planChange(host: HostCtx, spec: BoxSpec, request: RebuildRequest): Promise<PlannedRebuild> {
+  const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;
+  return planRebuild(
+    host.prefix,
+    spec,
+    named,
+    await movedTag(host, spec),
+    await rotatedSecrets(host, spec, named.env ?? spec.env),
+    await egressAfter(host, spec, named),
+    host.security.network,
+  );
 }
 
 /** Creates the host's box network when a rebuild joins it. Mounts and networks are checked before the preview. */

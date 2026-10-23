@@ -84,7 +84,8 @@ export default {
   "vol.sharedRwMessage": "{name} 已被其他地方以读写方式挂载。并发写入由你自行负责。",
   "vol.mounts": "挂载",
   "vol.noMounts": "此 Box 没有挂载。",
-  "vol.rebuildNote": "更改挂载会重建容器，并把容器名改为稳定的 Box id。地址栏里的容器 id 会随之改变。",
+  "vol.rebuildNote":
+    "挂载或卸载卷会先暂存，请在设置上方的横幅中应用。重建会把容器名改为稳定的 Box id，地址栏里的容器 id 会随之改变。",
   "vol.storageUnreachable": "存储池 {pools} 不可达。启动被拒绝，以免 hard 挂载把这个 Box 挂住。",
   "vol.removePool": "移除",
   "vol.poolName": "池名称",

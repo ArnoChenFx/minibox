@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { ensureDataDir, SECRET_FILE_MODE, writeFileAtomic } from "../data-dir";
 import { log } from "../lib/logger";
 import { isBoxId } from "./revision";
+import { StagedStore } from "./staged";
 import { SPEC_VERSION, type BoxSpec } from "./types";
 
 const isEnoent = (e: unknown): boolean => typeof e === "object" && e !== null && "code" in e && e.code === "ENOENT";
@@ -39,7 +40,12 @@ export class SpecStore {
   private readonly listeners = new Set<(change: SpecChange) => void>();
   private readonly retired = new Map<string, number>();
 
-  constructor(private readonly dataDir: string) {}
+  /** Rebuild changes staged per box. A box's staged file goes when its spec does. */
+  readonly staged: StagedStore;
+
+  constructor(private readonly dataDir: string) {
+    this.staged = new StagedStore(dataDir);
+  }
 
   /** Returns the function that removes the listener. A listener that throws is logged and the others still hear it. */
   subscribe(listener: (change: SpecChange) => void): () => void {
@@ -151,6 +157,7 @@ export class SpecStore {
     } catch (e) {
       if (!isEnoent(e)) throw e;
     }
+    this.staged.remove(id);
     this.notify({ kind: "remove", id });
   }
 

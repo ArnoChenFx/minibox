@@ -45,6 +45,7 @@ export default {
     "Nothing in this request changes the template, mounts, environment, network or security profile.",
   "err.rebuild_confirm_required":
     "This change rebuilds the box and was not applied. Send the same request with confirm set to true to apply the preview. Volumes, the stable id and the name are kept. The writable layer, running processes and the container IP are lost.",
+  "err.staged_none": "This box has no staged changes. They may have been applied or discarded already.",
   "err.rebuild_start_failed": "The new container did not start. The previous container and spec were restored.",
   "err.rebuild_name_conflict": "Cannot rebuild while {name} is still in use. Remove that container and try again.",
   "err.rebuild_failed_safety_kept":

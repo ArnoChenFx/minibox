@@ -9,6 +9,7 @@ import { mountMounts } from "./box-volumes.js";
 import { mountCheckpoints } from "./checkpoints.js";
 import { mountEgressCard } from "./egress-card.js";
 import { mountEnvCard } from "./env-card.js";
+import { mountStagedBanner } from "./staged-changes.js";
 import { mountStartupCard } from "./startup-card.js";
 
 function kvCard(title, rows) {
@@ -89,15 +90,26 @@ function navLink(id, item, activeId) {
 
 /**
  * The settings tab of a box: a sub-nav beside the one section the address names. A section that is not named falls back
- * to the first, as the settings page does. Returns the cleanup that the page calls when the tab closes.
+ * to the first, as the settings page does. Above the section, a banner shows the changes staged for the next rebuild,
+ * whichever section staged them. Returns the cleanup that the page calls when the tab closes.
  */
 export function mountBoxSettings(root, { box, section, history, onChange, refreshBox }) {
   const active = boxSettingsOf(section);
   root.innerHTML = `<div class="settings box-settings">
     <nav class="settings-nav" aria-label="${esc(t("bd.setNav"))}">${BOX_SETTINGS.map((item) => navLink(box().id, item, active.id)).join("")}</nav>
-    <div class="settings-panel box-stack" id="bsPanel"></div>
+    <div class="settings-panel box-stack">
+      <div id="bsStaged" hidden></div>
+      <div class="box-stack" id="bsPanel"></div>
+    </div>
   </div>`;
   const nav = root.querySelector(".settings-nav");
   revealInStrip(nav, nav.querySelector('[aria-current="page"]'));
-  return SECTIONS[active.id](root.querySelector("#bsPanel"), { box, history, onChange, refreshBox });
+  const banner = mountStagedBanner(root.querySelector("#bsStaged"), { box });
+  const offBanner = onChange(() => banner.onBoxChange());
+  const cleanup = SECTIONS[active.id](root.querySelector("#bsPanel"), { box, history, onChange, refreshBox });
+  return () => {
+    offBanner();
+    banner.dispose();
+    cleanup?.();
+  };
 }

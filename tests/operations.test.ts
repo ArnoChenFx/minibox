@@ -106,6 +106,11 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.move": (id) => ({ id, host: "lab", confirm: true, expectedRevision: "1" }),
   "box.logs": (id) => ({ id, tail: 10 }),
   "box.stats": (id) => ({ id }),
+  "box.staged.get": (id) => ({ id }),
+  "box.staged.set": (id) => ({ id, profile: "strict" }),
+  "box.staged.discard": (id) => ({ id }),
+  "box.staged.preview": (id) => ({ id }),
+  "box.staged.apply": (id) => ({ id, checkpoint: true, expectedRevision: "1" }),
   "box.startup.get": (id) => ({ id }),
   "box.startup.set": (id) => ({ id, command: "echo ready", expectedRevision: "1" }),
   "box.startup.delete": (id) => ({ id, expectedRevision: "1" }),
@@ -406,6 +411,9 @@ async function preparedInput(
   if (operation.name.startsWith("self.")) {
     const agent = await agentOf(app, ctx, boxId);
     return { input: SAMPLES[operation.name]?.(boxId, app), principal: agent.principal };
+  }
+  if (operation.name.startsWith("box.staged.") && operation.name !== "box.staged.set") {
+    await app.operations.run("box.staged.set", ctx, SAMPLES["box.staged.set"]?.(boxId, app));
   }
   if (operation.name === "template.rebuild") {
     await app.operations.run("template.create", ctx, SAMPLES["template.create"]?.(boxId, app));

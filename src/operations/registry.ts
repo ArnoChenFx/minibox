@@ -16,6 +16,7 @@ import { secretOperations } from "./secrets";
 import { selfOperations } from "./self";
 import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
+import { stagedOperations } from "./staged";
 import { startupOperations } from "./startup";
 import { targetOperations } from "./targets";
 import { taskOperations } from "./tasks";
@@ -29,6 +30,7 @@ import { volumeOperations } from "./volumes";
 /** Every operation the API serves. REST routes, OpenAPI, MCP tools and CLI commands are all derived from this list. */
 export const OPERATIONS: readonly Operation[] = [
   ...boxOperations,
+  ...stagedOperations,
   ...startupOperations,
   ...execOperations,
   ...portOperations,

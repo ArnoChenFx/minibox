@@ -401,6 +401,15 @@ const rebuildRule: Rule = async (check) => {
   assertSecretUse(check.principal, envAfterRebuild(check));
 };
 
+/**
+ * Staging changes nothing yet, but the owner may apply what a token staged without reading every field, so a token may
+ * stage only what it could rebuild with itself.
+ */
+const stagedSetRule: Rule = async (check) => {
+  await changeRule(check);
+  if (check.input.env !== undefined) assertSecretUse(check.principal, envOf(check.input.env));
+};
+
 /** Only an update that changes the box's template, mounts, env, network or profile rebuilds it. */
 const REBUILD_FIELDS = ["template", "mounts", "env", "network", "profile"] as const;
 
@@ -486,6 +495,10 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["box.update", updateRule],
   ["box.rebuild", rebuildRule],
   ["box.move", moveRule],
+  ["box.staged.get", boxRule],
+  ["box.staged.set", stagedSetRule],
+  ["box.staged.discard", boxRule],
+  ["box.staged.preview", boxRule],
   ["box.logs", boxRule],
   ["box.stats", boxRule],
   ["box.startup.get", boxRule],

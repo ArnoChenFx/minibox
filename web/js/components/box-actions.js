@@ -156,8 +156,24 @@ function envChangeText(text) {
     .join(", ");
 }
 
-function changeText(change, text) {
-  return change.field === "env" ? envChangeText(text) : text;
+/** A planned change's text as a person reads it: an environment as NAME=value pairs, anything else as it is. */
+export function changeText(change, text) {
+  if (change.field === "env") return envChangeText(text);
+  if (change.field === "mounts") return mountsChangeText(text);
+  return text;
+}
+
+/** Mounts as path=volume:mode, from the JSON a rebuild plan names them in. Text that is not that JSON stays as it is. */
+function mountsChangeText(text) {
+  let rows;
+  try {
+    rows = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (!Array.isArray(rows)) return text;
+  if (!rows.length) return "—";
+  return rows.map((row) => `${row.path}=${row.volume}:${row.mode}`).join(", ");
 }
 
 /** The HTML for a rebuild preview: the planned changes, the writable layer, what is kept and what is lost. */

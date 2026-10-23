@@ -1,10 +1,10 @@
-import { api, enc } from "../lib/api.js";
+import { api } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { toastError, openDialog, confirmDialog, toast } from "../lib/ui.js";
-import { rebuildPreviewHtml } from "./box-actions.js";
 import { mountModeLabel } from "./mount-editor.js";
+import { fetchStaged, onStaged, stageFields, stagedField } from "./staged-changes.js";
 import { usageInlineHtml } from "./volume-usage.js";
 
 const ROLE_LABEL = {
@@ -14,20 +14,61 @@ const ROLE_LABEL = {
   cache: "vol.roleCache",
 };
 
-export function mountsCard(box, volumes) {
-  const rows = (box.mounts ?? [])
-    .map((mount) => {
-      const detach = mount.volumeId
-        ? `<button class="btn btn-sm" data-action="detach-mount" data-volume="${esc(mount.volumeId)}" data-path="${esc(mount.path)}">${t("vol.detach")}</button>`
-        : "";
-      return `<tr>
-        <td class="mono">${esc(mount.path)}</td>
-        <td>${esc(mount.volumeName || mount.volume)}</td>
+const sameMount = (a, b) => a.volume === b.volume && a.path === b.path && a.mode === b.mode;
+
+/** The box's mounts as a rebuild names them: volume, path and mode. */
+export function mountSpecsOf(box) {
+  return (box.mounts ?? []).map((mount) => ({ volume: mount.volume, path: mount.path, mode: mount.mode }));
+}
+
+/**
+ * The rows the card lists. Without staged mounts, the box's own. With them, each mount the box has is kept or marked for
+ * removal, and each staged mount the box lacks is marked to be added, after the box's own.
+ */
+export function mountRowsOf(box, staged) {
+  const current = box.mounts ?? [];
+  if (!staged) return current.map((mount) => ({ mount, pending: null }));
+  const rows = current.map((mount) => ({
+    mount,
+    pending: staged.some((item) => sameMount(item, mount)) ? null : "remove",
+  }));
+  for (const item of staged) {
+    if (!current.some((mount) => sameMount(item, mount))) rows.push({ mount: item, pending: "add" });
+  }
+  return rows;
+}
+
+function volumeOfMount(mount, volumes) {
+  if (mount.volumeId) return volumes.get(mount.volumeId);
+  return [...volumes.values()].find((volume) => volume.engineName === mount.volume || volume.name === mount.volume);
+}
+
+function mountAction(mount, pending) {
+  const path = esc(mount.path);
+  if (pending === "remove") {
+    return `<button class="btn btn-sm" data-action="restore-mount" data-path="${path}">${t("stg.undo")}</button>`;
+  }
+  if (pending === "add" || mount.volumeId) {
+    return `<button class="btn btn-sm" data-action="detach-mount" data-path="${path}">${t("vol.detach")}</button>`;
+  }
+  return "";
+}
+
+const PENDING_BADGE = { add: "stg.pendingAdd", remove: "stg.pendingRemove" };
+
+export function mountsCard(box, volumes, staged = null) {
+  const rows = mountRowsOf(box, staged)
+    .map(({ mount, pending }) => {
+      const volume = volumeOfMount(mount, volumes);
+      const badge = pending ? ` <span class="badge badge-warning">${esc(t(PENDING_BADGE[pending]))}</span>` : "";
+      return `<tr${pending ? ` class="mount-pending mount-pending-${pending}" data-pending="${pending}"` : ""}>
+        <td class="mono">${esc(mount.path)}${badge}</td>
+        <td>${esc(mount.volumeName || volume?.name || mount.volume)}</td>
         <td>${mount.role ? esc(t(ROLE_LABEL[mount.role])) : "—"}</td>
         <td>${esc(mountModeLabel(mount.mode))}</td>
-        <td>${esc(mount.pool || "—")}</td>
-        <td>${usageInlineHtml(volumes.get(mount.volumeId))}</td>
-        <td>${detach}</td>
+        <td>${esc(mount.pool || volume?.pool || "—")}</td>
+        <td>${usageInlineHtml(volume)}</td>
+        <td>${mountAction(mount, pending)}</td>
       </tr>`;
     })
     .join("");
@@ -42,15 +83,16 @@ export function mountsCard(box, volumes) {
 }
 
 /**
- * The storage section of a box: its mounts with the volumes' sizes. The volumes are read once, after the card has
- * shown, and the card is drawn again as the box changes. Attaching or detaching a volume rebuilds the box, and the
- * page mounts the section again when it does.
+ * The storage section of a box: its mounts with the volumes' sizes, and the mounts staged for the next rebuild marked
+ * as such. The volumes and the staged mounts are read once, after the card has shown, and the card is drawn again as
+ * the box or its staged changes change. Attaching or detaching a volume stages the change; the banner applies it.
  */
 export function mountMounts(root, { box, onChange }) {
   let volumes = new Map();
+  let staged = null;
   let open = true;
   const draw = () => {
-    if (open) root.innerHTML = mountsCard(box(), volumes);
+    if (open) root.innerHTML = mountsCard(box(), volumes, staged);
   };
   draw();
   api("/api/volumes")
@@ -60,13 +102,43 @@ export function mountMounts(root, { box, onChange }) {
       draw();
     })
     .catch(() => undefined);
-  const off = onChange(draw);
+  const readStaged = () =>
+    fetchStaged(box().id)
+      .then((waiting) => {
+        if (!open) return;
+        staged = stagedField(waiting, "mounts");
+        draw();
+      })
+      .catch(() => undefined);
+  void readStaged();
+  let revision = box().revision;
+  const off = onChange(() => {
+    draw();
+    if (box().revision !== revision) {
+      revision = box().revision;
+      void readStaged();
+    }
+  });
+  const offStaged = onStaged(
+    () => box().boxId,
+    (waiting) => {
+      staged = stagedField(waiting, "mounts");
+      draw();
+    },
+  );
   return () => {
     open = false;
     off();
+    offStaged();
   };
 }
 
+/** The mounts the next rebuild would give the box: the staged ones, or the box's own when none are staged. */
+async function plannedMounts(box) {
+  return stagedField(await fetchStaged(box.id), "mounts") ?? mountSpecsOf(box);
+}
+
+/** Picks a volume, a path and a mode, and stages the box with that mount added. Resolves true once it is staged. */
 export async function attachVolume(box) {
   let volumes = [];
   try {
@@ -121,63 +193,41 @@ export async function attachVolume(box) {
     if (!ok) return null;
   }
   try {
-    const result = await sendRebuildingChange(
-      `/api/volumes/${enc(picked.id)}/attach`,
-      { box: box.id, path: picked.path, mode: picked.mode },
-      { "if-match": String(box.revision) },
-      { title: t("vol.attach"), message: esc(volume?.name ?? picked.id) },
-    );
-    if (!result) return null;
-    toast(
-      t("vol.attached"),
-      result.warning === "shared_rw" ? { message: t("vol.sharedRwMessage", { name: volume?.name ?? "" }) } : {},
-    );
-    return result.box;
+    const planned = await plannedMounts(box);
+    const mount = { volume: volume?.engineName ?? picked.id, path: picked.path, mode: picked.mode };
+    await stageFields(box, { mounts: [...planned.filter((item) => item.path !== mount.path), mount] });
+    toast(t("stg.staged"), { message: t("stg.stagedText") });
+    return true;
   } catch (e) {
     toastError(t("vol.attachFailed"), e);
-    return null;
+    return false;
   }
 }
 
-/**
- * Attaches or detaches a volume, which rebuilds the box. The first request only returns the rebuild preview as a 409.
- * The second one, with confirm, is sent after the user has seen that preview.
- */
-async function sendRebuildingChange(url, body, headers, { title, message }) {
-  try {
-    return await api(url, { method: "POST", body, headers });
-  } catch (err) {
-    if (err.code !== "confirmation_required" || !err.details?.preview) throw err;
-    const ok = await confirmDialog({
-      title,
-      message,
-      body: rebuildPreviewHtml(err.details.preview),
-      confirmText: t("rb.apply"),
-      danger: true,
-      checkboxes: [{ key: "safetyCheckpoint", label: t("rb.safety"), help: t("rb.safetyHelp"), checked: true }],
-    });
-    if (!ok) return null;
-    return api(url, {
-      method: "POST",
-      body: { ...body, confirm: true, safetyCheckpoint: ok.safetyCheckpoint },
-      headers,
-    });
-  }
-}
-
+/** Stages the box without the mount at the path the button names. */
 export async function detachMount(box, el) {
   try {
-    const result = await sendRebuildingChange(
-      `/api/volumes/${enc(el.dataset.volume)}/detach`,
-      { box: box.id, path: el.dataset.path },
-      { "if-match": String(box.revision) },
-      { title: t("vol.detach"), message: esc(el.dataset.path) },
-    );
-    if (!result) return null;
-    toast(t("vol.detached"));
-    return result.box;
+    const planned = await plannedMounts(box);
+    await stageFields(box, { mounts: planned.filter((item) => item.path !== el.dataset.path) });
+    toast(t("stg.staged"), { message: t("stg.stagedText") });
+    return true;
   } catch (e) {
     toastError(t("vol.detachFailed"), e);
-    return null;
+    return false;
+  }
+}
+
+/** Takes a mount the box has back into the staged mounts, which undoes its staged removal. */
+export async function restoreMount(box, el) {
+  const kept = (box.mounts ?? []).find((mount) => mount.path === el.dataset.path);
+  if (!kept) return false;
+  try {
+    const planned = await plannedMounts(box);
+    const restored = { volume: kept.volume, path: kept.path, mode: kept.mode };
+    await stageFields(box, { mounts: [...planned.filter((item) => item.path !== kept.path), restored] });
+    return true;
+  } catch (e) {
+    toastError(t("stg.stageFailed"), e);
+    return false;
   }
 }

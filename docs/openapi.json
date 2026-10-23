@@ -7190,6 +7190,1821 @@
         "x-cli": "box stats"
       }
     },
+    "/api/boxes/{id}/staged": {
+      "get": {
+        "operationId": "box.staged.get",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Read a box's staged changes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "staged": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "fields": {
+                              "type": "object",
+                              "properties": {
+                                "template": {
+                                  "type": "string"
+                                },
+                                "mounts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "volume": {
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rw",
+                                          "ro"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "volume",
+                                      "path",
+                                      "mode"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "env": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      },
+                                      "secretRef": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "network": {
+                                  "type": "string"
+                                },
+                                "egress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "mode": {
+                                      "type": "string",
+                                      "enum": [
+                                        "open",
+                                        "none",
+                                        "proxy-only"
+                                      ]
+                                    },
+                                    "presets": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "agent-default",
+                                          "package-registries"
+                                        ]
+                                      }
+                                    },
+                                    "domains": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "allow": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "mode",
+                                    "presets",
+                                    "domains",
+                                    "allow"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "profile": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "standard",
+                                        "strict",
+                                        "relaxed"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "additionalProperties": false,
+                              "description": "The staged values. A field left out stays as the box has it."
+                            },
+                            "pending": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "template",
+                                  "mounts",
+                                  "env",
+                                  "network",
+                                  "egress",
+                                  "profile"
+                                ]
+                              },
+                              "description": "The staged fields that still differ from the box. A field that matches the box again is dropped."
+                            },
+                            "changes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "field": {
+                                    "type": "string",
+                                    "enum": [
+                                      "template",
+                                      "mounts",
+                                      "env",
+                                      "network",
+                                      "egress",
+                                      "profile",
+                                      "containerName"
+                                    ]
+                                  },
+                                  "from": {
+                                    "type": "string"
+                                  },
+                                  "to": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "field",
+                                  "from",
+                                  "to"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "description": "What applying would change, field by field."
+                            },
+                            "problem": {
+                              "description": "Why the staged changes cannot be applied as they stand, such as a secret that is no longer set.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "baseRevision": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            },
+                            "updatedBy": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "fields",
+                            "pending",
+                            "changes",
+                            "problem",
+                            "baseRevision",
+                            "updatedAt",
+                            "updatedBy"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Null when nothing is staged."
+                    }
+                  },
+                  "required": [
+                    "staged"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:read",
+        "x-async": false,
+        "x-cli": "box staged"
+      },
+      "put": {
+        "operationId": "box.staged.set",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Stage changes that rebuild a box",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used."
+                  },
+                  "mounts": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "description": "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A recorded volume can be mounted by several boxes unless another box owns it. A new or changed mount needs volume:attach on its volume, and a read-write one also needs volume:write. A name that does not exist yet creates a standalone volume, which needs volume:write. Refused: minibox-data, volumes without the MiniBox label, internal helper volumes, pool roots, volumes another box owns, and names that start with the label prefix followed by -ws- or -pool-."
+                  },
+                  "env": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+                          "maxLength": 128
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 8192
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+                          "maxLength": 128
+                        }
+                      }
+                    },
+                    "description": "Environment entries that replace the box's env list. Each entry is { name, value } for a plain value or { name, secretRef } for a secret set with secret.set. Give one or the other. Omitted, the current env stays. A secret's value goes into the new container when the box is rebuilt, so a changed secret takes effect on the next rebuild. A secret that is not set is refused with 400. Values are not written to container labels."
+                  },
+                  "network": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "Docker network the rebuilt container joins: the host's box network (created when missing) or the network the box already uses. Host, none and container networks, and any other network, are refused."
+                  },
+                  "egress": {
+                    "type": "object",
+                    "required": [
+                      "mode"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "none",
+                          "proxy-only"
+                        ]
+                      },
+                      "presets": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "agent-default",
+                            "package-registries"
+                          ]
+                        }
+                      },
+                      "domains": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 253
+                        }
+                      }
+                    },
+                    "description": "Network egress for the box. open, the default, reaches the internet like any container. none gives the box a private network with no route out: exec, SSH and preview still reach it. proxy-only gives it a private network whose only way out is a MiniBox proxy, which forwards to the hosts named by presets and domains and refuses the rest. presets (agent-default, package-registries) and domains (a host, or *. and a suffix for its subdomains) apply to proxy-only only. The proxy logs each host it allows or refuses, never paths or bodies. Changing egress rebuilds the box, so an update or rebuild without confirm true returns the preview."
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "strict",
+                      "relaxed"
+                    ],
+                    "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "staged": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "fields": {
+                              "type": "object",
+                              "properties": {
+                                "template": {
+                                  "type": "string"
+                                },
+                                "mounts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "volume": {
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rw",
+                                          "ro"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "volume",
+                                      "path",
+                                      "mode"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "env": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      },
+                                      "secretRef": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "network": {
+                                  "type": "string"
+                                },
+                                "egress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "mode": {
+                                      "type": "string",
+                                      "enum": [
+                                        "open",
+                                        "none",
+                                        "proxy-only"
+                                      ]
+                                    },
+                                    "presets": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "agent-default",
+                                          "package-registries"
+                                        ]
+                                      }
+                                    },
+                                    "domains": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "allow": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "mode",
+                                    "presets",
+                                    "domains",
+                                    "allow"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "profile": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "standard",
+                                        "strict",
+                                        "relaxed"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "additionalProperties": false,
+                              "description": "The staged values. A field left out stays as the box has it."
+                            },
+                            "pending": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "template",
+                                  "mounts",
+                                  "env",
+                                  "network",
+                                  "egress",
+                                  "profile"
+                                ]
+                              },
+                              "description": "The staged fields that still differ from the box. A field that matches the box again is dropped."
+                            },
+                            "changes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "field": {
+                                    "type": "string",
+                                    "enum": [
+                                      "template",
+                                      "mounts",
+                                      "env",
+                                      "network",
+                                      "egress",
+                                      "profile",
+                                      "containerName"
+                                    ]
+                                  },
+                                  "from": {
+                                    "type": "string"
+                                  },
+                                  "to": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "field",
+                                  "from",
+                                  "to"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "description": "What applying would change, field by field."
+                            },
+                            "problem": {
+                              "description": "Why the staged changes cannot be applied as they stand, such as a secret that is no longer set.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "baseRevision": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            },
+                            "updatedBy": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "fields",
+                            "pending",
+                            "changes",
+                            "problem",
+                            "baseRevision",
+                            "updatedAt",
+                            "updatedBy"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Null when nothing is staged."
+                    }
+                  },
+                  "required": [
+                    "staged"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:write",
+        "x-async": false,
+        "x-cli": "box stage"
+      },
+      "delete": {
+        "operationId": "box.staged.discard",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Discard a box's staged changes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:write",
+        "x-async": false,
+        "x-cli": "box unstage"
+      }
+    },
+    "/api/boxes/{id}/staged/preview": {
+      "get": {
+        "operationId": "box.staged.preview",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Preview applying a box's staged changes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preview": {
+                      "type": "object",
+                      "properties": {
+                        "changes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string",
+                                "enum": [
+                                  "template",
+                                  "mounts",
+                                  "env",
+                                  "network",
+                                  "egress",
+                                  "profile",
+                                  "containerName"
+                                ]
+                              },
+                              "from": {
+                                "type": "string"
+                              },
+                              "to": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "added",
+                                  "modified",
+                                  "deleted"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "kind"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "description": "Changes in the container's writable layer. The rebuild loses them."
+                        },
+                        "keeps": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "loses": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "containerName": {
+                          "type": "object",
+                          "properties": {
+                            "from": {
+                              "type": "string"
+                            },
+                            "to": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "revision": {
+                          "type": "object",
+                          "properties": {
+                            "current": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "next": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "current",
+                            "next"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "sessions": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Terminal sessions that end with the old container. Null when they could not be read."
+                        },
+                        "systemCheckpoint": {
+                          "type": "boolean",
+                          "description": "Whether the checkpoint taken first can include the writable layer. Not when the env names a secret."
+                        }
+                      },
+                      "required": [
+                        "changes",
+                        "diff",
+                        "keeps",
+                        "loses",
+                        "containerName",
+                        "revision",
+                        "sessions",
+                        "systemCheckpoint"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "preview"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:read",
+        "x-async": false,
+        "x-cli": "box staged preview"
+      }
+    },
+    "/api/boxes/{id}/staged/apply": {
+      "post": {
+        "operationId": "box.staged.apply",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Apply a box's staged changes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "The box's current revision: a positive integer, a quoted entity tag, or a weak tag. Missing is 428 precondition_required. A stale revision is 412 precondition_failed.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "checkpoint": {
+                    "type": "boolean",
+                    "description": "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0. Defaults to true."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "box": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "image": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "cpus": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "memory": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "volume": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual",
+                                "volume_limit"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              },
+                              "volumeId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "volumeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "role": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "workspace",
+                                      "home",
+                                      "tools",
+                                      "cache"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "pool": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode",
+                              "volumeId",
+                              "volumeName",
+                              "role",
+                              "pool"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "storage": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ok",
+                                "unreachable",
+                                "unknown"
+                              ]
+                            },
+                            "pools": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reachable",
+                                      "unreachable",
+                                      "unknown"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "status"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "pools"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "boxId",
+                        "name",
+                        "state",
+                        "status",
+                        "running",
+                        "image",
+                        "template",
+                        "profile",
+                        "network",
+                        "cpus",
+                        "memory",
+                        "pids",
+                        "createdAt",
+                        "startedAt",
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts",
+                        "env",
+                        "tools",
+                        "storage"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The checkpoint taken before the rebuild, or null when none was taken."
+                    }
+                  },
+                  "required": [
+                    "box",
+                    "safety"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The If-Match revision is not the box's current revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required and was not sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "box:apply",
+        "x-async": false,
+        "x-cli": "box apply"
+      }
+    },
     "/api/boxes/{id}/startup-command": {
       "get": {
         "operationId": "box.startup.get",

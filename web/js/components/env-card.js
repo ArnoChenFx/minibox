@@ -3,11 +3,9 @@ import { esc } from "../lib/dom.js";
 import { canonicalEnv, checkEnvRows, envRowsOf } from "../lib/env.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { movedBoxHash } from "../lib/routes.js";
-import { refreshHost } from "../lib/store.js";
-import { confirmDialog, toast, withBusy } from "../lib/ui.js";
-import { rebuildPreviewHtml } from "./box-actions.js";
+import { toast, withBusy } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
+import { fetchStaged, onStaged, stageFields, stagedField } from "./staged-changes.js";
 
 const MASK = "••••••••";
 
@@ -42,12 +40,15 @@ function entryHtml(entry, secrets) {
 }
 
 /**
- * The environment card on the overview tab. It reads the box from REST, because a live frame names the variables without
- * their values. A plain value stays masked until it is revealed, and a secret shows only its name. Saving rebuilds the box
- * after the same preview and confirmation as the rebuild dialog, and it is refused when the box changed since editing began.
+ * The environment card in a box's settings. It reads the box from REST, because a live frame names the variables without
+ * their values. A plain value stays masked until it is revealed, and a secret shows only its name. Saving stages the
+ * environment for the next rebuild instead of rebuilding: the card then shows the staged variables, marked as pending,
+ * and the banner above the settings applies them with the other staged changes.
  */
 export function mountEnvCard(container, { box }) {
   let entries = [];
+  /** The staged environment, or null when none waits. It is what the card shows and what editing starts from. */
+  let staged = null;
   let revision = null;
   let secrets = null;
   let loadError = "";
@@ -61,9 +62,13 @@ export function mountEnvCard(container, { box }) {
   const fetchBox = async () => {
     const seq = ++fetches;
     try {
-      const { box: fresh } = await api(`/api/boxes/${enc(box().id)}`);
+      const [{ box: fresh }, waiting] = await Promise.all([
+        api(`/api/boxes/${enc(box().id)}`),
+        fetchStaged(box().id).catch(() => null),
+      ]);
       if (disposed || seq !== fetches) return false;
       entries = fresh.env ?? [];
+      staged = stagedField(waiting, "env");
       revision = fresh.revision;
       loadError = "";
     } catch (e) {
@@ -74,14 +79,18 @@ export function mountEnvCard(container, { box }) {
   };
 
   const drawView = () => {
-    const body = entries.length
-      ? `<dl class="kv env-kv">${entries.map((entry) => entryHtml(entry, secrets)).join("")}</dl>`
+    const shown = staged ?? entries;
+    const body = shown.length
+      ? `<dl class="kv env-kv">${shown.map((entry) => entryHtml(entry, secrets)).join("")}</dl>`
       : `<p class="subtle">${esc(t("env.none"))}</p>`;
+    const pending = staged
+      ? ` <span class="badge badge-warning" data-env-pending>${esc(t("stg.pendingBadge"))}</span>`
+      : "";
     container.innerHTML = `<div class="card">
-      <div class="card-head"><h3>${esc(t("env.section"))}</h3>
+      <div class="card-head"><h3>${esc(t("env.section"))}${pending}</h3>
         <button type="button" class="btn btn-sm" data-env-action="edit">${icon("sliders")}${esc(t("env.edit"))}</button></div>
       <div class="card-body">
-        <p class="help">${esc(t("env.detailHelp"))}</p>
+        <p class="help">${esc(t(staged ? "env.pendingHelp" : "env.detailHelp"))}</p>
         ${loadError ? `<div class="callout danger">${icon("alert")}<span>${esc(loadError)}</span></div>` : ""}
         ${body}
       </div>
@@ -122,7 +131,7 @@ export function mountEnvCard(container, { box }) {
   };
 
   const startEdit = () => {
-    base = { entries, revision };
+    base = { entries: staged ?? entries, revision };
     editing = true;
     draw();
   };
@@ -133,36 +142,11 @@ export function mountEnvCard(container, { box }) {
     draw();
   };
 
-  const rebuild = async (env) => {
-    const path = `/api/boxes/${enc(box().id)}/rebuild`;
-    const headers = { "if-match": String(base.revision) };
-    let result;
-    try {
-      result = await api(path, { method: "POST", body: { env }, headers });
-    } catch (err) {
-      if (err.code !== "confirmation_required" || !err.details?.preview) throw err;
-      const ok = await confirmDialog({
-        title: t("env.confirmTitle", { name: box().name }),
-        message: esc(t("env.saveNote")),
-        body: rebuildPreviewHtml(err.details.preview),
-        confirmText: t("rb.apply"),
-        danger: true,
-        checkboxes: [{ key: "safetyCheckpoint", label: t("rb.safety"), help: t("rb.safetyHelp"), checked: true }],
-      });
-      if (!ok) return false;
-      result = await api(path, {
-        method: "POST",
-        body: { env, confirm: true, safetyCheckpoint: ok.safetyCheckpoint },
-        headers,
-      });
-    }
-    const safety = result?.safety ? ` ${t("rb.safetyTaken")}` : "";
-    toast(t("rb.done"), { message: t("rb.doneText", { name: box().name }) + safety });
-    refreshHost();
-    const next = result?.box?.id;
-    const address = next && next !== box().id ? movedBoxHash(location.hash, box().id, next) : null;
-    if (address) location.hash = address;
-    return true;
+  /** Stages the environment. A box whose env already matches has nothing staged for it, so the card shows the box's. */
+  const stage = async (env) => {
+    const waiting = await stageFields(box(), { env });
+    staged = stagedField(waiting, "env");
+    toast(t(staged ? "stg.staged" : "stg.unstaged"), staged ? { message: t("stg.stagedText") } : {});
   };
 
   const save = async (button) => {
@@ -178,14 +162,13 @@ export function mountEnvCard(container, { box }) {
     showError();
     await withBusy(button, async () => {
       try {
-        if (!(await rebuild(checked.env))) return;
+        await stage(checked.env);
       } catch (err) {
         showError(`${err.message}${err.hint ? ` ${err.hint}` : ""}`);
         return;
       }
       editing = false;
       base = null;
-      await fetchBox();
       draw();
     });
   };
@@ -221,6 +204,14 @@ export function mountEnvCard(container, { box }) {
     draw();
   });
 
+  const offStaged = onStaged(
+    () => box().boxId,
+    (waiting) => {
+      staged = stagedField(waiting, "env");
+      if (!editing) draw();
+    },
+  );
+
   return {
     onBoxChange() {
       if (disposed || editing || box().revision === revision) return;
@@ -230,6 +221,7 @@ export function mountEnvCard(container, { box }) {
     },
     dispose() {
       disposed = true;
+      offStaged();
     },
   };
 }
