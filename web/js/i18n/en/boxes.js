@@ -308,6 +308,9 @@ export default {
   "reset.createdBy": "created by",
   "reset.sep": ", ",
   "cb.tools": "Tools",
+  "cb.toolsChosen": "{n} chosen: {names}",
+  "cb.toolsNone": "None chosen",
+  "cb.templateChosen": "Chosen: {name}",
   "cb.toolsHelp":
     "Optional. Installed onto the shared tools volume after the box starts. Tools already in the template are skipped. Progress appears in Tasks.",
   "cb.toolsInstalling": "Installing tools",
