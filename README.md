@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml"><img src="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0" /></a>
-  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.4-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.4.4" /></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.3-f9f1e1?logo=bun&amp;logoColor=black" alt="Runtime: Bun ≥ 1.4.3" /></a>
   <img src="https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&amp;logoColor=white" alt="Sandbox: Docker" />
 </p>
 
@@ -87,7 +87,7 @@ The [documentation index](docs/README.md) lists every page. Chinese documents ar
 ## Requirements
 
 - A Linux host with Docker Engine. MiniBox reads `/proc` for host metrics.
-- For a source install, [Bun](https://bun.sh) 1.4.4 or later.
+- For a source install, [Bun](https://bun.sh) 1.4.3 or later.
 
 ## License
 
