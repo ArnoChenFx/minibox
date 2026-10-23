@@ -32,7 +32,7 @@ MiniBox is built for one trusted user, on a machine that the user controls. Read
 - `exec` and `box:ssh` can read and write every mount of the boxes that the token may use. Grant them only where needed.
 - Only the owner can create tokens. No preset can create one.
 
-**`/mcp` accepts the access key, and the key grants full owner access over MCP.** A client with the key can run `exec` as root in any box that is not `strict`, delete boxes and rebuild them. Give agents an agent token instead. A token's tool list and every call are held to its scopes. See [Connecting AI agents](../user-guide/agents.md).
+**`/mcp` accepts the access key in this release, and the key grants full owner access over MCP.** A client with the key can run `exec` as root in any box that is not `strict`, delete boxes and rebuild them. MiniBox records each use. Set `MCP_ALLOW_OWNER_KEY=false` to refuse the key on `/mcp`. The next minor release refuses it by default. Give agents an agent token instead. A token's tool list and every call are held to its scopes. See [Connecting AI agents](../user-guide/agents.md).
 
 ## Host secrets
 

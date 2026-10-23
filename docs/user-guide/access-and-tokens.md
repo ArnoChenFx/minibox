@@ -2,7 +2,7 @@
 
 MiniBox has three ways to prove who you are:
 
-- **The access key** signs you in to the console, and it is the owner's key for the REST API, the CLI and MCP.
+- **The access key** signs you in to the console, and it is the owner's key for the REST API, the CLI and MCP. MCP accepts it for now, see [Connecting AI agents](agents.md).
 - **Browser sessions** are the sign-ins that you keep in each browser.
 - **Agent tokens** are keys for agents and scripts. Each token has only the permissions you give it.
 
@@ -43,6 +43,8 @@ An agent API token is a secret that starts with `mbx_`. Use one for each agent o
 6. Click **New token**. Copy the secret now. MiniBox does not show it again.
 
 After you create the token, MiniBox shows an example for **REST** and the **MCP client config**, with the secret filled in. Copy either one.
+
+The command line can create one too: `minibox token create <name>` prints the secret once. See the [CLI reference](../reference/cli.md#tokens).
 
 ### Presets
 
