@@ -113,6 +113,7 @@ async function updateChanging(host: HostCtx, current: Box, revision: number, pat
       }
       throw e;
     }
+    host.selfTokens.rename(current.boxId, nextName);
   });
   await host.sampler.observe(current.id);
   log.info("box.updated", { id: current.boxId, name: current.name });

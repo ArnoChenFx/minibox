@@ -65,6 +65,23 @@ export class SelfTokenStore {
     return this.byBox.has(boxId);
   }
 
+  /**
+   * Gives the box's record its new name, so the events its agent writes carry the box's current name. The spec is already
+   * renamed when this runs, so a record that cannot be saved is logged rather than failing a rename that has happened.
+   */
+  rename(boxId: string, name: string): void {
+    const record = this.byBox.get(boxId);
+    if (!record || record.name === name) return;
+    const renamed: SelfRecord = { ...record, name };
+    this.byBox.set(boxId, renamed);
+    this.byHash.set(renamed.tokenHash, renamed);
+    try {
+      this.save();
+    } catch (e) {
+      log.warn("box.self_token_rename_unsaved", { boxId, error: String(e) });
+    }
+  }
+
   /** Ends the box's token. Returns false when the box had none. */
   revoke(boxId: string): boolean {
     if (!this.drop(boxId)) return false;
