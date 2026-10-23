@@ -38,7 +38,7 @@ The common tools are `git`, `curl`, `tmux`, `jq`, `ripgrep`, `openssh-client`, `
 Official templates are not built when MiniBox starts. A template is built on a host the first time a box needs it there:
 
 - **Creating a box.** If no host holds the template, MiniBox builds it on the host the box goes to, and the create waits for the build. The build log opens in the **Tasks** panel. With automatic placement, the box goes to the roomiest online host that can build the template, when no host that already holds it has room. A failed build leaves no template and no box.
-- **Building ahead of time.** On the **Templates** page, click **Build** on the card of a template that is not built yet, or **Build here** next to a host when the console has several hosts. On the command line, run `minibox template build-official go`, with `--host` to choose a host.
+- **Building ahead of time.** On the **Templates** tab of **Library**, click **Build** on the card of a template that is not built yet, or **Build here** next to a host when the console has several hosts. On the command line, run `minibox template build-official go`, with `--host` to choose a host.
 
 In the **Create box** dialog, the official templates that are not built yet come after the built ones, marked **Builds on first use**.
 
