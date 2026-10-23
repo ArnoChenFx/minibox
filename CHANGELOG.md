@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 新增
+- Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：创建 Box 时可以为其 Agent 开启自助令牌（默认关闭；`POST /api/boxes` 的 `selfToken`、`minibox box create --self-token` 与控制台的创建表单）。令牌只写入 Box 内的 `/run/minibox/self-token`（权限 600，位于内存文件系统），不进入环境变量、事件、审计或镜像，服务器只保存其哈希。每次启动、重启、重建或迁移都会轮换令牌；停止或删除 Box 会使其失效；所有者可在 Box 页面吊销，或调用 `DELETE /api/boxes/{id}/self-token`（吊销后该 Box 的功能关闭，需重新创建才能再次开启）。令牌只能使用本 Box 的 `get_info`、`checkpoint`、`get_task`、`ask_human`、`get_question` 与 `report_status`（REST 位于 `/api/self`）；访问其他 Box、令牌管理、密钥或宿主机时返回 `403`。`self` 工具集只对该 Box 的 Agent 可见，每个令牌每分钟最多 60 次请求。
+- Agent 提问：`ask_human` 提出的问题保存在 `DATA_DIR/questions.json`，每个 Box 最多 20 个未回答的问题。问题显示在 Box 页面的 **Agent** 卡片中，所有者可以回复；每个新问题发送 `agent.question` 通知。REST 接口为 `GET /api/boxes/{id}/questions` 与 `POST /api/questions/{id}/answer`。
+- Agent 状态：`report_status` 报告的状态记入事件日志，并显示在活动面板中。
+
+### 文档
+- 新增 Box 内 Agent 指南（`docs/user-guide/agents.md` 与 `docs/zh-CN/user-guide/agents.md`），含供 Box 内 Agent 使用的 `AGENTS.md` 说明文本，并在 API、MCP、CLI、通知、访问与令牌、Box、安全、配置与数据目录文档中补充相关内容。Box 访问 MiniBox 需要服务器监听 `minibox-boxes` 网络可达的地址，见配置中的 `HOST`。
+
 ## [0.5.0] - 2026-10-23
 
 ### 亮点
