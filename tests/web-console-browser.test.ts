@@ -207,6 +207,10 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
         await webExpect(tab(page, "Checkpoints")).toHaveAttribute("aria-selected", "false");
         await webExpect(page.locator("#volRows")).toContainText("alpha");
         await webExpect(page.locator("#boxPick")).toHaveCount(0);
+        await webExpect(page.locator("#view [role='tabpanel']")).toHaveAttribute(
+          "aria-labelledby",
+          (await tab(page, "Volumes").getAttribute("id")) ?? "",
+        );
       },
       TIMEOUT_MS,
     );
@@ -320,6 +324,20 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
           await webExpect(page).toHaveURL(at(to));
           await webExpect(currentEntry(page)).toHaveAttribute("data-nav", nav);
         }
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "a settings category address opens that category, and Settings is the current entry",
+      async () => {
+        await page.goto(`${consoleUrl}/#/settings/secrets`);
+        await webExpect(page).toHaveURL(at("#/settings/secrets"));
+        await webExpect(page.locator(".settings-nav [aria-current='page']")).toHaveAttribute(
+          "href",
+          "#/settings/secrets",
+        );
+        await webExpect(currentEntry(page)).toHaveAttribute("data-nav", "settings");
       },
       TIMEOUT_MS,
     );

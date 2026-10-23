@@ -1,6 +1,6 @@
 import { mountBoxTab } from "../components/box-tab.js";
 import { mountCheckpoints } from "../components/checkpoints.js";
-import { sectionTabsHtml } from "../components/section-tabs.js";
+import { sectionPanelHtml, sectionTabsHtml } from "../components/section-tabs.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import * as volumes from "./volumes.js";
@@ -18,7 +18,7 @@ export function render(view, tab = "volumes", arg = "") {
       <div class="page-actions"><a class="btn" href="#/trash">${icon("trash")}${t("nav.trash")}</a></div>
     </div>
     ${sectionTabsHtml("storage", TABS, tab, arg)}
-    <div id="sectionBody"></div>`;
+    ${sectionPanelHtml("storage", tab)}`;
   const body = view.querySelector("#sectionBody");
   if (tab === "checkpoints") return mountBoxTab(body, { section: "storage", tab, arg, mount: mountCheckpoints });
   return volumes.render(body);
