@@ -3,6 +3,7 @@ import { esc } from "../lib/dom.js";
 import { canonicalEnv, checkEnvRows, envRowsOf } from "../lib/env.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { movedBoxHash } from "../lib/routes.js";
 import { refreshHost } from "../lib/store.js";
 import { confirmDialog, toast, withBusy } from "../lib/ui.js";
 import { rebuildPreviewHtml } from "./box-actions.js";
@@ -55,7 +56,7 @@ export function mountEnvCard(container, { box }) {
   let disposed = false;
   let fetches = 0;
 
-  container.innerHTML = `<div class="card" style="margin-top:16px"><div class="card-body"><span class="spinner"></span></div></div>`;
+  container.innerHTML = `<div class="card"><div class="card-body"><span class="spinner"></span></div></div>`;
 
   const fetchBox = async () => {
     const seq = ++fetches;
@@ -76,7 +77,7 @@ export function mountEnvCard(container, { box }) {
     const body = entries.length
       ? `<dl class="kv env-kv">${entries.map((entry) => entryHtml(entry, secrets)).join("")}</dl>`
       : `<p class="subtle">${esc(t("env.none"))}</p>`;
-    container.innerHTML = `<div class="card" style="margin-top:16px">
+    container.innerHTML = `<div class="card">
       <div class="card-head"><h3>${esc(t("env.section"))}</h3>
         <button type="button" class="btn btn-sm" data-env-action="edit">${icon("sliders")}${esc(t("env.edit"))}</button></div>
       <div class="card-body">
@@ -88,7 +89,7 @@ export function mountEnvCard(container, { box }) {
   };
 
   const drawEdit = () => {
-    container.innerHTML = `<div class="card" style="margin-top:16px">
+    container.innerHTML = `<div class="card">
       <div class="card-head"><h3>${esc(t("env.section"))}</h3></div>
       <div class="card-body stack">
         <p class="help">${esc(t("env.editHelp"))}</p>
@@ -157,7 +158,8 @@ export function mountEnvCard(container, { box }) {
     toast(t("rb.done"), { message: t("rb.doneText", { name: box().name }) + safety });
     refreshHost();
     const next = result?.box?.id;
-    if (next && next !== box().id) location.hash = `#/boxes/${next}`;
+    const address = next && next !== box().id ? movedBoxHash(location.hash, box().id, next) : null;
+    if (address) location.hash = address;
     return true;
   };
 

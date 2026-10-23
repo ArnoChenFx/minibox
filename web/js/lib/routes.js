@@ -25,11 +25,11 @@ const PAGES = [
   },
   { re: /^\/boxes$/, page: "boxes", nav: "boxes", crumbs: ["nav.boxes"] },
   {
-    re: /^\/boxes\/([^/]+)(?:\/(\w+))?$/,
+    re: /^\/boxes\/([^/]+)(?:\/(\w+)(?:\/(\w+))?)?$/,
     page: "boxDetail",
     nav: "boxes",
     crumbs: ["nav.boxes"],
-    args: (m) => [decode(m[1]), m[2]],
+    args: (m) => [decode(m[1]), m[2], m[3] === undefined ? undefined : decode(m[3])],
   },
   { re: /^\/trash$/, page: "trash", nav: "storage", crumbs: ["nav.storage", "nav.trash"] },
   {
@@ -42,12 +42,18 @@ const PAGES = [
   { re: /^\/about$/, page: "about", nav: "about", crumbs: ["nav.about"] },
 ];
 
-/** The addresses that moved. Each one maps the path it matches to the address that opens now. */
+/**
+ * The addresses that moved. Each one maps the path it matches to the address that opens now. The box tabs that became
+ * settings sections keep their links working here, so a bookmark made before the change still opens the same content.
+ */
 const MOVED = [
   { re: /^\/volumes$/, to: () => "/storage/volumes" },
   { re: /^\/templates$/, to: () => "/library/templates" },
   { re: /^\/templates\/([^/]+)$/, to: (m) => `/library/templates/${m[1]}` },
   { re: /^\/snapshots$/, to: () => "/library/templates" },
+  { re: /^\/boxes\/([^/]+)\/(resources|tools|checkpoints)$/, to: (m) => `/boxes/${m[1]}/settings/${m[2]}` },
+  { re: /^\/boxes\/([^/]+)\/snapshots$/, to: (m) => `/boxes/${m[1]}/settings/checkpoints` },
+  { re: /^\/boxes\/([^/]+)\/logs$/, to: (m) => `/boxes/${m[1]}/activity` },
 ];
 
 /**
@@ -82,6 +88,27 @@ function resolveSection([, section, tab, arg]) {
 /** The address of a tab, with the box or template it works on when it names one. */
 export function tabHash(section, tab, arg = "") {
   return `#/${section}/${tab}${arg ? `/${encodeURIComponent(arg)}` : ""}`;
+}
+
+/**
+ * The address of a box's tab. The overview is the box's own address, so a link to the box opens it. The settings tab
+ * takes the section it names, when it names one.
+ */
+export function boxHash(id, tab = "overview", section = "") {
+  const box = `#/boxes/${encodeURIComponent(id)}`;
+  if (tab === "overview") return box;
+  if (tab === "settings" && section) return `${box}/settings/${encodeURIComponent(section)}`;
+  return `${box}/${tab}`;
+}
+
+/**
+ * The address that shows the same tab of a box under its new container id, or null when `hash` is not on that box. A
+ * rebuild or a move gives a box a new id, so the page moves to the new address and keeps the tab it was on.
+ */
+export function movedBoxHash(hash, fromId, toId) {
+  const from = `#/boxes/${encodeURIComponent(fromId)}`;
+  if (hash !== from && !hash.startsWith(`${from}/`)) return null;
+  return `#/boxes/${encodeURIComponent(toId)}${hash.slice(from.length)}`;
 }
 
 function decode(segment) {
