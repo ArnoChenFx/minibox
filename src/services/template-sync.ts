@@ -3,6 +3,7 @@ import { untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
 import { type ImageDetails, isRuntimeError } from "../runtime";
 import { needsImage, sendImage } from "./image-transfer";
+import { copyRecipe } from "./template-builds";
 
 /** A host that holds a MiniBox template, and the image as that host's engine reports it. */
 export interface TemplateSource {
@@ -39,8 +40,9 @@ export async function findTemplateSource(hosts: readonly HostCtx[], ref: string)
 }
 
 /**
- * Copies the template from `source` to `target` unless the target already holds that image. The move that carries a box
- * uses the same transfer, so a template copy and a box move agree on what a host may hold. Returns whether an image was sent.
+ * Copies the template from `source` to `target` unless the target already holds that image, and gives the target the
+ * recipe that built it, so a declared template keeps its setup there. The move that carries a box uses the same transfer,
+ * so a template copy and a box move agree on what a host may hold. Returns whether an image was sent.
  */
 export async function copyTemplate(
   source: TemplateSource,
@@ -50,5 +52,6 @@ export async function copyTemplate(
 ): Promise<boolean> {
   const transfer = await needsImage(target, ref, source.image);
   if (transfer) await sendImage(source.host, target, ref, source.image.id, signal);
+  copyRecipe(source.host, target, ref, source.image.id);
   return transfer;
 }

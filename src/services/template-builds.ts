@@ -116,6 +116,20 @@ export function removeRecipe(host: HostCtx, name: string): void {
   rmSync(recipePath(host, name), { force: true });
 }
 
+/**
+ * Gives `to` the recipe that built the template `ref` on `from`, when that recipe names `imageId`. A copy of a declared
+ * template keeps its setup and can be rebuilt on `to`; a saved or rebuilt image matches no recipe, so it copies none.
+ */
+export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: string): void {
+  const prefix = `${from.prefix}-template:`;
+  if (!ref.startsWith(prefix)) return;
+  const name = ref.slice(prefix.length);
+  if (!NAME_RE.test(name)) return;
+  const recipe = readRecipe(from, name);
+  if (!recipe || recipe.imageId !== imageId || readRecipe(to, name)?.imageId === imageId) return;
+  writeRecipe(to, name, recipe);
+}
+
 /** How a template was built, when its image still matches the recipe that built it. */
 export function buildKindOf(host: HostCtx, name: string, imageId: string): BuildKind | null {
   if (!NAME_RE.test(name)) return null;

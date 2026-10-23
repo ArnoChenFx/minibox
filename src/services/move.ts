@@ -26,6 +26,7 @@ import { beginMove } from "./moving";
 import { assertFresh, containerSpec, movedTag } from "./rebuild";
 import { provisionSelfToken } from "./self-token";
 import { launchStartup } from "./startup";
+import { copyRecipe } from "./template-builds";
 
 /** What a move keeps. Volumes are copied to the target, or attached again where the storage is shared. */
 export const MOVE_KEEPS = ["id", "name", "volumes", "env", "history"] as const;
@@ -305,6 +306,7 @@ async function runMove(
       say(`Sending image ${spec.template.image} to ${to.host.id}.`);
       await sendImage(from, to, spec.template.image, plan.image.id, progress?.signal);
     }
+    copyRecipe(from, to, spec.template.image, plan.image.id);
     throwIfCancelled(progress);
     if (plan.running) {
       say("Pausing the box while its volumes are copied.");
