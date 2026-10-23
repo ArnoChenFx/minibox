@@ -15,13 +15,16 @@ import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoices } from "../lib/mounts.js";
+import { filterBySearch, searchTerms } from "../lib/search.js";
+import { chosenSummary, loadFolded, saveFolded } from "../lib/section-fold.js";
 import { STARTUP_COMMAND_MAX_BYTES, startupProblem, startupProblemKey } from "../lib/startup.js";
 import { getTemplates, hostNow, invalidateTemplates, refreshHost } from "../lib/store.js";
-import { needsSync, syncSizeMb, templateCards } from "../lib/template-list.js";
+import { needsSync, syncSizeMb, templateCards, templateSearchFields } from "../lib/template-list.js";
 import { cloneRepo } from "../lib/template-source.js";
-import { filterTools, groupTools } from "../lib/tool-list.js";
+import { pickerView } from "../lib/tool-list.js";
 import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretChoicesHtml, secretNames } from "./env-editor.js";
+import { bindToggles, isToggled, limitList, listToggleHtml } from "./list-toggle.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "./search-box.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
@@ -60,12 +63,30 @@ function toolCheckHtml(tool, selected) {
     </span></label>`;
 }
 
+/** A category's rows, under a header that folds them. A folded group keeps only its selected rows, which `pickerView` filtered. */
 function toolGroupHtml(group, selected) {
   const label = esc(categoryLabel(group.category));
   return `<section class="tool-group" aria-label="${label}">
-    <div class="tool-group-head"><strong>${label}</strong><span class="badge">${group.rows.length}</span></div>
+    <button type="button" class="tool-group-head" data-toggle="${esc(group.id)}" aria-expanded="${!group.folded}">${icon("chevron")}<strong>${label}</strong><span class="badge">${group.count}</span></button>
     <div class="tool-checks">${group.rows.map((tool) => toolCheckHtml(tool, selected.has(tool.id))).join("")}</div>
   </section>`;
+}
+
+/**
+ * A foldable section's heading: a chevron button holding the title and a summary of what is chosen, which stays visible
+ * while the section is folded, and the section's search at the right.
+ */
+function sectionHeadHtml({ id, label, searchHtml, folded }) {
+  return `<div class="picker-head">
+    <button type="button" class="section-toggle" id="${id}Toggle" aria-expanded="${!folded}" aria-controls="${id}Body">${icon("chevron")}<span class="label">${label}</span><span class="section-summary" id="${id}Summary"></span></button>
+    ${searchHtml}</div>`;
+}
+
+function templateOptionHtml(template, selectedRef) {
+  return `<div class="option" role="radio" tabindex="0" aria-checked="${template.ref === selectedRef}" data-ref="${esc(template.ref)}">
+    <span class="avatar">${icon("layers")}</span>
+    <span class="meta"><strong>${esc(template.name)}</strong><span>${esc(template.description ?? template.ref)}</span></span>
+    <span class="subtle num">${bytes(template.size)}</span></div>`;
 }
 
 /** The volumes a custom row can pick, with the ones another live box owns marked unavailable. */
@@ -142,27 +163,26 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   }
   const secrets = snapshot ? [] : await secretNames();
   const picker = !snapshot && catalog.length > 0;
+  const folded = loadFolded();
   const toolsSection = picker
-    ? `<div class="field" id="cbToolsField">
-          <div class="tool-picker-head"><span class="label">${t("cb.tools")}</span>${searchBoxHtml({ id: "cbToolSearch", placeholder: t("tool.searchPlaceholder"), label: t("tool.search") })}</div>
+    ? `<div class="field fold-section" id="cbToolsField">
+          ${sectionHeadHtml({ id: "cbTools", label: t("cb.tools"), folded: folded.has("tools"), searchHtml: searchBoxHtml({ id: "cbToolSearch", placeholder: t("tool.searchPlaceholder"), label: t("tool.search") }) })}
+          <div class="section-body" id="cbToolsBody">
           <div class="help">${t("cb.toolsHelp")}</div>
-          <div class="tool-groups" id="cbTools"></div></div>`
+          <div class="tool-groups" id="cbTools"></div>
+          <div class="list-more" id="cbToolsMore"></div></div></div>`
     : "";
 
-  const templatePicker = snapshot
-    ? `<div class="option" aria-checked="true"><span class="avatar">${icon("camera")}</span><span class="meta"><strong>${esc(snapshot)}</strong><span>${t("cb.fromSnapshotHint")}</span></span></div>`
+  const templateSection = snapshot
+    ? `<div class="field"><span class="label">${t("cb.sourceSnapshot")}</span><div class="option" aria-checked="true"><span class="avatar">${icon("camera")}</span><span class="meta"><strong>${esc(snapshot)}</strong><span>${t("cb.fromSnapshotHint")}</span></span></div></div>`
     : templates.length
-      ? `<div class="option-list" role="radiogroup" id="cbTemplates">${templates
-          .map(
-            (
-              t,
-            ) => `<div class="option" role="radio" tabindex="0" aria-checked="${t.ref === state.template}" data-ref="${esc(t.ref)}">
-              <span class="avatar">${icon("layers")}</span>
-              <span class="meta"><strong>${esc(t.name)}</strong><span>${esc(t.description ?? t.ref)}</span></span>
-              <span class="subtle num">${bytes(t.size)}</span></div>`,
-          )
-          .join("")}</div>`
-      : `<div class="callout warn">${icon("alert")}<span>${t("cb.noTemplates")}</span></div>`;
+      ? `<div class="field fold-section" id="cbTemplatesField">
+          ${sectionHeadHtml({ id: "cbTemplates", label: t("cb.template"), folded: folded.has("templates"), searchHtml: searchBoxHtml({ id: "cbTemplateSearch", placeholder: t("tp.searchPlaceholder"), label: t("tp.search") }) })}
+          <div class="section-body" id="cbTemplatesBody">
+          <div class="option-list" role="radiogroup" aria-label="${esc(t("cb.template"))}" id="cbTemplates"></div>
+          <div id="cbTemplatesEmpty" hidden></div>
+          <div class="list-more" id="cbTemplatesMore"></div></div></div>`
+      : `<div class="field"><span class="label">${t("cb.template")}</span><div class="callout warn">${icon("alert")}<span>${t("cb.noTemplates")}</span></div></div>`;
 
   const initialHost = hostFilter() || "local";
   const hostField =
@@ -273,7 +293,6 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         <div class="help">${t("cb.nameHelp")}</div>
         <div class="error-text" id="cbNameErr"></div></div>
       ${hostField}
-      <div class="field"><span class="label">${snapshot ? t("cb.sourceSnapshot") : t("cb.template")}</span>${templatePicker}</div>
       <div class="field"><span class="label">${t("cb.size")} <span class="subtle">${t("cb.hostCap", { cores: maxCpu, mem: gbOrMb(maxMem * 1024 * 1024) })}</span></span>
         <div class="segmented" id="cbPresets">${PRESETS.map(
           (
@@ -287,6 +306,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         <div class="slider-row"><input type="range" id="cbMemR" min="256" max="${maxMem}" step="256" /><input class="input" id="cbMem" type="number" min="128" max="${maxMem}" step="128" /></div>
         <div class="error-text" id="cbResErr"></div></div>
       <div id="cbCapacity"></div>
+      ${templateSection}
       ${selfTokenSection}
       <details class="advanced" id="cbAdvanced">
         <summary>${t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) })}</summary>
@@ -393,13 +413,6 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   q("#cbHost")?.addEventListener("change", () => {
     q("#cbHostHelp").textContent = t(q("#cbHost").value === AUTO_HOST ? "cb.hostAutoHelp" : "cb.hostHelp");
     validateRes();
-    syncNote();
-  });
-  q("#cbTemplates")?.addEventListener("click", (e) => {
-    const o = e.target.closest(".option");
-    if (!o) return;
-    state.template = o.dataset.ref;
-    $$(".option", root).forEach((x) => x.setAttribute("aria-checked", String(x === o)));
     syncNote();
   });
   q("#cbProfiles").addEventListener("click", (e) => {
@@ -524,21 +537,51 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbMountRows").addEventListener("change", refreshMounts);
     q("#cbMountRows").addEventListener("click", refreshMounts);
   }
+  /** Connects a section's fold button. Folding hides the body and the search; the summary stays in the heading. */
+  const bindSection = (id, key, searchId) => {
+    const button = q(`#${id}Toggle`);
+    const apply = (isFolded) => {
+      button.setAttribute("aria-expanded", String(!isFolded));
+      q(`#${id}Body`).hidden = isFolded;
+      q(`#${searchId}`).hidden = isFolded;
+    };
+    apply(folded.has(key));
+    button.addEventListener("click", () => {
+      const next = button.getAttribute("aria-expanded") === "true";
+      apply(next);
+      saveFolded(key, next);
+    });
+  };
   const selectedTools = new Set();
   if (picker) {
+    const paintToolsSummary = () => {
+      const names = catalog.filter((tool) => selectedTools.has(tool.id)).map((tool) => tool.name);
+      const { count, names: list } = chosenSummary(names);
+      q("#cbToolsSummary").textContent = count ? t("cb.toolsChosen", { n: count, names: list }) : t("cb.toolsNone");
+    };
+    bindSection("cbTools", "tools", "cbToolSearch");
+    paintToolsSummary();
     let toolQuery = "";
     const drawTools = () => {
-      const matches = filterTools(catalog, toolQuery, categoryLabel);
-      q("#cbTools").innerHTML = matches.length
-        ? groupTools(matches)
-            .map((group) => toolGroupHtml(group, selectedTools))
-            .join("")
+      const drawn = pickerView(catalog, {
+        query: toolQuery,
+        categoryLabel,
+        selected: selectedTools,
+        expanded: isToggled(root, "tools"),
+        isFolded: (id) => isToggled(root, id),
+      });
+      q("#cbTools").innerHTML = drawn.groups.length
+        ? drawn.groups.map((group) => toolGroupHtml(group, selectedTools)).join("")
         : emptyState({
             iconName: "search",
             title: t("tool.noMatch"),
             text: t("tool.noMatchText", { q: esc(toolQuery) }),
             action: `<button class="btn btn-sm" data-action="clear-search">${t("common.clearSearch")}</button>`,
           });
+      q("#cbToolsMore").innerHTML = drawn.toggle
+        ? listToggleHtml("tools", { expanded: isToggled(root, "tools"), total: drawn.count })
+        : "";
+      bindToggles(root, q("#cbToolsField"), drawTools);
     };
     const search = bindSearchBox(q("#cbToolSearch"), (text) => {
       toolQuery = text;
@@ -549,11 +592,65 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       if (!input) return;
       if (input.checked) selectedTools.add(input.value);
       else selectedTools.delete(input.value);
+      paintToolsSummary();
     });
     q("#cbTools").addEventListener("click", (event) => {
       if (event.target.closest('[data-action="clear-search"]')) search.clear();
     });
     drawTools();
+  }
+  if (!snapshot && templates.length) {
+    let templateQuery = "";
+    const paintTemplateSummary = () => {
+      const chosen = templates.find((tp) => tp.ref === state.template);
+      q("#cbTemplatesSummary").textContent = chosen ? t("cb.templateChosen", { name: chosen.name }) : "";
+    };
+    bindSection("cbTemplates", "templates", "cbTemplateSearch");
+    paintTemplateSummary();
+    const chooseTemplate = (option) => {
+      state.template = option.dataset.ref;
+      $$(".option", root).forEach((x) => x.setAttribute("aria-checked", String(x === option)));
+      paintTemplateSummary();
+      syncNote();
+    };
+    const drawTemplates = () => {
+      const matches = filterBySearch(templates, templateQuery, (tp) => templateSearchFields(tp, ""));
+      const { shown, toggle } = limitList(root, "templates", matches, {
+        keep: (tp) => tp.ref === state.template,
+        searching: searchTerms(templateQuery).length > 0,
+      });
+      q("#cbTemplates").innerHTML = shown.map((tp) => templateOptionHtml(tp, state.template)).join("");
+      q("#cbTemplatesEmpty").hidden = matches.length > 0;
+      q("#cbTemplatesEmpty").innerHTML =
+        matches.length === 0
+          ? emptyState({
+              iconName: "search",
+              title: t("tp.noMatch"),
+              text: t("tp.noMatchText", { q: esc(templateQuery) }),
+              action: `<button class="btn btn-sm" data-action="clear-search">${t("common.clearSearch")}</button>`,
+            })
+          : "";
+      q("#cbTemplatesMore").innerHTML = toggle;
+      bindToggles(root, q("#cbTemplatesField"), drawTemplates);
+    };
+    const search = bindSearchBox(q("#cbTemplateSearch"), (text) => {
+      templateQuery = text;
+      drawTemplates();
+    });
+    q("#cbTemplates").addEventListener("click", (event) => {
+      const option = event.target.closest(".option");
+      if (option) chooseTemplate(option);
+    });
+    q("#cbTemplates").addEventListener("keydown", (event) => {
+      const option = event.target.closest(".option");
+      if (!option || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      chooseTemplate(option);
+    });
+    q("#cbTemplatesField").addEventListener("click", (event) => {
+      if (event.target.closest('[data-action="clear-search"]')) search.clear();
+    });
+    drawTemplates();
   }
   sync();
   syncNote();

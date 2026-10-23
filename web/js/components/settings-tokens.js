@@ -4,6 +4,7 @@ import { relTime, dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { emptyState, openDialog, nameError, toast, toastError, confirmDialog } from "../lib/ui.js";
+import { bindToggles, limitList } from "./list-toggle.js";
 
 const PRESETS = ["readonly", "operator", "sandboxed-agent", "admin"];
 
@@ -41,8 +42,9 @@ export async function loadTokens(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  const { shown, toggle } = limitList(view, "tokens", tokens);
   const rows = tokens.length
-    ? tokens.map(tokenRow).join("")
+    ? shown.map(tokenRow).join("")
     : `<tr><td colspan="6">${emptyState({ iconName: "key", title: t("st.tokenNone") })}</td></tr>`;
   card.innerHTML = `
     <div class="card-head">
@@ -55,11 +57,13 @@ export async function loadTokens(view) {
         <th class="hide-sm">${t("st.tokenExpires")}</th><th>${t("st.tokenLastUsed")}</th><th></th>
       </tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table></div>
+    <div class="list-more">${toggle}</div>`;
   card.querySelector("#stTokenCreate").addEventListener("click", () => createToken(view));
   card.querySelectorAll("[data-revoke-token]").forEach((btn) => {
     btn.addEventListener("click", () => revokeToken(view, btn.dataset.revokeToken, btn.dataset.tokenName));
   });
+  bindToggles(view, card, () => loadTokens(view));
 }
 
 function tokenRow(token) {

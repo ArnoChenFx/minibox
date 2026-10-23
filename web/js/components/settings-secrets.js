@@ -1,10 +1,12 @@
 import { api, enc } from "../lib/api.js";
-import { esc } from "../lib/dom.js";
+import { copyText, esc } from "../lib/dom.js";
 import { ENV_VALUE_MAX, SECRET_NAME_RE, validSecretValue } from "../lib/env.js";
 import { dateTime, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { generateSecret } from "../lib/secret-gen.js";
 import { emptyState, openDialog, withBusy, toast, confirmDialog, toastError } from "../lib/ui.js";
+import { bindToggles, limitList } from "./list-toggle.js";
 
 export async function loadSecrets(view) {
   const card = view.querySelector("#stSecrets");
@@ -21,8 +23,9 @@ export async function loadSecrets(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  const { shown, toggle } = limitList(view, "secrets", secrets);
   const rows = secrets.length
-    ? secrets.map(secretRow).join("")
+    ? shown.map(secretRow).join("")
     : `<tr><td colspan="4">${emptyState({ iconName: "key", title: t("st.secretNone") })}</td></tr>`;
   card.innerHTML = `
     <div class="card-head">
@@ -33,7 +36,8 @@ export async function loadSecrets(view) {
     <div class="table-wrap"><table class="table">
       <thead><tr><th>${t("label.name")}</th><th class="hide-sm">${t("st.secretUpdated")}</th><th>${t("st.secretUsedBy")}</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table></div>
+    <div class="list-more">${toggle}</div>`;
   card.querySelector("#stSecretAdd").addEventListener("click", () => secretDialog(view));
   card.querySelectorAll("[data-secret-replace]").forEach((btn) => {
     btn.addEventListener("click", () => secretDialog(view, btn.dataset.secretReplace));
@@ -41,6 +45,7 @@ export async function loadSecrets(view) {
   card.querySelectorAll("[data-secret-delete]").forEach((btn) => {
     btn.addEventListener("click", () => deleteSecret(view, btn.dataset.secretDelete));
   });
+  bindToggles(view, card, () => loadSecrets(view));
 }
 
 function secretRow(secret) {
@@ -58,6 +63,57 @@ function secretRow(secret) {
   </tr>`;
 }
 
+function replaceValueHtml() {
+  return `<label class="field">${t("st.secretValueLabel")}
+        <input class="input mono" name="value" type="password" autofocus required autocapitalize="off" autocomplete="new-password" spellcheck="false" />
+        <span class="help">${t("st.secretValueHelp", { max: ENV_VALUE_MAX })}</span></label>`;
+}
+
+/**
+ * The value field of the add form, filled with a new generated value each time the form opens. The user may keep it,
+ * regenerate it, or clear it and type or paste their own. The value stays masked until it is revealed.
+ */
+function addValueHtml() {
+  return `<div class="field">
+        <label class="label" for="stSecretValue">${t("st.secretValueLabel")}</label>
+        <div class="secret-input">
+          <input class="input mono" id="stSecretValue" name="value" type="password" value="${esc(generateSecret())}" required autocapitalize="off" autocomplete="new-password" spellcheck="false" />
+          <button type="button" class="icon-btn" data-secret-reveal aria-pressed="false" aria-label="${esc(t("st.secretShow"))}" title="${esc(t("st.secretShow"))}">${icon("eye")}</button>
+          <button type="button" class="icon-btn" data-secret-copy aria-label="${esc(t("st.secretCopy"))}" title="${esc(t("st.secretCopy"))}">${icon("copy")}</button>
+        </div>
+        <div class="secret-gen">
+          <span class="help">${t("st.secretValueHelp", { max: ENV_VALUE_MAX })} ${t("st.secretGenerateHelp")}</span>
+          <button type="button" class="btn btn-sm" data-secret-regenerate>${icon("refresh")}${t("st.secretGenerate")}</button>
+        </div>
+      </div>`;
+}
+
+function bindGenerator(root, error) {
+  const input = root.querySelector("#stSecretValue");
+  const reveal = root.querySelector("[data-secret-reveal]");
+  reveal.addEventListener("click", () => {
+    const shown = input.type === "text";
+    input.type = shown ? "password" : "text";
+    const label = t(shown ? "st.secretShow" : "st.secretHide");
+    reveal.innerHTML = icon(shown ? "eye" : "eyeOff");
+    reveal.setAttribute("aria-pressed", String(!shown));
+    reveal.setAttribute("aria-label", label);
+    reveal.title = label;
+  });
+  root.querySelector("[data-secret-copy]").addEventListener("click", async () => {
+    try {
+      await copyText(input.value);
+      toast(t("st.secretCopied"));
+    } catch (e) {
+      toastError(t("st.secretCopyFailed"), e);
+    }
+  });
+  root.querySelector("[data-secret-regenerate]").addEventListener("click", () => {
+    input.value = generateSecret();
+    error.textContent = "";
+  });
+}
+
 /** Adds a secret, or replaces the value of `replacing`. The value is sent once and never shown again. */
 function secretDialog(view, replacing = "") {
   const { root, close } = openDialog({
@@ -68,14 +124,13 @@ function secretDialog(view, replacing = "") {
       <label class="field">${t("st.secretNameLabel")}
         <input class="input mono" name="name" value="${esc(replacing)}"${replacing ? " readonly" : " autofocus"} required autocapitalize="off" autocomplete="off" spellcheck="false" />
         <span class="help">${t("st.secretNameHelp")}</span></label>
-      <label class="field">${t("st.secretValueLabel")}
-        <input class="input mono" name="value" type="password"${replacing ? " autofocus" : ""} required autocapitalize="off" autocomplete="new-password" spellcheck="false" />
-        <span class="help">${t("st.secretValueHelp", { max: ENV_VALUE_MAX })}</span></label>
+      ${replacing ? replaceValueHtml() : addValueHtml()}
       <div class="error-text" id="stSecretErr"></div>
     </form>`,
     footer: `<button class="btn" data-close type="button">${t("common.cancel")}</button><button class="btn btn-primary" id="stSecretSave" type="button">${t("st.secretSave")}</button>`,
   });
   const error = root.querySelector("#stSecretErr");
+  if (!replacing) bindGenerator(root, error);
   root.querySelector("#stSecretSave").addEventListener("click", async (event) => {
     const data = new FormData(root.querySelector("#stSecretForm"));
     const name = String(data.get("name") ?? "").trim();

@@ -10,6 +10,8 @@ export default {
   "common.unknown": "Unknown",
   "common.unlimited": "Unlimited",
   "common.loading": "Loading…",
+  "list.showAll": "Show all ({n})",
+  "list.collapse": "Show less",
   "common.connecting": "Connecting…",
   "common.failed": "Failed",
   "common.tagline": "Personal dev environments for AI agents",

@@ -373,6 +373,28 @@ describe("a self token reaches only its own box", () => {
     expect(refused(await asAlpha("/api/hosts"))).toEqual({ status: 403, key: "operation_forbidden" });
   });
 
+  test("the host-wide routes for hosts, templates, snapshots and images are refused with 403, and a preview needs a session", async () => {
+    const template = encodeURIComponent("mbtest-template:gold");
+    const refusals: Array<[string, string, unknown?]> = [
+      ["GET", "/api/hosts/usage"],
+      ["POST", "/api/hosts/pairing", { id: "edge" }],
+      ["GET", "/api/templates"],
+      ["POST", `/api/templates/${template}/sync`, { host: "local" }],
+      ["DELETE", `/api/templates/${template}`],
+      ["GET", "/api/snapshots"],
+      ["POST", "/api/images/pull", { ref: "alpine:3.20" }],
+      ["GET", "/api/preview/setup"],
+      ["GET", "/api/checkpoints"],
+    ];
+    for (const [method, path, body] of refusals) {
+      expect(refused(await asAlpha(path, method, body))).toEqual({ status: 403, key: "operation_forbidden" });
+    }
+    expect(refused(await asAlpha(`/api/boxes/${alpha.id}/ports/8080/preview`))).toEqual({
+      status: 401,
+      key: "preview_unauthorized",
+    });
+  });
+
   test("the box cannot delete itself, revoke its token, or answer a question", async () => {
     expect(refused(await asAlpha(`/api/boxes/${alpha.id}`, "DELETE"))).toEqual({
       status: 403,

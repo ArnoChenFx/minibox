@@ -32,7 +32,13 @@ const PAGES = [
     args: (m) => [decode(m[1]), m[2]],
   },
   { re: /^\/trash$/, page: "trash", nav: "storage", crumbs: ["nav.storage", "nav.trash"] },
-  { re: /^\/settings$/, page: "settings", nav: "settings", crumbs: ["nav.settings"] },
+  {
+    re: /^\/settings(?:\/([^/]*))?$/,
+    page: "settings",
+    nav: "settings",
+    crumbs: ["nav.settings"],
+    args: (m) => [m[1] ? decode(m[1]) : undefined],
+  },
   { re: /^\/about$/, page: "about", nav: "about", crumbs: ["nav.about"] },
 ];
 

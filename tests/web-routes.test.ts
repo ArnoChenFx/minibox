@@ -24,6 +24,13 @@ describe("pages without tabs", () => {
     expect(landing("/about")).toMatchObject({ page: "about", nav: "about" });
   });
 
+  test("a settings address passes the category it names, so each category keeps its own address", () => {
+    expect(landing("/settings")?.args).toEqual([undefined]);
+    expect(landing("/settings/secrets")).toMatchObject({ page: "settings", nav: "settings", args: ["secrets"] });
+    expect(landing("/settings/tokens")?.args).toEqual(["tokens"]);
+    expect(landing("/settingsx")).toBeNull();
+  });
+
   test("the Recycle bin opens from Storage, so Storage stays highlighted", () => {
     expect(landing("/trash")).toMatchObject({ page: "trash", nav: "storage" });
   });

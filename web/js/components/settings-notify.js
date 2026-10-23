@@ -5,6 +5,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { failureOf, NOTICE_KINDS, CHANNEL_TYPES, channelBody } from "../lib/notify-state.js";
 import { emptyState, withBusy, toastError, toast, openDialog, confirmDialog } from "../lib/ui.js";
+import { bindToggles, limitList } from "./list-toggle.js";
 
 const NOTIFY_DELIVERIES = 20;
 
@@ -37,11 +38,13 @@ export async function loadNotify(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  const channelList = limitList(view, "channels", channels);
+  const deliveryList = limitList(view, "deliveries", deliveries);
   const channelRows = channels.length
-    ? channels.map(notifyChannelRow).join("")
+    ? channelList.shown.map(notifyChannelRow).join("")
     : `<tr><td colspan="5">${emptyState({ iconName: "zap", title: t("st.notifyNone") })}</td></tr>`;
   const deliveryRows = deliveries.length
-    ? deliveries.map(deliveryRow).join("")
+    ? deliveryList.shown.map(deliveryRow).join("")
     : `<tr><td colspan="5">${emptyState({ iconName: "activity", title: t("st.notifyDeliveriesNone") })}</td></tr>`;
   card.innerHTML = `
     <div class="card-head">
@@ -55,6 +58,7 @@ export async function loadNotify(view) {
       </tr></thead>
       <tbody>${channelRows}</tbody>
     </table></div>
+    <div class="list-more">${channelList.toggle}</div>
     <div class="card-note"><strong>${t("st.notifyDeliveries")}</strong><p class="help">${t("st.notifyDeliveriesHelp")}</p></div>
     <div class="table-wrap"><table class="table">
       <thead><tr>
@@ -62,7 +66,8 @@ export async function loadNotify(view) {
         <th>${t("st.notifyColResult")}</th><th class="hide-sm">${t("st.notifyColAttempts")}</th>
       </tr></thead>
       <tbody>${deliveryRows}</tbody>
-    </table></div>`;
+    </table></div>
+    <div class="list-more">${deliveryList.toggle}</div>`;
   card.querySelector("#stNotifyAdd").addEventListener("click", () => notifyDialog(view));
   card.querySelectorAll("[data-notify-test]").forEach((btn) => {
     btn.addEventListener("click", () => sendTest(view, btn, btn.dataset.notifyTest, btn.dataset.notifyName));
@@ -78,6 +83,7 @@ export async function loadNotify(view) {
   card.querySelectorAll("[data-notify-delete]").forEach((btn) => {
     btn.addEventListener("click", () => deleteNotify(view, btn.dataset.notifyDelete, btn.dataset.notifyName));
   });
+  bindToggles(view, card, () => loadNotify(view));
 }
 
 function channelDestination(channel) {
