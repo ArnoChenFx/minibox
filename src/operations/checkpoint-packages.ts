@@ -145,7 +145,7 @@ export const checkpointCopy = defineOperation({
     toolset: "storage",
     name: "copy_checkpoint",
     description:
-      "Copy a checkpoint to another host, so a box can be forked there. The data is streamed to the target in a sealed package that is removed once the target holds it, and the template the checkpoint names is copied first when the target lacks it. The copy is a new checkpoint with its own id on the target. Owner only. Returns a task id; the task log shows the transfer.",
+      "Copy a checkpoint to another host, so a box can be forked there. The source packs the data into a sealed package that passes through this control plane and is removed once the target holds the copy. The base template and the template the checkpoint names are copied first when the target lacks them. The copy is a new checkpoint with its own id on the target. Owner only. Returns a task id; the finished task holds the copy, and its log shows the transfer.",
   },
   hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   precondition: async ({ host }) => refuseAgent(host, "checkpoints"),
