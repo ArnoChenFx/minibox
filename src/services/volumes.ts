@@ -26,8 +26,9 @@ import type {
 import { recordSample, sampleWithin } from "../volumes/usage";
 import { type Box, getBox, readSpec } from "./boxes";
 import { type RebuildResult, rebuildWithSafety, type SafetyHook } from "./rebuild";
-import { keepsVolume, purgeEntry, trashVolume } from "./trash";
+import { discardCopy, keepsVolume, trashVolume } from "./trash";
 import type { RecordNote } from "./volume-owner";
+import { errorOutcome, hostOffline, messageOutcome, type OutcomeError, volumesInUse } from "./volume-refs";
 
 export interface VolumeMountView {
   boxId: string;
@@ -181,6 +182,21 @@ export type StoragePreview =
       trash: boolean;
     }
   | {
+      action: "delete_volumes";
+      volumes: {
+        id: string;
+        name: string;
+        hostId: string | null;
+        pool: string | null;
+        role: VolumeRole | null;
+        bytes: number | null;
+        /** Whether the delete keeps a copy of the data in the recycle bin. */
+        trash: boolean;
+        /** Why the volume is not deleted, or null when it will be. */
+        blocked: DeleteBlock | null;
+      }[];
+    }
+  | {
       action: "replace_pools";
       pools: { name: string; backend: PoolBackend; default: boolean }[];
       roles: RolePools;
@@ -251,7 +267,7 @@ export async function deleteVolume(
     : null;
   const result = await removeEngine(host, volume.engineName);
   if (result.status === "failed") {
-    await dropCopy(host, trash, opts.record);
+    await discardCopy(host, trash, opts.record);
     throw conflict(msg("volume_delete_failed", { name: volume.name, detail: result.detail }));
   }
   host.volumes.remove(volume.id);
@@ -259,13 +275,145 @@ export async function deleteVolume(
   return { name: volume.name, trash };
 }
 
-async function dropCopy(host: HostCtx, trash: TrashRef | null, record?: RecordNote): Promise<void> {
-  if (trash === null) return;
-  try {
-    await purgeEntry(host, trash.id, "failed", record);
-  } catch (e) {
-    log.warn("volume.delete_copy_kept", { id: trash.id, error: String(e) });
+/** Why a batch delete does not remove a volume. `in_use` and `forbidden` are refusals; the rest are failures. */
+export type DeleteBlock = "in_use" | "forbidden" | "not_found" | "offline" | "unavailable";
+
+/** One id of a batch delete, resolved and judged before anything is removed. */
+export interface DeletePlan {
+  /** The id or name the request named. */
+  ref: string;
+  volume: VolumeRecord | null;
+  host: HostCtx | null;
+  blocked: DeleteBlock | null;
+  /** The engine's reason when its containers could not be listed. */
+  detail: string | null;
+}
+
+/**
+ * Resolves each id or name a batch delete names and decides what happens to it, without changing anything. A volume is
+ * blocked when the caller may not delete it or a box or container still uses it. A host that is offline, or cannot list
+ * its containers, blocks only its own volumes, so one bad host does not stop the others.
+ */
+export async function planDeletes(
+  request: HostCtx,
+  hosts: readonly HostCtx[],
+  refs: readonly string[],
+  may: (volume: VolumeRecord) => Promise<boolean>,
+): Promise<DeletePlan[]> {
+  const usage = new Map<string, Promise<Set<string>>>();
+  const usageOf = (host: HostCtx): Promise<Set<string>> => {
+    const known = usage.get(host.host.id);
+    if (known) return known;
+    const pending = volumesInUse(host);
+    usage.set(host.host.id, pending);
+    return pending;
+  };
+  const seen = new Set<string>();
+  const plans: DeletePlan[] = [];
+  for (const ref of new Set(refs)) {
+    const volume = request.volumes.resolve(ref);
+    if (volume && seen.has(volume.id)) continue;
+    if (volume) seen.add(volume.id);
+    plans.push(await planOne(ref, volume, hosts, may, usageOf));
   }
+  return plans;
+}
+
+async function planOne(
+  ref: string,
+  volume: VolumeRecord | null,
+  hosts: readonly HostCtx[],
+  may: (volume: VolumeRecord) => Promise<boolean>,
+  usageOf: (host: HostCtx) => Promise<Set<string>>,
+): Promise<DeletePlan> {
+  if (!volume) return { ref, volume, host: null, blocked: "not_found", detail: null };
+  if (!(await may(volume))) return { ref, volume, host: null, blocked: "forbidden", detail: null };
+  const host = hosts.find((item) => item.host.id === volume.hostId) ?? null;
+  if (!host) return { ref, volume, host, blocked: "not_found", detail: null };
+  if (hostOffline(host)) return { ref, volume, host, blocked: "offline", detail: null };
+  try {
+    const inUse = (await usageOf(host)).has(volume.engineName);
+    return { ref, volume, host, blocked: inUse ? "in_use" : null, detail: null };
+  } catch (e) {
+    return { ref, volume, host, blocked: "unavailable", detail: errorOutcome(e).message };
+  }
+}
+
+/** What a batch delete did with one of its volumes. */
+export interface DeletedVolume {
+  id: string;
+  name: string;
+  hostId: string | null;
+  status: "removed" | "refused" | "failed";
+  trash: TrashRef | null;
+  error: OutcomeError | null;
+}
+
+/**
+ * Deletes the planned volumes one after another, each the way `deleteVolume` deletes one. A blocked volume is left alone,
+ * and a delete that fails is reported with its reason, so one failure does not stop the rest.
+ */
+export async function deleteVolumes(
+  plans: readonly DeletePlan[],
+  opts: { skipTrash: boolean; createdBy: string; record?: RecordNote },
+): Promise<DeletedVolume[]> {
+  const deleted: DeletedVolume[] = [];
+  for (const plan of plans) deleted.push(await deleteOne(plan, opts));
+  return deleted;
+}
+
+async function deleteOne(
+  plan: DeletePlan,
+  opts: { skipTrash: boolean; createdBy: string; record?: RecordNote },
+): Promise<DeletedVolume> {
+  const { volume, host, blocked } = plan;
+  const id = volume?.id ?? plan.ref;
+  const name = volume?.name ?? plan.ref;
+  const hostId = volume?.hostId ?? null;
+  if (blocked !== null || volume === null || host === null) {
+    const status = blocked === "in_use" || blocked === "forbidden" ? "refused" : "failed";
+    return { id, name, hostId, status, trash: null, error: blockOf(plan, blocked ?? "not_found") };
+  }
+  try {
+    const removed = await deleteVolume(host, volume.id, opts);
+    return { id, name, hostId, status: "removed", trash: removed.trash, error: null };
+  } catch (e) {
+    const error = errorOutcome(e);
+    return { id, name, hostId, status: error.key === "volume_mounted" ? "refused" : "failed", trash: null, error };
+  }
+}
+
+function blockOf(plan: DeletePlan, block: DeleteBlock): OutcomeError {
+  const name = plan.volume?.name ?? plan.ref;
+  const hostName = plan.host?.host.name ?? plan.volume?.hostId ?? "";
+  switch (block) {
+    case "in_use":
+      return messageOutcome(msg("volume_in_use_by_box", { volume: name }));
+    case "forbidden":
+      return messageOutcome(msg("volume_delete_forbidden", { volume: name }));
+    case "not_found":
+      return messageOutcome(msg("volume_not_found", { volume: plan.ref }));
+    case "offline":
+      return messageOutcome(msg("volume_host_offline", { host: hostName }));
+    case "unavailable":
+      return messageOutcome(msg("volume_host_failed", { host: hostName, detail: plan.detail ?? "" }));
+  }
+}
+
+export function previewDeleteVolumes(plans: readonly DeletePlan[], skipTrash: boolean): StoragePreview {
+  return {
+    action: "delete_volumes",
+    volumes: plans.map((plan) => ({
+      id: plan.volume?.id ?? plan.ref,
+      name: plan.volume?.name ?? plan.ref,
+      hostId: plan.volume?.hostId ?? null,
+      pool: plan.volume?.pool ?? null,
+      role: plan.volume?.role ?? null,
+      bytes: plan.volume?.bytes ?? null,
+      trash: plan.volume !== null && keepsVolume(plan.volume, skipTrash),
+      blocked: plan.blocked,
+    })),
+  };
 }
 
 function nextMounts(current: BoxMount[], mount: BoxMount): BoxMount[] {
