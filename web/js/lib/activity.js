@@ -74,6 +74,13 @@ export const ACTION_ICON = {
   "notify.channel.set": "sliders",
   "notify.channel.test": "zap",
   "notify.channel.delete": "trash",
+  "backup.create": "camera",
+  "backup.delete": "trash",
+  "target.add": "link",
+  "target.remove": "trash",
+  "target.test": "check",
+  "target.push": "upload",
+  "target.pull": "download",
 };
 
 /** An action without a label, such as one a newer server records, read as words: `notify.channel.test` → "Notify channel test". */
