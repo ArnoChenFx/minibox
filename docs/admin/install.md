@@ -6,7 +6,7 @@ This page is for the person who runs MiniBox on a server. It covers the release 
 
 - A Linux host with Docker Engine. MiniBox reads `/proc` for host metrics.
 - Access to the Docker socket for the user that runs MiniBox. The socket is `/var/run/docker.sock` by default.
-- For a source install, [Bun](https://bun.sh) 1.4.3 or later.
+- For a source install, [Bun](https://bun.sh) 1.4.4 or later.
 
 Docker access is root-equivalent. Read the [security guide](security.md) before you install.
 
