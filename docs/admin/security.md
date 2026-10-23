@@ -33,7 +33,7 @@ MiniBox is built for one trusted user, on a machine that the user controls. Read
 - Only the owner can create tokens. No preset can create one.
 - A box's self token is not an agent token. It is issued for one box and reaches only that box's `self` operations. MiniBox keeps only its hash and never logs it, and the file in the box is on a memory filesystem. See [A box's own agent](../user-guide/agents.md#a-boxs-own-agent).
 
-**`/mcp` accepts the access key in this release, and the key grants full owner access over MCP.** A client with the key can run `exec` as root in any box that is not `strict`, delete boxes and rebuild them. MiniBox records each use. Set `MCP_ALLOW_OWNER_KEY=false` to refuse the key on `/mcp`. The next minor release refuses it by default. Give agents an agent token instead. A token's tool list and every call are held to its scopes. See [Connecting AI agents](../user-guide/agents.md).
+**`/mcp` refuses the access key by default.** The key grants full owner access, and a client with it can run `exec` as root in any box that is not `strict`, delete boxes and rebuild them. `MCP_ALLOW_OWNER_KEY` defaults to `false`, so `/mcp` answers the key with `401`. Set it to `true` only if you accept that risk, and MiniBox then records each use. Give agents an agent token instead. A token's tool list and every call are held to its scopes. See [Connecting AI agents](../user-guide/agents.md) and [Upgrades](upgrades.md).
 
 ## Host secrets
 

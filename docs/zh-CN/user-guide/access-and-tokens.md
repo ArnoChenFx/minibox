@@ -2,7 +2,7 @@
 
 MiniBox 有三种方式证明你的身份：
 
-- **访问密钥**用于登录控制台，也是 REST API、CLI 和 MCP 的所有者密钥。MCP 目前仍接受它，见 [连接 AI Agent](agents.md)。
+- **访问密钥**用于登录控制台，也是 REST API 和 CLI 的所有者密钥。MCP 默认拒绝它，见 [连接 AI Agent](agents.md)。
 - **浏览器会话**是你在每个浏览器中保持的登录状态。
 - **Agent 令牌**供 Agent 和脚本使用的密钥。每个令牌只有你授予的权限。
 

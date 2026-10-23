@@ -20,8 +20,9 @@ These are the manual steps for changes made in 0.4 and later. Read the ones that
 
 ### MCP and the owner access key
 
-- **Agents and the access key.** This release still accepts the access key on `/mcp`. MiniBox records each use, logs the first one, and shows a notice in the console for seven days after the last use. The next minor release refuses the key on `/mcp` by default, with `401`, so agents that still send it stop working. Before you upgrade to that release, give each agent its own token, from **Settings** or with `minibox token create <name>`. Agent tokens keep working either way.
-- **Keeping or refusing the key.** Set `MCP_ALLOW_OWNER_KEY=true` to keep accepting the key after the default changes. Set `MCP_ALLOW_OWNER_KEY=false` to refuse it now.
+- **Agents and the access key.** `/mcp` refuses the access key by default, with `401`, so an agent that still sends it stops working when you upgrade to this release. Before you upgrade, give each agent its own token, from **Settings** or with `minibox token create <name>`, and use that token as the agent's bearer key or `MINIBOX_ACCESS_KEY`. Agent tokens are not affected.
+- **Warnings after the upgrade.** If an agent used the key on `/mcp` in the last seven days, MiniBox logs `mcp.owner_key_now_refused` when it starts, and the console shows a notice with the time of the last use. Both name the fix. `minibox mcp` also explains a refusal and suggests `minibox token create`.
+- **Keeping the key for now.** Set `MCP_ALLOW_OWNER_KEY=true` in `.env`, or in the container environment, to accept the key again while you move the agents. MiniBox still records each use and warns about it. Remove the setting once no agent sends the key.
 
 ### Proxies, sign-in and scripts
 

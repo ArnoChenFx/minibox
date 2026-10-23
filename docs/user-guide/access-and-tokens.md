@@ -2,7 +2,7 @@
 
 MiniBox has three ways to prove who you are:
 
-- **The access key** signs you in to the console, and it is the owner's key for the REST API, the CLI and MCP. MCP accepts it for now, see [Connecting AI agents](agents.md).
+- **The access key** signs you in to the console, and it is the owner's key for the REST API and the CLI. MCP refuses it by default, see [Connecting AI agents](agents.md).
 - **Browser sessions** are the sign-ins that you keep in each browser.
 - **Agent tokens** are keys for agents and scripts. Each token has only the permissions you give it.
 
