@@ -26,7 +26,7 @@
 
 ### 工程化
 - 工作流中的 GitHub Actions 引用改为各 action 最新的主版本标签（如 `actions/checkout@v7`、`docker/build-push-action@v7`），不再固定到 commit SHA。`docker/build-push-action` 从 v6 升到 v7，`actions/configure-pages` 升到 v6，`actions/upload-pages-artifact` 与 `actions/deploy-pages` 升到 v5；所用输入在新版本中均未变化。
-- Bun 最低版本升到 1.4.4（`engines.bun`、`@types/bun`、Pages 工作流与文档同步更新）。`bun run typecheck` 改用 Bun 内置的类型检查器 `bun check --no-script`（与 TypeScript 7.0.2 报告相同的错误），替代 `tsc --noEmit`；`--no-script` 确保它不会转去运行同名的 `check` 脚本。`typescript` 仍保留为开发依赖，供编辑器使用。
+- Bun 最低版本升到 1.4.4（`engines.bun`、`@types/bun` 与文档同步更新）；Pages 工作流与 CI 一致使用 `bun-version: latest`。`bun run typecheck` 改用 Bun 内置的类型检查器 `bun check --no-script`（与 TypeScript 7.0.2 报告相同的错误），替代 `tsc --noEmit`；`--no-script` 确保它不会转去运行同名的 `check` 脚本。`typescript` 仍保留为开发依赖，供编辑器使用。
 
 ### 文档
 - 检查点、Box、卷、令牌、配置、API、CLI、MCP 与架构文档，以及 `.env.example`，补充回收站与安全检查点的说明，并提供中文版本。
