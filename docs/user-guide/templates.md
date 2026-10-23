@@ -22,6 +22,30 @@ The MiniBox image does not include the base template. Build it once from the con
 
 To follow the build, click **Tasks** in the top bar. Build the base template again whenever you want to update it.
 
+## Official templates
+
+MiniBox ships four official templates. Each comes from a Dockerfile in the MiniBox source, and each has the common tools of the base template:
+
+| Template | Base image | Adds |
+|---|---|---|
+| `node` | `node:26-bookworm-slim` | Node.js 26, pnpm and yarn, with `build-essential` |
+| `python` | `python:3.14-slim-bookworm` | Python 3.14 and uv, with `build-essential` |
+| `go` | `golang:1.26-bookworm` | Go 1.26 and gopls, with `build-essential` |
+| `minimal` | `debian:bookworm-slim` | No language toolchain |
+
+The common tools are `git`, `curl`, `tmux`, `jq`, `ripgrep`, `openssh-client`, `sudo` and `vim`. Each template has the user `dev`, user ID 1000.
+
+Official templates are not built when MiniBox starts. A template is built on a host the first time a box needs it there:
+
+- **Creating a box.** If no host holds the template, MiniBox builds it on the host the box goes to, and the create waits for the build. The build log opens in the **Tasks** panel. With automatic placement, the box goes to the roomiest online host that can build the template, when no host that already holds it has room. A failed build leaves no template and no box.
+- **Building ahead of time.** On the **Templates** page, click **Build** on the card of a template that is not built yet, or **Build here** next to a host when the console has several hosts. On the command line, run `minibox template build-official go`, with `--host` to choose a host.
+
+In the **Create box** dialog, the official templates that are not built yet come after the built ones, marked **Builds on first use**.
+
+A box rebuild does not build a missing official template, so build it first. Rebuilding a built official template runs its Dockerfile again on the base image that the host already holds. To take a newer patch release of that base image, pull it first with **Pull image**, for example `node:26-bookworm-slim`, and then rebuild the template. A MiniBox update can change an official Dockerfile, and the change reaches a host when that template is rebuilt.
+
+Only the owner can build an official template or list the catalog. A token can create a box from an official template after the owner has built it on that host.
+
 ## Save a box as a template
 
 Save a box as a template when you have installed software into the box, and you want new boxes to start with it.
@@ -112,6 +136,7 @@ Deleting a template in the console removes its copy on every host. A rebuild cha
 The **Templates** tab shows these labels:
 
 - **Built-in** marks the bundled base template.
+- **Official** marks one of the four official templates. An official template that no host has built yet shows **Not built on any host yet** and a **Build** button.
 - **Custom** templates are the ones that you saved from a box.
 - **Built from** names the source of a template that you built from a Dockerfile, a repository, a build context or a `devcontainer.json`.
 
