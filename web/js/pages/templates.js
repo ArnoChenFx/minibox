@@ -5,33 +5,62 @@ import { openNewTemplate } from "../components/template-dialog.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, dateTime, shortId } from "../lib/format.js";
+import { hostName, hostsNow, multiHost, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { filterBySearch } from "../lib/search.js";
 import { invalidateTemplates } from "../lib/store.js";
-import { templateSearchFields } from "../lib/template-list.js";
+import { templateCards, templateSearchFields } from "../lib/template-list.js";
 import { imageRefOk, KIND_LABEL_KEYS } from "../lib/template-source.js";
 import { confirmDialog, emptyState, nameError, promptDialog, toast, toastError, withBusy } from "../lib/ui.js";
 
 /** Operations whose success changes the template list. */
-const TEMPLATE_TASK_OPS = new Set(["template.build", "template.save", "template.create", "template.rebuild"]);
+const TEMPLATE_TASK_OPS = new Set([
+  "template.build",
+  "template.save",
+  "template.create",
+  "template.rebuild",
+  "template.sync",
+]);
 
 function legacyRow(s) {
+  const where = multiHost() ? `<div class="help">${esc(hostName(s.hostId))}</div>` : "";
   return `<tr>
         <td><div class="name-cell"><span class="avatar">${icon("camera")}</span><div class="truncate"><strong class="mono" style="font-weight:500">${esc(s.ref)}</strong><span class="subtle mono">${esc(shortId(s.id))}</span></div></div></td>
-        <td class="hide-sm">${s.source ? esc(s.source) : '<span class="subtle">—</span>'}</td>
+        <td class="hide-sm">${s.source ? esc(s.source) : '<span class="subtle">—</span>'}${where}</td>
         <td class="num">${bytes(s.size)}</td>
         <td class="hide-sm subtle nowrap">${dateTime(s.createdAt)}</td>
         <td><div class="actions">
           <button class="btn btn-sm" data-action="snap-create" data-ref="${esc(s.ref)}">${icon("plus")}${t("box.create")}</button>
-          <button class="btn btn-sm" data-action="snap-promote" data-ref="${esc(s.ref)}" data-source="${esc(s.source ?? "")}">${icon("upload")}${t("sn.promote")}</button>
-          <button class="icon-btn danger" data-action="snap-delete" data-ref="${esc(s.ref)}" title="${t("sn.delete")}" aria-label="${t("sn.delete")}">${icon("trash")}</button>
+          <button class="btn btn-sm" data-action="snap-promote" data-ref="${esc(s.ref)}" data-host="${esc(s.hostId)}" data-source="${esc(s.source ?? "")}">${icon("upload")}${t("sn.promote")}</button>
+          <button class="icon-btn danger" data-action="snap-delete" data-ref="${esc(s.ref)}" data-host="${esc(s.hostId)}" title="${t("sn.delete")}" aria-label="${t("sn.delete")}">${icon("trash")}</button>
         </div></td></tr>`;
+}
+
+/** One row per host: whether the host holds the template, and a copy button for a host that lacks it and can take one. */
+function presenceHtml(card) {
+  return hostsNow()
+    .map((host) => {
+      const name = esc(host.name ?? host.id);
+      if (card.holders.includes(host.id)) {
+        return `<div class="row between"><span>${name}</span><span class="badge badge-success">${esc(t("tp.present"))}</span></div>`;
+      }
+      const blocked =
+        host.transport === "agent"
+          ? t("err.agent_host_unsupported", { feature: t("feature.templates") })
+          : host.status === "online"
+            ? ""
+            : t("tp.hostOffline");
+      return `<div class="row between"><span>${name}</span><span class="row" style="gap:8px"><span class="badge">${esc(t("tp.absent"))}</span>
+        <button class="btn btn-sm" data-action="sync" data-ref="${esc(card.ref)}" data-host="${esc(host.id)}"${blocked ? ` disabled title="${esc(blocked)}"` : ""}>${icon("copy")}${esc(t("tp.copyHere"))}</button></span></div>`;
+    })
+    .join("");
 }
 
 export function render(view, focusName = "") {
   let base = "";
   let templates = null;
+  let cards = [];
   let loadError = null;
   let legacy = null;
   let legacyError = null;
@@ -69,6 +98,7 @@ export function render(view, focusName = "") {
       return;
     }
     if (!templates) return;
+    cards = templateCards(templates);
     if (!templates.length) {
       grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState({
         iconName: "layers",
@@ -78,7 +108,7 @@ export function render(view, focusName = "") {
       })}</div>`;
       return;
     }
-    const matches = filterBySearch(templates, query, (tp) => templateSearchFields(tp, badge(tp)));
+    const matches = filterBySearch(cards, query, (tp) => templateSearchFields(tp, badge(tp)));
     if (!matches.length) {
       grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState({
         iconName: "search",
@@ -99,11 +129,12 @@ export function render(view, focusName = "") {
           ${tp.source ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.fromBox", { name: tp.source }))}</div>` : ""}
           ${tp.buildKind ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.builtFrom", { kind: t(KIND_LABEL_KEYS[tp.buildKind]) }))}</div>` : ""}
           <dl class="kv" style="margin-top:14px;font-size:12.5px"><dt>${t("tp.image")}</dt><dd class="mono">${esc(tp.ref)}</dd><dt>${t("tp.size")}</dt><dd>${bytes(tp.size)}</dd><dt>${t("tp.created")}</dt><dd>${dateTime(tp.createdAt)}</dd></dl>
+          ${multiHost() ? `<div class="stack" style="margin-top:14px;gap:6px"><div class="help">${esc(t("tp.hosts"))}</div>${presenceHtml(tp)}</div>` : ""}
         </div>
         <div class="dialog-foot" style="justify-content:space-between;background:transparent">
           <button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>
           <div class="actions">
-            ${tp.buildKind ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
+            ${tp.buildKind ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
             <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>
           </div>
         </div></div>`,
@@ -132,6 +163,7 @@ export function render(view, focusName = "") {
   });
 
   const loadTemplates = async () => {
+    await refreshHosts();
     try {
       const r = await api("/api/templates");
       templates = r.templates;
@@ -186,7 +218,8 @@ export function render(view, focusName = "") {
     },
     rebuild: async (b) => {
       try {
-        const r = await withBusy(b, () => api(`/api/templates/${enc(b.dataset.ref)}/rebuild`, { method: "POST" }));
+        const path = `/api/templates/${enc(b.dataset.ref)}/rebuild?host=${enc(b.dataset.host)}`;
+        const r = await withBusy(b, () => api(path, { method: "POST" }));
         toast(t("tp.rebuildStarted"), { type: "info", message: t("tp.rebuildStartedText") });
         trackTask(r.taskId);
       } catch (e) {
@@ -213,24 +246,49 @@ export function render(view, focusName = "") {
       }
     },
     delete: async (b) => {
-      const isBase = b.dataset.ref === base;
+      const ref = b.dataset.ref;
+      const card = cards.find((tp) => tp.ref === ref);
+      if (!card) return;
+      const isBase = ref === base;
+      const hostsNote = multiHost()
+        ? t("tp.deleteHostsExtra", { hosts: card.holders.map((id) => esc(hostName(id))).join(", ") })
+        : "";
       const ok = await confirmDialog({
         title: t("tp.delete"),
         message: t("tp.deleteMessage", {
-          ref: esc(b.dataset.ref),
-          extra: isBase ? t("tp.deleteBaseExtra") : t("tp.deleteExtra"),
+          ref: esc(ref),
+          extra: `${hostsNote}${isBase ? t("tp.deleteBaseExtra") : t("tp.deleteExtra")}`,
         }),
         confirmText: t("tp.delete"),
         danger: true,
       });
       if (!ok) return;
       try {
-        await api(`/api/templates/${enc(b.dataset.ref)}`, { method: "DELETE" });
+        for (const host of card.holders)
+          await api(`/api/templates/${enc(ref)}?host=${enc(host)}`, { method: "DELETE" });
         invalidateTemplates();
         toast(t("tp.deleted"));
         load();
       } catch (e) {
+        invalidateTemplates();
+        load();
         toastError(t("ba.deleteFailed"), e);
+      }
+    },
+    sync: async (b) => {
+      try {
+        const r = await withBusy(b, () =>
+          api(`/api/templates/${enc(b.dataset.ref)}/sync`, { method: "POST", body: { host: b.dataset.host } }),
+        );
+        toast(t("tp.syncStarted"), { type: "info", message: t("tp.syncStartedText") });
+        trackTask(r.taskId);
+      } catch (e) {
+        if (e.details?.taskId) {
+          toast(t("task.alreadyRunning"), { type: "info" });
+          openTasks(e.details.taskId);
+          return;
+        }
+        toastError(t("tp.syncFailed"), e);
       }
     },
     "snap-create": (b) =>
@@ -249,7 +307,10 @@ export function render(view, focusName = "") {
       });
       if (!name) return;
       try {
-        const r = await api(`/api/snapshots/${enc(b.dataset.ref)}/promote`, { method: "POST", body: { name } });
+        const r = await api(`/api/snapshots/${enc(b.dataset.ref)}/promote`, {
+          method: "POST",
+          body: { name, host: b.dataset.host },
+        });
         invalidateTemplates();
         toast(t("sn.promoted"), { message: r.template.ref });
         load();
@@ -266,7 +327,7 @@ export function render(view, focusName = "") {
       });
       if (!ok) return;
       try {
-        await api(`/api/snapshots/${enc(b.dataset.ref)}`, { method: "DELETE" });
+        await api(`/api/snapshots/${enc(b.dataset.ref)}?host=${enc(b.dataset.host)}`, { method: "DELETE" });
         toast(t("sn.deleted"));
         load();
       } catch (e) {

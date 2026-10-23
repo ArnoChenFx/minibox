@@ -108,4 +108,13 @@ export default {
   "tp.rebuildStarted": "正在重新构建模板",
   "tp.rebuildStartedText": "可在任务面板查看构建日志。",
   "tp.rebuildFailed": "无法重新构建模板",
+  "tp.hosts": "宿主机",
+  "tp.present": "已有",
+  "tp.absent": "缺失",
+  "tp.copyHere": "同步到此宿主机",
+  "tp.hostOffline": "宿主机当前不在线。",
+  "tp.syncStarted": "正在同步模板",
+  "tp.syncStartedText": "可在任务面板查看同步进度。",
+  "tp.syncFailed": "无法同步模板",
+  "tp.deleteHostsExtra": "将删除 {hosts} 上的副本。",
 };

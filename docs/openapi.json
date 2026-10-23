@@ -1227,6 +1227,18 @@
                         "taskId"
                       ],
                       "additionalProperties": false
+                    },
+                    "sync": {
+                      "type": "object",
+                      "properties": {
+                        "taskId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "taskId"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -18207,6 +18219,16 @@
         "summary": "List snapshots",
         "parameters": [
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -18233,6 +18255,9 @@
                         "type": "object",
                         "properties": {
                           "id": {
+                            "type": "string"
+                          },
+                          "hostId": {
                             "type": "string"
                           },
                           "ref": {
@@ -18280,6 +18305,7 @@
                         },
                         "required": [
                           "id",
+                          "hostId",
                           "ref",
                           "tags",
                           "name",
@@ -19192,6 +19218,16 @@
             }
           },
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -19267,6 +19303,16 @@
           },
           "415": {
             "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -28547,6 +28593,16 @@
         "summary": "List templates",
         "parameters": [
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -28573,6 +28629,9 @@
                         "type": "object",
                         "properties": {
                           "id": {
+                            "type": "string"
+                          },
+                          "hostId": {
                             "type": "string"
                           },
                           "ref": {
@@ -28629,6 +28688,7 @@
                         },
                         "required": [
                           "id",
+                          "hostId",
                           "ref",
                           "tags",
                           "name",
@@ -28719,7 +28779,11 @@
         "x-kind": "read",
         "x-scope": "template:read",
         "x-async": false,
-        "x-cli": "template list"
+        "x-cli": "template list",
+        "x-mcp": {
+          "name": "list_templates",
+          "toolset": "tools"
+        }
       },
       "post": {
         "operationId": "template.create",
@@ -28806,6 +28870,11 @@
                         "maxLength": 128
                       }
                     }
+                  },
+                  "host": {
+                    "description": "Host to build the template on. Omitted, the local host.",
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
                   }
                 },
                 "required": [
@@ -29010,6 +29079,11 @@
                     "type": "string",
                     "maxLength": 200,
                     "description": "One line, at most 200 characters. Line breaks and other control characters are refused."
+                  },
+                  "host": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                    "description": "Host id: local, or the id of a host added under Settings."
                   }
                 },
                 "required": [
@@ -29094,6 +29168,16 @@
           },
           "415": {
             "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -29370,6 +29454,16 @@
             }
           },
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Host that holds the template. Omitted, the first host that holds it.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -29547,6 +29641,16 @@
         "summary": "Build the bundled base template",
         "parameters": [
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -29629,6 +29733,16 @@
               }
             }
           },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected server error.",
             "content": {
@@ -29678,6 +29792,207 @@
         "x-cli": "template build"
       }
     },
+    "/api/templates/{ref}/sync": {
+      "post": {
+        "operationId": "template.sync",
+        "tags": [
+          "templates"
+        ],
+        "summary": "Copy a template to another host",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Template image reference, URL-encoded."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                    "description": "The host to copy the template to."
+                  }
+                },
+                "required": [
+                  "host"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "template:build",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "sent": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ref",
+            "host",
+            "sent"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "template sync",
+        "x-mcp": {
+          "name": "sync_template",
+          "toolset": "tools"
+        }
+      }
+    },
     "/api/templates/{ref}": {
       "delete": {
         "operationId": "template.delete",
@@ -29693,6 +30008,16 @@
             "schema": {
               "type": "string",
               "description": "Template image reference, URL-encoded."
+            }
+          },
+          {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Host that holds the template. Omitted, the first host that holds it.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
             }
           },
           {
@@ -29779,6 +30104,16 @@
               }
             }
           },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected server error.",
             "content": {
@@ -29848,6 +30183,11 @@
                     "type": "string",
                     "maxLength": 255,
                     "description": "Image to pull from its registry, such as node:24-bookworm-slim or ghcr.io/org/image:tag."
+                  },
+                  "host": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                    "description": "Host id: local, or the id of a host added under Settings."
                   }
                 },
                 "required": [

@@ -365,6 +365,7 @@ export const boxRollbackGet = defineOperation({
   output: z.object({ rollback: PendingRollbackSchema.nullable() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/rollback" }],
   cli: "box rollback-status",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   run: async ({ host }, _input, box) => ({ rollback: pendingRollbackView(host, box.boxId) }),
 });
@@ -388,6 +389,7 @@ export const boxRollbackConfirm = defineOperation({
   output: z.object({ removed: replacedVolumes }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rollback/confirm", body: true, status: 202 }],
   cli: "box rollback-confirm",
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, input, box) => {
     const preview = cleanupPreview(host, box);
@@ -420,6 +422,7 @@ export const boxRollbackUndo = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/rollback/undo", body: true, ifMatch: true, status: 202 }],
   cli: "box rollback-undo",
   precondition: (ctx) => assertCanWrite(ctx),
+  hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, input, box) => {
     const revision = requireRevision(input.expectedRevision);

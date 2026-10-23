@@ -28,6 +28,7 @@ import { type S3Double, startS3Double } from "./support/s3-double";
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
 const TEMPLATE_REF = "mbtest-template:gold";
+const SYNCED_TEMPLATE_REF = "mbtest-template:synced";
 const CHECKPOINT_PLACEHOLDER = `ck_${"0".repeat(16)}`;
 const PACKAGE_PLACEHOLDER = `pk_${"0".repeat(16)}`;
 const BACKUP_PLACEHOLDER = `bk_${"0".repeat(16)}`;
@@ -217,6 +218,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.create": () => ({ name: "sample", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" } }),
   "template.rebuild": () => ({ ref: "mbtest-template:sample" }),
   "template.build": () => ({}),
+  "template.sync": () => ({ ref: SYNCED_TEMPLATE_REF, host: "local" }),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
   "image.pull": () => ({ ref: "alpine:3.20" }),
   "task.list": () => ({}),
@@ -350,6 +352,13 @@ async function preparedInput(
   if (operation.name === "template.rebuild") {
     await app.operations.run("template.create", ctx, SAMPLES["template.create"]?.(boxId, app));
     await app.tasks.drain();
+  }
+  if (operation.name === "template.sync") {
+    await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });
+    (app.hosts.get("lab").runtime as FakeRuntime).seedImage(SYNCED_TEMPLATE_REF, {
+      [app.hosts.get().keys.template]: "true",
+    });
+    return { input: { ref: SYNCED_TEMPLATE_REF, host: "local" } };
   }
   if (operation.name === "task.get") {
     const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
@@ -1122,12 +1131,14 @@ describe("projections", () => {
       "delete_custom_tool",
       "install_tool",
       "list_custom_tools",
+      "list_templates",
       "list_tools",
       "pull_image",
       "put_custom_tool",
       "rebuild_template",
       "reconcile_tools",
       "save_template",
+      "sync_template",
       "uninstall_tool",
       "upgrade_tool",
     ]);

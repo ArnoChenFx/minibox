@@ -76,6 +76,21 @@ describe("checkpoint rules", () => {
     expect(rowActions(row(), { pending: true }).rollback).toEqual({ allowed: false, reason: "ck.reasonPending" });
   });
 
+  test("a checkpoint kept on another host cannot be rolled back to from here, and its other actions stay", () => {
+    const actions = rowActions(row(), { elsewhere: true });
+    expect(actions.rollback).toEqual({ allowed: false, reason: "ck.reasonOtherHost" });
+    expect([actions.fork.allowed, actions.export.allowed, actions.pin.allowed, actions.delete.allowed]).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+  });
+
+  test("a waiting rollback is the reason shown first, even for a checkpoint on another host", () => {
+    expect(rowActions(row(), { pending: true, elsewhere: true }).rollback.reason).toBe("ck.reasonPending");
+  });
+
   test("the safety checkpoint of a waiting rollback cannot be deleted", () => {
     expect(rowActions(row(), { held: true, pending: true }).delete).toEqual({
       allowed: false,
@@ -667,6 +682,50 @@ describe("checkpoint schedule", () => {
     expect(html).toContain('id="ckAt" type="text"');
     expect(html).not.toContain('type="time"');
     expect(html).toMatch(/<div class="field hidden" data-field="daily">/);
+  });
+});
+
+describe("checkpoints kept on several hosts", () => {
+  const hosts = [
+    { id: "local", name: "Local" },
+    { id: "host_b", name: "Host B" },
+  ];
+  const onB = checkpoint({ id: "ck_b", hostId: "host_b", label: "kept on B" });
+  const here = checkpoint({ id: "ck_here", hostId: "local", label: "kept here" });
+  const several = runConsole<Markup>(
+    "en",
+    { hosts, onB, here },
+    `return {
+      away: component.checkpointRowHtml(fixtures.onB, { hosts: fixtures.hosts, boxHostId: "local" }),
+      local: component.checkpointRowHtml(fixtures.here, { hosts: fixtures.hosts, boxHostId: "local" }),
+      single: component.checkpointRowHtml(fixtures.here, { hosts: [fixtures.hosts[0]], boxHostId: "local" }),
+      card: component.checkpointCardHtml({ rows: [fixtures.onB, fixtures.here], pending: null, usage: null, hosts: fixtures.hosts, boxHostId: "local" }),
+    };`,
+  );
+
+  test("a checkpoint kept on another host names that host, and cannot be rolled back to from the box's host", () => {
+    const html = several.away ?? "";
+    expect(html).toContain("Stored on Host B");
+    expect(isDisabled(buttonFor(html, "ck-rollback", "ck_b"))).toBe(true);
+    expect(titleOf(buttonFor(html, "ck-rollback", "ck_b"))).toBe(escaped(en["ck.reasonOtherHost"] ?? ""));
+    expect(isDisabled(buttonFor(html, "ck-fork", "ck_b"))).toBe(false);
+    expect(isDisabled(buttonFor(html, "ck-delete", "ck_b"))).toBe(false);
+  });
+
+  test("a checkpoint kept on the box's own host can be rolled back to, and still names its host", () => {
+    const html = several.local ?? "";
+    expect(html).toContain("Stored on Local");
+    expect(isDisabled(buttonFor(html, "ck-rollback", "ck_here"))).toBe(false);
+  });
+
+  test("with one host there is no host line", () => {
+    expect(several.single ?? "").not.toContain("Stored on");
+  });
+
+  test("the card names the host of each of its checkpoints", () => {
+    const html = several.card ?? "";
+    expect(html).toContain("Stored on Host B");
+    expect(html).toContain("Stored on Local");
   });
 });
 

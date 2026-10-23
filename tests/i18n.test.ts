@@ -106,12 +106,12 @@ describe("server messages", () => {
       expect([k, `feature.${k}` in en && `feature.${k}` in zh]).toEqual([k, true]);
     }
   });
-  test("a remote-host refusal names its feature by key, and the Chinese text takes the translated name", () => {
-    const refusal = msg("host_unsupported", { feature: "snapshots" });
-    expect(refusal.text).toBe("Snapshots is not supported on remote hosts yet.");
+  test("an agent-host refusal names its feature by key, and the Chinese text takes the translated name", () => {
+    const refusal = msg("agent_host_unsupported", { feature: "snapshots" });
+    expect(refusal.text).toBe("Snapshots is not supported on agent hosts yet.");
     expect(refusal.params).toEqual({ feature: "snapshots" });
-    const template = zh["err.host_unsupported"] ?? "";
-    expect(template.replace("{feature}", zh["feature.snapshots"] ?? "")).toBe("远程宿主机暂不支持快照。");
+    const template = zh["err.agent_host_unsupported"] ?? "";
+    expect(template.replace("{feature}", zh["feature.snapshots"] ?? "")).toBe("Agent 宿主机暂不支持快照。");
   });
   test("error responses carry key and params", async () => {
     const res = errorResponse(new AppError(409, "conflict", msg("box_exists", { name: "dev" })));
