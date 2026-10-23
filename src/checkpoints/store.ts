@@ -43,10 +43,10 @@ function isRecord(value: unknown): value is CheckpointRecord {
     typeof record.id === "string" &&
     isCheckpointId(record.id) &&
     typeof record.hostId === "string" &&
-    typeof record.boxId === "string" &&
+    (record.boxId === null || typeof record.boxId === "string") &&
     typeof record.pinned === "boolean" &&
-    typeof record.spec === "object" &&
-    record.spec !== null &&
+    (record.spec === null || (typeof record.spec === "object" && record.spec !== null)) &&
+    (record.trash === undefined || record.trash === null || typeof record.trash === "object") &&
     Array.isArray(record.data)
   );
 }
@@ -281,7 +281,7 @@ export class CheckpointStore {
         log.warn("checkpoint.unreadable", { id, error: "not a checkpoint record" });
         return null;
       }
-      return parsed;
+      return { ...parsed, trash: parsed.trash ?? null };
     } catch (e) {
       log.warn("checkpoint.unreadable", { id, error: String(e) });
       return null;

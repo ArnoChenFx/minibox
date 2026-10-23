@@ -35,6 +35,8 @@ export interface Config {
   trustProxy: boolean;
   cookieSecure: boolean;
   allowedOrigins: string[];
+  /** Whether the owner access key may call `/mcp`. An agent token always may, within its scopes. */
+  mcpAllowOwnerKey: boolean;
   /** Security profile for new boxes when the request does not choose one. */
   boxProfile: BoxProfile;
   /** Maximum number of processes in each box. */
@@ -64,6 +66,8 @@ export interface Config {
   checkpointKeepDays: number;
   /** Checkpoint repository size in MB at which new automatic checkpoints are refused. 0 sets no limit. */
   checkpointCapacityMb: number;
+  /** Days a deleted box or volume stays in the recycle bin before retention purges it. */
+  trashRetentionDays: number;
   /** Largest checkpoint package in MB that an export writes or an upload accepts. It also caps the HTTP request body. */
   checkpointPackageMaxMb: number;
   /** Largest single file in MB that the file browser or the file API uploads. It caps the request body of that upload. */
@@ -205,6 +209,21 @@ function parseContainerRuntime(value: string | undefined): string | null {
   return v;
 }
 
+/**
+ * Whether the owner access key may call `/mcp`. It is accepted in this release, and the next minor release refuses it
+ * by default. Flipping that default is a change to this one constant.
+ */
+export const DEFAULT_MCP_ALLOW_OWNER_KEY: boolean = true;
+
+/** A security switch, so anything other than a clear true or false stops startup rather than picking a side. */
+function parseMcpAllowOwnerKey(value: string | undefined): boolean {
+  const v = nonBlank(value)?.toLowerCase();
+  if (v === undefined) return DEFAULT_MCP_ALLOW_OWNER_KEY;
+  if (["true", "1", "yes", "on"].includes(v)) return true;
+  if (["false", "0", "no", "off"].includes(v)) return false;
+  throw new Error(`MCP_ALLOW_OWNER_KEY: "${value?.trim()}" must be true or false`);
+}
+
 export interface LoadOptions {
   /** Dotenv file to read. It is only ever read, never written. Defaults to `<project>/.env`. */
   envFile?: string;
@@ -246,6 +265,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     trustProxy: isTruthy(get("TRUST_PROXY")),
     cookieSecure: isTruthy(get("COOKIE_SECURE")),
     allowedOrigins: parseOrigins(get("ALLOWED_ORIGINS")),
+    mcpAllowOwnerKey: parseMcpAllowOwnerKey(get("MCP_ALLOW_OWNER_KEY")),
     boxProfile: parseBoxProfile(get("BOX_PROFILE")),
     boxPidsLimit: parseBoxPidsLimit(get("BOX_PIDS_LIMIT")),
     containerRuntime: parseContainerRuntime(get("RUNTIME")),
@@ -259,6 +279,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     checkpointKeepLast: intInRange(get("CHECKPOINT_KEEP_LAST"), 20, 1, 10_000),
     checkpointKeepDays: intInRange(get("CHECKPOINT_KEEP_DAYS"), 30, 0, 3650),
     checkpointCapacityMb: intInRange(get("CHECKPOINT_CAPACITY_MB"), 0, 0, 1_000_000_000),
+    trashRetentionDays: intInRange(get("TRASH_RETENTION_DAYS"), 7, 1, 365),
     checkpointPackageMaxMb: intInRange(get("CHECKPOINT_PACKAGE_MAX_MB"), 2048, 1, 65536),
     fileUploadMaxMb: intInRange(get("FILE_UPLOAD_MAX_MB"), 1024, 1, 65536),
     hostOvercommit: parseHostOvercommit(get("HOST_OVERCOMMIT")),

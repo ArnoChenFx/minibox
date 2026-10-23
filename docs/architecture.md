@@ -88,6 +88,7 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 - **Templates** are images on a box's host. The base template is `minibox-template:base` by default, and it is built from `templates/base/Dockerfile`. Saving a box as a template commits it as a snapshot, promotes the snapshot to a template and then removes the snapshot. Volumes are never part of a template. A template built from a Dockerfile, a repository, a build context or a `devcontainer.json` keeps its recipe in `DATA_DIR/template-recipes/`, so a rebuild can run the same source again.
 - **Volumes** hold a box's files. Each volume has a role that sets its mount point: `workspace` at `/workspace` and `home` at `/home/dev`, both read-write; `tools` at `/opt/minibox/tools`, read-only; and `cache` at `/home/dev/.cache`. Volume records and storage pools are JSON files in `DATA_DIR`. A pool stores its volumes on the local Docker engine, on an NFS export or in a host path.
 - **Checkpoints** are stored in one restic repository per host, in the volume `<prefix>-checkpoints-<host>`. restic runs in helper containers, and its password is generated once into `DATA_DIR/secrets`. An exported checkpoint is a package in `DATA_DIR/packages`, sealed with the passphrase chosen at export. The checkpoint repository key never goes into a package.
+- **The recycle bin** keeps the data of deleted boxes and volumes as entries of the same repository. An entry is a checkpoint record with a `trash` mark, so it counts against the same size limit and is left out of the checkpoint list. `src/services/trash.ts` makes and restores entries, and it checks the host disk floor and measures each copy with the usage sampler's `measureTree`. `src/services/safety.ts` takes the safety checkpoint that a rebuild takes first.
 - **Secrets** are files in `DATA_DIR/secrets/env`. A box refers to a secret by name, and gets the value when it is created or rebuilt. Secret values never appear in events, the audit log or the server log.
 
 ## Background work
@@ -95,7 +96,7 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 - `src/services/lifecycle.ts` runs on a timer. It puts idle boxes to sleep and stops boxes whose TTL has passed.
 - `src/services/reconcile.ts` compares the engine with the stored box specs. It claims containers that have no spec, and it settles rollbacks that are still pending.
 - `src/services/container-watch.ts` turns engine start, stop and out-of-memory events into the `container.*` activity that the Activity tab shows.
-- `src/events/retention.ts` and `src/services/checkpoint-retention.ts` apply the retention limits.
+- `src/events/retention.ts` and `src/services/checkpoint-retention.ts` apply the retention limits. The second also purges the recycle bin entries whose time is up.
 - `src/services/checkpoint-schedule.ts` takes the scheduled checkpoints once a minute, and skips boxes that are stopped or asleep.
 - `src/services/volume-usage.ts` runs `VolumeUsageWatcher`. It samples each volume's usage every `VOLUME_USAGE_INTERVAL_SEC` seconds, and checks the host disk's free-space floor on the same pass. Each volume is sampled on its own clock, with its own deadline, so a frozen NFS mount holds back only its own sample. The watcher keeps each volume's last level in memory, so an event is written when a volume crosses a limit, not on every pass. The sample logic is in `src/volumes/usage.ts`, the limit rules in `src/volumes/limits.ts`, and the disk floor in `src/volumes/disk.ts`.
 
@@ -107,6 +108,12 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 ## Notifications
 
 `src/notify/` turns events into notices and sends them. `rules.ts` maps a stored event to a notice, such as `box.oom` or `exec.failed`. `src/app.ts` passes every event to `Notifications` in `service.ts`, which also takes host link changes, and queues each notice for every channel that subscribes to it. Lifecycle warnings and terminal takeovers are events too, so they take the same path. Sends run in the background, with a bounded queue, a timeout and a fixed number of attempts. Each attempt is recorded as a `notify.deliver` event. `transport.ts` makes the request: it resolves the name once, refuses addresses that are not public, connects to the address it checked, and bounds the whole send with the timeout. `channels.ts` builds the request for each channel type and signs webhooks. `store.ts` keeps the channel settings in `notify.json` and their secrets under `secrets/notify`. The operations that configure channels are in `src/operations/notify.ts`.
+
+## Backups and off-site targets
+
+`src/backup/create.ts` writes a backup. It copies each SQLite store from a snapshot that `VACUUM INTO` makes in a worker thread (`snapshot.ts`), lists the other files, and streams them through a strict USTAR writer (`tar.ts`) into a sealing writer (`seal.ts`), which encrypts 1 MiB chunks with AES-256-GCM under a scrypt key. `restore.ts` reads an archive into an empty directory through a staging folder. `store.ts` keeps the archives under `DATA_DIR/backups`, each with a record written last. `src/services/backup.ts` and `src/operations/backup.ts` expose them.
+
+`src/targets/` reaches off-site targets. `s3.ts` uses Bun's S3 client with path-style addresses and a multipart writer. `sftp.ts` uses `ssh2`, with the host key pinned in `targets.json`. An adapter writes an object's archive before its record, and a pulled object is kept only when it matches its record. `src/services/targets.ts` runs the pushes and pulls, and `src/operations/targets.ts` exposes them. The credentials stay in `secrets/env` under the reserved `target.` names.
 
 ## Previews
 
@@ -132,6 +139,8 @@ Every path is under `DATA_DIR`.
 | Preview tickets and grants (memory only) | `src/preview/grants.ts` | Not written to disk, so a restart ends them |
 | `checkpoints/schedules/` | `src/checkpoints/store.ts`, `src/services/checkpoint-schedule.ts` | Checkpoint schedules, one per box |
 | `packages/` | `src/checkpoints/packages.ts` | Exported checkpoint packages, sealed with a passphrase |
+| `backups/` | `src/backup/store.ts` | Stored backups: sealed archives, each with a record written last |
+| `targets.json` | `src/targets/store.ts` | Off-site targets: where each one is and its last sync. Their credentials are secrets named `target.<id>.<field>` |
 | `exec/` | `src/events/outputs.ts` | Saved output of commands |
 | `hosts.json`, `hosts/<id>/` | `src/host/store.ts` | Remote host records and their credential files |
 | `agents.json` | `src/host/agent/store.ts` | Paired host agents: ids, public keys and revocation. The private key stays in the agent's own volume |

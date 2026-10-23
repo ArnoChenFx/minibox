@@ -1,3 +1,4 @@
+import { backupOperations } from "./backup";
 import { boxOperations } from "./boxes";
 import { checkpointPackageOperations } from "./checkpoint-packages";
 import { checkpointOperations } from "./checkpoints";
@@ -15,10 +16,12 @@ import { selfOperations } from "./self";
 import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
 import { startupOperations } from "./startup";
+import { targetOperations } from "./targets";
 import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
 import { tokenOperations } from "./tokens";
 import { toolOperations } from "./tools";
+import { trashOperations } from "./trash";
 import type { Operation } from "./types";
 import { volumeOperations } from "./volumes";
 
@@ -36,6 +39,9 @@ export const OPERATIONS: readonly Operation[] = [
   ...snapshotOperations,
   ...checkpointOperations,
   ...checkpointPackageOperations,
+  ...backupOperations,
+  ...targetOperations,
+  ...trashOperations,
   ...templateOperations,
   ...imageOperations,
   ...taskOperations,

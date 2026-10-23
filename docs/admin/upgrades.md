@@ -18,6 +18,11 @@ MiniBox is not 1.0 yet. A minor version, such as 0.4 to 0.5, can contain breakin
 
 These are the manual steps for changes made in 0.4 and later. Read the ones that apply to the versions you are skipping. Some need action before you start the new version.
 
+### MCP and the owner access key
+
+- **Agents and the access key.** This release still accepts the access key on `/mcp`. MiniBox records each use, logs the first one, and shows a notice in the console for seven days after the last use. The next minor release refuses the key on `/mcp` by default, with `401`, so agents that still send it stop working. Before you upgrade to that release, give each agent its own token, from **Settings** or with `minibox token create <name>`. Agent tokens keep working either way.
+- **Keeping or refusing the key.** Set `MCP_ALLOW_OWNER_KEY=true` to keep accepting the key after the default changes. Set `MCP_ALLOW_OWNER_KEY=false` to refuse it now.
+
 ### Proxies, sign-in and scripts
 
 - **Reverse proxies and tunnels.** Leave `TRUST_PROXY` off unless a proxy you control overwrites `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` on every request. MiniBox logs `proxy.headers_ignored` when those headers arrive while `TRUST_PROXY` is off. Turn it on only behind a proxy that sets them. OpenTunnel does not set them, so there it stays off. Set `ALLOWED_ORIGINS=https://your-address` when the proxy rewrites `Host`, which nginx does unless you set `proxy_set_header Host $host;`. Set `COOKIE_SECURE=1` only when the browser uses HTTPS but the proxy removes the `https://` origin. Writes from another origin return `403` unless `ALLOWED_ORIGINS` lists it.
@@ -47,6 +52,7 @@ These are the manual steps for changes made in 0.4 and later. Read the ones that
 
 ### Storage, uploads and notifications
 
+- **Recycle bin and safety checkpoints.** Deleting a box or a volume now keeps a copy of its data for `TRASH_RETENTION_DAYS` days (7 by default). A rebuild, an attach or a detach takes a safety checkpoint first. Both use space in the checkpoint repository, and they count against `CHECKPOINT_CAPACITY_MB`. To free the space at once, purge the entries on the **Recycle bin** page. Send `skipTrash=true` on a delete, or `safetyCheckpoint: false` on a rebuild, to keep no copy.
 - **Upload limits behind a proxy.** Uploaded files (`FILE_UPLOAD_MAX_MB`, 1024 by default) and checkpoint packages (`CHECKPOINT_PACKAGE_MAX_MB`, 2048 by default) can be larger than 128 MiB. A reverse proxy has its own limit, such as nginx `client_max_body_size`, which is 1 MB by default. Raise it, or uploads fail at the proxy.
 - **NFS volumes.** Creating a volume on an NFS export fails with `502` (`storage_unwritable` or `storage_permission_denied`) when the export uses `root_squash` with the default anonymous user, `nobody`. Set `all_squash,anonuid=1000,anongid=1000` or `root_squash,anonuid=1000,anongid=1000` on the export. See [NFS](../user-guide/nfs.md).
 - **Notifications to private addresses.** MiniBox refuses to send notifications to loopback, private and other non-public addresses, unless `NOTIFY_ALLOW_PRIVATE=true`. The `198.18.0.0/15` range stays allowed, for DNS proxies that answer with fake IP addresses. Set it only for a channel that must reach your network.

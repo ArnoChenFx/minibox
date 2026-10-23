@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { EventTarget } from "../events/types";
+import { preRebuildSafety } from "../services/safety";
 import {
   attachVolume,
   confirmationRequired,
@@ -21,11 +22,20 @@ import {
 import { requireRevision } from "../specs/revision";
 import { refusal, specViews, volumeVisible } from "../tokens/model";
 import type { PoolDraft, RoleDraft } from "../volumes/pools";
-import { assertCanAdministerPools, assertCanAttach, assertCanWrite } from "./authz";
+import { assertCanAdministerPools, assertCanAttach, assertCanSkipTrash, assertCanWrite } from "./authz";
 import { defineOperation } from "./define";
 import { fromEveryHost, hostOfVolume } from "./routing";
-import { BoxSchema } from "./schemas";
-import { boxId, confirmFlag, expectedRevision, refreshFlag, storageConfirmFlag, volumeName } from "./validation";
+import { BoxSchema, SafetyCheckpointSchema, TrashRefSchema } from "./schemas";
+import {
+  boxId,
+  confirmFlag,
+  expectedRevision,
+  refreshFlag,
+  safetyCheckpointFlag,
+  skipTrashFlag,
+  storageConfirmFlag,
+  volumeName,
+} from "./validation";
 
 const ROLES = ["workspace", "home", "tools", "cache"] as const;
 
@@ -112,7 +122,7 @@ const UsageSchema = z.object({
   lastError: z.string().nullable(),
 });
 
-const VolumeSchema = z.object({
+export const VolumeSchema = z.object({
   id: z.string(),
   name: z.string(),
   hostId: z.string(),
@@ -234,26 +244,36 @@ const volumeDelete = defineOperation({
   scope: "volume:write",
   async: false,
   conflicts: true,
+  longSync: true,
   input: z.object({
     id: z.string().meta({ description: "Volume id (vol_…) or volume name." }),
     confirm: storageConfirmFlag(),
+    skipTrash: skipTrashFlag(),
   }),
-  output: z.object({ name: z.string() }),
-  rest: [{ method: "DELETE", path: "/api/volumes/:id", query: ["confirm"] }],
+  output: z.object({
+    name: z.string(),
+    trash: TrashRefSchema.nullable().meta({
+      description: "The recycle bin entry that kept the volume's data until expiresAt, or null when none was kept.",
+    }),
+  }),
+  rest: [{ method: "DELETE", path: "/api/volumes/:id", query: ["confirm", "skipTrash"] }],
   cli: "volume rm",
   mcp: {
     toolset: "storage",
     name: "delete_volume",
     description:
-      "Delete a volume and its engine data. A volume that a box mounts is refused. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+      "Delete a volume and its engine data. The data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new volume. Cache and tools volumes keep nothing. A volume that a box mounts is refused. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
+  precondition: async (ctx, input) => {
+    if (input.skipTrash) await assertCanSkipTrash(ctx);
+  },
   activity: { action: () => "volume.delete", target: (_input, volume) => volume.name },
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
-  run: async ({ host }, input, volume) => {
-    if (!input.confirm) throw confirmationRequired(previewDeleteVolume(volume));
-    return deleteVolume(host, input.id);
+  run: async ({ host, principal, record }, input, volume) => {
+    if (!input.confirm) throw confirmationRequired(previewDeleteVolume(volume, input.skipTrash));
+    return deleteVolume(host, input.id, { skipTrash: input.skipTrash, createdBy: principal.id, record });
   },
 });
 
@@ -273,11 +293,15 @@ const volumeAttach = defineOperation({
       .enum(["rw", "ro"])
       .meta({ description: "Read-write or read-only. A second read-write mount is the operator's risk." }),
     confirm: confirmFlag(),
+    safetyCheckpoint: safetyCheckpointFlag(),
     expectedRevision: expectedRevision(),
   }),
   output: z.object({
     box: BoxSchema,
     warning: z.enum(["shared_rw"]).nullable(),
+    safety: SafetyCheckpointSchema.nullable().meta({
+      description: "The checkpoint taken before the rebuild, or null when none was taken.",
+    }),
   }),
   rest: [{ method: "POST", path: "/api/volumes/:id/attach", body: true, ifMatch: true }],
   cli: "volume attach",
@@ -285,8 +309,9 @@ const volumeAttach = defineOperation({
     toolset: "storage",
     name: "attach_volume",
     description:
-      "Mount a volume into a box. Docker cannot add a mount in place, so the container is rebuilt and renamed to prefix-<box id>. Send expectedRevision and confirm true. Without confirm the call changes nothing and returns confirmation_required with the rebuild preview. A read-write mount also needs volume:write. warning is shared_rw when another box already mounts this volume read-write.",
+      "Mount a volume into a box. Docker cannot add a mount in place, so the container is rebuilt and renamed to prefix-<box id>. Send expectedRevision and confirm true. Without confirm the call changes nothing and returns confirmation_required with the rebuild preview. A confirmed mount takes a safety checkpoint of the box first unless safetyCheckpoint is false, as box rebuild does. A read-write mount also needs volume:write. warning is shared_rw when another box already mounts this volume read-write.",
   },
+  longSync: true,
   hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.attach", target: (_input, volume) => volume.name },
@@ -304,6 +329,7 @@ const volumeAttach = defineOperation({
         revision: requireRevision(input.expectedRevision),
         confirm: input.confirm,
       },
+      input.safetyCheckpoint ? preRebuildSafety(ctx.host, ctx.principal.id) : null,
       ctx.record,
     );
   },
@@ -322,17 +348,24 @@ const volumeDetach = defineOperation({
     box: boxId(),
     path: z.string().meta({ description: "Mount path to remove." }),
     confirm: confirmFlag(),
+    safetyCheckpoint: safetyCheckpointFlag(),
     expectedRevision: expectedRevision(),
   }),
-  output: z.object({ box: BoxSchema }),
+  output: z.object({
+    box: BoxSchema,
+    safety: SafetyCheckpointSchema.nullable().meta({
+      description: "The checkpoint taken before the rebuild, or null when none was taken.",
+    }),
+  }),
   rest: [{ method: "POST", path: "/api/volumes/:id/detach", body: true, ifMatch: true }],
   cli: "volume detach",
   mcp: {
     toolset: "storage",
     name: "detach_volume",
     description:
-      "Remove one mount of a volume from a box. The container is rebuilt and renamed to prefix-<box id>. Send expectedRevision and confirm true. Without confirm the call changes nothing and returns the rebuild preview.",
+      "Remove one mount of a volume from a box. The container is rebuilt and renamed to prefix-<box id>. Send expectedRevision and confirm true. Without confirm the call changes nothing and returns the rebuild preview. A confirmed detach takes a safety checkpoint of the box first unless safetyCheckpoint is false, as box rebuild does.",
   },
+  longSync: true,
   hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.detach", target: (_input, volume) => volume.name },
@@ -348,6 +381,7 @@ const volumeDetach = defineOperation({
         revision: requireRevision(input.expectedRevision),
         confirm: input.confirm,
       },
+      input.safetyCheckpoint ? preRebuildSafety(ctx.host, ctx.principal.id) : null,
       ctx.record,
     );
   },

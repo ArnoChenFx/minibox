@@ -27,6 +27,9 @@
   .content {
     padding: 20px 16px;
   }
+  .owner-key-banner:not([hidden]) {
+    padding: 16px 16px 0;
+  }
   .topbar {
     padding: 0 16px;
   }

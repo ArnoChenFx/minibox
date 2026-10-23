@@ -19,6 +19,8 @@ Use an agent token for each agent, not the access key. The access key is the own
 
 See [Access, sessions and tokens](access-and-tokens.md) for the presets and scopes.
 
+From a shell, `minibox token create <name>` makes a token too, and prints its secret once. See the [CLI reference](../reference/cli.md#tokens).
+
 ## Connect an MCP client
 
 Add a server to the client's MCP settings. Use the URL of your MiniBox server, and the token as a bearer token:
@@ -28,6 +30,8 @@ Add a server to the client's MCP settings. Use the URL of your MiniBox server, a
 ```
 
 For a client that starts a command, run `minibox mcp`. Set `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` to the server address and the agent's token.
+
+`/mcp` still accepts the access key. MiniBox records each use and warns about it in the console and the log, and `minibox mcp` warns when it runs on the key. The next minor release refuses the key on `/mcp` by default, so give each agent a token now. [Upgrading](../admin/upgrades.md) names the `MCP_ALLOW_OWNER_KEY` setting.
 
 ## Toolsets
 
@@ -92,7 +96,7 @@ Paste this into the `AGENTS.md` file of the project that the agent works in. It 
 ```markdown
 ## MiniBox
 
-Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work inside a box.
+Use the MiniBox MCP server (`/mcp`, Bearer agent token) to work inside a box.
 
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision, unless the box's TTL has passed: then exec fails with box_ttl_expired. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
@@ -109,7 +113,7 @@ Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work in
 - session_read returns lines and a cursor. Pass the newest cursor as since to read only what is new. reset true means the screen was redrawn, and lines is the current window.
 - session_send takes keys (tmux names such as Enter, Tab, Escape or C-c) or text, but not both. The audit log keeps the counts, never the input.
 - The tools toolset (`/mcp?toolsets=tools`) holds list_tools, install_tool, upgrade_tool, uninstall_tool, reconcile_tools, save_template, create_template, rebuild_template and pull_image. Installs write to the shared tools volume and update BoxSpec.tools. save_template saves a box as a template: it is long-running, returns a task id, and leaves out `/workspace` and home volumes. create_template builds a template from a Dockerfile, a repository, a build context or a devcontainer.json, rebuild_template rebuilds one from its source, and pull_image pulls an image. Only the owner may use these three, and each returns a task id. list_custom_tools, put_custom_tool and delete_custom_tool manage the custom catalog in DATA_DIR/tools.d. Only the owner may use them. delete_custom_tool removes the file and does not uninstall the tool.
-- The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size. Checkpoint export, import and schedule tools are in the same toolset, for the owner only: export_checkpoint returns a task whose result holds a package id, import_checkpoint imports a package uploaded with POST /api/packages, and get_checkpoint_schedule, set_checkpoint_schedule and clear_checkpoint_schedule manage a box's schedule. A scheduled checkpoint never wakes a stopped or sleeping box. The audit log and the task record never hold a passphrase.
+- The storage toolset (`/mcp?toolsets=storage`) holds the volume and pool tools. create_volume, delete_volume, attach_volume, detach_volume and replace_pools need confirm true. Without it the call changes nothing and returns confirmation_required with details.preview. attach_volume and detach_volume rebuild the box, so the same mount rules apply as to rebuild_box. measure_volume only refreshes the cached size. Deleting a box or a volume keeps a copy of its data in the recycle bin for the retention period unless skipTrash is true; skipTrash needs the owner or a token with the trash:skip scope. The recycle bin tools are in the same toolset, for the owner only: list_trash lists the kept entries, restore_trash brings one back as a new box or volume, and purge_trash removes one now. Checkpoint export, import and schedule tools are in the same toolset, for the owner only: export_checkpoint returns a task whose result holds a package id, import_checkpoint imports a package uploaded with POST /api/packages, and get_checkpoint_schedule, set_checkpoint_schedule and clear_checkpoint_schedule manage a box's schedule. A scheduled checkpoint never wakes a stopped or sleeping box. The audit log and the task record never hold a passphrase.
 - The network toolset (`/mcp?toolsets=network`) holds list_ports and expose_port for port previews. A returned url opens in a browser signed in to MiniBox: a path under `/box/<name>/<port>/`, or, when PREVIEW_BASE_DOMAIN is set, a sign-in link to the port's own preview host.
 - read_file, write_file, list_files and copy_files act on volumes (not boxes). They work when no box is running, via a helper container and the Docker archive API. A call keeps the boxes that mount the volume awake while it runs, and it never starts a stopped box. Paths are jailed inside the volume. write_file stamps uid/gid 1000 (dev). exec already implies volume RW on mounts of boxes the token may use; files:* only matters without exec.
 - The default toolsets are core and meta. Add others with `?toolsets=`, for example `/mcp?toolsets=core,meta,session`. Taking, listing, forking and rolling back checkpoints have no MCP tools: use the REST API (`/api/boxes/{id}/checkpoints`, `/api/checkpoints`).

@@ -547,13 +547,12 @@ describe("crossing a limit raises one event, and the event carries the reason", 
     ).toMatchObject({ status: 409, key: "volume_over_limit" });
     expect(
       await rejectionOf(
-        attachVolume(host, data.id, {
-          box: beta.boxId,
-          path: "/srv/data",
-          mode: "rw",
-          revision: beta.revision,
-          confirm: true,
-        }),
+        attachVolume(
+          host,
+          data.id,
+          { box: beta.boxId, path: "/srv/data", mode: "rw", revision: beta.revision, confirm: true },
+          null,
+        ),
       ),
     ).toMatchObject({ status: 409, key: "volume_over_limit" });
 

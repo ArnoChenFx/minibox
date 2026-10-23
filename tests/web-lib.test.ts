@@ -23,7 +23,9 @@ import {
   validMountPath,
   volumeChoices,
 } from "../web/js/lib/mounts.js";
+import { ownerKeyNotice } from "../web/js/lib/owner-key.js";
 import { retiredRedirect } from "../web/js/lib/retired-routes.js";
+import { daysLeft } from "../web/js/lib/trash.js";
 
 const LIB = join(ROOT, "web", "js", "lib");
 const I18N = join(ROOT, "web", "js", "i18n");
@@ -146,7 +148,9 @@ describe("format helpers", () => {
           pctRounded: format.pct(12.345, 0),
           pctNaN: format.pct(NaN),
           cpusNull: format.cpus(null),
+          cpus1: format.cpus(1),
           cpus2: format.cpus(2),
+          cpusHalf: format.cpus(0.5),
           memNull: format.mem(null),
           mem512: format.mem(512 * 1024 * 1024),
           mem2g: format.mem(2 * 1024 ** 3),
@@ -164,7 +168,9 @@ describe("format helpers", () => {
       pctRounded: "12%",
       pctNaN: "—",
       cpusNull: "Unlimited",
+      cpus1: "1 core",
       cpus2: "2 cores",
+      cpusHalf: "0.5 cores",
       memNull: "Unlimited",
       mem512: "512 MB",
       mem2g: "2 GB",
@@ -222,11 +228,12 @@ describe("format helpers", () => {
         `({
           mem: format.mem(null),
           cpus: format.cpus(2),
+          cpus1: format.cpus(1),
           hours: format.duration(3700),
           justNow: format.relTime(new Date(Date.now() - 5000).toISOString()),
         })`,
       ),
-    ).toEqual({ mem: "不限", cpus: "2 核", hours: "1 小时 1 分钟", justNow: "刚刚" });
+    ).toEqual({ mem: "不限", cpus: "2 核", cpus1: "1 核", hours: "1 小时 1 分钟", justNow: "刚刚" });
   });
 
   test("shortId strips the sha256 prefix and keeps twelve characters", () => {
@@ -847,6 +854,40 @@ describe("box state badges", () => {
       running: "running",
     });
     expect(badges.expired).toContain("TTL expired");
+  });
+});
+
+describe("recycle bin countdown", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.parse("2026-10-22T00:00:00.000Z");
+  const at = (ms: number) => new Date(now + ms).toISOString();
+
+  test("counts the days left, and a part of a day counts as a day", () => {
+    expect(daysLeft(at(7 * DAY), now)).toBe(7);
+    expect(daysLeft(at(DAY / 2), now)).toBe(1);
+    expect(daysLeft(at(DAY + 1), now)).toBe(2);
+  });
+
+  test("an entry whose time has passed, or whose time is not a date, has no days left", () => {
+    expect(daysLeft(at(0), now)).toBe(0);
+    expect(daysLeft(at(-DAY), now)).toBe(0);
+    expect(daysLeft("not a date", now)).toBe(0);
+  });
+});
+
+describe("owner key notice", () => {
+  const lastUsedAt = "2026-10-23T01:00:00.000Z";
+
+  test("is the outcome the server reports, and nothing when the owner key was not used lately", () => {
+    expect(ownerKeyNotice({ mcpOwnerKey: { outcome: "accepted", lastUsedAt } })).toBe("accepted");
+    expect(ownerKeyNotice({ mcpOwnerKey: { outcome: "refused", lastUsedAt } })).toBe("refused");
+    expect(ownerKeyNotice({ mcpOwnerKey: null })).toBeNull();
+    expect(ownerKeyNotice({})).toBeNull();
+    expect(ownerKeyNotice(null)).toBeNull();
+  });
+
+  test("an outcome the console does not know shows nothing", () => {
+    expect(ownerKeyNotice({ mcpOwnerKey: { outcome: "maybe" as "accepted", lastUsedAt } })).toBeNull();
   });
 });
 

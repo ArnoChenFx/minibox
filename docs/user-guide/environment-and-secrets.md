@@ -36,6 +36,7 @@ To delete a secret, click **Delete**. If a box uses the secret, MiniBox lists th
 - **Only the owner and tokens with the `secret:use` scope can refer to a secret.** Only the `admin` preset has that scope. A repository clone at box create refers to a secret too, when it names one.
 - **Anyone who can run commands in a box can read its environment.** This includes `exec`, SSH and the terminal. Give those permissions only for boxes that should hold the secret.
 - **Secret values never appear in events, the audit log or the server log.** They show only the name.
+- **Names that start with `target.` are reserved.** They hold the credentials of [off-site targets](../admin/backups.md#off-site-targets). They do not appear in the list of secrets, and a box cannot use them.
 
 ## Limits
 

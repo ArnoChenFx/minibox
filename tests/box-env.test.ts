@@ -280,6 +280,35 @@ describe("secret store operations", () => {
     });
   });
 
+  test("a credential of a target is reserved: the secret API, a box and a clone refuse its name, and the list hides it", async () => {
+    const reserved = "target.tgt_abcdefgh.secret-key";
+    setSecret(reserved, SECRET_VALUE);
+    expect(await rejectionOf(run("secret.set", { name: reserved, value: ROTATED_VALUE }))).toMatchObject({
+      status: 400,
+      key: "secret_name_reserved",
+    });
+    expect(await rejectionOf(run("secret.delete", { name: reserved, force: true }))).toMatchObject({
+      status: 400,
+      key: "secret_name_reserved",
+    });
+    expect(
+      await rejectionOf(run("box.create", createInput("alpha", [{ name: "TOKEN", secretRef: reserved }]))),
+    ).toMatchObject({ status: 400, key: "secret_name_reserved" });
+    expect(
+      await rejectionOf(
+        run("box.create", {
+          ...createInput("alpha", []),
+          repo: { url: "https://github.com/org/private.git", secretRef: reserved },
+        }),
+      ),
+    ).toMatchObject({ status: 400, key: "secret_name_reserved" });
+    expect(runtime.callsTo("createContainer")).toEqual([]);
+    expect(app.hosts.get().specs.list()).toEqual([]);
+
+    expect((await run<{ secrets: { name: string }[] }>("secret.list", {})).secrets).toEqual([]);
+    expect(app.hosts.get().secrets.meta(reserved)).not.toBeNull();
+  });
+
   test("deleting a secret that a box uses is refused without force, and the answer names the box", async () => {
     setSecret("vault", SECRET_VALUE);
     await run("box.create", createInput("alpha", [{ name: "TOKEN", secretRef: "vault" }]));

@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 118 operations in 18 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 133 operations in 21 groups.
 
 ## Authentication
 
@@ -39,10 +39,10 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
 | `secret:use` | `secret:use`. Setting, removing or running a box's startup command also needs `exec`. |
-| `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+| `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `trash:read`, `trash:restore`, `trash:purge`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 | `self` | None. Only the self token of the box can call these, and only for that box. |
 
-The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
+The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. The `skipTrash` option of `DELETE /api/boxes/{id}` and `DELETE /api/volumes/{id}` also needs the `trash:skip` token scope, or the owner. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
 
 ## Requests
 
@@ -53,7 +53,7 @@ The scope check comes first. The token's box, volume and host grants, its quotas
 
 ## Long-running operations
 
-Some operations take a while, such as template builds, checkpoints, exports, imports, forks, rollbacks and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
+Some operations take a while, such as template builds, checkpoints, exports, imports, forks, rollbacks, recycle bin restores and purges, and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
 
 - `GET /api/tasks/{id}` shows the task, including its status and result.
 - `GET /api/tasks/{id}/events` streams its progress as server-sent events. It is not in the OpenAPI document.
@@ -133,13 +133,13 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. The response's `clone.taskId` names the clone task. `selfToken: true` gives the box's agent its self token |
 | `GET` | `/api/boxes/{id}` | Get one box |
 | `PATCH` | `/api/boxes/{id}` | Update a box in place |
-| `DELETE` | `/api/boxes/{id}` | Delete a box |
+| `DELETE` | `/api/boxes/{id}` | Delete a box. Its data is kept in the recycle bin unless `skipTrash=true`, and `deleteVolume=true` also deletes the volumes it owns. The response's `trash` names the entry, or is `null` |
 | `DELETE` | `/api/boxes/{id}/self-token` | Revoke the box's self token. The box keeps running, and the feature stays off for it |
 | `POST` | `/api/boxes/{id}/start` | Start a box |
 | `POST` | `/api/boxes/{id}/stop` | Stop a box |
 | `POST` | `/api/boxes/{id}/restart` | Restart a box |
 | `PATCH` | `/api/boxes/{id}/resources` | Change the CPU, memory or process limit of a box |
-| `POST` | `/api/boxes/{id}/rebuild` | Rebuild a box from its spec |
+| `POST` | `/api/boxes/{id}/rebuild` | Rebuild a box from its spec. Takes a safety checkpoint first, unless `safetyCheckpoint` is `false` |
 | `POST` | `/api/boxes/{id}/move` | Move a box to another host. Needs `If-Match`. Without `confirm: true` it returns `409 confirmation_required` with a preview |
 | `GET` | `/api/boxes/{id}/logs` | Read the recent log output of a box |
 | `GET` | `/api/boxes/{id}/stats` | Read the current resource usage of a box |
@@ -188,9 +188,9 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `GET` | `/api/volumes` | List volumes |
 | `POST` | `/api/volumes` | Create an independent volume |
 | `GET` | `/api/volumes/{id}` | Get a volume |
-| `DELETE` | `/api/volumes/{id}` | Delete a volume |
-| `POST` | `/api/volumes/{id}/attach` | Mount a volume on a box |
-| `POST` | `/api/volumes/{id}/detach` | Unmount a volume from a box |
+| `DELETE` | `/api/volumes/{id}` | Delete a volume. Its data is kept in the recycle bin unless `skipTrash=true`. The response's `trash` names the entry, or is `null` |
+| `POST` | `/api/volumes/{id}/attach` | Mount a volume on a box. Takes a safety checkpoint of the box first, unless `safetyCheckpoint` is `false` |
+| `POST` | `/api/volumes/{id}/detach` | Unmount a volume from a box. Takes a safety checkpoint of the box first, unless `safetyCheckpoint` is `false` |
 | `POST` | `/api/volumes/{id}/usage` | Measure a volume |
 | `PUT` | `/api/volumes/{id}/limits` | Set a volume's soft and hard limits in bytes, and the action at the hard limit (`warn` or `stop`). A field left out keeps its value, and `null` clears a limit. Owner only. An NFS volume answers `400` |
 | `GET` | `/api/pools` | List storage pools |
@@ -241,7 +241,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/checkpoints` | List checkpoints |
+| `GET` | `/api/checkpoints` | List checkpoints. Recycle bin entries are not listed here; see [trash](#trash) |
 | `GET` | `/api/checkpoints/usage` | Read the checkpoint repository's size against its limit |
 | `GET` | `/api/checkpoints/{id}` | Get one checkpoint |
 | `PATCH` | `/api/checkpoints/{id}` | Pin or relabel a checkpoint |
@@ -259,6 +259,42 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `GET` | `/api/boxes/{id}/checkpoint-schedule` | Read a box's checkpoint schedule, with its next and last run. `null` when none is set. `timezoneUnknown` is `true` when the saved zone is one the server no longer knows; the schedule then runs in UTC until it is set again. Owner only |
 | `PUT` | `/api/boxes/{id}/checkpoint-schedule` | Set a schedule `{ "everyHours" }` or `{ "at": "HH:MM", "timezone" }`, not both. `timezone` is an IANA zone such as `Asia/Shanghai`; without it the time is UTC, and an unknown zone or a UTC offset such as `+08:00` is `400`. Replaces any schedule the box has. Owner only |
 | `DELETE` | `/api/boxes/{id}/checkpoint-schedule` | Remove a box's schedule. Checkpoints already taken are kept. Owner only |
+
+### backups
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/backups` | Back up DATA_DIR into a sealed archive, as a task. Takes `{ "passphrase" }`. Returns `202`; the task result holds the backup. Owner only |
+| `GET` | `/api/backups` | List the backups kept on the server, newest first. Owner only |
+| `GET` | `/api/backups/{id}/download` | Download a backup archive as `<id>.mbbak`. Owner only |
+| `DELETE` | `/api/backups/{id}` | Delete a backup kept on the server. Owner only |
+
+### targets
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/targets` | List off-site targets. Credentials are never returned. Owner only |
+| `POST` | `/api/targets` | Add an S3-compatible or SFTP target. Takes its fields, and the credentials are stored as secrets. Owner only |
+| `POST` | `/api/targets/test` | Reach a target with the given details, and store nothing. Owner only |
+| `GET` | `/api/targets/{id}/check` | Reach a stored target with its own credentials. Owner only |
+| `GET` | `/api/targets/{id}/objects` | List the complete packages and backups on a target, newest first. Owner only |
+| `DELETE` | `/api/targets/{id}` | Remove a target and its stored credentials. Objects on the target are kept. Owner only |
+| `POST` | `/api/targets/{id}/push` | Push a package (`pk_…`) or a backup (`bk_…`) to a target, as a task. Owner only |
+| `POST` | `/api/targets/{id}/pull` | Pull a package or a backup from a target, as a task. Owner only |
+
+Targets take the fields of `POST /api/targets`. An S3 target takes `endpoint`, `region`, `bucket`, `accessKeyId` and `secretAccessKey`. An SFTP target takes `host`, `port`, `user`, `privateKey` and `hostKeyFingerprint`. The fingerprint comes from `POST /api/targets/test`, which reports the server's key when the key is not yet known. See [Backups](../admin/backups.md#off-site-targets).
+
+### trash
+
+The recycle bin holds the data of deleted boxes and volumes. Its entries are not checkpoints, so they are not in `GET /api/checkpoints`. These operations are for the owner only.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/trash` | List the recycle bin, newest deletion first. The `trash` array holds each entry's `id`, `hostId`, `kind` (`box` or `volume`), `sourceId`, `sourceName`, `deletedAt`, `expiresAt`, `bytes` and `createdBy` |
+| `POST` | `/api/trash/{id}/restore` | Restore an entry as a new box or volume, as a task. Takes `name`, and for a box `cpus` and `memoryMb`, all optional. The entry is removed once the restore has finished |
+| `DELETE` | `/api/trash/{id}` | Purge an entry now, as a task. Its data cannot be restored afterwards |
+
+An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configuration.md#checkpoints). Each delete, restore and purge is recorded as an event: `box.trashed` or `volume.trashed`, `trash.restored` or `trash.purged`.
 
 ### templates
 

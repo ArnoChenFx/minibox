@@ -31,6 +31,11 @@ Commands:
                                        Rebuild a template from the source it was built from
   minibox image pull <ref> [--no-wait] [--json]
                                        Pull an image from its registry, when the engine does not have it
+  minibox trash ls [--json]            List the recycle bin: deleted boxes and volumes, kept until they expire
+  minibox trash restore <id> [--name NAME] [--cpus N] [--memory MB] [--no-wait] [--json]
+                                       Restore an entry as a new box or volume, and remove the entry
+  minibox trash purge <id> [--no-wait] [--json]
+                                       Remove an entry and the data it keeps, before it expires
   minibox exec <box> [options] -- <argv...>
       --cwd DIR         Working directory (default /workspace)
       --user USER       Container user (default dev; the strict profile allows only dev or 1000)
@@ -63,11 +68,21 @@ Commands:
                                        Save an entry from a JSON document (owner only)
   minibox tool custom delete <id> [--json]
                                        Remove an entry from tools.d; nothing is uninstalled
+  minibox token create <name> [--preset P] [--scopes LIST] [--expires-in SEC] [--json]
+                                       Print a new agent token's secret once. The preset defaults to sandboxed-agent.
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
   minibox ssh-config [--append] [--url URL] [--token KEY]
                                        Print the ~/.ssh/config block and host key pin. --append writes both and saves
                                        the server and key for ssh-proxy. --token leaves the key in shell history.
   minibox ssh-proxy <box>              Carry one SSH connection over stdio (the ProxyCommand from ssh-config)
+  minibox backup [--out FILE] [--overwrite] [--passphrase-stdin] [--json]
+                                       Back up DATA_DIR while MiniBox runs. Sealed with MINIBOX_BACKUP_PASSPHRASE
+                                       (or --passphrase-stdin). --out saves the archive here after a size/checksum check.
+  minibox backup ls [--json]           List the backups kept on the server
+  minibox backup rm <id> [--json]      Delete a backup kept on the server
+  minibox restore <file> --data-dir DIR [--passphrase-stdin]
+                                       Restore offline into an empty DATA_DIR. The passphrase is
+                                       read as for backup.
   minibox --version                    Print the MiniBox version this CLI was built from
 
 Every command takes --help. Install this CLI from the server: curl -fsSL <MINIBOX_URL>/cli/install.sh | sh

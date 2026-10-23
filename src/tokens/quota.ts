@@ -123,7 +123,7 @@ export function assertCheckpointQuota(ctx: Pick<OperationContext, "principal" | 
   if (max === null) return;
   const taken = ctx.host.checkpoints
     .list()
-    .filter((record) => !record.auto && record.createdBy === principal.id).length;
+    .filter((record) => record.trash === null && !record.auto && record.createdBy === principal.id).length;
   if (taken + 1 > max) throw refusal("quota_checkpoints", { max });
 }
 

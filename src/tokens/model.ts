@@ -24,6 +24,7 @@ export const SCOPES = [
   "volume:attach",
   "tool:install",
   "secret:use",
+  "trash:skip",
 ] as const;
 
 export type Scope = (typeof SCOPES)[number];
@@ -132,9 +133,11 @@ export interface TokenDraft {
 const READ_SCOPES: readonly Scope[] = ["box:read", "files:read"];
 /**
  * Every scope but `secret:use`. A box that receives a host secret, and a startup command that may hold one, is the owner's
- * decision, so only the admin preset has it.
+ * decision, so only the admin preset has it. `trash:skip` is in no preset: a token deletes into the recycle bin unless a
+ * credential names that scope itself.
  */
-const OPERATOR_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "secret:use");
+const OPERATOR_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "secret:use" && scope !== "trash:skip");
+const ADMIN_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "trash:skip");
 const SANDBOX_SCOPES: readonly Scope[] = OPERATOR_SCOPES.filter(
   (scope) => scope !== "volume:attach" && scope !== "tool:install" && scope !== "box:ssh",
 );
@@ -192,7 +195,7 @@ export function presetPolicy(name: PresetName): Omit<TokenDraft, "name" | "prese
       };
     case "admin":
       return {
-        scopes: SCOPES,
+        scopes: ADMIN_SCOPES,
         boxes: { type: "all" },
         volumes: NO_VOLUMES,
         hosts: { type: "all" },
@@ -311,6 +314,8 @@ export function requiredScopes(operationScope: string): readonly Scope[] | "owne
       return ["port:expose"];
     case "secret:use":
       return ["secret:use"];
+    case "trash:skip":
+      return ["trash:skip"];
     default:
       return "owner";
   }

@@ -16,13 +16,17 @@ export class VolumeChanges {
     this.steps.push({ what, undo });
   }
 
-  async rollback(): Promise<void> {
+  /** Runs the undo steps and returns true only when every one of them succeeded. */
+  async rollback(): Promise<boolean> {
+    let clean = true;
     for (const step of this.steps.splice(0).toReversed()) {
       try {
         await step.undo();
       } catch (e) {
+        clean = false;
         log.warn("volume.rollback_failed", { step: step.what, error: String(e) });
       }
     }
+    return clean;
   }
 }
