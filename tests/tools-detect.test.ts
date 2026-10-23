@@ -7,6 +7,7 @@ import type { ExecSpec, HelperSpec } from "../src/runtime";
 import { startServer } from "../src/server";
 import { getBox, stopBox } from "../src/services/boxes";
 import { savePools } from "../src/services/volumes";
+import type { VolumeRecord } from "../src/volumes/types";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 
@@ -194,6 +195,19 @@ function helperCallsFrom(index: number): HelperSpec[] {
     .map((call) => call.args[0] as HelperSpec);
 }
 
+function toolsRecord(): VolumeRecord {
+  const tools = app.hosts
+    .get()
+    .volumes.list()
+    .find((volume) => volume.role === "tools");
+  if (!tools) throw new Error("the shared tools record is missing");
+  return tools;
+}
+
+function onVolume(spec: HelperSpec, engine: string): boolean {
+  return spec.mounts?.some((mount) => mount.source === engine) ?? false;
+}
+
 async function installCodex(boxId: string): Promise<string> {
   const started = await call("POST", `/api/boxes/${boxId}/tools/install`, { tool: "codex", version: "latest" });
   expect(started.status).toBe(202);
@@ -247,6 +261,42 @@ describe("the tools writer", () => {
     const calls = helperCallsFrom(before);
     expect(calls.some((spec) => spec.network === true)).toBe(true);
     expect(calls.some((spec) => spec.user === "0:0" && spec.cmd.join(" ").includes("chown -R"))).toBe(false);
+  });
+
+  test("an install recreates a lost tools volume before the writer runs, and writes into the recreated volume", async () => {
+    const boxId = await createBox("alpha");
+    answerDetection({});
+    const tools = toolsRecord();
+    runtime.volumes.delete(tools.engineName);
+    const before = runtime.callsTo("runHelper").length;
+
+    expect(await installCodex(boxId)).toBe("succeeded");
+    expect(runtime.volumes.has(tools.engineName)).toBe(true);
+    expect(app.hosts.get().activity.list()).toContainEqual(
+      expect.objectContaining({ action: "volume.recreate", target: tools.name }),
+    );
+    const calls = helperCallsFrom(before);
+    const writer = calls.findIndex((spec) => spec.network === true);
+    const handover = calls.findIndex((spec) => spec.user === "0:0" && onVolume(spec, tools.engineName));
+    expect(handover).toBeGreaterThanOrEqual(0);
+    expect(handover).toBeLessThan(writer);
+    expect(calls[writer]?.mounts).toEqual([expect.objectContaining({ source: tools.engineName })]);
+  });
+
+  test("listing the tools recreates a lost tools volume before the detect helper mounts it", async () => {
+    await createBox("alpha");
+    answerDetection({});
+    const tools = toolsRecord();
+    runtime.volumes.delete(tools.engineName);
+    const before = runtime.callsTo("runHelper").length;
+
+    expect((await call("GET", "/api/tools")).status).toBe(200);
+    expect(runtime.volumes.has(tools.engineName)).toBe(true);
+    const calls = helperCallsFrom(before);
+    const detect = calls.findIndex((spec) => spec.cmd.join(" ").includes("MBTOOL"));
+    const handover = calls.findIndex((spec) => spec.user === "0:0" && onVolume(spec, tools.engineName));
+    expect(handover).toBeGreaterThanOrEqual(0);
+    expect(handover).toBeLessThan(detect);
   });
 });
 

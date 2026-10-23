@@ -4,7 +4,7 @@ import { type ContainerInfo, HELPER_SECRETS_LABEL } from "../runtime";
 import { ClaimError, ensureSpec } from "../specs/claim";
 import { ttlExpired } from "../specs/lifetime";
 import type { BoxSpec } from "../specs/types";
-import { claimEngineVolumes } from "../volumes/engine";
+import { claimEngineVolumes, healAllSharedTools } from "../volumes/engine";
 import { sleepBox, startBox, stopBox } from "./boxes";
 import { followRunningProxies, sweepEgress, syncHostFirewall } from "./egress";
 import { settlePendingRollbacks } from "./rollback";
@@ -25,6 +25,8 @@ export interface ReconcileReport {
   rollbacksSettled: string[];
   /** Helper secret volumes a crash left behind, removed. */
   secretsRemoved: string[];
+  /** Engine names of shared tools volumes the engine had lost. Each is recreated empty on this pass. */
+  toolsRecreated: string[];
   /** Egress proxies and private networks that no box spec names, removed. These are container and network names. */
   egressRemoved: string[];
   /** Stable ids whose container is gone. The spec is kept. */
@@ -51,11 +53,13 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
     unpaused: [],
     rollbacksSettled: [],
     secretsRemoved: [],
+    toolsRecreated: [],
     egressRemoved: [],
     missing: [],
     failed: [],
   };
   await claimEngineVolumes(host);
+  report.toolsRecreated = await healAllSharedTools(host);
   const infos = await host.runtime.listContainers({ labels: { [host.keys.box]: "true" } });
   const seen = new Set<string>();
   const live: ContainerInfo[] = [];

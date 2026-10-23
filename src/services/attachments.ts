@@ -3,7 +3,7 @@ import { conflict, forbidden, notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { VolumeInfo } from "../runtime";
 import type { BoxMount, BoxSpec } from "../specs/types";
-import { claimOne, inspectVolumeOrNull, ownedByAnotherBox } from "../volumes/engine";
+import { claimOne, inspectVolumeOrNull, isSharedTools, ownedByAnotherBox } from "../volumes/engine";
 import { isVolumeId } from "../volumes/id";
 import { assertMountsWithinLimits } from "../volumes/limits";
 import type { VolumeRecord } from "../volumes/types";
@@ -37,7 +37,8 @@ export async function mountTarget(host: HostCtx, engineName: string): Promise<Mo
  * Refuses a mount that `box` may not make. `box` is null while a box is being created.
  * - The data volume, the pool roots and internal helper volumes are always refused.
  * - A volume the box already mounts is kept, unless the engine no longer has it.
- * - A recorded or already-mounted volume that the engine no longer has is refused, never recreated.
+ * - A recorded or already-mounted volume that the engine no longer has is refused, never recreated. The exception is a
+ *   shared tools record, which the create, start or rebuild that mounts it recreates before the engine needs it.
  * - A volume without the MiniBox box label is refused.
  * - A record owned by another live box is refused. Standalone records may be mounted by several boxes.
  * - A name that does not exist yet is allowed, except ids and the workspace prefix (`<prefix>-ws-`).
@@ -51,6 +52,7 @@ export function assertMountAllowed(host: HostCtx, box: BoxSpec | null, volume: s
   if (reserved) throw forbidden(msg("volume_reserved", { volume: shown }));
   const kept = box?.mounts.some((mount) => mount.volume === volume) ?? false;
   if (!target.info) {
+    if (target.record && isSharedTools(host, target.record)) return;
     if (target.record || kept) throw conflict(msg("volume_missing", { volume: shown }));
     if (isVolumeId(volume)) throw notFound(msg("volume_not_found", { volume }));
     if (volume.startsWith(`${host.prefix}-ws-`)) throw forbidden(msg("volume_reserved", { volume: shown }));

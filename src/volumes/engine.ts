@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import type { HostCtx } from "../host/registry";
 import { volumeName } from "../labels";
-import { AppError, badRequest, conflict, forbidden } from "../lib/errors";
+import { AppError, badRequest, conflict, forbidden, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { type Msg, msg } from "../lib/messages";
 import { isRuntimeError, RuntimeError, type VolumeInfo, type VolumeOwner } from "../runtime";
@@ -444,19 +444,75 @@ export async function leftoverWorkspace(
   return { engineName, record: host.volumes.findByEngine(host.host.id, engineName) };
 }
 
+/** True for a host's shared tools record: an independent `tools` volume, one for each pool. */
+export function isSharedTools(host: HostCtx, volume: VolumeRecord): boolean {
+  return volume.role === "tools" && volume.ownership === "independent" && volume.hostId === host.host.id;
+}
+
 /** The independent tools volume for one pool on this host, if one already exists. */
 export function findSharedTools(host: HostCtx, poolName: string): VolumeRecord | null {
-  return (
-    host.volumes
-      .list()
-      .find(
-        (volume) =>
-          volume.role === "tools" &&
-          volume.pool === poolName &&
-          volume.hostId === host.host.id &&
-          volume.ownership === "independent",
-      ) ?? null
-  );
+  return host.volumes.list().find((volume) => isSharedTools(host, volume) && volume.pool === poolName) ?? null;
+}
+
+/**
+ * Recreates the engine volume of a shared tools record that the engine no longer has. The record and its engine name stay,
+ * so the boxes that mount the volume find it again. It comes back empty: the tools installed in it are gone until a box
+ * installs them again. Nothing is undone afterwards, because the record still puts the volume on this host, and removing
+ * the empty volume would only restore the state this repairs. The caller holds the volume lock, or uses `healSharedTools`.
+ * Returns false when the engine already has the volume.
+ */
+export async function restoreSharedTools(host: HostCtx, volume: VolumeRecord, known: Set<string>): Promise<boolean> {
+  if ((await inspectVolumeOrNull(host, volume.engineName)) !== null) return false;
+  const pool = host.volumes.readPools().pools.find((item) => item.name === volume.pool);
+  if (!pool) throw notFound(msg("pool_not_found", { pool: volume.pool }));
+  await createEngineVolume(host, pool, volume, known, new VolumeChanges());
+  if (pool.backend === "local") await chownEngines(host, [volume.engineName], known);
+  log.warn("volume.tools_recreated", { host: host.host.id, volume: volume.name, engine: volume.engineName });
+  host.activity.add({
+    action: "volume.recreate",
+    target: volume.name,
+    ok: true,
+    message: msg("volume_tools_recreated", { volume: volume.name }).text,
+  });
+  return true;
+}
+
+/** Recreates a shared tools volume the engine lost, under the volume lock. Returns false when nothing was missing. */
+export async function healSharedTools(host: HostCtx, volume: VolumeRecord, known: Set<string>): Promise<boolean> {
+  return host.volumes.exclusive(async () => {
+    const current = host.volumes.read(volume.id);
+    if (!current || !isSharedTools(host, current)) return false;
+    return restoreSharedTools(host, current, known);
+  });
+}
+
+/** Recreates each shared tools volume among the engine volumes named that the engine lost. Other volumes are left to the caller. */
+export async function healSharedToolsMounts(
+  host: HostCtx,
+  engineNames: Iterable<string>,
+  known: Set<string>,
+): Promise<void> {
+  for (const engineName of new Set(engineNames)) {
+    const record = host.volumes.findByEngine(host.host.id, engineName);
+    if (record && isSharedTools(host, record)) await healSharedTools(host, record, known);
+  }
+}
+
+/**
+ * Recreates every shared tools volume of this host that the engine lost, at startup and when a remote host comes back.
+ * A volume that cannot be recreated is logged and skipped, so one broken pool does not hold back the others. Returns the
+ * engine names it recreated.
+ */
+export async function healAllSharedTools(host: HostCtx): Promise<string[]> {
+  const recreated: string[] = [];
+  for (const volume of host.volumes.list().filter((item) => isSharedTools(host, item))) {
+    try {
+      if (await healSharedTools(host, volume, new Set())) recreated.push(volume.engineName);
+    } catch (e) {
+      log.error("volume.tools_recreate_failed", { host: host.host.id, volume: volume.name, error: String(e) });
+    }
+  }
+  return recreated;
 }
 
 export function defaultRolePlans(

@@ -19,7 +19,7 @@ import { type MovedTag, planRebuild, previewOf, type PlannedRebuild, type Rebuil
 import { revisionMismatch } from "../specs/revision";
 import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
-import { assertVolumesPresent } from "../volumes/engine";
+import { assertVolumesPresent, healSharedToolsMounts } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox, locked, refuseExpired } from "./boxes";
@@ -291,6 +291,11 @@ async function resolveVolumes(
   mounts: BoxMount[],
   changes: VolumeChanges,
 ): Promise<BoxMount[]> {
+  await healSharedToolsMounts(
+    host,
+    mounts.map((mount) => mount.volume),
+    new Set(),
+  );
   const resolved: BoxMount[] = [];
   for (const mount of mounts) {
     const target = await mountTarget(host, mount.volume);

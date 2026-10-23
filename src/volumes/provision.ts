@@ -16,6 +16,7 @@ import {
   inspectVolumeOrNull,
   mountFor,
   type NewVolume,
+  restoreSharedTools,
 } from "./engine";
 import { poolForRole } from "./pools";
 import type { StoragePool, VolumeRecord, VolumeRole } from "./types";
@@ -118,6 +119,7 @@ async function provisionDefaultMountsLocked(
       }
     }
     if (plan.existing) {
+      await restoreSharedTools(host, plan.existing, known);
       await assertVolumesPresent(host, [plan.existing.engineName]);
       mounts.push(mountFor(plan.role, plan.existing.engineName));
       continue;

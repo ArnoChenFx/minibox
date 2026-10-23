@@ -246,6 +246,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const firewall = new FirewallStore(join(cfg.dataDir, "egress-firewall.json"));
   const selfTokens = new SelfTokenStore({ file: selfTokensPath(cfg.dataDir) });
   const questions = new QuestionStore({ file: questionsPath(cfg.dataDir) });
+  const activity = new ActivityLog();
   const local = createLocalHost(
     cfg,
     deps.runtime ?? createDockerRuntime(cfg.dockerSocket),
@@ -253,10 +254,9 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     volumes,
     bus,
     pulse,
-    { checkpoints, checkpointEngine, multiHost, secrets, egress, firewall, selfTokens, questions },
+    { checkpoints, checkpointEngine, multiHost, secrets, egress, firewall, selfTokens, questions, activity },
   );
   hosts.add(local);
-  const activity = new ActivityLog();
   const knownSecrets = [cfg.accessKey];
   const redactor = createRedactor({ knownSecrets });
   const tokens = new TokenStore({
@@ -346,6 +346,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       firewall,
       selfTokens,
       questions,
+      activity,
     },
     connect: deps.connect ?? createDockerRuntime,
     attach: (host) => {

@@ -6,7 +6,7 @@ import { assertSecretsStartable } from "../secrets/env";
 import { pushHistory } from "../specs/history";
 import { ttlExpired } from "../specs/lifetime";
 import type { DesiredState, StopReason, BoxEnv } from "../specs/types";
-import { poolsUsed, assertVolumesPresent } from "../volumes/engine";
+import { assertVolumesPresent, healSharedToolsMounts, poolsUsed } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { assertMountsWithinLimits } from "../volumes/limits";
 import { removeEngine } from "../volumes/provision";
@@ -42,11 +42,19 @@ async function setDesired(
   });
 }
 
-/** Start and restart refuse a box whose pool is unreachable or whose volume is gone, instead of letting Docker recreate it. */
+/**
+ * Start and restart refuse a box whose pool is unreachable or whose volume is gone, instead of letting Docker recreate it.
+ * The exception is a shared tools volume the engine lost, which is recreated empty first.
+ */
 async function ensureRunningStorage(host: HostCtx, box: Box): Promise<void> {
   const spec = host.specs.read(box.boxId);
   const mounts = spec?.mounts ?? box.mounts;
   await assertPoolsReachable(host, poolsUsed(host, mounts));
+  await healSharedToolsMounts(
+    host,
+    mounts.map((mount) => mount.volume),
+    new Set(),
+  );
   await assertVolumesPresent(
     host,
     mounts.map((mount) => mount.volume),

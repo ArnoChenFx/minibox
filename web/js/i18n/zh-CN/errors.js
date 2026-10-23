@@ -203,6 +203,8 @@ export default {
   "err.volume_in_use": "卷 {volume} 已被另一个 Box 挂载。",
   "err.volume_missing":
     "卷 {volume} 在引擎中已不存在。MiniBox 不会重新创建它。请恢复引擎中的卷，或在不再需要时删除该卷的记录。",
+  "err.volume_tools_recreated":
+    "引擎丢失了共享 tools 卷 {volume}。MiniBox 已将其重新创建为空卷，因此需要重新安装其中的工具。",
   "err.network_reserved": "Box 不能加入网络 {network}。host、none 与 container 网络均被拒绝。",
   "err.network_not_managed": "Box 不能加入网络 {network}，只能加入 {managed}。",
   "err.egress_mode_invalid": "出站策略须为 open、none 或 proxy-only，不能是 {mode}。",

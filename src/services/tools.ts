@@ -10,7 +10,7 @@ import { findCatalogEntry, loadCatalog, requireCatalogEntry } from "../tools/cat
 import { commandFor, renderCommand, resolveToolVersion } from "../tools/commands";
 import { detectScript, parseDetectOutput, type DetectResult } from "../tools/detect";
 import { TOOLS_PREFIX, type CatalogEntry, type ToolAction, type ToolStatus } from "../tools/types";
-import { chownEngines, findSharedTools } from "../volumes/engine";
+import { chownEngines, findSharedTools, healSharedTools } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
 import type { VolumeRecord } from "../volumes/types";
 import { getBox, type Box } from "./boxes";
@@ -64,6 +64,7 @@ async function runToolsWriter(
   } catch {
     throw badRequest(msg("helper_image_missing", { image }));
   }
+  await healSharedTools(host, volume, new Set([image]));
   if (host.volumes.readPools().pools.find((pool) => pool.name === volume.pool)?.backend === "local") {
     // Docker copies the image's root-owned /opt/minibox/tools into an empty volume on the first box mount, so the
     // writer takes the volume back for uid 1000 before every write.
@@ -164,8 +165,11 @@ interface DetectTarget {
  */
 async function detectTarget(host: HostCtx, box: Box | null): Promise<DetectTarget> {
   const mounts: DetectTarget["mounts"] = [];
-  const engine = sharedToolsVolume(host)?.engineName;
-  if (engine) mounts.push({ source: engine, target: TOOLS_PREFIX, mode: "ro" });
+  const tools = sharedToolsVolume(host);
+  if (tools) {
+    await healSharedTools(host, tools, new Set());
+    mounts.push({ source: tools.engineName, target: TOOLS_PREFIX, mode: "ro" });
+  }
   let image = host.baseTemplateTag;
   if (box) {
     const home = box.mounts.find((mount) => mount.role === "home");

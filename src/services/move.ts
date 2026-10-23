@@ -13,7 +13,13 @@ import { type PlannedRebuild, REBUILD_LOSES } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
-import { assertVolumesPresent, findSharedTools, labelsFor, mountedByAnotherBox } from "../volumes/engine";
+import {
+  assertVolumesPresent,
+  findSharedTools,
+  healSharedTools,
+  labelsFor,
+  mountedByAnotherBox,
+} from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { nfsDriverOpts } from "../volumes/pools";
 import { createIndependentVolume, freeName, materialize, removeEngine } from "../volumes/provision";
@@ -515,6 +521,7 @@ async function sharedToolsOn(
 ): Promise<VolumeRecord> {
   const existing = findSharedTools(host, source.pool);
   if (existing) {
+    await healSharedTools(host, existing, known);
     await assertVolumesPresent(host, [existing.engineName]);
     return existing;
   }

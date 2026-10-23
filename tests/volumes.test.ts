@@ -11,11 +11,12 @@ import type { AuditEvent, ExecutorHooks } from "../src/operations/executor";
 import type { OperationContext } from "../src/operations/types";
 import { type HelperResult, type HelperSpec, RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
+import { rebuildBox } from "../src/services/rebuild";
 import { reconcileHost } from "../src/services/reconcile";
 import { attachVolume, createVolume, getPools, listVolumes, measureVolume, savePools } from "../src/services/volumes";
-import { claimEngineVolumes } from "../src/volumes/engine";
+import { claimEngineVolumes, labelsFor } from "../src/volumes/engine";
 import { parseDf, probePool, probePools } from "../src/volumes/health";
-import { DEV_OWNER, type StoragePool } from "../src/volumes/types";
+import { DEV_OWNER, type StoragePool, type VolumeRecord } from "../src/volumes/types";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { settle } from "./support/clock";
 import { FakeRuntime } from "./support/fake-runtime";
@@ -42,6 +43,12 @@ beforeEach(() => {
 
 const newBox = (name: string, extra: Partial<Parameters<typeof boxes.createBox>[1]> = {}) =>
   boxes.createBox(host, { name, cpus: 1, memoryMb: 256, ...extra });
+
+const sharedToolsRecord = (): VolumeRecord => {
+  const tools = host.volumes.list().find((volume) => volume.role === "tools");
+  if (!tools) throw new Error("the shared tools record is missing");
+  return tools;
+};
 
 describe("volumes and storage pools", () => {
   test("an independent volume mounts on two boxes and survives deleting either box", async () => {
@@ -494,6 +501,7 @@ describe("a volume the engine lost is refused, not recreated", () => {
     const report = await reconcileHost(host);
     expect(report.failed).toEqual([{ id: lost.boxId, error: expect.stringContaining("no longer exists") }]);
     expect(report.started).toEqual([fine.boxId]);
+    expect(report.toolsRecreated).toEqual([]);
     expect(runtime.volumes.has(lost.volume)).toBe(false);
   });
 
@@ -531,22 +539,26 @@ describe("a volume the engine lost is refused, not recreated", () => {
     expect(runtime.volumes.has(notes.engineName)).toBe(false);
   });
 
-  test("a create that finds the shared tools volume gone is refused and leaves no volume, container or spec", async () => {
-    const first = await newBox("first");
-    await boxes.deleteBox(host, first.id, true);
-    const tools = host.volumes.list().find((volume) => volume.role === "tools");
-    if (!tools) throw new Error("the shared tools record is missing");
-    runtime.volumes.delete(tools.engineName);
+  test("starting a box whose home or cache volume the engine lost is refused, as for the workspace", async () => {
+    const home = await newBox("home-lost");
+    const cache = await newBox("cache-lost");
+    await boxes.stopBox(host, home.id);
+    await boxes.stopBox(host, cache.id);
+    runtime.volumes.delete(home.mounts.find((mount) => mount.role === "home")?.volume ?? "");
+    runtime.volumes.delete(cache.mounts.find((mount) => mount.role === "cache")?.volume ?? "");
+    const starts = runtime.callsTo("startContainer").length;
 
-    expect(await rejectionOf(newBox("second"))).toMatchObject({
+    expect(await rejectionOf(boxes.startBox(host, home.id))).toMatchObject({
       status: 409,
       key: "volume_missing",
-      params: { volume: tools.name },
+      params: { volume: "home-lost-home" },
     });
-    expect(runtime.volumes.size).toBe(0);
-    expect(runtime.containers.size).toBe(0);
-    expect(host.specs.findByName("second")).toBeNull();
-    expect(host.volumes.list().map((volume) => volume.role)).toEqual(["tools"]);
+    expect(await rejectionOf(boxes.startBox(host, cache.id))).toMatchObject({
+      status: 409,
+      key: "volume_missing",
+      params: { volume: "cache-lost-cache" },
+    });
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
   });
 
   test("a legacy workspace record whose volume is gone blocks the box, instead of making a new workspace", async () => {
@@ -564,6 +576,170 @@ describe("a volume the engine lost is refused, not recreated", () => {
     expect(host.volumes.list().map((volume) => volume.engineName)).toEqual(["mbtest-ws-gone"]);
   });
 });
+
+describe("a lost shared tools volume is recreated", () => {
+  test("the repro: a box with default mounts, the tools engine volume removed, then another box with default mounts", async () => {
+    await newBox("first");
+    const tools = sharedToolsRecord();
+    runtime.volumes.delete(tools.engineName);
+    const since = runtime.callsTo("runHelper").length;
+
+    expectToolsRecreated(await newBox("second"), tools, since);
+  });
+
+  test("a create after the first box is deleted recreates the lost tools volume under the same record and engine name", async () => {
+    const first = await newBox("first");
+    await boxes.deleteBox(host, first.id, false);
+    const tools = sharedToolsRecord();
+    runtime.volumes.delete(tools.engineName);
+    const since = runtime.callsTo("runHelper").length;
+
+    expectToolsRecreated(await newBox("second"), tools, since);
+  });
+
+  test("an explicit mount of a lost shared tools volume recreates it, as a default create does", async () => {
+    const first = await newBox("first");
+    await boxes.deleteBox(host, first.id, false);
+    const tools = sharedToolsRecord();
+    runtime.volumes.delete(tools.engineName);
+
+    const second = await newBox("second", { mounts: [{ volume: tools.id, path: "/opt/minibox/tools", mode: "ro" }] });
+    expect(second.mounts).toContainEqual(expect.objectContaining({ volume: tools.engineName, mode: "ro" }));
+    expect(runtime.volumes.has(tools.engineName)).toBe(true);
+  });
+
+  test("starting a stopped box recreates a lost shared tools volume before the engine starts the box", async () => {
+    const box = await newBox("alpha");
+    await boxes.stopBox(host, box.id);
+    const tools = sharedToolsRecord();
+    runtime.volumes.delete(tools.engineName);
+    const starts = runtime.callsTo("startContainer").length;
+
+    expect((await boxes.startBox(host, box.id)).running).toBe(true);
+    expect(runtime.volumes.has(tools.engineName)).toBe(true);
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts + 1);
+  });
+
+  test("a rebuild that mounts a lost shared tools volume recreates it before the new container is created", async () => {
+    const box = await newBox("alpha");
+    const tools = sharedToolsRecord();
+    runtime.volumes.delete(tools.engineName);
+
+    const rebuilt = await rebuildBox(host, box.id, box.revision, { profile: "strict" }, true);
+    expect(rebuilt.mounts).toContainEqual(expect.objectContaining({ volume: tools.engineName, role: "tools" }));
+    expect(runtime.volumes.has(tools.engineName)).toBe(true);
+  });
+
+  test("reconcile recreates a lost shared tools volume once, and reports it only on the pass that did it", async () => {
+    const box = await newBox("alpha");
+    await boxes.stopBox(host, box.id);
+    const tools = sharedToolsRecord();
+    runtime.volumes.delete(tools.engineName);
+
+    expect((await reconcileHost(host)).toolsRecreated).toEqual([tools.engineName]);
+    expect(runtime.volumes.has(tools.engineName)).toBe(true);
+    expect((await reconcileHost(host)).toolsRecreated).toEqual([]);
+  });
+
+  test("reconcile leaves a lost shared tools volume on an unreachable pool, and does not fail startup", async () => {
+    await savePools(
+      host,
+      [
+        { name: "local", backend: "local" },
+        { name: "disk", backend: "path", root: "/mnt/disk", default: true },
+      ],
+      undefined,
+    );
+    const box = await newBox("alpha");
+    await boxes.stopBox(host, box.id);
+    const tools = sharedToolsRecord();
+    runtime.volumes.delete(tools.engineName);
+    const known = host.volumes.healthOf(host.host.id, "disk");
+    if (known) host.volumes.rememberHealth({ ...known, checkedAt: new Date(0).toISOString() });
+    runtime.helperHandler = (spec) =>
+      spec.cmd.join(" ").includes("test -f") ? { exitCode: 1, logs: "missing" } : { exitCode: 0, logs: "" };
+
+    const report = await reconcileHost(host);
+    expect(report.toolsRecreated).toEqual([]);
+    expect(runtime.volumes.has(tools.engineName)).toBe(false);
+  });
+
+  test("a lost shared tools volume on an NFS pool comes back on the same share and subdirectory, with no local chown", async () => {
+    await savePools(
+      host,
+      [
+        { name: "local", backend: "local" },
+        {
+          name: "nas",
+          backend: "nfs",
+          server: "192.168.1.10",
+          export: "/volume1/minibox",
+          options: ["nfsvers=4.1", "hard"],
+          default: true,
+        },
+      ],
+      undefined,
+    );
+    const first = await newBox("first");
+    await boxes.deleteBox(host, first.id, false);
+    const tools = sharedToolsRecord();
+    expect(tools.pool).toBe("nas");
+    runtime.volumes.delete(tools.engineName);
+    const since = runtime.callsTo("runHelper").length;
+
+    await newBox("second");
+    expect(runtime.volumes.get(tools.engineName)?.options).toMatchObject({
+      type: "nfs",
+      device: `:/volume1/minibox/${tools.subpath}`,
+    });
+    expect(host.volumes.read(tools.id)).toEqual(tools);
+    expect(chownedSince(since, tools)).toBe(false);
+  });
+
+  test("a create that fails after the recreate keeps the recreated volume and its record, and removes what the create made", async () => {
+    const first = await newBox("first");
+    await boxes.deleteBox(host, first.id, false);
+    const tools = sharedToolsRecord();
+    runtime.volumes.delete(tools.engineName);
+    const recordIds = host.volumes
+      .list()
+      .map((volume) => volume.id)
+      .toSorted();
+    runtime.fail("createContainer", new RuntimeError("engine", "boom", "boom"));
+
+    expect(await rejectionOf(newBox("second"))).toMatchObject({ kind: "engine" });
+    expect(runtime.volumes.has(tools.engineName)).toBe(true);
+    expect(
+      host.volumes
+        .list()
+        .map((volume) => volume.id)
+        .toSorted(),
+    ).toEqual(recordIds);
+    expect(runtime.volumes.has("second-workspace")).toBe(false);
+    expect(host.specs.findByName("second")).toBeNull();
+  });
+});
+
+/** True when a helper run since `since` chowns the engine volume of `tools`. */
+const chownedSince = (since: number, tools: VolumeRecord): boolean =>
+  runtime
+    .callsTo("runHelper")
+    .slice(since)
+    .map((call) => call.args[0] as HelperSpec)
+    .some(
+      (spec) =>
+        spec.cmd.join(" ").includes("chown") && (spec.mounts ?? []).some((mount) => mount.source === tools.engineName),
+    );
+
+const expectToolsRecreated = (box: Awaited<ReturnType<typeof newBox>>, tools: VolumeRecord, since: number): void => {
+  expect(box.mounts).toContainEqual(expect.objectContaining({ volume: tools.engineName, role: "tools", mode: "ro" }));
+  expect(runtime.volumes.get(tools.engineName)?.labels).toEqual(labelsFor(host, tools));
+  expect(host.volumes.read(tools.id)).toEqual(tools);
+  expect(chownedSince(since, tools)).toBe(true);
+  expect(host.activity.list()).toContainEqual(
+    expect.objectContaining({ action: "volume.recreate", target: tools.name, ok: true }),
+  );
+};
 
 const helperSpecs = (text: string): HelperSpec[] =>
   runtime
