@@ -426,20 +426,28 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
       "the toolbar is right-aligned on a wide and on a narrow window, and never covers the name",
       async () => {
         try {
-          for (const viewport of [VIEWPORT, { width: 1440, height: 900 }]) {
+          for (const viewport of [
+            VIEWPORT,
+            { width: 1440, height: 900 },
+            { width: 1920, height: 1000 },
+            { width: 720, height: 800 },
+          ]) {
             await page.setViewportSize(viewport);
             await page.goto(boxUrl(running));
             const toolbar = page.locator(".detail-head .page-actions");
             await webExpect(toolbar).toBeVisible();
-            const [head, actions, badge] = await Promise.all([
+            const [head, actions, deleteButton, title] = await Promise.all([
               page.locator(".detail-head").boundingBox(),
               toolbar.boundingBox(),
-              page.locator(".detail-head h1 .badge").first().boundingBox(),
+              page.locator(".detail-head [data-action='delete']").boundingBox(),
+              page.locator(".detail-head .detail-title").boundingBox(),
             ]);
-            if (!head || !actions || !badge) throw new Error("the header has no layout box");
-            expect(Math.abs(actions.x + actions.width - (head.x + head.width))).toBeLessThanOrEqual(1);
-            const beside = actions.x >= badge.x + badge.width;
-            const below = actions.y >= badge.y + badge.height;
+            if (!head || !actions || !deleteButton || !title) throw new Error("the header has no layout box");
+            // The last button ends at the header's right edge, so the buttons on each line sit at the right.
+            expect(Math.abs(deleteButton.x + deleteButton.width - (head.x + head.width))).toBeLessThanOrEqual(1);
+            // The toolbar is either to the right of the title or below it, so it never covers the name.
+            const beside = actions.x >= title.x + title.width;
+            const below = actions.y >= title.y + title.height;
             expect(beside || below).toBe(true);
           }
         } finally {
