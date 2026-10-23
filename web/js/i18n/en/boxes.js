@@ -51,6 +51,7 @@ export default {
   "act.template.create": "Built template",
   "act.template.rebuild": "Rebuilt template",
   "act.template.sync": "Copied template to host",
+  "act.template.official.build": "Built official template",
   "act.image.pull": "Pulled image",
   "act.volume.create": "Created volume",
   "act.volume.delete": "Deleted volume",
@@ -173,9 +174,14 @@ export default {
   "cb.syncing": "Copying template…",
   "cb.syncFailed": "The template could not be copied to this host.",
   "cb.syncStillRunning": "The copy is still running. Create the box when it finishes.",
+  "cb.buildHint":
+    "No host holds this template yet. MiniBox builds it on the host the box is created on, which takes a few minutes. The build log opens in the Tasks panel.",
+  "cb.building": "Building template…",
+  "cb.buildFailed": "The template could not be built on this host.",
+  "cb.buildStillRunning": "The build is still running. Create the box when it finishes.",
   "cb.hostAuto": "Automatic: the host with the most room",
   "cb.hostAutoHelp":
-    "The box goes to the online host that holds its template and has the most room for it, counting the CPU and memory its running boxes book.",
+    "The box goes to the online host that holds its template and has the most room for it, counting the CPU and memory its running boxes book. When no such host has room, an official template is built on the online host with the most room that does not hold it yet.",
   "cb.overHost": "Exceeds host capacity",
   "cb.memory": "Memory",
   "cb.profile": "Security profile",

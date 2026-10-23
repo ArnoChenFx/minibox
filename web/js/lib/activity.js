@@ -46,6 +46,7 @@ export const ACTION_ICON = {
   "template.save": "layers",
   "template.build": "hammer",
   "template.sync": "copy",
+  "template.official.build": "hammer",
   "template.delete": "trash",
   "image.pull": "download",
   "volume.create": "disk",

@@ -51,6 +51,7 @@ const TEMPLATE_OPS = new Set([
   "template.create",
   "template.rebuild",
   "template.sync",
+  "template.official.build",
 ]);
 const seenTemplateTask = new Set();
 

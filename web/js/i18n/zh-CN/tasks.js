@@ -27,6 +27,7 @@ export default {
   "task.op.template.create": "构建模板",
   "task.op.template.rebuild": "重新构建模板",
   "task.op.template.sync": "同步模板",
+  "task.op.template.official.build": "构建官方模板",
   "task.op.image.pull": "拉取镜像",
   "task.op.box.clone": "克隆代码仓库",
   "task.op.box.setup": "设置 Box",
