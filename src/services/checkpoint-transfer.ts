@@ -410,9 +410,10 @@ async function reserveCopy(source: HostCtx, target: HostCtx, id: string): Promis
 /**
  * Copies a checkpoint from `source` to `target`, so a box can be forked there. The source packs the checkpoint's snapshots
  * under a passphrase made for this copy alone, the target opens the package, and the package is removed. The copy gets its
- * own id, since a record is stored once per id, and keeps the box, settings and creation time of the original. A template
- * the target lacks is copied first from one of `templateHolders`, so a fork there starts from the same image. A failure
- * forgets the snapshots already copied in.
+ * own id, since a record is stored once per id, and keeps the box, settings and creation time of the original. Before the
+ * snapshots are copied in, the target takes each template it lacks from one of `templateHolders`: the base template, which
+ * a fork uses to set the owner of every volume it restores, and then the template the checkpoint names. A failure forgets
+ * the snapshots already copied in.
  */
 export async function copyCheckpoint(
   source: HostCtx,
@@ -431,6 +432,7 @@ export async function copyCheckpoint(
   let opened: OpenedPackage | undefined;
   let copies: string[] = [];
   try {
+    await ensureTemplate(target, templateHolders, target.baseTemplateTag, progress);
     const image = record.spec?.template.image;
     if (image) await ensureTemplate(target, templateHolders, image, progress);
     if (progress?.signal?.aborted) throw abortError();

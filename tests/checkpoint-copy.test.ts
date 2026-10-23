@@ -282,6 +282,29 @@ describe("copying a checkpoint to another host", () => {
     expect(edge.callsTo("loadImage")).toHaveLength(0);
   });
 
+  test("a target without the base template gets it from a holder first, so a fork there can set its volumes' owners", async () => {
+    await start();
+    local.seedImage(GOLD, { [keys.template]: "true", [keys.templateName]: "gold" });
+    const boxId = await boxOn(undefined, "alpha", { template: GOLD });
+    const origin = await take(boxId);
+    await edge.removeImage(app.cfg.baseTemplateTag, { force: true });
+
+    const task = await settle((await copyTo(origin.id, EDGE)).json.taskId ?? "");
+    expect(task.status).toBe("succeeded");
+    expect(logOf(task)).toContain(`Copying template ${app.cfg.baseTemplateTag} to ${EDGE}…`);
+    expect(logOf(task)).toContain(`Copying template ${GOLD} to ${EDGE}…`);
+    expect((await edge.inspectImage(app.cfg.baseTemplateTag)).id).toBe(
+      (await local.inspectImage(app.cfg.baseTemplateTag)).id,
+    );
+
+    const copy = checkpointOf(task);
+    const forked = await call(base, `/api/checkpoints/${copy.id}/fork`, {
+      body: { name: "beta", cpus: 1, memoryMb: 256 },
+    });
+    expect(forked.status).toBe(202);
+    expect((await settle(forked.json.taskId ?? "")).status).toBe("succeeded");
+  });
+
   test("the task log shows each step, and a copy of more than 16 MB logs the bytes it moves", async () => {
     await start();
     const boxId = await boxOn(undefined, "alpha");
