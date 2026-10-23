@@ -4,8 +4,15 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-23
+
 ### 亮点
 - **Box 网络出站策略**：每个 Box 可选择 `open`（默认，与以往相同）、`none`（没有对外路由，exec、SSH 与端口预览仍可使用）或 `proxy-only`（只能经 MiniBox 代理访问白名单中的主机，并记录每次连接的主机、端口与字节数）。`BLOCK_HOST_GATEWAY` 可阻止默认网络上的 Box 访问宿主机服务。
+- **官方模板**：内置 `node`、`python`、`go` 与 `minimal` 四个官方模板，在某台宿主机首次需要时才构建。`devcontainer.json` 新增支持 `postCreateCommand`、`forwardPorts` 等一部分设置。
+- **控制台改版**：导航精简为概览、Box、存储、库、活动、设置六项。Box 详情页分为六个标签页，每个标签页都有自己的地址。概览页新增「正在进行」与「需要关注」。
+- **卷的维护**：可批量删除卷，也可在预览后清理孤立卷。共享工具卷在引擎中丢失后自动重建。卷页标出引擎中已缺失的卷，以及所属 Box 已删除的卷。
+- **宿主机之间复制检查点**；**启动命令**在代码仓库克隆完成后才运行，Docker 自行启动容器时也会再运行一次，启动失败的原因会保存下来。
+- **破坏性变更**：`MCP_ALLOW_OWNER_KEY` 默认改为 `false`，`/mcp` 不再接受所有者访问密钥，请改用 Agent 令牌。见[升级说明](docs/admin/upgrades.md)。
 
 ### 新增
 - 卷的批量删除与清理孤立卷（[#178](https://github.com/ArnoChenFx/minibox/issues/178)）：卷页可勾选多个卷批量删除，删除前列出每个卷的去向。「清理孤立卷」预览没有任何 Box 配置引用、也没有被挂载的卷，确认后只删除预览列出的卷，并逐个再次检查。共享工具卷、系统卷与被挂载的卷在服务端一律拒绝删除；缓存卷不保留副本，删除后无法恢复。接口为 `POST /api/volumes/delete` 与 `POST /api/volumes/prune`（`dryRun` 默认为 `true`；`dryRun: false` 时必须用 `ids` 指定预览列出的卷）。批量删除需要新令牌权限 `volume:delete`（任何预设都不包含），且只能操作令牌自己创建的卷；清理孤立卷仅限所有者。命令行新增 `minibox volume delete` 与 `minibox volume prune`，MCP 的 `storage` 工具集新增 `delete_volumes` 与 `prune_volumes`。
