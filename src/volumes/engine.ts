@@ -6,7 +6,7 @@ import { AppError, badRequest, conflict, forbidden, notFound } from "../lib/erro
 import { log } from "../lib/logger";
 import { type Msg, msg } from "../lib/messages";
 import { isRuntimeError, RuntimeError, type VolumeInfo, type VolumeOwner } from "../runtime";
-import { ensureBaseImage } from "../services/base-template";
+import { ensureBaseImage, hasBaseImage } from "../services/base-template";
 import type { BoxSpec } from "../specs/types";
 import { VolumeChanges } from "./changes";
 import { assertPoolsReachable, poolRootVolume } from "./health";
@@ -54,13 +54,13 @@ const AGENT_VOLUME_OWNER = { uid: 1000, gid: 1000 };
  */
 export async function chownEngines(host: HostCtx, engines: string[], known: Set<string>): Promise<void> {
   if (engines.length === 0) return;
-  try {
-    await requireHelper(host, known);
-  } catch (e) {
-    // An agent host that lacks the image, or a build that failed: the volume still works, owned by root.
-    log.warn("volume.chown_skipped", { image: host.baseTemplateTag, count: engines.length, error: String(e) });
+  // A create does not wait minutes for a base template build just to chown: without the image the volume keeps root as
+  // its owner, as before, and the helpers that cannot do without it (tools, files, clones) build it when they run.
+  if (!known.has(host.baseTemplateTag) && !(await hasBaseImage(host))) {
+    log.warn("volume.chown_skipped", { image: host.baseTemplateTag, count: engines.length });
     return;
   }
+  known.add(host.baseTemplateTag);
   if (host.host.transport === "agent") {
     for (const engine of engines) {
       await host.runtime.setVolumeRootOwner(engine, AGENT_VOLUME_OWNER, host.baseTemplateTag);

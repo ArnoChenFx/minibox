@@ -173,10 +173,9 @@ describe("boxes on a host without the base template", () => {
     expect(String(installed.output)).toContain("is missing; building it");
   });
 
-  test("creating the box builds the base template its volume helpers run on", async () => {
+  test("creating a box from another template does not wait for a base template build", async () => {
     await createFromCustom("alpha", []);
-    expect(baseBuilds()).toHaveLength(1);
-    expect(await hasImage(app.cfg.baseTemplateTag)).toBe(true);
+    expect(baseBuilds()).toHaveLength(0);
   });
 
   test("a box from the base template on a fresh host builds it first, once, as a task of its own", async () => {
