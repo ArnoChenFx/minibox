@@ -13,6 +13,7 @@ import {
 
 import type { App } from "../src/app";
 import { startServer } from "../src/server";
+import { sleepBox } from "../src/services/box-lifecycle";
 import en from "../web/js/i18n/en.js";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 
@@ -66,6 +67,7 @@ interface BoxRow {
   boxId: string;
   name: string;
   running: boolean;
+  sleeping: boolean;
 }
 
 interface CheckpointRow {
@@ -381,6 +383,28 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
         );
         await webExpect(chipMeta(page, "console-made")).toHaveText("Created by you");
         await webExpect(chipMeta(page, "build")).toHaveText("Created by agent");
+      },
+      TIMEOUT_MS,
+    );
+  });
+
+  describe("waking a sleeping box from the terminal", () => {
+    test(
+      "Wake starts the box and opens its terminal in place",
+      async () => {
+        const host = app?.hosts.get();
+        if (!host) throw new Error("the test server is not running");
+        const sleeper = await makeBox("nap");
+        await setRunning(sleeper, true);
+        expect(await sleepBox(host, sleeper.boxId, "idle")).toBe(true);
+        expect(await boxNow(sleeper)).toMatchObject({ running: false, sleeping: true });
+
+        await page.goto(boxUrl(sleeper, "/terminal"));
+        await page.locator("#tabBody [data-action='wake']").click();
+
+        await webExpect(page.locator("#tSessions")).toBeVisible();
+        await webExpect(page.locator(".session-chip[data-session='console']")).toBeVisible();
+        expect(await boxNow(sleeper)).toMatchObject({ running: true, sleeping: false });
       },
       TIMEOUT_MS,
     );
