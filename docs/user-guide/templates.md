@@ -103,7 +103,7 @@ You can also click **Create from this** on a template's card in the **Templates*
 
 ## Copy a template to another host
 
-A box on another host needs the template's image on that host. MiniBox copies the image when you create the box there, so you rarely need to copy a template by hand. To copy one ahead of time, click **Copy here** next to a host that lacks it, on the template's card. The copy runs as a **Sync template** task. Each card lists every host, and whether it has the template.
+A box on another host needs the template's image on that host. MiniBox copies the image when you create the box there, so you rarely need to copy a template by hand. To copy one ahead of time, click **Copy here** next to a host that lacks it, on the template's card. The copy runs as a **Sync template** task. Each card lists every host, and whether it has the template. A copy also carries the recipe of a template built from a source. The copy keeps that template's setup, and it can be rebuilt on that host from the same source.
 
 Deleting a template in the console removes its copy on every host. A rebuild changes the copy on the first host that holds the template. The other copies keep their old image until you delete them and copy the template again. A copy needs a target engine that keeps image IDs. See [Limits](hosts.md#limits).
 
@@ -122,7 +122,7 @@ Deleting a template does not affect the boxes that you created from it. A templa
 Building a template, rebuilding one and pulling an image are for the owner only. No token can do them, even a token with every scope.
 
 - **Secrets.** A private repository's token or deploy key is used only for its clone. MiniBox removes its value from the clone output before the task log shows it. The value is never written into the image, and the recipe keeps only the secret's name. Do not paste a secret into a Dockerfile, `containerEnv`, `remoteEnv` or `build.args`: those values go into the image or the build log.
-- **Recipes.** The pasted Dockerfile and the source fields are kept on the host in `DATA_DIR/template-recipes/`, so that a rebuild can run them again.
+- **Recipes.** The pasted Dockerfile and the source fields are kept on each host that holds the template, in `DATA_DIR/template-recipes/`, so that a rebuild can run them again. A copy to another host carries them too.
 - **Build contexts.** MiniBox refuses an archive entry or repository file whose path leaves the build context, is absolute, or is a hard link, a device or another special file. It also refuses a symbolic link that points outside the context, or a write that would pass through one.
 - **URLs come from the server.** MiniBox downloads a build context URL itself, and clones a repository from a helper container on the Docker network. Both follow redirects to any address. MiniBox does not block private or loopback addresses, or cloud metadata addresses, so a build can reach any service that the host can reach. Give owner access only to people who should have that reach.
 - **SSH host keys.** An SSH clone accepts the server's host key the first time it connects, because each clone starts with an empty known-hosts file. An attacker on the network could answer that first connection. HTTPS with a token checks the server's certificate instead.
@@ -153,7 +153,7 @@ The file sets either `image` or `build`, never both, and a `build` needs `build.
 
 ### The setup of a box
 
-`postCreateCommand` and `forwardPorts` are not part of the image. The template keeps them, and a box created from the template runs them in its setup task, in this order:
+`postCreateCommand` and `forwardPorts` are not part of the image. The template keeps them on every host that holds a copy of it, and a box created from the template runs them in its setup task, in this order:
 
 1. The repository is cloned, when you gave one.
 2. Each port in `forwardPorts` becomes a manual preview port of the box.

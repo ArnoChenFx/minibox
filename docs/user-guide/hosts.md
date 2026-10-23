@@ -61,7 +61,7 @@ With more than one host, MiniBox counts the CPU and memory that running boxes re
 
 What a move does:
 
-- The template image is sent to the target when the target does not have it.
+- The template image is sent to the target when the target does not have it, and the template's recipe comes with it.
 - Local volumes are copied to the target. A running box is paused while they are copied. NFS volumes are attached on the target and not copied. The tools volume is replaced by the target's shared tools volume.
 - The box is created on the target and started there if it was running. The box is removed from the old host only after it runs on the target. If any step fails before that, the move is undone and the box stays where it was.
 - The box keeps its id, name, volumes, environment variables and history. Its writable layer, running processes and IP address are lost, as in a rebuild.
