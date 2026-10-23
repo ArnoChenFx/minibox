@@ -1,0 +1,81 @@
+/* ---------- Modal / drawer ---------- */
+.dialog {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: pop 0.16s ease;
+}
+.dialog.wide {
+  width: min(640px, 100%);
+}
+.rebuild-mounts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rebuild-mount {
+  display: grid;
+  grid-template-columns: 1fr 1fr 88px auto;
+  gap: 8px;
+  align-items: center;
+}
+.env-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Every row has the same four columns (name | kind | value or secret | remove) and the height of an input. The reveal
+   button sits inside the value input, so the value field is exactly as wide as the secret chooser. */
+.env-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 120px minmax(0, 1.6fr) auto;
+  grid-template-areas: "name kind value remove";
+  gap: 8px;
+  align-items: center;
+}
+.env-row > [data-env-name] {
+  grid-area: name;
+}
+.env-row > .dropdown-trigger,
+.env-row > [data-env-kind] {
+  grid-area: kind;
+  width: 100%;
+}
+.env-row > .env-field {
+  grid-area: value;
+}
+.env-row > [data-env-remove] {
+  grid-area: remove;
+  height: 36px;
+}
+.env-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.env-field[hidden] {
+  display: none;
+}
+.env-field > .input,
+.env-field > .select {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+.env-field-reveal > .input {
+  padding-right: 40px;
+}
+.env-reveal {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  width: 30px;
+  height: 30px;
+  transform: translateY(-50%);
+}

@@ -1,4 +1,4 @@
-import { normalize, resolve, sep } from "node:path";
+import { normalize, posix, resolve, sep } from "node:path";
 
 const TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8",
@@ -36,10 +36,32 @@ export async function serveFile(root: string, urlPath: string): Promise<Response
   const file = Bun.file(path);
   if (!(await file.exists())) return null;
   const isHtml = path.endsWith(".html");
-  return new Response(file, {
+  const body = path.endsWith(".css") ? await inlineImports(root, urlPath, await file.text()) : file;
+  return new Response(body, {
     headers: {
       "content-type": contentType(path),
       "cache-control": isHtml ? "no-store" : "public, max-age=300",
     },
+  });
+}
+
+/** A line such as `@import "app/base.css";`. Only quoted relative paths are inlined. */
+const IMPORT_LINE = /^@import "([^":]+\.css)";[ \t]*$/gm;
+
+/**
+ * Replaces each top-level `@import` of a stylesheet under `root` with that file's text, so a stylesheet kept as parts
+ * (app.css and web/css/app/) still loads as one request. One level only: the parts do not import further. An import
+ * that leaves `root` or names a missing file is left as it is.
+ */
+async function inlineImports(root: string, urlPath: string, css: string): Promise<string> {
+  const parts = new Map<string, string>();
+  for (const [, rel = ""] of css.matchAll(IMPORT_LINE)) {
+    const full = safeJoin(root, posix.join(posix.dirname(urlPath), rel));
+    const part = full ? Bun.file(full) : null;
+    if (part && (await part.exists())) parts.set(rel, await part.text());
+  }
+  return css.replace(IMPORT_LINE, (line, rel: string) => {
+    const text = parts.get(rel);
+    return text === undefined ? line : `/* ${rel} */\n${text.trimEnd()}`;
   });
 }
