@@ -115,6 +115,18 @@
   justify-content: flex-end;
   flex-shrink: 0;
 }
+/* On a narrow screen the actions take their own line, right-aligned, so the count is never covered. */
+@media (max-width: 640px) {
+  .staged-banner {
+    flex-wrap: wrap;
+  }
+  .staged-text {
+    flex-basis: calc(100% - 32px);
+  }
+  .staged-actions {
+    flex-basis: 100%;
+  }
+}
 .staged-problem {
   margin-top: 8px;
 }

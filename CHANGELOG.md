@@ -4,8 +4,18 @@
 
 ## [Unreleased]
 
+### 新增
+- 重建类变更暂存、统一应用（Refs [#26](https://github.com/ArnoChenFx/minibox/issues/26)）：Box 设置中修改环境变量或挂载不再立即重建，而是暂存在服务端（重启后保留）。设置页顶部显示「N 项变更待应用 [查看差异] [应用并重建] [放弃]」；应用前的确认框列出规格差异、将被结束的终端会话数、可展开的 Docker 差异、默认勾选的「先创建检查点（含系统层）」，并说明所有卷中的数据保持不变。接口为 `GET/PUT/DELETE /api/boxes/{id}/staged`、`GET /api/boxes/{id}/staged/preview` 与 `POST /api/boxes/{id}/staged/apply`；有 `box:write` 的令牌可以暂存与放弃，应用仅限所有者。
+
+## [0.6.0] - 2026-10-23
+
 ### 亮点
 - **Box 网络出站策略**：每个 Box 可选择 `open`（默认，与以往相同）、`none`（没有对外路由，exec、SSH 与端口预览仍可使用）或 `proxy-only`（只能经 MiniBox 代理访问白名单中的主机，并记录每次连接的主机、端口与字节数）。`BLOCK_HOST_GATEWAY` 可阻止默认网络上的 Box 访问宿主机服务。
+- **官方模板**：内置 `node`、`python`、`go` 与 `minimal` 四个官方模板，在某台宿主机首次需要时才构建。`devcontainer.json` 新增支持 `postCreateCommand`、`forwardPorts` 等一部分设置。
+- **控制台改版**：导航精简为概览、Box、存储、库、活动、设置六项。Box 详情页分为六个标签页，每个标签页都有自己的地址。概览页新增「正在进行」与「需要关注」。
+- **卷的维护**：可批量删除卷，也可在预览后清理孤立卷。共享工具卷在引擎中丢失后自动重建。卷页标出引擎中已缺失的卷，以及所属 Box 已删除的卷。
+- **宿主机之间复制检查点**；**启动命令**在代码仓库克隆完成后才运行，Docker 自行启动容器时也会再运行一次，启动失败的原因会保存下来。
+- **破坏性变更**：`MCP_ALLOW_OWNER_KEY` 默认改为 `false`，`/mcp` 不再接受所有者访问密钥，请改用 Agent 令牌。见[升级说明](docs/admin/upgrades.md)。
 
 ### 新增
 - 卷的批量删除与清理孤立卷（[#178](https://github.com/ArnoChenFx/minibox/issues/178)）：卷页可勾选多个卷批量删除，删除前列出每个卷的去向。「清理孤立卷」预览没有任何 Box 配置引用、也没有被挂载的卷，确认后只删除预览列出的卷，并逐个再次检查。共享工具卷、系统卷与被挂载的卷在服务端一律拒绝删除；缓存卷不保留副本，删除后无法恢复。接口为 `POST /api/volumes/delete` 与 `POST /api/volumes/prune`（`dryRun` 默认为 `true`；`dryRun: false` 时必须用 `ids` 指定预览列出的卷）。批量删除需要新令牌权限 `volume:delete`（任何预设都不包含），且只能操作令牌自己创建的卷；清理孤立卷仅限所有者。命令行新增 `minibox volume delete` 与 `minibox volume prune`，MCP 的 `storage` 工具集新增 `delete_volumes` 与 `prune_volumes`。
@@ -24,7 +34,6 @@
 - 创建 Box 对话框的「工具」与「模板」两节可在标题前的箭头按钮处整节折叠，折叠状态保存在浏览器中；折叠时标题旁仍显示已选的模板或工具。「模板」一节移到「规格」下方。
 - Box 详情页改为六个标签页：概览、终端、文件、端口、活动与设置（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）。每个标签页有自己的地址，例如 `#/boxes/<id>/terminal`，刷新或收藏后仍停留在原标签页。
 - 「设置」标签页分为资源、存储与挂载、工具、环境变量、生命周期、安全与检查点七组，每组有自己的地址，例如 `#/boxes/<id>/settings/checkpoints`。工具分组默认展开，可逐组折叠。手机上标签页与设置分组可横向滚动，打开时当前项在视野内，标题栏按钮收为一行（除启动/停止外只显示图标）。
-- 重建类变更暂存、统一应用（Refs [#26](https://github.com/ArnoChenFx/minibox/issues/26)）：Box 设置中修改环境变量或挂载不再立即重建，而是暂存在服务端（重启后保留）。设置页顶部显示「N 项变更待应用 [查看差异] [应用并重建] [放弃]」；应用前的确认框列出规格差异、将被结束的终端会话数、可展开的 Docker 差异、默认勾选的「先创建检查点（含系统层）」，并说明所有卷中的数据保持不变。接口为 `GET/PUT/DELETE /api/boxes/{id}/staged`、`GET /api/boxes/{id}/staged/preview` 与 `POST /api/boxes/{id}/staged/apply`；有 `box:write` 的令牌可以暂存与放弃，应用仅限所有者。
 - 终端标签页列出 Box 内的全部 tmux 会话，并标明每个会话是你创建的还是 Agent 创建的。
 - 标题栏的「创建检查点」在任何标签页都可用。在「设置」的检查点分组中创建后，列表立即显示新检查点，无需刷新页面。
 - 概览页「正在进行」与「需要关注」（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）：`GET /api/overview`（`overview.get`，作用域 `overview:read`，仅所有者可读）返回 `inProgress` 与 `attention`。「正在进行」列出最近 10 分钟内 Agent 操作过的 Box，以及仍在运行命令的 Box；两张卡片位于容量卡片下方；每行占一行，依次为操作者（令牌名，或 Box 内的 Agent）、最近命令与最近使用的会话、时间和操作，运行中命令的最后 3 行输出与 Agent 备注通过行末的箭头展开。没有需要关注的事项时，「需要关注」收成一行。「需要关注」只列服务器已记录的事项：内存耗尽与检查点失败保留 24 小时，配置漂移、待确认的回滚、卷超出硬上限、存储池不可达、宿主机离线与磁盘不足在其条件存续期间列出。
@@ -74,6 +83,7 @@
 - CI 新增 `official-templates` 任务：在 `linux/amd64` 上构建四个官方模板，并对每个镜像运行 `scripts/check-box-image.sh`；最小模板通过 `REQUIRED_TOOLS` 只检查它所带的工具。
 - Box 详情页的测试：`tests/web-box-detail.test.ts` 为无 DOM 的组件测试，覆盖设置分组与会话来源标记；`tests/web-box-detail-browser.test.ts` 用 Chromium 覆盖六个标签页的地址与切换、概览不滚动、设置分组、标题栏的「创建检查点」、会话来源、休眠的 Box 在终端中唤醒、工具栏对齐、手机上的单行工具栏与当前标签页可见，以及旧地址跳转。`tests/web-routes.test.ts` 补充了标签页、设置分组与移动后的地址。截图脚本改为打开检查点分组。
 - 概览的测试：`tests/overview.test.ts` 以行为方式覆盖 `GET /api/overview` 的权限、正在进行的命令与输出、各类需要关注的事项，以及跨宿主机的情况；`tests/web-overview.test.ts` 覆盖概览的文字、链接与轮询间隔，并核对事项类型与服务器输出 schema 一致；`tests/web-console-browser.test.ts` 在 Chromium 中覆盖概览的四个列表及其展开按钮、观察与接管的地址、会话的切换与刷新、需要关注的链接，以及 Box 列表的活动标记。
+- 启动命令的真实引擎测试 `tests/docker-startup-command.test.ts` 新增 Docker 自行启动容器（`docker restart`，以及先停止再 `docker start`）的用例：每次启动命令恰好运行一次。该用例的超时设为 60 秒（[#133](https://github.com/ArnoChenFx/minibox/issues/133)）。
 
 ### 文档
 - 模板指南新增「官方模板」一节（中英文），说明四个模板的内容、何时构建、重新构建时基础镜像的更新方式，以及权限；API、CLI 与 MCP 参考同步新增相应条目（[#15](https://github.com/ArnoChenFx/minibox/issues/15)）。
