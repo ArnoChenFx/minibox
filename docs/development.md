@@ -4,7 +4,7 @@ This page is for people who change MiniBox. To run MiniBox, read [Install](admin
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.4.4 or later. `package.json` sets this as the minimum version.
+- [Bun](https://bun.sh) 1.4.3 or later. `package.json` sets this as the minimum version.
 - Docker Engine, for the template check and the real-engine tests. The unit tests do not need Docker.
 - Chromium, for the homepage browser tests, the console navigation test, the preview isolation test and `bun run screenshots`. See [Tests](#tests).
 
