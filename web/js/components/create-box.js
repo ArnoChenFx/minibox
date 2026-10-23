@@ -616,9 +616,11 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           toast(t("cb.toolsInstallLater"), { message: installErr.message });
         }
       }
-      if (res.clone?.taskId) {
-        openTasks(res.clone.taskId);
-        toast(t("cb.cloning"), { message: t("cb.cloningText") });
+      if (res.setup?.taskId) {
+        openTasks(res.setup.taskId);
+        toast(repo ? t("cb.cloning") : t("cb.settingUp"), {
+          message: repo ? t("cb.cloningText") : t("cb.settingUpText"),
+        });
       }
       onCreated?.(res.box);
     } catch (e) {

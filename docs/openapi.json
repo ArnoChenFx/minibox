@@ -1255,6 +1255,18 @@
                         "taskId"
                       ],
                       "additionalProperties": false
+                    },
+                    "setup": {
+                      "type": "object",
+                      "properties": {
+                        "taskId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "taskId"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [

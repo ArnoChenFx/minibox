@@ -29,6 +29,7 @@ export default {
   "task.op.template.sync": "Sync template",
   "task.op.image.pull": "Pull image",
   "task.op.box.clone": "Clone repository",
+  "task.op.box.setup": "Set up box",
   "task.op.snapshot.create": "Create snapshot",
   "task.op.checkpoint.create": "Create checkpoint",
   "task.op.checkpoint.fork": "Fork checkpoint",

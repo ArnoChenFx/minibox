@@ -289,6 +289,11 @@ export const CloneStartedSchema = z.object({
   taskId: z.string(),
 });
 
+/** The task that sets up a new box: its repository clone, forwarded ports and postCreateCommand. */
+export const SetupStartedSchema = z.object({
+  taskId: z.string(),
+});
+
 /** The image the build produced. The build log is kept on the task, not in this result. */
 export const BuildResultSchema = z.object({
   ref: z.string(),

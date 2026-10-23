@@ -73,17 +73,17 @@ export async function boxCreateCommand(
 
   const res = await request(env, "POST", "/api/boxes", body);
   if (res.status >= 400) return fail(io, res.status, res.json, res.text);
-  const created = res.json as { box: { name: string }; clone?: { taskId: string } };
+  const created = res.json as { box: { name: string }; setup?: { taskId: string } };
   const asJson = options.switches.has("--json");
   io.stdout(asJson ? `${JSON.stringify(res.json)}\n` : `${created.box.name}\n`);
-  if (!created.clone) return 0;
+  if (!created.setup) return 0;
   if (options.switches.has("--no-wait")) {
-    io.stderr(`The clone runs as task ${created.clone.taskId}\n`);
+    io.stderr(`The setup runs as task ${created.setup.taskId}\n`);
     return 0;
   }
-  const task = await followTask(env, io, created.clone.taskId);
+  const task = await followTask(env, io, created.setup.taskId);
   if (!task) return 1;
   if (task.status === "succeeded") return 0;
-  io.stderr(`${created.box.name} was created, but its clone did not finish: ${task.error?.message ?? task.status}\n`);
+  io.stderr(`${created.box.name} was created, but its setup did not finish: ${task.error?.message ?? task.status}\n`);
   return 1;
 }
