@@ -17,7 +17,7 @@ If the box is asleep, the terminal wakes it. A box that you stopped by hand does
 2. In **Session name**, type a name. Use up to 32 letters, digits, dashes and underscores.
 3. Click **New session**.
 
-The session name is how you find the session again. The **Sessions** list shows every session in the box.
+The session name is how you find the session again. The **Sessions** list shows every session in the box. Each session is marked with who created it: **Created by you** for a session you started in the console, or **Created by agent** for one that an agent or another client started through the API. The session that runs the box's startup command, `minibox-init`, carries no mark, so it also shows **Created by agent**.
 
 To end a session, click **Close session**, and confirm. Programs that run in the session stop.
 
@@ -38,6 +38,17 @@ A session that you started yourself stays with you. Return it to the agent when 
 While you hold a session, the agent can still read its screen, but the agent's input is refused until you return the session.
 
 Restarting MiniBox returns every session to its starting control: the agent for agent sessions, and you for sessions you started.
+
+## Watch an agent on the overview
+
+The **Overview** page lists the boxes that an agent worked on in the last 10 minutes, under **In progress**. A row shows the box, who acted (the name of the access token, or the box's own agent), and the agent's latest command. While the command still runs, the row also shows its last three lines of output. The row names the session the agent used last.
+
+- **Observe** opens that session read-only.
+- **Take over** opens the same session. The overview does not take it over. Click **Take over** on the **Terminal** tab to type.
+
+A command that ran outside any session has only **Observe**. It opens the box's **Activity** tab, which lists the command.
+
+Each session has its own address, and the address ends with the session's name. When you pick another session in the list, the address changes to it, so a reload or a shared link opens that session.
 
 ## Use sessions from the command line
 

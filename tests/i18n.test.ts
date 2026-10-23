@@ -106,6 +106,33 @@ describe("list, settings navigation and secret strings", () => {
   });
 });
 
+describe("overview strings", () => {
+  const keys = Object.keys(en).filter((key) => key.startsWith("ov."));
+
+  test("the overview dictionary is loaded", () => {
+    expect(keys.length).toBeGreaterThan(30);
+  });
+
+  test("each one has its own Chinese text, not the English copied across", () => {
+    for (const key of keys) expect([key, zh[key] !== en[key]]).toEqual([key, true]);
+  });
+
+  test("observe and take over use the words the watch uses in both languages", () => {
+    expect([en["ov.observe"], en["ov.takeOver"]]).toEqual(["Observe", "Take over"]);
+    expect([zh["ov.observe"], zh["ov.takeOver"]]).toEqual(["观察", "接管"]);
+  });
+
+  test("the box list's indicator names the agent and how long ago it acted, in both languages", () => {
+    expect(en["ov.agentActive"]).toBe("Agent active · {ago}");
+    expect(zh["ov.agentActive"]).toBe("Agent 活动中 · {ago}");
+  });
+
+  test("the two lists are named 正在进行 and 需要关注 in Chinese", () => {
+    expect([zh["ov.progress"], zh["ov.attention"]]).toEqual(["正在进行", "需要关注"]);
+    expect([en["ov.progress"], en["ov.attention"]]).toEqual(["In progress", "Needs attention"]);
+  });
+});
+
 describe("console translations", () => {
   const used = consoleFiles(WEB).flatMap((path) =>
     literalKeys(readFileSync(path, "utf8")).map((key) => ({ key, file: relative(WEB, path) })),

@@ -21,8 +21,36 @@ export function templateCards(rows) {
   return [...cards.values()];
 }
 
-/** Whether a box created on `hostId` needs the template copied there first: the card exists and the host lacks it. */
-export const needsSync = (card, hostId) => card !== undefined && !card.holders.includes(hostId);
+/**
+ * The official templates no host holds yet, as cards with no holder, after the built ones. A built official template is
+ * already a card, so it is not listed twice. `official` is the server's catalog from GET /api/templates/official.
+ */
+export function withOfficialCards(cards, official) {
+  const built = new Set(cards.map((card) => card.ref));
+  const unbuilt = official
+    .filter((template) => !built.has(template.ref))
+    .map((template) => ({
+      ref: template.ref,
+      name: template.name,
+      description: template.description,
+      base: template.base,
+      buildKind: "official",
+      tags: [],
+      size: null,
+      holders: [],
+    }));
+  return [...cards, ...unbuilt];
+}
+
+/** Whether no host holds the template yet, so a box can only get it by building it. */
+export const isUnbuilt = (card) => card !== undefined && card.holders.length === 0;
+
+/**
+ * Whether a box created on `hostId` needs the template copied there first: a host holds it, and the host does not. A
+ * template no host holds is built instead, see `isUnbuilt`.
+ */
+export const needsSync = (card, hostId) =>
+  card !== undefined && card.holders.length > 0 && !card.holders.includes(hostId);
 
 /** The size of a template in whole megabytes for the copy notice. A copy under a megabyte still reads as one. */
 export const syncSizeMb = (card) => Math.max(1, Math.round(card.size / 1024 ** 2));

@@ -7,6 +7,7 @@ import common from "./zh-CN/common.js";
 import egress from "./zh-CN/egress.js";
 import errors from "./zh-CN/errors.js";
 import files from "./zh-CN/files.js";
+import overview from "./zh-CN/overview.js";
 import settings from "./zh-CN/settings.js";
 import tasks from "./zh-CN/tasks.js";
 import tools from "./zh-CN/tools.js";
@@ -23,6 +24,7 @@ export default {
   ...checkpoints,
   ...volumes,
   ...files,
+  ...overview,
   ...tasks,
   ...tools,
   ...trash,
@@ -78,6 +80,7 @@ export default {
   "tp.kindGit": "Git 代码仓库",
   "tp.kindContext": "构建上下文 URL",
   "tp.kindDevcontainer": "devcontainer.json",
+  "tp.kindOfficial": "MiniBox 官方 Dockerfile",
   "tp.kindDockerfileHint": "粘贴内容",
   "tp.kindGitHint": "克隆后构建",
   "tp.kindContextHint": "从 URL 下载压缩包",
@@ -120,5 +123,11 @@ export default {
   "tp.syncStarted": "正在同步模板",
   "tp.syncStartedText": "可在任务面板查看同步进度。",
   "tp.syncFailed": "无法同步模板",
+  "tp.official": "官方",
+  "tp.notBuiltHelp": "尚未在任何宿主机上构建。创建 Box 时首次需要即会构建，也可现在构建。",
+  "tp.buildOfficial": "构建",
+  "tp.buildHere": "在此构建",
+  "tp.officialBuildStarted": "正在构建官方模板",
+  "tp.buildsOnUse": "首次使用时构建",
   "tp.deleteHostsExtra": "将删除 {hosts} 上的副本。",
 };

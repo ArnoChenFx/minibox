@@ -39,7 +39,7 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
 | `secret:use` | `secret:use`. Setting, removing or running a box's startup command also needs `exec`. |
-| `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `trash:read`, `trash:restore`, `trash:purge`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+| `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:copy`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `template:official`, `trash:read`, `trash:restore`, `trash:purge`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 | `self` | None. Only the self token of the box can call these, and only for that box. |
 
 The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. The `skipTrash` option of `DELETE /api/boxes/{id}` and `DELETE /api/volumes/{id}` also needs the `trash:skip` token scope, or the owner. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
@@ -53,7 +53,7 @@ The scope check comes first. The token's box, volume and host grants, its quotas
 
 ## Long-running operations
 
-Some operations take a while, such as template builds, checkpoints, exports, imports, forks, rollbacks, recycle bin restores and purges, and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
+Some operations take a while, such as template builds, checkpoints, exports, imports, copies, forks, rollbacks, recycle bin restores and purges, and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
 
 - `GET /api/tasks/{id}` shows the task, including its status and result.
 - `GET /api/tasks/{id}/events` streams its progress as server-sent events. It is not in the OpenAPI document.
@@ -248,6 +248,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `DELETE` | `/api/checkpoints/{id}` | Delete a checkpoint |
 | `POST` | `/api/boxes/{id}/checkpoints` | Take a checkpoint of a box |
 | `POST` | `/api/checkpoints/{id}/fork` | Create a box from a checkpoint |
+| `POST` | `/api/checkpoints/{id}/copy` | Copy a checkpoint to another host `{ "host" }`. Returns `202`; the task result holds the copy. Owner only |
 | `GET` | `/api/boxes/{id}/rollback` | Read the rollback of a box that waits for its confirm or undo |
 | `POST` | `/api/boxes/{id}/rollback` | Roll a box back to one of its checkpoints |
 | `POST` | `/api/boxes/{id}/rollback/confirm` | Confirm a rollback: delete the volumes it replaced |
@@ -301,6 +302,7 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/templates` | List templates |
+| `GET` | `/api/templates/official` | List the official templates: name, ref, description and base image. Owner only |
 | `POST` | `/api/templates` | Build a template from a source, as a task. Owner only |
 | `POST` | `/api/templates/{ref}/rebuild` | Rebuild a template from the source it was built from, as a task. Owner only |
 | `POST` | `/api/templates/{ref}/sync` | Copy a template to another host, as a task. The body is `{ host }`. Owner only |
@@ -308,11 +310,14 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `POST` | `/api/snapshots/{ref}/promote` | Promote a snapshot to a template |
 | `POST` | `/api/boxes/{id}/template` | Save a box as a template |
 | `POST` | `/api/templates/base/build` | Build the bundled base template |
+| `POST` | `/api/templates/official/{name}/build` | Build an official template (`node`, `python`, `go` or `minimal`) as a task, on the host in `?host=`. Owner only |
 | `DELETE` | `/api/templates/{ref}` | Delete a template |
 
 `POST /api/templates` takes `name`, an optional `description` and a `source`. The source's `kind` is `dockerfile` (with `text`), `git` (with `url`, and optional `branch`, `subdir`, `dockerfile` and `secretRef`), `context` (with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`) or `devcontainer` (with `url`, and optional `branch`, `path` and `secretRef`). A `devcontainer` source reads the settings that [Templates](../user-guide/templates.md#devcontainerjson) lists, and warns in the build log about any other. The task's result holds `template.ref`, such as `minibox-template:node-tools`. `POST /api/images/pull` takes `ref`, such as `node:24-bookworm-slim`, and its task's result holds `image.ref` and `image.id`. See [Templates](../user-guide/templates.md).
 
-`host` names the host an operation runs on. In a body it is the `host` field, as in `POST /api/templates`, `POST /api/images/pull` and `POST /api/templates/{ref}/sync`, where it is the host to copy to. As a query parameter it is `?host=`, as in `POST /api/templates/{ref}/rebuild`, `POST /api/templates/base/build` and `DELETE /api/templates/{ref}`. Without it, a build or a pull runs on `local`, and a rebuild or a delete runs on the first host that holds the template.
+`host` names the host an operation runs on. In a body it is the `host` field, as in `POST /api/templates`, `POST /api/images/pull` and `POST /api/templates/{ref}/sync`, where it is the host to copy to. As a query parameter it is `?host=`, as in `POST /api/templates/{ref}/rebuild`, `POST /api/templates/base/build`, `POST /api/templates/official/{name}/build` and `DELETE /api/templates/{ref}`. Without it, a build or a pull runs on `local`, and a rebuild or a delete runs on the first host that holds the template.
+
+`POST /api/templates/official/{name}/build` returns `202` with `taskId`, and its task's result holds `template.ref`. A name that the host already holds is refused with `409` (`template_name_taken`). `POST /api/boxes` gives a missing official template to the host the box goes to: it copies the template from a host that holds it, or else builds it there, as a task that the create waits for. The response then holds `sync.taskId`, as it does for a copy. See [Official templates](../user-guide/templates.md#official-templates).
 
 ### tasks
 

@@ -62,7 +62,7 @@ export function agentCardHtml({ selfToken, pending, answered, drafts = new Map()
     ? `<ul class="agent-list">${pending.map((question) => questionHtml(question, drafts.get(question.id) ?? "")).join("")}</ul>`
     : `<p class="subtle">${esc(t("ag.nonePending"))}</p>`;
   const latest = answered.slice(0, ANSWERED_SHOWN);
-  return `<div class="card" style="margin-top:16px">
+  return `<div class="card">
     <div class="card-head"><h3>${esc(t("ag.section"))} ${badge}</h3><div class="startup-actions">${revoke}</div></div>
     <div class="card-body stack">
       <p class="help">${esc(t(selfToken ? "ag.help" : "ag.helpRevoked"))}</p>

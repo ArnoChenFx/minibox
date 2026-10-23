@@ -186,6 +186,7 @@ Building a template, rebuilding one and pulling an image are for the owner only.
 | `minibox template create <name> (--dockerfile FILE \| --repo URL \| --context URL \| --devcontainer URL) [options]` | Builds a template from one source, and prints its reference, such as `minibox-template:node-tools` |
 | `minibox template rebuild <ref> [--host ID]` | Rebuilds a template from the source it was built from. The tag moves only when the build succeeds. Without `--host`, the first host that holds the template. |
 | `minibox template sync <ref> --host ID` | Copies a template from a host that holds it to host `ID`, so a box can start there |
+| `minibox template build-official <name> [--host ID] [--no-wait] [--json]` | Builds an official template (`node`, `python`, `go` or `minimal`) on a host, and prints its reference. Without `--host`, the local host. A name the host already holds is refused |
 | `minibox image pull <ref> [--host ID]` | Pulls an image from its registry, unless the engine already has it. Default: `local` |
 
 The options of `template create`:
@@ -220,6 +221,18 @@ Only the owner can use these commands. See [Tools](../user-guide/tools.md).
 | `minibox tool custom list [--json]` | Lists the custom entries in `DATA_DIR/tools.d` |
 | `minibox tool custom put <id> (--file FILE \| --stdin) [--override-builtin] [--json]` | Saves an entry from a JSON document. `--override-builtin` replaces a built-in tool's entry. |
 | `minibox tool custom delete <id> [--json]` | Removes the entry. Nothing is uninstalled from the shared tools volume. |
+
+## Checkpoints
+
+Only the owner can use this command. A copy runs as a task. The command waits for the task, prints the task log to standard error, and prints the ID of the copy. It exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. See [Checkpoints](../user-guide/checkpoints.md#copy-to-another-host).
+
+| Command | Meaning |
+|---|---|
+| `minibox checkpoint copy <id> --host ID [--no-wait] [--json]` | Copies a checkpoint to host `ID`, so a box can be forked there. The copy is a new checkpoint with its own ID. `--json` prints the task. |
+
+```bash
+minibox checkpoint copy ck_3f9a --host lab
+```
 
 ## Backups
 

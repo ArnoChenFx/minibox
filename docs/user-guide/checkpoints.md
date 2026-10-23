@@ -4,14 +4,14 @@ A checkpoint is a copy of a box's data. You can fork a new box from a checkpoint
 
 A checkpoint includes the box's `/workspace` folder and its home folder. A template includes only the system files, so a checkpoint is the way to keep your work.
 
-Checkpoints are available in the console, and in the [REST API](../reference/api.md). The [MCP](../reference/mcp.md) storage toolset also exports, imports and schedules them, for the owner only. The command-line tool does not manage them.
+Checkpoints are available in the console, and in the [REST API](../reference/api.md). The [MCP](../reference/mcp.md) storage toolset also exports, imports, copies and schedules them, for the owner only. The command-line tool copies them to another host with `minibox checkpoint copy`.
 
-Checkpoints are not a backup of the whole server. They are stored on the host the box was on when the checkpoint was taken, and they stay there when the box moves. With more than one host, a checkpoint's row names its host. A rollback uses the checkpoint from the box's own host, so to roll back to a checkpoint on another host, move the box there first. Keep an off-host copy of anything you cannot lose. [Export](#export-and-import) a checkpoint to make a copy you can carry elsewhere, or push the package to an [off-site target](#off-site-targets). To back up the whole server, see [Backups](../admin/backups.md).
+Checkpoints are not a backup of the whole server. They are stored on the host the box was on when the checkpoint was taken, and they stay there when the box moves. With more than one host, a checkpoint's row names its host. A rollback uses the checkpoint from the box's own host, so to roll back to a checkpoint on another host, [copy](#copy-to-another-host) it there, or move the box there first. Keep an off-host copy of anything you cannot lose. [Export](#export-and-import) a checkpoint to make a copy you can carry elsewhere, or push the package to an [off-site target](#off-site-targets). To back up the whole server, see [Backups](../admin/backups.md).
 
 ## Create a checkpoint
 
-1. Open the box, and click the **Checkpoints** tab.
-2. Click **Create checkpoint**.
+1. Open the box, click **Settings**, and then **Checkpoints**.
+2. Click **Create checkpoint**. The same button is in the title bar of the box, on every tab.
 3. In **Label**, type a short name. Leave it empty to use the box's name.
 4. Under **Consistency**, choose how the box is held while its files are copied:
 
@@ -58,7 +58,7 @@ Rolling back replaces the box's current data with the data in a checkpoint.
 
 Before anything changes, MiniBox takes a safety checkpoint of the current data. The box is then rebuilt with the restored data.
 
-After a rollback, the old volumes are kept, so you can decide what to do with them. The **Checkpoints** tab shows **Old volumes are kept**, with two buttons:
+After a rollback, the old volumes are kept, so you can decide what to do with them. The **Checkpoints** section of the box's **Settings** shows **Old volumes are kept**, with two buttons:
 
 - **Confirm and clean up** deletes the old volumes.
 - **Undo rollback** mounts the old volumes again. Anything written since the rollback is lost.
@@ -102,6 +102,18 @@ Entries do not appear in the checkpoint list. Each host keeps its own recycle bi
 
 On the command line, `minibox trash ls` lists the entries, `minibox trash restore <id>` restores one, with `--name`, `--cpus` and `--memory`, and `minibox trash purge <id>` purges one. The MCP tools are `list_trash`, `restore_trash` and `purge_trash`.
 
+## Copy to another host
+
+A copy makes a checkpoint available on another host, so you can fork a box from it there without moving the box. The original stays where it is. The copy is a new checkpoint with its own id on the target host. It keeps the original's label, pin, creation time and box settings.
+
+To copy one, click **Copy to host** on the checkpoint's row, choose the host, and click **Copy**. The button shows only when there is more than one host. The copy runs as a task, and its log shows the transfer. On the command line, `minibox checkpoint copy <id> --host <host>` waits for the task and prints the copy's id. Over the REST API, `POST /api/checkpoints/{id}/copy` with `{ "host": "<id>" }` returns `202` with a task. Copying is for the owner only.
+
+The data is packed on the source host into a sealed package, with a passphrase made for that one copy. The package passes through this control plane, and MiniBox removes it when the copy ends, whether it succeeds or not. If the target lacks the base template, or the template the checkpoint was taken from, the copy sends that template first, as a template copy does. A copy that fails leaves no checkpoint on the target.
+
+A copy is refused for the same reasons as an export. These are a snapshot from before checkpoints, a checkpoint that holds no volume data, and a checkpoint that includes its system layer. It is also refused when the target is the host the checkpoint is already on, when that host already holds a copy of it, and when the checkpoint is being exported or copied. The package must fit in `CHECKPOINT_PACKAGE_MAX_MB`, as an export does.
+
+`GET /api/checkpoints` lists the copy with its host. Forking from the copy creates the box on that host.
+
 ## Export and import
 
 Export a checkpoint to get a portable package: a single `.mbckpt` file. Keep it off the host, or import it on this instance or on another MiniBox instance. Export and import are owner only.
@@ -118,9 +130,9 @@ Some checkpoints cannot be exported. These are a snapshot from before checkpoint
 
 To import a package:
 
-1. On the **Checkpoints** tab of a box, click **Import**.
+1. In the box's **Settings**, under **Checkpoints**, click **Import**.
 2. Choose the **Package file**, a `.mbckpt` file, and type the **Passphrase** it was sealed with. If this instance has more than one host, choose the **Host** to import onto.
-3. Click **Import**. The import runs as a task. When it finishes, the checkpoint can be forked. It is listed on this tab only when this box is the one it was taken from, as described below.
+3. Click **Import**. The import runs as a task. When it finishes, the checkpoint can be forked. It is listed in this section only when this box is the one it was taken from, as described below.
 
 A wrong passphrase fails the import, and the package stays, so you can try again until it expires. A checkpoint whose id already exists on the instance is not imported, and nothing there changes.
 
@@ -138,12 +150,12 @@ Push an exported package before it expires, 24 hours after the export. A package
 
 A box can take checkpoints on a schedule: every few hours, or once a day at a time you choose. Schedules are off by default, so a box without one behaves as before.
 
-To set a schedule, open the box's **Checkpoints** tab, and in **Schedule** click **Set a schedule**:
+To set a schedule, open the box's **Settings**, go to **Checkpoints**, and in **Schedule** click **Set a schedule**:
 
 1. Under **When**, choose **Every few hours** and type the **Hours**, from 1 to 720. Or choose **Once a day** and type a **Time**, such as `02:30`. The time is in your browser's time zone, which the dialog names.
 2. Click **Save schedule**.
 
-The tab then shows the schedule, such as `Every day at 03:00 (Asia/Shanghai)`, with its **Next run** and **Last run** in your local time, followed by your time zone. The last run says whether a checkpoint was taken, or why the run was skipped or failed. **Change schedule** edits the schedule, and **Turn off** removes it. Turning a schedule off keeps the checkpoints it already took.
+The section then shows the schedule, such as `Every day at 03:00 (Asia/Shanghai)`, with its **Next run** and **Last run** in your local time, followed by your time zone. The last run says whether a checkpoint was taken, or why the run was skipped or failed. **Change schedule** edits the schedule, and **Turn off** removes it. Turning a schedule off keeps the checkpoints it already took.
 
 A scheduled checkpoint is taken while the box keeps running, like a **Live** checkpoint. It is not pinned, and it counts as automatic, so the retention policy keeps or removes it in the same way as the checkpoints MiniBox takes before a rollback.
 
@@ -151,7 +163,7 @@ MiniBox never wakes or starts a box for a schedule. A stopped or sleeping box is
 
 Schedules are checked every minute, and they are kept on the instance, so they survive a restart. A run that fell due while the server was down happens once after the server starts, within about a minute. An every-hours schedule keeps to its original times, so a late run does not move the later ones. A daily schedule runs at its next time, and keeps to the clock of its zone when daylight saving time starts or ends. A time the clocks skip runs an hour later, and a time that happens twice runs once.
 
-Over the REST API, `PUT /api/boxes/{id}/checkpoint-schedule` sets a schedule and `DELETE` on the same path removes it. A daily time takes `timezone`, an IANA name such as `Asia/Shanghai`; without it the time is UTC. A UTC offset such as `+08:00` is not accepted. If the server no longer knows a saved zone, the schedule keeps running in UTC, the response has `timezoneUnknown: true`, and the tab asks you to set the schedule again. The MCP storage toolset does the same for the owner.
+Over the REST API, `PUT /api/boxes/{id}/checkpoint-schedule` sets a schedule and `DELETE` on the same path removes it. A daily time takes `timezone`, an IANA name such as `Asia/Shanghai`; without it the time is UTC. A UTC offset such as `+08:00` is not accepted. If the server no longer knows a saved zone, the schedule keeps running in UTC, the response has `timezoneUnknown: true`, and the section asks you to set the schedule again. The MCP storage toolset does the same for the owner.
 
 ## How long checkpoints are kept
 

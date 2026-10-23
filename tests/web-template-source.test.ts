@@ -93,6 +93,11 @@ describe("template sources", () => {
       "tp.kindDevcontainer",
     ]);
   });
+
+  test("an official template has a label of its own, and the dialog offers it as no source", () => {
+    expect(KIND_LABEL_KEYS.official).toBe("tp.kindOfficial");
+    expect(SOURCE_KINDS).not.toContain("official");
+  });
 });
 
 describe("clone fields on the create-box dialog", () => {

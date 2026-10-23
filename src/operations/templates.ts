@@ -5,6 +5,7 @@ import { type ErrorCode, AppError, notFound } from "../lib/errors";
 import { type MessageKey, msg } from "../lib/messages";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
+import { OFFICIAL_TEMPLATES, officialOfRef } from "../services/official-templates";
 import { createDeclaredTemplate, declaredTemplate, rebuildDeclaredTemplate } from "../services/template-builds";
 import { copyTemplate, findTemplateSource, heldImage } from "../services/template-sync";
 import {
@@ -16,15 +17,23 @@ import {
   promoteSnapshot,
   saveBoxAsTemplate,
 } from "../services/templates";
-import type { TaskError } from "../tasks/types";
+import type { TaskError, TaskReader } from "../tasks/types";
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
 import { fromEveryHost, hostById, hostNamed, hostOfBox, hostOfImage, imageHosts, refuseAgent } from "./routing";
-import { BuildResultSchema, OkSchema, PromotedTemplateSchema, TemplateSchema, TemplateSyncedSchema } from "./schemas";
-import type { OperationContext } from "./types";
+import {
+  BuildResultSchema,
+  OfficialTemplateSchema,
+  OkSchema,
+  PromotedTemplateSchema,
+  TemplateSchema,
+  TemplateSyncedSchema,
+} from "./schemas";
+import type { Operation, OperationContext } from "./types";
 import {
   boxId,
   hostId,
+  officialName,
   snapshotRef,
   templateDescription,
   templateName,
@@ -266,46 +275,128 @@ export const templateSync = defineOperation({
   run: async ({ host, task }, input, source) => ({
     ref: input.ref,
     host: host.host.id,
-    sent: await copyTemplate(source, host, input.ref, task?.signal),
+    sent: await copyTemplate(source, host, input.ref, task),
+  }),
+});
+
+export const templateOfficialList = defineOperation({
+  name: "template.official.list",
+  tag: "templates",
+  summary: "List the official templates",
+  kind: "read",
+  scope: "template:official",
+  async: false,
+  input: z.object({}),
+  output: z.object({ templates: z.array(OfficialTemplateSchema) }),
+  rest: [{ method: "GET", path: "/api/templates/official" }],
+  mcp: {
+    toolset: "tools",
+    name: "list_official_templates",
+    description:
+      "List the official templates MiniBox ships: node, python, go and minimal. Each has its description, the pinned base image it builds from, and the ref it has on this host. A template is built on a host when a box first needs it there, or by build_official_template.",
+  },
+  run: async ({ host }) => ({
+    templates: OFFICIAL_TEMPLATES.map((template) => ({
+      name: template.name,
+      ref: `${host.prefix}-template:${template.name}`,
+      description: template.description,
+      base: template.base,
+    })),
+  }),
+});
+
+export const templateOfficialBuild = defineOperation({
+  name: "template.official.build",
+  tag: "templates",
+  summary: "Build an official template",
+  kind: "write",
+  scope: "template:build",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    name: officialName(),
+    host: hostId().optional().meta({ description: "Host to build the template on. Omitted, the local host." }),
+  }),
+  output: z.object({ template: PromotedTemplateSchema }),
+  rest: [{ method: "POST", path: "/api/templates/official/:name/build", query: ["host"], status: 202 }],
+  cli: "template build-official",
+  mcp: {
+    toolset: "tools",
+    name: "build_official_template",
+    description:
+      "Build an official template (node, python, go or minimal) on a host, from the Dockerfile that ships with MiniBox. Its base image is pulled when the host lacks it. A name the host already holds is refused. Owner only. Returns a task id; the task log shows the build.",
+  },
+  hostFor: (ctx, input) => hostNamed(ctx, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
+  exclusive: ({ host }, input) => `template.name:${host.host.id}:${input.name}`,
+  subject: (input) => input.name,
+  activity: { action: () => "template.official.build", target: (input) => input.name },
+  audit: { target: (input) => ({ kind: "template", name: input.name }) },
+  run: async ({ host, principal, task }, input) => ({
+    template: await holdingTemplateName(host, input.name, () =>
+      createDeclaredTemplate(
+        host,
+        { name: input.name, source: { kind: "official", name: input.name }, createdBy: principal.id },
+        { log: (text) => task?.log(text), signal: task?.signal },
+      ),
+    ),
   }),
 });
 
 /**
- * Copies the template `ref` to `host` before a box is created there, when `host` lacks it and another host holds it. The
- * copy runs as a task of its own, and the create waits for it, so the box starts from the image it names. A copy that is
- * already running for the same template is joined rather than started twice. Only an owner's create copies: a token's
- * create is judged by the template its host shows it, as it always was.
+ * Makes `ref` available on `host` before a box is created there. When `host` lacks it, a copy comes from another host
+ * that holds it, and when none does, an official template is built on `host` from the Dockerfile that ships with
+ * MiniBox. Either runs as a task of its own, and the create waits for it, so the box starts from the image it names. A
+ * task already running for the same template is joined rather than started twice. Only an owner's create copies or
+ * builds: a token's create is judged by the template its host shows it, as it always was.
  */
 export async function ensureTemplateOn(
   ctx: OperationContext,
   host: HostCtx,
   ref: string,
 ): Promise<{ taskId: string } | undefined> {
-  if (ctx.principal.type !== "owner" || host.host.transport === "agent" || !ctx.startTask || !ctx.tasks)
-    return undefined;
+  const { startTask, tasks } = ctx;
+  if (ctx.principal.type !== "owner" || host.host.transport === "agent" || !startTask || !tasks) return undefined;
   if (await heldImage(host, ref)) return undefined;
   const others = imageHosts(ctx).filter((candidate) => candidate.host.id !== host.host.id);
   const source = await findTemplateSource(others, ref);
-  if (!source) return undefined;
+  if (source) return awaitTask(startTask, tasks, templateSync, { ref, host: host.host.id }, source, "copy");
+  const official = officialOfRef(host, ref);
+  if (!official) return undefined;
+  return awaitTask(startTask, tasks, templateOfficialBuild, { name: official.name }, undefined, "build");
+}
 
+/**
+ * Runs `operation` as a child task and waits for it to finish. A run already going under the same key is joined rather
+ * than started again, so the caller gets that run's outcome.
+ */
+async function awaitTask(
+  startTask: NonNullable<OperationContext["startTask"]>,
+  tasks: TaskReader,
+  operation: Operation,
+  input: Record<string, unknown>,
+  resolved: unknown,
+  what: "copy" | "build",
+): Promise<{ taskId: string }> {
   let taskId: string;
   try {
-    ({ taskId } = await ctx.startTask(templateSync, { ref, host: host.host.id }, source));
+    ({ taskId } = await startTask(operation, input, resolved));
   } catch (e) {
     const running = e instanceof AppError && e.key === "task_busy" ? runningTaskOf(e.details) : undefined;
     if (running === undefined) throw e;
     taskId = running;
   }
-  await ctx.tasks.done(taskId);
-  const finished = ctx.tasks.get(taskId, { output: false });
-  if (finished?.status !== "succeeded") throw copyFailure(finished?.error);
+  await tasks.done(taskId);
+  const finished = tasks.get(taskId, { output: false });
+  if (finished?.status !== "succeeded") throw taskFailure(finished?.error, what);
   return { taskId };
 }
 
-/** The error a failed copy gives its create, with the copy's own message key so the console can translate it. */
-function copyFailure(error: TaskError | undefined): AppError {
+/** The error a failed copy or build gives its create, with the task's own message key so the console can translate it. */
+function taskFailure(error: TaskError | undefined, what: "copy" | "build"): AppError {
   if (!error)
-    return new AppError(502, "docker_error", msg("docker_error", { detail: "the template copy did not finish" }));
+    return new AppError(502, "docker_error", msg("docker_error", { detail: `the template ${what} did not finish` }));
   const message = error.key ? msg(error.key as MessageKey, error.params) : error.message;
   return new AppError(error.status, error.code as ErrorCode, message);
 }
@@ -350,4 +441,6 @@ export const templateOperations = [
   templateBuild,
   templateSync,
   templateDelete,
+  templateOfficialList,
+  templateOfficialBuild,
 ];

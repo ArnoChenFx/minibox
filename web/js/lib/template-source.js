@@ -1,12 +1,16 @@
 /** The source kinds a template can be built from, in the order the dialog shows them. */
 export const SOURCE_KINDS = ["dockerfile", "git", "context", "devcontainer"];
 
-/** The translation key of each kind's name, shown in the dialog and on the template card. */
+/**
+ * The translation key of each kind's name, shown in the dialog and on the template card. `official` is not a source the
+ * dialog offers: MiniBox builds those itself.
+ */
 export const KIND_LABEL_KEYS = {
   dockerfile: "tp.kindDockerfile",
   git: "tp.kindGit",
   context: "tp.kindContext",
   devcontainer: "tp.kindDevcontainer",
+  official: "tp.kindOfficial",
 };
 
 /** The same rule the server applies to an image reference, so a typo is caught before the request. */

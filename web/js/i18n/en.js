@@ -7,6 +7,7 @@ import common from "./en/common.js";
 import egress from "./en/egress.js";
 import errors from "./en/errors.js";
 import files from "./en/files.js";
+import overview from "./en/overview.js";
 import settings from "./en/settings.js";
 import tasks from "./en/tasks.js";
 import tools from "./en/tools.js";
@@ -23,6 +24,7 @@ export default {
   ...checkpoints,
   ...volumes,
   ...files,
+  ...overview,
   ...tasks,
   ...tools,
   ...trash,
@@ -80,6 +82,7 @@ export default {
   "tp.kindGit": "Git repository",
   "tp.kindContext": "Build context URL",
   "tp.kindDevcontainer": "devcontainer.json",
+  "tp.kindOfficial": "MiniBox's official Dockerfile",
   "tp.kindDockerfileHint": "Paste the text",
   "tp.kindGitHint": "Clone, then build",
   "tp.kindContextHint": "Archive from a URL",
@@ -125,5 +128,11 @@ export default {
   "tp.syncStarted": "Copying template",
   "tp.syncStartedText": "Watch the copy in the Tasks panel.",
   "tp.syncFailed": "Couldn't copy template",
+  "tp.official": "Official",
+  "tp.notBuiltHelp": "Not built on any host yet. A box builds it the first time it needs it, or build it now.",
+  "tp.buildOfficial": "Build",
+  "tp.buildHere": "Build here",
+  "tp.officialBuildStarted": "Building official template",
+  "tp.buildsOnUse": "Builds on first use",
   "tp.deleteHostsExtra": "Removes the copy on {hosts}. ",
 };

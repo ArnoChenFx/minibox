@@ -13,6 +13,24 @@
 .dialog.wide {
   width: min(640px, 100%);
 }
+/* A list of editable rows and the button that adds one: the button sits one row gap below the last row and keeps its
+   own width. An empty list takes no space, so the button does not hang below a gap. */
+.row-editor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.row-editor > * {
+  align-self: stretch;
+}
+.row-editor > .btn {
+  align-self: flex-start;
+}
+.row-editor[hidden],
+.row-editor > :empty {
+  display: none;
+}
 .rebuild-mounts {
   display: flex;
   flex-direction: column;

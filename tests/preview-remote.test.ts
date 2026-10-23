@@ -91,7 +91,7 @@ async function bed(overrides: Partial<Config> = {}): Promise<Bed> {
   const app = createApp(testConfig({ labelPrefix: "mbtest", ...overrides }), "0.0.0-test", {
     runtime: local,
     connect: () => edge,
-    checkpointEngine: new FakeCheckpointEngine(local),
+    checkpointEngine: new FakeCheckpointEngine(),
     eventsPath: ":memory:",
   });
   const keys = app.hosts.get().keys;

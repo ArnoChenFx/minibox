@@ -119,6 +119,21 @@ export default {
   "ck.exportStarted": "Export started",
   "ck.exported": "Package downloaded",
   "ck.exportFailed": "Export failed",
+  "ck.copy": "Copy to host",
+  "ck.copyTitle": "Copy “{label}”",
+  "ck.copyDesc":
+    "Makes a copy of this checkpoint on another host, so a box can be forked there. This checkpoint stays where it is.",
+  "ck.copyHostHelp": "The copy is a new checkpoint on that host, with this box's settings and creation time.",
+  "ck.copyHow":
+    "The data moves to the host in a sealed package, which is removed once the host holds the copy. A template the host lacks is copied first.",
+  "ck.copyConfirm": "Copy",
+  "ck.copyStarted": "Copying…",
+  "ck.copied": "Checkpoint copied",
+  "ck.copyFailed": "Copy failed",
+  "ck.reasonCopyLegacy": "A snapshot from before checkpoints cannot be copied to another host.",
+  "ck.reasonCopyEmpty": "This checkpoint holds no volume data, so there is nothing to copy.",
+  "ck.reasonCopySystem":
+    "It includes its system layer, which a copy does not carry yet. Take one without the system layer to copy it.",
   "ck.import": "Import",
   "ck.importTitle": "Import checkpoint",
   "ck.importDesc":

@@ -5,10 +5,13 @@ import { startServer } from "../../src/server";
 import { compileToken, type TokenCreateInput } from "../../src/tokens/model";
 import { createTestApp, TEST_KEY } from "./app";
 import type { FakeRuntime } from "./fake-runtime";
+import type { FakeCheckpointEngine } from "./fake-snapshots";
 
 export interface Harness {
   readonly app: App;
   readonly runtime: FakeRuntime;
+  /** The checkpoint engine every host of the app shares, with each host's repository in it. */
+  readonly checkpoints: FakeCheckpointEngine;
   readonly base: string;
   stop(): void;
 }
@@ -18,13 +21,14 @@ export function startHarness(
   overrides: Partial<Config> = {},
   deps: Pick<AppDeps, "cliBuild" | "notify"> = {},
 ): Harness {
-  const { app, runtime } = createTestApp({ labelPrefix: "mbtest", ...overrides }, undefined, {}, deps);
+  const { app, runtime, checkpoints } = createTestApp({ labelPrefix: "mbtest", ...overrides }, undefined, {}, deps);
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   const server = startServer(app);
   return {
     app,
     runtime,
+    checkpoints,
     base: `http://127.0.0.1:${server.port}`,
     stop: () => {
       server.stop(true);

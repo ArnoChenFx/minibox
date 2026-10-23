@@ -87,6 +87,36 @@ jobs:
           cache-from: type=gha,scope=base-template
       - run: PLATFORM=linux/arm64 scripts/check-box-image.sh minibox-template:base-arm64
 
+  official-templates:
+    name: Official template builds (smoke)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - template: node
+          - template: python
+          - template: go
+          - template: minimal
+            tools: git curl ps tmux jq rg ssh unzip less vim.tiny ping socat
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the ${{ matrix.template }} template for linux/amd64
+        uses: docker/build-push-action@v7
+        with:
+          context: templates/official/${{ matrix.template }}
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: minibox-official:${{ matrix.template }}
+          cache-from: type=gha,scope=official-${{ matrix.template }}
+          cache-to: type=gha,mode=max,scope=official-${{ matrix.template }}
+      - name: Box checks on linux/amd64
+        env:
+          REQUIRED_TOOLS: ${{ matrix.tools }}
+        run: scripts/check-box-image.sh minibox-official:${{ matrix.template }}
+
   agent-image:
     name: Agent image (smoke)
     runs-on: ubuntu-latest

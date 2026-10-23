@@ -62,7 +62,7 @@ beforeAll(async () => {
   const local = new FakeRuntime();
   app = createApp(cfg, "0.0.0-test", {
     runtime: local,
-    checkpointEngine: new FakeCheckpointEngine(local),
+    checkpointEngine: new FakeCheckpointEngine(),
     eventsPath: ":memory:",
   });
   server = startServer(app);

@@ -127,7 +127,28 @@ async function templateSyncCommand(
   return awaitStarted(env, io, started.json, options, (task) => (task.result as { ref: string }).ref);
 }
 
-/** `template create`, `template rebuild` and `template sync`. Templates are built or copied as a task. */
+async function templateBuildOfficialCommand(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+): Promise<number> {
+  const options = parseOptions(argv, ["--host"], OUTPUT_SWITCHES);
+  const [name, ...more] = options.positional;
+  if (!name || more.length > 0) throw new Error("minibox template build-official needs one official template name");
+  const host = options.values.get("--host");
+  const query = host === undefined ? "" : `?host=${encodeURIComponent(host)}`;
+  const started = await request(env, "POST", `/api/templates/official/${encodeURIComponent(name)}/build${query}`);
+  if (started.status >= 400) return fail(io, started.status, started.json, started.text);
+  return awaitStarted(
+    env,
+    io,
+    started.json,
+    options,
+    (task) => (task.result as { template: { ref: string } }).template.ref,
+  );
+}
+
+/** `template create`, `rebuild`, `sync` and `build-official`. Templates are built or copied as a task. */
 export async function templateCommand(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -137,5 +158,6 @@ export async function templateCommand(
   if (sub === "create") return templateCreateCommand(rest, env, io);
   if (sub === "rebuild") return templateRebuildCommand(rest, env, io);
   if (sub === "sync") return templateSyncCommand(rest, env, io);
-  throw new Error("minibox template needs create, rebuild or sync");
+  if (sub === "build-official") return templateBuildOfficialCommand(rest, env, io);
+  throw new Error("minibox template needs create, rebuild, sync or build-official");
 }

@@ -1,11 +1,13 @@
 /**
- * Template copies and port previews across two real engines. Both engines are throwaway `docker:dind` containers on the
- * classic image store. The console's own host is the first, and the second is added as a host of its own over its Unix
- * socket, so every request to it takes the path a remote host takes. The test does not depend on the store the runner's
- * own engine uses: that engine only starts the two containers.
+ * Template copies, checkpoint copies and port previews across two real engines. Both engines are throwaway
+ * `docker:dind` containers on the classic image store. The console's own host is the first, and the second is added as
+ * a host of its own over its Unix socket, so every request to it takes the path a remote host takes. The test does not
+ * depend on the store the runner's own engine uses: that engine only starts the two containers.
  *
  * The test builds a template on each engine, copies one across by hand and on a box create, saves a template from a box
- * on the second engine, and serves an HTTP service and a WebSocket from that box through the relay.
+ * on the second engine, and serves an HTTP service and a WebSocket from that box through the relay. A checkpoint of a
+ * box on the local engine is copied to the second engine, forks there with the files it took, and survives the delete
+ * of its origin. A file written through the API and a terminal session in a box on the second engine reach that engine.
  *
  *   bun run test:docker
  *
@@ -17,7 +19,7 @@
  * new id, and the copy refuses it, so both engines here are on the classic store.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -26,6 +28,7 @@ import Docker from "dockerode";
 
 import { type App, createApp } from "../src/app";
 import { COOKIE_NAME } from "../src/auth";
+import { RESTIC_IMAGE } from "../src/checkpoints/restic";
 import { createDockerRuntime } from "../src/docker/runtime";
 import type { HostCtx } from "../src/host/registry";
 import { labelKeys } from "../src/labels";
@@ -34,7 +37,7 @@ import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
 import type { SocketData } from "../src/ws/socket";
 import { rejectionOf, silenceLogs, TEST_KEY, testConfig } from "./support/app";
-import { call, finishedTask } from "./support/tokens";
+import { call, finishedTask, refused } from "./support/tokens";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
 const SOCKET = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
@@ -50,7 +53,9 @@ const templateRef = (name: string) => `${prefix}-template:${name}`;
 const REMOTE_TEMPLATE = templateRef("pyremote");
 const LOCAL_TEMPLATE = templateRef("pylocal");
 const AUTO_TEMPLATE = templateRef("pyauto");
+const TERMINAL_TEMPLATE = templateRef("pyterm");
 const SAVED_TEMPLATE = templateRef("saved-remote");
+const BASE_TEMPLATE = templateRef("base");
 const runnerDocker = new Docker({ socketPath: SOCKET });
 
 /**
@@ -136,9 +141,19 @@ interface CreatedBox {
   sync?: { taskId: string };
 }
 
+interface MountedBoxJson extends BoxJson {
+  mounts: { path: string; volumeId: string | null }[];
+}
+
 interface TemplateJson {
   ref: string;
   hostId: string;
+}
+
+interface CheckpointJson {
+  id: string;
+  hostId: string;
+  boxName: string | null;
 }
 
 /** One engine this file started: the socket it serves, and a client for it. */
@@ -160,19 +175,40 @@ let labRuntime: Runtime;
 let labDocker: Docker;
 let labHost: HostCtx;
 let web: BoxJson;
+let copied: { source: string; origin: string; copy: string } | null = null;
 
 /** The Dockerfile a test template is built from. It is FROM the image both engines pull, and names where it was built. */
-function dockerfile(builtOn: string): string {
+function dockerfile(builtOn: string, install?: string): string {
   return [
     `FROM ${BASE_IMAGE}`,
     'LABEL minibox.template.uid="1000" minibox.template.gid="1000"',
     `ENV MB_BUILT_ON=${builtOn}`,
+    ...(install ? [`RUN ${install}`] : []),
     "RUN addgroup -g 1000 dev && adduser -D -u 1000 -G dev dev && mkdir -p /workspace && chown dev:dev /workspace",
     "USER dev",
     "WORKDIR /workspace",
     'CMD ["sleep", "infinity"]',
     "",
   ].join("\n");
+}
+
+/**
+ * Builds the base template on `runtime` from the same small Dockerfile as the others. The bundled base takes minutes to
+ * build, and a fork needs only an image labelled as the base, which it sets volume owners with.
+ */
+async function seedBase(runtime: Runtime): Promise<void> {
+  const contextDir = mkdtempSync(join(tmpdir(), `${prefix}-base-`));
+  try {
+    writeFileSync(join(contextDir, "Dockerfile"), dockerfile("local"));
+    await runtime.buildImage({
+      contextDir,
+      dockerfile: "Dockerfile",
+      tag: BASE_TEMPLATE,
+      labels: { [keys.template]: "true", [keys.templateName]: "base" },
+    });
+  } finally {
+    rmSync(contextDir, { recursive: true, force: true });
+  }
 }
 
 /** Polls `check` until it returns a value other than null, and fails once `timeoutMs` has passed. */
@@ -253,6 +289,8 @@ beforeAll(async () => {
   localRuntime = local.runtime;
   labRuntime = lab.runtime;
   labDocker = lab.docker;
+  await Promise.all([localRuntime.pullImage(RESTIC_IMAGE), labRuntime.pullImage(RESTIC_IMAGE)]);
+  await seedBase(localRuntime);
   app = createApp(testConfig({ labelPrefix: prefix, dockerSocket: local.socket }), "0.0.0-test", {
     runtime: localRuntime,
     eventsPath: ":memory:",
@@ -326,6 +364,38 @@ async function startService(boxId: string): Promise<void> {
 async function preview(path: string): Promise<{ status: number; text: string }> {
   const res = await fetch(`${base}${path}`, { headers: { cookie } });
   return { status: res.status, text: await res.text() };
+}
+
+/** The checkpoint a finished task returned. A task that ended without one fails with how it ended. */
+function checkpointFrom(task: { status: string; result?: unknown }): CheckpointJson {
+  const checkpoint = (task.result as { checkpoint?: CheckpointJson } | undefined)?.checkpoint;
+  if (!checkpoint) throw new Error(`the task ended as ${task.status} and returned no checkpoint`);
+  return checkpoint;
+}
+
+/** Runs a shell snippet as the box's user on `host`, and returns what it printed, trimmed. */
+async function shellIn(host: HostCtx, boxId: string, script: string): Promise<string> {
+  const { id } = await getBox(host, boxId);
+  const exec = await host.runtime.startExec(id, {
+    cmd: ["sh", "-c", `${script}; echo MB_DONE`],
+    env: ["TERM=dumb"],
+    workingDir: "/",
+  });
+  let text = "";
+  exec.stream.on("data", (chunk: Buffer) => {
+    text += chunk.toString("utf8");
+  });
+  try {
+    await until(async () => (text.includes("MB_DONE") ? true : null), "the command's output", 30_000);
+  } finally {
+    exec.stream.destroy();
+  }
+  return text.slice(0, text.indexOf("MB_DONE")).replace(/\r/g, "").trim();
+}
+
+function copiedState(): NonNullable<typeof copied> {
+  if (!copied) throw new Error("the copy test did not run");
+  return copied;
 }
 
 describe.skipIf(!enabled)("a second engine over a Unix socket, against a real engine", () => {
@@ -479,6 +549,140 @@ describe.skipIf(!enabled)("a second engine over a Unix socket, against a real en
       });
       expect(await rejectionOf(localRuntime.inspectImage(SAVED_TEMPLATE))).toMatchObject({ kind: "not_found" });
       expect(await holdersOf(SAVED_TEMPLATE)).toEqual(["lab"]);
+    },
+    LONG,
+  );
+
+  test(
+    "a checkpoint of a box on the local engine copies to the second engine, and forks there with the files it took",
+    async () => {
+      const made = await call(base, "/api/boxes", {
+        body: { name: "copy-src", template: LOCAL_TEMPLATE, cpus: 0.5, memoryMb: 128 },
+      });
+      expect(made.status).toBe(201);
+      const source = (made.json as unknown as CreatedBox).box;
+      expect(source).toMatchObject({ name: "copy-src", hostId: "local", running: true });
+      await shellIn(
+        app.hosts.get(),
+        source.boxId,
+        "mkdir -p /workspace/src && echo kept > /workspace/notes.txt && echo 'export const answer = 42' > /workspace/src/answer.ts",
+      );
+
+      const taken = await call(base, `/api/boxes/${source.boxId}/checkpoints`, { body: {} });
+      expect(taken.status).toBe(202);
+      const origin = checkpointFrom(await finishedTask(base, taken.json.taskId ?? ""));
+
+      expect(await holdersOf(BASE_TEMPLATE)).toEqual(["local"]);
+      const copying = await call(base, `/api/checkpoints/${origin.id}/copy`, { body: { host: "lab" } });
+      expect(copying.status).toBe(202);
+      const copyTask = await finishedTask(base, copying.json.taskId ?? "");
+      expect(copyTask).toMatchObject({ status: "succeeded" });
+      expect(await holdersOf(BASE_TEMPLATE)).toEqual(["lab", "local"]);
+      const copy = checkpointFrom(copyTask);
+      expect(copy).toMatchObject({ hostId: "lab", boxName: "copy-src" });
+      expect(copy.id).not.toBe(origin.id);
+      expect((copyTask as { output?: string }).output).toContain("Restoring copy-src on lab");
+      copied = { source: source.boxId, origin: origin.id, copy: copy.id };
+
+      const forking = await call(base, `/api/checkpoints/${copy.id}/fork`, {
+        body: { name: "copy-fork", cpus: 0.5, memoryMb: 128 },
+      });
+      expect(forking.status).toBe(202);
+      const forkTask = await finishedTask(base, forking.json.taskId ?? "");
+      expect(forkTask).toMatchObject({ status: "succeeded" });
+      const fork = (forkTask.result as { box: BoxJson }).box;
+      expect(fork).toMatchObject({ name: "copy-fork", hostId: "lab", running: true });
+      expect(await shellIn(labHost, fork.boxId, "cat /workspace/notes.txt /workspace/src/answer.ts")).toBe(
+        "kept\nexport const answer = 42",
+      );
+    },
+    LONG,
+  );
+
+  test(
+    "the origin stays whole, a copy back or a second copy is refused, and deleting the origin leaves the copy forkable",
+    async () => {
+      const { source, origin, copy } = copiedState();
+      expect(await shellIn(app.hosts.get(), source, "cat /workspace/notes.txt")).toBe("kept");
+      expect((await call(base, `/api/checkpoints/${origin}`)).json).toMatchObject({ checkpoint: { hostId: "local" } });
+
+      const back = await call(base, `/api/checkpoints/${copy}/copy`, { body: { host: "local" } });
+      expect(back.status).toBe(202);
+      expect(await finishedTask(base, back.json.taskId ?? "")).toMatchObject({
+        status: "failed",
+        error: { key: "checkpoint_copy_exists" },
+      });
+
+      const again = await call(base, `/api/checkpoints/${origin}/copy`, { body: { host: "lab" } });
+      expect(refused(again)).toEqual({ status: 409, key: "checkpoint_copy_exists" });
+
+      const deleted = await call(base, `/api/checkpoints/${origin}`, { method: "DELETE" });
+      expect(deleted.status).toBe(202);
+      expect(await finishedTask(base, deleted.json.taskId ?? "")).toMatchObject({ status: "succeeded" });
+
+      const forking = await call(base, `/api/checkpoints/${copy}/fork`, {
+        body: { name: "after-delete", cpus: 0.5, memoryMb: 128 },
+      });
+      expect(forking.status).toBe(202);
+      const forkTask = await finishedTask(base, forking.json.taskId ?? "");
+      expect(forkTask).toMatchObject({ status: "succeeded" });
+      const fork = (forkTask.result as { box: BoxJson }).box;
+      expect(await shellIn(labHost, fork.boxId, "cat /workspace/notes.txt")).toBe("kept");
+    },
+    LONG,
+  );
+
+  test(
+    "a file written through the API and a terminal session on a box of the second engine reach that engine",
+    async () => {
+      const built = await call(base, "/api/templates", {
+        body: {
+          name: "pyterm",
+          host: "lab",
+          source: { kind: "dockerfile", text: dockerfile("lab", "apk add --no-cache tmux") },
+        },
+      });
+      expect(built.status).toBe(202);
+      expect(await finishedTask(base, built.json.taskId ?? "")).toMatchObject({ status: "succeeded" });
+
+      const made = await call(base, "/api/boxes", {
+        body: { name: "remote-term", template: TERMINAL_TEMPLATE, host: "lab", cpus: 0.5, memoryMb: 128 },
+      });
+      expect(made.status).toBe(201);
+      const box = (made.json as unknown as { box: MountedBoxJson }).box;
+      expect(box).toMatchObject({ name: "remote-term", hostId: "lab", running: true });
+      const volume = box.mounts.find((mount) => mount.path === "/workspace")?.volumeId;
+      expect(volume).toBeTruthy();
+
+      const wrote = await call(base, `/api/volumes/${volume}/files/content`, {
+        method: "PUT",
+        body: { path: "notes.txt", content: "written through the api" },
+      });
+      expect(wrote.status).toBe(200);
+      expect(await shellIn(labHost, box.boxId, "cat /workspace/notes.txt")).toBe("written through the api");
+      expect((await call(base, `/api/volumes/${volume}/files/content?path=notes.txt`)).json).toMatchObject({
+        content: "written through the api",
+        type: "file",
+      });
+
+      const started = await call(base, `/api/boxes/${box.boxId}/sessions`, { body: { name: "shell" } });
+      expect(started.status).toBe(200);
+      expect(started.json).toMatchObject({ created: true, session: { name: "shell", takenOver: false } });
+      const typed = await call(base, `/api/boxes/${box.boxId}/sessions/shell/input`, {
+        body: { text: "echo term-$((6*7))\n" },
+      });
+      expect(typed.status).toBe(200);
+      await until(
+        async () => {
+          const screen = (await call(base, `/api/boxes/${box.boxId}/sessions/shell?lines=50`)).json as {
+            lines?: string[];
+          };
+          return screen.lines?.some((line) => line.trim() === "term-42") ? true : null;
+        },
+        "the session to print term-42",
+        30_000,
+      );
+      expect(await containersNamed("remote-term")).toMatchObject([{ State: "running" }]);
     },
     LONG,
   );

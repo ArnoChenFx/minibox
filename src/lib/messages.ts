@@ -44,6 +44,7 @@ export type LabelKey = keyof typeof LABELS;
 export const FEATURES = {
   snapshots: "Snapshots",
   templates: "Templates",
+  checkpoints: "Checkpoints",
 } as const;
 export type FeatureKey = keyof typeof FEATURES;
 
@@ -251,7 +252,7 @@ export const MESSAGES = {
     "The checkpoint repository holds {used} MB, at or above its limit of {limit} MB. Delete checkpoints before rolling back: a rollback takes a safety checkpoint first.",
   checkpoint_held_by_rollback:
     "Checkpoint {id} is the safety point of a rollback that waits for its confirm or undo. Confirm or undo that rollback before deleting it.",
-  checkpoint_exporting: "Checkpoint {id} is being exported. It can be deleted once the export finishes.",
+  checkpoint_exporting: "Checkpoint {id} is being exported or copied. It can be deleted once that finishes.",
   checkpoint_export_legacy: "Snapshot {id} was made before checkpoints. It has no data to export.",
   checkpoint_export_empty: "Checkpoint {id} holds no volume data, so there is nothing to export.",
   checkpoint_export_no_box: "Checkpoint {id} names no box, so a package cannot describe it.",
@@ -265,6 +266,14 @@ export const MESSAGES = {
     "Checkpoint {id} includes its system layer, which a package does not carry yet. Take a checkpoint without the system layer to export it.",
   checkpoint_import_exists:
     "Checkpoint {id} already exists on this instance, so the package was not imported. Delete the existing checkpoint first, or keep this one.",
+  checkpoint_copy_legacy: "Snapshot {id} was made before checkpoints. It cannot be copied to another host.",
+  checkpoint_copy_empty: "Checkpoint {id} holds no volume data, so there is nothing to copy.",
+  checkpoint_copy_system:
+    "Checkpoint {id} includes its system layer, which a copy does not carry yet. Take a checkpoint without the system layer to copy it.",
+  checkpoint_copy_no_box: "Checkpoint {id} names no box, so it cannot be copied to another host.",
+  checkpoint_copy_same_host: "Checkpoint {id} is already on host {host}. Copy it to another host.",
+  checkpoint_copy_exists:
+    "Checkpoint {id} already has a copy on host {host}, so it was not copied again. Delete that copy first to copy it again.",
   package_invalid: "The package is not a valid MiniBox checkpoint package: {reason}",
   package_passphrase_wrong: "The passphrase does not open this package.",
   package_passphrase_invalid:
@@ -360,7 +369,8 @@ export const MESSAGES = {
   host_id_invalid: "A host id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.",
   host_id_reserved: "“{host}” is reserved and cannot be a host id.",
   host_auto_offline: "No host is online to place the box on.",
-  host_auto_no_room: "No online host that holds the template has room for a box of {cpus} CPUs and {memoryMb} MB.",
+  host_auto_no_room:
+    "No online host that holds the template, or can build it, has room for a box of {cpus} CPUs and {memoryMb} MB.",
   host_exists: "A host with the id “{host}” already exists.",
   host_not_found: "Host “{host}” was not found.",
   host_is_local: "The local host cannot be removed.",

@@ -164,7 +164,7 @@ export default {
   "err.checkpoint_capacity_exceeded":
     "检查点仓库已占用 {used} MB，达到或超过 {limit} MB 的上限。请先删除一些检查点再回滚：回滚会先拍摄一个安全检查点。",
   "err.checkpoint_held_by_rollback": "检查点 {id} 是一次等待确认或撤销的回滚的安全点。请先确认或撤销该回滚，再删除它。",
-  "err.checkpoint_exporting": "检查点 {id} 正在导出。导出完成后才能删除。",
+  "err.checkpoint_exporting": "检查点 {id} 正在导出或复制。完成后才能删除。",
   "err.checkpoint_export_legacy": "快照 {id} 早于检查点功能创建，没有可导出的数据。",
   "err.checkpoint_export_empty": "检查点 {id} 没有卷数据，无需导出。",
   "err.checkpoint_export_no_box": "检查点 {id} 没有所属的 Box，无法生成包来描述它。",
@@ -172,6 +172,14 @@ export default {
   "err.checkpoint_export_system":
     "检查点 {id} 包含系统层，而包目前不携带系统层。请先创建一个不含系统层的检查点，再导出它。",
   "err.checkpoint_import_exists": "本实例已存在检查点 {id}，因此没有导入该包。请先删除现有检查点，或保留它。",
+  "err.checkpoint_copy_legacy": "快照 {id} 早于检查点功能创建，无法复制到其他宿主机。",
+  "err.checkpoint_copy_empty": "检查点 {id} 没有卷数据，无需复制。",
+  "err.checkpoint_copy_system":
+    "检查点 {id} 包含系统层，而复制目前不携带系统层。请先创建一个不含系统层的检查点，再复制它。",
+  "err.checkpoint_copy_no_box": "检查点 {id} 没有所属的 Box，无法复制到其他宿主机。",
+  "err.checkpoint_copy_same_host": "检查点 {id} 已在宿主机 {host} 上。请复制到另一台宿主机。",
+  "err.checkpoint_copy_exists":
+    "检查点 {id} 在宿主机 {host} 上已有副本，因此没有再次复制。请先删除该副本，再重新复制。",
   "err.trash_not_found": "找不到回收站条目 {id}。",
   "err.trash_capacity_exceeded":
     "保留这份数据到回收站需要 {need} MB，但检查点仓库已用 {used} MB，上限为 {limit} MB，清空回收站也没能腾出足够空间。请删除部分检查点，或不保留副本直接删除。",
@@ -257,7 +265,7 @@ export default {
   "err.host_id_invalid": "宿主机 id 为 1 至 32 个小写字母、数字或连字符，且以字母开头。",
   "err.host_id_reserved": "「{host}」是保留字，不能作为宿主机 id。",
   "err.host_auto_offline": "没有可以放置 Box 的在线宿主机。",
-  "err.host_auto_no_room": "持有该模板且在线的宿主机都没有容纳 {cpus} 核、{memoryMb} MB 内存 Box 的余量。",
+  "err.host_auto_no_room": "持有该模板、或能够构建它的在线宿主机都没有容纳 {cpus} 核、{memoryMb} MB 内存 Box 的余量。",
   "err.host_exists": "已存在 id 为「{host}」的宿主机。",
   "err.host_not_found": "找不到宿主机「{host}」。",
   "err.host_is_local": "不能移除本机宿主机。",

@@ -50,6 +50,16 @@
   flex-direction: column;
   gap: 16px;
 }
+.box-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+/* An empty child, such as a section that did not mount, takes no gap, so the cards that show stay evenly spaced. */
+.box-stack > :empty {
+  display: none;
+}
 .row {
   display: flex;
   align-items: center;
@@ -84,7 +94,10 @@
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
+/* The detail moves below the figure as a whole when the card is too narrow, so "11.3 GB / 15.6 GB" never breaks inside. */
 .metric-value small {
+  display: inline-block;
+  white-space: nowrap;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-3);

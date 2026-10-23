@@ -14,6 +14,9 @@ export const REASON_KEYS = [
   "ck.reasonPinned",
   "ck.reasonSystem",
   "ck.reasonOtherHost",
+  "ck.reasonCopyLegacy",
+  "ck.reasonCopyEmpty",
+  "ck.reasonCopySystem",
 ];
 
 /** The translation of each reason a scheduled run can be skipped for, as the server names it. */
@@ -65,6 +68,7 @@ export function rowActions(checkpoint, { held = false, pending = false, elsewher
     return {
       fork: ALLOWED,
       export: refused("ck.reasonLegacy"),
+      copy: refused("ck.reasonCopyLegacy"),
       rollback: refused("ck.reasonLegacy"),
       pin: refused("ck.reasonLegacy"),
       delete: ALLOWED,
@@ -81,7 +85,10 @@ export function rowActions(checkpoint, { held = false, pending = false, elsewher
   let exportable = ALLOWED;
   if (checkpoint.data.length === 0) exportable = refused("ck.reasonEmpty");
   else if (checkpoint.system !== null) exportable = refused("ck.reasonSystem");
-  return { fork: ALLOWED, export: exportable, rollback, pin: ALLOWED, delete: remove };
+  let copyable = ALLOWED;
+  if (checkpoint.data.length === 0) copyable = refused("ck.reasonCopyEmpty");
+  else if (checkpoint.system !== null) copyable = refused("ck.reasonCopySystem");
+  return { fork: ALLOWED, export: exportable, copy: copyable, rollback, pin: ALLOWED, delete: remove };
 }
 
 /** Whether a passphrase is one the server will seal a package with: its length, and no edge spaces or line breaks. */

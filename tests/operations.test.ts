@@ -194,6 +194,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "box.rollback.undo": (id) => ({ id, confirm: true, expectedRevision: "2" }),
   "checkpoint.export": () => ({ id: CHECKPOINT_PLACEHOLDER, passphrase: PASSPHRASE }),
   "checkpoint.import": () => ({ id: PACKAGE_PLACEHOLDER, passphrase: PASSPHRASE }),
+  "checkpoint.copy": () => ({ id: CHECKPOINT_PLACEHOLDER, host: "lab" }),
   "checkpoint.schedule.get": (id) => ({ id }),
   "checkpoint.schedule.set": (id) => ({ id, everyHours: 6 }),
   "checkpoint.schedule.clear": (id) => ({ id }),
@@ -220,11 +221,14 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.build": () => ({}),
   "template.sync": () => ({ ref: SYNCED_TEMPLATE_REF, host: "local" }),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
+  "template.official.list": () => ({}),
+  "template.official.build": () => ({ name: "node" }),
   "image.pull": () => ({ ref: "alpine:3.20" }),
   "task.list": () => ({}),
   "task.get": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "task.cancel": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "events.list": () => ({ op: "box.create" }),
+  "overview.get": () => ({}),
   "token.list": () => ({}),
   "token.create": () => ({ name: "ci", preset: "readonly" }),
   "token.revoke": (_boxId, app) => ({
@@ -441,6 +445,10 @@ async function preparedInput(
   if (operation.name === "checkpoint.import") {
     const id = await packageOfCheckpoint(app, ctx, boxId);
     return { input: { id, passphrase: PASSPHRASE } };
+  }
+  if (operation.name === "checkpoint.copy") {
+    await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });
+    return { input: { id: await takeCheckpointOf(app, ctx, boxId), host: "lab" } };
   }
   if (operation.name === "backup.download" || operation.name === "backup.delete") {
     return { input: { id: await backupOf(app, ctx) } };
@@ -1140,6 +1148,7 @@ describe("projections", () => {
       "attach_volume",
       "check_target",
       "clear_checkpoint_schedule",
+      "copy_checkpoint",
       "create_backup",
       "create_volume",
       "delete_backup",
@@ -1171,10 +1180,12 @@ describe("projections", () => {
         .map((tool) => tool.name)
         .toSorted(),
     ).toEqual([
+      "build_official_template",
       "create_template",
       "delete_custom_tool",
       "install_tool",
       "list_custom_tools",
+      "list_official_templates",
       "list_templates",
       "list_tools",
       "pull_image",

@@ -205,6 +205,8 @@ export default {
   "st.hosts": "Hosts",
   "st.hostsHelp":
     "Machines that run boxes. Add a Docker engine over its socket, mutual TLS or SSH. Credentials are stored on this control plane and are never shown again.",
+  "st.hostAccessWarn":
+    "This console is the root entry to every host. Each Docker engine has root on its machine, so anyone who signs in here can act on all of them. Keep the owner key private, and give each agent token only the hosts it needs.",
   "st.hostAdd": "Add host",
   "st.hostAddHelp":
     "An agent dials in from the machine. Or give a Docker endpoint: a socket, mutual TLS or an SSH key login.",
