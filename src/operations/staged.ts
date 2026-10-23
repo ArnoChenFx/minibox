@@ -72,6 +72,7 @@ const StagedPreviewSchema = z.object({
   systemCheckpoint: z.boolean().meta({
     description: "Whether the checkpoint taken first can include the writable layer. Not when the env names a secret.",
   }),
+  stagedAt: z.string().meta({ description: "When the staged changes were last changed. Pass it to apply." }),
 });
 
 const resolveBox = ({ host }: OperationContext, input: { id: string }) => getBox(host, input.id);
@@ -194,6 +195,9 @@ export const boxStagedApply = defineOperation({
     id: boxId(),
     checkpoint: safetyCheckpointFlag(),
     expectedRevision: expectedRevision(),
+    stagedAt: z.string().optional().meta({
+      description: "The preview's `stagedAt`. When given, changes staged after that preview are refused with 412.",
+    }),
   }),
   output: z.object({
     box: BoxSchema,
@@ -211,7 +215,15 @@ export const boxStagedApply = defineOperation({
     detail: (input) => ({ checkpoint: input.checkpoint }),
   },
   run: async (ctx, input, box) =>
-    applyStaged(ctx.host, box, requireRevision(input.expectedRevision), input.checkpoint, ctx.principal.id, ctx.record),
+    applyStaged(
+      ctx.host,
+      box,
+      requireRevision(input.expectedRevision),
+      input.checkpoint,
+      ctx.principal.id,
+      ctx.record,
+      input.stagedAt,
+    ),
 });
 
 export const stagedOperations = [boxStagedGet, boxStagedSet, boxStagedDiscard, boxStagedPreview, boxStagedApply];

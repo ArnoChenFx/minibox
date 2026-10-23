@@ -3469,7 +3469,7 @@
     "path": "/api/boxes/<boxId>/staged/preview",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"preview\":{\"changes\":[{\"field\":\"env\",\"from\":\"[]\",\"to\":\"[{\\\"name\\\":\\\"MODE\\\",\\\"value\\\":\\\"dev\\\",\\\"secretRef\\\":null}]\"},{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"}],\"diff\":[],\"keeps\":[\"volumes\",\"id\",\"name\",\"history\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"containerName\":{\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"},\"revision\":{\"current\":1,\"next\":2},\"sessions\":0,\"systemCheckpoint\":true}}"
+    "body": "{\"preview\":{\"changes\":[{\"field\":\"env\",\"from\":\"[]\",\"to\":\"[{\\\"name\\\":\\\"MODE\\\",\\\"value\\\":\\\"dev\\\",\\\"secretRef\\\":null}]\"},{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"}],\"diff\":[],\"keeps\":[\"volumes\",\"id\",\"name\",\"history\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"containerName\":{\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"},\"revision\":{\"current\":1,\"next\":2},\"sessions\":0,\"systemCheckpoint\":true,\"stagedAt\":\"<time>\"}}"
   },
   {
     "step": "apply the staged changes",

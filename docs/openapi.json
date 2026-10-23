@@ -8257,6 +8257,10 @@
                         "systemCheckpoint": {
                           "type": "boolean",
                           "description": "Whether the checkpoint taken first can include the writable layer. Not when the env names a secret."
+                        },
+                        "stagedAt": {
+                          "type": "string",
+                          "description": "When the staged changes were last changed. Pass it to apply."
                         }
                       },
                       "required": [
@@ -8267,7 +8271,8 @@
                         "containerName",
                         "revision",
                         "sessions",
-                        "systemCheckpoint"
+                        "systemCheckpoint",
+                        "stagedAt"
                       ],
                       "additionalProperties": false
                     }
@@ -8407,6 +8412,10 @@
                   "checkpoint": {
                     "type": "boolean",
                     "description": "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0. Defaults to true."
+                  },
+                  "stagedAt": {
+                    "description": "The preview's `stagedAt`. When given, changes staged after that preview are refused with 412.",
+                    "type": "string"
                   }
                 }
               }

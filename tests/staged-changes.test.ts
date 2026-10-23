@@ -221,6 +221,22 @@ describe("applying staged changes", () => {
     expect(stagedOf(await readStaged(boxId))?.pending).toEqual(["profile"]);
   });
 
+  test("changes staged after the preview are refused with 412, so the owner applies only what they reviewed", async () => {
+    const { boxId, revision } = await makeBox("alpha");
+    await stage(boxId, { profile: "strict" });
+    const reviewed = (await preview(boxId)).json as unknown as { preview: { stagedAt: string } };
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await stage(boxId, { env: [{ name: "LATE", value: "1" }] });
+
+    const stale = await apply(boxId, revision, { checkpoint: false, stagedAt: reviewed.preview.stagedAt });
+    expect(stale.status).toBe(412);
+    expect(stale.json.error?.key).toBe("staged_changed");
+    expect((await getBox(boxId))?.revision).toBe(revision);
+
+    const fresh = (await preview(boxId)).json as unknown as { preview: { stagedAt: string } };
+    expect((await apply(boxId, revision, { checkpoint: false, stagedAt: fresh.preview.stagedAt })).status).toBe(200);
+  });
+
   test("a rebuild that fails keeps the staged changes, so they can be applied again", async () => {
     const { boxId, revision } = await makeBox("alpha");
     await stage(boxId, { profile: "strict" });

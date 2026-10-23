@@ -169,7 +169,7 @@ async function applyStaged(box) {
   try {
     result = await api(`/api/boxes/${enc(fresh.id)}/staged/apply`, {
       method: "POST",
-      body: { checkpoint: ok.checkpoint },
+      body: { checkpoint: ok.checkpoint, stagedAt: preview.stagedAt },
       headers: { "if-match": String(fresh.revision) },
     });
   } catch (err) {

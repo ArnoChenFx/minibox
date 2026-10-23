@@ -29,6 +29,8 @@ export interface StagedPreview extends RebuildPreview {
   sessions: number | null;
   /** Whether a checkpoint taken first can include the writable layer. Not when the box's env names a secret. */
   systemCheckpoint: boolean;
+  /** When the previewed staged changes were last changed. Apply takes it back to refuse changes staged since. */
+  stagedAt: string;
 }
 
 /** A change field that comes from a staged field. The container rename comes with any change and is not staged. */
@@ -189,6 +191,7 @@ export async function previewStaged(
     ...preview,
     sessions: await sessionCount(host, box, terminals),
     systemCheckpoint: systemLayerAllowed(spec.env),
+    stagedAt: record.updatedAt,
   };
 }
 
@@ -205,7 +208,7 @@ async function sessionCount(host: HostCtx, box: Box, terminals: TerminalService 
 /**
  * Rebuilds the box with its staged changes and clears them once the rebuild has succeeded. With `checkpoint`, a
  * checkpoint of the box's data and writable layer is taken first. A failed rebuild leaves the box and the staged
- * changes as they were.
+ * changes as they were. With `stagedAt`, changes staged after that preview are refused with 412 and nothing is done.
  */
 export async function applyStaged(
   host: HostCtx,
@@ -214,10 +217,14 @@ export async function applyStaged(
   checkpoint: boolean,
   principalId: string,
   record?: RecordNote,
+  stagedAt?: string,
 ): Promise<RebuildResult> {
   const view = await readStaged(host, box);
   if (!view) throw new AppError(404, "not_found", msg("staged_none"));
   const staged = requireStaged(host, box);
+  if (stagedAt !== undefined && stagedAt !== staged.updatedAt) {
+    throw new AppError(412, "precondition_failed", msg("staged_changed"), { stagedAt: staged.updatedAt });
+  }
   const result = await rebuildWithSafety(
     host,
     box.id,
