@@ -318,6 +318,20 @@ describe("presets and file access", () => {
     expect(scopeAllowed(sshOnly, "exec")).toBe(false);
   });
 
+  test("volume:delete is its own scope: operator and admin hold it, readonly and sandboxed-agent do not, and volume:write is not enough", () => {
+    expect(requiredScopes("volume:delete")).toEqual(["volume:delete"]);
+    expect(compileToken({ name: "o", preset: "operator" }).scopes).toContain("volume:delete");
+    expect(compileToken({ name: "a", preset: "admin" }).scopes).toContain("volume:delete");
+    expect(compileToken({ name: "s", preset: "sandboxed-agent" }).scopes).not.toContain("volume:delete");
+    expect(compileToken({ name: "r", preset: "readonly" }).scopes).not.toContain("volume:delete");
+    const sandbox = grantsOf(compileToken({ name: "s", preset: "sandboxed-agent" }));
+    const writer = grantsOf(compileToken({ name: "w", scopes: ["volume:write"] }));
+    const deleter = grantsOf(compileToken({ name: "d", scopes: ["volume:delete"] }));
+    expect(scopeAllowed(sandbox, "volume:delete")).toBe(false);
+    expect(scopeAllowed(writer, "volume:delete")).toBe(false);
+    expect(scopeAllowed(deleter, "volume:delete")).toBe(true);
+  });
+
   test("an operation scope that no token scope covers is owner-only, including one the registry does not know", () => {
     for (const scope of ["pool:admin", "pool:read", "token:manage", "template:build", "task:write", "made:up"]) {
       expect(requiredScopes(scope)).toBe("owner");

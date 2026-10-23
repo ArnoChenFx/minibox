@@ -23,6 +23,7 @@ import type { HelperSpec } from "../src/runtime";
 import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
 import { parseTar } from "../src/services/files-tar";
+import { createVolume } from "../src/services/volumes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import { fingerprintOf, runCommand } from "./support/ssh";
 import { mint } from "./support/tokens";
@@ -1521,5 +1522,125 @@ describe("CLI recycle bin", () => {
       expect(sink.err.length).toBeGreaterThan(0);
       expect(sink.out).toBe("");
     }
+  });
+});
+
+type Served = ReturnType<typeof serve>;
+
+async function volumeNames(served: Served): Promise<string[]> {
+  const listed = (await api(served.env.MINIBOX_URL, "GET", "/api/volumes")).json as { volumes: { name: string }[] };
+  return listed.volumes.map((volume) => volume.name);
+}
+
+/** A volume no box uses, dated two days back so the five-minute grace period has passed for it. */
+async function orphanVolume(served: Served, name: string): Promise<void> {
+  const host = served.app.hosts.get();
+  await createVolume(host, { name, role: null, createdBy: null });
+  const record = host.volumes.resolve(name);
+  if (!record) throw new Error(`volume ${name} was not created`);
+  host.volumes.write({ ...record, createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() });
+}
+
+describe("CLI volume prune and delete", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("volume prune lists the orphans, and --yes removes them", async () => {
+    const env = serve();
+    try {
+      await orphanVolume(env, "notes");
+
+      const listed = io();
+      expect(await runCli(["volume", "prune"], env.env, listed, lines([]))).toBe(0);
+      expect(listed.out.split("\n")[0]).toBe("NAME  HOST  POOL  BYTES  LAST USED  FORMER BOX  STATUS");
+      expect(listed.out).toContain("notes  local  local");
+      expect(listed.out).toContain("Nothing was removed. Add --yes to remove these volumes.");
+      expect(await volumeNames(env)).toContain("notes");
+
+      const removed = io();
+      expect(await runCli(["volume", "prune", "--yes"], env.env, removed, lines([]))).toBe(0);
+      expect(removed.out).toMatch(/^notes\s.*removed$/m);
+      expect(await volumeNames(env)).not.toContain("notes");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("volume prune --older-than keeps the volumes used more recently, --json prints the reply, and a bad span exits 1", async () => {
+    const env = serve();
+    try {
+      await orphanVolume(env, "notes");
+
+      const recent = io();
+      expect(await runCli(["volume", "prune", "--older-than", "7d"], env.env, recent, lines([]))).toBe(0);
+      expect(recent.out).toContain("No orphaned volumes.");
+
+      const json = io();
+      expect(await runCli(["volume", "prune", "--older-than", "1d", "--json"], env.env, json, lines([]))).toBe(0);
+      expect(JSON.parse(json.out)).toMatchObject({
+        dryRun: true,
+        olderThan: "1d",
+        volumes: [expect.objectContaining({ name: "notes", status: "candidate" })],
+      });
+
+      const nonsense = io();
+      expect(await runCli(["volume", "prune", "--older-than", "soon"], env.env, nonsense, lines([]))).toBe(1);
+      expect(nonsense.err).toContain("olderThan must be a whole number followed by s, m, h, d or w");
+      expect(await volumeNames(env)).toContain("notes");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("volume delete previews without --yes, then --yes deletes the volumes a box does not use and refuses the rest", async () => {
+    const env = serve();
+    try {
+      expect(await runCli(["box", "create", "alpha", "--cpus", "1", "--memory", "256"], env.env, io(), lines([]))).toBe(
+        0,
+      );
+      await createVolume(env.app.hosts.get(), { name: "notes", role: null, createdBy: null });
+
+      const preview = io();
+      expect(await runCli(["volume", "delete", "alpha-workspace", "notes"], env.env, preview, lines([]))).toBe(0);
+      expect(preview.out.split("\n")[0]).toBe("NAME  HOST  ACTION");
+      expect(preview.out).toContain("alpha-workspace  local  skip (in_use)");
+      expect(preview.out).toContain("notes  local  delete, kept in the recycle bin");
+      expect(preview.out).toContain("Nothing was deleted. Add --yes to delete the volumes that are not skipped.");
+      expect(await volumeNames(env)).toEqual(expect.arrayContaining(["alpha-workspace", "notes"]));
+
+      const applied = io();
+      expect(await runCli(["volume", "delete", "alpha-workspace", "notes", "--yes"], env.env, applied, lines([]))).toBe(
+        1,
+      );
+      expect(applied.out).toContain("alpha-workspace  local  refused  Volume alpha-workspace is in use");
+      expect(applied.out).toContain("notes  local  removed  -");
+      expect(await volumeNames(env)).toContain("alpha-workspace");
+      expect(await volumeNames(env)).not.toContain("notes");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("volume usage errors exit 2 without calling the server", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    const cases: [string[], string][] = [
+      [["volume"], "needs delete or prune"],
+      [["volume", "frobnicate"], "needs delete or prune"],
+      [["volume", "delete"], "needs one or more volume ids or names"],
+      [["volume", "delete", "notes", "--color", "red"], "Unknown option --color"],
+      [["volume", "prune", "notes"], "takes no arguments"],
+      [["volume", "prune", "--older-than"], "--older-than needs a value"],
+      [["volume", "prune", "--color", "red"], "Unknown option --color"],
+    ];
+    for (const [argv, message] of cases) {
+      const sink = io();
+      expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
+      expect(sink.err).toContain(message);
+      expect(sink.out).toBe("");
+    }
+    expect(await runCli(["volume", "prune", "--help"], env, io(), lines([]))).toBe(0);
   });
 });
