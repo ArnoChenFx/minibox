@@ -26,6 +26,7 @@ export default {
   "task.op.template.save": "Save box as template",
   "task.op.template.create": "Build template",
   "task.op.template.rebuild": "Rebuild template",
+  "task.op.template.sync": "Sync template",
   "task.op.image.pull": "Pull image",
   "task.op.box.clone": "Clone repository",
   "task.op.snapshot.create": "Create snapshot",

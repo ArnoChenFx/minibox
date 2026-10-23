@@ -13,7 +13,8 @@ import { boxLabel, inPreviewNamespace, parsePreviewHost, type PreviewHost } from
 import { type PreviewGrant, type PreviewGrants, previewCookie, previewToken, TICKET_PARAM } from "./grants";
 import { boxCookies } from "./headers";
 import type { PreviewTarget } from "./path";
-import { proxyHttp, resolveTarget, upstreamSocketUrl } from "./proxy";
+import { proxyHttp, resolveTarget, upstreamSocket } from "./proxy";
+import type { PreviewRelay } from "./relay";
 import type { PreviewSocketData } from "./ws";
 
 export interface PreviewHostDeps {
@@ -22,6 +23,7 @@ export interface PreviewHostDeps {
   readonly grants: PreviewGrants;
   readonly pulse: ActivityPulse;
   readonly record: RecordNote;
+  readonly relay: PreviewRelay;
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -67,13 +69,14 @@ export async function servePreviewHost(
   const resolved = await resolveTarget(deps.hosts, target, {
     pulse: deps.pulse,
     audit: (hostId, note) => deps.record(hostId, "ui", OWNER, note),
+    relay: deps.relay,
   });
   if (!upgrade) return proxyHttp(req, resolved, "subdomain");
   const cookie = boxCookies(req.headers.get("cookie") ?? "");
   const data: PreviewSocketData = {
     kind: "preview",
     boxId: resolved.box.boxId,
-    pendingUpstream: upstreamSocketUrl(resolved),
+    pendingUpstream: upstreamSocket(resolved),
     pendingHeaders: req.headers,
     release: resolved.release,
     sessionId: grant.sessionId,

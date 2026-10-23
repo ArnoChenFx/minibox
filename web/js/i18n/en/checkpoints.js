@@ -106,6 +106,8 @@ export default {
   "ck.reasonEmpty": "This checkpoint holds no volume data, so there is nothing to export.",
   "ck.reasonHeld": "It is the safety checkpoint of a rollback that is waiting. Confirm or undo that rollback first.",
   "ck.reasonPinned": "Unpin it before deleting it.",
+  "ck.reasonOtherHost": "This checkpoint is on another host. Move the box back there to roll back to it.",
+  "ck.storedOn": "Stored on {host}",
   "ck.reasonSystem":
     "It includes its system layer, which a package does not carry yet. Take one without the system layer to export it.",
   "ck.export": "Export",

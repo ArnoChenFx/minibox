@@ -101,6 +101,12 @@ MiniBox never pulls its own template, snapshot and checkpoint images. They exist
 
 You can also click **Create from this** on a template's card in the **Templates** list. To clone a repository into the box at the same time, see [Clone a repository](boxes.md#clone-a-repository).
 
+## Copy a template to another host
+
+A box on another host needs the template's image on that host. MiniBox copies the image when you create the box there, so you rarely need to copy a template by hand. To copy one ahead of time, click **Copy here** next to a host that lacks it, on the template's card. The copy runs as a **Sync template** task. Each card lists every host, and whether it has the template.
+
+Deleting a template in the console removes its copy on every host. A rebuild changes the copy on the first host that holds the template. The other copies keep their old image until you delete them and copy the template again. A copy needs a target engine that keeps image IDs. See [Limits](hosts.md#limits).
+
 ## Built-in and custom templates
 
 The **Templates** page shows these labels:
@@ -121,7 +127,7 @@ Building a template, rebuilding one and pulling an image are for the owner only.
 - **URLs come from the server.** MiniBox downloads a build context URL itself, and clones a repository from a helper container on the Docker network. Both follow redirects to any address. MiniBox does not block private or loopback addresses, or cloud metadata addresses, so a build can reach any service that the host can reach. Give owner access only to people who should have that reach.
 - **SSH host keys.** An SSH clone accepts the server's host key the first time it connects, because each clone starts with an empty known-hosts file. An attacker on the network could answer that first connection. HTTPS with a token checks the server's certificate instead.
 - **Clone helper.** A clone runs in a helper container with all Linux capabilities dropped and a read-only root file system. It has 512 MB of memory, and it stops after five minutes.
-- **Remote hosts.** Template builds and image pulls run only on the local host. On a remote host they return `501`.
+- **Other hosts.** The console builds templates and pulls images on the local host. To build or pull on another host, use `--host` on the command line, or `?host=` in the API. An agent host does not support templates yet.
 
 ## devcontainer.json
 

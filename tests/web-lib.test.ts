@@ -580,13 +580,13 @@ describe("api errors", () => {
   });
 });
 
-describe("remote host refusals", () => {
-  test("the feature a remote-host refusal names is translated, not left in English", () => {
+describe("agent host refusals", () => {
+  test("the feature an agent-host refusal names is translated, not left in English", () => {
     const failure = {
       error: {
         code: "unsupported",
-        message: "Snapshots is not supported on remote hosts yet.",
-        key: "host_unsupported",
+        message: "Snapshots is not supported on agent hosts yet.",
+        key: "agent_host_unsupported",
         params: { feature: "snapshots" },
       },
     };
@@ -598,7 +598,7 @@ describe("remote host refusals", () => {
         `const api = await import(${JSON.stringify(join(LIB, "api.js"))});`,
       ],
     );
-    expect(message).toBe("远程宿主机暂不支持快照。");
+    expect(message).toBe("Agent 宿主机暂不支持快照。");
   });
 });
 

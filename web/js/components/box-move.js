@@ -29,9 +29,10 @@ export function movePreviewHtml(preview) {
   const starts = preview.starts ? t("mv.starts", { to }) : t("mv.staysStopped");
   const keeps = KEEPS.map((name) => t(`mv.keep.${name}`)).join(", ");
   const loses = LOSES.map((name) => t(`rebuild.lose.${name}`)).join(", ");
+  const checkpointKey = preview.checkpoints === 1 ? "mv.checkpoint" : "mv.checkpoints";
   const checkpoints =
     preview.checkpoints > 0
-      ? `<p class="help">${esc(t("mv.checkpoints", { count: String(preview.checkpoints), from, to }))}</p>`
+      ? `<p class="help">${esc(t(checkpointKey, { count: String(preview.checkpoints), from, to }))}</p>`
       : "";
   return `<div class="rebuild-preview"><strong>${esc(t("mv.previewTitle"))}</strong>
     <div class="help" style="margin-top:8px">${esc(t("mv.volumes"))}</div>

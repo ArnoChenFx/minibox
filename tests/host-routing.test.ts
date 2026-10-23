@@ -107,6 +107,16 @@ describe("box operations go to the host the box lives on", () => {
     expect(edge.callsTo("inspectContainer").length).toBeGreaterThan(0);
   });
 
+  test("the rollback state of a box on another host is read there, so the checkpoints tab can load", async () => {
+    const box = await boxOn("edge", "alpha");
+    const localCalls = local.calls.length;
+
+    const res = await api(`/api/boxes/${box.boxId}/rollback`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ rollback: null });
+    expect(local.calls.length).toBe(localCalls);
+  });
+
   test("a box created without a host is on the local host, which is the default", async () => {
     const box = await boxOn(undefined, "beta");
     expect(box.hostId).toBe("local");
@@ -226,31 +236,46 @@ describe("a host that still holds boxes cannot be removed", () => {
   });
 });
 
-describe("features with no remote form yet answer 501 on a remote host", () => {
-  test("a snapshot of a box on another host is refused before the engine is asked", async () => {
+describe("templates and snapshots are made on the host the box lives on", () => {
+  test("a snapshot of a box on another host is taken by that host's engine", async () => {
     const box = await boxOn("edge", "alpha", { mounts: [] });
     const commits = edge.callsTo("commitContainer").length;
+    const localCalls = local.calls.length;
     const res = await post(`/api/boxes/${box.boxId}/snapshots`, {});
-    expect(res.status).toBe(501);
-    expect(await errorOf(res)).toMatchObject({
-      code: "unsupported",
-      key: "host_unsupported",
-      params: { feature: "snapshots" },
-    });
-    expect(edge.callsTo("commitContainer")).toHaveLength(commits);
+    expect(res.status).toBe(202);
+    await app.tasks.drain();
+    expect(edge.callsTo("commitContainer")).toHaveLength(commits + 1);
+    expect(local.calls.length).toBe(localCalls);
   });
 
-  test("saving a box on another host as a template is refused, not looked up on the local engine", async () => {
+  test("the snapshot list names the host each snapshot is on", async () => {
+    const box = await boxOn("edge", "alpha", { mounts: [] });
+    await post(`/api/boxes/${box.boxId}/snapshots`, {});
+    await app.tasks.drain();
+    const { snapshots } = (await (await api("/api/snapshots")).json()) as { snapshots: { hostId: string }[] };
+    expect(snapshots.map((snapshot) => snapshot.hostId)).toEqual(["edge"]);
+  });
+
+  test("saving a box on another host as a template builds it on that host, not on the local engine", async () => {
     const box = await boxOn("edge", "alpha", { mounts: [] });
     const localCalls = local.calls.length;
     const res = await post(`/api/boxes/${box.boxId}/template`, { name: "edge-tpl" });
-    expect(res.status).toBe(501);
-    expect(await errorOf(res)).toMatchObject({
-      code: "unsupported",
-      key: "host_unsupported",
-      params: { feature: "templates" },
-    });
+    expect(res.status).toBe(202);
+    await app.tasks.drain();
     expect(local.calls.length).toBe(localCalls);
+    const { templates } = (await (await api("/api/templates?host=edge")).json()) as {
+      templates: { ref: string; hostId: string }[];
+    };
+    expect(templates.every((template) => template.hostId === "edge")).toBe(true);
+    expect(templates.map((template) => template.ref)).toContainEqual(expect.stringMatching(/-template:edge-tpl$/));
+  });
+
+  test("the template list shows a template on every host that holds it, once for each host", async () => {
+    const { templates } = (await (await api("/api/templates")).json()) as {
+      templates: { ref: string; hostId: string }[];
+    };
+    const base = templates.filter((template) => template.ref === app.cfg.baseTemplateTag);
+    expect(base.map((template) => template.hostId).toSorted()).toEqual(["edge", "local"]);
   });
 
   test("a box on the local host can still be saved as a template while another host exists", async () => {

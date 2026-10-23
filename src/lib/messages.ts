@@ -40,7 +40,7 @@ export const LABELS = {
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
-/** Features a `host_unsupported` error names. The UI translates each key through `feature.<key>`. */
+/** Features an `agent_host_unsupported` error names. The UI translates each key through `feature.<key>`. */
 export const FEATURES = {
   snapshots: "Snapshots",
   templates: "Templates",
@@ -118,6 +118,8 @@ export const MESSAGES = {
   preview_box_stopped: "Start the box before opening a port preview.",
   preview_no_ip: "The box has no container IP yet. Wait until it is fully started, then try again.",
   preview_upstream_failed: "Could not reach the service inside the box: {detail}",
+  preview_bridge_failed: "Could not open the preview through the box's engine: {detail}",
+  preview_bridge_hint: "A box on another host needs python3 to serve a preview.",
   preview_port_invalid: "Port must be an integer between 1 and 65535.",
   preview_port_not_manual: "That port is not on the manual preview list.",
   preview_unauthorized: "Sign in to open a box port preview.",
@@ -346,7 +348,7 @@ export const MESSAGES = {
   host_key_mismatch:
     "The SSH host key {presented} is not the key you confirmed ({expected}). No credentials were sent to the host.",
   host_unreachable: "The host could not be reached: {detail}",
-  host_unsupported: "{feature} is not supported on remote hosts yet.",
+  agent_host_unsupported: "{feature} is not supported on agent hosts yet.",
   host_endpoint_agent:
     "Agent hosts are paired with a code, not added by endpoint. Create a pairing code, then run the agent on the host.",
   host_not_agent: "Host “{host}” is not an agent host.",
@@ -366,7 +368,7 @@ export const MESSAGES = {
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
     "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
-  preview_remote_unsupported: "Port preview is not supported on remote hosts yet.",
+  preview_agent_unsupported: "Port preview is not supported on agent hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
   move_confirm:

@@ -13,6 +13,7 @@ export const REASON_KEYS = [
   "ck.reasonHeld",
   "ck.reasonPinned",
   "ck.reasonSystem",
+  "ck.reasonOtherHost",
 ];
 
 /** The translation of each reason a scheduled run can be skipped for, as the server names it. */
@@ -56,9 +57,10 @@ const refused = (reason) => Object.freeze({ allowed: false, reason });
 
 /**
  * Each row action, whether it is allowed and, when it is not, the key of the reason. `held` marks the safety point of a
- * rollback that waits for its confirm or undo, and `pending` says whether any rollback waits on the box.
+ * rollback that waits for its confirm or undo, `pending` says whether any rollback waits on the box, and `elsewhere` says
+ * the checkpoint is kept on a host other than the one the box runs on.
  */
-export function rowActions(checkpoint, { held = false, pending = false } = {}) {
+export function rowActions(checkpoint, { held = false, pending = false, elsewhere = false } = {}) {
   if (checkpoint.legacy) {
     return {
       fork: ALLOWED,
@@ -71,6 +73,7 @@ export function rowActions(checkpoint, { held = false, pending = false } = {}) {
   const owned = checkpoint.data.some((layer) => layer.ownership === "owned");
   let rollback = ALLOWED;
   if (pending) rollback = refused("ck.reasonPending");
+  else if (elsewhere) rollback = refused("ck.reasonOtherHost");
   else if (!owned) rollback = refused("ck.reasonNoData");
   let remove = ALLOWED;
   if (held) remove = refused("ck.reasonHeld");

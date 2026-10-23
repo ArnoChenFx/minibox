@@ -15,6 +15,7 @@ import {
 } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime } from "../lib/format.js";
+import { hostOfBox } from "../lib/host-list.js";
 import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -659,14 +660,25 @@ function rowButton(action, checkpoint, iconName, label, rule) {
   return `<button class="btn btn-sm" data-action="${action}" data-id="${esc(checkpoint.id)}"${disabled}>${icon(iconName)}${esc(label)}</button>`;
 }
 
+function hostLine(hosts, hostId) {
+  const name = hosts.find((host) => host.id === hostId)?.name ?? hostId;
+  return `<div class="help">${esc(t("ck.storedOn", { host: name }))}</div>`;
+}
+
+/**
+ * One row. `state` carries the rollback's safety point (`held`, `pending`), the hosts when there are several (`hosts`),
+ * and the host the box runs on (`boxHostId`). A checkpoint kept on another host cannot be rolled back to from here.
+ */
 export function checkpointRowHtml(checkpoint, state) {
-  const rules = rowActions(checkpoint, state);
+  const elsewhere = state.boxHostId !== undefined && checkpoint.hostId !== state.boxHostId;
+  const rules = rowActions(checkpoint, { held: state.held, pending: state.pending, elsewhere });
   const kinds = kindsOf(checkpoint)
     .map((kind) => `<span class="badge ${KIND_CLASS[kind]}">${esc(t(`ck.kind.${kind}`))}</span>`)
     .join(" ");
+  const stored = state.hosts?.length > 1 ? hostLine(state.hosts, checkpoint.hostId) : "";
   return `<tr>
     <td class="subtle">${esc(dateTime(checkpoint.createdAt))}</td>
-    <td><div>${esc(checkpoint.label)}</div>${checkpoint.reason ? `<div class="help">${esc(checkpoint.reason)}</div>` : ""}</td>
+    <td><div>${esc(checkpoint.label)}</div>${checkpoint.reason ? `<div class="help">${esc(checkpoint.reason)}</div>` : ""}${stored}</td>
     <td><div class="ck-badges">${kinds}</div></td>
     <td>${esc(contentsText(checkpoint))}</td>
     <td class="num" style="text-align:right">${esc(bytes(checkpoint.bytes))}</td>
@@ -679,8 +691,11 @@ export function checkpointRowHtml(checkpoint, state) {
     </div></td></tr>`;
 }
 
-/** `schedule` is null when the box has none, and undefined when it could not be read, which hides the line. */
-export function checkpointCardHtml({ rows, pending, usage, schedule }) {
+/**
+ * `schedule` is null when the box has none, and undefined when it could not be read, which hides the line. `hosts` lists
+ * the hosts when there are several, and `boxHostId` is the host the box runs on.
+ */
+export function checkpointCardHtml({ rows, pending, usage, schedule, hosts = [], boxHostId }) {
   const body = rows.length
     ? `<div class="table-wrap"><table class="table"><thead><tr>
         <th>${esc(t("ck.colTaken"))}</th><th>${esc(t("ck.colLabel"))}</th><th>${esc(t("ck.colKind"))}</th>
@@ -688,7 +703,12 @@ export function checkpointCardHtml({ rows, pending, usage, schedule }) {
         <th style="text-align:right">${esc(t("bx.colActions"))}</th>
       </tr></thead><tbody>${rows
         .map((row) =>
-          checkpointRowHtml(row, { held: pending?.safetyCheckpointId === row.id, pending: Boolean(pending) }),
+          checkpointRowHtml(row, {
+            held: pending?.safetyCheckpointId === row.id,
+            pending: Boolean(pending),
+            hosts,
+            boxHostId,
+          }),
         )
         .join("")}</tbody></table></div>`
     : emptyState({ iconName: "history", title: t("ck.empty"), text: esc(t("ck.emptyText")) });
@@ -733,7 +753,14 @@ export function mountCheckpoints(root, { box, refreshBox }) {
       rows = newestFirst(checkpoints.filter((checkpoint) => checkpoint.boxId === current.boxId));
       pending = rollback;
       schedule = plan;
-      root.innerHTML = checkpointCardHtml({ rows, pending, usage, schedule });
+      root.innerHTML = checkpointCardHtml({
+        rows,
+        pending,
+        usage,
+        schedule,
+        hosts: multiHost() ? hostsNow() : [],
+        boxHostId: hostOfBox(current),
+      });
     } catch (err) {
       if (disposed || token !== seq) return;
       root.innerHTML = emptyState({ iconName: "alert", title: t("ck.loadFailed"), text: esc(err.message) });

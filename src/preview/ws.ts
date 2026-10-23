@@ -3,11 +3,20 @@ import type { ServerWebSocket } from "bun";
 import { log } from "../lib/logger";
 import type { ActivityPulse } from "../services/activity-pulse";
 
+/**
+ * Where a preview socket connects. A box on another host is reached through the relay's proxy, and each connection carries
+ * its own single-use token.
+ */
+export interface PreviewSocketUpstream {
+  readonly url: string;
+  readonly proxy?: { readonly url: string; readonly token: string };
+}
+
 export interface PreviewSocketData {
   readonly kind: "preview";
   readonly boxId: string;
   /** Set on the upgrade data before Bun calls `open`; cleared after the upstream is attached. */
-  pendingUpstream?: string;
+  pendingUpstream?: PreviewSocketUpstream;
   pendingHeaders?: Headers;
   upstream?: WebSocket;
   closed?: boolean;
@@ -73,7 +82,7 @@ export function isPreviewSocket(data: object): data is PreviewSocketData {
  */
 export async function attachPreviewUpstream(
   ws: ServerWebSocket<PreviewSocketData>,
-  upstreamUrl: string,
+  target: PreviewSocketUpstream,
   pulse: ActivityPulse,
   requestHeaders: Headers,
 ): Promise<void> {
@@ -88,8 +97,11 @@ export async function attachPreviewUpstream(
         "user-agent": requestHeaders.get("user-agent") ?? "MiniBox-preview",
         ...(ws.data.cookie ? { cookie: ws.data.cookie } : {}),
       },
+      ...(target.proxy
+        ? { proxy: { url: target.proxy.url, headers: { "proxy-authorization": target.proxy.token } } }
+        : {}),
     };
-    upstream = new WebSocket(upstreamUrl, options as unknown as ConstructorParameters<typeof WebSocket>[1]);
+    upstream = new WebSocket(target.url, options as unknown as ConstructorParameters<typeof WebSocket>[1]);
   } catch (e) {
     log.warn("preview.ws_open_failed", { boxId: ws.data.boxId, error: String(e) });
     ws.close(1011, "upstream open failed");
