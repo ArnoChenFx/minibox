@@ -113,6 +113,20 @@ describe("box creation with egress", () => {
     expect(host.specs.read(box.boxId)?.egress).toMatchObject({ mode: "none", subnet: "240.0.1.0/28" });
   });
 
+  test("creates that plan at the same time are given different subnets", async () => {
+    const [first, second] = await Promise.all([
+      newBox("twin-a", { egress: none() }),
+      newBox("twin-b", { egress: none() }),
+    ]);
+
+    const subnets = [subnetOf(first.boxId), subnetOf(second.boxId)]
+      .filter((subnet): subnet is string => subnet !== undefined)
+      .toSorted();
+    expect(subnets).toEqual(["240.0.1.0/28", "240.0.1.16/28"]);
+    expect(egressNetworks()).toHaveLength(2);
+    expect(runtime.hostIngressBlock).toEqual(subnets);
+  });
+
   test("proxy-only gets a proxy on the uplink, joined to the box's network under the proxy alias", async () => {
     const box = await newBox("walled", { egress: proxyOnly(["example.com"]) });
 

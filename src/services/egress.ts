@@ -8,14 +8,7 @@ import { type Ipv4Network, parseIpv4Cidr } from "../lib/cidr";
 import { AppError, badRequest, conflict } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
-import {
-  type ContainerHardening,
-  type ContainerInfo,
-  isRuntimeError,
-  type NetworkSummary,
-  RuntimeError,
-} from "../runtime";
-import type { Box } from "./box-model";
+import { type ContainerHardening, type ContainerInfo, isRuntimeError, RuntimeError } from "../runtime";
 
 const PROXY_MEMORY_BYTES = 256 * 1024 * 1024;
 const PROXY_TMPFS = "rw,noexec,nosuid,nodev,size=16m";
@@ -43,27 +36,38 @@ export function egressEnvOf(egress: BoxEgress | null): string[] {
   return egress?.mode === "proxy-only" ? boxProxyEnv() : [];
 }
 
-/** The egress a new box holds, on a private subnet the pool gives it. Open needs neither a network nor a subnet. */
-export async function planEgress(host: HostCtx, policy: EgressPolicy): Promise<BoxEgress | null> {
+/**
+ * The egress a box holds under a policy, on the private subnet it keeps. A box that already holds a private network keeps
+ * its subnet, so a change of tier reuses that network. Open needs neither a network nor a subnet.
+ */
+export async function planEgress(
+  host: HostCtx,
+  policy: EgressPolicy,
+  current: BoxEgress | null = null,
+): Promise<BoxEgress | null> {
   const mode = policy.mode;
   if (mode === "open") return null;
-  const used = subnetsIn(await host.runtime.listNetworks());
+  const subnet = current?.subnet ?? allocateBoxSubnet(await subnetsInUse(host));
   return {
     mode,
     presets: [...policy.presets],
     domains: [...policy.domains],
     allow: [...policy.allow],
-    subnet: allocateBoxSubnet(used),
+    subnet,
   };
 }
 
-function subnetsIn(networks: readonly NetworkSummary[]): Ipv4Network[] {
-  return networks.flatMap((network) =>
-    network.subnets.flatMap((cidr) => {
-      const parsed = parseIpv4Cidr(cidr);
-      return parsed ? [parsed] : [];
-    }),
-  );
+/**
+ * The subnets a new box must avoid: those of the networks the engine holds, and those the egress specs hold. A stopped box's
+ * network may have been pruned, and its subnet still has to stay its own when it starts again.
+ */
+async function subnetsInUse(host: HostCtx): Promise<Ipv4Network[]> {
+  const held = host.specs.list().flatMap((spec) => (spec.egress ? [spec.egress.subnet] : []));
+  const engine = (await host.runtime.listNetworks()).flatMap((network) => network.subnets);
+  return [...engine, ...held].flatMap((cidr) => {
+    const parsed = parseIpv4Cidr(cidr);
+    return parsed ? [parsed] : [];
+  });
 }
 
 /**
@@ -160,16 +164,21 @@ async function removeProxy(host: HostCtx, proxyId: string): Promise<void> {
 /**
  * Brings a box's egress up before its container starts: its private network, its proxy, and the host firewall rules that
  * keep it off the host. A box on the default network only gets the firewall check. A stopped box is attached to its
- * network again, since a `docker network prune` may have removed the one it last used.
+ * network again, since a `docker network prune` may have removed the one it last used. `previous` is the egress a
+ * rebuild takes the box off, so the firewall drops that source too.
  */
-export async function prepareEgress(host: HostCtx, box: Box): Promise<void> {
+export async function prepareEgress(
+  host: HostCtx,
+  box: EgressBox & { readonly running: boolean },
+  previous: BoxEgress | null = null,
+): Promise<void> {
   const egress = host.specs.read(box.boxId)?.egress;
   if (egress) {
     await ensureEgressNetwork(host, box.boxId, egress);
     if (!box.running) await host.runtime.reattachNetwork(box.id, egressNetworkName(host.prefix, box.boxId));
     await ensureEgressProxy(host, box, egress);
   }
-  if (egress || host.security.blockHostGateway) await syncHostFirewall(host);
+  if (egress || previous || host.security.blockHostGateway) await syncHostFirewall(host);
 }
 
 /** Stops a box's proxies once the box has stopped. A proxy that cannot stop is logged, since the box is already stopped. */
@@ -183,9 +192,14 @@ export async function stopEgressProxies(host: HostCtx, boxId: string): Promise<v
   }
 }
 
+/** Removes every proxy a box has. A box with none makes only the lookup. */
+export async function removeProxies(host: HostCtx, boxId: string): Promise<void> {
+  for (const proxy of await proxiesOf(host, boxId)) await removeProxy(host, proxy.id);
+}
+
 /** Removes a box's proxy and private network. The box's container must be gone first, or the engine keeps the network. */
 export async function removeEgress(host: HostCtx, boxId: string): Promise<void> {
-  for (const proxy of await proxiesOf(host, boxId)) await removeProxy(host, proxy.id);
+  await removeProxies(host, boxId);
   await host.runtime.removeNetwork(egressNetworkName(host.prefix, boxId));
 }
 

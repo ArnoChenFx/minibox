@@ -165,9 +165,14 @@ async function buildBox(
 
   const id = boxIdFor(host, input.id);
   attempt.boxId = id;
-  const egress = await planEgress(host, policy);
-  if (egress) attempt.egress = true;
-  const network = egress ? await ensureEgressNetwork(host, id, egress) : security.network;
+  const reserved = await host.specs.exclusive(async () => {
+    const planned = await planEgress(host, policy);
+    if (!planned) return null;
+    attempt.egress = true;
+    return { egress: planned, network: await ensureEgressNetwork(host, id, planned) };
+  });
+  const egress = reserved?.egress ?? null;
+  const network = reserved?.network ?? security.network;
   const createdBy = input.createdBy ?? "owner";
   const known = new Set<string>([image]);
   const mounts = input.mounts

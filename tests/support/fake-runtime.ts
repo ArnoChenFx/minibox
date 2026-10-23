@@ -5,6 +5,7 @@ import { Duplex, PassThrough, Readable } from "node:stream";
 
 import { templateOwnerOf } from "../../src/labels";
 import { abortError } from "../../src/lib/abort";
+import { ipv4Overlaps, parseIpv4Cidr } from "../../src/lib/cidr";
 import {
   type BuildSpec,
   type CommitSpec,
@@ -1430,6 +1431,18 @@ export class FakeRuntime implements Runtime {
     return { totalBytes: this.disk.totalBytes, freeBytes: this.disk.freeBytes };
   }
 
+  /** Docker refuses a network whose subnet overlaps one another network already holds. */
+  private overlapsAnotherPool(subnet: string): boolean {
+    const wanted = parseIpv4Cidr(subnet);
+    if (wanted === null) return false;
+    return [...this.networks.values()].some((network) =>
+      network.subnets.some((cidr) => {
+        const held = parseIpv4Cidr(cidr);
+        return held !== null && ipv4Overlaps(held, wanted);
+      }),
+    );
+  }
+
   async ensureBridgeNetwork(
     name: string,
     opts: { interContainerComm: boolean; internal?: boolean; subnet?: string },
@@ -1438,6 +1451,9 @@ export class FakeRuntime implements Runtime {
     const internal = opts.internal ?? false;
     const existing = this.networks.get(name);
     if (!existing) {
+      if (opts.subnet !== undefined && this.overlapsAnotherPool(opts.subnet)) {
+        throw new RuntimeError("conflict", "Pool overlaps with other one on this address space");
+      }
       this.seedNetwork(name, opts.interContainerComm ? {} : { [ICC_OPTION]: "false" });
       const created = this.networks.get(name);
       if (created) {

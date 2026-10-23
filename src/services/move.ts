@@ -341,6 +341,7 @@ async function runMove(
       mounts,
       env: spec.env,
       network: spec.network,
+      egress: null,
       profile: spec.profile,
       containerName: name,
     };

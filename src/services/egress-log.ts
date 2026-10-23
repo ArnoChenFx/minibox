@@ -16,29 +16,38 @@ export type EgressRecorder = (hostId: string, note: AuditNote) => void;
  * Reads each egress proxy's log and records one event per connection: what was allowed, what was refused and what failed,
  * with the host, the port and the byte counts. The proxy never writes paths or bodies, so none reach an event.
  */
+interface Follower {
+  readonly controller: AbortController;
+  readonly containerId: string;
+}
+
 export class EgressLog {
-  private readonly followers = new Map<string, AbortController>();
+  private readonly followers = new Map<string, Follower>();
 
   constructor(private readonly record: EgressRecorder) {}
 
-  /** Starts reading a proxy's log. A proxy already read is not read twice. */
+  /**
+   * Starts reading a proxy's log. A proxy already read for the same box is not read twice. A proxy that now serves a
+   * new container, as a rebuilt box's proxy does, is read again so its events name that container.
+   */
   follow(runtime: Runtime, hostId: string, watch: EgressWatch): void {
     const key = followKey(hostId, watch.proxyId);
     const current = this.followers.get(key);
-    if (current && !current.signal.aborted) return;
+    if (current && !current.controller.signal.aborted && current.containerId === watch.containerId) return;
+    current?.controller.abort();
     const controller = new AbortController();
-    this.followers.set(key, controller);
+    this.followers.set(key, { controller, containerId: watch.containerId });
     void this.read(runtime, hostId, key, controller, watch);
   }
 
   stop(hostId: string, proxyId: string): void {
     const key = followKey(hostId, proxyId);
-    this.followers.get(key)?.abort();
+    this.followers.get(key)?.controller.abort();
     this.followers.delete(key);
   }
 
   stopAll(): void {
-    for (const controller of this.followers.values()) controller.abort();
+    for (const { controller } of this.followers.values()) controller.abort();
     this.followers.clear();
   }
 
@@ -60,7 +69,7 @@ export class EgressLog {
         log.warn("egress.log_failed", { host: hostId, proxy: watch.proxyId, error: String(e) });
       }
     } finally {
-      if (this.followers.get(key) === controller) this.followers.delete(key);
+      if (this.followers.get(key)?.controller === controller) this.followers.delete(key);
     }
   }
 }
