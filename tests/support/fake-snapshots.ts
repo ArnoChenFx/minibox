@@ -80,7 +80,7 @@ async function* oneChunk(bytes: Buffer): AsyncIterable<Uint8Array> {
 }
 
 /**
- * The checkpoint engine over the fake runtime's volume files. A snapshot holds a copy of every file but the root, and a
+ * The checkpoint engine over the volume files of each host's fake runtime. A snapshot holds a copy of every file but the root, and a
  * restore writes those files back over the target's, as restic does. Each host has its own repository: a snapshot is
  * found, forgotten and copied only on the host that holds it. `failBackupOf` makes the next backups of a volume fail, to
  * exercise the cleanup of a checkpoint that cannot finish.
@@ -101,8 +101,6 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   usageFails = false;
   private sequence = 0;
   private gate: { promise: Promise<void>; kind: EngineCall | null; blocked: number } | null = null;
-
-  constructor(private readonly runtime: FakeRuntime) {}
 
   /**
    * Holds every backup and restore from now until the returned `release`, or only those of `kind`, so a test can have one
@@ -140,6 +138,11 @@ export class FakeCheckpointEngine implements SnapshotEngine {
     return this.sequence.toString(16).padStart(64, "0");
   }
 
+  /** The fake runtime a host's volumes live in. Each host has one, so a copy's volumes are found on the copy's host. */
+  private runtimeOf(host: HostCtx): FakeRuntime {
+    return host.runtime as FakeRuntime;
+  }
+
   /** The snapshot `snapshotId` on this host's repository. A snapshot of another host is not found here. */
   private heldBy(host: HostCtx, snapshotId: string, action: string): FakeSnapshot {
     const snapshot = this.snapshots.get(snapshotId);
@@ -155,10 +158,11 @@ export class FakeCheckpointEngine implements SnapshotEngine {
 
   async backup(host: HostCtx, volume: string, tags: string[]): Promise<BackupResult> {
     await this.enter("backup");
-    if (!this.runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
+    const runtime = this.runtimeOf(host);
+    if (!runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
     if (this.failBackupOf.has(volume)) throw new RuntimeError("engine", `backup of ${volume} failed`);
     const files = new Map<string, FakeFsEntry>();
-    for (const [path, entry] of this.runtime.filesOf(volume)) {
+    for (const [path, entry] of runtime.filesOf(volume)) {
       if (path !== "") files.set(path, clone(entry));
     }
     const snapshotId = this.nextId();
@@ -170,8 +174,9 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   async restore(host: HostCtx, snapshotId: string, volume: string): Promise<void> {
     await this.enter("restore");
     const snapshot = this.heldBy(host, snapshotId, "restore");
-    if (!this.runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
-    const files = this.runtime.filesOf(volume);
+    const runtime = this.runtimeOf(host);
+    if (!runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
+    const files = runtime.filesOf(volume);
     for (const [path, entry] of snapshot.files) files.set(path, clone(entry));
   }
 
