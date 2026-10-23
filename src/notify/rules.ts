@@ -25,7 +25,7 @@ function commandFailed(detail: Fields): boolean {
 }
 
 /** A failed checkpoint is one the engine or the repository refused, so only a server-side error counts. */
-function checkpointFailed(event: StoredEvent): boolean {
+export function checkpointFailed(event: StoredEvent): boolean {
   return event.status === "error" && (event.error?.status ?? 0) >= 500;
 }
 

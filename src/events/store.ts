@@ -21,6 +21,8 @@ export interface EventFilter {
   readonly run?: string;
   /** Epoch milliseconds. Events at or after this time match. */
   readonly since?: number;
+  /** Only events a token or a box's own agent recorded. The owner's events do not match. */
+  readonly agents?: boolean;
   /**
    * Limits added for a token or a box-self principal. Combined with the caller's filters: a caller can narrow the
    * result, not widen it. Absent for the owner and for an admin token that may read the whole log.
@@ -108,6 +110,7 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX events_run ON events (run, seq);
   CREATE INDEX events_coalesce ON events (coalesce_key, seq);
   `,
+  `CREATE INDEX events_time ON events (ts, seq);`,
 ];
 
 const COLUMNS = `seq, id, ts, duration_ms, status, op, kind, tier, principal_type, principal_id, principal_name,
@@ -208,6 +211,7 @@ function filterSql(filter: EventFilter): { sql: string; params: (string | number
     clauses.push("ts >= ?");
     params.push(filter.since);
   }
+  if (filter.agents) clauses.push("principal_type <> 'owner'");
   if (filter.visible) {
     const visible = visibleSql(filter.visible);
     clauses.push(visible.sql);
@@ -253,6 +257,7 @@ export function matchesFilter(event: StoredEvent, filter: EventFilter): boolean 
   if (filter.status !== undefined && event.status !== filter.status) return false;
   if (filter.run !== undefined && event.run !== filter.run) return false;
   if (filter.since !== undefined && event.ts < filter.since) return false;
+  if (filter.agents && event.principal.type === "owner") return false;
   if (filter.visible && !matchesVisible(event, filter.visible)) return false;
   return true;
 }
@@ -300,7 +305,7 @@ function toEvent(row: Row): StoredEvent {
 }
 
 /** The part of the store that operations may use to read the log. Writes happen only through the audit hook. */
-export type EventReader = Pick<EventStore, "list">;
+export type EventReader = Pick<EventStore, "list" | "recent">;
 
 /**
  * The events database: one SQLite file in WAL mode. Every event is redacted before it is written, so secrets never
@@ -380,6 +385,20 @@ export class EventStore {
     const page = rows.slice(0, options.limit).map(toEvent);
     const more = rows.length > options.limit;
     return { events: page, nextCursor: more ? (page.at(-1)?.seq ?? null) : null };
+  }
+
+  /**
+   * The newest events matching the filter, up to `limit`, by time. Pass `since` with it: the time index then bounds the
+   * read, where `list` pages the whole log by sequence.
+   */
+  recent(filter: EventFilter, limit: number): StoredEvent[] {
+    const scoped = filterSql(filter);
+    return this.db
+      .query<Row, (string | number)[]>(
+        `SELECT ${COLUMNS} FROM events WHERE 1 = 1${scoped.sql} ORDER BY ts DESC, seq DESC LIMIT ?`,
+      )
+      .all(...scoped.params, limit)
+      .map(toEvent);
   }
 
   /** Up to `limit` events matching the filter after `seq`, oldest first. The stream replays from here. */

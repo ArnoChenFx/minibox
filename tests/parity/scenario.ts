@@ -1151,6 +1151,13 @@ async function recordScenario(): Promise<Exchange[]> {
     const copied = (pyBox.json?.sync as { taskId?: string } | undefined)?.taskId;
     await send("read the build that the box create waited for", "GET", `/api/tasks/${copied ?? ""}`);
     await send("list templates after the official builds", "GET", "/api/templates");
+    const reader = await post("create a token that reads the overview", "/api/tokens", {
+      name: "reader",
+      preset: "readonly",
+    });
+    await send("a token reads the overview", "GET", "/api/overview", {
+      headers: { authorization: `Bearer ${String(reader.json?.token ?? "")}` },
+    });
   } finally {
     server.stop(true);
     app.throttle.stop();

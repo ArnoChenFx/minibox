@@ -3350,5 +3350,21 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:python\",\"tags\":[\"mbtest-template:python\"],\"name\":\"python\",\"description\":\"Debian 12 · Python 3.14 · uv · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"official\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:minimal\",\"tags\":[\"mbtest-template:minimal\"],\"name\":\"minimal\",\"description\":\"Debian 12 · git · tmux · jq · ripgrep · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"official\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:sample\",\"tags\":[\"mbtest-template:sample\"],\"name\":\"sample\",\"description\":\"Built from a Dockerfile\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"dockerfile\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:saved\",\"tags\":[\"mbtest-template:saved\"],\"name\":\"saved\",\"description\":\"Saved from box ckbox\",\"source\":\"ckbox\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"}],\"baseTemplate\":\"mbtest-template:base\"}"
+  },
+  {
+    "step": "create a token that reads the overview",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"reader\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+  },
+  {
+    "step": "a token reads the overview",
+    "method": "GET",
+    "path": "/api/overview",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run GET /api/overview.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"GET /api/overview\"}}}"
   }
 ]

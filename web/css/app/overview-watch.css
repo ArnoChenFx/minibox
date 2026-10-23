@@ -1,0 +1,258 @@
+/* Overview watch lists: what agents are doing now, and what needs attention. They sit under the capacity cards, one
+   full-width card each, and each card takes the height of its rows. */
+.watch-grid {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.watch-card .card-head h3 {
+  white-space: nowrap;
+}
+.watch-card .card-head .hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* An empty list is one quiet line. */
+.watch-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+/* With nothing to flag, the attention card is a single line: its title, and "nothing needs attention" at the right. */
+#ovAttentionCard.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+#ovAttentionCard.is-empty .card-head {
+  border-bottom: 0;
+}
+#ovAttentionCard.is-empty .card-head .hint {
+  display: none;
+}
+#ovAttentionCard.is-empty .watch-empty {
+  padding: 0 18px;
+  color: var(--success);
+}
+#ovAttentionCard.is-empty .watch-empty span {
+  color: var(--text-2);
+}
+/* Each row shares the list's columns, so the name, state, actor, command, time and actions line up from row to row:
+   icon | name | state | actor | command | time | actions. */
+.watch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  column-gap: 12px;
+}
+.watch-list {
+  grid-template-columns: max-content max-content max-content minmax(0, max-content) minmax(
+      120px,
+      1fr
+    ) max-content max-content;
+}
+.watch-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: start;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 28px;
+}
+.watch-row:last-child {
+  border-bottom: 0;
+}
+.watch-ico {
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-subtle);
+  color: var(--text-2);
+}
+.watch-ico.fail {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+/* Name, state and actor take three of the list's columns. An attention row has no state, so its subject spans two. */
+.watch-who {
+  grid-column: 2 / span 3;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+.watch-who > * {
+  min-width: 0;
+}
+.watch-who > strong + .watch-actor {
+  grid-column: span 2;
+}
+.watch-state {
+  display: inline-flex;
+}
+.watch-actor {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.watch-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.watch-name:hover {
+  color: var(--accent-text);
+}
+.watch-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.watch-code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.watch-meta {
+  display: inline-flex;
+  flex: none;
+}
+.watch-meta .tag {
+  height: 18px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.watch-more {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.watch-more:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.watch-more .icon {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s;
+}
+.watch-row.is-open .watch-more .icon {
+  transform: rotate(180deg);
+}
+.watch-row .time {
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: right;
+}
+.watch-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+/* The lines a command printed last, opened from the row's toggle. Each line keeps its own row, cut at the edge. */
+.watch-detail {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  line-height: 1.5;
+  font-size: 12px;
+}
+.watch-detail[hidden] {
+  display: none;
+}
+.watch-output {
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow: hidden;
+}
+.watch-output span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+/* An attention row explains itself on the line, cut at the edge; the full text is its title. */
+.watch-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The indicator on a box row. Its badge sets display, so the hidden attribute needs its own rule to hide it. */
+.agent-live[hidden] {
+  display: none;
+}
+/* On a narrow screen a row takes up to three lines: icon, who and time, then the command or text, then the actions. */
+@media (max-width: 640px) {
+  .watch-list {
+    display: block;
+  }
+  .watch-row {
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    grid-template-areas:
+      "ico who time"
+      ". cmd cmd"
+      ". actions actions"
+      ". detail detail";
+    column-gap: 12px;
+    row-gap: 2px;
+  }
+  .watch-ico {
+    grid-area: ico;
+  }
+  .watch-who {
+    grid-area: who;
+    display: flex;
+    gap: 8px;
+    overflow: hidden;
+  }
+  .watch-state:empty {
+    display: none;
+  }
+  .watch-row .time {
+    grid-area: time;
+  }
+  .watch-cmd {
+    grid-area: cmd;
+  }
+  .watch-actions {
+    grid-area: actions;
+    justify-content: flex-start;
+    margin-top: 4px;
+  }
+  .watch-detail {
+    grid-area: detail;
+  }
+}

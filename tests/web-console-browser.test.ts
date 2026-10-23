@@ -12,8 +12,11 @@ import {
 } from "@playwright/test";
 
 import type { App } from "../src/app";
+import { ulid } from "../src/events/ulid";
 import { startServer } from "../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
+import type { FakeRuntime } from "./support/fake-runtime";
+import { call, mint } from "./support/tokens";
 
 /**
  * Chromium comes from PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH or from Playwright's own install (`bunx playwright install
@@ -48,6 +51,7 @@ const currentEntry = (page: Page): Locator => page.locator(".sidebar [aria-curre
 
 describe.skipIf(!executablePath)("the console's top navigation (real browser)", () => {
   let app: App | undefined;
+  let runtime: FakeRuntime | undefined;
   let server: ReturnType<typeof startServer> | undefined;
   let browser: Browser;
   let context: BrowserContext | undefined;
@@ -66,9 +70,17 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     return fresh;
   }
 
+  /** Opens `hash` as a fresh render. Going to the address the page is on is a fragment navigation, which renders nothing. */
+  async function openFresh(hash: string): Promise<void> {
+    await page.goto(`${consoleUrl}/#/boxes`);
+    await page.goto(`${consoleUrl}/${hash}`);
+  }
+  const openOverview = () => openFresh("#/overview");
+
   beforeAll(async () => {
     const harness = createTestApp();
     app = harness.app;
+    runtime = harness.runtime;
     const keys = app.hosts.get().keys;
     harness.runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
     server = startServer(app);
@@ -406,6 +418,273 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
             "活动",
             "设置",
           ]);
+        } finally {
+          await zh.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
+  });
+
+  describe("the overview's watch lists and the box list's indicator", () => {
+    const boxes = { delta: "", echo: "", foxtrot: "", golf: "" };
+    let agent = { id: "", secret: "" };
+    let previousScript: FakeRuntime["execScript"] = null;
+
+    const agentCall = (path: string, body: Record<string, unknown>) =>
+      call(consoleUrl, path, { token: agent.secret, body });
+
+    async function agentBox(name: string): Promise<string> {
+      const created = await agentCall("/api/boxes", { name, cpus: 1, memoryMb: 512 });
+      expect(created.status).toBe(201);
+      if (!created.json.box) throw new Error(`the box ${name} was not created`);
+      return created.json.box.id;
+    }
+
+    async function agentRuns(boxId: string, cmd: string, output: string): Promise<void> {
+      const started = await agentCall(`/api/boxes/${boxId}/exec`, { cmd, background: true });
+      expect(started.status).toBe(200);
+      runtime?.execs.at(-1)?.print(output);
+    }
+
+    async function agentOpens(boxId: string, name: string): Promise<void> {
+      const opened = await agentCall(`/api/boxes/${boxId}/sessions`, { name });
+      expect(opened.status).toBeLessThan(300);
+    }
+
+    beforeAll(async () => {
+      if (!app || !runtime) throw new Error("the console did not start");
+      previousScript = runtime.execScript;
+      runtime.execScript = null;
+      agent = mint(app, { name: "builder", preset: "sandboxed-agent" });
+
+      boxes.echo = await agentBox("echo");
+      await agentRuns(boxes.echo, "tail -f app.log", "one\ntwo\n");
+      boxes.foxtrot = await agentBox("foxtrot");
+      await agentRuns(boxes.foxtrot, "make watch", "built in 2.1s\n");
+      boxes.golf = await agentBox("golf");
+      await agentRuns(boxes.golf, "sleep 600", "");
+      boxes.delta = await agentBox("delta");
+      await agentOpens(boxes.delta, "logs");
+      await agentOpens(boxes.delta, "work");
+      await agentRuns(boxes.delta, "npm run dev", "compiling\nready in 1.2s\nlistening on 3000\n");
+      app.events.append({
+        id: ulid(Date.now()),
+        ts: Date.now(),
+        durationMs: 0,
+        status: "ok",
+        op: "container.oom",
+        kind: "write",
+        principal: { type: "owner", id: "owner", name: "owner" },
+        source: "system",
+        hostId: "local",
+        summary: "container.oom",
+        target: { kind: "box", id: boxes.delta, name: "delta" },
+      });
+    }, 60_000);
+
+    afterAll(() => {
+      if (runtime) runtime.execScript = previousScript;
+    });
+
+    test(
+      "a long list shows three rows, and its toggle shows the rest and collapses again",
+      async () => {
+        await openOverview();
+        const rows = page.locator("#ovProgress .watch-row");
+        const toggle = page.locator("#ovProgress .list-toggle");
+        await webExpect(rows).toHaveCount(3);
+        await webExpect(toggle).toHaveText("Show all (4)");
+        await toggle.click();
+        await webExpect(rows).toHaveCount(4);
+        await webExpect(toggle).toHaveText("Show less");
+        await toggle.click();
+        await webExpect(rows).toHaveCount(3);
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "the overview's box list and recent timeline show five rows each, and their toggles show the rest",
+      async () => {
+        await openOverview();
+        const boxRows = page.locator("#ovBoxes .activity li");
+        const boxToggle = page.locator("#ovBoxes .list-toggle");
+        await webExpect(boxRows).toHaveCount(5);
+        await webExpect(boxToggle).toHaveText(/^Show all \(\d+\)$/);
+        await boxToggle.click();
+        await webExpect(boxToggle).toHaveText("Show less");
+        expect(await boxRows.count()).toBeGreaterThan(5);
+        await boxToggle.click();
+        await webExpect(boxRows).toHaveCount(5);
+
+        const timeline = page.locator("#ovActivity .activity li");
+        const timelineToggle = page.locator("#ovActivity .list-toggle");
+        await webExpect(timeline).toHaveCount(5);
+        await timelineToggle.click();
+        await webExpect(timelineToggle).toHaveText("Show less");
+        expect(await timeline.count()).toBeGreaterThan(5);
+        await timelineToggle.click();
+        await webExpect(timeline).toHaveCount(5);
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "a row names who acted, the command and the session it used, and its last lines open on request",
+      async () => {
+        await openOverview();
+        await page.locator("#ovProgress .list-toggle").click();
+        const row = page.locator("#ovProgress .watch-row", { hasText: "delta" });
+        await webExpect(row.locator(".watch-name")).toHaveText("delta");
+        await webExpect(row.getByText("Token builder")).toBeVisible();
+        await webExpect(row.getByText("Running", { exact: true })).toBeVisible();
+        await webExpect(row.locator(".watch-code")).toHaveText("npm run dev");
+        const more = row.locator(".watch-more");
+        await webExpect(more).toHaveAttribute("aria-expanded", "false");
+        await webExpect(row.locator(".watch-output")).toBeHidden();
+        await more.click();
+        await webExpect(more).toHaveAttribute("aria-expanded", "true");
+        await webExpect(row.locator(".watch-output")).toBeVisible();
+        await webExpect(row.locator(".watch-output span")).toHaveText([
+          "compiling",
+          "ready in 1.2s",
+          "listening on 3000",
+        ]);
+        await webExpect(row.locator(".watch-meta .tag")).toHaveText("Session work");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "Observe and Take over point at the session the agent used, and a row without one observes the box's activity",
+      async () => {
+        await openOverview();
+        await page.locator("#ovProgress .list-toggle").click();
+        const delta = page.locator("#ovProgress .watch-row", { hasText: "delta" });
+        await webExpect(delta.getByRole("link", { name: "Observe" })).toHaveAttribute(
+          "href",
+          `#/boxes/${boxes.delta}/terminal/work`,
+        );
+        await webExpect(delta.getByRole("link", { name: "Take over" })).toHaveAttribute(
+          "href",
+          `#/boxes/${boxes.delta}/terminal/work`,
+        );
+        const echo = page.locator("#ovProgress .watch-row", { hasText: "echo" });
+        await webExpect(echo.getByRole("link", { name: "Observe" })).toHaveAttribute(
+          "href",
+          `#/boxes/${boxes.echo}/activity`,
+        );
+        await webExpect(echo.getByRole("link", { name: "Take over" })).toHaveCount(0);
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "Observe opens the session read-only, with its chip pressed and the agent still driving",
+      async () => {
+        await openOverview();
+        await page.locator("#ovProgress .list-toggle").click();
+        await page
+          .locator("#ovProgress .watch-row", { hasText: "delta" })
+          .getByRole("link", { name: "Observe" })
+          .click();
+        await webExpect(page).toHaveURL(at(`#/boxes/${boxes.delta}/terminal/work`));
+        await webExpect(page.locator('.session-chip[data-session="work"]')).toHaveAttribute("aria-pressed", "true");
+        await webExpect(page.locator('.session-chip[data-session="logs"]')).toHaveAttribute("aria-pressed", "false");
+        await webExpect(page.locator("#tControl")).toContainText("Agent is driving");
+        await webExpect(page.locator('#tControl [data-control="takeover"]')).toBeVisible();
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "Take over gives this page the keyboard, and Return to agent gives it back",
+      async () => {
+        await openFresh(`#/boxes/${boxes.delta}/terminal/work`);
+        const takeOver = page.locator('#tControl [data-control="takeover"]');
+        await webExpect(takeOver).toBeVisible();
+        await takeOver.click();
+        await webExpect(page.locator("#tControl")).toContainText("You are driving");
+        await page.locator('#tControl [data-control="release"]').click();
+        await webExpect(page.locator("#tControl")).toContainText("Agent is driving");
+        await webExpect(takeOver).toBeVisible();
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "picking another session moves the address to it, and a reload opens that session",
+      async () => {
+        await openFresh(`#/boxes/${boxes.delta}/terminal/work`);
+        await webExpect(page.locator('.session-chip[data-session="work"]')).toHaveAttribute("aria-pressed", "true");
+        await page.locator('.session-chip[data-session="logs"]').click();
+        await webExpect(page).toHaveURL(at(`#/boxes/${boxes.delta}/terminal/logs`));
+        await webExpect(page.locator('.session-chip[data-session="logs"]')).toHaveAttribute("aria-pressed", "true");
+        await webExpect(page.locator('.session-chip[data-session="work"]')).toHaveAttribute("aria-pressed", "false");
+        await page.reload();
+        await webExpect(page).toHaveURL(at(`#/boxes/${boxes.delta}/terminal/logs`));
+        await webExpect(page.locator('.session-chip[data-session="logs"]')).toHaveAttribute("aria-pressed", "true");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "a row with no session opens the box's activity, which shows the commands it ran",
+      async () => {
+        await openOverview();
+        await page.locator("#ovProgress .list-toggle").click();
+        await page
+          .locator("#ovProgress .watch-row", { hasText: "echo" })
+          .getByRole("link", { name: "Observe" })
+          .click();
+        await webExpect(page).toHaveURL(at(`#/boxes/${boxes.echo}/activity`));
+        await webExpect(tab(page, "Activity")).toHaveAttribute("aria-selected", "true");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "the attention list names the box that ran out of memory, and View opens its activity",
+      async () => {
+        await openOverview();
+        const row = page.locator("#ovAttention .watch-row", { hasText: "delta" });
+        await webExpect(row.locator("strong")).toHaveText("Out of memory");
+        await webExpect(row.getByText("The box ran out of memory")).toBeVisible();
+        await row.getByRole("link", { name: "View" }).click();
+        await webExpect(page).toHaveURL(at(`#/boxes/${boxes.delta}/activity`));
+        await webExpect(tab(page, "Activity")).toHaveAttribute("aria-selected", "true");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "the Boxes list marks the boxes an agent is working on, and no others",
+      async () => {
+        await page.goto(`${consoleUrl}/#/boxes`);
+        await webExpect(page.locator("[data-activity]:not([hidden])")).toHaveCount(4);
+        await webExpect(page.locator(`[data-activity="${boxes.delta}"]`)).toContainText("Agent active");
+        await webExpect(page.locator("tr", { hasText: "alpha" }).locator("[data-activity]")).toBeHidden();
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "the overview and the Boxes list name their parts in Chinese",
+      async () => {
+        const zh = await signedIn({ locale: "zh-CN", viewport: VIEWPORT });
+        try {
+          const zhPage = await zh.newPage();
+          await zhPage.goto(`${consoleUrl}/#/overview`);
+          await webExpect(zhPage.locator("#ovProgressTitle")).toHaveText("正在进行");
+          await webExpect(zhPage.locator("#ovAttentionTitle")).toHaveText("需要关注");
+          await webExpect(zhPage.locator("#ovAttention")).toContainText("内存耗尽");
+          await zhPage.locator("#ovProgress .list-toggle").click();
+          const row = zhPage.locator("#ovProgress .watch-row", { hasText: "delta" });
+          await webExpect(row.getByRole("link", { name: "观察" })).toBeVisible();
+          await webExpect(row.getByRole("link", { name: "接管" })).toBeVisible();
+          await zhPage.goto(`${consoleUrl}/#/boxes`);
+          await webExpect(zhPage.locator(`[data-activity="${boxes.delta}"]`)).toContainText("Agent 活动中");
         } finally {
           await zh.close();
         }

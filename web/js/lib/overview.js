@@ -1,0 +1,97 @@
+/**
+ * What the overview's watch lists show, where their actions lead, and how often the page reads again. Pure, and it
+ * imports nothing that needs the browser, so a test loads it without the storage the dictionaries and the API client
+ * use.
+ */
+
+const RUNNING_MS = 3000;
+const ACTIVE_MS = 10_000;
+const IDLE_MS = 15_000;
+
+const enc = encodeURIComponent;
+
+/** The dictionary key that names each kind of attention item. */
+export const ATTENTION_LABEL = Object.freeze({
+  "box.oom": "ov.attn.oom",
+  "box.checkpoint_failed": "ov.attn.checkpoint_failed",
+  "box.drift": "ov.attn.drift",
+  "box.rollback_pending": "ov.attn.rollback_pending",
+  "volume.over_limit": "ov.attn.over_limit",
+  "pool.unreachable": "ov.attn.pool_unreachable",
+  "host.offline": "ov.attn.host_offline",
+  "host.disk_low": "ov.attn.disk_low",
+});
+
+/** The page of the storage or host an item names. Box conditions open the box's tab that shows them instead. */
+const PAGE_OF = Object.freeze({
+  "volume.over_limit": "#/storage/volumes",
+  "pool.unreachable": "#/storage/volumes",
+  "host.offline": "#/settings/hosts",
+  "host.disk_low": "#/settings/hosts",
+});
+
+const TAB_OF = Object.freeze({
+  "box.oom": "activity",
+  "box.checkpoint_failed": "checkpoints",
+  "box.rollback_pending": "checkpoints",
+  "box.drift": "resources",
+});
+
+/** Where an attention item leads: the page of the storage or host it names, or the box's tab that shows the condition. */
+export function attentionHref(item) {
+  if (PAGE_OF[item.kind]) return PAGE_OF[item.kind];
+  if (!item.box) return "#/boxes";
+  const tab = TAB_OF[item.kind];
+  return tab ? `#/boxes/${enc(item.box.id)}/${tab}` : `#/boxes/${enc(item.box.id)}`;
+}
+
+/**
+ * The dictionary key and parameters that word an attention item, or null for a kind this console does not know. `bytes`
+ * formats the byte counts of a volume.
+ */
+export function attentionText(item, { bytes = String } = {}) {
+  const p = item.params;
+  switch (item.kind) {
+    case "box.oom":
+      return { key: "ov.text.oom", params: {} };
+    case "box.checkpoint_failed":
+      return p.detail
+        ? { key: "ov.text.checkpoint_failed_detail", params: { detail: p.detail } }
+        : { key: "ov.text.checkpoint_failed", params: {} };
+    case "box.drift":
+      return { key: "ov.text.drift", params: { fields: p.fields } };
+    case "box.rollback_pending":
+      return { key: "ov.text.rollback_pending", params: { checkpoint: p.checkpoint } };
+    case "volume.over_limit":
+      return {
+        key: p.action === "stop" ? "ov.text.over_limit_stop" : "ov.text.over_limit_warn",
+        params: { used: bytes(p.used), limit: bytes(p.limit) },
+      };
+    case "pool.unreachable":
+      return p.detail
+        ? { key: "ov.text.pool_unreachable_detail", params: { detail: p.detail } }
+        : { key: "ov.text.pool_unreachable", params: {} };
+    case "host.offline":
+      return { key: "ov.text.host_offline", params: {} };
+    case "host.disk_low":
+      return { key: "ov.text.disk_low", params: { free: p.free, min: p.min } };
+    default:
+      return null;
+  }
+}
+
+/** How long the page waits before it reads again: sooner while a command runs, since its output changes as it goes. */
+export function pollDelay(overview) {
+  if (overview.inProgress.some((row) => row.command?.running)) return RUNNING_MS;
+  return overview.inProgress.length > 0 ? ACTIVE_MS : IDLE_MS;
+}
+
+/** The in-progress row of each box, by box id. A box has one row, so the lookup is exact. */
+export function activityByBox(inProgress) {
+  return new Map(inProgress.map((row) => [row.box.id, row]));
+}
+
+/** The items on one host, or every item when `host` is empty. */
+export function scopeToHost(items, host, hostOf) {
+  return host ? items.filter((item) => hostOf(item) === host) : items;
+}

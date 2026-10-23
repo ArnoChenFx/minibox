@@ -7,6 +7,7 @@ import common from "./en/common.js";
 import egress from "./en/egress.js";
 import errors from "./en/errors.js";
 import files from "./en/files.js";
+import overview from "./en/overview.js";
 import settings from "./en/settings.js";
 import tasks from "./en/tasks.js";
 import tools from "./en/tools.js";
@@ -23,6 +24,7 @@ export default {
   ...checkpoints,
   ...volumes,
   ...files,
+  ...overview,
   ...tasks,
   ...tools,
   ...trash,

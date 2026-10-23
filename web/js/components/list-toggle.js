@@ -1,7 +1,7 @@
 import { esc } from "../lib/dom.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { isLong, shownItems } from "../lib/list-limit.js";
+import { isLong, LIST_LIMIT, shownItems } from "../lib/list-limit.js";
 
 /**
  * Which lists and groups are toggled, per scope: a page's view or a dialog's overlay. A list is toggled when it is
@@ -31,12 +31,13 @@ export function listToggleHtml(key, { expanded, total }) {
 /**
  * What a list draws: the items to show and the toggle to draw under them. Searching shows every match and no toggle, so
  * clearing the search returns the list to the state the user left it in. `keep` marks items that stay visible while the
- * list is collapsed.
+ * list is collapsed. `limit` is how many items a collapsed list shows, five by default.
  */
-export function limitList(scope, key, items, { keep, searching = false } = {}) {
+export function limitList(scope, key, items, { keep, searching = false, limit = LIST_LIMIT } = {}) {
   const expanded = searching || isToggled(scope, key);
-  const shown = shownItems(items, { expanded, keep });
-  const toggle = !searching && isLong(items.length) ? listToggleHtml(key, { expanded, total: items.length }) : "";
+  const shown = shownItems(items, { expanded, keep, limit });
+  const toggle =
+    !searching && isLong(items.length, limit) ? listToggleHtml(key, { expanded, total: items.length }) : "";
   return { shown, toggle };
 }
 
