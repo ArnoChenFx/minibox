@@ -1,4 +1,5 @@
 import type { BoxProfile } from "../box-profile";
+import type { BoxEgress } from "../egress/policy";
 
 /** On-disk schema version of `DATA_DIR/boxes/<id>.json`. */
 export const SPEC_VERSION = 1;
@@ -91,6 +92,11 @@ export interface BoxSpec {
   };
   profile: BoxProfile | null;
   network: string;
+  /**
+   * The egress policy. Absent on an `open` box, which is the default and the only kind older specs describe. A box that
+   * is not open runs on the private network named by `network`.
+   */
+  egress?: BoxEgress;
   /**
    * Always `no`. Docker must not restart a box on its own: the reconciler applies `lifecycle.desired`
    * (decision D8).

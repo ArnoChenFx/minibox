@@ -248,7 +248,9 @@ export default {
   "err.egress_proxy_failed": "The egress proxy for box {box} could not start: {detail}",
   "err.egress_move_refused":
     "Box {box} has egress {mode}. A box with a network egress policy cannot move to another host yet.",
-  "err.egress_host_gateway_failed": "The host firewall could not be updated for box egress: {detail}",
+  "err.egress_network_conflict":
+    "The private network {network} already exists with other settings. Remove it, then try again.",
+  "err.egress_host_gateway_failed": "The host firewall could not be updated: {detail}",
   "err.egress_needs_network":
     "Egress {mode} and network {network} cannot be set together. Egress sets the box network.",
   "err.cpu_over_host": "CPU cores exceed the host limit ({cores} cores).",

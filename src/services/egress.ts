@@ -1,0 +1,260 @@
+import { hardeningFor } from "../box-profile";
+import { type BoxEgress, type EgressPolicy } from "../egress/policy";
+import { allocateBoxSubnet, UPLINK_SUBNET } from "../egress/pool";
+import { boxProxyEnv, PROXY_ALIAS, PROXY_PROGRAM, proxyEnv } from "../egress/proxy";
+import type { HostCtx } from "../host/registry";
+import { egressNetworkName, egressProxyName, egressUplinkName } from "../labels";
+import { type Ipv4Network, parseIpv4Cidr } from "../lib/cidr";
+import { AppError, badRequest, conflict } from "../lib/errors";
+import { log } from "../lib/logger";
+import { msg } from "../lib/messages";
+import {
+  type ContainerHardening,
+  type ContainerInfo,
+  isRuntimeError,
+  type NetworkSummary,
+  RuntimeError,
+} from "../runtime";
+import type { Box } from "./box-model";
+
+const PROXY_MEMORY_BYTES = 256 * 1024 * 1024;
+const PROXY_TMPFS = "rw,noexec,nosuid,nodev,size=16m";
+const PROXY_STOP_TIMEOUT_SEC = 1;
+
+/** What egress needs to know about a box: its stable id, its container and its name. */
+export interface EgressBox {
+  readonly boxId: string;
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * A box on a private network has no raw sockets. Packets it crafts would still stay on that network, but there is no
+ * reason to let it build them.
+ */
+export function withoutRawSockets(hardening: ContainerHardening): ContainerHardening {
+  const capDrop = [...new Set([...(hardening.capDrop ?? []), "NET_RAW"])];
+  const capAdd = hardening.capAdd?.filter((cap) => cap !== "NET_RAW");
+  return { ...hardening, capDrop, ...(capAdd ? { capAdd } : {}) };
+}
+
+/** The proxy settings a box is created with. A box with `proxy-only` egress uses its proxy for every request. */
+export function egressEnvOf(egress: BoxEgress | null): string[] {
+  return egress?.mode === "proxy-only" ? boxProxyEnv() : [];
+}
+
+/** The egress a new box holds, on a private subnet the pool gives it. Open needs neither a network nor a subnet. */
+export async function planEgress(host: HostCtx, policy: EgressPolicy): Promise<BoxEgress | null> {
+  const mode = policy.mode;
+  if (mode === "open") return null;
+  const used = subnetsIn(await host.runtime.listNetworks());
+  return {
+    mode,
+    presets: [...policy.presets],
+    domains: [...policy.domains],
+    allow: [...policy.allow],
+    subnet: allocateBoxSubnet(used),
+  };
+}
+
+function subnetsIn(networks: readonly NetworkSummary[]): Ipv4Network[] {
+  return networks.flatMap((network) =>
+    network.subnets.flatMap((cidr) => {
+      const parsed = parseIpv4Cidr(cidr);
+      return parsed ? [parsed] : [];
+    }),
+  );
+}
+
+/**
+ * Makes sure the box's private network exists on the subnet its spec names. The network is internal: nothing on it has a
+ * route out of the host. Containers on it may reach each other, which is how a box reaches its own proxy.
+ */
+export async function ensureEgressNetwork(host: HostCtx, boxId: string, egress: BoxEgress): Promise<string> {
+  const name = egressNetworkName(host.prefix, boxId);
+  await ensureNetwork(host, name, { interContainerComm: true, internal: true, subnet: egress.subnet });
+  return name;
+}
+
+async function ensureNetwork(
+  host: HostCtx,
+  name: string,
+  opts: { interContainerComm: boolean; internal?: boolean; subnet?: string },
+): Promise<void> {
+  try {
+    await host.runtime.ensureBridgeNetwork(name, opts);
+  } catch (e) {
+    if (isRuntimeError(e, "conflict")) throw conflict(msg("egress_network_conflict", { network: name }));
+    throw e;
+  }
+}
+
+function proxiesOf(host: HostCtx, boxId: string): Promise<ContainerInfo[]> {
+  return host.runtime.listContainers({ labels: { [host.keys.egressProxy]: boxId } });
+}
+
+/**
+ * Makes sure a proxy-only box has a running proxy. The proxy sits on the shared uplink, which reaches the internet, and it
+ * joins the box's private network under the alias the box's proxy settings name. A proxy that serves another allowlist
+ * is replaced. Box, proxy and uplink are the only things that network can reach.
+ */
+export async function ensureEgressProxy(host: HostCtx, box: EgressBox, egress: BoxEgress): Promise<void> {
+  if (egress.mode !== "proxy-only") return;
+  const uplink = egressUplinkName(host.prefix);
+  try {
+    await ensureNetwork(host, uplink, { interContainerComm: false, subnet: UPLINK_SUBNET });
+    const proxyId = await proxyFor(host, box.boxId, egress);
+    await host.runtime.connectNetwork(proxyId, egressNetworkName(host.prefix, box.boxId), { alias: PROXY_ALIAS });
+    await host.runtime.reattachNetwork(proxyId, uplink);
+    await host.runtime.startContainer(proxyId);
+    host.egress.follow(host.runtime, host.host.id, { proxyId, containerId: box.id, name: box.name });
+  } catch (e) {
+    if (e instanceof AppError) throw e;
+    throw new AppError(502, "docker_error", msg("egress_proxy_failed", { box: box.name, detail: detailOf(e) }));
+  }
+}
+
+async function proxyFor(host: HostCtx, boxId: string, egress: BoxEgress): Promise<string> {
+  const existing = await proxiesOf(host, boxId);
+  for (const proxy of existing) {
+    const env = await host.runtime.inspectEnv(proxy.id);
+    if (proxyEnv(egress.allow).every((entry) => env.includes(entry))) return proxy.id;
+  }
+  for (const proxy of existing) await removeProxy(host, proxy.id);
+  await assertProxyImage(host);
+  const created = await host.runtime.createContainer({
+    name: egressProxyName(host.prefix, boxId),
+    image: host.baseTemplateTag,
+    cmd: ["node", "-e", PROXY_PROGRAM],
+    env: proxyEnv(egress.allow),
+    labels: { [host.keys.egressProxy]: boxId },
+    network: egressUplinkName(host.prefix),
+    restart: "unless-stopped",
+    memoryBytes: PROXY_MEMORY_BYTES,
+    readonlyRootfs: true,
+    tmpfs: { "/tmp": PROXY_TMPFS },
+    hardening: hardeningFor("strict", host.security),
+  });
+  return created.id;
+}
+
+/** The proxy runs the base template, which carries Node. Without that image there is no proxy to start. */
+async function assertProxyImage(host: HostCtx): Promise<void> {
+  try {
+    await host.runtime.inspectImage(host.baseTemplateTag);
+  } catch (e) {
+    if (isRuntimeError(e, "not_found")) throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
+    throw e;
+  }
+}
+
+async function removeProxy(host: HostCtx, proxyId: string): Promise<void> {
+  host.egress.stop(host.host.id, proxyId);
+  try {
+    await host.runtime.removeContainer(proxyId, { force: true });
+  } catch (e) {
+    if (!isRuntimeError(e, "not_found")) throw e;
+  }
+}
+
+/**
+ * Brings a box's egress up before its container starts: its private network, its proxy, and the host firewall rules that
+ * keep it off the host. A box on the default network only gets the firewall check. A stopped box is attached to its
+ * network again, since a `docker network prune` may have removed the one it last used.
+ */
+export async function prepareEgress(host: HostCtx, box: Box): Promise<void> {
+  const egress = host.specs.read(box.boxId)?.egress;
+  if (egress) {
+    await ensureEgressNetwork(host, box.boxId, egress);
+    if (!box.running) await host.runtime.reattachNetwork(box.id, egressNetworkName(host.prefix, box.boxId));
+    await ensureEgressProxy(host, box, egress);
+  }
+  if (egress || host.security.blockHostGateway) await syncHostFirewall(host);
+}
+
+/** Stops a box's proxies once the box has stopped. A proxy that cannot stop is logged, since the box is already stopped. */
+export async function stopEgressProxies(host: HostCtx, boxId: string): Promise<void> {
+  try {
+    for (const proxy of await proxiesOf(host, boxId)) {
+      if (proxy.running) await host.runtime.stopContainer(proxy.id, { timeoutSec: PROXY_STOP_TIMEOUT_SEC });
+    }
+  } catch (e) {
+    log.warn("egress.proxy_stop_failed", { host: host.host.id, box: boxId, error: String(e) });
+  }
+}
+
+/** Removes a box's proxy and private network. The box's container must be gone first, or the engine keeps the network. */
+export async function removeEgress(host: HostCtx, boxId: string): Promise<void> {
+  for (const proxy of await proxiesOf(host, boxId)) await removeProxy(host, proxy.id);
+  await host.runtime.removeNetwork(egressNetworkName(host.prefix, boxId));
+}
+
+/**
+ * Sets the host firewall to the sources that may not reach the host: the private network of each egress box on this host,
+ * and the default network when BLOCK_HOST_GATEWAY is on. A host with neither makes no engine call. A host whose rules are
+ * already what is wanted is not sent them again. A failure is raised, so a box does not start without its block.
+ */
+export async function syncHostFirewall(host: HostCtx): Promise<void> {
+  const sources = await blockedSources(host);
+  try {
+    await host.firewall.apply(sources, (next) => host.runtime.setHostIngressBlock(next));
+  } catch (e) {
+    throw new AppError(502, "docker_error", msg("egress_host_gateway_failed", { detail: detailOf(e) }));
+  }
+}
+
+async function blockedSources(host: HostCtx): Promise<string[]> {
+  const sources = new Set<string>();
+  for (const spec of host.specs.list()) {
+    if (spec.hostId === host.host.id && spec.egress) sources.add(spec.egress.subnet);
+  }
+  if (host.security.blockHostGateway) {
+    const network = (await host.runtime.listNetworks()).find((candidate) => candidate.name === host.security.network);
+    for (const subnet of network?.subnets ?? []) sources.add(subnet);
+  }
+  return [...sources].toSorted();
+}
+
+/**
+ * Removes the proxies and private networks that no box spec names, such as those a crash or a deleted spec left behind.
+ * Each name it removes is returned. A network that still has a container attached is kept and logged.
+ */
+export async function sweepEgress(host: HostCtx): Promise<string[]> {
+  const prefix = `${host.prefix}-egress-`;
+  const uplink = egressUplinkName(host.prefix);
+  const networks = (await host.runtime.listNetworks()).filter((network) => network.name.startsWith(prefix));
+  // A proxy is only ever created after the uplink exists, so a host with no egress network has no proxy either.
+  if (networks.length === 0) return [];
+
+  const specs = host.specs.list();
+  const boxIds = new Set(specs.map((spec) => spec.id));
+  const wanted = new Set(specs.flatMap((spec) => (spec.egress ? [egressNetworkName(host.prefix, spec.id)] : [])));
+  const removed: string[] = [];
+
+  for (const container of await host.runtime.listContainers({ labels: {} })) {
+    const owner = container.labels[host.keys.egressProxy];
+    if (owner === undefined || boxIds.has(owner)) continue;
+    try {
+      await removeProxy(host, container.id);
+      removed.push(container.name);
+    } catch (e) {
+      log.warn("egress.sweep_failed", { host: host.host.id, container: container.name, error: String(e) });
+    }
+  }
+
+  for (const network of networks) {
+    if (network.name === uplink || wanted.has(network.name)) continue;
+    try {
+      await host.runtime.removeNetwork(network.name);
+      removed.push(network.name);
+    } catch (e) {
+      log.warn("egress.sweep_failed", { host: host.host.id, network: network.name, error: String(e) });
+    }
+  }
+  return removed;
+}
+
+function detailOf(e: unknown): string {
+  if (e instanceof RuntimeError) return e.detail;
+  return e instanceof Error ? e.message : String(e);
+}

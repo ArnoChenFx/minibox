@@ -1,5 +1,6 @@
 import type { BoxProfile } from "../box-profile";
 import type { TrashRef } from "../checkpoints/types";
+import type { EgressPolicy } from "../egress/policy";
 import type { AuditNote } from "../events/types";
 import type { ContainerStats } from "../runtime";
 import type { BoxMount, BoxEnv, DesiredState, StopReason, BoxRecovery } from "../specs/types";
@@ -31,6 +32,8 @@ export interface CreateBoxInput {
   tools?: string[];
   /** Runs in the box's init session at every start. Absent means none. Templates and snapshots never pass one. */
   startupCommand?: string;
+  /** The checked egress policy. Absent, like `open`, keeps the box on the default network. */
+  egress?: EgressPolicy;
 }
 
 export interface BoxUpdate {
@@ -60,6 +63,11 @@ export interface Box {
   profile: BoxProfile | null;
   /** Boxes created before profiles stay on the engine's default `bridge` network. */
   network: string;
+  /**
+   * The egress policy, present only when the box is not `open`. An open box, the default, reports none, so its record is
+   * the same as before egress existed. A box with another mode runs on its own private network.
+   */
+  egress?: EgressPolicy;
   /** Observed on the container. A difference from the spec is reported in `drift`. */
   cpus: number | null;
   memory: number | null;

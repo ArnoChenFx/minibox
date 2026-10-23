@@ -60,8 +60,44 @@ export interface EgressPolicy {
 
 export const OPEN_EGRESS: EgressPolicy = { mode: "open", presets: [], domains: [], allow: [] };
 
+/** The egress a box holds, as its spec and its container label record it. An open box holds none. */
+export interface BoxEgress extends Omit<EgressPolicy, "mode"> {
+  mode: Exclude<EgressMode, "open">;
+  /** The box's private network. The host firewall keeps the box from reaching the host through it. */
+  subnet: string;
+}
+
 export function isEgressPreset(value: string): value is EgressPreset {
   return (EGRESS_PRESETS as readonly string[]).includes(value);
+}
+
+export function egressPolicyOf(egress: BoxEgress): EgressPolicy {
+  return {
+    mode: egress.mode,
+    presets: [...egress.presets],
+    domains: [...egress.domains],
+    allow: [...egress.allow],
+  };
+}
+
+const isStrings = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+/** Reads the record a container label or a spec holds. Anything that is not a complete egress record is null. */
+export function parseBoxEgress(text: string | undefined): BoxEgress | null {
+  if (!text) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const { mode, presets, domains, allow, subnet } = value as Record<string, unknown>;
+  if (mode !== "none" && mode !== "proxy-only") return null;
+  if (!isStrings(presets) || !presets.every((preset) => isEgressPreset(preset))) return null;
+  if (!isStrings(domains) || !isStrings(allow) || typeof subnet !== "string") return null;
+  return { mode, presets: presets as EgressPreset[], domains, allow, subnet };
 }
 
 /**

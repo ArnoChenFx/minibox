@@ -1,9 +1,15 @@
+import { type EgressPolicy, egressPolicyOf } from "../egress/policy";
 import type { HostCtx } from "../host/registry";
 import type { ContainerInfo } from "../runtime";
 import { detectDrift } from "../specs/drift";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { poolsUsed } from "../volumes/engine";
 import type { Box, BoxMountView } from "./boxes";
+
+/** Only a box that is not open reports its egress policy, so an open box's record is the same as before egress existed. */
+function egressFieldOf(spec: BoxSpec): { egress?: EgressPolicy } {
+  return spec.egress ? { egress: egressPolicyOf(spec.egress) } : {};
+}
 
 function workspaceVolume(spec: BoxSpec): string {
   const workspace = spec.mounts.find((mount) => mount.path === "/workspace");
@@ -60,6 +66,7 @@ export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): B
     template: spec.template.ref,
     profile: spec.profile,
     network: info.network,
+    ...egressFieldOf(spec),
     cpus: info.cpus,
     memory: info.memoryBytes,
     pids: info.pidsLimit,
@@ -109,6 +116,7 @@ export function unreachableBox(host: HostCtx, spec: BoxSpec): Box {
     template: spec.template.ref,
     profile: spec.profile,
     network: spec.network,
+    ...egressFieldOf(spec),
     cpus: null,
     memory: null,
     pids: null,

@@ -8,6 +8,8 @@ import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
 import { type Runtime, RuntimeError } from "../runtime";
 import { SecretStore } from "../secrets/store";
 import { ActivityPulse } from "../services/activity-pulse";
+import { EgressFirewall, FirewallStore } from "../services/egress-firewall";
+import { EgressLog } from "../services/egress-log";
 import { BoxPower } from "../services/power";
 import { StartupLaunches } from "../services/startup";
 import { SpecStore } from "../specs/store";
@@ -39,6 +41,8 @@ export interface HostSecurity {
   pidsLimit: number;
   runtime: string | null;
   network: string;
+  /** Keeps boxes on the default network off the host. See `BLOCK_HOST_GATEWAY`. */
+  blockHostGateway: boolean;
 }
 
 /** What a host can give to boxes. Null where the engine does not report the figure. */
@@ -97,6 +101,10 @@ export interface HostCtx {
   capacityPolicy: CapacityPolicy;
   /** The host disk's free-space floor. See `HOST_DISK_MIN_FREE_PERCENT`. */
   diskPolicy: DiskPolicy;
+  /** Reads the egress proxies' logs and records what they allow and refuse. One is shared by every host. */
+  egress: EgressLog;
+  /** The source lists this host's firewall was last set to, for the egress block. Each host keeps its own. */
+  firewall: EgressFirewall;
   /** CPU and memory a single box may take on this host. The local host reads the machine, others read the engine. */
   capacity(): Promise<HostCapacity>;
   /** True when the control plane holds more than one host. Box payloads name their host only then. */
@@ -113,6 +121,10 @@ export interface SharedStores {
   readonly checkpoints: CheckpointStore;
   readonly checkpointEngine: SnapshotEngine;
   readonly multiHost: () => boolean;
+  /** Defaults to a log that records nothing. The app passes the one that writes events. */
+  readonly egress?: EgressLog;
+  /** Defaults to a store that is kept in memory. The app keeps it under `DATA_DIR`. */
+  readonly firewall?: FirewallStore;
 }
 
 export interface HostIdentity {
@@ -134,6 +146,8 @@ export interface LocalHostOptions {
   readonly secrets?: SecretStore;
   /** Defaults to a control plane with one host. The app passes the registry's count. */
   readonly multiHost?: () => boolean;
+  readonly egress?: EgressLog;
+  readonly firewall?: FirewallStore;
 }
 
 /** The host every box has when no other is configured. Its runtime is passed in, so a test can supply a fake. */
@@ -160,6 +174,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
       pidsLimit: cfg.boxPidsLimit,
       runtime: cfg.containerRuntime,
       network: boxNetworkName(cfg.labelPrefix),
+      blockHostGateway: cfg.blockHostGateway,
     },
     monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory, shared.live),
     sampler: new HostSampler(
@@ -184,6 +199,8 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
     startup: new StartupLaunches(),
     capacityPolicy: { overcommit: cfg.hostOvercommit },
     diskPolicy: { minFreePercent: cfg.hostDiskMinFreePercent },
+    egress: shared.egress ?? new EgressLog(() => undefined),
+    firewall: new EgressFirewall(identity.id, shared.firewall ?? new FirewallStore(null)),
     capacity: async () => {
       if (identity.transport !== "local") return engineCapacity(runtime);
       const metrics = await ctx.monitor.snapshot();
@@ -225,6 +242,8 @@ export function createLocalHost(
       checkpoints: options.checkpoints ?? new CheckpointStore(cfg.dataDir),
       checkpointEngine: options.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir }),
       multiHost: options.multiHost ?? (() => false),
+      egress: options.egress,
+      firewall: options.firewall,
     },
     {
       id: options.id ?? LOCAL_HOST_ID,
