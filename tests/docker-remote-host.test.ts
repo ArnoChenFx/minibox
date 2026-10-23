@@ -7,7 +7,7 @@
  * The test builds a template on each engine, copies one across by hand and on a box create, saves a template from a box
  * on the second engine, and serves an HTTP service and a WebSocket from that box through the relay. A checkpoint of a
  * box on the local engine is copied to the second engine, forks there with the files it took, and survives the delete
- * of its origin.
+ * of its origin. A file written through the API and a terminal session in a box on the second engine reach that engine.
  *
  *   bun run test:docker
  *
@@ -53,6 +53,7 @@ const templateRef = (name: string) => `${prefix}-template:${name}`;
 const REMOTE_TEMPLATE = templateRef("pyremote");
 const LOCAL_TEMPLATE = templateRef("pylocal");
 const AUTO_TEMPLATE = templateRef("pyauto");
+const TERMINAL_TEMPLATE = templateRef("pyterm");
 const SAVED_TEMPLATE = templateRef("saved-remote");
 const BASE_TEMPLATE = templateRef("base");
 const runnerDocker = new Docker({ socketPath: SOCKET });
@@ -140,6 +141,10 @@ interface CreatedBox {
   sync?: { taskId: string };
 }
 
+interface MountedBoxJson extends BoxJson {
+  mounts: { path: string; volumeId: string | null }[];
+}
+
 interface TemplateJson {
   ref: string;
   hostId: string;
@@ -173,11 +178,12 @@ let web: BoxJson;
 let copied: { source: string; origin: string; copy: string } | null = null;
 
 /** The Dockerfile a test template is built from. It is FROM the image both engines pull, and names where it was built. */
-function dockerfile(builtOn: string): string {
+function dockerfile(builtOn: string, install?: string): string {
   return [
     `FROM ${BASE_IMAGE}`,
     'LABEL minibox.template.uid="1000" minibox.template.gid="1000"',
     `ENV MB_BUILT_ON=${builtOn}`,
+    ...(install ? [`RUN ${install}`] : []),
     "RUN addgroup -g 1000 dev && adduser -D -u 1000 -G dev dev && mkdir -p /workspace && chown dev:dev /workspace",
     "USER dev",
     "WORKDIR /workspace",
@@ -622,6 +628,61 @@ describe.skipIf(!enabled)("a second engine over a Unix socket, against a real en
       expect(forkTask).toMatchObject({ status: "succeeded" });
       const fork = (forkTask.result as { box: BoxJson }).box;
       expect(await shellIn(labHost, fork.boxId, "cat /workspace/notes.txt")).toBe("kept");
+    },
+    LONG,
+  );
+
+  test(
+    "a file written through the API and a terminal session on a box of the second engine reach that engine",
+    async () => {
+      const built = await call(base, "/api/templates", {
+        body: {
+          name: "pyterm",
+          host: "lab",
+          source: { kind: "dockerfile", text: dockerfile("lab", "apk add --no-cache tmux") },
+        },
+      });
+      expect(built.status).toBe(202);
+      expect(await finishedTask(base, built.json.taskId ?? "")).toMatchObject({ status: "succeeded" });
+
+      const made = await call(base, "/api/boxes", {
+        body: { name: "remote-term", template: TERMINAL_TEMPLATE, host: "lab", cpus: 0.5, memoryMb: 128 },
+      });
+      expect(made.status).toBe(201);
+      const box = (made.json as unknown as { box: MountedBoxJson }).box;
+      expect(box).toMatchObject({ name: "remote-term", hostId: "lab", running: true });
+      const volume = box.mounts.find((mount) => mount.path === "/workspace")?.volumeId;
+      expect(volume).toBeTruthy();
+
+      const wrote = await call(base, `/api/volumes/${volume}/files/content`, {
+        method: "PUT",
+        body: { path: "notes.txt", content: "written through the api" },
+      });
+      expect(wrote.status).toBe(200);
+      expect(await shellIn(labHost, box.boxId, "cat /workspace/notes.txt")).toBe("written through the api");
+      expect((await call(base, `/api/volumes/${volume}/files/content?path=notes.txt`)).json).toMatchObject({
+        content: "written through the api",
+        type: "file",
+      });
+
+      const started = await call(base, `/api/boxes/${box.boxId}/sessions`, { body: { name: "shell" } });
+      expect(started.status).toBe(200);
+      expect(started.json).toMatchObject({ created: true, session: { name: "shell", takenOver: false } });
+      const typed = await call(base, `/api/boxes/${box.boxId}/sessions/shell/input`, {
+        body: { text: "echo term-$((6*7))\n" },
+      });
+      expect(typed.status).toBe(200);
+      await until(
+        async () => {
+          const screen = (await call(base, `/api/boxes/${box.boxId}/sessions/shell?lines=50`)).json as {
+            lines?: string[];
+          };
+          return screen.lines?.some((line) => line.trim() === "term-42") ? true : null;
+        },
+        "the session to print term-42",
+        30_000,
+      );
+      expect(await containersNamed("remote-term")).toMatchObject([{ State: "running" }]);
     },
     LONG,
   );
