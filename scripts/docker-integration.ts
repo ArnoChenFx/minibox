@@ -2,8 +2,8 @@
  * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-checkpoint.test.ts,
  * tests/docker-sessions.test.ts, tests/docker-startup-command.test.ts, tests/docker-ssh.test.ts,
  * tests/docker-templates.test.ts, tests/docker-declared-templates.test.ts, tests/docker-tools.test.ts,
- * tests/docker-hosts.test.ts, tests/docker-move.test.ts, tests/docker-agent.test.ts, tests/docker-files.test.ts and
- * tests/docker-trash.test.ts) against the local Docker engine, one file per process.
+ * tests/docker-hosts.test.ts, tests/docker-remote-host.test.ts, tests/docker-move.test.ts, tests/docker-agent.test.ts,
+ * tests/docker-files.test.ts and tests/docker-trash.test.ts) against the local Docker engine, one file per process.
  *
  *   bun run test:docker
  *
@@ -13,7 +13,8 @@
  *
  * Environment: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20). The SSH test
  * builds its box image on debian:bookworm-slim, and the tools test builds its box from templates/base on
- * node:26-bookworm-slim. Those base images are pulled here too when the engine does not have them.
+ * node:26-bookworm-slim. The remote-host test starts two docker:dind engines of its own and builds its templates on
+ * python:3.12-alpine. Those images are pulled here too when the engine does not have them.
  */
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
@@ -26,6 +27,9 @@ const image = process.env.MINIBOX_TEST_IMAGE ?? "alpine:3.20";
 const SSH_FIXTURE_BASE = "debian:bookworm-slim";
 /** The FROM image of templates/base/Dockerfile. A build pulls it anyway, so this only moves the pull earlier. */
 const TEMPLATE_BASE = "node:26-bookworm-slim";
+/** The engine image of tests/docker-remote-host.test.ts, and the base of the templates that test builds on both engines. */
+const SECOND_ENGINE_IMAGE = "docker:dind";
+const REMOTE_TEMPLATE_BASE = "python:3.12-alpine";
 const prefix = `mbit${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
 
 const lines = (text: string) => [
@@ -73,7 +77,16 @@ async function preflight(): Promise<void> {
       { cause: e },
     );
   }
-  for (const ref of new Set([image, RESTIC_IMAGE, SSH_FIXTURE_BASE, TEMPLATE_BASE])) await ensureImage(ref);
+  for (const ref of new Set([
+    image,
+    RESTIC_IMAGE,
+    SSH_FIXTURE_BASE,
+    TEMPLATE_BASE,
+    SECOND_ENGINE_IMAGE,
+    REMOTE_TEMPLATE_BASE,
+  ])) {
+    await ensureImage(ref);
+  }
 }
 
 const TEST_FILES = [
@@ -86,6 +99,7 @@ const TEST_FILES = [
   "tests/docker-declared-templates.test.ts",
   "tests/docker-tools.test.ts",
   "tests/docker-hosts.test.ts",
+  "tests/docker-remote-host.test.ts",
   "tests/docker-move.test.ts",
   "tests/docker-agent.test.ts",
   "tests/docker-files.test.ts",
@@ -122,7 +136,7 @@ async function runTests(): Promise<number> {
 /** Removes everything this run made, containers first so that images and volumes are no longer in use. */
 async function sweep(): Promise<void> {
   const containers = lines(await docker(["ps", "-aq", "--filter", `label=${prefix}`]));
-  if (containers.length > 0) await docker(["rm", "-f", ...containers]);
+  if (containers.length > 0) await docker(["rm", "-f", "-v", ...containers]);
 
   const images = [
     ...lines(await docker(["images", "-q", "--filter", `label=${prefix}.snapshot`])),
