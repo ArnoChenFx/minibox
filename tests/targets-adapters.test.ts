@@ -3,15 +3,13 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { utils } from "ssh2";
-
 import { TargetFailure } from "../src/targets/errors";
 import { openSession } from "../src/targets/open";
 import { openS3Session } from "../src/targets/s3";
 import type { SftpConnection, S3Connection, TargetSession } from "../src/targets/session";
 import { silenceLogs } from "./support/app";
 import { type S3Double, startS3Double } from "./support/s3-double";
-import { type SftpDouble, startSftpDouble } from "./support/sftp-double";
+import { newEd25519Key, type SftpDouble, startSftpDouble } from "./support/sftp-double";
 
 const ACCESS_KEY = "AKIATESTONLY0001";
 const SECRET_KEY = "test-only-secret-key-0001";
@@ -236,7 +234,7 @@ describe("SFTP target adapter", () => {
   });
 
   test("refuses a login whose key the server does not hold", async () => {
-    const stranger = utils.generateKeyPairSync("ed25519").private;
+    const stranger = newEd25519Key();
     expect(await reasonOf(() => openSession(connection({ privateKey: stranger })))).toBe("auth");
   });
 

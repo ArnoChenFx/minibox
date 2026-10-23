@@ -213,11 +213,22 @@ function authenticate(expected: ParsedKey, ctx: AuthContext): void {
   return ctx.accept();
 }
 
+/**
+ * A new ed25519 private key in OpenSSH form. Under Bun, ssh2 sometimes writes a key whose public half lost a leading zero
+ * byte, and then cannot read it back, so a key that does not parse is generated again.
+ */
+export function newEd25519Key(): string {
+  for (;;) {
+    const key = utils.generateKeyPairSync("ed25519").private;
+    if (!(utils.parseKey(key) instanceof Error)) return key;
+  }
+}
+
 /** An SFTP server on 127.0.0.1 that serves a fresh temporary folder. Nothing outside the folder is reachable. */
 export async function startSftpDouble(): Promise<SftpDouble> {
-  const hostKey = utils.generateKeyPairSync("ed25519").private;
-  const pair = utils.generateKeyPairSync("ed25519");
-  const clientKey = utils.parseKey(pair.private);
+  const hostKey = newEd25519Key();
+  const clientPrivate = newEd25519Key();
+  const clientKey = utils.parseKey(clientPrivate);
   if (clientKey instanceof Error) throw clientKey;
   const root = mkdtempSync(join(tmpdir(), "minibox-sftp-"));
   const requests: string[] = [];
@@ -245,7 +256,7 @@ export async function startSftpDouble(): Promise<SftpDouble> {
     host: "127.0.0.1",
     port,
     hostKeyFingerprint: fingerprintOf(hostParsed.getPublicSSH()),
-    privateKey: pair.private,
+    privateKey: clientPrivate,
     root,
     requests,
     close: () =>
