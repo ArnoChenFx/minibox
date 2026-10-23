@@ -15,6 +15,7 @@ import {
   type HelperResult,
   type ImageDetails,
   type ImageSummary,
+  type NetworkSummary,
   isRuntimeError,
   type PathStat,
   type Runtime,
@@ -374,12 +375,31 @@ export class AgentRuntime implements Runtime {
     throw refused("diskUsage");
   }
 
-  ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void> {
+  ensureBridgeNetwork(
+    name: string,
+    opts: { interContainerComm: boolean; internal?: boolean; subnet?: string },
+  ): Promise<void> {
     return this.call("ensureBridgeNetwork", { name, opts }).then(() => undefined);
+  }
+
+  removeNetwork(name: string): Promise<void> {
+    return this.call("removeNetwork", { name }).then(() => undefined);
+  }
+
+  connectNetwork(containerId: string, name: string, opts?: { alias?: string }): Promise<void> {
+    return this.call("connectNetwork", { containerId, name, opts }).then(() => undefined);
+  }
+
+  listNetworks(): Promise<NetworkSummary[]> {
+    return this.call("listNetworks", {}) as Promise<NetworkSummary[]>;
   }
 
   reattachNetwork(containerId: string, name: string): Promise<void> {
     return this.call("reattachNetwork", { containerId, name }).then(() => undefined);
+  }
+
+  setHostIngressBlock(sources: string[]): Promise<void> {
+    return this.call("setHostIngressBlock", { sources }).then(() => undefined);
   }
 
   private call(op: string, args: unknown, signal?: AbortSignal, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {

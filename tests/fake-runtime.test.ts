@@ -293,6 +293,60 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     });
   });
 
+  test("an internal network with a subnet is matched on both, and a different internal flag or subnet is a conflict", async () => {
+    const rt = new FakeRuntime();
+    await rt.ensureBridgeNetwork("mbx-a", { interContainerComm: true, internal: true, subnet: "240.0.8.0/28" });
+    await rt.ensureBridgeNetwork("mbx-a", { interContainerComm: true, internal: true, subnet: "240.0.8.0/28" });
+    expect(await rt.listNetworks()).toEqual([{ name: "mbx-a", subnets: ["240.0.8.0/28"] }]);
+
+    expect(await rejectionOf(rt.ensureBridgeNetwork("mbx-a", { interContainerComm: true }))).toMatchObject({
+      kind: "conflict",
+    });
+    expect(
+      await rejectionOf(
+        rt.ensureBridgeNetwork("mbx-a", { interContainerComm: true, internal: true, subnet: "240.0.9.0/28" }),
+      ),
+    ).toMatchObject({
+      kind: "conflict",
+    });
+  });
+
+  test("removing a network refuses while a running container has an endpoint on it, and forgets it once none does", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    await rt.ensureBridgeNetwork("mbx-egress", { interContainerComm: true, internal: true });
+    await rt.ensureBridgeNetwork("mbx-uplink", { interContainerComm: true });
+    const { id } = await rt.createContainer({ image: "alpine:3.20", network: "mbx-egress" });
+    await rt.startContainer(id);
+    await rt.connectNetwork(id, "mbx-uplink", { alias: "minibox-proxy" });
+
+    expect(await rejectionOf(rt.removeNetwork("mbx-uplink"))).toMatchObject({ kind: "conflict" });
+    await rt.stopContainer(id, { timeoutSec: 1 });
+    await rt.removeNetwork("mbx-uplink");
+    expect(rt.networks.has("mbx-uplink")).toBe(false);
+    await rt.removeNetwork("mbx-uplink");
+    expect(rt.callsTo("removeNetwork")).toHaveLength(3);
+  });
+
+  test("a container connects to another network once, and listing holds no endpoint for it", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage("alpine:3.20");
+    await rt.ensureBridgeNetwork("mbx-uplink", { interContainerComm: true, subnet: "240.0.0.0/28" });
+    const { id } = await rt.createContainer({ image: "alpine:3.20" });
+    await rt.connectNetwork(id, "mbx-uplink", { alias: "minibox-proxy" });
+    await rt.connectNetwork(id, "mbx-uplink", { alias: "minibox-proxy" });
+    expect(await rejectionOf(rt.connectNetwork(id, "missing"))).toMatchObject({ kind: "not_found" });
+    expect(await rt.listNetworks()).toEqual([{ name: "mbx-uplink", subnets: ["240.0.0.0/28"] }]);
+  });
+
+  test("the host ingress block is replaced as a whole, and an empty list clears it", async () => {
+    const rt = new FakeRuntime();
+    await rt.setHostIngressBlock(["240.0.0.0/12"]);
+    expect(rt.hostIngressBlock).toEqual(["240.0.0.0/12"]);
+    await rt.setHostIngressBlock([]);
+    expect(rt.hostIngressBlock).toEqual([]);
+  });
+
   test("a container on a missing network can be created but not started, and reports its network once attached", async () => {
     const rt = new FakeRuntime();
     rt.seedImage("alpine:3.20");

@@ -1,20 +1,37 @@
 import Docker from "dockerode";
 
-import { RuntimeError, type Runtime } from "../runtime";
+import { RuntimeError, type NetworkSummary, type Runtime } from "../runtime";
 import { networkOf } from "./containers";
 import { call, type Engine } from "./engine";
 import { toRuntimeError } from "./errors";
 
 const ICC_OPTION = "com.docker.network.bridge.enable_icc";
 
-/** An existing network can be used only if it is a bridge with the requested inter-container communication setting. */
-function bridgeMatches(network: Docker.NetworkInspectInfo, interContainerComm: boolean): boolean {
-  const enabled = network.Options?.[ICC_OPTION] !== "false";
-  return network.Driver === "bridge" && enabled === interContainerComm;
+interface BridgeSpec {
+  interContainerComm: boolean;
+  internal: boolean;
+  subnet?: string;
 }
 
-function networkConflict(name: string, interContainerComm: boolean): RuntimeError {
-  const message = `network ${name} exists but is not a bridge with inter-container communication ${interContainerComm ? "on" : "off"}`;
+function subnetsOf(network: Docker.NetworkInspectInfo): string[] {
+  return (network.IPAM?.Config ?? []).flatMap((entry) => (entry.Subnet ? [entry.Subnet] : []));
+}
+
+/** An existing network can be used only if it is a bridge that matches every setting the caller asked for. */
+function bridgeMatches(network: Docker.NetworkInspectInfo, spec: BridgeSpec): boolean {
+  const enabled = network.Options?.[ICC_OPTION] !== "false";
+  if (network.Driver !== "bridge" || enabled !== spec.interContainerComm) return false;
+  if (Boolean(network.Internal) !== spec.internal) return false;
+  return spec.subnet === undefined || subnetsOf(network).includes(spec.subnet);
+}
+
+function networkConflict(name: string, spec: BridgeSpec): RuntimeError {
+  const parts = [
+    `inter-container communication ${spec.interContainerComm ? "on" : "off"}`,
+    spec.internal ? "internal" : "not internal",
+    spec.subnet ? `subnet ${spec.subnet}` : null,
+  ].filter(Boolean);
+  const message = `network ${name} exists but is not a bridge with ${parts.join(", ")}`;
   return new RuntimeError("conflict", message, message);
 }
 
@@ -28,32 +45,74 @@ async function inspectNetwork(docker: Docker, name: string): Promise<Docker.Netw
   }
 }
 
-type NetworkMethods = Pick<Runtime, "ensureBridgeNetwork" | "reattachNetwork">;
+type NetworkMethods = Pick<
+  Runtime,
+  "ensureBridgeNetwork" | "removeNetwork" | "connectNetwork" | "listNetworks" | "reattachNetwork"
+>;
 
 export function networkMethods(engine: Engine): NetworkMethods {
   const { docker, mutate } = engine;
 
   return {
-    async ensureBridgeNetwork(name, { interContainerComm }) {
+    async ensureBridgeNetwork(name, { interContainerComm, internal = false, subnet }) {
+      const spec: BridgeSpec = { interContainerComm, internal, subnet };
       const existing = await inspectNetwork(docker, name);
       if (existing) {
-        if (!bridgeMatches(existing, interContainerComm)) throw networkConflict(name, interContainerComm);
+        if (!bridgeMatches(existing, spec)) throw networkConflict(name, spec);
         return;
       }
+      const ipam = subnet === undefined ? undefined : { Driver: "default", Config: [{ Subnet: subnet }] };
       try {
         await call(() =>
           docker.createNetwork({
             Name: name,
             Driver: "bridge",
+            Internal: internal,
             Options: interContainerComm ? {} : { [ICC_OPTION]: "false" },
+            ...(ipam ? { IPAM: ipam } : {}),
           }),
         );
       } catch (e) {
         if (!(e instanceof RuntimeError) || e.kind !== "conflict") throw e;
         // Another request created it between our inspect and create; accept it only if it matches.
         const created = await inspectNetwork(docker, name);
-        if (!created || !bridgeMatches(created, interContainerComm)) throw networkConflict(name, interContainerComm);
+        if (!created || !bridgeMatches(created, spec)) throw networkConflict(name, spec);
       }
+    },
+
+    async removeNetwork(name) {
+      if (!(await inspectNetwork(docker, name))) return;
+      try {
+        await mutate(() => docker.getNetwork(name).remove());
+      } catch (e) {
+        // The engine refuses with 403 while containers are attached. That is a conflict, not a bad request.
+        if (e instanceof RuntimeError && e.kind === "invalid") {
+          throw new RuntimeError("conflict", `network ${name} still has containers attached`, e.detail);
+        }
+        throw e;
+      }
+    },
+
+    async connectNetwork(containerId, name, opts) {
+      const info = await call(() => docker.getContainer(containerId).inspect());
+      const network = await inspectNetwork(docker, name);
+      if (!network) throw new RuntimeError("not_found", `network ${name} not found`);
+      const endpoint = info.NetworkSettings.Networks[name];
+      if (endpoint?.NetworkID === network.Id) return;
+      // The engine rejects a disconnect from a network the container has no endpoint on.
+      if (endpoint) await mutate(() => docker.getNetwork(name).disconnect({ Container: containerId }));
+      const aliases = opts?.alias === undefined ? undefined : [opts.alias];
+      await mutate(() =>
+        docker.getNetwork(name).connect({
+          Container: containerId,
+          ...(aliases ? { EndpointConfig: { Aliases: aliases } } : {}),
+        }),
+      );
+    },
+
+    async listNetworks() {
+      const networks = await call(() => docker.listNetworks());
+      return networks.map((network): NetworkSummary => ({ name: network.Name, subnets: subnetsOf(network) }));
     },
 
     async reattachNetwork(containerId, name) {

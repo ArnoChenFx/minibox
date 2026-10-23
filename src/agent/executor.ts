@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { parseIpv4Cidr } from "../lib/cidr";
 import { type ExecSession, type ExecSpec, MAX_OWNER_ID, type Runtime, RuntimeError } from "../runtime";
 import { type AgentErrorInfo, type ExecExit, REFUSED_OPERATIONS } from "./protocol";
 
@@ -30,6 +31,10 @@ const LABELS = z.record(z.string().max(256), z.string().max(4096));
 const COUNT = z.number().int().min(0).max(100_000);
 const TIMEOUT = z.number().int().min(0).max(3600);
 const OWNER_ID = z.number().int().min(0).max(MAX_OWNER_ID);
+const IPV4_CIDR = z
+  .string()
+  .max(18)
+  .refine((text) => parseIpv4Cidr(text) !== null, "is not an IPv4 CIDR");
 
 /** Only named volumes: a source that is a path would be a bind mount, which an agent never creates. */
 const MountSchema = z
@@ -168,8 +173,26 @@ const ops = {
       image: IMAGE,
     })
     .strict(),
-  ensureBridgeNetwork: ByName.extend({ opts: z.object({ interContainerComm: z.boolean() }).strict() }).strict(),
+  ensureBridgeNetwork: ByName.extend({
+    opts: z
+      .object({
+        interContainerComm: z.boolean(),
+        internal: z.boolean().optional(),
+        subnet: IPV4_CIDR.optional(),
+      })
+      .strict(),
+  }).strict(),
+  removeNetwork: ByName,
+  connectNetwork: z
+    .object({
+      containerId: NAME,
+      name: NETWORK,
+      opts: z.object({ alias: NAME.optional() }).strict().optional(),
+    })
+    .strict(),
+  listNetworks: Empty,
   reattachNetwork: z.object({ containerId: NAME, name: NETWORK }).strict(),
+  setHostIngressBlock: z.object({ sources: z.array(IPV4_CIDR).max(16) }).strict(),
   startExec: z.object({ containerId: NAME, spec: ExecSpecSchema }).strict(),
   followLogs: ById.extend({
     tail: COUNT,
@@ -377,9 +400,25 @@ export class AgentExecutor {
         await r.ensureBridgeNetwork(a.name, a.opts);
         return { result: {} };
       }
+      case "removeNetwork":
+        await r.removeNetwork(parse(op, ops.removeNetwork, raw).name);
+        return { result: {} };
+      case "connectNetwork": {
+        const a = parse(op, ops.connectNetwork, raw);
+        await r.connectNetwork(a.containerId, a.name, a.opts);
+        return { result: {} };
+      }
+      case "listNetworks":
+        parse(op, ops.listNetworks, raw);
+        return { result: await r.listNetworks() };
       case "reattachNetwork": {
         const a = parse(op, ops.reattachNetwork, raw);
         await r.reattachNetwork(a.containerId, a.name);
+        return { result: {} };
+      }
+      case "setHostIngressBlock": {
+        const a = parse(op, ops.setHostIngressBlock, raw);
+        await r.setHostIngressBlock(a.sources);
         return { result: {} };
       }
       case "startExec":
