@@ -29,7 +29,7 @@ Every box runs as the user `dev`, user ID 1000. Inside a box, `sudo` works witho
 11. To set environment variables, open **Environment variables**. See [Environment variables and secrets](environment-and-secrets.md).
 12. Click **Create and start**.
 
-The box is listed with its status. Open it to see its details.
+The box is listed with its status. Open it to see its details. A box made from a template built from a `devcontainer.json` also runs that template's setup. See [devcontainer.json](templates.md#devcontainerjson).
 
 ## Clone a repository
 
@@ -44,8 +44,8 @@ The same fields are the `repo` object in the API, the `--repo`, `--branch` and `
 The clone runs once, when the box is created:
 
 - It is shallow. The workspace gets the latest commit of the branch, without the history.
-- The box is created first, then the clone runs as its own task, **Clone repository**. Follow it in the **Tasks** panel. If the clone fails, the box stays, and the task shows why.
-- Starting, stopping, restarting and rebuilding a box never clone again.
+- The box is created first, then its setup runs as its own task, **Set up box**. The setup clones the repository, then forwards the ports and runs the `postCreateCommand` that the template sets, if it sets them. Follow it in the **Tasks** panel. If the clone fails, the box stays, and the task shows why.
+- Starting, stopping, restarting and rebuilding a box never clone again, and never run the setup again. See [The setup of a box](templates.md#the-setup-of-a-box).
 - `/workspace` must be writable. The default volumes give a new box an empty workspace. If you choose **Customize** and mount a volume that already has files at `/workspace`, the clone fails.
 
 The secret's value is read for the clone only. It is never written into the box or its image, and the task log shows the clone output with the value replaced. A secret that is not set stops the create before anything is created. For what a clone can reach and how SSH host keys are checked, see [Security](../admin/security.md#template-builds-and-repository-clones).
