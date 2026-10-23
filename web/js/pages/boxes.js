@@ -1,6 +1,7 @@
 import { actionButtons, deleteBox, lifecycle } from "../components/box-actions.js";
 import { takeCheckpoint } from "../components/checkpoints.js";
 import { openCreateBox } from "../components/create-box.js";
+import { followOverview } from "../components/overview-feed.js";
 import { api } from "../lib/api.js";
 import { applyBoxFrame, applySamples, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
@@ -10,6 +11,7 @@ import { hostFilter, hostName, multiHost, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
+import { activityByBox } from "../lib/overview.js";
 import { boxState, emptyState, skeletonRows, stateBadge, toastError, usageBar } from "../lib/ui.js";
 
 export function render(view) {
@@ -31,6 +33,15 @@ export function render(view) {
 
   const body = view.querySelector("#bxBody");
   const find = (id) => boxes.find((b) => b.id === id);
+
+  let activity = new Map();
+  const paintActivity = () => {
+    for (const badge of body.querySelectorAll("[data-activity]")) {
+      const row = activity.get(badge.dataset.activity);
+      badge.hidden = !row;
+      if (row) badge.innerHTML = `<span class="dot"></span>${esc(t("ov.agentActive", { ago: relTime(row.lastAt) }))}`;
+    }
+  };
 
   let loaded = false;
   const draw = () => {
@@ -63,7 +74,7 @@ export function render(view) {
         const where = multiHost() ? ` · ${esc(hostName(hostOfBox(b)))}` : "";
         return `<tr class="clickable${unreachable ? " is-unreachable" : ""}" data-action="open" data-id="${esc(b.id)}">
           <td><div class="name-cell"><span class="avatar">${icon("box")}</span><div class="truncate"><strong>${esc(b.name)}</strong><span class="subtle mono">${esc(b.id.slice(0, 12))}${where}</span></div></div></td>
-          <td>${stateBadge(boxState(b))}${b.storage?.status === "unreachable" ? ` <span class="badge badge-danger">${esc(t("vol.unreachable"))}</span>` : ""}</td>
+          <td>${stateBadge(boxState(b))}${b.storage?.status === "unreachable" ? ` <span class="badge badge-danger">${esc(t("vol.unreachable"))}</span>` : ""} <span class="agent-live badge badge-accent" data-activity="${esc(b.id)}" hidden></span></td>
           <td class="hide-sm"><span class="tag truncate" title="${esc(b.template)}">${esc(b.template.replace(/^minibox-template:/, "") || "—")}</span></td>
           <td class="hide-sm num nowrap">${cpus(b.cpus)} · ${mem(b.memory)}</td>
           <td>${s ? usageBar("", cpuP, pct(s.cpuPercent)) : '<span class="subtle">—</span>'}</td>
@@ -73,6 +84,7 @@ export function render(view) {
         </tr>`;
       })
       .join("");
+    paintActivity();
   };
 
   const load = async () => {
@@ -121,10 +133,15 @@ export function render(view) {
     }),
     onHosts(() => loaded && draw()),
   ];
+  const stopFeed = followOverview((overview) => {
+    activity = activityByBox(overview.inProgress);
+    paintActivity();
+  });
   load().catch((e) => toastError(t("bx.loadFailedToast"), e));
   const stopPolling = pollWhileDown(load, 5000);
   return () => {
     for (const off of offs) off();
     stopPolling();
+    stopFeed();
   };
 }
