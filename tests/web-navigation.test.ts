@@ -54,6 +54,16 @@ describe("console navigation", () => {
   });
 });
 
+describe("settings categories in the address", () => {
+  test("settings takes an optional category after its name, so each category has an address of its own", () => {
+    const pattern = app.match(/\{ re: \/(.+?)\/, page: settings,/)?.[1] ?? "";
+    const re = new RegExp(pattern);
+    expect(re.exec("/settings")?.[1]).toBeUndefined();
+    expect(re.exec("/settings/secrets")?.[1]).toBe("secrets");
+    expect(re.test("/settingsx")).toBe(false);
+  });
+});
+
 describe("console icons", () => {
   test("every icon the console names is in the icon set", () => {
     const names = consoleSources().flatMap((text) =>

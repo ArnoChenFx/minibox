@@ -397,8 +397,6 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 220px;
-  overflow: auto;
 }
 .option {
   display: flex;

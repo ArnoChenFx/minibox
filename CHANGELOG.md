@@ -13,11 +13,17 @@
 - `BLOCK_HOST_GATEWAY`（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：设为 `true` 后，默认网络上的 Box 无法通过桥接网关访问宿主机上的服务。默认关闭。
 - 远程宿主机的 Agent 只接受出站地址池 `240.0.0.0/12` 内的网段，或其引擎上某个网络的网段，作为宿主机防火墙的阻止来源，因此控制面无法借此切断宿主机的入站连接。MiniBox 重启或宿主机重启后的对账会重新设置防火墙规则，并继续读取已在运行的代理日志。
 - `devcontainer.json` 子集（Refs #15）：从 `.devcontainer/devcontainer.json` 构建的模板现在还读取 `build.target`、`remoteEnv`、`postCreateCommand`、`forwardPorts` 与 `remoteUser`（仅 `dev` 或 `1000`）。由它创建的 Box 在设置任务（`setup.taskId`）中依次克隆代码仓库、把 `forwardPorts` 加为手动预览端口，并以用户 `dev` 运行一次 `postCreateCommand`：挂载了 `/workspace` 时在其中运行，否则在 `/` 中运行。命令上限 30 分钟，失败或超时时保留 Box。`POST /api/boxes` 的响应新增 `setup`，`clone` 仍在并指向同一任务；`minibox box create` 会等待该任务。以令牌创建这类 Box 需要 `exec`（`postCreateCommand`）与 `port:expose`（`forwardPorts`）作用域。设置只在创建时运行，模板保存的 Box 不继承。复制到其他宿主机（同步或迁移）的模板则保留设置。见[模板](docs/zh-CN/user-guide/templates.md#devcontainerjson)。
+- 设置 → 密钥的「添加密钥」表单每次打开时自动填入一个新的随机值（32 字节、URL 安全的 base64，共 43 个字符），可「重新生成」、复制、显示，或清空后自行输入或粘贴。
+- 创建 Box 的模板选择器支持按名称、标签、描述与镜像搜索，可折叠，搜索时显示全部匹配项，已选模板在折叠时始终可见。模板页的卡片列表过长时同样可以折叠。
+- 创建 Box 的工具选择器可按分类折叠，已选工具在折叠时始终可见，搜索时自动展开匹配项。
+- 创建 Box 对话框的「工具」与「模板」两节可在标题前的箭头按钮处整节折叠，折叠状态保存在浏览器中；折叠时标题旁仍显示已选的模板或工具。「模板」一节移到「规格」下方。
 
 ### 变更
 - 更改已有 Box 的出站档位属于重建：API 与 MCP 先返回预览，带 `confirm: true` 确认后才会重建。Box 保留名称、ID 与卷。
 - 出站档位不为 `open` 的 Box 无法迁移到其他宿主机（返回 `409`，`egress_move_refused`）。回收站恢复与检查点派生会保留出站策略，并为其创建新的私有网络。Box 视图仅在档位不是 `open` 时包含 `egress` 字段。
 - `devcontainer.json` 中不支持的设置不再拒绝整个构建。它们在构建日志中以 `Warning:` 列出，其余设置照常应用。无法按原样应用的设置仍会拒绝构建，例如取值中的 `${…}` 引用，或 `postCreateCommand` 中的 devcontainer 变量（Refs #15）。
+- 设置页改为左侧分类导航（窄屏时为可横向滚动的一行）。每次只显示一个分类，每个分类有自己的地址（如 `#/settings/secrets`），浏览器的前进与后退可在分类之间切换，默认显示「会话」。令牌横幅的链接直接打开「Agent API 令牌」分类。
+- 长列表默认只显示前 5 项，其余通过「展开全部（N）」展开，「收起」收回。涉及设置页的会话、令牌、密钥、通知渠道与投递记录、宿主机与异地目标，创建 Box 的工具与模板选择器，以及模板页的卡片列表。设置页中当前会话排在最前。
 
 ### 修复
 - Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：在 Agent 宿主机上创建带自助令牌的 Box 时，请求在创建流程开始前即返回 `501`（`self_token_host_unsupported`），不再进入后续检查。

@@ -1,6 +1,6 @@
 # Settings
 
-Open **Settings** in the sidebar to manage the console and the server's access. The page has these sections:
+Open **Settings** in the sidebar to manage the console and the server's access. The menu beside the page lists the sections, and the page shows one section at a time. Each section has its own address, such as `#/settings/hosts`, so the browser's back and forward buttons move between them. The sections are:
 
 | Section | What you do there |
 |---|---|
