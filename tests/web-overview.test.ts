@@ -148,9 +148,9 @@ describe("where an attention item leads", () => {
 
   test("a box condition opens the box tab that shows it", () => {
     expect(attentionHref(itemOf("box.oom"))).toBe("#/boxes/bx_1/activity");
-    expect(attentionHref(itemOf("box.checkpoint_failed"))).toBe("#/boxes/bx_1/checkpoints");
-    expect(attentionHref(itemOf("box.rollback_pending"))).toBe("#/boxes/bx_1/checkpoints");
-    expect(attentionHref(itemOf("box.drift"))).toBe("#/boxes/bx_1/resources");
+    expect(attentionHref(itemOf("box.checkpoint_failed"))).toBe("#/boxes/bx_1/settings/checkpoints");
+    expect(attentionHref(itemOf("box.rollback_pending"))).toBe("#/boxes/bx_1/settings/checkpoints");
+    expect(attentionHref(itemOf("box.drift"))).toBe("#/boxes/bx_1/settings/resources");
   });
 
   test("a box condition whose box is gone opens the Boxes list", () => {

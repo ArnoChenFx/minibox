@@ -294,14 +294,16 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
     );
 
     test(
-      "the tool groups start folded, and a search shows its matches inside them",
+      "the tool groups start open, a group folds from its header, and a search shows its matches inside it",
       async () => {
         await page.goto(boxUrl(running, "/settings/tools"));
         const toggles = page.locator("#bdToolRows .group-toggle");
         await webExpect(toggles.first()).toBeVisible();
-        await webExpect(toggles.first()).toHaveAttribute("aria-expanded", "false");
+        for (const toggle of await toggles.all()) await webExpect(toggle).toHaveAttribute("aria-expanded", "true");
         const codex = page.locator("#bdToolRows td.mono", { hasText: /^codex$/ });
-        await webExpect(codex).toHaveCount(0);
+        await webExpect(codex).toBeVisible();
+        await toggles.first().click();
+        await webExpect(page.locator("#bdToolRows .group-toggle").first()).toHaveAttribute("aria-expanded", "false");
         await page.locator("#bdToolSearch input").fill("codex");
         await webExpect(codex).toBeVisible();
       },
@@ -449,6 +451,29 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
             const beside = actions.x >= title.x + title.width;
             const below = actions.y >= title.y + title.height;
             expect(beside || below).toBe(true);
+          }
+        } finally {
+          await page.setViewportSize(VIEWPORT);
+        }
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "on a phone the toolbar is one row, and the open tab and settings section are scrolled into view",
+      async () => {
+        try {
+          await page.setViewportSize({ width: 390, height: 844 });
+          await page.goto(boxUrl(running, "/settings/checkpoints"));
+          await webExpect(page.locator(".settings-nav [aria-current='page']")).toBeVisible();
+          const tops = await page
+            .locator(".detail-head .page-actions > .btn")
+            .evaluateAll((buttons) => new Set(buttons.map((b) => Math.round(b.getBoundingClientRect().top))).size);
+          expect(tops).toBe(1);
+          for (const selector of [".tabs [aria-selected='true']", ".settings-nav [aria-current='page']"]) {
+            const box = await page.locator(selector).boundingBox();
+            if (!box) throw new Error(`${selector} has no layout box`);
+            expect([selector, box.x >= 0 && box.x + box.width <= 390]).toEqual([selector, true]);
           }
         } finally {
           await page.setViewportSize(VIEWPORT);

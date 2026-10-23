@@ -1,5 +1,5 @@
 import { BOX_SETTINGS, boxSettingsOf } from "../lib/box-settings.js";
-import { esc } from "../lib/dom.js";
+import { esc, revealInStrip } from "../lib/dom.js";
 import { dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { boxHash } from "../lib/routes.js";
@@ -75,7 +75,7 @@ function securitySection(panel, { box, onChange }) {
 const SECTIONS = {
   resources: (panel, { box, history, onChange }) => mountResources(panel, { box, history, onChange }),
   storage: (panel, { box, onChange }) => mountMounts(panel, { box, onChange }),
-  tools: (panel, { box, refreshBox }) => mountTools(panel, { box, refreshBox, foldGroups: true }),
+  tools: (panel, { box, refreshBox }) => mountTools(panel, { box, refreshBox }),
   env: (panel, { box, onChange }) => withBoxChanges(mountEnvCard(panel, { box }), onChange),
   lifecycle: lifecycleSection,
   security: securitySection,
@@ -97,5 +97,7 @@ export function mountBoxSettings(root, { box, section, history, onChange, refres
     <nav class="settings-nav" aria-label="${esc(t("bd.setNav"))}">${BOX_SETTINGS.map((item) => navLink(box().id, item, active.id)).join("")}</nav>
     <div class="settings-panel box-stack" id="bsPanel"></div>
   </div>`;
+  const nav = root.querySelector(".settings-nav");
+  revealInStrip(nav, nav.querySelector('[aria-current="page"]'));
   return SECTIONS[active.id](root.querySelector("#bsPanel"), { box, history, onChange, refreshBox });
 }

@@ -4,11 +4,11 @@
  * use.
  */
 
+import { boxHash } from "./routes.js";
+
 const RUNNING_MS = 3000;
 const ACTIVE_MS = 10_000;
 const IDLE_MS = 15_000;
-
-const enc = encodeURIComponent;
 
 /** The dictionary key that names each kind of attention item. */
 export const ATTENTION_LABEL = Object.freeze({
@@ -30,19 +30,20 @@ const PAGE_OF = Object.freeze({
   "host.disk_low": "#/settings/hosts",
 });
 
+/** The box tab, and the settings section on the settings tab, that shows each box condition. */
 const TAB_OF = Object.freeze({
-  "box.oom": "activity",
-  "box.checkpoint_failed": "checkpoints",
-  "box.rollback_pending": "checkpoints",
-  "box.drift": "resources",
+  "box.oom": ["activity"],
+  "box.checkpoint_failed": ["settings", "checkpoints"],
+  "box.rollback_pending": ["settings", "checkpoints"],
+  "box.drift": ["settings", "resources"],
 });
 
 /** Where an attention item leads: the page of the storage or host it names, or the box's tab that shows the condition. */
 export function attentionHref(item) {
   if (PAGE_OF[item.kind]) return PAGE_OF[item.kind];
   if (!item.box) return "#/boxes";
-  const tab = TAB_OF[item.kind];
-  return tab ? `#/boxes/${enc(item.box.id)}/${tab}` : `#/boxes/${enc(item.box.id)}`;
+  const [tab = "overview", section] = TAB_OF[item.kind] ?? [];
+  return boxHash(item.box.id, tab, section);
 }
 
 /**

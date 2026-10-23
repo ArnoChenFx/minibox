@@ -13,7 +13,7 @@ import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
 import { boxSettingsOf } from "../lib/box-settings.js";
 import { applySamples } from "../lib/box-state.js";
-import { esc, delegate } from "../lib/dom.js";
+import { esc, delegate, revealInStrip } from "../lib/dom.js";
 import { shortId, cpus, mem } from "../lib/format.js";
 import { multiHost, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
@@ -174,6 +174,8 @@ export function render(view, id, tab = "overview", sub = undefined) {
     ).join("")}</div>
     <div id="tabBody"></div>`;
     painted = true;
+    const tabs = view.querySelector(".tabs");
+    revealInStrip(tabs, tabs.querySelector('[aria-selected="true"]'));
     // The session the address names opens once. A later mount of this page keeps the session on screen, which the
     // terminal remembers as the box's last one.
     const entry = entrySession;

@@ -63,14 +63,13 @@ function toolRow(tool, isCustom) {
 }
 
 /**
- * The box's tool catalog with its groups. With `foldGroups`, the groups start folded, so a long catalog shows as its
- * group headers until one is opened. A search always shows its matches, whichever groups are folded.
+ * The box's tool catalog with its groups. The groups start open; each folds from its header. A search always shows its
+ * matches, whichever groups are folded.
  */
-export function mountTools(root, { box, refreshBox, foldGroups = false }) {
+export function mountTools(root, { box, refreshBox }) {
   const collapsed = new Set();
   const pending = new Set();
   let tools = null;
-  let folded = false;
   /** The custom entries by id. Only an owner can list them, so for everyone else this stays empty. */
   let custom = new Map();
   let query = "";
@@ -121,10 +120,6 @@ export function mountTools(root, { box, refreshBox, foldGroups = false }) {
       return;
     }
     tools = listed.value.tools;
-    if (foldGroups && !folded) {
-      folded = true;
-      for (const group of groupTools(tools)) collapsed.add(group.id);
-    }
     drawRows();
   };
   const customDialog = (entry) =>

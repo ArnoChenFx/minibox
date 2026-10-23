@@ -19,7 +19,7 @@ If you tick tools, MiniBox installs them after the box starts. Follow the progre
 
 ## Manage tools in a box
 
-Open the box, click **Settings**, and then **Tools**. The table shows each tool's **Desired** state and its **Installed** state. The groups start folded: open a group to see its tools, or search for a tool to see its matches in every group.
+Open the box, click **Settings**, and then **Tools**. The table shows each tool's **Desired** state and its **Installed** state. The groups start open: fold a group from its header, or search for a tool to see its matches in every group.
 
 - **Install** adds a catalog tool to the shared tools volume and to the box's tool list.
 - **Upgrade** refreshes an installed tool to the current catalog version on that volume.

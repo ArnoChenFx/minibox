@@ -20,7 +20,7 @@
 - 创建 Box 的工具选择器可按分类折叠，已选工具在折叠时始终可见，搜索时自动展开匹配项。
 - 创建 Box 对话框的「工具」与「模板」两节可在标题前的箭头按钮处整节折叠，折叠状态保存在浏览器中；折叠时标题旁仍显示已选的模板或工具。「模板」一节移到「规格」下方。
 - Box 详情页改为六个标签页：概览、终端、文件、端口、活动与设置（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）。每个标签页有自己的地址，例如 `#/boxes/<id>/terminal`，刷新或收藏后仍停留在原标签页。
-- 「设置」标签页分为资源、存储与挂载、工具、环境变量、生命周期、安全与检查点七组，每组有自己的地址，例如 `#/boxes/<id>/settings/checkpoints`。工具分组默认折叠，搜索时显示匹配的工具。
+- 「设置」标签页分为资源、存储与挂载、工具、环境变量、生命周期、安全与检查点七组，每组有自己的地址，例如 `#/boxes/<id>/settings/checkpoints`。工具分组默认展开，可逐组折叠。手机上标签页与设置分组可横向滚动，打开时当前项在视野内，标题栏按钮收为一行（除启动/停止外只显示图标）。
 - 终端标签页列出 Box 内的全部 tmux 会话，并标明每个会话是你创建的还是 Agent 创建的。
 - 标题栏的「创建检查点」在任何标签页都可用。在「设置」的检查点分组中创建后，列表立即显示新检查点，无需刷新页面。
 - 概览页「正在进行」与「需要关注」（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）：`GET /api/overview`（`overview.get`，作用域 `overview:read`，仅所有者可读）返回 `inProgress` 与 `attention`。「正在进行」列出最近 10 分钟内 Agent 操作过的 Box，以及仍在运行命令的 Box；两张卡片位于容量卡片下方；每行占一行，依次为操作者（令牌名，或 Box 内的 Agent）、最近命令与最近使用的会话、时间和操作，运行中命令的最后 3 行输出与 Agent 备注通过行末的箭头展开。没有需要关注的事项时，「需要关注」收成一行。「需要关注」只列服务器已记录的事项：内存耗尽与检查点失败保留 24 小时，配置漂移、待确认的回滚、卷超出硬上限、存储池不可达、宿主机离线与磁盘不足在其条件存续期间列出。
@@ -58,7 +58,7 @@
 - 新增 `.cursor/environment.json` 与 `.cursor/install.sh`：Cursor 云端 Agent 构建环境时把 Bun 升到最新版并对照 `engines.bun` 检查，再安装依赖；新增 `AGENTS.md`，要求 Agent 不得降低 Bun 版本或改回 `tsc` 类型检查。
 - 新增真实引擎的出站集成测试 `tests/docker-egress.test.ts`，由 `bun run test:docker` 运行。它覆盖 `none` 的断网、exec、SSH 与端口预览，`proxy-only` 的允许、拒绝、事件与绕过，以及 `BLOCK_HOST_GATEWAY`。测试使用独立的标签前缀、数据目录与网络，并清理其代理、网络、防火墙规则与镜像。
 - 控制台导航的测试：`tests/web-routes.test.ts` 覆盖地址解析、标签页与旧地址的跳转，`tests/web-console-browser.test.ts` 用 Chromium 覆盖导航、标签页切换、刷新后的状态、宿主机筛选器与中文界面。浏览器测试与预览隔离测试一样，未配置 Chromium 时跳过，CI 中缺失则失败。
-- Box 详情页的测试：`tests/web-box-detail.test.ts` 为无 DOM 的组件测试，覆盖设置分组与会话来源标记；`tests/web-box-detail-browser.test.ts` 用 Chromium 覆盖六个标签页的地址与切换、概览不滚动、设置分组、标题栏的「创建检查点」、会话来源、休眠的 Box 在终端中唤醒、工具栏对齐与旧地址跳转。`tests/web-routes.test.ts` 补充了标签页、设置分组与移动后的地址。截图脚本改为打开检查点分组。
+- Box 详情页的测试：`tests/web-box-detail.test.ts` 为无 DOM 的组件测试，覆盖设置分组与会话来源标记；`tests/web-box-detail-browser.test.ts` 用 Chromium 覆盖六个标签页的地址与切换、概览不滚动、设置分组、标题栏的「创建检查点」、会话来源、休眠的 Box 在终端中唤醒、工具栏对齐、手机上的单行工具栏与当前标签页可见，以及旧地址跳转。`tests/web-routes.test.ts` 补充了标签页、设置分组与移动后的地址。截图脚本改为打开检查点分组。
 - 概览的测试：`tests/overview.test.ts` 以行为方式覆盖 `GET /api/overview` 的权限、正在进行的命令与输出、各类需要关注的事项，以及跨宿主机的情况；`tests/web-overview.test.ts` 覆盖概览的文字、链接与轮询间隔，并核对事项类型与服务器输出 schema 一致；`tests/web-console-browser.test.ts` 在 Chromium 中覆盖概览的四个列表及其展开按钮、观察与接管的地址、会话的切换与刷新、需要关注的链接，以及 Box 列表的活动标记。
 
 ### 文档

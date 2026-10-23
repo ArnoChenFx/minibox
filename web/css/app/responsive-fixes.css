@@ -192,3 +192,18 @@ textarea.token-lines {
 .ssh-note {
   margin: 0;
 }
+
+/* A box's title bar on a phone: one row of buttons. Only the first, start or stop, keeps its label; the others show
+   their icon, and their text stays as the accessible name. */
+@media (max-width: 560px) {
+  .detail-head .page-actions {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .detail-head .page-actions > .btn:not(:first-child) {
+    width: 34px;
+    padding: 0;
+    font-size: 0;
+    gap: 0;
+  }
+}
