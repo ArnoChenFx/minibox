@@ -1,4 +1,5 @@
 import type { BoxProfile } from "../box-profile";
+import type { EgressPolicy } from "../egress/policy";
 import type { VolumeOwner } from "../runtime";
 import type { BoxSpec, MountMode } from "../specs/types";
 import type { VolumeOwnership, VolumeRole } from "../volumes/types";
@@ -69,6 +70,8 @@ export interface CheckpointSpec {
   cpus: number | null;
   memoryBytes: number | null;
   profile: BoxProfile | null;
+  /** The box's egress policy when it was not open. A fork or a restore gets the same policy on a new network. */
+  egress?: EgressPolicy;
 }
 
 export interface CheckpointRecord {

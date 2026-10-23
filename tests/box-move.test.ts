@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { RuntimeError } from "../src/runtime";
 import { CheckpointScheduler, scheduleOf } from "../src/services/checkpoint-schedule";
 import { beginChange, beginMove } from "../src/services/moving";
+import { createDeclaredTemplate, readRecipe, templateSetupOf } from "../src/services/template-builds";
 import { type Cluster, type HostName, bootCluster, boxOn, errorOf } from "./support/cluster";
+import { DEVCONTAINER_WITH_SETUP, serveRepository } from "./support/repository";
 import { finishedTask } from "./support/tokens";
 
 interface MoveView {
@@ -282,6 +284,29 @@ describe("moving a box to another host", () => {
     expect(other.status).toBe(409);
     expect((await errorOf(other)).key).toBe("move_template_differs");
     expect(containersOf(cluster, "small", differs.boxId)).toEqual([]);
+  });
+
+  describe("a box made from a declared template with a setup", () => {
+    beforeEach(async () => {
+      serveRepository(cluster.engines.local, new Map([[".devcontainer/devcontainer.json", DEVCONTAINER_WITH_SETUP]]));
+      await createDeclaredTemplate(
+        cluster.app.hosts.get(),
+        { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+        {},
+      );
+    });
+
+    test("the target gets the template's recipe with the image, so its template keeps the setup", async () => {
+      const box = await boxOn(cluster, "local", "alpha", { template: "mbtest-template:dev" });
+      const view = await viewOf(box.id);
+      expect(await confirmed(box.id, "small", view.revision)).toMatchObject({ status: "succeeded" });
+
+      expect(readRecipe(cluster.app.hosts.get("small"), "dev")).toEqual(readRecipe(cluster.app.hosts.get(), "dev"));
+      expect(await templateSetupOf(cluster.app.hosts.get("small"), "mbtest-template:dev")).toEqual({
+        postCreate: ["/bin/sh", "-c", "npm install"],
+        forwardPorts: [3000],
+      });
+    });
   });
 });
 

@@ -99,11 +99,11 @@ MiniBox 从不拉取它自己的模板、快照和检查点镜像。这些镜像
 2. 在 **模板** 中选择模板。
 3. 填写表单，点击 **创建并启动**。
 
-你也可以在 **模板** 列表中某张模板卡片上点击 **用此模板创建**。若要在创建的同时把代码仓库克隆进 Box，参见[克隆代码仓库](boxes.md#克隆代码仓库)。
+你也可以在 **模板** 列表中某张模板卡片上点击 **用此模板创建**。若要在创建的同时把代码仓库克隆进 Box，参见[克隆代码仓库](boxes.md#克隆代码仓库)。由 `devcontainer.json` 构建、且设置了 `postCreateCommand` 或 `forwardPorts` 的模板，会为由它创建的每个 Box 完成设置。参见 [Box 的设置](#box-的设置)。
 
 ## 把模板复制到其他宿主机
 
-其他宿主机上的 Box 需要该宿主机上已有模板的镜像。MiniBox 在你于该宿主机上创建 Box 时会自动复制镜像，因此通常无需手动复制。若想提前复制，请在模板卡片上点击缺少该模板的宿主机旁的 **同步到此宿主机**。复制以 **同步模板** 任务的形式运行。每张卡片都会列出所有宿主机，以及各自是否已有该模板。
+其他宿主机上的 Box 需要该宿主机上已有模板的镜像。MiniBox 在你于该宿主机上创建 Box 时会自动复制镜像，因此通常无需手动复制。若想提前复制，请在模板卡片上点击缺少该模板的宿主机旁的 **同步到此宿主机**。复制以 **同步模板** 任务的形式运行。每张卡片都会列出所有宿主机，以及各自是否已有该模板。复制还会带上由来源构建的模板的构建记录。副本保留该模板的设置，并可以在该宿主机上按同一来源重新构建。
 
 在控制台中删除模板会删除每台宿主机上的副本。重新构建会改变第一台持有该模板的宿主机上的副本，其他副本保留旧镜像，直到你删除它们并重新复制模板。复制要求目标引擎保留镜像 ID。见 [限制](hosts.md#限制)。
 
@@ -121,8 +121,8 @@ MiniBox 从不拉取它自己的模板、快照和检查点镜像。这些镜像
 
 构建模板、重新构建模板和拉取镜像仅限所有者。任何令牌都不能执行这些操作，即使该令牌拥有全部 scope。
 
-- **密钥。** 私有仓库的令牌或部署密钥只用于该次克隆。MiniBox 会在任务日志显示克隆输出之前去掉其值。该值永远不会写入镜像，构建记录只保存密钥的名称。不要把密钥粘贴进 Dockerfile、`containerEnv` 或 `build.args`，这些值会进入镜像或构建日志。
-- **构建记录。** 粘贴的 Dockerfile 和来源字段保存在宿主机的 `DATA_DIR/template-recipes/` 中，以便重新构建时再次使用。
+- **密钥。** 私有仓库的令牌或部署密钥只用于该次克隆。MiniBox 会在任务日志显示克隆输出之前去掉其值。该值永远不会写入镜像，构建记录只保存密钥的名称。不要把密钥粘贴进 Dockerfile、`containerEnv`、`remoteEnv` 或 `build.args`，这些值会进入镜像或构建日志。
+- **构建记录。** 粘贴的 Dockerfile 和来源字段保存在持有该模板的每台宿主机的 `DATA_DIR/template-recipes/` 中，以便重新构建时再次使用。复制到其他宿主机时，构建记录也会一并复制。
 - **构建上下文。** 若压缩包条目或代码仓库文件的路径超出构建上下文、为绝对路径，或是硬链接、设备或其他特殊文件，MiniBox 会拒绝。它也会拒绝指向上下文之外的符号链接，以及会经过符号链接写入的操作。
 - **URL 由服务器发起。** MiniBox 自己下载构建上下文 URL，并从 Docker 网络上的辅助容器克隆代码仓库。两者都会跟随重定向到任意地址。MiniBox 不会阻止私有地址、回环地址或云元数据地址，因此构建可以访问宿主机能访问的任何服务。请只把所有者权限交给应当拥有这种访问能力的人。
 - **SSH 主机密钥。** SSH 克隆在首次连接时会接受服务器的主机密钥，因为每次克隆都从空的 known_hosts 文件开始。网络中的攻击者可能在这次首次连接时冒充服务器。能用时请使用带令牌的 HTTPS，它会校验服务器证书。
@@ -141,20 +141,54 @@ MiniBox 读取以下配置项：
 | `build.dockerfile` | Dockerfile，相对于 `devcontainer.json`。它必须位于构建上下文之内。 |
 | `build.context` | 构建上下文，相对于 `devcontainer.json`，默认为该文件所在目录。它必须位于代码仓库之内。 |
 | `build.args` | 构建参数。 |
+| `build.target` | 要构建的 Dockerfile 阶段。 |
 | `containerEnv` | 每个条目对应镜像中的一条 `ENV` 指令。 |
+| `remoteEnv` | 同样是写入镜像的 `ENV` 指令，因此 Box 中的每个进程都能看到。与 `containerEnv` 中同名的条目会被它替换。 |
+| `postCreateCommand` | 由模板创建 Box 时，在 Box 中运行一次。参见 [Box 的设置](#box-的设置)。 |
+| `forwardPorts` | 由模板创建 Box 时，成为该 Box 手动预览端口的 TCP 端口。 |
+| `remoteUser` | 为 `dev` 或 `1000` 时接受，即每个 Box 运行所用的用户。 |
 | `$schema`、`name` | 仅作元数据，不改变任何内容。 |
 
-该文件只能设置 `image` 或 `build` 之一，不能同时设置；设置 `build` 时必须同时给出 `build.dockerfile`。取值中不能使用 `${…}` 引用，因为 MiniBox 不展开变量。`devcontainer.json` 文件限制为 256 KB。设置了 `containerEnv` 时，MiniBox 会复制 Dockerfile 以添加 `ENV` 行，该副本同样限制为 256 KB。代码仓库中的原文件不会被修改。
+该文件只能设置 `image` 或 `build` 之一，不能同时设置；设置 `build` 时必须同时给出 `build.dockerfile`。若设置了 `build.target`，并且有 `ENV` 行需要添加，MiniBox 会构建该阶段，并在其之上添加一个最后阶段，其中包含这些 `ENV` 行。没有 `ENV` 行时，目标阶段即为镜像。Dockerfile 中未声明的目标会被拒绝。`devcontainer.json` 文件限制为 256 KB。需要添加 `ENV` 行时，MiniBox 会复制 Dockerfile 以添加它们，该副本同样限制为 256 KB。代码仓库中的原文件不会被修改。
 
-不支持的内容：
+### Box 的设置
 
-- 其他顶层配置项，例如 `features`、`forwardPorts`、`mounts`、`remoteUser` 和 `customizations`。构建会被拒绝，错误信息会列出每一项。
-- 生命周期命令：`initializeCommand`、`onCreateCommand`、`updateContentCommand`、`postCreateCommand`、`postStartCommand` 和 `postAttachCommand`。MiniBox 从不执行它们；文件中设置了其中任何一项，构建都会被拒绝。
-- 除 `dockerfile`、`context` 和 `args` 之外的构建配置，例如 `target` 和 `cacheFrom`。
+`postCreateCommand` 和 `forwardPorts` 不属于镜像。模板在每台持有其副本的宿主机上都保存它们，由该模板创建的 Box 会在其设置任务中运行它们，顺序如下：
 
-这些限制的原因是：MiniBox 只构建镜像，不运行代码仓库中的任何命令。生命周期命令在 Box 启动后于 Box 内运行，而模板本身不会启动 Box。请把安装步骤写成 Dockerfile 中的 `RUN` 指令。对于不支持的配置项，MiniBox 选择拒绝而不是跳过，这样模板永远不会缺少文件所要求的内容。
+1. 若你给出了代码仓库，则克隆该仓库。
+2. `forwardPorts` 中的每个端口成为该 Box 的手动预览端口。
+3. 运行 `postCreateCommand`。
 
-`containerEnv` 不是放置密钥的地方，因为它的值会写入镜像，并显示在构建日志中。若要给 Box 提供密钥，请使用引用密钥的环境变量。参见[环境变量与密钥](environment-and-secrets.md)。
+- 字符串形式以 `/bin/sh -c "<命令>"` 运行，因此 `npm ci && npm run build` 这样的 shell 语法可以使用。列表形式按原样运行，不经过 shell，其中的 `$HOME` 保持字面文本。
+- 命令以用户 `dev` 运行。若 Box 挂载了 `/workspace`，则在其中运行，否则在 `/` 中运行。其输出位于任务日志中，即**任务**面板里的**设置 Box**。
+- 退出代码非零的命令会使设置任务失败，任务会说明该代码。Box 会保留，你可以打开它并修复问题。
+- 运行超过 30 分钟的命令会被停止，任务随之失败。取消任务也会停止命令。两种情况下 Box 都会保留。
+- 设置只在创建 Box 时运行一次。启动、停止、重启和重建 Box 都不会再次运行它。从模板保存的 Box 不会继承它。
+- 从设置了 `postCreateCommand` 的模板创建 Box 需要令牌具有 `exec` scope；设置了 `forwardPorts` 时还需要 `port:expose` scope。缺少相应 scope 的令牌会在 Box 创建之前被拒绝。
+
+### MiniBox 不应用的设置
+
+MiniBox 不应用的设置不会中止构建。构建日志中会有一行以 `Warning:` 开头的文字指出该设置，构建会在没有它的情况下继续。这包括表中未列出的每个顶层配置项，例如 `features`、`mounts`、`runArgs` 和 `customizations`，也包括生命周期命令 `initializeCommand`、`onCreateCommand`、`updateContentCommand`、`postStartCommand` 和 `postAttachCommand`。MiniBox 从不运行这些命令。
+
+以下设置同样会以警告列出：
+
+- `remoteUser` 为 `dev` 或 `1000` 以外的值，因为每个 Box 都以 `dev` 运行命令。
+- `remoteEnv` 中值为 `null` 的条目，因为它会取消一个变量的设置，而 MiniBox 无法取消变量。
+- `build` 中除 `dockerfile`、`context`、`args` 和 `target` 之外的设置，例如 `cacheFrom`。
+- 对象形式的 `postCreateCommand`，它会并行运行多条命令。MiniBox 不会运行它。
+- `forwardPorts` 中不是 Box 内 TCP 端口的条目，例如 `db:5432`。
+
+MiniBox 应用但无法按原样应用的设置会被拒绝，构建不会开始：
+
+- `containerEnv`、`remoteEnv` 或 `build.args` 的值使用了 `${…}` 引用。MiniBox 不展开变量，因此值会与文件中的不同。
+- 名称不是合法的变量名，或取值含有控制字符，例如换行符或制表符。
+- `postCreateCommand` 使用了 devcontainer 变量，例如 `${localEnv:HOME}` 或 `${containerWorkspaceFolder}`。
+- `postCreateCommand` 超过 64 KB，或 `forwardPorts` 不是列表。
+- `build.target` 没有在 Dockerfile 中以 `FROM … AS <名称>` 声明。
+
+MiniBox 只从代码仓库运行一条命令，即 `postCreateCommand`，并且只在创建 Box 时运行。其他生命周期命令属于 dev container 生命周期中 MiniBox 并不具备的阶段。请把安装步骤写成 Dockerfile 中的 `RUN` 指令：构建时只运行一次，由该模板创建的每个 Box 都会得到其结果。
+
+`containerEnv` 和 `remoteEnv` 不是放置密钥的地方，因为它们的值会写入镜像，并显示在构建日志中。若要给 Box 提供密钥，请使用引用密钥的环境变量。参见[环境变量与密钥](environment-and-secrets.md)。
 
 ## 限制
 
@@ -163,7 +197,8 @@ MiniBox 读取以下配置项：
 | 模板名称 | 63 个字符 |
 | 描述 | 200 个字符，单行 |
 | 粘贴的 Dockerfile | 64 KB |
-| `devcontainer.json`，或 MiniBox 为 `containerEnv` 复制的 Dockerfile | 各 256 KB |
+| `devcontainer.json`，或 MiniBox 为添加 `ENV` 行而复制的 Dockerfile | 各 256 KB |
+| `postCreateCommand` | 64 KB，运行最长 30 分钟 |
 | 构建上下文压缩包 | 下载后与解包后均为 256 MB，最多 20,000 个条目 |
 | 下载构建上下文 | 2 分钟 |
 | 克隆 | 5 分钟，辅助容器内存 512 MB |

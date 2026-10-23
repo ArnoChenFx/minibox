@@ -10,6 +10,7 @@ export const ACTION_ICON = {
   "box.rebuild": "refresh",
   "box.move": "move",
   "box.clone": "download",
+  "box.setup": "download",
   "box.rollback": "history",
   "box.rollback.confirm": "check",
   "box.rollback.undo": "refresh",

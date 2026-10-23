@@ -143,8 +143,11 @@ interface Row {
 
 /** Operations whose events are activity: terminal session start, sends and close. */
 const ACTIVITY_OPS: ReadonlySet<string> = new Set(["session.start", "session.send", "session.close"]);
-/** Event families that are activity: exec, terminal attachments and container events from Docker. */
-const ACTIVITY_PREFIXES = ["exec.", "terminal.", "container."] as const;
+/**
+ * Event families that are activity: exec, terminal attachments, container events from Docker and the connections an
+ * egress proxy carries. A refused connection is audit whatever its family, as every refusal is.
+ */
+const ACTIVITY_PREFIXES = ["exec.", "terminal.", "container.", "egress."] as const;
 
 /**
  * Which tier an execution is recorded in. A refusal is always audit. Exec, terminal, session send and container events

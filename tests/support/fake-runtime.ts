@@ -5,6 +5,7 @@ import { Duplex, PassThrough, Readable } from "node:stream";
 
 import { templateOwnerOf } from "../../src/labels";
 import { abortError } from "../../src/lib/abort";
+import { ipv4Overlaps, parseIpv4Cidr } from "../../src/lib/cidr";
 import {
   type BuildSpec,
   type CommitSpec,
@@ -22,6 +23,7 @@ import {
   type HelperSpec,
   type ImageSummary,
   type Mount,
+  type NetworkSummary,
   type PathStat,
   type Runtime,
   type RuntimeEvent,
@@ -85,6 +87,8 @@ export interface FakeContainer {
   diff: ContainerChange[];
   /** ID of the network the container's endpoint points at. Null until the container first starts, as in the engine. */
   networkId: string | null;
+  /** Endpoints on networks other than the primary one, which `connectNetwork` adds. */
+  extraEndpoints: { name: string; networkId: string; aliases: string[] }[];
   /** Files written through a process in the container. Files under a tmpfs mount go when the container stops. */
   files: Map<string, FakeContainerFile>;
 }
@@ -128,6 +132,10 @@ export interface FakeNetwork {
   name: string;
   driver: string;
   options: Record<string, string>;
+  /** An internal network has no route out of the host. Set by `ensureBridgeNetwork`. */
+  internal: boolean;
+  /** IPv4 subnets the network was created with. Empty for networks the engine sized itself. */
+  subnets: string[];
 }
 
 export interface FakeExec extends ExecSession {
@@ -374,11 +382,21 @@ export class FakeRuntime implements Runtime {
   /** References a pull cannot fetch, as a registry without that repository answers. Others are pulled on demand. */
   readonly unpullable = new Set<string>();
   /** Each build context as `buildImage` received it: the files on disk when the call was made, keyed by relative path. */
-  readonly builds: { tag: string; dockerfile: string; args: Record<string, string>; files: Map<string, string> }[] = [];
+  readonly builds: {
+    tag: string;
+    dockerfile: string;
+    args: Record<string, string>;
+    target: string | undefined;
+    files: Map<string, string>;
+  }[] = [];
   /** Bytes reported by `diskUsage`. Tests shrink `freeBytes` to exercise the low-space flag. */
   disk: DiskUsage = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
   /** Answers `runHelper`. The default pretends `df`, `du` and `chown` succeeded. */
   helperHandler: (spec: HelperSpec) => HelperResult = defaultHelper;
+  /** The sources the last `setHostIngressBlock` installed. Empty when nothing is blocked. */
+  hostIngressBlock: string[] = [];
+  /** The owner the last `setHostIngressBlock` named. */
+  hostIngressOwner: string | null = null;
   /**
    * Output of the next non-TTY exec. The default is a successful empty command, which is what `true` does.
    * `null` leaves the command running until `kill()`, which is how tests model `sleep`.
@@ -482,15 +500,29 @@ export class FakeRuntime implements Runtime {
 
   /** A network that is created again gets a new ID, which containers that ran on the old one still point at. */
   seedNetwork(name: string, options: Record<string, string> = {}, driver = "bridge"): void {
-    this.networks.set(name, { id: newNetworkId(), name, driver, options: { ...options } });
+    this.networks.set(name, {
+      id: newNetworkId(),
+      name,
+      driver,
+      options: { ...options },
+      internal: false,
+      subnets: [],
+    });
   }
 
   /** Removes networks that no running container uses, as `docker network prune` does. */
   pruneNetworks(): void {
     for (const name of this.networks.keys()) {
-      const inUse = [...this.containers.values()].some((c) => c.running && c.spec.network === name);
-      if (!inUse) this.networks.delete(name);
+      if (!this.isAttached(name)) this.networks.delete(name);
     }
+  }
+
+  /** Whether a running container has an endpoint on the network named `name`, as primary or additional. */
+  private isAttached(name: string): boolean {
+    return [...this.containers.values()].some(
+      (c) =>
+        c.running && ((c.spec.network ?? DEFAULT_NETWORK) === name || c.extraEndpoints.some((e) => e.name === name)),
+    );
   }
 
   /** Writable-layer changes the next `containerDiff` returns. Seeding does not record a call. */
@@ -672,6 +704,7 @@ export class FakeRuntime implements Runtime {
       logs: "",
       diff: [],
       networkId: running ? this.networkIdOf(spec.network) : null,
+      extraEndpoints: [],
       files: new Map(),
     };
     this.containers.set(c.id, c);
@@ -1369,7 +1402,13 @@ export class FakeRuntime implements Runtime {
     if (!files.has(spec.dockerfile)) {
       throw new RuntimeError("engine", `failed to read dockerfile: open ${spec.dockerfile}: no such file or directory`);
     }
-    this.builds.push({ tag: spec.tag, dockerfile: spec.dockerfile, args: { ...spec.args }, files });
+    this.builds.push({
+      tag: spec.tag,
+      dockerfile: spec.dockerfile,
+      args: { ...spec.args },
+      target: spec.target,
+      files,
+    });
     spec.onLog?.(this.buildLog);
     await this.gate("buildImage", [spec]);
     if (spec.signal?.aborted) throw abortError();
@@ -1444,17 +1483,85 @@ export class FakeRuntime implements Runtime {
     return { totalBytes: this.disk.totalBytes, freeBytes: this.disk.freeBytes };
   }
 
-  async ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void> {
+  /** Docker refuses a network whose subnet overlaps one another network already holds. */
+  private overlapsAnotherPool(subnet: string): boolean {
+    const wanted = parseIpv4Cidr(subnet);
+    if (wanted === null) return false;
+    return [...this.networks.values()].some((network) =>
+      network.subnets.some((cidr) => {
+        const held = parseIpv4Cidr(cidr);
+        return held !== null && ipv4Overlaps(held, wanted);
+      }),
+    );
+  }
+
+  async ensureBridgeNetwork(
+    name: string,
+    opts: { interContainerComm: boolean; internal?: boolean; subnet?: string },
+  ): Promise<void> {
     this.enter("ensureBridgeNetwork", [name, opts]);
+    const internal = opts.internal ?? false;
     const existing = this.networks.get(name);
     if (!existing) {
+      if (opts.subnet !== undefined && this.overlapsAnotherPool(opts.subnet)) {
+        throw new RuntimeError("conflict", "Pool overlaps with other one on this address space");
+      }
       this.seedNetwork(name, opts.interContainerComm ? {} : { [ICC_OPTION]: "false" });
+      const created = this.networks.get(name);
+      if (created) {
+        created.internal = internal;
+        created.subnets = opts.subnet === undefined ? [] : [opts.subnet];
+      }
       return;
     }
     const enabled = existing.options[ICC_OPTION] !== "false";
-    if (existing.driver !== "bridge" || enabled !== opts.interContainerComm) {
+    const subnetMatches = opts.subnet === undefined || existing.subnets.includes(opts.subnet);
+    if (
+      existing.driver !== "bridge" ||
+      enabled !== opts.interContainerComm ||
+      existing.internal !== internal ||
+      !subnetMatches
+    ) {
       throw new RuntimeError("conflict", `network ${name} exists but is not a bridge with the requested settings`);
     }
+  }
+
+  async removeNetwork(name: string): Promise<void> {
+    this.enter("removeNetwork", [name]);
+    if (!this.networks.has(name)) return;
+    if (this.isAttached(name)) {
+      throw new RuntimeError("conflict", `network ${name} still has containers attached`);
+    }
+    this.networks.delete(name);
+  }
+
+  async connectNetwork(id: string, name: string, opts?: { alias?: string }): Promise<void> {
+    this.enter("connectNetwork", [id, name, opts]);
+    const c = this.getContainer(id);
+    const network = this.networks.get(name);
+    if (!network) throw new RuntimeError("not_found", `network ${name} not found`);
+    const aliases = opts?.alias === undefined ? [] : [opts.alias];
+    if ((c.spec.network ?? DEFAULT_NETWORK) === name) {
+      if (c.networkId !== null) c.networkId = network.id;
+      return;
+    }
+    const current = c.extraEndpoints.find((endpoint) => endpoint.name === name);
+    if (current?.networkId === network.id) return;
+    c.extraEndpoints = [
+      ...c.extraEndpoints.filter((endpoint) => endpoint.name !== name),
+      { name, networkId: network.id, aliases },
+    ];
+  }
+
+  async listNetworks(): Promise<NetworkSummary[]> {
+    this.enter("listNetworks", []);
+    return [...this.networks.values()].map((network) => ({ name: network.name, subnets: [...network.subnets] }));
+  }
+
+  async setHostIngressBlock(owner: string, sources: string[]): Promise<void> {
+    this.enter("setHostIngressBlock", [owner, sources]);
+    this.hostIngressOwner = owner;
+    this.hostIngressBlock = [...sources];
   }
 
   async reattachNetwork(id: string, name: string): Promise<void> {

@@ -126,18 +126,27 @@ export default {
   "err.repo_needs_workspace": "克隆需要 Box 中一个空的、可写的 /workspace。请保留默认挂载，或挂载一个可写的工作区卷。",
   "err.clone_failed": "无法克隆代码仓库：{detail}",
   "err.devcontainer_missing": "代码仓库中没有位于 {path} 的 devcontainer.json。",
-  "err.devcontainer_invalid": "devcontainer.json 不是有效的 JSON（允许注释）：{detail}",
-  "err.devcontainer_unsupported": "devcontainer.json 使用了 MiniBox 不支持的配置：{keys}。",
-  "err.devcontainer_unsupported_hint":
-    "MiniBox 只读取 image、build.dockerfile、build.context、build.args 和 containerEnv。请把其他设置移入 Dockerfile 或删除后重试。",
-  "err.devcontainer_post_create":
-    "MiniBox 不执行 postCreateCommand 或其他生命周期命令。请把安装步骤写成 Dockerfile 中的 RUN 指令，删除该配置项后重试。",
+  "err.devcontainer_invalid": "devcontainer.json 无效：{detail}",
   "err.devcontainer_source": "devcontainer.json 必须设置 image 或 build.dockerfile，且只能设置其中一个。",
   "err.devcontainer_build_invalid":
     "build.dockerfile 必须是 Dockerfile 的路径，build.context 必须是构建上下文的路径，二者都相对于 devcontainer.json。",
+  "err.devcontainer_target_invalid":
+    "build.target 必须是 Dockerfile 中的阶段名，只能包含字母、数字、点、下划线和连字符。",
+  "err.devcontainer_target_missing":
+    "build.target {target} 不是 Dockerfile 中的阶段，因此无法构建模板。请使用 Dockerfile 中以 FROM … AS {target} 声明的阶段，或删除 build.target。",
+  "err.devcontainer_variable":
+    "{name} 使用了 {variable}，这是 MiniBox 不会展开的 devcontainer 变量。请写入它代表的实际值后重试。",
   "err.devcontainer_path_invalid":
     "build.dockerfile 和 build.context 必须位于代码仓库之内，且 Dockerfile 必须位于构建上下文之内。",
-  "err.devcontainer_value_invalid": "{name} 必须是一行字符串，且不能包含 ${…} 形式的变量引用，MiniBox 不会展开变量。",
+  "err.devcontainer_value_invalid":
+    "{name} 无效。名称必须是合法的变量名，取值不能含有控制字符（例如换行符），也不能含有 ${…} 形式的引用，因为 MiniBox 不会展开变量。",
+  "err.post_create_failed": "postCreateCommand 以退出码 {code} 结束。Box 已创建并予以保留。",
+  "err.post_create_timeout": "postCreateCommand 未能在 {max} 分钟内完成，因此已被停止。Box 已创建并予以保留。",
+  "err.post_create_box_stopped": "Box 在 postCreateCommand 开始前已停止，因此该命令没有运行。Box 已予以保留。",
+  "err.template_command_forbidden":
+    "此令牌不能用该模板创建 Box，因为其 devcontainer.json 会运行 postCreateCommand，这需要 exec 权限范围。",
+  "err.template_ports_forbidden":
+    "此令牌不能用该模板创建 Box，因为其 devcontainer.json 会转发端口，这需要 port:expose 权限范围。",
   "err.box_exists": "名为「{name}」的 Box 已存在。",
   "err.box_id_taken": "Box ID {id} 已被占用。",
   "err.checkpoint_not_found": "找不到检查点 {id}。",
@@ -196,6 +205,18 @@ export default {
     "卷 {volume} 在引擎中已不存在。MiniBox 不会重新创建它。请恢复引擎中的卷，或在不再需要时删除该卷的记录。",
   "err.network_reserved": "Box 不能加入网络 {network}。host、none 与 container 网络均被拒绝。",
   "err.network_not_managed": "Box 不能加入网络 {network}，只能加入 {managed}。",
+  "err.egress_mode_invalid": "出站策略须为 open、none 或 proxy-only，不能是 {mode}。",
+  "err.egress_preset_invalid": "出站预设 {preset} 无效，须为 agent-default 或 package-registries。",
+  "err.egress_domain_invalid":
+    "{domain} 不是合法的主机名。请使用 api.example.com 这样的域名，或 *.example.com 这样的通配符。",
+  "err.egress_options_need_proxy": "预设与域名只适用于 proxy-only 出站策略，{mode} 模式都不接受。",
+  "err.egress_domains_too_many": "出站白名单最多包含 {max} 个主机。",
+  "err.egress_pool_full": "出站网络的地址已用完。请删除一个使用 none 或 proxy-only 出站策略的 Box，然后重试。",
+  "err.egress_proxy_failed": "Box {box} 的出站代理无法启动：{detail}",
+  "err.egress_move_refused": "Box {box} 的出站策略为 {mode}，暂不能迁移到其他宿主机。",
+  "err.egress_network_conflict": "出站私有网络 {network} 已存在且设置不同。请删除该网络后重试。",
+  "err.egress_host_gateway_failed": "无法更新宿主机防火墙：{detail}",
+  "err.egress_needs_network": "出站策略 {mode} 与网络 {network} 不能同时设置。出站策略会决定 Box 的网络。",
   "err.cpu_over_host": "CPU 核数超出宿主机上限（{cores} 核）。",
   "err.memory_over_host": "内存超出宿主机上限（{gb} GB）。",
   "err.cpu_booked_over_host": "运行中的 Box 将占用该宿主机 {booked} 核，超过其上限 {limit} 核。",

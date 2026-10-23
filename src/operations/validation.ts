@@ -2,9 +2,17 @@ import { z } from "zod";
 
 import { BOX_PROFILES, type BoxProfile, isBoxProfile } from "../box-profile";
 import { canonicalTimezone, SCHEDULE_HOURS_MAX, SCHEDULE_HOURS_MIN, SCHEDULE_TIME_RE } from "../checkpoints/schedule";
+import {
+  EGRESS_MODES,
+  EGRESS_PRESETS,
+  type EgressMode,
+  type EgressPolicy,
+  MAX_EGRESS_DOMAINS,
+  normalizeEgress,
+} from "../egress/policy";
 import { AUTO_HOST, HOST_ID_RE } from "../host/store";
 import { AppError } from "../lib/errors";
-import { msg } from "../lib/messages";
+import { msg, type MessageKey } from "../lib/messages";
 import {
   contextUrlProblem,
   DOCKERFILE_MAX_BYTES,
@@ -454,7 +462,7 @@ export function requireResources(
 }
 
 const UPDATE_FIELDS = ["name", "cpus", "memoryMb", "pids", "labels", "idleTimeoutSec", "ttlSec"] as const;
-const REBUILD_INPUTS = ["template", "mounts", "env", "network", "profile"] as const;
+const REBUILD_INPUTS = ["template", "mounts", "env", "network", "egress", "profile"] as const;
 
 /** An update has to change an in-place field or name a rebuild field. The handler rejects rebuild fields without confirm. */
 export function requireUpdate(
@@ -471,6 +479,7 @@ export function requireUpdate(
     mounts?: unknown;
     env?: unknown;
     network?: unknown;
+    egress?: unknown;
     profile?: unknown;
   },
 ): void {
@@ -747,6 +756,59 @@ export const rebuildNetwork = () =>
       "Docker network the rebuilt container joins: the host's box network (created when missing) or the network the box already uses. Host, none and container networks, and any other network, are refused.",
   }).optional();
 
+const EGRESS_DOMAIN_MAX = 253;
+
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+/**
+ * A box's egress policy. The request goes through `normalizeEgress`, the rules a stored policy is held to, so the policy
+ * the box records is the one this accepted. A refusal from it becomes a failure on the `egress` field.
+ */
+function checkEgress(value: unknown): Checked<EgressPolicy | undefined> {
+  if (value === undefined || value === null) return accept(undefined);
+  const request = (typeof value === "object" && !Array.isArray(value) ? value : {}) as {
+    mode?: unknown;
+    presets?: unknown;
+    domains?: unknown;
+  };
+  const presets = request.presets ?? [];
+  const domains = request.domains ?? [];
+  if (typeof request.mode !== "string") {
+    return reject(msg("egress_mode_invalid", { mode: String(request.mode ?? "nothing") }), "egress");
+  }
+  if (!isStringList(presets)) return reject(msg("egress_preset_invalid", { preset: String(presets) }), "egress");
+  if (!isStringList(domains)) return reject(msg("egress_domain_invalid", { domain: String(domains) }), "egress");
+  try {
+    return accept(normalizeEgress({ mode: request.mode as EgressMode, presets, domains }));
+  } catch (e) {
+    if (e instanceof AppError && e.key !== undefined) {
+      return reject(msg(e.key as MessageKey, e.params), "egress");
+    }
+    throw e;
+  }
+}
+
+const EGRESS_META: Meta = {
+  type: "object",
+  required: ["mode"],
+  properties: {
+    mode: { type: "string", enum: [...EGRESS_MODES] },
+    presets: { type: "array", uniqueItems: true, items: { type: "string", enum: [...EGRESS_PRESETS] } },
+    domains: {
+      type: "array",
+      maxItems: MAX_EGRESS_DOMAINS,
+      items: { type: "string", maxLength: EGRESS_DOMAIN_MAX },
+    },
+  },
+  description:
+    "Network egress for the box. open, the default, reaches the internet like any container. none gives the box a private network with no route out: exec, SSH and preview still reach it. proxy-only gives it a private network whose only way out is a MiniBox proxy, which forwards to the hosts named by presets and domains and refuses the rest. presets (agent-default, package-registries) and domains (a host, or *. and a suffix for its subdomains) apply to proxy-only only. The proxy logs each host it allows or refuses, never paths or bodies. Changing egress rebuilds the box, so an update or rebuild without confirm true returns the preview.",
+};
+
+/** The egress a box is created with or rebuilt onto, checked as a stored policy is. Omitted keeps the box as it is. */
+export const egressInput = () => field(checkEgress, EGRESS_META).optional();
+
 export const confirmFlag = () =>
   field(checkConfirm, {
     type: "boolean",
@@ -874,7 +936,7 @@ const TEMPLATE_SOURCE_META: Meta = {
   type: "object",
   required: ["kind"],
   description:
-    "Where the template's files come from. kind dockerfile takes text, the Dockerfile itself, at most 64 KB with a FROM instruction. kind git takes url, with optional branch, subdir (the build context inside the repository) and dockerfile (relative to the context), and secretRef, as for a box. kind context takes url of a .tar or .tar.gz build context, with optional dockerfile. kind devcontainer takes url of a repository, with optional branch, path (the devcontainer.json inside it; without it, .devcontainer/devcontainer.json, then .devcontainer.json) and secretRef; it reads image, build.dockerfile, build.context, build.args and containerEnv, and refuses any other setting. Each build fetches the files again, so a rebuild picks up the newest commit or archive.",
+    "Where the template's files come from. kind dockerfile takes text, the Dockerfile itself, at most 64 KB with a FROM instruction. kind git takes url, with optional branch, subdir (the build context inside the repository) and dockerfile (relative to the context), and secretRef, as for a box. kind context takes url of a .tar or .tar.gz build context, with optional dockerfile. kind devcontainer takes url of a repository, with optional branch, path (the devcontainer.json inside it; without it, .devcontainer/devcontainer.json, then .devcontainer.json) and secretRef; it reads image, build (dockerfile, context, args, target), containerEnv, remoteEnv, postCreateCommand and forwardPorts, and lists any other setting as a warning in the build log. Each build fetches the files again, so a rebuild picks up the newest commit or archive.",
   properties: {
     kind: { type: "string", enum: ["dockerfile", "git", "context", "devcontainer"] },
     text: { type: "string", maxLength: DOCKERFILE_MAX_BYTES },

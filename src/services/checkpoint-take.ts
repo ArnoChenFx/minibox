@@ -5,6 +5,7 @@ import {
   type TrashMark,
   CHECKPOINT_VERSION,
 } from "../checkpoints/types";
+import { egressPolicyOf } from "../egress/policy";
 import type { HostCtx } from "../host/registry";
 import { abortError } from "../lib/abort";
 import { notFound } from "../lib/errors";
@@ -174,6 +175,7 @@ async function writeCheckpoint(
             cpus: spec.resources.cpus,
             memoryBytes: spec.resources.memoryBytes,
             profile: spec.profile,
+            ...(spec.egress ? { egress: egressPolicyOf(spec.egress) } : {}),
           }
         : null,
       data,

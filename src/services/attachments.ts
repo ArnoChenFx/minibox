@@ -73,18 +73,22 @@ export function engineRefs(host: HostCtx, mounts: BoxMount[]): BoxMount[] {
   });
 }
 
-/** Checks a rebuild's mounts and network before the preview is returned, so a refused request changes nothing. */
+/**
+ * Checks a rebuild's mounts and network before the preview is returned, so a refused request changes nothing. A rebuilt
+ * box with egress joins its own private network, which the planner names, so `privateNetwork` lets that one through.
+ */
 export async function assertRebuildAttachments(
   host: HostCtx,
   box: BoxSpec,
   mounts: BoxMount[],
   network: string,
+  privateNetwork: boolean,
 ): Promise<void> {
   for (const mount of mounts) {
     assertMountAllowed(host, box, mount.volume, await mountTarget(host, mount.volume));
   }
   assertMountsWithinLimits(host, mounts);
-  assertNetworkAllowed(host, box, network);
+  assertNetworkAllowed(host, box, network, privateNetwork);
 }
 
 /**
@@ -92,8 +96,8 @@ export async function assertRebuildAttachments(
  * that runs on another network keeps it while the request leaves the network alone, so boxes created before the box
  * network still work. Host, none and container networks are refused even then.
  */
-function assertNetworkAllowed(host: HostCtx, box: BoxSpec, network: string): void {
+function assertNetworkAllowed(host: HostCtx, box: BoxSpec, network: string, privateNetwork: boolean): void {
   if (SHARED_NETWORK.test(network)) throw forbidden(msg("network_reserved", { network }));
-  if (network === host.security.network || network === box.network) return;
+  if (privateNetwork || network === host.security.network || network === box.network) return;
   throw forbidden(msg("network_not_managed", { network, managed: host.security.network }));
 }

@@ -87,6 +87,11 @@ export interface Config {
   /** How often every volume's usage is sampled, in seconds. */
   volumeUsageIntervalSec: number;
   /**
+   * Keeps boxes on the default network from reaching services on the host through the bridge gateway. Boxes with egress
+   * `none` or `proxy-only` are always kept off the host, whatever this is set to.
+   */
+  blockHostGateway: boolean;
+  /**
    * Free space, as a percentage of the disk, below which a host alerts and refuses new volumes and checkpoints. 0 turns
    * the check off.
    */
@@ -287,6 +292,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     notifyAllowPrivate: isTruthy(get("NOTIFY_ALLOW_PRIVATE")),
     volumeUsageIntervalSec: intInRange(get("VOLUME_USAGE_INTERVAL_SEC"), 600, 60, 86400),
     hostDiskMinFreePercent: intInRange(get("HOST_DISK_MIN_FREE_PERCENT"), 10, 0, 100),
+    blockHostGateway: isTruthy(get("BLOCK_HOST_GATEWAY")),
   };
 }
 

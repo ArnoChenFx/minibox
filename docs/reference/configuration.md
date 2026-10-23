@@ -42,6 +42,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 |---|---|---|
 | `BOX_PROFILE` | `standard` | The security profile for new boxes: `standard`, `strict` or `relaxed`. See [Security profiles](../admin/security.md#security-profiles). An unknown name stops startup. |
 | `BOX_PIDS_LIMIT` | `1024` | The most processes that each new box can run. A positive whole number. An invalid value stops startup. |
+| `BLOCK_HOST_GATEWAY` | `false` | Keeps boxes on the default network from reaching services on the host through the bridge gateway. Boxes with network egress `none` or `proxy-only` are always kept off the host. `1`, `true`, `yes` and `on` turn it on, and any other value leaves it off. See [Network egress](../admin/network-egress.md#the-host-gateway). |
 | `BOX_IDLE_TIMEOUT_SEC` | `0` | The default idle timeout for boxes, in seconds. `0` turns idle sleep off. A whole number from 0 to 31536000. Each box can set its own timeout. See [Idle sleep and TTL](../user-guide/idle-sleep.md). |
 | `BOX_IDLE_CPU_PERCENT` | `5` | A box counts as idle only when its recent CPU use is below this percentage. From 0 to 100. |
 | `LIFECYCLE_INTERVAL_MS` | `30000` | How often MiniBox checks idle sleep and TTLs, in milliseconds. A positive whole number. |

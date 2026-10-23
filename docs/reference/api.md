@@ -130,7 +130,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes` | List boxes |
-| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. The response's `clone.taskId` names the clone task. `selfToken: true` gives the box's agent its self token |
+| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. A template built from a `devcontainer.json` may forward ports and run its `postCreateCommand`. The response's `setup.taskId` names the setup task, which runs those steps, and `clone.taskId` names the same task when `repo` is given. `selfToken: true` gives the box's agent its self token |
 | `GET` | `/api/boxes/{id}` | Get one box |
 | `PATCH` | `/api/boxes/{id}` | Update a box in place |
 | `DELETE` | `/api/boxes/{id}` | Delete a box. Its data is kept in the recycle bin unless `skipTrash=true`, and `deleteVolume=true` also deletes the volumes it owns. The response's `trash` names the entry, or is `null` |
@@ -310,7 +310,7 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `POST` | `/api/templates/base/build` | Build the bundled base template |
 | `DELETE` | `/api/templates/{ref}` | Delete a template |
 
-`POST /api/templates` takes `name`, an optional `description` and a `source`. The source's `kind` is `dockerfile` (with `text`), `git` (with `url`, and optional `branch`, `subdir`, `dockerfile` and `secretRef`), `context` (with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`) or `devcontainer` (with `url`, and optional `branch`, `path` and `secretRef`). The task's result holds `template.ref`, such as `minibox-template:node-tools`. `POST /api/images/pull` takes `ref`, such as `node:24-bookworm-slim`, and its task's result holds `image.ref` and `image.id`. See [Templates](../user-guide/templates.md).
+`POST /api/templates` takes `name`, an optional `description` and a `source`. The source's `kind` is `dockerfile` (with `text`), `git` (with `url`, and optional `branch`, `subdir`, `dockerfile` and `secretRef`), `context` (with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`) or `devcontainer` (with `url`, and optional `branch`, `path` and `secretRef`). A `devcontainer` source reads the settings that [Templates](../user-guide/templates.md#devcontainerjson) lists, and warns in the build log about any other. The task's result holds `template.ref`, such as `minibox-template:node-tools`. `POST /api/images/pull` takes `ref`, such as `node:24-bookworm-slim`, and its task's result holds `image.ref` and `image.id`. See [Templates](../user-guide/templates.md).
 
 `host` names the host an operation runs on. In a body it is the `host` field, as in `POST /api/templates`, `POST /api/images/pull` and `POST /api/templates/{ref}/sync`, where it is the host to copy to. As a query parameter it is `?host=`, as in `POST /api/templates/{ref}/rebuild`, `POST /api/templates/base/build` and `DELETE /api/templates/{ref}`. Without it, a build or a pull runs on `local`, and a rebuild or a delete runs on the first host that holds the template.
 

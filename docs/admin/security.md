@@ -62,13 +62,14 @@ A notification channel sends a message to an address that you give it.
 
 ## Template builds and repository clones
 
-Building a template, rebuilding one and pulling an image are for the owner only. A repository clone at box create needs `box:write`, and `secret:use` when it names a secret. Each of these makes MiniBox fetch content from an address that someone supplies.
+Building a template, rebuilding one and pulling an image are for the owner only. A repository clone at box create needs `box:write`, and `secret:use` when it names a secret. A box created from a template whose `devcontainer.json` sets a `postCreateCommand` needs `exec`, and one whose template forwards ports needs `port:expose`. Each of these makes MiniBox fetch content from an address that someone supplies, or run a command that the template's owner wrote.
 
 - **The server makes the request.** MiniBox downloads a build context URL from its own process, and a clone runs in a helper container on the Docker network. Both follow redirects to any address. MiniBox does not block private, loopback or link-local addresses, or cloud metadata addresses. A build can therefore reach any service the host can reach, including MiniBox itself. This is server-side request forgery (SSRF). Give owner access only to people who should have that reach.
 - **Limits.** A context download stops after 2 minutes and is limited to 256 MB. The unpacked context is limited to 256 MB and 20,000 entries. A clone stops after 5 minutes, and runs in a helper with a read-only root, no Linux capabilities and 512 MB of memory.
 - **Paths.** MiniBox refuses an archive entry or repository file whose path has `..`, is absolute or contains a NUL byte. It also refuses hard links, devices and other special files. A symbolic link that resolves outside the build context is refused, and so is any write that would pass through a symbolic link.
 - **SSH host keys.** Each clone starts with an empty known-hosts file and accepts the host key the first time it connects (`StrictHostKeyChecking=accept-new`). An attacker on the network could answer that first connection. HTTPS with a token checks the server's certificate, so prefer it when the host offers it.
-- **Secrets.** A token or deploy key goes to the helper as a file, never on a command line, and is used only for its own clone. The task log removes its value from the clone output. The audit log records the size of a pasted Dockerfile, not its text. A template's recipe in `DATA_DIR/template-recipes/` keeps the pasted Dockerfile as text, so keep secrets out of it. The recipe keeps only the names of secrets.
+- **Setup commands run in the box.** A template built from a `devcontainer.json` may set a `postCreateCommand`. It runs once, as `dev`, in every box created from that template, so the template's owner decides what those boxes run when they are created. Its output is shown in the box's setup task, and it is stopped after 30 minutes.
+- **Secrets.** A token or deploy key goes to the helper as a file, never on a command line, and is used only for its own clone. The task log removes its value from the clone output. The audit log records the size of a pasted Dockerfile, not its text. A template's recipe in `DATA_DIR/template-recipes/` keeps the pasted Dockerfile as text, so keep secrets out of it. A copy of the template to another host carries the recipe too. The recipe keeps only the names of secrets.
 
 ## Requests and browsers
 
@@ -127,9 +128,13 @@ Every profile also:
 - Sets the open-file limit to 65536.
 - Connects the box to the `<LABEL_PREFIX>-boxes` network (`minibox-boxes` by default). Boxes cannot reach each other on it.
 
+### Network egress
+
+A box on the `open` tier, the default, reaches the internet without filtering. A box on the `none` tier has no route out. A box on `proxy-only` reaches only the hosts on its allowlist, through a MiniBox proxy. Boxes on `none` and `proxy-only` each have a private network instead of the shared one. `BLOCK_HOST_GATEWAY` keeps boxes on the shared network off the host's services. See [Network egress](network-egress.md) for the tiers, the events and the limits.
+
 ### Limits
 
-- **No egress filtering.** Box traffic leaves through Docker's normal NAT, without filtering. Boxes can reach services on the host's bridge gateway.
+- **Open egress by default.** A box on the `open` tier leaves through Docker's normal NAT, without filtering. Unless `BLOCK_HOST_GATEWAY` is on, it can reach services on the host's bridge gateway. Use `none` or `proxy-only` to filter a box's outbound traffic. Those tiers have their own limits, listed in [Network egress](network-egress.md#limits).
 - **No hard disk quotas.** Nothing stops a box from writing as much as the disk holds. MiniBox samples each volume's usage, can stop the boxes that mount a volume over its hard limit, and refuses new volumes and checkpoints while the host disk is below its free-space minimum. Soft alerts are best effort, not a quota, and they are checked between samples. Filesystem quotas are later work. See [Volumes and storage](../user-guide/volumes-and-storage.md#usage-limits-and-free-space).
 
 ### Host scripts

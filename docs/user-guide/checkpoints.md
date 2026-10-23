@@ -88,7 +88,7 @@ A delete keeps:
 - **A box**: the data of its workspace and home volumes, which are the volumes it owns and that checkpoints include. The copy is taken before the box is removed, and it is kept whether or not you also delete the box's volumes. The cache volume, the shared tools volume and independent volumes are not kept.
 - **A volume**: its data. A cache or tools volume keeps nothing.
 
-To restore an entry, click **Restore**, and type a **Name**. The name must be free on its host. A box comes back as a new box, with its template, data, resources and security profile. It does not get back the environment variables, startup command, labels, network, TTL or shared mounts of the box it came from. A volume comes back as a new volume. The restore runs as a task, and the entry is removed when it has finished, so a failed restore leaves the entry in place.
+To restore an entry, click **Restore**, and type a **Name**. The name must be free on its host. A box comes back as a new box, with its template, data, resources, security profile and network egress. It does not get back the environment variables, startup command, labels, TTL or shared mounts of the box it came from. A box that had `none` or `proxy-only` egress gets a new private network. See [Network egress](../admin/network-egress.md). A volume comes back as a new volume. The restore runs as a task, and the entry is removed when it has finished, so a failed restore leaves the entry in place.
 
 Click **Purge now** to remove an entry and its data at once. You confirm first, and the data cannot be restored afterwards.
 

@@ -42,7 +42,7 @@ export function toHelperOptions(spec: HelperSpec, name: string): Docker.Containe
   const readonlyRoot = spec.readonlyRoot !== false;
   const hostConfig: Docker.HostConfig = {
     Mounts: (spec.mounts ?? []).map(helperMountOf),
-    NetworkMode: spec.network ? "bridge" : "none",
+    NetworkMode: spec.hostNetwork ? "host" : spec.network ? "bridge" : "none",
     ReadonlyRootfs: readonlyRoot,
     Memory: memory,
     MemorySwap: memory,

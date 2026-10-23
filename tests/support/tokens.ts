@@ -72,6 +72,8 @@ export interface Body {
   templates?: { ref: string; name: string | null; createdBy: string | null }[];
   taskId?: string;
   clone?: { taskId?: string };
+  setup?: { taskId?: string };
+  ports?: { port: number; source: "listening" | "manual"; url: string }[];
   tasks?: { id: string }[];
   events?: {
     seq: number;

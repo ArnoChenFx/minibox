@@ -34,6 +34,7 @@ const FILTERS = [
     label: "bd.filterSessions",
     match: (op) => op.startsWith("session.") || op.startsWith("terminal."),
   },
+  { key: "egress", label: "bd.filterEgress", match: (op) => op.startsWith("egress.") },
 ];
 
 const opLabel = (op) => (has(`ev.${op}`) ? t(`ev.${op}`) : op);
@@ -42,6 +43,7 @@ function iconOf(op) {
   if (op.startsWith("exec.")) return "zap";
   if (op.startsWith("container.")) return "box";
   if (op.startsWith("session.") || op.startsWith("terminal.")) return "terminal";
+  if (op.startsWith("egress.")) return "shield";
   if (op === "box.self.revoke") return "key";
   return "activity";
 }
@@ -73,6 +75,7 @@ function describe(event) {
   if (event.op === "self.status") return [d.state, d.note].filter((part) => typeof part === "string").join(" · ");
   if (event.op === "self.ask" && typeof d.message === "string") return clip(d.message, COMMAND_MAX);
   if (event.op.startsWith("exec.")) return commandOf(d);
+  if (event.op.startsWith("egress.")) return typeof d.host === "string" ? `${d.host}:${d.port ?? ""}` : "";
   if (typeof d.session === "string") return d.session;
   return "";
 }

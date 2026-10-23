@@ -207,19 +207,29 @@ export const MESSAGES = {
     "A clone needs an empty, writable /workspace in the box. Leave the default mounts in place, or mount a writable workspace volume.",
   clone_failed: "Could not clone the repository: {detail}",
   devcontainer_missing: "There is no devcontainer.json at {path} in the repository.",
-  devcontainer_invalid: "The devcontainer.json file is not valid JSON with comments: {detail}",
-  devcontainer_unsupported: "devcontainer.json uses {keys}, which MiniBox does not support.",
-  devcontainer_unsupported_hint:
-    "MiniBox reads image, build.dockerfile, build.context, build.args and containerEnv. Move other settings into the Dockerfile, remove them, then try again.",
-  devcontainer_post_create:
-    "MiniBox does not run postCreateCommand or other lifecycle commands. Add the install steps to the Dockerfile as RUN instructions, remove the key, then try again.",
+  devcontainer_invalid: "devcontainer.json is not valid: {detail}",
   devcontainer_source: "devcontainer.json must set image or build.dockerfile, and not both.",
   devcontainer_build_invalid:
     "build.dockerfile must be a path to the Dockerfile, and build.context a path to the build context, both relative to devcontainer.json.",
+  devcontainer_target_invalid:
+    "build.target must be a stage name of the Dockerfile, with only letters, digits, dots, underscores and hyphens.",
+  devcontainer_target_missing:
+    "build.target {target} is not a stage of the Dockerfile, so the template cannot be built. Name a stage the Dockerfile declares with FROM … AS {target}, or remove build.target.",
+  devcontainer_variable:
+    "{name} uses {variable}, a devcontainer variable that MiniBox does not expand. Write the value it stands for, then try again.",
   devcontainer_path_invalid:
     "build.dockerfile and build.context must stay inside the repository, and the Dockerfile must be inside the build context.",
   devcontainer_value_invalid:
-    "{name} must be a string on one line without a ${…} variable reference, because MiniBox does not expand variables.",
+    "{name} is not valid. A name must be a valid variable name, and a value must have no control characters, such as a line break, and no ${…} reference, because MiniBox does not expand variables.",
+  post_create_failed: "postCreateCommand exited with code {code}. The box was created and is kept.",
+  post_create_timeout:
+    "postCreateCommand did not finish within {max} minutes, so it was stopped. The box was created and is kept.",
+  post_create_box_stopped:
+    "The box stopped before postCreateCommand could run, so the command did not run. The box is kept.",
+  template_command_forbidden:
+    "This token may not create a box from this template, because its devcontainer.json runs postCreateCommand, which needs the exec scope.",
+  template_ports_forbidden:
+    "This token may not create a box from this template, because its devcontainer.json forwards ports, which needs the port:expose scope.",
   box_exists: "A box named “{name}” already exists.",
   box_id_taken: "Box id {id} is already in use.",
   checkpoint_not_found: "Checkpoint {id} was not found.",
@@ -293,6 +303,21 @@ export const MESSAGES = {
     "Volume {volume} no longer exists in the engine. MiniBox does not recreate it. Restore the engine volume, or delete the volume record if you no longer need it.",
   network_reserved: "Boxes cannot join network {network}. Host, none and container networks are refused.",
   network_not_managed: "Boxes cannot join network {network}. Boxes join {managed}.",
+  egress_mode_invalid: "Egress must be open, none or proxy-only, not {mode}.",
+  egress_preset_invalid: "Egress preset {preset} is not one of agent-default or package-registries.",
+  egress_domain_invalid:
+    "{domain} is not a host name. Use a name such as api.example.com, or a wildcard such as *.example.com.",
+  egress_options_need_proxy: "Presets and domains apply to proxy-only egress only. The {mode} mode takes neither.",
+  egress_domains_too_many: "An egress allowlist holds at most {max} hosts.",
+  egress_pool_full:
+    "No address is left for another box's egress network. Remove a box with egress none or proxy-only, then try again.",
+  egress_proxy_failed: "The egress proxy for box {box} could not start: {detail}",
+  egress_move_refused:
+    "Box {box} has egress {mode}. A box with a network egress policy cannot move to another host yet.",
+  egress_network_conflict:
+    "The private network {network} already exists with other settings. Remove it, then try again.",
+  egress_host_gateway_failed: "The host firewall could not be updated: {detail}",
+  egress_needs_network: "Egress {mode} and network {network} cannot be set together. Egress sets the box network.",
   cpu_over_host: "CPU cores exceed the host limit ({cores} cores).",
   memory_over_host: "Memory exceeds the host limit ({gb} GB).",
   cpu_booked_over_host: "Running boxes on this host would take {booked} CPUs, more than its limit of {limit}.",

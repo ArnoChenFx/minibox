@@ -99,11 +99,11 @@ MiniBox never pulls its own template, snapshot and checkpoint images. They exist
 2. In **Template**, choose the template.
 3. Finish the form, and click **Create and start**.
 
-You can also click **Create from this** on a template's card in the **Templates** list. To clone a repository into the box at the same time, see [Clone a repository](boxes.md#clone-a-repository).
+You can also click **Create from this** on a template's card in the **Templates** list. To clone a repository into the box at the same time, see [Clone a repository](boxes.md#clone-a-repository). A template built from a `devcontainer.json` that sets `postCreateCommand` or `forwardPorts` sets up each box created from it. See [The setup of a box](#the-setup-of-a-box).
 
 ## Copy a template to another host
 
-A box on another host needs the template's image on that host. MiniBox copies the image when you create the box there, so you rarely need to copy a template by hand. To copy one ahead of time, click **Copy here** next to a host that lacks it, on the template's card. The copy runs as a **Sync template** task. Each card lists every host, and whether it has the template.
+A box on another host needs the template's image on that host. MiniBox copies the image when you create the box there, so you rarely need to copy a template by hand. To copy one ahead of time, click **Copy here** next to a host that lacks it, on the template's card. The copy runs as a **Sync template** task. Each card lists every host, and whether it has the template. A copy also carries the recipe of a template built from a source. The copy keeps that template's setup, and it can be rebuilt on that host from the same source.
 
 Deleting a template in the console removes its copy on every host. A rebuild changes the copy on the first host that holds the template. The other copies keep their old image until you delete them and copy the template again. A copy needs a target engine that keeps image IDs. See [Limits](hosts.md#limits).
 
@@ -121,8 +121,8 @@ Deleting a template does not affect the boxes that you created from it. A templa
 
 Building a template, rebuilding one and pulling an image are for the owner only. No token can do them, even a token with every scope.
 
-- **Secrets.** A private repository's token or deploy key is used only for its clone. MiniBox removes its value from the clone output before the task log shows it. The value is never written into the image, and the recipe keeps only the secret's name. Do not paste a secret into a Dockerfile, `containerEnv` or `build.args`: those values go into the image or the build log.
-- **Recipes.** The pasted Dockerfile and the source fields are kept on the host in `DATA_DIR/template-recipes/`, so that a rebuild can run them again.
+- **Secrets.** A private repository's token or deploy key is used only for its clone. MiniBox removes its value from the clone output before the task log shows it. The value is never written into the image, and the recipe keeps only the secret's name. Do not paste a secret into a Dockerfile, `containerEnv`, `remoteEnv` or `build.args`: those values go into the image or the build log.
+- **Recipes.** The pasted Dockerfile and the source fields are kept on each host that holds the template, in `DATA_DIR/template-recipes/`, so that a rebuild can run them again. A copy to another host carries them too.
 - **Build contexts.** MiniBox refuses an archive entry or repository file whose path leaves the build context, is absolute, or is a hard link, a device or another special file. It also refuses a symbolic link that points outside the context, or a write that would pass through one.
 - **URLs come from the server.** MiniBox downloads a build context URL itself, and clones a repository from a helper container on the Docker network. Both follow redirects to any address. MiniBox does not block private or loopback addresses, or cloud metadata addresses, so a build can reach any service that the host can reach. Give owner access only to people who should have that reach.
 - **SSH host keys.** An SSH clone accepts the server's host key the first time it connects, because each clone starts with an empty known-hosts file. An attacker on the network could answer that first connection. HTTPS with a token checks the server's certificate instead.
@@ -141,20 +141,54 @@ MiniBox reads these settings:
 | `build.dockerfile` | The Dockerfile, relative to `devcontainer.json`. It must sit inside the build context. |
 | `build.context` | The build context, relative to `devcontainer.json`. Defaults to its folder. It must stay inside the repository. |
 | `build.args` | Build arguments. |
+| `build.target` | The stage of the Dockerfile to build. |
 | `containerEnv` | One `ENV` instruction per entry, written into the image. |
+| `remoteEnv` | `ENV` instructions too, written into the image, so every process in the box sees them. An entry with the same name as one in `containerEnv` replaces it. |
+| `postCreateCommand` | Runs once in the box, when a box is created from the template. See [The setup of a box](#the-setup-of-a-box). |
+| `forwardPorts` | TCP ports that become manual preview ports of the box, when a box is created from the template. |
+| `remoteUser` | Accepted when it is `dev` or `1000`, the user every box runs as. |
 | `$schema`, `name` | Metadata only. They change nothing. |
 
-The file sets either `image` or `build`, never both, and a `build` needs `build.dockerfile`. A value cannot use a `${…}` reference, because MiniBox does not expand variables. The `devcontainer.json` file is limited to 256 KB. When `containerEnv` is set, MiniBox copies the Dockerfile to add the `ENV` lines, and that copy is limited to 256 KB too. The repository's own file is not changed.
+The file sets either `image` or `build`, never both, and a `build` needs `build.dockerfile`. When `build.target` is set and there are `ENV` lines to add, MiniBox builds the target stage and adds a last stage on top of it that holds the `ENV` lines. Without `ENV` lines, the target stage is the image. A target that the Dockerfile does not declare is refused. The `devcontainer.json` file is limited to 256 KB. When there are `ENV` lines to add, MiniBox copies the Dockerfile to add them, and that copy is limited to 256 KB too. The repository's own file is not changed.
 
-Not supported:
+### The setup of a box
 
-- Any other top-level setting, such as `features`, `forwardPorts`, `mounts`, `remoteUser` or `customizations`. The build is refused, and the error names each setting.
-- Lifecycle commands: `initializeCommand`, `onCreateCommand`, `updateContentCommand`, `postCreateCommand`, `postStartCommand` and `postAttachCommand`. MiniBox never runs them, and the build is refused when the file sets one.
-- Build settings other than `dockerfile`, `context` and `args`, such as `target` and `cacheFrom`.
+`postCreateCommand` and `forwardPorts` are not part of the image. The template keeps them on every host that holds a copy of it, and a box created from the template runs them in its setup task, in this order:
 
-The reason for these limits: MiniBox builds an image and runs nothing from the repository. A lifecycle command runs inside a box after it starts, and a template does not start a box. Put install steps in the Dockerfile as `RUN` instructions instead. MiniBox refuses an unsupported setting rather than skipping it, so a template is never built without something the file asked for.
+1. The repository is cloned, when you gave one.
+2. Each port in `forwardPorts` becomes a manual preview port of the box.
+3. `postCreateCommand` runs.
 
-`containerEnv` is not a place for secrets, because its values are written into the image and shown in the build log. To give a box a secret, use an environment variable with a secret reference. See [Environment variables and secrets](environment-and-secrets.md).
+- A string runs as `/bin/sh -c "<command>"`, so shell syntax such as `npm ci && npm run build` works. A list runs as written, without a shell, and `$HOME` stays literal in it.
+- The command runs as `dev`, in `/workspace` when the box mounts it, and in `/` otherwise. Its output is in the task log, under **Set up box** in the **Tasks** panel.
+- A command that exits with a non-zero code fails the setup task, and the task names the code. The box is kept, so you can open it and fix the problem.
+- A command still running after 30 minutes is stopped, and the task fails. Cancelling the task also stops it. In both cases the box is kept.
+- The setup runs once, when the box is created. Starting, stopping, restarting and rebuilding the box do not run it again. A box saved from the template does not inherit it.
+- A token needs the `exec` scope to create a box from a template whose `postCreateCommand` is set, and the `port:expose` scope for `forwardPorts`. A token without the scope is refused before the box is made.
+
+### Settings MiniBox does not apply
+
+A setting that MiniBox does not apply does not stop the build. The build log shows a `Warning:` line that names it, and the build goes on without it. This covers every top-level setting that the table does not list, such as `features`, `mounts`, `runArgs` and `customizations`. It also covers the lifecycle commands `initializeCommand`, `onCreateCommand`, `updateContentCommand`, `postStartCommand` and `postAttachCommand`, which MiniBox never runs.
+
+These settings are also listed as warnings:
+
+- A `remoteUser` other than `dev` or `1000`, because every box runs commands as `dev`.
+- A `remoteEnv` entry set to `null`, which would unset a variable. MiniBox cannot unset a variable.
+- A `build` setting other than `dockerfile`, `context`, `args` and `target`, such as `cacheFrom`.
+- A `postCreateCommand` in object form, which runs several commands in parallel. MiniBox does not run it.
+- A `forwardPorts` entry that is not a TCP port in the box, such as `db:5432`.
+
+A setting that MiniBox applies but cannot apply as written is refused, and the build does not start:
+
+- A `containerEnv`, `remoteEnv` or `build.args` value that uses a `${…}` reference. MiniBox does not expand variables, so the value would differ from the file.
+- A name that is not a valid variable name, or a value with a control character in it, such as a line break or a tab.
+- A `postCreateCommand` that names a devcontainer variable, such as `${localEnv:HOME}` or `${containerWorkspaceFolder}`.
+- A `postCreateCommand` that is longer than 64 KB, or a `forwardPorts` that is not a list.
+- A `build.target` that the Dockerfile does not declare with `FROM … AS <name>`.
+
+MiniBox runs one command from the repository, `postCreateCommand`, and only when it creates a box. The other lifecycle commands belong to stages of a dev container's life that MiniBox does not have. Put install steps in the Dockerfile as `RUN` instructions instead: the build runs them once, and every box made from the template has the result.
+
+`containerEnv` and `remoteEnv` are not places for secrets, because their values are written into the image and shown in the build log. To give a box a secret, use an environment variable with a secret reference. See [Environment variables and secrets](environment-and-secrets.md).
 
 ## Limits
 
@@ -163,7 +197,8 @@ The reason for these limits: MiniBox builds an image and runs nothing from the r
 | Template name | 63 characters |
 | Description | 200 characters, on one line |
 | Pasted Dockerfile | 64 KB |
-| `devcontainer.json`, or a Dockerfile that MiniBox copies for `containerEnv` | 256 KB each |
+| `devcontainer.json`, or a Dockerfile that MiniBox copies to add `ENV` lines | 256 KB each |
+| `postCreateCommand` | 64 KB, and 30 minutes to run |
 | Build context archive | 256 MB downloaded and 256 MB unpacked, and 20,000 entries |
 | Download of a build context | 2 minutes |
 | Clone | 5 minutes, and 512 MB of memory for the helper |

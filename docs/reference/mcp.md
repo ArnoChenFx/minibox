@@ -220,14 +220,14 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 
 ## Repository and template sources
 
-`create_box` takes `repo` to clone a Git repository into `/workspace` on the first create. It has `url`, and optional `branch` and `secretRef`. The clone runs as a task, returned as `clone.taskId`. A `secretRef` names a secret that holds a token for HTTPS, or a base64 deploy key for SSH.
+`create_box` takes `repo` to clone a Git repository into `/workspace` on the first create. It has `url`, and optional `branch` and `secretRef`. The setup runs as a task, returned as `setup.taskId` (and `clone.taskId` too when `repo` is given). A box created from a template whose `devcontainer.json` sets `postCreateCommand` or `forwardPorts` runs that setup once, and the token needs `exec` for the command and `port:expose` for the ports. A `secretRef` names a secret that holds a token for HTTPS, or a base64 deploy key for SSH.
 
 `create_template` takes `name`, an optional `description`, and a `source` whose `kind` is one of these:
 
 - `dockerfile`, with `text`.
 - `git`, with `url`, and optional `branch`, `subdir`, `dockerfile` and `secretRef`.
 - `context`, with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`.
-- `devcontainer`, with `url`, and optional `branch`, `path` and `secretRef`. It reads `image`, `build` and `containerEnv` from the `devcontainer.json` file, and refuses any other setting, including lifecycle commands.
+- `devcontainer`, with `url`, and optional `branch`, `path` and `secretRef`. It reads `image`, `build`, `containerEnv`, `remoteEnv`, `postCreateCommand` and `forwardPorts` from the `devcontainer.json` file, and lists any other setting as a warning in the build log without applying it.
 
 `rebuild_template` takes the template's `ref`, and `pull_image` takes an image `ref`, such as `node:24-bookworm-slim`. `sync_template` takes the template's `ref` and the `host` to copy it to. Building, rebuilding and pulling are owner only. Each returns a task, and its log shows the build or the layers. See [Templates](../user-guide/templates.md).
 
