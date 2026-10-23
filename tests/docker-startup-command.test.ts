@@ -236,6 +236,31 @@ describe.skipIf(!enabled)("startup command on a real engine", () => {
     expect(await stateOf(box)).toMatchObject({ status: "running" });
   });
 
+  test("a start Docker makes without MiniBox runs the command again, once per start", async () => {
+    host.sampler.start();
+    app.startups.start();
+    try {
+      const box = await newBox("init-engine", `echo run >> ${MARKS}; sleep 600`);
+      await waitForMarks(box, 1);
+      const current = (await getBox(host, box.boxId)).id;
+
+      await docker.getContainer(current).restart({ t: 1 });
+      await waitForMarks(box, 2);
+
+      await docker.getContainer(current).stop({ t: 1 });
+      await docker.getContainer(current).start();
+      await waitForMarks(box, 3);
+
+      // A late or repeated event must not launch the command a second time for the same start.
+      await Bun.sleep(3_000);
+      expect(await marks(box)).toEqual(["run", "run", "run"]);
+      expect(await stateOf(box)).toMatchObject({ status: "running" });
+    } finally {
+      app.startups.stop();
+      host.sampler.stop();
+    }
+  });
+
   test("a process a sudo started for the run, and the run's own processes, end when the command runs again", async () => {
     // The sudo'd process ignores the hangup that ending the pane's session sends, so only the sweep ends it.
     const box = await newBox(
