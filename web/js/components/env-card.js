@@ -144,11 +144,17 @@ export function mountEnvCard(container, { box }) {
         body: rebuildPreviewHtml(err.details.preview),
         confirmText: t("rb.apply"),
         danger: true,
+        checkboxes: [{ key: "safetyCheckpoint", label: t("rb.safety"), help: t("rb.safetyHelp"), checked: true }],
       });
       if (!ok) return false;
-      result = await api(path, { method: "POST", body: { env, confirm: true }, headers });
+      result = await api(path, {
+        method: "POST",
+        body: { env, confirm: true, safetyCheckpoint: ok.safetyCheckpoint },
+        headers,
+      });
     }
-    toast(t("rb.done"), { message: t("rb.doneText", { name: box().name }) });
+    const safety = result?.safety ? ` ${t("rb.safetyTaken")}` : "";
+    toast(t("rb.done"), { message: t("rb.doneText", { name: box().name }) + safety });
     refreshHost();
     const next = result?.box?.id;
     if (next && next !== box().id) location.hash = `#/boxes/${next}`;

@@ -122,4 +122,5 @@ export default {
   "about.license": "许可证",
   "about.licenseMeta": "Apache 2.0 许可证",
   "nav.volumes": "卷",
+  "nav.trash": "回收站",
 };

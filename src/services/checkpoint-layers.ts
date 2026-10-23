@@ -5,14 +5,17 @@ import { notFound, badRequest, conflict } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { type ImageDetails, isRuntimeError } from "../runtime";
-import type { BoxMount, BoxSpec } from "../specs/types";
+import type { BoxSpec, MountMode } from "../specs/types";
 import type { VolumeRecord } from "../volumes/types";
 import type { Box } from "./boxes";
 import { envScrubChanges } from "./images";
 
+/** One volume a checkpoint takes, and the path and mode it is read at. `inBox` is false for a volume no box mounts. */
 export interface PlannedLayer {
   volume: VolumeRecord;
-  mount: BoxMount;
+  path: string;
+  mode: MountMode;
+  inBox: boolean;
 }
 
 /**
@@ -36,11 +39,18 @@ export function planLayers(host: HostCtx, spec: BoxSpec, named: string[]): Plann
     }
     included.add(volume.id);
   }
-  return mounted.filter(({ volume }) => volume.checkpoint && (volume.ownership === "owned" || included.has(volume.id)));
+  return mounted
+    .filter(({ volume }) => volume.checkpoint && (volume.ownership === "owned" || included.has(volume.id)))
+    .map(({ volume, mount }) => ({ volume, path: mount.path, mode: mount.mode, inBox: true }));
 }
 
-export function tagsFor(checkpointId: string, boxId: string, volume: VolumeRecord): string[] {
-  return [`checkpoint:${checkpointId}`, `box:${boxId}`, `volume:${volume.id}`];
+/** The checkpoint-owned layers of a box: what a recycle bin entry keeps when the box is deleted. */
+export function boxLayers(host: HostCtx, spec: BoxSpec): PlannedLayer[] {
+  return planLayers(host, spec, []);
+}
+
+export function tagsFor(checkpointId: string, boxId: string | null, volume: VolumeRecord): string[] {
+  return [`checkpoint:${checkpointId}`, ...(boxId === null ? [] : [`box:${boxId}`]), `volume:${volume.id}`];
 }
 
 export async function commitSystemLayer(

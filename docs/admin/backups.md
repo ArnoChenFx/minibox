@@ -48,7 +48,7 @@ Replace `vol_abc123` with the volume's name. The name is shown on the **Volumes*
 
 ## Checkpoints are not a backup of the server
 
-Checkpoints are copies of one box's data. They are stored in the same Docker engine, on the same disk as the boxes. If that disk fails, the checkpoints and the boxes are lost together. To keep a copy somewhere else, copy the checkpoint repository volume and the key together. To keep one checkpoint, [export](../user-guide/checkpoints.md#export-and-import) it and download the package. A package is sealed with its passphrase, and it expires a day after the export.
+Checkpoints are copies of one box's data. The recycle bin keeps copies of deleted boxes and volumes in the same repository, so they are backed up with it. They are stored in the same Docker engine, on the same disk as the boxes. If that disk fails, the checkpoints and the boxes are lost together. To keep a copy somewhere else, copy the checkpoint repository volume and the key together. To keep one checkpoint, [export](../user-guide/checkpoints.md#export-and-import) it and download the package. A package is sealed with its passphrase, and it expires a day after the export.
 
 ## Restore
 

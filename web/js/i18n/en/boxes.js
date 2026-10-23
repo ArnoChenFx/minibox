@@ -240,4 +240,14 @@ export default {
   "cb.repoHelp": "The repository is cloned once, when the box is created. Leave it empty for an empty workspace.",
   "cb.cloning": "Cloning repository",
   "cb.cloningText": "Watch progress in the Tasks panel.",
+  "act.trash.restore": "Restored from the recycle bin",
+  "act.trash.purge": "Purged from the recycle bin",
+  "ba.skipTrash": "Delete without keeping a copy",
+  "ba.skipTrashHelp":
+    "The data is not kept in the recycle bin, so it cannot be restored. Only the owner, or a token with the trash:skip scope, may do this.",
+  "ba.keptInBin": "Kept in the recycle bin until {date}.",
+  "rb.safety": "Take a safety checkpoint first",
+  "rb.safetyHelp":
+    "Saves a checkpoint of the box's data before the rebuild. A failed rebuild that restores the box discards it. If the box cannot be restored exactly, the checkpoint is kept so the data can be recovered.",
+  "rb.safetyTaken": "A safety checkpoint was taken before the rebuild.",
 };

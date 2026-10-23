@@ -230,9 +230,12 @@ describe("MCP", () => {
         "get_volume",
         "import_checkpoint",
         "list_pools",
+        "list_trash",
         "list_volumes",
         "measure_volume",
+        "purge_trash",
         "replace_pools",
+        "restore_trash",
         "set_checkpoint_schedule",
         "set_volume_limits",
       ]);

@@ -24,6 +24,7 @@ import {
   volumeChoices,
 } from "../web/js/lib/mounts.js";
 import { retiredRedirect } from "../web/js/lib/retired-routes.js";
+import { daysLeft } from "../web/js/lib/trash.js";
 
 const LIB = join(ROOT, "web", "js", "lib");
 const I18N = join(ROOT, "web", "js", "i18n");
@@ -847,6 +848,24 @@ describe("box state badges", () => {
       running: "running",
     });
     expect(badges.expired).toContain("TTL expired");
+  });
+});
+
+describe("recycle bin countdown", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.parse("2026-10-22T00:00:00.000Z");
+  const at = (ms: number) => new Date(now + ms).toISOString();
+
+  test("counts the days left, and a part of a day counts as a day", () => {
+    expect(daysLeft(at(7 * DAY), now)).toBe(7);
+    expect(daysLeft(at(DAY / 2), now)).toBe(1);
+    expect(daysLeft(at(DAY + 1), now)).toBe(2);
+  });
+
+  test("an entry whose time has passed, or whose time is not a date, has no days left", () => {
+    expect(daysLeft(at(0), now)).toBe(0);
+    expect(daysLeft(at(-DAY), now)).toBe(0);
+    expect(daysLeft("not a date", now)).toBe(0);
   });
 });
 

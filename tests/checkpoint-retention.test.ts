@@ -37,6 +37,7 @@ function recordOf(id: string, overrides: Partial<CheckpointRecord> = {}): Checkp
     spec: { template: { ref: "base", image: "base", digest: null }, cpus: 1, memoryBytes: MB, profile: null },
     data: [],
     system: null,
+    trash: null,
     createdAt: daysBefore(0, NOW),
     updatedAt: daysBefore(0, NOW),
     ...overrides,
@@ -46,7 +47,7 @@ function recordOf(id: string, overrides: Partial<CheckpointRecord> = {}): Checkp
 const idsOf = (records: CheckpointRecord[]): string[] => records.map((record) => record.id);
 
 describe("which automatic checkpoints expire", () => {
-  const policy: CheckpointPolicy = { keepLast: 2, keepDays: 30, capacityBytes: 0 };
+  const policy: CheckpointPolicy = { keepLast: 2, keepDays: 30, capacityBytes: 0, trashKeepDays: 7 };
   const none = new Set<string>();
 
   test("the newest keepLast of each box stay, and the older ones go", () => {
@@ -78,7 +79,9 @@ describe("which automatic checkpoints expire", () => {
       recordOf("ck_manual", { auto: false, createdAt: daysBefore(900, NOW) }),
       recordOf("ck_pinned", { pinned: true, createdAt: daysBefore(900, NOW) }),
     ];
-    expect(expiredAutomatic(records, { keepLast: 1, keepDays: 1, capacityBytes: 0 }, NOW, none)).toEqual([]);
+    expect(
+      expiredAutomatic(records, { keepLast: 1, keepDays: 1, capacityBytes: 0, trashKeepDays: 7 }, NOW, none),
+    ).toEqual([]);
   });
 
   test("pinned checkpoints do not count toward keepLast", () => {
@@ -87,9 +90,9 @@ describe("which automatic checkpoints expire", () => {
       recordOf("ck_newest", { createdAt: daysBefore(1, NOW) }),
       recordOf("ck_older", { createdAt: daysBefore(2, NOW) }),
     ];
-    expect(idsOf(expiredAutomatic(records, { keepLast: 1, keepDays: 0, capacityBytes: 0 }, NOW, none))).toEqual([
-      "ck_older",
-    ]);
+    expect(
+      idsOf(expiredAutomatic(records, { keepLast: 1, keepDays: 0, capacityBytes: 0, trashKeepDays: 7 }, NOW, none)),
+    ).toEqual(["ck_older"]);
   });
 
   test("a held checkpoint stays whatever its rank or age, and still takes a place among the newest", () => {
@@ -98,11 +101,13 @@ describe("which automatic checkpoints expire", () => {
       recordOf("ck_older", { createdAt: daysBefore(2, NOW) }),
     ];
     const held = new Set(["ck_held"]);
-    expect(idsOf(expiredAutomatic(records, { keepLast: 1, keepDays: 0, capacityBytes: 0 }, NOW, held))).toEqual([
-      "ck_older",
-    ]);
+    expect(
+      idsOf(expiredAutomatic(records, { keepLast: 1, keepDays: 0, capacityBytes: 0, trashKeepDays: 7 }, NOW, held)),
+    ).toEqual(["ck_older"]);
     const old = [recordOf("ck_held", { createdAt: daysBefore(400, NOW) })];
-    expect(expiredAutomatic(old, { keepLast: 1, keepDays: 7, capacityBytes: 0 }, NOW, held)).toEqual([]);
+    expect(expiredAutomatic(old, { keepLast: 1, keepDays: 7, capacityBytes: 0, trashKeepDays: 7 }, NOW, held)).toEqual(
+      [],
+    );
   });
 });
 

@@ -347,7 +347,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     mcpSessions: new McpSessions((id, listener) => tokens.watch(id, listener)),
     bus,
     retention,
-    checkpointSweep: new CheckpointSweep(hosts),
+    checkpointSweep: new CheckpointSweep(hosts, undefined, recordNote),
     checkpointScheduler: new CheckpointScheduler(hosts, recordNote),
     tasks,
     operations: new Executor(OPERATIONS, {

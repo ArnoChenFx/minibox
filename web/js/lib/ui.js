@@ -86,7 +86,16 @@ export function openDialog({
   return { root: overlay, close };
 }
 
-/** Promise-based confirm dialog. `message` and `body` are HTML. Resolves to false, or to { checked } when confirmed. */
+/** A native checkbox with its label and help. `label` and `help` are markup, so callers escape anything they interpolate. */
+export function checkboxField({ id, label, help = "", checked = false }) {
+  return `<label class="checkbox"><input type="checkbox" id="${id}" ${checked ? "checked" : ""} /> <span>${label}${help ? `<div class="help">${help}</div>` : ""}</span></label>`;
+}
+
+/**
+ * Promise-based confirm dialog. `message` and `body` are HTML, and the checkboxes go below the body. Resolves to false
+ * when cancelled, or to `{ [key]: checked }` for the checkboxes when confirmed. `checkbox` is one checkbox whose result
+ * is `{ checked }`.
+ */
 export function confirmDialog({
   title,
   message,
@@ -94,7 +103,9 @@ export function confirmDialog({
   confirmText = t("common.confirm"),
   danger = false,
   checkbox,
+  checkboxes = [],
 }) {
+  const fields = checkbox ? [{ key: "checked", ...checkbox }] : checkboxes;
   return new Promise((resolve) => {
     let result = false;
     const { root, close } = openDialog({
@@ -102,14 +113,12 @@ export function confirmDialog({
       description: message,
       iconName: danger ? "alert" : "info",
       tone: danger ? "danger" : "",
-      body: checkbox
-        ? `<label class="checkbox"><input type="checkbox" id="cfm-check" /> <span>${checkbox.label}${checkbox.help ? `<div class="help">${checkbox.help}</div>` : ""}</span></label>`
-        : body,
+      body: `${body}${fields.map((field) => checkboxField({ id: `cfm-check-${field.key}`, ...field })).join("")}`,
       footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="cfm-ok">${esc(confirmText)}</button>`,
       onClose: () => resolve(result),
     });
     root.querySelector("#cfm-ok").addEventListener("click", () => {
-      result = { checked: !!root.querySelector("#cfm-check")?.checked };
+      result = Object.fromEntries(fields.map(({ key }) => [key, !!root.querySelector(`#cfm-check-${key}`)?.checked]));
       close();
     });
   });

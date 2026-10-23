@@ -14,6 +14,7 @@ import { sshProxy } from "./cli/ssh-proxy";
 import { templateCommand } from "./cli/template";
 import { toolCommand } from "./cli/tool";
 import { transferCommand } from "./cli/transfer";
+import { trashCommand } from "./cli/trash";
 
 /** The server version the binary was compiled from. `bun build --env` inlines it; a run from source reports `dev`. */
 const BUILT_VERSION = process.env.MINIBOX_CLI_BUILD_VERSION?.trim() || "dev";
@@ -49,6 +50,7 @@ export async function runCli(
     if (command === "box" && sub === "startup-command") return await boxStartupCommand(rest, env, io);
     if (command === "template") return await templateCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "image") return await imageCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "trash") return await trashCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "exec") return await execCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "session") return await sessionCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "files") return await filesCommand(sub === undefined ? [] : [sub, ...rest], env, io);

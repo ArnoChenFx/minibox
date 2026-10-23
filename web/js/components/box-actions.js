@@ -1,12 +1,12 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { canonicalEnv, checkEnvRows, envRowsOf } from "../lib/env.js";
-import { gbOrMb } from "../lib/format.js";
+import { dateTime, gbOrMb } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { canonicalMounts } from "../lib/mounts.js";
 import { hostNow, refreshHost } from "../lib/store.js";
-import { confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { checkboxField, confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
 
@@ -35,14 +35,16 @@ export async function deleteBox(box) {
     message: t("ba.deleteMessage"),
     confirmText: t("ba.deleteConfirm"),
     danger: true,
-    checkbox: {
-      label: t("ba.deleteVolume"),
-      help: t("ba.deleteVolumeHelp"),
-    },
+    checkboxes: [
+      { key: "deleteVolume", label: t("ba.deleteVolume"), help: t("ba.deleteVolumeHelp") },
+      { key: "skipTrash", label: t("ba.skipTrash"), help: t("ba.skipTrashHelp") },
+    ],
   });
   if (!res) return false;
   try {
-    const r = await api(`/api/boxes/${enc(box.id)}?deleteVolume=${res.checked}`, { method: "DELETE" });
+    const query = new URLSearchParams({ deleteVolume: String(res.deleteVolume), skipTrash: String(res.skipTrash) });
+    const r = await api(`/api/boxes/${enc(box.id)}?${query}`, { method: "DELETE" });
+    const kept = r.trash ? ` ${t("ba.keptInBin", { date: dateTime(r.trash.expiresAt) })}` : "";
     if (r.volumeError) {
       toast(t("ba.deletedVolumeFailed", { name: box.name }), {
         type: "error",
@@ -50,7 +52,7 @@ export async function deleteBox(box) {
       });
     } else {
       toast(t("ba.deleted"), {
-        message: t(r.volumeDeleted ? "ba.deletedWithVolume" : "ba.deletedKeepVolume", { name: box.name }),
+        message: t(r.volumeDeleted ? "ba.deletedWithVolume" : "ba.deletedKeepVolume", { name: box.name }) + kept,
       });
     }
     refreshHost();
@@ -178,8 +180,14 @@ export function rebuildPreviewHtml(preview) {
 }
 
 function showPreview(root, preview) {
-  root.querySelector("#rbPreview").hidden = false;
-  root.querySelector("#rbPreview").innerHTML = rebuildPreviewHtml(preview);
+  const panel = root.querySelector("#rbPreview");
+  panel.hidden = false;
+  panel.innerHTML = `${rebuildPreviewHtml(preview)}${checkboxField({
+    id: "rbSafety",
+    label: esc(t("rb.safety")),
+    help: esc(t("rb.safetyHelp")),
+    checked: true,
+  })}`;
   root.querySelector("#rbApply").hidden = false;
 }
 
@@ -241,8 +249,11 @@ export async function openRebuild(box) {
     resetPreview();
   });
   const dialogBody = root.querySelector(".dialog-body");
-  dialogBody.addEventListener("input", resetPreview);
-  dialogBody.addEventListener("change", resetPreview);
+  const editedBody = (event) => {
+    if (event.target.id !== "rbSafety") resetPreview();
+  };
+  dialogBody.addEventListener("input", editedBody);
+  dialogBody.addEventListener("change", editedBody);
 
   const post = (body) =>
     api(`/api/boxes/${enc(box.id)}/rebuild`, {
@@ -279,9 +290,13 @@ export async function openRebuild(box) {
       return;
     }
     try {
-      const result = await withBusy(event.currentTarget, () => post({ ...built.body, confirm: true }));
+      const safetyCheckpoint = root.querySelector("#rbSafety")?.checked ?? true;
+      const result = await withBusy(event.currentTarget, () =>
+        post({ ...built.body, confirm: true, safetyCheckpoint }),
+      );
       close();
-      toast(t("rb.done"), { message: t("rb.doneText", { name: box.name }) });
+      const safety = result?.safety ? ` ${t("rb.safetyTaken")}` : "";
+      toast(t("rb.done"), { message: t("rb.doneText", { name: box.name }) + safety });
       refreshHost();
       const next = result?.box?.id;
       if (next && next !== box.id) location.hash = `#/boxes/${next}`;

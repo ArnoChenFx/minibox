@@ -43,4 +43,6 @@ export default {
   "task.op.tool.upgrade": "Upgrade tool",
   "task.op.tool.uninstall": "Uninstall tool",
   "task.op.tool.reconcile": "Reconcile tools",
+  "task.op.trash.restore": "Restore from the recycle bin",
+  "task.op.trash.purge": "Purge from the recycle bin",
 };

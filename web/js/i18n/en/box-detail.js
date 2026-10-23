@@ -397,4 +397,8 @@ export default {
   "bd.sshCopy": "Copy",
   "bd.sshCopied": "Command copied",
   "bd.sshCopyFailed": "Could not copy the command",
+  "ev.box.trashed": "Box moved to the recycle bin",
+  "ev.volume.trashed": "Volume moved to the recycle bin",
+  "ev.trash.restored": "Restored from the recycle bin",
+  "ev.trash.purged": "Purged from the recycle bin",
 };

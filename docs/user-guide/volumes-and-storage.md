@@ -13,7 +13,7 @@ A new box gets four volumes by default:
 | **Workspace** | Default pool | `/workspace` | Read-write |
 | **Home** | Default pool | `/home/dev` | Read-write. Treat it as sensitive, because it can hold credentials. |
 | **Tools** | Default pool | `/opt/minibox/tools` | Read-only. One shared volume per pool holds the installed tools. |
-| **Cache** | Local pool | `/home/dev/.cache` | Read-write. Left out of checkpoints. |
+| **Cache** | Local pool | `/home/dev/.cache` | Read-write. Left out of checkpoints and the recycle bin. |
 
 To use different volumes, click **Customize** in the create dialog. The box mounts only the volumes you list. To add a volume to a box that already exists, attach it on the box's page.
 
@@ -39,6 +39,8 @@ A pool that still has volumes cannot be removed.
 - To attach a volume to a box, open the box's page, and use **Attach**. Attaching a volume rebuilds the box, so MiniBox shows a preview first.
 - To detach a volume, click **Detach**. Detaching also rebuilds the box.
 
+Both take a [safety checkpoint](checkpoints.md#safety-checkpoints) of the box first, unless you clear **Take a safety checkpoint first** in the confirmation.
+
 Changing the mounts of a box rebuilds it. The box keeps its name and its volumes. The writable layer and the running processes are lost.
 
 ## Read-write and read-only
@@ -51,6 +53,8 @@ The same volume can be mounted by several boxes. When you mount a volume read-wr
 ## Delete a volume
 
 Click **Delete** on the volume. MiniBox does not delete a volume that a box still mounts.
+
+Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) for `TRASH_RETENTION_DAYS` days, 7 by default. Restore the entry from the **Recycle bin** page to get it back as a new volume. A cache or tools volume keeps nothing. To delete without keeping a copy, tick **Delete without keeping a copy**. Only the owner, or a token with the `trash:skip` scope, can do that.
 
 When you delete a box, you can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
 
@@ -90,7 +94,7 @@ Click **Limits** on a volume to set its limits. Each limit is in GB, and an empt
 MiniBox checks the free space on the disk that the engine uses. When it falls below `HOST_DISK_MIN_FREE_PERCENT`, 10% by default:
 
 - MiniBox records a `host.disk_low` event and sends a notice, once for that low spell.
-- MiniBox refuses at once, with `507` (`insufficient_storage`), a request that would create a volume or a checkpoint. That covers a new volume, the volumes of a new box or of a box made from a checkpoint, a checkpoint you take, the safety checkpoint that a rollback takes first, a rollback, a checkpoint import, and a move to this host. A scheduled checkpoint is skipped instead, and shows as skipped because the disk is low.
+- MiniBox refuses at once, with `507` (`insufficient_storage`), a request that would create a volume or a checkpoint. That covers a new volume, the volumes of a new box or of a box made from a checkpoint, a checkpoint you take, the safety checkpoint that a rollback or a rebuild takes first, a rollback, a checkpoint import, a move to this host, and a delete that keeps a copy in the [recycle bin](checkpoints.md#recycle-bin). A scheduled checkpoint is skipped instead, and shows as skipped because the disk is low.
 
 The refusal ends when free space is back above the floor. Set `HOST_DISK_MIN_FREE_PERCENT=0` to turn the floor off. If MiniBox cannot read the disk, it refuses nothing.
 

@@ -33,6 +33,8 @@ const ACTION_ICON = {
   "template.save": "layers",
   "template.build": "hammer",
   "template.delete": "trash",
+  "trash.restore": "refresh",
+  "trash.purge": "trash",
   "token.create": "key",
   "token.revoke": "trash",
   "task.cancel": "x",

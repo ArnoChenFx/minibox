@@ -59,15 +59,16 @@ function legacyView(host: HostCtx, image: ImageItem): CheckpointView {
   };
 }
 
+/** A checkpoint of this host. A recycle bin entry is not one, so it is never read as a checkpoint. */
 export function ownRecord(host: HostCtx, id: string): CheckpointRecord | null {
   const record = host.checkpoints.read(id);
-  return record && record.hostId === host.host.id ? record : null;
+  return record && record.hostId === host.host.id && record.trash === null ? record : null;
 }
 
 export async function listCheckpoints(host: HostCtx): Promise<CheckpointView[]> {
   const own = host.checkpoints
     .list()
-    .filter((record) => record.hostId === host.host.id)
+    .filter((record) => record.hostId === host.host.id && record.trash === null)
     .map(viewOf);
   const legacy = (await listSnapshots(host)).map((image) => legacyView(host, image));
   return [...own, ...legacy].toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));

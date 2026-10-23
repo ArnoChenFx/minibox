@@ -229,4 +229,13 @@ export default {
   "cb.repoHelp": "仓库只在创建 Box 时克隆一次。留空则工作区为空。",
   "cb.cloning": "正在克隆代码仓库",
   "cb.cloningText": "可在任务面板查看进度。",
+  "act.trash.restore": "已从回收站恢复",
+  "act.trash.purge": "已从回收站彻底删除",
+  "ba.skipTrash": "删除时不保留副本",
+  "ba.skipTrashHelp": "数据不会保留在回收站中，因此无法恢复。只有所有者，或持有 trash:skip 权限的令牌可以这样做。",
+  "ba.keptInBin": "数据保留在回收站中，直到 {date}。",
+  "rb.safety": "重建前先拍摄安全检查点",
+  "rb.safetyHelp":
+    "重建前保存一份 Box 数据的检查点。重建失败并已恢复 Box 时，该检查点会被丢弃；若无法完全恢复，则保留检查点以便找回数据。",
+  "rb.safetyTaken": "重建前已拍摄安全检查点。",
 };

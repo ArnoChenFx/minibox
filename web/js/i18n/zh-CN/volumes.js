@@ -113,4 +113,7 @@ export default {
   "vol.overHard": "超过硬上限",
   "vol.usageShare": "整个 NFS 共享",
   "vol.usageFailed": "上次检查失败：{error}",
+  "vol.skipTrash": "删除时不保留副本",
+  "vol.skipTrashHelp": "数据不会保留在回收站中，因此无法恢复。只有所有者，或持有 trash:skip 权限的令牌可以这样做。",
+  "vol.keptInBin": "数据保留在回收站中，直到 {date}。",
 };

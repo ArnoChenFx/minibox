@@ -212,6 +212,18 @@ Only the owner can use these commands. See [Tools](../user-guide/tools.md).
 | `minibox tool custom put <id> (--file FILE \| --stdin) [--override-builtin] [--json]` | Saves an entry from a JSON document. `--override-builtin` replaces a built-in tool's entry. |
 | `minibox tool custom delete <id> [--json]` | Removes the entry. Nothing is uninstalled from the shared tools volume. |
 
+## Recycle bin
+
+The recycle bin keeps the data of deleted boxes and volumes until it expires. Only the owner can use these commands. See [Checkpoints](../user-guide/checkpoints.md#recycle-bin).
+
+| Command | Meaning |
+|---|---|
+| `minibox trash ls [--json]` | Lists the entries, newest deletion first, with each one's ID, name, kind, deletion time, expiry time and size |
+| `minibox trash restore <id> [--name NAME] [--cpus N] [--memory MB] [--no-wait] [--json]` | Restores an entry as a new box or volume, and removes the entry once the restore has finished. `--cpus` and `--memory` apply to a box. |
+| `minibox trash purge <id> [--no-wait] [--json]` | Removes an entry and the data it keeps, before it expires |
+
+A restore and a purge run as tasks. The command waits for the task and prints its log to standard error, unless `--no-wait` is given.
+
 ## Notifications
 
 Notification channels have no commands yet. Set them up in **Settings**, or through the [REST API](api.md#notify) and the [MCP tools](mcp.md#meta). See [Notifications](../user-guide/notifications.md).

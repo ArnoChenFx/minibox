@@ -127,9 +127,14 @@ async function sendRebuildingChange(url, body, headers, { title, message }) {
       body: rebuildPreviewHtml(err.details.preview),
       confirmText: t("rb.apply"),
       danger: true,
+      checkboxes: [{ key: "safetyCheckpoint", label: t("rb.safety"), help: t("rb.safetyHelp"), checked: true }],
     });
     if (!ok) return null;
-    return api(url, { method: "POST", body: { ...body, confirm: true }, headers });
+    return api(url, {
+      method: "POST",
+      body: { ...body, confirm: true, safetyCheckpoint: ok.safetyCheckpoint },
+      headers,
+    });
   }
 }
 

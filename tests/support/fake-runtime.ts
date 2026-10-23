@@ -1714,6 +1714,11 @@ export function volumeAwareHelper(rt: FakeRuntime, spec: HelperSpec): HelperResu
   const files = volume ? rt.filesOf(volume) : new Map<string, FakeFsEntry>();
   const cmd0 = spec.cmd[0] ?? "";
 
+  if (cmd0 === "du") {
+    const bytes = [...files.values()].reduce((sum, entry) => sum + (entry.content?.length ?? 0), 0);
+    return { exitCode: 0, logs: `${bytes}\t${root}\n` };
+  }
+
   if (cmd0 === "find") {
     // find -P <search> -maxdepth N ( -type f -o ... ) -printf ...
     const searchIdx = spec.cmd.indexOf("-P") >= 0 ? spec.cmd.indexOf("-P") + 1 : 1;
