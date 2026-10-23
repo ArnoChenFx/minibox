@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 
 import {
   connectCommands,
+  directAddress,
+  directCommand,
   installCommands,
   setupCommands,
   sshHost,
@@ -78,4 +80,27 @@ describe("SSH dialog commands", () => {
     },
     30_000,
   );
+});
+
+describe("direct SSH address", () => {
+  test("is off when the server reports no direct listener", () => {
+    expect(directAddress(null, "minibox.example")).toBeNull();
+    expect(directAddress({ host: null }, "minibox.example")).toBeNull();
+  });
+
+  test("uses the public host the server names, else the host the console was opened on", () => {
+    expect(directAddress({ host: "ssh.example", port: 2222 }, "minibox.example")).toEqual({
+      host: "ssh.example",
+      port: 2222,
+    });
+    expect(directAddress({ host: null, port: 2222 }, "minibox.example")).toEqual({
+      host: "minibox.example",
+      port: 2222,
+    });
+  });
+
+  test("the command logs in as the box and names the port unless it is 22", () => {
+    expect(directCommand("dev", { host: "minibox.example", port: 2222 })).toBe("ssh -p 2222 dev@minibox.example");
+    expect(directCommand("dev", { host: "minibox.example", port: 22 })).toBe("ssh dev@minibox.example");
+  });
 });

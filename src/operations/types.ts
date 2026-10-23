@@ -10,6 +10,7 @@ import type { BackupService } from "../services/backup";
 import type { ExecService } from "../services/exec";
 import type { TargetService } from "../services/targets";
 import type { TerminalService } from "../services/terminals";
+import type { SshKeyStore } from "../ssh/keys";
 import type { TaskHandle, TaskReader } from "../tasks/types";
 import type { BoxView, TokenGrants } from "../tokens/model";
 import type { TokenStore } from "../tokens/store";
@@ -91,6 +92,8 @@ export interface OperationContext {
   readonly backups?: BackupService;
   /** Off-site targets. The executor fills it in; target operations read it. */
   readonly targets?: TargetService;
+  /** The owner's SSH keys for direct SSH. The executor fills it in; SSH key operations read it. */
+  readonly sshKeys?: SshKeyStore;
   /** Command exec. Present on REST, MCP and the CLI. */
   readonly execs?: ExecService;
   /** Terminal sessions (tmux in the box). Present on REST, MCP and the CLI. */
@@ -162,6 +165,11 @@ export interface OperationMeta {
   readonly async: boolean;
   /** Can fail with a 409: a name that is taken, a busy object, or a change the caller must confirm first. */
   readonly conflicts?: boolean;
+  /**
+   * With `exclusive`: a call that finds the key taken is queued (FIFO) instead of refused, and a call that repeats a
+   * queued or running one (same op, key, subject and target) gets that task's id back.
+   */
+  readonly queue?: boolean;
   /**
    * A sync operation that can outlast the server's idle timeout, such as a create that pulls its image. Its route
    * lifts the timer for that request, so the caller is not cut off while the engine works.

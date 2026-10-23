@@ -317,7 +317,7 @@ export const BuildResultSchema = z.object({
   ref: z.string(),
 });
 
-export const TaskStatusSchema = z.enum(["running", "succeeded", "failed", "cancelled", "interrupted"]);
+export const TaskStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "cancelled", "interrupted"]);
 
 export const TaskErrorSchema = z.object({
   code: z.string(),
@@ -400,7 +400,7 @@ export const EventSchema = z.object({
   tier: z.enum(["audit", "activity"]),
   count: z.number().int(),
   principal: z.object({ type: z.string(), id: z.string(), name: z.string() }),
-  source: z.enum(["ui", "rest", "mcp", "cli", "scheduler", "system"]),
+  source: z.enum(["ui", "rest", "mcp", "cli", "ssh", "scheduler", "system"]),
   hostId: z.string(),
   summary: z.string(),
   target: z.object({ kind: z.string(), id: z.string().optional(), name: z.string() }).optional(),

@@ -100,3 +100,4 @@ The `minibox` command runs boxes and their commands from your own terminal.
 - [Terminals and sessions](user-guide/terminal-and-sessions.md): work in a box from the browser or let an agent use it.
 - [Tools](user-guide/tools.md): install Claude Code, Codex and other tools into a box.
 - [Remote access and TLS](admin/remote-access.md): open MiniBox from another computer.
+- [SSH access](user-guide/ssh-and-cli.md): connect with `ssh`, VS Code Remote-SSH, or an SSH app such as Termius. For an SSH app, start MiniBox with `-p 2222:2222 -e SSH_PORT=2222`, see [Direct SSH](admin/install.md#direct-ssh).

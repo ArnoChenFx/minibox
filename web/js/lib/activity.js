@@ -70,6 +70,8 @@ export const ACTION_ICON = {
   "tool.custom.delete": "trash",
   "secret.set": "key",
   "secret.delete": "trash",
+  "sshkey.add": "key",
+  "sshkey.delete": "trash",
   "trash.restore": "refresh",
   "trash.purge": "trash",
   "token.create": "key",

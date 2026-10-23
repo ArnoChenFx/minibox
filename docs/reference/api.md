@@ -58,7 +58,8 @@ Some operations take a while, such as template builds, checkpoints, exports, imp
 
 - `GET /api/tasks/{id}` shows the task, including its status and result.
 - `GET /api/tasks/{id}/events` streams its progress as server-sent events. It is not in the OpenAPI document.
-- A task has the status `running`, `succeeded`, `failed`, `cancelled` or `interrupted`. After a restart, tasks that were running become `interrupted`.
+- A task has the status `queued`, `running`, `succeeded`, `failed`, `cancelled` or `interrupted`. After a restart, tasks that were queued or running become `interrupted`.
+- Tool installs, upgrades, uninstalls and **Install missing** on one host run one at a time, because they share its tools volume. A request made while another runs gets `202` with a task in `queued`, which starts when the tasks ahead of it end, in the order they were queued. Repeating a request that is still queued or running returns that task's `taskId` instead of starting a second one. `POST /api/tasks/{id}/cancel` takes a queued task out of the queue without running it.
 
 ## Errors
 
@@ -104,7 +105,7 @@ These are streams, sockets, file routes and preview routes. They are not describ
 | `GET` | `/api/tasks/{id}/events` | A task's progress, as server-sent events |
 | `GET` | `/api/boxes/{id}/terminal` | A WebSocket for a terminal in a box. The `session` query parameter names the tmux session to attach to. Used by the console. A Bearer caller can read the output, but its input is refused, and its terminal needs tmux 3.2 or later in the box. |
 | `GET` | `/api/ssh/{box}` | A WebSocket that carries one SSH connection to a box. Used by `ssh-proxy`. With a plain GET, it runs the checks and returns `204`, or the refusal as JSON. |
-| `GET` | `/api/ssh/host-key` | The SSH gateway's host key |
+| `GET` | `/api/ssh/host-key` | The SSH gateway's host key: `algorithm`, `fingerprint` and `publicKey`, and `direct` with the `host` and `port` that the SSH dialog shows, or `null` while direct SSH is off. `host` is `null` unless `SSH_PUBLIC_HOST` is set. |
 | `POST` | `/mcp` | The MCP endpoint. See [MCP tools](mcp.md). |
 | `GET` | `/box/{name-or-id}/{port}/…` | Port preview in path mode, the default. Served only while `PREVIEW_BASE_DOMAIN` is not set; otherwise it returns `404`. Proxies HTTP and WebSocket to a port in a box. See [Port preview](../user-guide/port-preview.md). |
 | Any | `https://<port>-<box>.<PREVIEW_BASE_DOMAIN>/…` | Port preview in subdomain mode, when `PREVIEW_BASE_DOMAIN` is set. Proxies HTTP and WebSocket to a port in a box. It needs a grant cookie, which the launcher below issues. Any other name under the base domain, and the base domain itself, returns `404`. See [Subdomain previews](../admin/preview-subdomains.md). |
@@ -220,6 +221,16 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `GET` | `/api/secrets` | List secrets |
 | `PUT` | `/api/secrets/{name}` | Create or replace a secret |
 | `DELETE` | `/api/secrets/{name}` | Delete a secret |
+
+### ssh
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/ssh-keys` | List SSH keys |
+| `POST` | `/api/ssh-keys` | Add an SSH key. The body is `{ publicKey, label? }`, one OpenSSH public key line. A private key, or a key that is already added, is refused. |
+| `DELETE` | `/api/ssh-keys/{id}` | Delete an SSH key |
+
+These are owner only. A key logs in to every box over direct SSH, so no token may add one.
 
 ### sessions
 

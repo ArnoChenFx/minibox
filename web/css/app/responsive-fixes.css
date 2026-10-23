@@ -207,3 +207,59 @@ textarea.token-lines {
     gap: 0;
   }
 }
+
+/* The direct SSH login, one field per row: what the client calls it, the value, and a copy button. */
+.ssh-modes {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.ssh-modes > [hidden] {
+  display: none;
+}
+.ssh-fields {
+  display: grid;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ssh-field {
+  display: grid;
+  grid-template-columns: 9em minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 6px 4px 12px;
+  font-size: 13px;
+}
+.ssh-field + .ssh-field {
+  border-top: 1px solid var(--border);
+}
+.ssh-field dt {
+  color: var(--text-3);
+}
+.ssh-field dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  .ssh-field {
+    grid-template-columns: minmax(0, 1fr) 32px;
+    gap: 2px 8px;
+  }
+  .ssh-field dt {
+    grid-column: 1 / -1;
+    font-size: 12px;
+  }
+}
+.ssh-key-cell {
+  max-width: 0;
+  width: 100%;
+}
+.ssh-key-fp {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}

@@ -19,6 +19,7 @@ const COPY_FEEDBACK_MS = 1500;
 const LOG_MAX_CHARS = 128 * 1024;
 
 const BADGE = {
+  queued: "",
   running: "badge-accent",
   succeeded: "badge-success",
   failed: "badge-danger",
@@ -62,6 +63,9 @@ export function taskErrorText(error) {
   if (key && has(key)) return t(key, error.params);
   return error.message ?? "";
 }
+
+/** Queued tasks wait behind another on the same key (tool installs); they can be cancelled and will run. */
+const isActive = (task) => task?.status === "running" || task?.status === "queued";
 
 /** `.btn` and `.badge` set `display`, which overrides the `hidden` attribute. */
 function setHidden(node, hidden) {
@@ -122,10 +126,7 @@ function stopStream() {
 }
 
 function paintBadge() {
-  document.querySelector("#tasksBtn")?.classList.toggle(
-    "has-task",
-    tasks.some((task) => task.status === "running"),
-  );
+  document.querySelector("#tasksBtn")?.classList.toggle("has-task", tasks.some(isActive));
 }
 
 function paintList() {
@@ -138,7 +139,7 @@ function paintList() {
 
 function paintElapsed() {
   if (!shown) return;
-  const running = shown.status === "running";
+  const running = isActive(shown);
   const end = running ? Date.now() : Date.parse(shown.finishedAt ?? "");
   root.querySelector("#taskDurationLabel").textContent = t(running ? "task.elapsed" : "task.duration");
   root.querySelector("#taskDuration").textContent = Number.isNaN(end) ? "—" : elapsed(shown.createdAt, end);
@@ -168,7 +169,7 @@ function paintDetail(task) {
   setHidden(facts, false);
   setHidden(error, !task.error);
   error.textContent = taskErrorText(task.error);
-  setHidden(cancel, task.status !== "running");
+  setHidden(cancel, !isActive(task));
   paintElapsed();
   paintOutput();
 }
@@ -204,7 +205,8 @@ function paintCommandToggle() {
 function logHtml(output) {
   if (!shown) return "";
   if (output) return ansiToHtml(output);
-  const key = shown.status === "running" ? "task.waiting" : "task.noOutput";
+  const key =
+    shown.status === "queued" ? "task.queuedHint" : shown.status === "running" ? "task.waiting" : "task.noOutput";
   return `<span class="task-log-empty">${esc(t(key))}</span>`;
 }
 
@@ -214,16 +216,16 @@ function paintLog(output) {
   renderedLog = html;
   const log = root.querySelector("#taskLog");
   log.innerHTML = html;
-  if (follow && shown?.status === "running") log.scrollTop = log.scrollHeight;
+  if (follow && isActive(shown)) log.scrollTop = log.scrollHeight;
 }
 
 function paintJump() {
-  setHidden(root.querySelector("#taskJump"), follow || shown?.status !== "running");
+  setHidden(root.querySelector("#taskJump"), follow || !isActive(shown));
 }
 
 function resetLogScroll() {
   const log = root.querySelector("#taskLog");
-  log.scrollTop = shown?.status === "running" ? log.scrollHeight : 0;
+  log.scrollTop = isActive(shown) ? log.scrollHeight : 0;
   paintJump();
 }
 
@@ -326,7 +328,7 @@ async function select(id) {
   follow = true;
   paintDetail(task);
   resetLogScroll();
-  if (task.status === "running") listen(task);
+  if (isActive(task)) listen(task);
   noteFinished(task);
 }
 
@@ -358,7 +360,7 @@ async function refreshDetail(id) {
   const current = tasks.find((task) => task.id === id);
   const detail = await api(`/api/tasks/${enc(id)}`).catch(() => current);
   if (request !== detailRequest || selected !== id || !detail) return;
-  const running = detail.status === "running";
+  const running = isActive(detail);
   if (detail.output !== undefined && detail.logSeq !== undefined && (!source || !running)) logText = detail.output;
   paintDetail({ ...current, ...detail, error: detail.error ?? current?.error });
   if (running && !source) listen(detail);
@@ -368,7 +370,7 @@ async function refreshDetail(id) {
 
 /** While the stream is up, status frames refresh the list. Polling covers only the time the stream is down. */
 function schedule() {
-  const want = (open || tasks.some((task) => task.status === "running")) && !isLive();
+  const want = (open || tasks.some(isActive)) && !isLive();
   if (!want) {
     if (timer) clearInterval(timer);
     timer = null;
@@ -378,7 +380,7 @@ function schedule() {
 }
 
 function startTicker() {
-  if (!ticker) ticker = setInterval(() => shown?.status === "running" && paintElapsed(), TICK_MS);
+  if (!ticker) ticker = setInterval(() => isActive(shown) && paintElapsed(), TICK_MS);
 }
 
 function stopTicker() {
@@ -413,7 +415,7 @@ export async function waitTask(taskId) {
   const deadline = Date.now() + 10 * 60 * 1000;
   for (;;) {
     const task = await api(`/api/tasks/${enc(taskId)}`);
-    if (task.status !== "running") return task;
+    if (!isActive(task)) return task;
     if (Date.now() > deadline) return task;
     await nextStatus(taskId, isLive() ? 5000 : 400);
   }

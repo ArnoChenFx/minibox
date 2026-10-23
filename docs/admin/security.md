@@ -105,6 +105,17 @@ Keep the preview domain under your control. Point its wildcard record only at Mi
 - **Public tunnels are discoverable.** Tunnel addresses can appear in public certificate logs, and the tunnel adds no sign-in of its own. Prefer a private network, or a reverse proxy that requires its own sign-in.
 - **A box's agent needs the server on the box network.** Boxes reach MiniBox through the gateway of the `minibox-boxes` network, so a box's self token works only if `HOST` is that gateway's address (see `docker network inspect minibox-boxes`), or `0.0.0.0` as the release image sets. Every box can reach that address, but the self token reaches only its own box, and MiniBox never puts the access key in a box.
 
+## Direct SSH
+
+Direct SSH is off until `SSH_PORT` is set. It serves the same gateway as SSH through the command-line tool: the same host key, the same refusals, and the same connection limits.
+
+- **Who can log in.** A password must be an agent token with the `box:ssh` scope, or the access key while it is strong. A token's box limits and its request rate apply, and a box's own self token is never accepted. A public key must be one that the owner added under **Settings**, **SSH keys**. Such a key logs in as the owner, to any box. Only the owner can add or delete keys.
+- **Prefer tokens and keys to the access key.** An SSH app saves the password it is given. A token limited to a few boxes, and revoked when the device is lost, exposes less than the access key.
+- **Refusals look alike.** An unknown box, a wrong password and an unknown key all get the same `Permission denied`, so a client cannot learn which boxes exist.
+- **Rate limits.** After 5 failed logins from an address in 15 minutes, the address is locked out for 30 seconds, then for twice as long after each further failure, up to an hour. The server holds at most 32 unauthenticated connections, 8 from any one address, and each connection gets at most 10 login attempts. Passwords longer than 512 characters are refused before they are checked.
+- **Audit.** Each login, accepted or refused, is an `ssh.connect` event in the activity log, with the client's address, the method, and the token's name or the key's label and fingerprint. Secrets are never logged.
+- **Exposure.** The SSH port speaks SSH, not HTTPS, so an HTTPS tunnel or reverse proxy does not carry it. Prefer to publish it on a private network such as Tailscale or WireGuard. If you publish it on the internet, keep the access key long and random, or log in only with tokens and keys.
+
 ## Boxes
 
 - **Passwordless `sudo`.** Under the default `standard` profile, the `dev` user can become root inside its box. Root in the box can change the box and its workspace volume. The box is not a privileged container, because `standard` drops most Linux capabilities.

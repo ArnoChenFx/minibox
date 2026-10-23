@@ -175,45 +175,112 @@ export class TaskStore {
 
   /**
    * Inserts a running task. Returns the id of the task that already holds `exclusiveKey`, when there is one,
-   * instead of inserting a second.
+   * instead of inserting a second. With `queue`, such a task is inserted as `queued` behind the holder and any task
+   * already waiting, and a task that repeats one queued or running (same op, key, subject and target) returns that
+   * task's id with `duplicate`.
    */
-  insert(id: string, task: NewTask, now = Date.now()): { ok: true } | { ok: false; existingId: string } {
+  insert(
+    id: string,
+    task: NewTask,
+    now = Date.now(),
+  ): { ok: true; queued?: true } | { ok: false; existingId: string; duplicate?: true } {
+    const key = task.exclusiveKey;
+    if (task.queue && key !== undefined) {
+      return this.db.transaction(() => {
+        const same = this.db
+          .query<{ id: string }, [string, string, string, string]>(
+            `SELECT id FROM tasks
+              WHERE exclusive_key = ? AND op = ? AND status IN ('queued', 'running')
+                AND IFNULL(subject, '') = ? AND IFNULL(target_id, '') = ?
+              ORDER BY created_at ASC, id ASC LIMIT 1`,
+          )
+          .get(key, task.op, task.subject ?? "", task.target?.id ?? "");
+        if (same) return { ok: false as const, existingId: same.id, duplicate: true as const };
+        const busy = this.db
+          .query<{ id: string }, [string]>(
+            "SELECT id FROM tasks WHERE exclusive_key = ? AND (holds_lock = 1 OR status = 'queued') LIMIT 1",
+          )
+          .get(key);
+        this.insertRow(id, task, busy ? "queued" : "running", now);
+        return busy ? { ok: true as const, queued: true as const } : { ok: true as const };
+      })();
+    }
     try {
-      this.db
-        .query(
-          `INSERT INTO tasks (id, op, status, host_id, summary, subject, target_kind, target_id, target_name,
-            principal_type, principal_id, principal_name, source, run, parent_id, exclusive_key, holds_lock,
-            created_at, updated_at)
-           VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        )
-        .run(
-          id,
-          task.op,
-          task.hostId,
-          task.summary,
-          task.subject ?? null,
-          task.target?.kind ?? null,
-          task.target?.id ?? null,
-          task.target?.name ?? null,
-          task.principal.type,
-          task.principal.id,
-          task.principal.name,
-          task.source,
-          task.run ?? null,
-          task.parentId ?? null,
-          task.exclusiveKey ?? null,
-          now,
-          now,
-        );
+      this.insertRow(id, task, "running", now);
       return { ok: true };
     } catch (error) {
-      if (!isUnique(error) || task.exclusiveKey === undefined) throw error;
+      if (!isUnique(error) || key === undefined) throw error;
       const existing = this.db
         .query<{ id: string }, [string]>("SELECT id FROM tasks WHERE exclusive_key = ? AND holds_lock = 1 LIMIT 1")
-        .get(task.exclusiveKey);
+        .get(key);
       if (!existing) throw error;
       return { ok: false, existingId: existing.id };
     }
+  }
+
+  private insertRow(id: string, task: NewTask, status: "running" | "queued", now: number): void {
+    this.db
+      .query(
+        `INSERT INTO tasks (id, op, status, host_id, summary, subject, target_kind, target_id, target_name,
+          principal_type, principal_id, principal_name, source, run, parent_id, exclusive_key, holds_lock,
+          created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        task.op,
+        status,
+        task.hostId,
+        task.summary,
+        task.subject ?? null,
+        task.target?.kind ?? null,
+        task.target?.id ?? null,
+        task.target?.name ?? null,
+        task.principal.type,
+        task.principal.id,
+        task.principal.name,
+        task.source,
+        task.run ?? null,
+        task.parentId ?? null,
+        task.exclusiveKey ?? null,
+        status === "running" ? 1 : 0,
+        now,
+        now,
+      );
+  }
+
+  /**
+   * Starts the oldest task queued on `key` once no task holds it: the task becomes `running` and takes the key.
+   * Returns its id and the status event, or undefined when the key is still held or nothing waits.
+   */
+  promote(key: string, now = Date.now()): { taskId: string; event: TaskStreamEvent } | undefined {
+    return this.db.transaction(() => {
+      const held = this.db
+        .query<{ id: string }, [string]>("SELECT id FROM tasks WHERE exclusive_key = ? AND holds_lock = 1 LIMIT 1")
+        .get(key);
+      if (held) return undefined;
+      const next = this.db
+        .query<{ id: string; next_seq: number }, [string]>(
+          `SELECT id, next_seq FROM tasks WHERE exclusive_key = ? AND status = 'queued'
+            ORDER BY created_at ASC, id ASC LIMIT 1`,
+        )
+        .get(key);
+      if (!next) return undefined;
+      this.db.run("UPDATE tasks SET status = 'running', holds_lock = 1, updated_at = ?, next_seq = ? WHERE id = ?", [
+        now,
+        next.next_seq + 1,
+        next.id,
+      ]);
+      this.insertEvent(next.id, next.next_seq, now, { kind: "status", status: "running" });
+      const event: TaskStreamEvent = {
+        taskId: next.id,
+        seq: next.next_seq,
+        ts: now,
+        kind: "status",
+        status: "running",
+      };
+      return { taskId: next.id, event };
+    })();
   }
 
   /** Appends a log chunk, dropping the oldest chunks while the retained text is over the cap. */
@@ -259,7 +326,7 @@ export class TaskStore {
   }
 
   /**
-   * Moves a running task to a terminal status. Returns false when it was no longer running, so a cancel and a
+   * Moves a running or queued task to a terminal status. Returns false when it was neither, so a cancel and a
    * completion cannot overwrite each other. The exclusive key stays taken until {@link TaskStore.releaseLock}.
    */
   finish(taskId: string, outcome: TaskOutcome, now = Date.now()): TaskStreamEvent | undefined {
@@ -267,7 +334,7 @@ export class TaskStore {
       const changed = this.db.run(
         `UPDATE tasks SET status = ?, updated_at = ?, finished_at = ?, result = ?,
            error_code = ?, error_status = ?, error_message = ?, error_key = ?, error_params = ?
-         WHERE id = ? AND status = 'running'`,
+         WHERE id = ? AND status IN ('running', 'queued')`,
         [
           outcome.status,
           now,
@@ -305,7 +372,7 @@ export class TaskStore {
   }
 
   /**
-   * Marks every running task interrupted and frees every exclusive key. Used at startup, where the keys belong to
+   * Marks every running or queued task interrupted and frees every exclusive key. Used at startup, where the keys belong to
    * the previous process, and on shutdown. Returns how many tasks changed.
    */
   interruptRunning(error: TaskError, now = Date.now()): number {
@@ -313,7 +380,7 @@ export class TaskStore {
       const changed = this.db.run(
         `UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ?,
            error_code = ?, error_status = ?, error_message = ?, error_key = ?, error_params = ?
-         WHERE status = 'running'`,
+         WHERE status IN ('running', 'queued')`,
         [
           now,
           now,

@@ -36,6 +36,7 @@ const TARGET_PLACEHOLDER = `tgt_${"0".repeat(16)}`;
 const PASSPHRASE = "correct horse battery staple";
 const SAMPLE_TARGET_KEY = "AKIATESTONLY0003";
 const SAMPLE_TARGET_SECRET = "test-only-secret-key-0003";
+const SAMPLE_SSH_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE8d1T0l/tZAUL3o6B4VSlhu/I57QvxHqNchsKhABjJh sample";
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 const CUSTOM_TOOL = {
   id: "sample-tool",
@@ -179,6 +180,9 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "secret.list": () => ({}),
   "secret.set": () => ({ name: "vault", value: "s3cret-value" }),
   "secret.delete": () => ({ name: "vault", force: false }),
+  "sshkey.list": () => ({}),
+  "sshkey.add": () => ({ publicKey: SAMPLE_SSH_KEY, label: "laptop" }),
+  "sshkey.delete": () => ({}),
   "session.list": (id) => ({ id }),
   "session.start": (id) => ({ id, name: "work" }),
   "session.read": (id) => ({ id, name: "work", lines: 10 }),
@@ -445,6 +449,12 @@ async function preparedInput(
   }
   if (operation.name === "box.startup.run") {
     await app.operations.run("box.startup.set", ctx, { id: boxId, command: "echo ready", expectedRevision: "1" });
+  }
+  if (operation.name === "sshkey.delete") {
+    const added = (await app.operations.run("sshkey.add", ctx, { publicKey: SAMPLE_SSH_KEY })) as {
+      key: { id: string };
+    };
+    return { input: { id: added.key.id } };
   }
   if (operation.name === "secret.delete") {
     await app.operations.run("secret.set", ctx, { name: "vault", value: "s3cret-value" });

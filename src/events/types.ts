@@ -1,5 +1,5 @@
 /** Which interface an operation call came through. `ui` is reserved for the console's own session (#2). */
-export type Source = "ui" | "rest" | "mcp" | "cli" | "scheduler" | "system";
+export type Source = "ui" | "rest" | "mcp" | "cli" | "ssh" | "scheduler" | "system";
 
 /** `started` is the first event of a long-running task, and of an exec that records again when it finishes. */
 export type EventStatus = "started" | "ok" | "error" | "denied";

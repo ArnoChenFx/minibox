@@ -50,21 +50,12 @@
   }
 }
 
-/* A box's settings: the sub-nav is as wide as its longest name, which leaves the section the rest of the tab, and each
-   checkpoint's actions stay on one line, so a row is as tall as its text. */
+/* A box's settings: the sub-nav is as wide as its longest name, which leaves the section the rest of the tab. */
 @media (min-width: 901px) {
   .box-settings {
     grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
   }
 }
-.box-settings .table:has(.ck-row-actions) :is(th, td) {
-  padding-left: 12px;
-  padding-right: 12px;
-}
-.box-settings .ck-row-actions {
-  flex-wrap: nowrap;
-}
-
 /* The add-secret form's value: a masked field with reveal and copy beside it, and the generator's line under it. */
 .secret-input {
   display: flex;

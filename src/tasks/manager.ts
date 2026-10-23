@@ -40,6 +40,10 @@ export class TaskManager implements TaskReader {
   private readonly running = new Map<string, AbortController>();
   private readonly jobs = new Map<string, Promise<void>>();
   private readonly subjects = new Map<string, TaskSubject>();
+  /** The exclusive key of each task this process began with one, so its end can start the next queued task. */
+  private readonly keys = new Map<string, string>();
+  /** Queued tasks waiting for their turn, resolved when {@link TaskStore.promote} starts them. */
+  private readonly waiting = new Map<string, () => void>();
 
   constructor(
     private readonly store: TaskStore,
@@ -51,15 +55,21 @@ export class TaskManager implements TaskReader {
 
   /**
    * Inserts a running task. A second task with the same exclusive key is refused with `409` and `details.taskId`
-   * of the one already running.
+   * of the one already running. With `queue` it is inserted as `queued` instead, and starts when the tasks ahead of it
+   * have ended (see {@link TaskManager.turn}). A queued begin that repeats a queued or running task returns that task
+   * with `duplicate` and no handle, so the caller reports its id and starts nothing.
    */
-  begin(task: NewTask): { id: string; handle: TaskHandle } {
+  begin(task: NewTask): { id: string; handle: TaskHandle; duplicate?: false } | { id: string; duplicate: true } {
     const id = ulid();
     const inserted = this.store.insert(id, task);
-    if (!inserted.ok) throw new AppError(409, "conflict", msg("task_busy"), { taskId: inserted.existingId });
+    if (!inserted.ok) {
+      if (inserted.duplicate) return { id: inserted.existingId, duplicate: true };
+      throw new AppError(409, "conflict", msg("task_busy"), { taskId: inserted.existingId });
+    }
     const controller = new AbortController();
     this.running.set(id, controller);
     this.subjects.set(id, { hostId: task.hostId, target: task.target });
+    if (task.exclusiveKey !== undefined) this.keys.set(id, task.exclusiveKey);
     const handle: TaskHandle = {
       id,
       signal: controller.signal,
@@ -69,6 +79,46 @@ export class TaskManager implements TaskReader {
       },
     };
     return { id, handle };
+  }
+
+  /**
+   * Resolves when the task may do its work: at once for a running task, and for a queued one when every task ahead of
+   * it on the same key has ended. Rejects with an AbortError when the task is cancelled or the server shuts down first.
+   */
+  turn(id: string): Promise<void> {
+    if (this.store.get(id, { output: false })?.status !== "queued") return Promise.resolve();
+    const signal = this.running.get(id)?.signal;
+    return new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(abortError());
+        return;
+      }
+      const onAbort = () => {
+        this.waiting.delete(id);
+        reject(abortError());
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.waiting.set(id, () => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      });
+    });
+  }
+
+  /** Starts the next task queued on `key`, if the key is free. */
+  private promote(key: string): void {
+    let promoted: ReturnType<TaskStore["promote"]>;
+    try {
+      promoted = this.store.promote(key);
+    } catch (error) {
+      log.warn("task.promote_failed", { key, error: String(error) });
+      return;
+    }
+    if (!promoted) return;
+    this.publish(promoted.event);
+    const wake = this.waiting.get(promoted.taskId);
+    this.waiting.delete(promoted.taskId);
+    wake?.();
   }
 
   /**
@@ -84,7 +134,11 @@ export class TaskManager implements TaskReader {
         this.releaseLock(id);
         this.running.delete(id);
         this.jobs.delete(id);
+        this.waiting.delete(id);
+        const key = this.keys.get(id);
+        this.keys.delete(id);
         this.settle(id);
+        if (key !== undefined) this.promote(key);
       });
     this.jobs.set(id, job);
   }
@@ -158,14 +212,16 @@ export class TaskManager implements TaskReader {
   }
 
   /**
-   * Marks a running task cancelled and aborts its work. The task keeps its exclusive key until the work has returned,
-   * so a new task for the same box or host is refused with `409` until then. A commit the engine has already finished
-   * is left in place. A task that is not running is a 409.
+   * Marks a running or queued task cancelled and aborts its work. The task keeps its exclusive key until the work has
+   * returned, so a new task for the same box or host is refused with `409` (or queued) until then. A commit the engine
+   * has already finished is left in place. A queued task leaves the queue without running. A finished task is a 409.
    */
   cancel(id: string): TaskView {
     const current = this.store.get(id, { output: false });
     if (!current) throw notFound(msg("task_not_found"));
-    if (current.status !== "running") throw new AppError(409, "conflict", msg("task_not_running"));
+    if (current.status !== "running" && current.status !== "queued") {
+      throw new AppError(409, "conflict", msg("task_not_running"));
+    }
     this.finish(id, { status: "cancelled", error: cancelledError() });
     this.running.get(id)?.abort(abortError());
     const view = this.store.get(id, { output: true });
@@ -199,6 +255,8 @@ export class TaskManager implements TaskReader {
     this.running.clear();
     this.jobs.clear();
     this.subjects.clear();
+    this.keys.clear();
+    this.waiting.clear();
     this.store.close();
   }
 

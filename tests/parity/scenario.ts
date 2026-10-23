@@ -18,6 +18,7 @@ export interface Exchange {
 
 const GB = 1024 ** 3;
 const PASSPHRASE = "correct horse battery staple";
+const PARITY_SSH_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE8d1T0l/tZAUL3o6B4VSlhu/I57QvxHqNchsKhABjJh parity";
 
 /** A fixed host, so capacity errors do not depend on the machine running the scenario. */
 const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as HostMetrics;
@@ -35,6 +36,7 @@ export function normalize(text: string): string {
     .replace(/\bck_[0-9a-z]{8,32}\b/g, "ck_<checkpoint>")
     .replace(/\bbk_[0-9a-z]{8,32}\b/g, "bk_<backup>")
     .replace(/tok_[0-9a-f]+/g, "<tokenId>")
+    .replace(/\bsk_[0-9a-f]{16}\b/g, "sk_<sshKey>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
     .replace(/[0-9a-f]{64}/g, "<id>")
@@ -1194,6 +1196,14 @@ async function recordScenario(): Promise<Exchange[]> {
     });
     await put("stage a network change", `/api/boxes/${stagingId}/staged`, { network: "bridge" });
     await send("discard the staged changes", "DELETE", `/api/boxes/${stagingId}/staged`);
+    await send("list SSH keys with none", "GET", "/api/ssh-keys");
+    const sshKey = await post("add an SSH key", "/api/ssh-keys", { publicKey: PARITY_SSH_KEY, label: "laptop" });
+    await post("add the same SSH key again", "/api/ssh-keys", { publicKey: PARITY_SSH_KEY });
+    await post("add a malformed SSH key", "/api/ssh-keys", { publicKey: "ssh-ed25519 not-a-key" });
+    await send("list SSH keys", "GET", "/api/ssh-keys");
+    const sshKeyId = String((sshKey.json?.key as { id?: string } | undefined)?.id ?? "");
+    await send("delete an SSH key", "DELETE", `/api/ssh-keys/${sshKeyId}`);
+    await send("delete a missing SSH key", "DELETE", `/api/ssh-keys/${sshKeyId}`);
   } finally {
     server.stop(true);
     app.throttle.stop();
