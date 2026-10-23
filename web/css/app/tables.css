@@ -65,6 +65,32 @@ table.table {
 .table .actions > .btn + .btn {
   margin-left: 6px;
 }
+/* The checkbox column of a table whose rows can be selected: only as wide as its box. */
+.table .select-cell {
+  width: 1%;
+  padding-right: 0;
+}
+/* Shown under a card's header while rows are selected: how many, and what to do with them. */
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.bulk-bar[hidden] {
+  display: none;
+}
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 /* A table that fills a card starts and ends at the card's own padding, so it lines up with the card header. Group
    headers keep their own full-width button. */
 .card > .table-wrap > .table tr:not(.group-row) > :is(th, td):first-child {

@@ -1,12 +1,23 @@
+import { bindToggles, limitList } from "../components/list-toggle.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { usageCellHtml } from "../components/volume-usage.js";
-import { api, enc } from "../lib/api.js";
+import { api, enc, errorText } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime } from "../lib/format.js";
+import { hostName, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { filterBySearch } from "../lib/search.js";
-import { confirmDialog, emptyState, nameError, openDialog, skeletonRows, toast, toastError } from "../lib/ui.js";
+import {
+  checkboxField,
+  confirmDialog,
+  emptyState,
+  nameError,
+  openDialog,
+  skeletonRows,
+  toast,
+  toastError,
+} from "../lib/ui.js";
 import {
   GROUP_BY,
   GROUP_LABELS,
@@ -15,6 +26,15 @@ import {
   saveGroupBy,
   volumeSearchFields,
 } from "../lib/volume-list.js";
+import {
+  headerState,
+  keepSelectable,
+  previewOutcome,
+  tallyRows,
+  toggleAll,
+  toggleOne,
+  unselectableReason,
+} from "../lib/volume-select.js";
 import { limitDraft, limitsBody } from "../lib/volume-usage.js";
 
 const ROLES = [
@@ -24,9 +44,32 @@ const ROLES = [
   ["cache", "vol.roleCache"],
 ];
 
-const VOLUME_COLUMNS = 7;
+const VOLUME_COLUMNS = 8;
 
 const roleLabel = (role) => t(ROLES.find(([name]) => name === role)?.[1] ?? "vol.unknown");
+
+/** Why a volume cannot be selected, in words for its checkbox's tooltip. */
+function selectReasonText(reason) {
+  return reason === "tools" ? t("vol.selectTools") : t("vol.selectMounted");
+}
+
+/** Why a batch delete skips a volume, from the `blocked` code its preview gives. */
+function blockedText(block) {
+  switch (block) {
+    case "in_use":
+      return t("vol.blockInUse");
+    case "forbidden":
+      return t("vol.blockForbidden");
+    case "tools":
+      return t("vol.blockTools");
+    case "not_found":
+      return t("vol.blockNotFound");
+    case "offline":
+      return t("vol.blockOffline");
+    default:
+      return t("vol.blockUnavailable");
+  }
+}
 
 function groupLabel(group) {
   switch (group.kind) {
@@ -48,7 +91,7 @@ function groupLabel(group) {
   }
 }
 
-function volumeRow(volume) {
+function volumeRow(volume, selected) {
   const mounts = volume.mounts
     .map((mount) => `${esc(mount.boxName)}:${esc(mount.path)} (${esc(mount.mode)})`)
     .join(", ");
@@ -58,7 +101,11 @@ function volumeRow(volume) {
     volume.backend === "nfs"
       ? `<button class="btn btn-sm" disabled title="${esc(t("vol.limitsNfs"))}">${t("vol.limits")}</button>`
       : `<button class="btn btn-sm" data-action="limits" data-id="${esc(volume.id)}">${t("vol.limits")}</button>`;
+  const reason = unselectableReason(volume);
+  const tip = reason ? ` title="${esc(selectReasonText(reason))}"` : "";
+  const pick = `<label class="checkbox"${tip}><input type="checkbox" data-select="${esc(volume.id)}" aria-label="${esc(t("vol.selectOne", { name: volume.name }))}"${selected.has(volume.id) ? " checked" : ""}${reason ? " disabled" : ""} /></label>`;
   return `<tr class="${over.trim()}">
+    <td class="select-cell">${pick}</td>
     <td><strong>${esc(volume.name)}</strong><div class="subtle mono">${esc(volume.id)}</div></td>
     <td>${volume.role ? esc(roleLabel(volume.role)) : "—"}</td>
     <td>${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
@@ -144,11 +191,93 @@ function formDialog(title, body) {
   });
 }
 
+/**
+ * A dialog that shows what a change to volumes would do. It resolves to the dialog's root when its confirm button is
+ * pressed, and to null when it is closed another way. Cancel has the focus, so Enter does not confirm a removal.
+ */
+function previewDialog({ title, description, body, confirmText, confirmDisabled = false }, draw) {
+  return new Promise((resolve) => {
+    let confirmed = false;
+    const { root, close } = openDialog({
+      title,
+      description,
+      iconName: "alert",
+      tone: "danger",
+      wide: true,
+      body,
+      footer: `<button class="btn" data-close autofocus>${t("common.cancel")}</button><button class="btn btn-danger" id="vol-ok"${confirmDisabled ? " disabled" : ""}>${esc(confirmText)}</button>`,
+      onClose: () => resolve(confirmed ? root : null),
+    });
+    draw(root);
+    root.querySelector("#vol-ok").addEventListener("click", () => {
+      confirmed = true;
+      close();
+    });
+  });
+}
+
+/**
+ * Draws a preview table into `box`. A long table shows its first rows and a toggle for the rest. The scope remembers
+ * whether the toggle is open, so a redraw keeps it.
+ */
+function drawTable(box, scope, { head, items, row }) {
+  const { shown, toggle } = limitList(scope, "rows", items);
+  box.innerHTML = `<div class="table-wrap"><table class="table">
+      <thead><tr>${head}</tr></thead>
+      <tbody>${shown.map(row).join("")}</tbody>
+    </table></div>
+    <div class="list-more">${toggle}</div>`;
+  bindToggles(scope, box, () => drawTable(box, scope, { head, items, row }));
+}
+
+/** One line for each host a prune did not check. The volumes on such a host were left alone. */
+const skippedHostNotes = (hosts) =>
+  hosts.filter((host) => host.status !== "checked").map((host) => errorText(host.error));
+
+function pruneRowHtml(volume, showHost) {
+  return `<tr>
+    <td><strong>${esc(volume.name)}</strong></td>
+    ${showHost ? `<td>${esc(hostName(volume.hostId))}</td>` : ""}
+    <td class="num">${esc(bytes(volume.bytes))}</td>
+    <td>${esc(dateTime(volume.lastUsedAt))}</td>
+    <td>${volume.formerBox ? esc(volume.formerBox) : "—"}</td>
+  </tr>`;
+}
+
+function deleteRowHtml(row, skipTrash, showHost) {
+  const outcome = previewOutcome(row, skipTrash);
+  const action = outcome.blocked
+    ? `<span class="subtle">${esc(blockedText(outcome.blocked))}</span>`
+    : esc(outcome.keepsCopy ? t("vol.willKeepBin") : t("vol.willDelete"));
+  return `<tr>
+    <td><strong>${esc(row.name)}</strong></td>
+    ${showHost ? `<td>${esc(hostName(row.hostId))}</td>` : ""}
+    <td class="num">${esc(bytes(row.bytes))}</td>
+    <td>${action}</td>
+  </tr>`;
+}
+
+/**
+ * The preview of a batch delete. The server answers a request without confirm with its preview and removes nothing, so
+ * this only reads that answer.
+ */
+async function previewDelete(ids) {
+  try {
+    await api("/api/volumes/delete", { method: "POST", body: { ids } });
+    return [];
+  } catch (err) {
+    if (err.code !== "confirmation_required" || !err.details?.preview) throw err;
+    return err.details.preview.volumes;
+  }
+}
+
 export function render(view) {
   let pools = [];
   let roles = { workspace: null, home: null, tools: null, cache: null };
   let health = [];
   let volumes = null;
+  let matches = [];
+  let selected = new Set();
   let boxNames = new Map();
   let query = "";
   let groupBy = loadGroupBy();
@@ -164,6 +293,7 @@ export function render(view) {
         <button class="btn" data-action="add-nfs">${t("vol.addNfs")}</button>
         <button class="btn" data-action="add-path">${t("vol.addPath")}</button>
         <button class="btn btn-primary" data-action="create">${icon("plus")}${t("vol.create")}</button>
+        <button class="btn" data-action="prune">${icon("zap")}${t("vol.prune")}</button>
       </div>
     </div>
     <div id="volBody">${skeletonRows(3, 4)}</div>
@@ -174,8 +304,15 @@ export function render(view) {
           <div class="group-by"><label for="volGroup">${t("vol.groupBy")}</label><select class="select" id="volGroup">${groupOptions}</select></div>
         </div>
       </div>
+      <div class="bulk-bar" id="volBulk" hidden>
+        <span id="volBulkCount"></span>
+        <div class="bulk-actions">
+          <button class="btn btn-sm" data-action="clear-selection">${t("vol.clearSelection")}</button>
+          <button class="btn btn-sm btn-danger" data-action="bulk-delete">${icon("trash")}${t("vol.deleteSelected")}</button>
+        </div>
+      </div>
       <div class="table-wrap"><table class="table">
-        <thead><tr><th>${t("vol.colName")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colPool")}</th><th>${t("vol.colOwnership")}</th><th>${t("vol.colMounts")}</th><th>${t("vol.colBytes")}</th><th></th></tr></thead>
+        <thead><tr><th class="select-cell"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colPool")}</th><th>${t("vol.colOwnership")}</th><th>${t("vol.colMounts")}</th><th>${t("vol.colBytes")}</th><th></th></tr></thead>
         <tbody id="volRows">${skeletonRows(3, VOLUME_COLUMNS)}</tbody>
       </table></div>
     </div>`;
@@ -226,14 +363,28 @@ export function render(view) {
       </div>`;
   };
 
+  /** The header checkbox and the bulk bar follow the selection and the matches on screen. */
+  const syncSelection = () => {
+    const header = view.querySelector("#volSelectAll");
+    const state = headerState(selected, matches);
+    header.disabled = state.disabled;
+    header.checked = state.checked;
+    header.indeterminate = state.indeterminate;
+    view.querySelector("#volBulk").hidden = selected.size === 0;
+    view.querySelector("#volBulkCount").textContent = t("vol.selectedCount", { n: selected.size });
+  };
+
   const drawVolumes = () => {
     if (!volumes) return;
     const body = view.querySelector("#volRows");
+    matches = volumes.length
+      ? filterBySearch(volumes, query, (volume) => volumeSearchFields(volume, { boxNames, roleLabel }))
+      : [];
+    syncSelection();
     if (!volumes.length) {
       body.innerHTML = `<tr><td colspan="${VOLUME_COLUMNS}">${emptyState({ iconName: "folder", title: t("vol.none"), text: "" })}</td></tr>`;
       return;
     }
-    const matches = filterBySearch(volumes, query, (volume) => volumeSearchFields(volume, { boxNames, roleLabel }));
     if (!matches.length) {
       body.innerHTML = `<tr><td colspan="${VOLUME_COLUMNS}">${emptyState({
         iconName: "search",
@@ -245,9 +396,12 @@ export function render(view) {
     }
     body.innerHTML = groupVolumes(matches, groupBy, { boxNames })
       .map((group) => {
-        if (group.kind === "all") return group.rows.map(volumeRow).join("");
+        if (group.kind === "all") return group.rows.map((volume) => volumeRow(volume, selected)).join("");
         const isCollapsed = collapsed.has(group.id);
-        return groupRow(group, isCollapsed) + (isCollapsed ? "" : group.rows.map(volumeRow).join(""));
+        return (
+          groupRow(group, isCollapsed) +
+          (isCollapsed ? "" : group.rows.map((volume) => volumeRow(volume, selected)).join(""))
+        );
       })
       .join("");
   };
@@ -269,6 +423,18 @@ export function render(view) {
     drawVolumes();
   });
 
+  view.addEventListener("change", (event) => {
+    const input = event.target;
+    if (input.id === "volSelectAll") {
+      selected = toggleAll(selected, matches);
+      drawVolumes();
+    } else if (input.dataset.select !== undefined) {
+      const volume = volumes?.find((item) => item.id === input.dataset.select);
+      if (volume) selected = toggleOne(selected, volume, input.checked);
+      syncSelection();
+    }
+  });
+
   const load = async () => {
     const [poolBody, volumeBody, boxBody] = await Promise.all([
       api("/api/pools?refresh=true"),
@@ -281,9 +447,96 @@ export function render(view) {
     roles = { ...roles, ...poolBody.roles };
     health = poolBody.health;
     volumes = volumeBody.volumes;
+    selected = keepSelectable(selected, volumes);
     boxNames = new Map(boxBody.boxes.map((box) => [box.boxId, box.name]));
     draw();
     drawVolumes();
+  };
+
+  const pruneOrphans = async () => {
+    let preview;
+    try {
+      preview = await api("/api/volumes/prune", { method: "POST", body: { dryRun: true } });
+    } catch (err) {
+      return toastError(t("vol.pruneFailed"), err);
+    }
+    const notes = skippedHostNotes(preview.hosts);
+    if (!preview.volumes.length) return toast(t("vol.pruneNone"), { type: "info", message: notes.join(" ") });
+    const showHost = multiHost();
+    const scope = {};
+    const confirmed = await previewDialog(
+      {
+        title: t("vol.pruneTitle"),
+        description: esc(t("vol.pruneDesc")),
+        body: `<div class="preview-notes">${notes.map((note) => `<div class="callout warn">${icon("alert")}<span>${esc(note)}</span></div>`).join("")}</div><div class="prune-list"></div>`,
+        confirmText: t("vol.pruneConfirm"),
+      },
+      (root) => {
+        const head = `<th>${t("vol.colName")}</th>${showHost ? `<th>${t("vol.colHost")}</th>` : ""}<th class="num">${t("vol.colBytes")}</th><th>${t("vol.lastUsed")}</th><th>${t("vol.formerBox")}</th>`;
+        drawTable(root.querySelector(".prune-list"), scope, {
+          head,
+          items: preview.volumes,
+          row: (volume) => pruneRowHtml(volume, showHost),
+        });
+      },
+    );
+    if (!confirmed) return;
+    let result;
+    try {
+      result = await api("/api/volumes/prune", { method: "POST", body: { dryRun: false } });
+    } catch (err) {
+      return toastError(t("vol.pruneFailed"), err);
+    }
+    const tally = tallyRows(result.volumes);
+    toast(t("vol.pruned"), {
+      type: tally.failed ? "error" : "success",
+      message: [t("vol.resultTally", tally), ...skippedHostNotes(result.hosts)].join(" "),
+    });
+    await load();
+  };
+
+  const deleteSelected = async () => {
+    const ids = volumes.filter((volume) => selected.has(volume.id)).map((volume) => volume.id);
+    if (!ids.length) return;
+    let rows;
+    try {
+      rows = await previewDelete(ids);
+    } catch (err) {
+      return toastError(t("vol.deleteFailed"), err);
+    }
+    const removable = rows.filter((row) => previewOutcome(row, false).removes).length;
+    const showHost = multiHost();
+    const scope = {};
+    const confirmed = await previewDialog(
+      {
+        title: t("vol.deleteSelectedTitle"),
+        description: `${esc(t("vol.deleteSummary", { removed: removable, skipped: rows.length - removable }))} ${esc(t("vol.deleteSelectedDesc"))}`,
+        body: `${checkboxField({ id: "bd-skip", label: esc(t("vol.skipTrash")), help: esc(t("vol.skipTrashHelp")) })}<div class="prune-list"></div>`,
+        confirmText: t("vol.delete"),
+        confirmDisabled: removable === 0,
+      },
+      (root) => {
+        const skip = root.querySelector("#bd-skip");
+        const head = `<th>${t("vol.colName")}</th>${showHost ? `<th>${t("vol.colHost")}</th>` : ""}<th class="num">${t("vol.colBytes")}</th><th>${t("vol.colAction")}</th>`;
+        const box = root.querySelector(".prune-list");
+        const draw = () =>
+          drawTable(box, scope, { head, items: rows, row: (row) => deleteRowHtml(row, skip.checked, showHost) });
+        skip.addEventListener("change", draw);
+        draw();
+      },
+    );
+    if (!confirmed) return;
+    const skipTrash = confirmed.querySelector("#bd-skip").checked;
+    let done;
+    try {
+      done = await api("/api/volumes/delete", { method: "POST", body: { ids, confirm: true, skipTrash } });
+    } catch (err) {
+      return toastError(t("vol.deleteFailed"), err);
+    }
+    const tally = tallyRows(done.volumes);
+    toast(t("vol.bulkDone"), { type: tally.failed ? "error" : "success", message: t("vol.resultTally", tally) });
+    selected = new Set();
+    await load();
   };
 
   const readRoles = () => {
@@ -372,6 +625,13 @@ export function render(view) {
         toggleGroup(target.dataset.group);
       } else if (action === "clear-search") {
         search.clear();
+      } else if (action === "clear-selection") {
+        selected = new Set();
+        drawVolumes();
+      } else if (action === "bulk-delete") {
+        await deleteSelected();
+      } else if (action === "prune") {
+        await pruneOrphans();
       } else if (action === "save") {
         await save();
       } else if (action === "make-default") {

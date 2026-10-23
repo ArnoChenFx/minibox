@@ -13,6 +13,21 @@
 .dialog.wide {
   width: min(640px, 100%);
 }
+/* A volume preview: the notes about hosts that were not checked, then a compact table, which folds when it is long. */
+.preview-notes {
+  display: grid;
+  gap: 8px;
+}
+.prune-list {
+  margin-top: 14px;
+}
+.prune-list .table th,
+.prune-list .table td {
+  padding: 8px 10px;
+}
+.prune-list .list-more {
+  padding: 10px 0 0;
+}
 .rebuild-mounts {
   display: flex;
   flex-direction: column;
