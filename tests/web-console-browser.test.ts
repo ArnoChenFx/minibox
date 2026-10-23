@@ -312,6 +312,24 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     );
 
     test(
+      "still lists the templates the hosts hold when the official catalog cannot be read",
+      async () => {
+        const noCatalog = await signedIn({ viewport: VIEWPORT });
+        try {
+          await noCatalog.route("**/api/templates/official", (route) =>
+            route.fulfill({ status: 500, json: { error: { code: "internal", message: "catalog unavailable" } } }),
+          );
+          const tpPage = await noCatalog.newPage();
+          await tpPage.goto(`${consoleUrl}/#/library/templates`);
+          await webExpect(tpPage.locator('#tpGrid [data-name="base"]')).toBeVisible();
+        } finally {
+          await noCatalog.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
       "a template address opens Library on Templates, with that template in focus",
       async () => {
         await page.goto(`${consoleUrl}/#/templates/base`);

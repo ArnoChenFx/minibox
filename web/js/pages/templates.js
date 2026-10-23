@@ -190,9 +190,17 @@ export function render(view, focusName = "") {
   const loadTemplates = async () => {
     await refreshHosts();
     try {
-      const [r, catalog] = await Promise.all([api("/api/templates"), api("/api/templates/official")]);
+      // The official catalog is extra: when it cannot be read, the page still lists the templates the hosts hold, as the
+      // create dialog does.
+      const [r, official] = await Promise.all([
+        api("/api/templates"),
+        api("/api/templates/official").then(
+          (body) => body.templates,
+          () => [],
+        ),
+      ]);
       templates = r.templates;
-      officials = catalog.templates;
+      officials = official;
       base = r.baseTemplate;
       loadError = null;
     } catch (e) {

@@ -59,6 +59,7 @@ table.table {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 2px;
 }
 /* Icon buttons sit close together; labelled buttons need the usual button gap. */

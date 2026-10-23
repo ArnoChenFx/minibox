@@ -150,8 +150,10 @@ a.sidebar-foot.active {
   margin-top: 4px;
 }
 /* Page actions sit at the right edge, also after wrapping below the title. A row with a search field takes its own line
-   under the title, with the search at the left and the buttons at the right. */
-.page-actions {
+   under the title, with the search at the left and the buttons at the right. `.actions` is the same toolbar for a card's
+   head or foot, so its buttons keep the same gap; a table's row actions keep their own tighter spacing (tables.css). */
+.page-actions,
+.actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
