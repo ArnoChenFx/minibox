@@ -432,6 +432,8 @@ export const MESSAGES = {
   volume_host_failed: "Host {host} could not list its containers, so its volumes were not checked: {detail}",
   volume_older_than_invalid: "olderThan must be a whole number followed by s, m, h, d or w, such as 30d.",
   volume_delete_forbidden: "This credential may delete only the volumes it created: {volume}.",
+  volume_shared_tools:
+    "Volume {volume} is the shared tools volume. It holds the tools of every box, so it is not deleted.",
   volume_attach_forbidden: "This credential may not attach volume {volume}.",
   volume_write_forbidden: "This credential may not write volume {volume}.",
   volume_create_forbidden: "This credential may not create volumes.",

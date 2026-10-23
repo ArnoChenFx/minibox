@@ -275,8 +275,10 @@ export async function deleteVolume(
   return { name: volume.name, trash };
 }
 
-/** Why a batch delete does not remove a volume. `in_use` and `forbidden` are refusals; the rest are failures. */
-export type DeleteBlock = "in_use" | "forbidden" | "not_found" | "offline" | "unavailable";
+/** Why a batch delete does not remove a volume. `in_use`, `forbidden` and `tools` are refusals; the rest are failures. */
+export type DeleteBlock = "in_use" | "forbidden" | "tools" | "not_found" | "offline" | "unavailable";
+
+const REFUSED_BLOCKS: ReadonlySet<DeleteBlock> = new Set(["in_use", "forbidden", "tools"]);
 
 /** One id of a batch delete, resolved and judged before anything is removed. */
 export interface DeletePlan {
@@ -328,6 +330,7 @@ async function planOne(
 ): Promise<DeletePlan> {
   if (!volume) return { ref, volume, host: null, blocked: "not_found", detail: null };
   if (!(await may(volume))) return { ref, volume, host: null, blocked: "forbidden", detail: null };
+  if (volume.role === "tools") return { ref, volume, host: null, blocked: "tools", detail: null };
   const host = hosts.find((item) => item.host.id === volume.hostId) ?? null;
   if (!host) return { ref, volume, host, blocked: "not_found", detail: null };
   if (hostOffline(host)) return { ref, volume, host, blocked: "offline", detail: null };
@@ -371,7 +374,7 @@ async function deleteOne(
   const name = volume?.name ?? plan.ref;
   const hostId = volume?.hostId ?? null;
   if (blocked !== null || volume === null || host === null) {
-    const status = blocked === "in_use" || blocked === "forbidden" ? "refused" : "failed";
+    const status = blocked !== null && REFUSED_BLOCKS.has(blocked) ? "refused" : "failed";
     return { id, name, hostId, status, trash: null, error: blockOf(plan, blocked ?? "not_found") };
   }
   try {
@@ -391,6 +394,8 @@ function blockOf(plan: DeletePlan, block: DeleteBlock): OutcomeError {
       return messageOutcome(msg("volume_in_use_by_box", { volume: name }));
     case "forbidden":
       return messageOutcome(msg("volume_delete_forbidden", { volume: name }));
+    case "tools":
+      return messageOutcome(msg("volume_shared_tools", { volume: name }));
     case "not_found":
       return messageOutcome(msg("volume_not_found", { volume: plan.ref }));
     case "offline":

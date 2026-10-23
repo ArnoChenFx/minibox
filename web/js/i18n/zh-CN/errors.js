@@ -329,6 +329,7 @@ export default {
   "err.volume_host_failed": "宿主机 {host} 无法列出其容器，因此未检查其卷：{detail}",
   "err.volume_older_than_invalid": "olderThan 必须是整数加上 s、m、h、d 或 w，例如 30d。",
   "err.volume_delete_forbidden": "此凭据只能删除它自己创建的卷：{volume}。",
+  "err.volume_shared_tools": "卷 {volume} 是共享的工具卷，保存着所有 Box 的工具，因此不会删除。",
   "err.volume_attach_forbidden": "此凭据不能挂载卷 {volume}。",
   "err.volume_write_forbidden": "此凭据不能写入卷 {volume}。",
   "err.volume_create_forbidden": "此凭据不能创建卷。",

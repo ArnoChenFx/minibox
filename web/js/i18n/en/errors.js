@@ -389,6 +389,8 @@ export default {
   "err.volume_host_failed": "Host {host} could not list its containers, so its volumes were not checked: {detail}",
   "err.volume_older_than_invalid": "olderThan must be a whole number followed by s, m, h, d or w, such as 30d.",
   "err.volume_delete_forbidden": "This credential may delete only the volumes it created: {volume}.",
+  "err.volume_shared_tools":
+    "Volume {volume} is the shared tools volume. It holds the tools of every box, so it is not deleted.",
   "err.volume_attach_forbidden": "This credential may not attach volume {volume}.",
   "err.volume_write_forbidden": "This credential may not write volume {volume}.",
   "err.volume_create_forbidden": "This credential may not create volumes.",
