@@ -1,3 +1,5 @@
+import { SELF_QUOTA } from "../tokens/self-policy";
+
 /**
  * Pasteable instructions for an agent working through MiniBox. docs/user-guide/agents.md includes this text,
  * and the MCP `instructions` field does too, so the two stay the same.
@@ -30,3 +32,6 @@ Use the MiniBox MCP server (\`/mcp\`, Bearer access key or agent token) to work 
 export const MCP_INSTRUCTIONS = `Recommended flow: list_boxes or create_box, then exec and the file tools (read_file / write_file / list_files / copy_files) on volumes. Taking, listing, forking and rolling back checkpoints have no MCP tools; they are in the REST API. The default toolsets are core and meta. tools/list returns the tools of the requested toolsets that this token may use. rebuild_box is in the rebuild toolset, and move_box is in the move toolset. The session toolset holds session_start, session_send and session_read. The volume and pool tools are in the storage toolset, which also holds the owner's checkpoint export, import and schedule tools. The tools toolset holds tool install operations, the owner's custom catalog operations, save_template, which saves a box's system layer as a template, and the owner's template build, template rebuild and image pull tools. The network toolset holds list_ports and expose_port for port previews.
 
 ${AGENTS_MD_SNIPPET}`;
+
+/** What a box's own agent is told when it connects with the box's self token. Its toolset is the only one offered. */
+export const SELF_MCP_INSTRUCTIONS = `You are this box's own agent, connected with the box's self token. The token reaches this box alone: no other box, its secrets, tokens or the host. The self toolset holds get_info (this box's name, size and remaining TTL), checkpoint (a checkpoint of this box, run as a task: poll get_task with its task id until it succeeds), ask_human (a question for a person, shown in the console and in notifications: pass options for a choice, then poll get_question for the answer), and report_status (working, waiting, done or failed, with one line of note). Calls are limited to ${SELF_QUOTA.rateLimit} a minute, and checkpoints to ${SELF_QUOTA.maxCheckpoints} for the box. ask_human does not wait for an answer, so keep working or report waiting.`;

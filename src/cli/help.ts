@@ -12,9 +12,10 @@ Commands:
   minibox box list [--json]            Same as box ls
   minibox box create <name> [--template IMAGE] [--cpus N] [--memory MB] [--profile P]
                        [--repo URL [--branch BRANCH] [--secret NAME]]
-                       [--startup-command TEXT | --startup-command-stdin] [--no-wait] [--json]
+                       [--startup-command TEXT | --startup-command-stdin] [--self-token] [--no-wait] [--json]
                                        Create and start a box. --repo clones into /workspace on the first create.
-                                       A startup command runs at every start of the box.
+                                       A startup command runs at every start of the box. --self-token gives the box's
+                                       agent a token for this box alone, in /run/minibox/self-token.
   minibox box startup-command get <box> [--json]
                                        Print the startup command; its status and last output lines go to stderr
   minibox box startup-command set <box> (--command TEXT | --stdin) [--apply] [--json]

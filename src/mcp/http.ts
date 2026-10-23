@@ -9,7 +9,7 @@ import { RUN_ID_PATTERN } from "../operations/run";
 import type { Operation, Principal, Toolset } from "../operations/types";
 import { scopeAllowed } from "../tokens/model";
 import { SELF_SCOPE } from "../tokens/self-policy";
-import { MCP_INSTRUCTIONS } from "./instructions";
+import { MCP_INSTRUCTIONS, SELF_MCP_INSTRUCTIONS } from "./instructions";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"] as const;
 const DEFAULT_PROTOCOL: (typeof PROTOCOL_VERSIONS)[number] = "2025-06-18";
@@ -187,7 +187,7 @@ export async function handleMcp(app: App, req: Request, url: URL, address: strin
         protocolVersion: version,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "minibox", version: app.version },
-        instructions: MCP_INSTRUCTIONS,
+        instructions: principal.type === "box-self" ? SELF_MCP_INSTRUCTIONS : MCP_INSTRUCTIONS,
       },
       { "mcp-session-id": id, "mcp-protocol-version": version },
     );
