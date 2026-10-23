@@ -32,7 +32,7 @@ import { deleteTemplate, promoteSnapshot, saveBoxAsTemplate } from "../src/servi
 import { attachVolume, createVolume, measureVolume } from "../src/services/volumes";
 import type { RebuildRequest } from "../src/specs/plan";
 import type { BoxMount } from "../src/specs/types";
-import { WRITE_CHECK } from "../src/volumes/engine";
+import { labelsFor, rootOwnerOf, WRITE_CHECK } from "../src/volumes/engine";
 import { DEV_OWNER } from "../src/volumes/types";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
 
@@ -1403,6 +1403,60 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         expect((await runtime.inspectContainer(box.id)).running).toBe(true);
         await boxes.deleteBox(host, box.id, true);
       } finally {
+        restore();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a create after the engine lost the shared tools volume recreates it under the same record, labelled and handed to uid 1000",
+    async () => {
+      const restore = silenceLogs();
+      const base = `${prefix}-template`;
+      let second: boxes.Box | undefined;
+      try {
+        // Earlier tests leave boxes on the shared tools volume, and the engine will not remove a volume in use.
+        for (const leftover of await boxes.listBoxes(host)) await boxes.deleteBox(host, leftover.id, true);
+        const { id: seed } = await runtime.createContainer({
+          image: IMAGE,
+          name: `${prefix}-tools-seed`,
+          cmd: ["sleep", "300"],
+          labels: owned,
+        });
+        await runtime.startContainer(seed);
+        await runtime.commitContainer(seed, { repo: base, tag: "base", pause: true, changes: [] });
+        await runtime.removeContainer(seed, { force: true });
+
+        const first = await boxes.createBox(host, { name: "tools-first", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        const toolsOf = (boxId: string) =>
+          host.specs.read(boxId)?.mounts.find((mount) => mount.path === "/opt/minibox/tools")?.volume ?? "";
+        const toolsEngine = toolsOf(first.boxId);
+        const tools = host.volumes.findByEngine(host.host.id, toolsEngine);
+        if (!tools) throw new Error("the shared tools record is missing");
+        await boxes.deleteBox(host, first.id, false);
+        await runtime.removeVolume(toolsEngine);
+        expect(await volumeExists(toolsEngine)).toBe(false);
+
+        second = await boxes.createBox(host, { name: "tools-second", image: IMAGE, cpus: 0.5, memoryMb: 64 });
+        expect(toolsOf(second.boxId)).toBe(toolsEngine);
+        expect(await volumeExists(toolsEngine)).toBe(true);
+        expect((await docker.getVolume(toolsEngine).inspect()).Labels).toMatchObject(labelsFor(host, tools));
+        // The record is the same one. Only the unmount note moves on, to the box deleted before the volume was lost.
+        const { lastMount: _before, updatedAt: _beforeAt, ...kept } = tools;
+        const after = host.volumes.read(tools.id);
+        expect(after).toMatchObject(kept);
+        expect(after?.lastMount?.boxId).toBe(first.boxId);
+        expect(await rootOwnerOf(host, toolsEngine)).toEqual({ uid: 1000, gid: 1000 });
+        expect(
+          await shell(second.id, "touch /opt/minibox/tools/probe 2>/dev/null && echo writable || echo read-only"),
+        ).toBe("read-only");
+        expect(host.activity.list()).toContainEqual(
+          expect.objectContaining({ action: "volume.recreate", target: tools.name, ok: true }),
+        );
+      } finally {
+        if (second) await boxes.deleteBox(host, second.id, true).catch(() => {});
+        await runtime.removeImage(`${base}:base`, { force: true }).catch(() => {});
         restore();
       }
     },

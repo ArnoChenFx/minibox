@@ -92,6 +92,22 @@ function groupLabel(group) {
   }
 }
 
+/** Flags a record the engine has lost, or whose owner box was deleted and kept it, so the operator can clean it up. */
+function statusBadges(volume) {
+  const badges = [];
+  if (volume.engineMissing) {
+    badges.push(
+      `<span class="badge badge-danger" title="${esc(t("vol.engineMissingHint"))}">${esc(t("vol.engineMissing"))}</span>`,
+    );
+  }
+  if (volume.ownerMissing) {
+    badges.push(
+      `<span class="badge badge-warning" title="${esc(t("vol.ownerMissingHint"))}">${esc(t("vol.ownerMissing"))}</span>`,
+    );
+  }
+  return badges.map((badge) => ` ${badge}`).join("");
+}
+
 function volumeRow(volume, selected) {
   const mounts = volume.mounts
     .map((mount) => {
@@ -111,7 +127,7 @@ function volumeRow(volume, selected) {
   const pick = `<label class="checkbox"${tip}><input type="checkbox" data-select="${esc(volume.id)}" aria-label="${esc(t("vol.selectOne", { name: volume.name }))}"${selected.has(volume.id) ? " checked" : ""}${reason ? " disabled" : ""} /></label>`;
   return `<tr class="${over.trim()}">
     <td class="select-cell">${pick}</td>
-    <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong><div class="subtle mono">${esc(volume.id)}</div></td>
+    <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong>${statusBadges(volume)}<div class="subtle mono">${esc(volume.id)}</div></td>
     <td class="nowrap">${volume.role ? esc(roleLabel(volume.role)) : "—"}</td>
     <td class="nowrap">${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
     <td class="nowrap">${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>

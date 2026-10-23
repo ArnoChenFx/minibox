@@ -5,7 +5,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, MountMode } from "../specs/types";
-import { claimEngineVolumes } from "../volumes/engine";
+import { claimListed } from "../volumes/engine";
 import { probePools } from "../volumes/health";
 import { type LimitPatch, mergeLimits, usageLevel } from "../volumes/limits";
 import { validMountPath } from "../volumes/mounts";
@@ -69,6 +69,10 @@ export interface VolumeView {
   unattached: boolean;
   /** How many boxes currently mount this volume read-write. A second read-write mount is the operator's risk. */
   rwMounts: number;
+  /** The engine no longer has this volume, so no box can mount it. Only a shared tools volume is recreated on its own. */
+  engineMissing: boolean;
+  /** The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it. */
+  ownerMissing: boolean;
 }
 
 export interface PoolsView {
@@ -107,7 +111,19 @@ function usageOf(host: HostCtx, volume: VolumeRecord, backend: PoolBackend): Vol
   };
 }
 
-function viewOf(host: HostCtx, volume: VolumeRecord): VolumeView {
+/** An owned volume whose owner box is gone. Deleting a box keeps its volumes unless the caller asks for them to go. */
+function ownerGone(host: HostCtx, volume: VolumeRecord): boolean {
+  return volume.ownership === "owned" && volume.ownerBoxId !== null && host.specs.read(volume.ownerBoxId) === null;
+}
+
+/** Records the engine volumes MiniBox does not know yet, and returns the engine names as they are now. */
+async function claimedEngines(host: HostCtx): Promise<Set<string>> {
+  const listed = await host.runtime.listVolumes();
+  await claimListed(host, listed);
+  return new Set(listed.map((info) => info.name));
+}
+
+function viewOf(host: HostCtx, volume: VolumeRecord, engineMissing: boolean): VolumeView {
   const mounts = mountsOf(host, volume);
   const pool = host.volumes.readPools().pools.find((item) => item.name === volume.pool);
   const backend = pool?.backend ?? "local";
@@ -131,21 +147,24 @@ function viewOf(host: HostCtx, volume: VolumeRecord): VolumeView {
     mounts,
     unattached: mounts.length === 0,
     rwMounts: mounts.filter((mount) => mount.mode === "rw").length,
+    engineMissing,
+    ownerMissing: ownerGone(host, volume),
   };
 }
 
 export async function listVolumes(host: HostCtx): Promise<VolumeView[]> {
-  await claimEngineVolumes(host);
+  const engines = await claimedEngines(host);
   return host.volumes
     .list()
     .filter((volume) => volume.hostId === host.host.id)
-    .map((volume) => viewOf(host, volume))
+    .map((volume) => viewOf(host, volume, !engines.has(volume.engineName)))
     .toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getVolume(host: HostCtx, ref: string): Promise<VolumeView> {
-  await claimEngineVolumes(host);
-  return viewOf(host, requireVolume(host, ref));
+  const engines = await claimedEngines(host);
+  const volume = requireVolume(host, ref);
+  return viewOf(host, volume, !engines.has(volume.engineName));
 }
 
 export async function createVolume(
@@ -153,7 +172,7 @@ export async function createVolume(
   input: { name: string; pool?: string; role: VolumeRole | null; createdBy: string | null },
 ): Promise<VolumeView> {
   const record = await createIndependentVolume(host, input, new Set());
-  return viewOf(host, record);
+  return viewOf(host, record, false);
 }
 
 function refuseIfMounted(name: string, mounts: VolumeMountView[]): void {
@@ -501,14 +520,14 @@ export async function measureVolume(host: HostCtx, ref: string): Promise<VolumeV
   const next = recordSample(host, volume.id, sample);
   if (!sample.ok) throw sample.error instanceof Error ? sample.error : new Error(sample.message);
   if (!next) throw notFound(msg("volume_not_found", { volume: ref }));
-  return viewOf(host, next);
+  return viewOf(host, next, false);
 }
 
 /**
  * Sets a volume's usage limits. A field left out keeps its value and null clears one. An NFS volume is refused, since
  * its usage is the whole share's: a quota belongs on the NAS export.
  */
-export function setVolumeLimits(host: HostCtx, ref: string, patch: LimitPatch): VolumeView {
+export function setVolumeLimits(host: HostCtx, ref: string, patch: LimitPatch): void {
   const volume = requireVolume(host, ref);
   const pool = host.volumes.readPools().pools.find((item) => item.name === volume.pool);
   if (pool?.backend === "nfs") throw badRequest(msg("volume_limit_nfs", { volume: volume.name }));
@@ -518,7 +537,6 @@ export function setVolumeLimits(host: HostCtx, ref: string, patch: LimitPatch): 
     updatedAt: new Date().toISOString(),
   };
   host.volumes.write(next);
-  return viewOf(host, next);
 }
 
 export async function getPools(host: HostCtx, opts: { force?: boolean } = {}): Promise<PoolsView> {

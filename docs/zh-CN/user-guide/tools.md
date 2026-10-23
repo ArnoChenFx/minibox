@@ -32,6 +32,8 @@
 
 工具写入共享 tools 卷，在各 Box 中以只读方式挂载。同一宿主机上使用同一存储池 tools 卷的每个 Box 共享各工具的程序文件。安装到一个 Box 的工具，对共享该卷的其他 Box 也可用。
 
+若引擎丢失了共享 tools 卷，MiniBox 会重新创建它。本地池上的卷会以空卷返回，卷中原有的工具会显示为未安装。点击 **补装缺失** 即可重新安装。参见[卷与存储](volumes-and-storage.md#引擎丢失卷时)。
+
 ## Tailscale
 
 Tailscale 将 Box 连接到你的 tailnet。从目录安装后：

@@ -13,7 +13,7 @@ import { newBoxId, isBoxId } from "../specs/revision";
 import type { BoxMount, MountMode, BoxSpec } from "../specs/types";
 import { loadCatalog } from "../tools/catalog";
 import { VolumeChanges } from "../volumes/changes";
-import { trackPoolRoots, poolsUsed, assertVolumesPresent } from "../volumes/engine";
+import { assertVolumesPresent, healSharedToolsMounts, poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { assertMountsWithinLimits } from "../volumes/limits";
 import { validMountPath } from "../volumes/mounts";
@@ -57,8 +57,13 @@ function resolveMounts(host: HostCtx, mounts: BoxMount[]): BoxMount[] {
 }
 
 /** Explicit mounts name recorded volumes, and each one must pass the attachment rules a new box is held to. */
-async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[]): Promise<BoxMount[]> {
+async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[], known: Set<string>): Promise<BoxMount[]> {
   const resolved = resolveMounts(host, mounts);
+  await healSharedToolsMounts(
+    host,
+    resolved.map((mount) => mount.volume),
+    known,
+  );
   for (const mount of resolved) {
     assertMountAllowed(host, null, mount.volume, await mountTarget(host, mount.volume));
   }
@@ -181,7 +186,7 @@ async function buildBox(
   const createdBy = input.createdBy ?? "owner";
   const known = new Set<string>([image]);
   const mounts = input.mounts
-    ? await resolveCreateMounts(host, input.mounts)
+    ? await resolveCreateMounts(host, input.mounts, known)
     : await provisionDefaultMounts(host, { id, name: input.name, createdBy }, known, attempt.changes);
   assertMountsWithinLimits(host, mounts);
   await trackPoolRoots(host, poolsUsed(host, mounts), attempt.changes);
