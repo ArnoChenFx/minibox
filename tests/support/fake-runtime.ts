@@ -395,6 +395,8 @@ export class FakeRuntime implements Runtime {
   helperHandler: (spec: HelperSpec) => HelperResult = defaultHelper;
   /** The sources the last `setHostIngressBlock` installed. Empty when nothing is blocked. */
   hostIngressBlock: string[] = [];
+  /** The owner the last `setHostIngressBlock` named. */
+  hostIngressOwner: string | null = null;
   /**
    * Output of the next non-TTY exec. The default is a successful empty command, which is what `true` does.
    * `null` leaves the command running until `kill()`, which is how tests model `sleep`.
@@ -1556,8 +1558,9 @@ export class FakeRuntime implements Runtime {
     return [...this.networks.values()].map((network) => ({ name: network.name, subnets: [...network.subnets] }));
   }
 
-  async setHostIngressBlock(sources: string[]): Promise<void> {
-    this.enter("setHostIngressBlock", [sources]);
+  async setHostIngressBlock(owner: string, sources: string[]): Promise<void> {
+    this.enter("setHostIngressBlock", [owner, sources]);
+    this.hostIngressOwner = owner;
     this.hostIngressBlock = [...sources];
   }
 

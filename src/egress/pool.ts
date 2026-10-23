@@ -3,8 +3,8 @@ import { conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
 
 /**
- * The addresses egress networks use. They sit outside the ranges Docker hands out by default, and every network in the
- * pool shares one host firewall rule (see `setHostIngressBlock`).
+ * The addresses egress networks use. They sit outside the ranges Docker hands out by default, and a remote agent only
+ * blocks sources inside them, or the subnets of its engine's own networks (see `setHostIngressBlock`).
  */
 export const EGRESS_POOL = requireCidr("240.0.0.0/12");
 

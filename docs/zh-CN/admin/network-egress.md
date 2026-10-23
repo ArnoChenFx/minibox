@@ -64,7 +64,7 @@ Box 概览中的**网络出站**卡片列出最近被拒绝的连接，活动列
 
 `none` 与 `proxy-only` 档位的 Box 始终与宿主机隔离，与 `BLOCK_HOST_GATEWAY` 的设置无关。
 
-该规则是宿主机防火墙中 `MINIBOX-EGRESS` 链里的一条规则，`INPUT` 链会跳转到它。规则由一个辅助容器设置，该容器使用 `alpine:3.20` 镜像，运行在宿主机网络上并具有 `NET_ADMIN` 能力。MiniBox 在第一次需要时拉取该镜像。该链由宿主机上的所有 MiniBox 共享。若规则无法设置，需要该规则的 Box 将无法启动。
+该规则是宿主机防火墙中 `MINIBOX-EGRESS-<hash>` 链里的一条规则，`INPUT` 链会跳转到它。每个安装有自己的链，以其 `LABEL_PREFIX` 的哈希命名，因此同一宿主机上的多个安装互不影响对方的规则。规则由一个辅助容器设置，该容器使用 `alpine:3.20` 镜像，运行在宿主机网络上并具有 `NET_ADMIN` 能力。MiniBox 在第一次需要时拉取该镜像。若规则无法设置，需要该规则的 Box 将无法启动。
 
 ## 远程宿主机
 
@@ -83,11 +83,11 @@ Box 概览中的**网络出站**卡片列出最近被拒绝的连接，活动列
 - **宿主机上必须有基础模板。** 代理基于它运行，因此没有它，`proxy-only` Box 无法启动。每个代理的内存上限为 256 MB。
 - **端口预览需要通往 Box 的路由。** 预览连接的是 Box 在其网络上的地址，因此 MiniBox 必须能够路由到该网络，这对任何 Box 都一样。exec 与 SSH 不依赖这一点。
 - **私有网络使用 `240.0.0.0/12`。** `none` 与 `proxy-only` 的 Box 私有网络取自这一保留地址段，因此不会与常见的私有地址段冲突。
-- **宿主机防火墙是共享的。** `MINIBOX-EGRESS` 链属于宿主机，而不属于某一个 MiniBox 安装。
+- **需要 Docker Engine 26.0 或更高版本。** 更早的引擎会把内部网络的 DNS 查询转发给宿主机的解析器（CVE-2024-29018），`none` 的 Box 因而可经 DNS 向外发送数据。25.0.5 与 23.0.11 也包含该修复。
 
 ## 允许的主机超时
 
-若允许的主机超时，且代理记录了 `upstream`，请检查宿主机的 `FORWARD` 策略。残留的 `iptables-legacy` 表若设置了 `-P FORWARD DROP`，会静默丢弃 Docker 自身规则允许的流量。使用 `sudo iptables-legacy -S FORWARD` 查看。用 `sudo iptables-legacy -P FORWARD ACCEPT` 将策略设为 `ACCEPT`，或删除残留的旧规则。
+若允许的主机超时，且代理记录了 `upstream`，请检查宿主机的 `FORWARD` 策略。残留的 `iptables-legacy` 表若设置了 `-P FORWARD DROP`，会静默丢弃 Docker 自身规则允许的流量。使用 `sudo iptables-legacy -S FORWARD` 查看。只放行代理的上行网络：`sudo iptables-legacy -I FORWARD -i br-<id> -j ACCEPT`，并加一条对应的 `-o br-<id> -m conntrack --ctstate RELATED,ESTABLISHED` 规则，其中 `br-<id>` 是 `<prefix>-egress-uplink` 网络的网桥。或删除残留的旧规则。
 
 ## 试一试
 

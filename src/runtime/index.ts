@@ -535,12 +535,14 @@ export interface Runtime {
   listNetworks(): Promise<NetworkSummary[]>;
 
   /**
-   * Replaces the MiniBox host firewall rules: new connections that the host itself receives from any of `sources`
+   * Replaces one install's host firewall rules: new connections that the host itself receives from any of `sources`
    * (IPv4 CIDRs) are dropped. A container's connection to the bridge gateway is one of these, so this is what stops a
-   * box reaching services on the host. The rules are replaced as a whole, and an empty list removes them. Runs a
-   * short-lived privileged helper on the host network, so a remote agent host runs it on its own engine.
+   * box reaching services on the host. `owner` is the install's label prefix: each owner has its own chain, so two
+   * installs on one host do not replace each other's rules. An owner's rules are replaced as a whole, and an empty
+   * list removes them. Runs a short-lived privileged helper on the host network, so a remote agent host runs it on its
+   * own engine.
    */
-  setHostIngressBlock(sources: string[]): Promise<void>;
+  setHostIngressBlock(owner: string, sources: string[]): Promise<void>;
 
   /**
    * Attaches a container to the network named `name` as it is now. The engine pins a container to the ID of the

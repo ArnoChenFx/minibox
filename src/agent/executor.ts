@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { parseIpv4Cidr } from "../lib/cidr";
+import { type Ipv4Network, ipv4Overlaps, parseIpv4Cidr } from "../lib/cidr";
 import { type ExecSession, type ExecSpec, MAX_OWNER_ID, type Runtime, RuntimeError } from "../runtime";
 import { type AgentErrorInfo, type ExecExit, REFUSED_OPERATIONS } from "./protocol";
 
@@ -35,6 +35,31 @@ const IPV4_CIDR = z
   .string()
   .max(18)
   .refine((text) => parseIpv4Cidr(text) !== null, "is not an IPv4 CIDR");
+
+/** One source per egress box on the host, plus the default network's subnets. */
+const MAX_BLOCKED_SOURCES = 4096;
+/** The addresses egress networks use (see src/egress/pool.ts). */
+const EGRESS_POOL: Ipv4Network = { base: 240 * 2 ** 24, prefix: 12 };
+
+/**
+ * Refuses a source that is neither inside the egress pool nor exactly the subnet of a network on this engine. The rule
+ * drops new inbound connections, so a source such as 0.0.0.0/0 would cut the host off, SSH included.
+ */
+async function assertBlockable(r: Runtime, sources: readonly string[]): Promise<void> {
+  if (sources.length === 0) return;
+  let subnets: Set<string> | null = null;
+  for (const source of sources) {
+    const network = parseIpv4Cidr(source);
+    if (network && network.prefix >= EGRESS_POOL.prefix && ipv4Overlaps(network, EGRESS_POOL)) continue;
+    subnets ??= new Set((await r.listNetworks()).flatMap((candidate) => candidate.subnets));
+    if (subnets.has(source)) continue;
+    throw new RuntimeError(
+      "invalid",
+      "setHostIngressBlock: sources is not valid",
+      `${source} is neither in the egress pool nor the subnet of a network on this engine`,
+    );
+  }
+}
 
 /** Only named volumes: a source that is a path would be a bind mount, which an agent never creates. */
 const MountSchema = z
@@ -192,7 +217,9 @@ const ops = {
     .strict(),
   listNetworks: Empty,
   reattachNetwork: z.object({ containerId: NAME, name: NETWORK }).strict(),
-  setHostIngressBlock: z.object({ sources: z.array(IPV4_CIDR).max(16) }).strict(),
+  setHostIngressBlock: z
+    .object({ owner: z.string().min(1).max(256), sources: z.array(IPV4_CIDR).max(MAX_BLOCKED_SOURCES) })
+    .strict(),
   startExec: z.object({ containerId: NAME, spec: ExecSpecSchema }).strict(),
   followLogs: ById.extend({
     tail: COUNT,
@@ -418,7 +445,8 @@ export class AgentExecutor {
       }
       case "setHostIngressBlock": {
         const a = parse(op, ops.setHostIngressBlock, raw);
-        await r.setHostIngressBlock(a.sources);
+        await assertBlockable(r, a.sources);
+        await r.setHostIngressBlock(a.owner, a.sources);
         return { result: {} };
       }
       case "startExec":

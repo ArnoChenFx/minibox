@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
+import { hostFirewallChain } from "../src/docker/host-firewall";
 import { type EgressPolicy, normalizeEgress } from "../src/egress/policy";
 import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
@@ -101,6 +102,7 @@ describe("box creation with egress", () => {
     });
     expect(proxiesOf(box.boxId)).toEqual([]);
     expect(runtime.hostIngressBlock).toEqual(["240.0.1.0/28"]);
+    expect(runtime.hostIngressOwner).toBe("mbtest");
 
     const container = runtime.containers.get(box.id);
     expect(container?.spec.network).toBe(egressNetworkOf(box.boxId));
@@ -356,5 +358,52 @@ describe("proxy log events", () => {
     expect(denied?.detail).toEqual({ host: "evil.example.net", port: 443, reason: "not_allowed" });
     expect(failed).toMatchObject({ status: "error", summary: "Egress to example.com:443 failed" });
     expect(app.events.list({ op: "egress.listening" }, { limit: 10 }).events).toEqual([]);
+  });
+
+  test("a reconcile reads the logs of proxies already running, as after a MiniBox restart", async () => {
+    const box = await newBox("resumed", { egress: proxyOnly(["example.com"]) });
+    const [proxy] = proxiesOf(box.boxId);
+    if (!proxy) throw new Error("no proxy");
+    host.egress.stopAll();
+
+    await reconcileHost(host);
+    runtime.appendLogs(
+      proxy.id,
+      '{"v":1,"ts":1,"e":"denied","host":"evil.example.net","port":443,"reason":"not_allowed"}\n',
+    );
+
+    const [denied] = await eventsOf("egress.denied", 1);
+    expect(denied).toMatchObject({ status: "denied", target: { kind: "box", id: box.id, name: "resumed" } });
+  });
+});
+
+describe("host firewall after a reboot", () => {
+  test("a reconcile sends the source list again although the store says the host holds it", async () => {
+    const box = await newBox("rebooted", { egress: none() });
+    const subnet = subnetOf(box.boxId) ?? "";
+    expect(runtime.hostIngressBlock).toEqual([subnet]);
+    runtime.hostIngressBlock = [];
+
+    await reconcileHost(host);
+
+    expect(runtime.hostIngressBlock).toEqual([subnet]);
+  });
+
+  test("a reconcile on a host that needs no block and holds none makes no firewall call", async () => {
+    await newBox("plain");
+
+    await reconcileHost(host);
+
+    expect(runtime.ops().filter((op) => op === "setHostIngressBlock")).toEqual([]);
+  });
+});
+
+describe("host firewall chains", () => {
+  test("each install has its own chain, named within iptables' limit", () => {
+    const chain = hostFirewallChain("minibox");
+    expect(chain).toMatch(/^MINIBOX-EGRESS-[0-9a-f]{8}$/);
+    expect(chain.length).toBeLessThanOrEqual(28);
+    expect(hostFirewallChain("minibox")).toBe(chain);
+    expect(hostFirewallChain("mbit-test")).not.toBe(chain);
   });
 });

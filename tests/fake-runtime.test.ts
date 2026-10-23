@@ -341,9 +341,10 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
 
   test("the host ingress block is replaced as a whole, and an empty list clears it", async () => {
     const rt = new FakeRuntime();
-    await rt.setHostIngressBlock(["240.0.0.0/12"]);
+    await rt.setHostIngressBlock("mbx", ["240.0.0.0/12"]);
     expect(rt.hostIngressBlock).toEqual(["240.0.0.0/12"]);
-    await rt.setHostIngressBlock([]);
+    expect(rt.hostIngressOwner).toBe("mbx");
+    await rt.setHostIngressBlock("mbx", []);
     expect(rt.hostIngressBlock).toEqual([]);
   });
 

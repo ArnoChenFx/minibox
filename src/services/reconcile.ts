@@ -6,7 +6,7 @@ import { ttlExpired } from "../specs/lifetime";
 import type { BoxSpec } from "../specs/types";
 import { claimEngineVolumes } from "../volumes/engine";
 import { sleepBox, startBox, stopBox } from "./boxes";
-import { sweepEgress, syncHostFirewall } from "./egress";
+import { followRunningProxies, sweepEgress, syncHostFirewall } from "./egress";
 import { settlePendingRollbacks } from "./rollback";
 import { deliverSelfToken } from "./self-token";
 
@@ -81,7 +81,7 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
   }
 
   try {
-    await syncHostFirewall(host);
+    await syncHostFirewall(host, { force: true });
   } catch (e) {
     log.error("egress.firewall_sync_failed", { host: host.host.id, error: String(e) });
   }
@@ -105,6 +105,11 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
     report.egressRemoved = await sweepEgress(host);
   } catch (e) {
     log.error("egress.sweep_failed", { host: host.host.id, error: String(e) });
+  }
+  try {
+    await followRunningProxies(host);
+  } catch (e) {
+    log.warn("egress.follow_resume_failed", { host: host.host.id, error: String(e) });
   }
   return report;
 }

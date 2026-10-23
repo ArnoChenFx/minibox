@@ -36,7 +36,11 @@ export class FirewallStore {
   }
 }
 
-/** Applies one host's source list. Calls run one at a time, and a list the host already holds is not sent again. */
+/**
+ * Applies one host's source list. Calls run one at a time, and a list the host already holds is not sent again, unless
+ * `force` is set: the kernel drops its rules on a reboot while the store still holds the list, so a reconcile sends it
+ * anyway. Even then a host that holds no list and wants none gets no call.
+ */
 export class EgressFirewall {
   private queue: Promise<void> = Promise.resolve();
 
@@ -45,9 +49,10 @@ export class EgressFirewall {
     private readonly store: FirewallStore,
   ) {}
 
-  apply(sources: readonly string[], set: (sources: string[]) => Promise<void>): Promise<void> {
+  apply(sources: readonly string[], set: (sources: string[]) => Promise<void>, force = false): Promise<void> {
     const run = this.queue.then(async () => {
-      if (sameList(this.store.read(this.hostId), sources)) return;
+      const held = this.store.read(this.hostId);
+      if (sameList(held, sources) && (!force || sources.length === 0)) return;
       await set([...sources]);
       this.store.write(this.hostId, sources);
     });

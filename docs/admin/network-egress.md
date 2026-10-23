@@ -62,7 +62,7 @@ A box on the default network can reach the services that the host listens on, th
 
 A `none` or `proxy-only` box is always kept off the host, whatever `BLOCK_HOST_GATEWAY` says.
 
-The block is a rule in the `MINIBOX-EGRESS` chain, which the host's `INPUT` chain jumps to. A helper container from `alpine:3.20` sets the rules. It runs on the host network with `NET_ADMIN`, and MiniBox pulls its image the first time it is needed. The chain is shared by every MiniBox on the host. A box that needs a block does not start while the rules cannot be set.
+The block is a rule in a `MINIBOX-EGRESS-<hash>` chain, which the host's `INPUT` chain jumps to. Each install has its own chain, named after a hash of its `LABEL_PREFIX`, so installs on one host leave each other's rules alone. A helper container from `alpine:3.20` sets the rules. It runs on the host network with `NET_ADMIN`, and MiniBox pulls its image the first time it is needed. A box that needs a block does not start while the rules cannot be set.
 
 ## Remote hosts
 
@@ -81,11 +81,11 @@ These tiers are not a full sandbox against code that is written to get around th
 - **The base template must be on the host.** The proxy runs from it, so a `proxy-only` box does not start without it. Each proxy is capped at 256 MB of memory.
 - **Port previews need a route to the box.** A preview connects to the box's address on its network, so MiniBox must be able to route to that network, as it must for any box. Exec and SSH do not depend on this.
 - **Private networks use `240.0.0.0/12`.** The private networks of `none` and `proxy-only` boxes are taken from this reserved range, so they stay clear of the usual private ranges.
-- **The host firewall is shared.** The `MINIBOX-EGRESS` chain belongs to the host, not to one MiniBox install.
+- **Docker Engine 26.0 or later.** Older engines forward DNS queries from internal networks to the host's resolvers (CVE-2024-29018), which lets a `none` box send data out through DNS. 25.0.5 and 23.0.11 carry the fix too.
 
 ## If an allowed host times out
 
-If an allowed host times out, and the proxy logs `upstream`, check the host's `FORWARD` policy. A leftover `iptables-legacy` table with `-P FORWARD DROP` silently drops the traffic that Docker's own rules allow. Look with `sudo iptables-legacy -S FORWARD`. Set the policy with `sudo iptables-legacy -P FORWARD ACCEPT`, or remove the stale legacy rules.
+If an allowed host times out, and the proxy logs `upstream`, check the host's `FORWARD` policy. A leftover `iptables-legacy` table with `-P FORWARD DROP` silently drops the traffic that Docker's own rules allow. Look with `sudo iptables-legacy -S FORWARD`. Allow the proxies' uplink only, with `sudo iptables-legacy -I FORWARD -i br-<id> -j ACCEPT` and a matching `-o br-<id> -m conntrack --ctstate RELATED,ESTABLISHED` rule, where `br-<id>` is the bridge of the `<prefix>-egress-uplink` network. Or remove the stale legacy rules.
 
 ## Try it
 

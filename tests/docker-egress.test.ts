@@ -11,8 +11,8 @@
  *
  * The proxy-only cases need the engine to forward from user-defined networks to the internet. A host whose iptables-legacy
  * FORWARD policy is DROP, left over from an older Docker, drops that traffic silently, so the proxy's upstream times out.
- * The host firewall is one chain, MINIBOX-EGRESS, shared by every MiniBox on the host, so the test clears it when it
- * ends. The box image is tests/fixtures/egress. The proxy runs from tests/fixtures/egress/proxy.Dockerfile, which stands
+ * The host firewall rules sit in a chain of the test's own label prefix, so the test clears that chain when it ends and
+ * leaves the chains of any other MiniBox on the host alone. The box image is tests/fixtures/egress. The proxy runs from tests/fixtures/egress/proxy.Dockerfile, which stands
  * in for the base template. The client side needs ssh on PATH.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -278,7 +278,7 @@ afterAll(async () => {
   for (const volume of await runtime.listVolumes().catch(() => [])) {
     if (volume.labels[prefix] === "true") await runtime.removeVolume(volume.name).catch(() => {});
   }
-  await runtime.setHostIngressBlock([]).catch(() => {});
+  await runtime.setHostIngressBlock(prefix, []).catch(() => {});
   await runtime.removeImage(BOX_IMAGE, { force: true }).catch(() => {});
   await runtime.removeImage(PROXY_BASE, { force: true }).catch(() => {});
   if (home) rmSync(home, { recursive: true, force: true });
@@ -400,7 +400,7 @@ describe.skipIf(!enabled)("egress tiers on a real engine", () => {
     const blocked = await inBox(probe, ["curl", "-sS", "-m", "5", url]);
     expect(blocked.code).not.toBe(0);
 
-    await runtime.setHostIngressBlock([]);
+    await runtime.setHostIngressBlock(prefix, []);
     expect(await inBox(probe, ["curl", "-sS", "-m", "5", url])).toMatchObject({ code: 0, out: SERVICE_TEXT });
   }, 120_000);
 

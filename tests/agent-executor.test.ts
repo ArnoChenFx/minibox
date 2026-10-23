@@ -258,11 +258,36 @@ describe("networks", () => {
 
   test("a host firewall source list that is not a list of IPv4 CIDRs is refused before the runtime runs", async () => {
     const { executor, frames, runtime } = setup();
-    await executor.request("n3", "setHostIngressBlock", { sources: ["240.0.0.0/12", "not-a-network"] });
+    await executor.request("n3", "setHostIngressBlock", { owner: "mbx", sources: ["240.0.0.0/12", "not-a-network"] });
     expect(responseTo(frames, "n3")).toMatchObject({ ok: false, error: { kind: "invalid" } });
-    await executor.request("n4", "setHostIngressBlock", { sources: Array.from({ length: 17 }, () => "240.0.0.0/12") });
+    await executor.request("n4", "setHostIngressBlock", {
+      owner: "mbx",
+      sources: Array.from({ length: 4097 }, () => "240.0.0.0/12"),
+    });
     expect(responseTo(frames, "n4")).toMatchObject({ ok: false, error: { kind: "invalid" } });
     expect(runtime.ops()).toEqual([]);
+  });
+
+  test("a host firewall source outside the egress pool must be the subnet of a network on the engine", async () => {
+    const { executor, frames, runtime } = setup();
+    runtime.seedNetwork("mbx-boxes");
+    const boxes = runtime.networks.get("mbx-boxes");
+    if (boxes) boxes.subnets = ["172.30.0.0/16"];
+    const many = Array.from({ length: 64 }, (_, i) => `240.0.${i + 1}.0/28`);
+    await executor.request("f1", "setHostIngressBlock", { owner: "mbx", sources: [...many, "172.30.0.0/16"] });
+    expect(responseTo(frames, "f1")).toMatchObject({ ok: true });
+    expect(runtime.hostIngressBlock).toEqual([...many, "172.30.0.0/16"]);
+    expect(runtime.hostIngressOwner).toBe("mbx");
+
+    for (const [id, source] of [
+      ["f2", "0.0.0.0/0"],
+      ["f3", "240.0.0.0/8"],
+      ["f4", "172.30.0.0/15"],
+    ] as const) {
+      await executor.request(id, "setHostIngressBlock", { owner: "mbx", sources: ["240.0.1.0/28", source] });
+      expect(responseTo(frames, id)).toMatchObject({ ok: false, error: { kind: "invalid" } });
+    }
+    expect(runtime.hostIngressBlock).toEqual([...many, "172.30.0.0/16"]);
   });
 
   test("a container is connected to a second network with its alias, and listed networks come back with their subnets", async () => {

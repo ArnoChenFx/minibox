@@ -206,12 +206,17 @@ export async function removeEgress(host: HostCtx, boxId: string): Promise<void> 
 /**
  * Sets the host firewall to the sources that may not reach the host: the private network of each egress box on this host,
  * and the default network when BLOCK_HOST_GATEWAY is on. A host with neither makes no engine call. A host whose rules are
- * already what is wanted is not sent them again. A failure is raised, so a box does not start without its block.
+ * already what is wanted is not sent them again, unless `force` is set, as a reconcile does after a host reboot may have
+ * cleared them. A failure is raised, so a box does not start without its block.
  */
-export async function syncHostFirewall(host: HostCtx): Promise<void> {
+export async function syncHostFirewall(host: HostCtx, opts: { readonly force?: boolean } = {}): Promise<void> {
   const sources = await blockedSources(host);
   try {
-    await host.firewall.apply(sources, (next) => host.runtime.setHostIngressBlock(next));
+    await host.firewall.apply(
+      sources,
+      (next) => host.runtime.setHostIngressBlock(host.prefix, next),
+      opts.force ?? false,
+    );
   } catch (e) {
     throw new AppError(502, "docker_error", msg("egress_host_gateway_failed", { detail: detailOf(e) }));
   }
@@ -227,6 +232,25 @@ async function blockedSources(host: HostCtx): Promise<string[]> {
     for (const subnet of network?.subnets ?? []) sources.add(subnet);
   }
   return [...sources].toSorted();
+}
+
+/**
+ * Reads the logs of the proxies already running for this host's proxy-only boxes, as after a MiniBox restart, when no
+ * start has asked for them. A proxy already read is not read twice.
+ */
+export async function followRunningProxies(host: HostCtx): Promise<void> {
+  const specs = host.specs.list().filter((spec) => spec.hostId === host.host.id && spec.egress?.mode === "proxy-only");
+  if (specs.length === 0) return;
+  const owners = new Map(specs.map((spec) => [spec.id, spec]));
+  for (const proxy of await host.runtime.listContainers({ labels: {} })) {
+    const owner = owners.get(proxy.labels[host.keys.egressProxy] ?? "");
+    if (!owner || !proxy.running) continue;
+    host.egress.follow(host.runtime, host.host.id, {
+      proxyId: proxy.id,
+      containerId: owner.containerId,
+      name: owner.name,
+    });
+  }
 }
 
 /**

@@ -402,8 +402,8 @@ export class AgentRuntime implements Runtime {
     return this.call("reattachNetwork", { containerId, name }).then(() => undefined);
   }
 
-  setHostIngressBlock(sources: string[]): Promise<void> {
-    return this.call("setHostIngressBlock", { sources }).then(() => undefined);
+  setHostIngressBlock(owner: string, sources: string[]): Promise<void> {
+    return this.call("setHostIngressBlock", { owner, sources }).then(() => undefined);
   }
 
   private call(op: string, args: unknown, signal?: AbortSignal, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
