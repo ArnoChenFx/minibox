@@ -10,11 +10,12 @@
 .field + .field {
   margin-top: 16px;
 }
-/* In a grid the gap spaces the fields; a sibling margin would push every field after the first one down. */
+/* In a grid or a form stack the gap spaces the fields; a sibling margin would push every field after the first one down. */
 .form-grid {
   align-items: start;
 }
-.form-grid > .field + .field {
+.form-grid > .field + .field,
+.form-stack > .field + .field {
   margin-top: 0;
 }
 .form-grid > .field-wide {

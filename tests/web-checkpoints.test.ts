@@ -489,7 +489,7 @@ describe("checkpoint rows", () => {
     const html = markup.pinned ?? "";
     expect(isDisabled(buttonFor(html, "ck-delete", "ck_pin"))).toBe(true);
     expect(titleOf(buttonFor(html, "ck-delete", "ck_pin"))).toBe(escaped(en["ck.reasonPinned"] ?? ""));
-    expect(html).toContain(">Unpin</button>");
+    expect(html).toContain('aria-label="Unpin"');
   });
 
   test("the safety checkpoint of a waiting rollback can be neither deleted nor rolled back again, and shows its reason", () => {
