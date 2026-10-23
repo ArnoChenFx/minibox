@@ -167,6 +167,30 @@ describe("box security settings", () => {
   });
 });
 
+describe("BLOCK_HOST_GATEWAY", () => {
+  test("is off when unset or blank", () => {
+    expect(load({ ACCESS_KEY: KEY }).blockHostGateway).toBe(false);
+    expect(load({ ACCESS_KEY: KEY, BLOCK_HOST_GATEWAY: "  " }).blockHostGateway).toBe(false);
+  });
+  test("1, true, yes and on turn it on in any letter case", () => {
+    for (const value of ["1", "true", "TRUE", "yes", "On"]) {
+      expect(load({ ACCESS_KEY: KEY, BLOCK_HOST_GATEWAY: value }).blockHostGateway).toBe(true);
+    }
+  });
+  test("any other value leaves it off", () => {
+    for (const value of ["0", "false", "no", "off", "maybe"]) {
+      expect(load({ ACCESS_KEY: KEY, BLOCK_HOST_GATEWAY: value }).blockHostGateway).toBe(false);
+    }
+  });
+  test("can come from .env, and the process env wins over it", () => {
+    writeFileSync(envFile, "BLOCK_HOST_GATEWAY=true\n");
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).blockHostGateway).toBe(true);
+    expect(
+      loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir, BLOCK_HOST_GATEWAY: "0" }, { envFile }).blockHostGateway,
+    ).toBe(false);
+  });
+});
+
 describe("MCP_ALLOW_OWNER_KEY", () => {
   test("unset or blank takes the release default", () => {
     expect(load({ ACCESS_KEY: KEY }).mcpAllowOwnerKey).toBe(DEFAULT_MCP_ALLOW_OWNER_KEY);
