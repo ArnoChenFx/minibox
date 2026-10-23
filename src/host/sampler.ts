@@ -1,139 +1,39 @@
 import { sleep, untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
-import { type ContainerInfo, type ContainerStats, isRuntimeError, type RuntimeEvent } from "../runtime";
-import { liveBox, projectBox } from "../services/box-view";
+import { type ContainerInfo, type RuntimeEvent, type ContainerStats, isRuntimeError } from "../runtime";
+import { projectBox, liveBox } from "../services/box-view";
 import type { Box } from "../services/boxes";
-import { ClaimError, ensureSpec } from "../specs/claim";
+import { ensureSpec, ClaimError } from "../specs/claim";
 import type { SpecChange } from "../specs/store";
 import type { BoxSpec } from "../specs/types";
-import { type BoxSample, type LinkState, type LiveSink, NO_LIVE, type StatSample } from "./live";
+import { type LinkState, type StatSample, type LiveSink, NO_LIVE, type BoxSample } from "./live";
 import { LogFollows } from "./log-follow";
 import type { HostCtx } from "./registry";
-
-/** Container actions that can change how a box looks. Exec, attach and the like leave the box as it was. */
-const STATE_VERBS = new Set([
-  "create",
-  "start",
-  "restart",
-  "die",
-  "stop",
-  "kill",
-  "pause",
-  "unpause",
-  "oom",
-  "rename",
-  "update",
-  "health_status",
-]);
-const STATS_CONCURRENCY = 8;
-/** Container inspects a drain runs at once. A burst of starts and stops then takes a few engine round trips, not one per box. */
-const INSPECT_CONCURRENCY = 8;
-/** Longest a stats call may take. A longer interval waits this long for a sample at most. */
-const STATS_TIMEOUT_MS = 5000;
-const BACKOFF_MIN_MS = 1000;
-const BACKOFF_MAX_MS = 30_000;
-const IDLE_INTERVAL_MS = 30_000;
-/**
- * How long one `need()` keeps the samples going while no live subscriber watches. A reader of usage renews it, so
- * a host that nobody reads costs no stats call once the lease runs out.
- */
-export const DEMAND_LEASE_MS = 5 * 60_000;
-/** A sample older than this is not reported. The idle cadence sits well inside it, so a leased sampler keeps it current. */
-const STALE_AFTER_MS = 60_000;
-/** How long a delivered event is remembered, so a replay of it after a reconnect is not delivered again. */
-const EVENT_MEMORY_MS = 60_000;
-/** Remembered events above this count are swept of the expired ones before a new one is remembered. */
-const EVENT_MEMORY_SWEEP = 1024;
-/** How often the containers are listed again, so a change the event stream never reported is caught up. */
-const RELIST_MS = 60_000;
-/** Longest a re-list waits for the engine's listing. A listing that is still pending past this is given up. */
-const RELIST_TIMEOUT_MS = 30_000;
-/** Longest a container inspect may take. A longer one keeps the cached entry, and the next round reads it again. */
-const INSPECT_TIMEOUT_MS = 5000;
-/** Longest the first listing after a subscription may take. A longer one takes the link down, and backoff retries. */
-const LIST_TIMEOUT_MS = 30_000;
-/** Longest `observe()` waits for the queued writes. Past it, the caller goes on, and the writes still run in order. */
-const OBSERVE_WAIT_MS = 5000;
-
-export interface SamplerOptions {
-  /** Time between two sample rounds while a live subscriber watches. Host metrics use the same interval. */
-  intervalMs: number;
-  /** Time between two sample rounds while none does. Never shorter than `intervalMs`. */
-  idleIntervalMs?: number;
-  /** Age past which a sample is no longer reported. See `STALE_AFTER_MS`. */
-  staleAfterMs?: number;
-  /** Time between two full listings of the containers. A stalled event stream hides a change for at most this long. */
-  relistMs?: number;
-  /** Longest a re-list waits for its listing. See `RELIST_TIMEOUT_MS`. */
-  relistTimeoutMs?: number;
-  /** Longest a container inspect may take. See `INSPECT_TIMEOUT_MS`. */
-  inspectTimeoutMs?: number;
-  /** Longest the first listing after a subscription may take. See `LIST_TIMEOUT_MS`. */
-  listTimeoutMs?: number;
-  /** Longest `observe()` waits for the queued writes. See `OBSERVE_WAIT_MS`. */
-  observeWaitMs?: number;
-  /** Samples kept per box. The oldest are dropped first. */
-  history: number;
-  backoffMinMs?: number;
-  backoffMaxMs?: number;
-}
-
-export interface BoxTotals {
-  total: number;
-  running: number;
-  allocatedCpus: number;
-  allocatedMemory: number;
-  unlimited: number;
-}
-
-/** The allocation of the boxes in `infos`. A box without a CPU or memory limit counts as unlimited. */
-export function summarizeBoxes(infos: Iterable<ContainerInfo>): BoxTotals {
-  const totals: BoxTotals = { total: 0, running: 0, allocatedCpus: 0, allocatedMemory: 0, unlimited: 0 };
-  for (const info of infos) {
-    totals.total += 1;
-    if (info.cpus === null || info.memoryBytes === null) totals.unlimited += 1;
-    if (!info.running) continue;
-    totals.running += 1;
-    totals.allocatedCpus += info.cpus ?? 0;
-    totals.allocatedMemory += info.memoryBytes ?? 0;
-  }
-  return { ...totals, allocatedCpus: Math.round(totals.allocatedCpus * 100) / 100 };
-}
-
-function errorText(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
-/** Resolves once `promise` settles, or after `ms`, whichever comes first. The promise itself is left to finish. */
-function waitUpTo(promise: Promise<unknown>, ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(done, ms);
-    function done() {
-      clearTimeout(timer);
-      resolve();
-    }
-    promise.then(done, done);
-  });
-}
+import {
+  OBSERVE_WAIT_MS,
+  DEMAND_LEASE_MS,
+  STATS_TIMEOUT_MS,
+  BACKOFF_MAX_MS,
+  BACKOFF_MIN_MS,
+  RELIST_MS,
+  STATE_VERBS,
+  EVENT_MEMORY_SWEEP,
+  EVENT_MEMORY_MS,
+  INSPECT_CONCURRENCY,
+  INSPECT_TIMEOUT_MS,
+  LIST_TIMEOUT_MS,
+  RELIST_TIMEOUT_MS,
+  STALE_AFTER_MS,
+  STATS_CONCURRENCY,
+  IDLE_INTERVAL_MS,
+} from "./sampler-constants";
+import { waitUpTo, summarizeBoxes, errorText, mapLimit } from "./sampler-helpers";
+import type { SamplerOptions, BoxTotals } from "./sampler-types";
 
 /** A running box and the container a sample of it is taken from. */
 interface Target {
   boxId: string;
   containerId: string;
-}
-
-async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = [];
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const index = next;
-      next += 1;
-      results[index] = await fn(items[index] as T);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
 }
 
 /**
@@ -926,3 +826,7 @@ export class HostSampler {
     return run;
   }
 }
+
+export { DEMAND_LEASE_MS } from "./sampler-constants";
+export type { SamplerOptions, BoxTotals } from "./sampler-types";
+export { summarizeBoxes } from "./sampler-helpers";
