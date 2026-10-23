@@ -53,6 +53,7 @@ export default {
   "st.secretNameHelp": "只能包含字母、数字、点、下划线和连字符。Box 通过此名称引用密钥。",
   "st.secretValueLabel": "值",
   "st.secretValueHelp": "1 到 {max} 个字符，不能包含换行。",
+  "st.navLabel": "设置分类",
   "st.secretSave": "保存密钥",
   "st.secretSaved": "已添加密钥",
   "st.secretReplaced": "已替换密钥",

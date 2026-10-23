@@ -81,6 +81,20 @@ describe("save as template strings", () => {
   });
 });
 
+describe("list and settings navigation strings", () => {
+  const added = ["list.showAll", "list.collapse", "st.navLabel"];
+
+  test("each one has its own Chinese text, not the English copied across", () => {
+    for (const key of added) expect([key, zh[key] !== en[key]]).toEqual([key, true]);
+  });
+
+  test("the show-all toggle names the count in both languages", () => {
+    expect(en["list.showAll"]).toContain("{n}");
+    expect(zh["list.showAll"]).toContain("{n}");
+    expect(zh["list.collapse"]).toBe("收起");
+  });
+});
+
 describe("console translations", () => {
   const used = consoleFiles(WEB).flatMap((path) =>
     literalKeys(readFileSync(path, "utf8")).map((key) => ({ key, file: relative(WEB, path) })),

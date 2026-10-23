@@ -1,0 +1,46 @@
+/* ---------- Long lists ----------
+   A list longer than five rows draws its first few rows and a toggle for the rest. The toggle sits under the list. */
+.list-more {
+  display: flex;
+  justify-content: center;
+  padding: 10px 16px 14px;
+}
+.list-more:empty {
+  display: none;
+}
+.list-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.list-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.list-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.list-toggle .icon {
+  transition: transform 0.12s;
+}
+.list-toggle.is-expanded .icon {
+  transform: rotate(180deg);
+}
+
+/* A picker's heading: its label at the left and its search at the right, wrapping when the dialog is narrow. */
+.picker-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}

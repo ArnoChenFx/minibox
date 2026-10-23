@@ -5,6 +5,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { targetBody } from "../lib/target-state.js";
 import { emptyState, withBusy, toastError, toast, openDialog, confirmDialog } from "../lib/ui.js";
+import { bindToggles, limitList } from "./list-toggle.js";
 
 export async function loadTargets(view) {
   const card = view.querySelector("#stTargets");
@@ -21,8 +22,9 @@ export async function loadTargets(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  const { shown, toggle } = limitList(view, "targets", targets);
   const rows = targets.length
-    ? targets.map(targetRow).join("")
+    ? shown.map(targetRow).join("")
     : `<tr><td colspan="5">${emptyState({ iconName: "upload", title: t("st.targetNone") })}</td></tr>`;
   card.innerHTML = `
     <div class="card-head">
@@ -35,7 +37,8 @@ export async function loadTargets(view) {
         <th class="hide-sm">${t("st.targetColSize")}</th><th></th>
       </tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table></div>
+    <div class="list-more">${toggle}</div>`;
   card.querySelector("#stTargetAdd").addEventListener("click", () => targetDialog(view));
   card.querySelectorAll("[data-target-check]").forEach((btn) => {
     btn.addEventListener("click", () => checkTarget(btn, btn.dataset.targetCheck, btn.dataset.targetName));
@@ -43,6 +46,7 @@ export async function loadTargets(view) {
   card.querySelectorAll("[data-target-remove]").forEach((btn) => {
     btn.addEventListener("click", () => removeTarget(view, btn.dataset.targetRemove, btn.dataset.targetName));
   });
+  bindToggles(view, card, () => loadTargets(view));
 }
 
 function targetRow(target) {

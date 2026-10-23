@@ -8,6 +8,7 @@ import { ROOT } from "../src/config";
 const WEB = join(ROOT, "web");
 const BOX_ACTIONS = join(WEB, "js", "components", "box-actions.js");
 const MOUNT_EDITOR = join(WEB, "js", "components", "mount-editor.js");
+const LIST_TOGGLE = join(WEB, "js", "components", "list-toggle.js");
 
 const stubs = [
   `const stub = { documentElement: {}, body: {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, removeEventListener() {} };`,
@@ -90,6 +91,90 @@ describe("overlay layout", () => {
     const overlay = css.match(/\.overlay \{[^}]*\}/)?.[0] ?? "";
     expect(overlay).toContain("grid-template-columns: minmax(0, 1fr);");
     expect(overlay).toContain("place-items: center;");
+  });
+});
+
+/** Loads the list toggle in a fresh process and returns what `body` gives, with the module's exports in scope. */
+function listToggle<T>(body: string): T {
+  const script = [
+    ...stubs,
+    `const { bindToggles, flip, isToggled, limitList, listToggleHtml } = await import(${JSON.stringify(LIST_TOGGLE)});`,
+    `const result = await (async () => {\n${body}\n})();`,
+    `console.log(JSON.stringify(result));`,
+  ].join("\n");
+  const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
+  if (run.status !== 0) throw new Error(run.stderr);
+  return JSON.parse(run.stdout) as T;
+}
+
+const SEVEN = `Array.from({ length: 7 }, (_, id) => ({ id }))`;
+
+describe("list toggle", () => {
+  test("a long list shows its first five items under a toggle that names the full length", () => {
+    const out = listToggle<{ shown: number[]; toggle: string }>(`
+      const { shown, toggle } = limitList({}, "k", ${SEVEN});
+      return { shown: shown.map((item) => item.id), toggle };`);
+    expect(out.shown).toEqual([0, 1, 2, 3, 4]);
+    expect(out.toggle).toContain('data-toggle="k"');
+    expect(out.toggle).toContain("Show all (7)");
+    expect(out.toggle).not.toContain("is-expanded");
+  });
+
+  test("a press expands the list for its own scope only, and the toggle then offers to show less", () => {
+    const out = listToggle<{ shown: number; toggle: string; other: number }>(`
+      const scope = {};
+      flip(scope, "k");
+      const { shown, toggle } = limitList(scope, "k", ${SEVEN});
+      return { shown: shown.length, toggle, other: limitList({}, "k", ${SEVEN}).shown.length };`);
+    expect(out.shown).toBe(7);
+    expect(out.toggle).toContain("is-expanded");
+    expect(out.toggle).toContain("Show less");
+    expect(out.other).toBe(5);
+  });
+
+  test("a search shows every match with no toggle, and clearing it brings back the choice the user made", () => {
+    const out = listToggle<{ searching: { shown: number; toggle: string }; cleared: number }>(`
+      const scope = {};
+      flip(scope, "k");
+      const { shown, toggle } = limitList(scope, "k", ${SEVEN}, { searching: true });
+      return { searching: { shown: shown.length, toggle }, cleared: limitList(scope, "k", ${SEVEN}).shown.length };`);
+    expect(out.searching).toEqual({ shown: 7, toggle: "" });
+    expect(out.cleared).toBe(7);
+  });
+
+  test("a list of five or fewer has no toggle, and a kept item stays visible past the limit", () => {
+    const out = listToggle<{ short: string; kept: number[] }>(`
+      return {
+        short: limitList({}, "k", ${SEVEN}.slice(0, 5)).toggle,
+        kept: limitList({}, "k", ${SEVEN}, { keep: (item) => item.id === 6 }).shown.map((item) => item.id),
+      };`);
+    expect(out.short).toBe("");
+    expect(out.kept).toEqual([0, 1, 2, 3, 4, 6]);
+  });
+
+  test("a toggle's key is escaped in its attribute", () => {
+    const html = listToggle<string>(`return listToggleHtml('a"b', { expanded: false, total: 3 });`);
+    expect(html).toContain('data-toggle="a&quot;b"');
+  });
+
+  test("a press redraws the toggles and returns focus to the same toggle", () => {
+    const out = listToggle<{ flipped: boolean; focused: boolean; redrawn: boolean }>(`
+      const scope = {};
+      const button = () => ({
+        dataset: { toggle: "k" },
+        focused: false,
+        listeners: {},
+        addEventListener(type, handler) { this.listeners[type] = handler; },
+        focus() { this.focused = true; },
+      });
+      const root = { buttons: [button()], querySelectorAll() { return this.buttons; } };
+      const before = root.buttons[0];
+      bindToggles(scope, root, () => { root.buttons = [button()]; });
+      before.listeners.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const after = root.buttons[0];
+      return { flipped: isToggled(scope, "k"), focused: after.focused, redrawn: before !== after };`);
+    expect(out).toEqual({ flipped: true, focused: true, redrawn: true });
   });
 });
 

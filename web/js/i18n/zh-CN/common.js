@@ -10,6 +10,8 @@ export default {
   "common.unknown": "未知",
   "common.unlimited": "不限",
   "common.loading": "正在加载…",
+  "list.showAll": "展开全部（{n}）",
+  "list.collapse": "收起",
   "common.connecting": "正在连接…",
   "common.failed": "失败",
   "common.tagline": "为 AI Agent 准备的个人开发环境",

@@ -19,6 +19,8 @@
 @import "app/hosts-tasks.css";
 @import "app/about.css";
 @import "app/box-files.css";
+@import "app/lists.css";
+@import "app/settings.css";
 
 /* Stays here, after the imports, because tests/web-components.test.ts reads this rule from app.css. */
 .overlay {

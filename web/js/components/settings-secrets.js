@@ -5,6 +5,7 @@ import { dateTime, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { emptyState, openDialog, withBusy, toast, confirmDialog, toastError } from "../lib/ui.js";
+import { bindToggles, limitList } from "./list-toggle.js";
 
 export async function loadSecrets(view) {
   const card = view.querySelector("#stSecrets");
@@ -21,8 +22,9 @@ export async function loadSecrets(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  const { shown, toggle } = limitList(view, "secrets", secrets);
   const rows = secrets.length
-    ? secrets.map(secretRow).join("")
+    ? shown.map(secretRow).join("")
     : `<tr><td colspan="4">${emptyState({ iconName: "key", title: t("st.secretNone") })}</td></tr>`;
   card.innerHTML = `
     <div class="card-head">
@@ -33,7 +35,8 @@ export async function loadSecrets(view) {
     <div class="table-wrap"><table class="table">
       <thead><tr><th>${t("label.name")}</th><th class="hide-sm">${t("st.secretUpdated")}</th><th>${t("st.secretUsedBy")}</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table></div>
+    <div class="list-more">${toggle}</div>`;
   card.querySelector("#stSecretAdd").addEventListener("click", () => secretDialog(view));
   card.querySelectorAll("[data-secret-replace]").forEach((btn) => {
     btn.addEventListener("click", () => secretDialog(view, btn.dataset.secretReplace));
@@ -41,6 +44,7 @@ export async function loadSecrets(view) {
   card.querySelectorAll("[data-secret-delete]").forEach((btn) => {
     btn.addEventListener("click", () => deleteSecret(view, btn.dataset.secretDelete));
   });
+  bindToggles(view, card, () => loadSecrets(view));
 }
 
 function secretRow(secret) {

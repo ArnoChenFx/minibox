@@ -57,6 +57,7 @@ export default {
   "st.secretNameHelp": "Letters, digits, dots, underscores and hyphens. Boxes refer to the secret by this name.",
   "st.secretValueLabel": "Value",
   "st.secretValueHelp": "Between 1 and {max} characters, with no line breaks.",
+  "st.navLabel": "Settings categories",
   "st.secretSave": "Save secret",
   "st.secretSaved": "Secret added",
   "st.secretReplaced": "Secret replaced",
