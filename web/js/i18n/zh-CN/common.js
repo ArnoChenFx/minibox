@@ -46,9 +46,9 @@ export default {
   "shell.memShort": "内存",
   "shell.dockerUnavailable": "Docker 不可用",
   "shell.ownerKeyAccepted":
-    "有 Agent 使用所有者访问密钥访问 /mcp，最近一次在 {time}。请为每个 Agent 分配各自的 Agent 令牌。下一个次要版本将默认拒绝 /mcp 上的所有者访问密钥。",
+    "有 Agent 使用所有者访问密钥访问 /mcp，MCP_ALLOW_OWNER_KEY=true 目前接受该密钥。最近一次使用在 {time}。请为每个 Agent 分配各自的 Agent 令牌，然后移除 MCP_ALLOW_OWNER_KEY=true，让 /mcp 默认拒绝该密钥。",
   "shell.ownerKeyRefused":
-    "有 Agent 向 /mcp 发送所有者访问密钥，MiniBox 已拒绝该请求。最近一次拒绝在 {time}。请为该 Agent 分配 Agent 令牌。",
+    "有 Agent 使用所有者访问密钥访问 /mcp，MiniBox 现以 401 拒绝。最近一次使用在 {time}。请为每个 Agent 分配各自的 Agent 令牌，或设置 MCP_ALLOW_OWNER_KEY=true 重新接受该密钥。",
   "shell.ownerKeyAction": "创建 Agent 令牌",
   "login.title": "登录 · MiniBox",
   "login.heroTitle": "为 AI Agent 准备的<br />个人开发环境",
