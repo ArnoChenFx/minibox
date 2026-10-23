@@ -14,14 +14,18 @@ import {
   usedPercent,
 } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
-import { bytes, dateTime } from "../lib/format.js";
+import { bytes, dateTime, relTime } from "../lib/format.js";
 import { hostOfBox } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { subscribe } from "../lib/live.js";
 import { confirmDialog, emptyState, nameError, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { flip, limitList } from "./list-toggle.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
+
+/** How many checkpoints the box's tab lists before its show-all toggle. */
+const LIST_ROWS = 8;
 
 export const KIND_CLASS = { legacy: "badge-warning", pinned: "badge-success", automatic: "", manual: "badge-accent" };
 
@@ -384,18 +388,19 @@ function lastRunText(run, zone) {
 /** The schedule line of the card: off, or the rule with its next and last run, and the buttons that change it. */
 export function scheduleHtml(schedule, zone = browserTimezone()) {
   if (!schedule) {
-    return `<div class="ck-schedule">
+    return `<div class="ck-schedule"><div class="ck-schedule-info">
       <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge">${esc(t("ck.scheduleOff"))}</span></div>
-      <div class="help">${esc(t("ck.scheduleOffHelp"))}</div>
+      <div class="help">${esc(t("ck.scheduleOffHelp"))}</div></div>
       <div class="ck-schedule-actions"><button class="btn btn-sm" data-action="ck-schedule">${icon("clock")}${esc(t("ck.scheduleSet"))}</button></div>
     </div>`;
   }
-  return `<div class="ck-schedule">
+  return `<div class="ck-schedule"><div class="ck-schedule-info">
     <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge badge-accent">${esc(ruleText(schedule))}</span></div>
     <div class="help">${esc(t("ck.nextRun"))}: ${esc(zonedTime(schedule.nextRunAt, zone))}</div>
     <div class="help">${esc(t("ck.lastRun"))}: ${esc(lastRunText(schedule.lastRun, zone))}</div>
     <div class="help">${esc(t("ck.scheduleNote"))}</div>
     ${schedule.timezoneUnknown ? callout("warn", t("ck.scheduleZoneUnknown", { zone: schedule.timezone ?? "" })) : ""}
+    </div>
     <div class="ck-schedule-actions">
       <button class="btn btn-sm" data-action="ck-schedule">${icon("clock")}${esc(t("ck.scheduleEdit"))}</button>
       <button class="btn btn-sm" data-action="ck-schedule-off">${icon("x")}${esc(t("ck.scheduleTurnOff"))}</button>
@@ -704,53 +709,62 @@ export function contentsText(checkpoint) {
   return parts.join(" · ") || "—";
 }
 
-function rowButton(action, checkpoint, iconName, label, rule) {
-  const disabled = rule.allowed ? "" : ` disabled title="${esc(t(rule.reason))}"`;
-  return `<button class="btn btn-sm" data-action="${action}" data-id="${esc(checkpoint.id)}"${disabled}>${icon(iconName)}${esc(label)}</button>`;
+/** An icon button for one checkpoint, as on the storage page's timeline. A disabled one gives its reason as the title. */
+function rowButton(action, checkpoint, iconName, label, rule, { danger = false } = {}) {
+  const state = rule.allowed ? `title="${esc(label)}"` : `title="${esc(t(rule.reason))}" disabled`;
+  return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(checkpoint.id)}" aria-label="${esc(label)}" ${state}>${icon(iconName)}</button>`;
 }
 
 function hostLine(hosts, hostId) {
   const name = hosts.find((host) => host.id === hostId)?.name ?? hostId;
-  return `<div class="help">${esc(t("ck.storedOn", { host: name }))}</div>`;
+  return t("ck.storedOn", { host: name });
 }
 
 /**
  * One row. `state` carries the rollback's safety point (`held`, `pending`), the hosts when there are several (`hosts`),
  * and the host the box runs on (`boxHostId`). A checkpoint kept on another host cannot be rolled back to from here.
+ * The label line carries the kind badges and the line under it what the checkpoint holds, so no column has to wrap.
  */
 export function checkpointRowHtml(checkpoint, state) {
   const elsewhere = state.boxHostId !== undefined && checkpoint.hostId !== state.boxHostId;
   const rules = rowActions(checkpoint, { held: state.held, pending: state.pending, elsewhere });
   const kinds = kindsOf(checkpoint)
     .map((kind) => `<span class="badge ${KIND_CLASS[kind]}">${esc(t(`ck.kind.${kind}`))}</span>`)
-    .join(" ");
-  const stored = state.hosts?.length > 1 ? hostLine(state.hosts, checkpoint.hostId) : "";
+    .join("");
+  const detail = [contentsText(checkpoint)];
+  if (state.hosts?.length > 1) detail.push(hostLine(state.hosts, checkpoint.hostId));
+  const detailText = detail.join(" · ");
+  const reason = checkpoint.reason
+    ? `<div class="subtle truncate" title="${esc(checkpoint.reason)}">${esc(checkpoint.reason)}</div>`
+    : "";
   return `<tr>
-    <td class="subtle">${esc(dateTime(checkpoint.createdAt))}</td>
-    <td><div>${esc(checkpoint.label)}</div>${checkpoint.reason ? `<div class="help">${esc(checkpoint.reason)}</div>` : ""}${stored}</td>
-    <td><div class="ck-badges">${kinds}</div></td>
-    <td>${esc(contentsText(checkpoint))}</td>
-    <td class="num" style="text-align:right">${esc(bytes(checkpoint.bytes))}</td>
-    <td><div class="actions ck-row-actions">
+    <td class="ck-time nowrap" title="${esc(dateTime(checkpoint.createdAt))}">${esc(dateTime(checkpoint.createdAt))}<div class="subtle">${esc(relTime(checkpoint.createdAt))}</div></td>
+    <td class="ck-label"><div class="ck-label-line"><span class="truncate" title="${esc(checkpoint.label)}">${esc(checkpoint.label)}</span><span class="ck-badges">${kinds}</span></div>
+      <div class="subtle truncate" title="${esc(detailText)}">${esc(detailText)}</div>${reason}</td>
+    <td class="ck-size num nowrap">${esc(bytes(checkpoint.bytes))}</td>
+    <td class="ck-actions"><div class="actions ck-row-actions">
       ${rowButton("ck-fork", checkpoint, "copy", t("ck.fork"), rules.fork)}
       ${rowButton("ck-export", checkpoint, "download", t("ck.export"), rules.export)}
       ${state.hosts?.length > 1 ? rowButton("ck-copy", checkpoint, "server", t("ck.copy"), rules.copy) : ""}
-      ${rowButton("ck-rollback", checkpoint, "refresh", t("ck.rollback"), rules.rollback)}
+      ${rowButton("ck-rollback", checkpoint, "history", t("ck.rollback"), rules.rollback)}
       ${rowButton("ck-pin", checkpoint, "layers", checkpoint.pinned ? t("ck.unpin") : t("ck.pin"), rules.pin)}
-      ${rowButton("ck-delete", checkpoint, "trash", t("ck.delete"), rules.delete)}
+      ${rowButton("ck-delete", checkpoint, "trash", t("ck.delete"), rules.delete, { danger: true })}
     </div></td></tr>`;
 }
 
 /**
  * `schedule` is null when the box has none, and undefined when it could not be read, which hides the line. `hosts` lists
- * the hosts when there are several, and `boxHostId` is the host the box runs on.
+ * the hosts when there are several, and `boxHostId` is the host the box runs on. `toggle` is the show-all button drawn
+ * under a long list, and `total` how many checkpoints the box has when `rows` is only the first of them.
  */
-export function checkpointCardHtml({ rows, pending, usage, schedule, hosts = [], boxHostId }) {
+export function checkpointCardHtml({ rows, pending, usage, schedule, hosts = [], boxHostId, toggle = "", total }) {
+  const count = total ?? rows.length;
   const body = rows.length
-    ? `<div class="table-wrap"><table class="table"><thead><tr>
-        <th>${esc(t("ck.colTaken"))}</th><th>${esc(t("ck.colLabel"))}</th><th>${esc(t("ck.colKind"))}</th>
-        <th>${esc(t("ck.colContents"))}</th><th style="text-align:right">${esc(t("bd.colSize"))}</th>
-        <th style="text-align:right">${esc(t("bx.colActions"))}</th>
+    ? `<div class="table-wrap"><table class="table ck-table">
+        <colgroup><col class="ck-c-time" /><col /><col class="ck-c-size" /><col class="${hosts.length > 1 ? "ck-c-actions-6" : "ck-c-actions"}" /></colgroup>
+        <thead><tr>
+        <th>${esc(t("ck.colTaken"))}</th><th>${esc(t("ck.colLabel"))}</th>
+        <th class="num">${esc(t("bd.colSize"))}</th><th class="actions-head">${esc(t("bx.colActions"))}</th>
       </tr></thead><tbody>${rows
         .map((row) =>
           checkpointRowHtml(row, {
@@ -760,10 +774,11 @@ export function checkpointCardHtml({ rows, pending, usage, schedule, hosts = [],
             boxHostId,
           }),
         )
-        .join("")}</tbody></table></div>`
+        .join("")}</tbody></table></div>${toggle ? `<div class="ck-more">${toggle}</div>` : ""}`
     : emptyState({ iconName: "history", title: t("ck.empty"), text: esc(t("ck.emptyText")) });
-  return `<div class="card">
-    <div class="card-head"><h3>${esc(t("ck.title"))}</h3>
+  const counted = count ? `<span class="badge">${count}</span>` : "";
+  return `<div class="card ck-card">
+    <div class="card-head"><h3>${esc(t("ck.title"))}${counted}</h3>
       <div class="actions"><button class="btn btn-sm" data-action="ck-import">${icon("upload")}${esc(t("ck.import"))}</button><button class="btn btn-sm btn-primary" data-action="ck-take">${icon("camera")}${esc(t("act.checkpoint"))}</button></div></div>
     <div class="card-body stack">
       <p class="help">${esc(t("ck.help"))}</p>
@@ -785,6 +800,26 @@ export function mountCheckpoints(root, { box, refreshBox }) {
   let rows = [];
   let pending = null;
   let schedule = undefined;
+  let lastUsage = null;
+
+  /** Draws the card from the last load. A long list shows its newest rows and any pinned one, with a show-all toggle. */
+  const draw = () => {
+    const current = box();
+    const { shown, toggle } = limitList(root, `ck:${current.boxId}`, rows, {
+      limit: LIST_ROWS,
+      keep: (row) => row.pinned,
+    });
+    root.innerHTML = checkpointCardHtml({
+      rows: shown,
+      total: rows.length,
+      toggle,
+      pending,
+      usage: lastUsage,
+      schedule,
+      hosts: multiHost() ? hostsNow() : [],
+      boxHostId: hostOfBox(current),
+    });
+  };
 
   const load = async () => {
     const token = ++seq;
@@ -803,14 +838,8 @@ export function mountCheckpoints(root, { box, refreshBox }) {
       rows = newestFirst(checkpoints.filter((checkpoint) => checkpoint.boxId === current.boxId));
       pending = rollback;
       schedule = plan;
-      root.innerHTML = checkpointCardHtml({
-        rows,
-        pending,
-        usage,
-        schedule,
-        hosts: multiHost() ? hostsNow() : [],
-        boxHostId: hostOfBox(current),
-      });
+      lastUsage = usage;
+      draw();
     } catch (err) {
       if (disposed || token !== seq) return;
       root.innerHTML = emptyState({ iconName: "alert", title: t("ck.loadFailed"), text: esc(err.message) });
@@ -836,6 +865,13 @@ export function mountCheckpoints(root, { box, refreshBox }) {
   ]);
 
   const onClick = (event) => {
+    const key = event.target.closest("[data-toggle]")?.dataset.toggle;
+    if (key) {
+      flip(root, key);
+      draw();
+      [...root.querySelectorAll("[data-toggle]")].find((b) => b.dataset.toggle === key)?.focus({ preventScroll: true });
+      return;
+    }
     const button = event.target.closest("[data-action]");
     const run = button && actions.get(button.dataset.action);
     if (!run || button.disabled) return;

@@ -1,9 +1,11 @@
 /* ---------- Progress / usage bars ---------- */
+/* The track is a tint of the text colour, not a surface colour, so it stays visible on a card, a hovered row, or a
+   selected one, in either theme. */
 .bar {
   position: relative;
   height: 6px;
   border-radius: 99px;
-  background: var(--bg-subtle);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
   overflow: hidden;
 }
 .bar > span {
