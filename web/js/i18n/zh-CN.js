@@ -1,3 +1,4 @@
+import agent from "./zh-CN/agent.js";
 import boxDetail from "./zh-CN/box-detail.js";
 import boxes from "./zh-CN/boxes.js";
 import checkpoints from "./zh-CN/checkpoints.js";
@@ -15,6 +16,7 @@ export default {
   ...errors,
   ...boxes,
   ...boxDetail,
+  ...agent,
   ...checkpoints,
   ...volumes,
   ...files,

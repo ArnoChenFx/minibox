@@ -1,0 +1,33 @@
+/* Agent card on the overview tab: the questions a box's agent asked, each with its choices or reply. */
+.agent-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-question,
+.agent-answered {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.agent-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+.agent-choices,
+.agent-reply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.agent-reply .input {
+  flex: 1 1 220px;
+  min-width: 0;
+}

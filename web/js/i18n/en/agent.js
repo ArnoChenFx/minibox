@@ -1,0 +1,25 @@
+export default {
+  "ag.section": "Agent",
+  "ag.tokenOn": "Self token on",
+  "ag.tokenOff": "No self token",
+  "ag.help":
+    "The box's agent can ask you questions here and report its status. Its token reaches this box only. A question does not stop the agent: it works on and reads your answer when it checks.",
+  "ag.helpRevoked": "This box's agent token was revoked. Questions it already asked still wait here for an answer.",
+  "ag.nonePending": "No question is waiting for an answer.",
+  "ag.asked": "Asked {time}",
+  "ag.answered": "Answered",
+  "ag.answeredAt": "Answered {time}",
+  "ag.reply": "Reply",
+  "ag.replyPlaceholder": "Type an answer",
+  "ag.answerEmpty": "Type an answer first.",
+  "ag.answerOption": "Pick one of the choices.",
+  "ag.answeredToast": "Answer sent",
+  "ag.answerFailed": "Couldn't send the answer",
+  "ag.revoke": "Revoke token",
+  "ag.revokeTitle": "Revoke the agent token of {name}?",
+  "ag.revokeText":
+    "The box's agent loses access at once, and the box's self token is turned off. Its questions stay here until they are answered.",
+  "ag.revoked": "Agent token revoked",
+  "ag.revokedText": "{name} no longer has a self token.",
+  "ag.revokeFailed": "Couldn't revoke the agent token",
+};

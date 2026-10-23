@@ -110,6 +110,9 @@ export default {
   "cb.startup": "启动命令",
   "cb.startupHelp": "每次 Box 启动、容器就绪后，以 Box 用户在 /workspace 中运行。留空则不运行任何命令。",
   "cb.startupPlaceholder": "npm run dev",
+  "cb.selfToken": "为 Box 的 Agent 启用自助令牌",
+  "cb.selfTokenHelp":
+    "启用后，Agent 可以通过只能访问这个 Box 的令牌向你提问，并报告状态。令牌在每次启动时轮换，停止时移除。默认关闭。",
   "cb.submit": "创建并启动",
   "cb.creating": "正在创建…",
   "cb.cpuRange": "CPU 须在 0.1 到 {max} 核之间。",

@@ -116,6 +116,9 @@ export default {
   "cb.startupHelp":
     "Runs every time the box starts, once its container is up, in /workspace as the box user. Leave it empty to run nothing.",
   "cb.startupPlaceholder": "npm run dev",
+  "cb.selfToken": "Give the box's agent a self token",
+  "cb.selfTokenHelp":
+    "The agent can then ask you questions and report its status, through a token that reaches this box only. The token is rotated on every start and removed on stop. Off by default.",
   "cb.submit": "Create and start",
   "cb.creating": "Creating…",
   "cb.cpuRange": "CPU must be between 0.1 and {max} cores.",

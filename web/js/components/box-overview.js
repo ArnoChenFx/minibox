@@ -4,6 +4,7 @@ import { pct, cpus, gbOrMb, mem, duration, dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { usageBar } from "../lib/ui.js";
+import { mountAgentCard } from "./box-agent.js";
 import { mountsCard } from "./box-volumes.js";
 import { mountEnvCard } from "./env-card.js";
 import { mountStartupCard } from "./startup-card.js";
@@ -46,7 +47,8 @@ function specBanners(box) {
 }
 
 export function mountOverview(root, { box, onChange }) {
-  root.innerHTML = `<div id="ovMain"></div><div id="ovEnv"></div><div id="ovStartup"></div><div id="ovMounts"></div>`;
+  root.innerHTML = `<div id="ovMain"></div><div id="ovAgent"></div><div id="ovEnv"></div><div id="ovStartup"></div><div id="ovMounts"></div>`;
+  const agent = mountAgentCard(root.querySelector("#ovAgent"), { box });
   const env = mountEnvCard(root.querySelector("#ovEnv"), { box });
   const startup = mountStartupCard(root.querySelector("#ovStartup"), { box });
   let volumes = new Map();
@@ -82,6 +84,7 @@ export function mountOverview(root, { box, onChange }) {
           <dt>${t("bd.template")}</dt><dd class="mono">${esc(b.template || "—")}</dd>
           <dt>${t("bd.profile")}</dt><dd>${b.profile ? t(`profile.${b.profile}`) : t("bd.profileLegacy")}</dd>
           <dt>${t("bd.network")}</dt><dd class="mono">${esc(b.network)}</dd>
+          <dt>${t("bd.selfToken")}</dt><dd>${b.selfToken ? t("bd.selfTokenOn") : t("bd.selfTokenOff")}</dd>
           <dt>${t("bd.tools")}</dt><dd>${(b.tools ?? []).length ? esc((b.tools ?? []).map((item) => item.id).join(", ")) : t("bd.toolsNone")}</dd>
           <dt>${t("bd.workspace")}</dt><dd><span class="mono">/workspace</span> <span class="subtle">${t("bd.volume")}</span> <span class="mono">${esc(b.volume || "—")}</span></dd>
           <dt>${t("bd.created")}</dt><dd>${dateTime(b.createdAt)}</dd>
@@ -99,12 +102,14 @@ export function mountOverview(root, { box, onChange }) {
     .catch(() => undefined);
   const off = onChange(() => {
     draw();
+    agent.onBoxChange();
     env.onBoxChange();
     startup.onBoxChange();
   });
   return () => {
     open = false;
     off();
+    agent.dispose();
     env.dispose();
     startup.dispose();
   };
