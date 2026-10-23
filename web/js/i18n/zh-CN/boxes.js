@@ -78,7 +78,6 @@ export default {
   "act.target.remove": "移除异地目标",
   "act.target.push": "推送到异地目标",
   "act.target.pull": "从异地目标拉取",
-  "act.mcp.owner_key": "通过所有者访问密钥访问 /mcp",
   "box.create": "创建 Box",
   "bx.subtitle": "每个 Box 是一个独立的开发环境，可供 Agent 通过终端或 API 使用。",
   "bx.search": "搜索名称或模板",
