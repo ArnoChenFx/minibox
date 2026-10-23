@@ -418,6 +418,7 @@ export default {
   "err.storage_squash_hint":
     "On the NAS, set the export to all_squash,anonuid=1000,anongid=1000, or root_squash,anonuid=1000,anongid=1000, so the squashed user is uid 1000. Setup guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/nfs.md",
   "err.helper_image_missing": "Base template image {image} is missing, so volume helpers cannot run.",
+  "err.helper_image_build_failed": "Base template image {image} is missing, and building it failed: {detail}",
   "err.volume_over_limit":
     "Volume {volume} is over its hard limit: {used} MB used, limit {limit} MB. Boxes that mount it cannot start.",
   "err.volume_over_limit_hint": "Raise or clear the hard limit, or free space in the volume, then start the box.",

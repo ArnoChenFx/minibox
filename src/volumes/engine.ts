@@ -6,9 +6,10 @@ import { AppError, badRequest, conflict, forbidden, notFound } from "../lib/erro
 import { log } from "../lib/logger";
 import { type Msg, msg } from "../lib/messages";
 import { isRuntimeError, RuntimeError, type VolumeInfo, type VolumeOwner } from "../runtime";
+import { ensureBaseImage, hasBaseImage } from "../services/base-template";
 import type { BoxSpec } from "../specs/types";
 import { VolumeChanges } from "./changes";
-import { assertPoolsReachable, helperImage, poolRootVolume } from "./health";
+import { assertPoolsReachable, poolRootVolume } from "./health";
 import { nfsDriverOpts, pathDriverOpts, poolForRole } from "./pools";
 import type { StoragePool, VolumeOwnership, VolumeRecord, VolumeRole } from "./types";
 import { DEV_OWNER, LOCAL_POOL, ROLE_MOUNT, UNLIMITED } from "./types";
@@ -38,16 +39,10 @@ export function labelsFor(
   return labels;
 }
 
-async function imageReady(host: HostCtx, known: Set<string>): Promise<boolean> {
-  if (known.has(host.baseTemplateTag)) return true;
-  try {
-    await host.runtime.inspectImage(host.baseTemplateTag);
-    known.add(host.baseTemplateTag);
-    return true;
-  } catch (e) {
-    if (e instanceof RuntimeError && e.kind === "not_found") return false;
-    throw e;
-  }
+/** Makes sure the base template is on the host, building it on first need. `known` saves the check within one call. */
+async function requireHelper(host: HostCtx, known: Set<string>): Promise<void> {
+  if (known.has(host.baseTemplateTag)) return;
+  known.add(await ensureBaseImage(host));
 }
 
 /** The owner a new volume's root takes on an agent host, where no helper container runs to chown it recursively. */
@@ -59,10 +54,13 @@ const AGENT_VOLUME_OWNER = { uid: 1000, gid: 1000 };
  */
 export async function chownEngines(host: HostCtx, engines: string[], known: Set<string>): Promise<void> {
   if (engines.length === 0) return;
-  if (!(await imageReady(host, known))) {
+  // A create does not wait minutes for a base template build just to chown: without the image the volume keeps root as
+  // its owner, as before, and the helpers that cannot do without it (tools, files, clones) build it when they run.
+  if (!known.has(host.baseTemplateTag) && !(await hasBaseImage(host))) {
     log.warn("volume.chown_skipped", { image: host.baseTemplateTag, count: engines.length });
     return;
   }
+  known.add(host.baseTemplateTag);
   if (host.host.transport === "agent") {
     for (const engine of engines) {
       await host.runtime.setVolumeRootOwner(engine, AGENT_VOLUME_OWNER, host.baseTemplateTag);
@@ -96,9 +94,7 @@ function storageRefusal(message: Msg): AppError {
 }
 
 async function prepareSubdir(host: HostCtx, pool: StoragePool, subpath: string, known: Set<string>): Promise<void> {
-  if (!(await imageReady(host, known))) {
-    throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
-  }
+  await requireHelper(host, known);
   const source = pool.backend === "nfs" ? poolRootVolume(host.prefix, pool.name) : (pool.root ?? "/");
   const kind = pool.backend === "path" ? "bind" : "volume";
   const script = [
@@ -587,8 +583,7 @@ const HELPER_PATH = "/mnt";
  * its own to read it from, so a checkpoint of one needs this.
  */
 export async function rootOwnerOf(host: HostCtx, engineName: string): Promise<VolumeOwner> {
-  const image = await helperImage(host);
-  if (!image) throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
+  const image = await ensureBaseImage(host);
   const created = await host.runtime.createContainer({
     image,
     name: `${host.prefix}-owner-${randomBytes(4).toString("hex")}`,

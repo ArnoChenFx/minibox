@@ -5,10 +5,11 @@ import { boxProxyEnv, PROXY_ALIAS, PROXY_PROGRAM, proxyEnv } from "../egress/pro
 import type { HostCtx } from "../host/registry";
 import { egressNetworkName, egressProxyName, egressUplinkName } from "../labels";
 import { type Ipv4Network, parseIpv4Cidr } from "../lib/cidr";
-import { AppError, badRequest, conflict } from "../lib/errors";
+import { AppError, conflict } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { type ContainerHardening, type ContainerInfo, isRuntimeError, RuntimeError } from "../runtime";
+import { ensureBaseImage } from "./base-template";
 
 const PROXY_MEMORY_BYTES = 256 * 1024 * 1024;
 const PROXY_TMPFS = "rw,noexec,nosuid,nodev,size=16m";
@@ -125,7 +126,8 @@ async function proxyFor(host: HostCtx, boxId: string, egress: BoxEgress): Promis
     if (proxyEnv(egress.allow).every((entry) => env.includes(entry))) return proxy.id;
   }
   for (const proxy of existing) await removeProxy(host, proxy.id);
-  await assertProxyImage(host);
+  // The proxy runs the base template, which carries Node. A host without it builds it first.
+  await ensureBaseImage(host);
   const created = await host.runtime.createContainer({
     name: egressProxyName(host.prefix, boxId),
     image: host.baseTemplateTag,
@@ -140,16 +142,6 @@ async function proxyFor(host: HostCtx, boxId: string, egress: BoxEgress): Promis
     hardening: hardeningFor("strict", host.security),
   });
   return created.id;
-}
-
-/** The proxy runs the base template, which carries Node. Without that image there is no proxy to start. */
-async function assertProxyImage(host: HostCtx): Promise<void> {
-  try {
-    await host.runtime.inspectImage(host.baseTemplateTag);
-  } catch (e) {
-    if (isRuntimeError(e, "not_found")) throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
-    throw e;
-  }
 }
 
 async function removeProxy(host: HostCtx, proxyId: string): Promise<void> {

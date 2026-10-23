@@ -78,7 +78,7 @@ These tiers are not a full sandbox against code that is written to get around th
 - **IPv4 only.** A host with no IPv4 address cannot be reached through the proxy.
 - **Clients must use the proxy.** A program that ignores `HTTP_PROXY` and `HTTPS_PROXY` gets no connection. The box has no other route, so the connection fails instead of going around the proxy.
 - **The proxy resolves names.** The box's DNS settings do not decide what it can reach.
-- **The base template must be on the host.** The proxy runs from it, so a `proxy-only` box does not start without it. Each proxy is capped at 256 MB of memory.
+- **The proxy runs from the base template.** MiniBox builds it on the host when it is missing. A host reached through an agent cannot build it, so a `proxy-only` box there does not start until the template is copied to it. Each proxy is capped at 256 MB of memory.
 - **Port previews need a route to the box.** A preview connects to the box's address on its network, so MiniBox must be able to route to that network, as it must for any box. Exec and SSH do not depend on this.
 - **Private networks use `240.0.0.0/12`.** The private networks of `none` and `proxy-only` boxes are taken from this reserved range, so they stay clear of the usual private ranges.
 - **Docker Engine 26.0 or later.** Older engines forward DNS queries from internal networks to the host's resolvers (CVE-2024-29018), which lets a `none` box send data out through DNS. 25.0.5 and 23.0.11 carry the fix too.

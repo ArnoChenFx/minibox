@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
 
 import type { HostCtx } from "../host/registry";
-import { notFound, badRequest, toAppError } from "../lib/errors";
+import { notFound, toAppError } from "../lib/errors";
 import { msg } from "../lib/messages";
-import { RuntimeError, isRuntimeError, type HelperSpec, type HelperResult } from "../runtime";
+import { isRuntimeError, type HelperSpec, type HelperResult } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
+import { ensureBaseImage } from "./base-template";
 import { FILE_MOUNT } from "./files-model";
 
 export function requireVolume(host: HostCtx, ref: string): VolumeRecord {
@@ -13,16 +14,9 @@ export function requireVolume(host: HostCtx, ref: string): VolumeRecord {
   return volume;
 }
 
-export async function requireHelperImage(host: HostCtx): Promise<string> {
-  try {
-    await host.runtime.inspectImage(host.baseTemplateTag);
-    return host.baseTemplateTag;
-  } catch (e) {
-    if (e instanceof RuntimeError && e.kind === "not_found") {
-      throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
-    }
-    throw e;
-  }
+/** The base template, which file helpers run on, built first when the host lacks it. */
+export function requireHelperImage(host: HostCtx): Promise<string> {
+  return ensureBaseImage(host);
 }
 
 export interface MountAccess {

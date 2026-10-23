@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 import type { HostCtx } from "../host/registry";
 import { labelChange } from "../labels";
 import { conflict, notFound } from "../lib/errors";
@@ -7,6 +5,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { NAME_RE } from "../lib/validation";
 import { isRuntimeError } from "../runtime";
+export { BASE_DESCRIPTION, buildBaseTemplate } from "./base-template";
 import { getBox } from "./boxes";
 import { type Progress, underBox } from "./checkpoints";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
@@ -28,8 +27,6 @@ export async function listTemplates(host: HostCtx): Promise<TemplateItem[]> {
     return buildKind === null ? image : { ...image, buildKind };
   });
 }
-
-export const BASE_DESCRIPTION = "Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user";
 
 /**
  * Refuses a template name that is already taken. A commit to a tag that exists moves the tag without a word, so the
@@ -165,25 +162,4 @@ export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> 
   const prefix = `${host.prefix}-template:`;
   const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : "";
   if (NAME_RE.test(name)) removeRecipe(host, name);
-}
-
-/**
- * Build the bundled base template from templates/base/Dockerfile. One build at a time is enforced by the task mutex,
- * not here, so a direct caller can run more than one.
- */
-export async function buildBaseTemplate(
-  host: HostCtx,
-  progress?: { readonly signal?: AbortSignal; log?(text: string): void },
-): Promise<{ ref: string; output: string }> {
-  const k = host.keys;
-  const output = await host.runtime.buildImage({
-    contextDir: join(host.templatesDir, "base"),
-    dockerfile: "Dockerfile",
-    tag: host.baseTemplateTag,
-    labels: { [k.template]: "true", [k.templateName]: "base", [k.templateDesc]: BASE_DESCRIPTION },
-    onLog: (chunk) => progress?.log?.(chunk),
-    signal: progress?.signal,
-  });
-  log.info("template.built", { ref: host.baseTemplateTag });
-  return { ref: host.baseTemplateTag, output };
 }

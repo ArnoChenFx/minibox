@@ -21,6 +21,7 @@ import { type App, createApp } from "../src/app";
 import { createDockerRuntime } from "../src/docker/runtime";
 import type { HostCtx } from "../src/host/registry";
 import type { ExecSession, Runtime } from "../src/runtime";
+import { ensureBaseImage } from "../src/services/base-template";
 import { type Box, createBox } from "../src/services/boxes";
 import { installTool, listToolStatuses, uninstallTool } from "../src/services/tools";
 import { testConfig } from "./support/app";
@@ -30,7 +31,6 @@ const SOCKET = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
 const PREFIX_PATTERN = /^mbit[a-z0-9-]{3,40}$/;
 const prefix = process.env.MINIBOX_TEST_PREFIX ?? `mbit${Date.now().toString(36)}`;
 if (enabled && !PREFIX_PATTERN.test(prefix)) throw new Error(`MINIBOX_TEST_PREFIX must match ${PREFIX_PATTERN}`);
-const ROOT = join(import.meta.dir, "..");
 const IMAGE = `${prefix}-template:base`;
 const owned = { [prefix]: "true" };
 const CONTROL_PLANE = "https://controlplane.tailscale.com/";
@@ -43,6 +43,7 @@ let box: Box;
 let up: ExecSession;
 let daemon: number;
 let controlPlaneReachable = false;
+let baseBuilds: string[] = [];
 
 async function until<T>(check: () => Promise<T | null>, what: string, timeoutMs: number): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -116,12 +117,8 @@ beforeAll(async () => {
     { runtime, eventsPath: ":memory:" },
   );
   host = app.hosts.get();
-  await runtime.buildImage({
-    contextDir: join(ROOT, "templates", "base"),
-    dockerfile: "Dockerfile",
-    tag: IMAGE,
-    labels: owned,
-  });
+  // The engine starts without the base template: two callers that need it at once share one build of templates/base.
+  baseBuilds = await Promise.all([ensureBaseImage(host), ensureBaseImage(host)]);
   box = await createBox(host, { name: "tools-box", image: IMAGE, cpus: 1, memoryMb: 512 });
   const probe = await execInBox(`curl -sS -m 15 -o /dev/null ${CONTROL_PLANE} && echo reachable || echo unreachable`);
   controlPlaneReachable = probe.stdout.trim() === "reachable";
@@ -142,6 +139,12 @@ afterAll(async () => {
 });
 
 describe.skipIf(!enabled)("Tailscale in a box built from templates/base", () => {
+  test("the base template is built on first need, labelled as the base template", async () => {
+    expect(baseBuilds).toEqual([IMAGE, IMAGE]);
+    const image = await runtime.inspectImage(IMAGE);
+    expect(image.labels).toMatchObject({ [host.keys.template]: "true", [host.keys.templateName]: "base" });
+  });
+
   test("the tools writer installs tailscale for dev, and detection finds it on the tools volume", async () => {
     const installed = await installTool(host, box.id, "tailscale", "latest");
     expect(installed).toMatchObject({ id: "tailscale" });

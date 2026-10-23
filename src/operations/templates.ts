@@ -346,8 +346,8 @@ export const templateOfficialBuild = defineOperation({
 
 /**
  * Makes `ref` available on `host` before a box is created there. When `host` lacks it, a copy comes from another host
- * that holds it, and when none does, an official template is built on `host` from the Dockerfile that ships with
- * MiniBox. Either runs as a task of its own, and the create waits for it, so the box starts from the image it names. A
+ * that holds it, and when none does, the base template or an official template is built on `host` from the Dockerfile
+ * that ships with MiniBox. Either runs as a task of its own, and the create waits for it, so the box starts from the image it names. A
  * task already running for the same template is joined rather than started twice. Only an owner's create copies or
  * builds: a token's create is judged by the template its host shows it, as it always was.
  */
@@ -362,6 +362,8 @@ export async function ensureTemplateOn(
   const others = imageHosts(ctx).filter((candidate) => candidate.host.id !== host.host.id);
   const source = await findTemplateSource(others, ref);
   if (source) return awaitTask(startTask, tasks, templateSync, { ref, host: host.host.id }, source, "copy");
+  if (ref === host.baseTemplateTag)
+    return awaitTask(startTask, tasks, templateBuild, {}, { ref: host.baseTemplateTag }, "build");
   const official = officialOfRef(host, ref);
   if (!official) return undefined;
   return awaitTask(startTask, tasks, templateOfficialBuild, { name: official.name }, undefined, "build");
