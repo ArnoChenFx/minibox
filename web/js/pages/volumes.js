@@ -1,3 +1,4 @@
+import { mountModeLabel } from "../components/mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { usageCellHtml } from "../components/volume-usage.js";
 import { api, enc } from "../lib/api.js";
@@ -50,7 +51,7 @@ function groupLabel(group) {
 
 function volumeRow(volume) {
   const mounts = volume.mounts
-    .map((mount) => `${esc(mount.boxName)}:${esc(mount.path)} (${esc(mount.mode)})`)
+    .map((mount) => `${esc(mount.boxName)}:${esc(mount.path)} (${esc(mountModeLabel(mount.mode))})`)
     .join(", ");
   const over =
     volume.usage?.level === "hard" || volume.usage?.level === "soft" ? ` volume-over-${volume.usage.level}` : "";

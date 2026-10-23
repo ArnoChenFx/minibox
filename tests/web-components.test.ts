@@ -69,6 +69,12 @@ describe("mount row", () => {
     expect(html).toContain("data-remove-mount");
   });
 
+  test("the mode choices keep the values ro and rw but read as words", () => {
+    const html = mountRowMarkup({ volume: "data", path: "/data", mode: "rw" });
+    expect(html).toContain('<option value="rw" selected>Read-write</option>');
+    expect(html).toContain('<option value="ro" >Read-only</option>');
+  });
+
   test("with volumes, the volume is a choice, and a volume another box owns cannot be picked", () => {
     const html = mountRowMarkup(
       { volume: "vol_2", path: "/data", mode: "rw" },
