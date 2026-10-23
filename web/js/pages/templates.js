@@ -1,4 +1,5 @@
 import { openCreateBox } from "../components/create-box.js";
+import { bindToggles, limitList } from "../components/list-toggle.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks, trackTask } from "../components/tasks.js";
 import { openNewTemplate } from "../components/template-dialog.js";
@@ -8,7 +9,7 @@ import { bytes, dateTime, shortId } from "../lib/format.js";
 import { hostName, hostsNow, multiHost, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { filterBySearch } from "../lib/search.js";
+import { filterBySearch, searchTerms } from "../lib/search.js";
 import { invalidateTemplates } from "../lib/store.js";
 import { templateCards, templateSearchFields } from "../lib/template-list.js";
 import { imageRefOk, KIND_LABEL_KEYS } from "../lib/template-source.js";
@@ -78,6 +79,7 @@ export function render(view, focusName = "") {
       </div>
     </div>
     <div class="grid grid-fit" id="tpGrid">${'<div class="card"><div class="skeleton sk-block"></div></div>'.repeat(3)}</div>
+    <div class="list-more" id="tpMore"></div>
     <details class="advanced" id="tpLegacy" hidden>
       <summary>${t("sn.legacyTitle")} <span class="subtle" id="tpLegacyCount"></span></summary>
       <p class="help">${t("sn.legacyText")}</p>
@@ -87,6 +89,7 @@ export function render(view, focusName = "") {
       </table></div></div>
     </details>`;
   const grid = view.querySelector("#tpGrid");
+  const more = view.querySelector("#tpMore");
   const legacyBox = view.querySelector("#tpLegacy");
   const legacyBody = view.querySelector("#tpLegacyBody");
 
@@ -94,12 +97,14 @@ export function render(view, focusName = "") {
 
   const draw = () => {
     if (loadError) {
+      more.innerHTML = "";
       grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState({ iconName: "alert", title: t("tp.loadFailed"), text: esc(loadError.message) })}</div>`;
       return;
     }
     if (!templates) return;
     cards = templateCards(templates);
     if (!templates.length) {
+      more.innerHTML = "";
       grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState({
         iconName: "layers",
         title: t("tp.empty"),
@@ -110,6 +115,7 @@ export function render(view, focusName = "") {
     }
     const matches = filterBySearch(cards, query, (tp) => templateSearchFields(tp, badge(tp)));
     if (!matches.length) {
+      more.innerHTML = "";
       grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState({
         iconName: "search",
         title: t("tp.noMatch"),
@@ -118,7 +124,11 @@ export function render(view, focusName = "") {
       })}</div>`;
       return;
     }
-    grid.innerHTML = matches
+    const { shown, toggle } = limitList(view, "templates", matches, {
+      keep: (tp) => tp.name === pendingFocus,
+      searching: searchTerms(query).length > 0,
+    });
+    grid.innerHTML = shown
       .map(
         (tp) => `<div class="card" style="display:flex;flex-direction:column" data-name="${esc(tp.name)}">
         <div class="card-body" style="flex:1">
@@ -140,6 +150,8 @@ export function render(view, focusName = "") {
         </div></div>`,
       )
       .join("");
+    more.innerHTML = toggle;
+    bindToggles(view, more, draw);
     const focused = [...grid.querySelectorAll("[data-name]")].find((card) => card.dataset.name === pendingFocus);
     pendingFocus = "";
     if (focused) {
