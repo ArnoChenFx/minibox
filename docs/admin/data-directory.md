@@ -9,6 +9,8 @@ The default location is `./data` in a source checkout, and `/data` in the releas
 | `access_key` | `600` | The access key, written on first start when none is set in the environment or in `.env` |
 | `sessions.json` | `600` | Browser sign-ins, written on first sign-in. Stores SHA-256 hashes of the session tokens, never the tokens. Also stores a scrypt check of the access key, so every session ends when the key changes. |
 | `tokens.json` | `600` | Agent API tokens, written on first token create. Stores SHA-256 hashes only, with the token's scopes, limits and expiry. Rotating `ACCESS_KEY` does not revoke these tokens. |
+| `self-tokens.json` | `600` | The self token of each box that has one, as the SHA-256 hash, the box id and name. Written when a token is issued, revoked or renamed with its box. |
+| `questions.json` | `600` | Questions that box agents asked, with their options and answers. It keeps up to 500 questions and drops the oldest answered ones first. Written when a question is asked or answered. |
 | `ssh_host_ed25519_key` | `600` | The SSH gateway's host key, generated when the server starts. `minibox ssh-config` pins its public half. |
 | `boxes/` | `700` | One box spec per file, `<id>.json`, mode `600`. This is where box settings live. |
 | `checkpoints/` | `700` | One checkpoint record per file, `ck_….json`, mode `600`. The data itself is in the checkpoint repository volume. |

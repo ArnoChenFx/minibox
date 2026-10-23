@@ -12,7 +12,7 @@ For how to connect an agent, see [Connecting AI agents](../user-guide/agents.md)
 | `GET` | `/mcp` | Returns `405` with `Allow: POST, DELETE`. The server does not open a server-to-client stream. |
 | `DELETE` | `/mcp` | Closes the session named by the `Mcp-Session-Id` header. |
 
-Send `Authorization: Bearer` with the access key or an agent token. A browser sign-in cookie is refused. A wrong bearer key counts toward the same sign-in limit as a wrong login key.
+Send `Authorization: Bearer` with the access key, an agent token or a box's self token. A browser sign-in cookie is refused. A wrong bearer key counts toward the same sign-in limit as a wrong login key.
 
 A session belongs to the credential that opened it. It ends when that token is revoked.
 
@@ -38,6 +38,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `storage` | Volumes, storage pools, and the owner's checkpoint export, import and schedules |
 | `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, and pulling images |
 | `network` | Preview ports |
+| `self` | A box's own agent, with its self token. Only that agent is offered it, and it is its default. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent). |
 
 ## Tools by toolset
 
@@ -147,6 +148,19 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `list_ports` | `GET /api/boxes/{id}/ports` |
 | `expose_port` | `POST /api/boxes/{id}/ports` |
 
+### self
+
+Only a box's own agent, connected with the box's self token, is offered these tools. No other token and no owner sees them.
+
+| Tool | Operation it calls |
+|---|---|
+| `get_info` | `GET /api/self` |
+| `checkpoint` | `POST /api/self/checkpoints`. Returns a task |
+| `get_task` | `GET /api/self/tasks/{id}`. Only a task the box started |
+| `ask_human` | `POST /api/self/questions`. Returns the question |
+| `get_question` | `GET /api/self/questions/{id}` |
+| `report_status` | `POST /api/self/status` |
+
 ## Confirmation
 
 Some tools change things that are hard to undo. They need `confirm: true` in their arguments. Without it, the call changes nothing, and returns `confirmation_required` with `details.preview`, which describes what would change. These tools need confirmation:
@@ -203,3 +217,13 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 ## Notification tools
 
 `set_notify_channel` takes the fields of `PUT /api/notify/channels/{id}`: `id`, `name`, `type` and `events`, and optionally `boxes`, `enabled`, `url`, `server`, `topic`, `chatId` and `secret`. A secret is never returned. `list_notify_channels` shows only whether one is stored, as `hasSecret`. Omit `secret` to keep the stored one, or send `null` to clear it. The tools are for the owner only, and a token does not see them in `tools/list`. See [Notifications](../user-guide/notifications.md).
+
+## Self tools
+
+These tools serve a box's own agent. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent).
+
+- `checkpoint` takes `label`, `reason` and `consistency`, which is `live` (the default) or `pause`. It checkpoints the box's volumes, not its writable layer, and returns a task. The box may hold 20 manual checkpoints of its own. Poll `get_task` for the result.
+- `ask_human` takes `message`, of up to 1000 characters, and optionally `options`, a list of up to 10 choices of up to 200 characters each. It returns at once, and the answer is read with `get_question`. A box holds at most 20 unanswered questions.
+- `report_status` takes `state`, which is `working`, `waiting`, `done` or `failed`, and a `note` of one line, up to 500 characters.
+
+Every self token is limited to 60 calls a minute, counted per box. A call over the limit gets `429` with `too_many_requests` until the minute ends. The endpoint refuses a call to any other tool.

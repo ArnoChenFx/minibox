@@ -1,6 +1,6 @@
 # 通知
 
-MiniBox 可以在你不盯着控制台时告诉你出现了问题。当 Box 内存耗尽、命令失败、Box 即将停止或休眠、终端会话被接管，或宿主机离线时，它会向 **Webhook**、**ntfy** 主题或 **Telegram** 聊天发送一条简短消息。
+MiniBox 可以在你不盯着控制台时告诉你出现了问题。当 Box 内存耗尽、命令失败、Box 即将停止或休眠、终端会话被接管、宿主机离线，或 Box 内的 Agent 向你提问时，它会向 **Webhook**、**ntfy** 主题或 **Telegram** 聊天发送一条简短消息。
 
 只有所有者可以设置通知，位置在 **设置** 的 **通知** 部分。发送失败不会阻止触发它的操作。
 
@@ -14,12 +14,11 @@ MiniBox 可以在你不盯着控制台时告诉你出现了问题。当 Box 内�
 | `box.ttl_soon` | Box 的 TTL 将在 5 分钟内结束，Box 随即停止。 |
 | `box.idle_soon` | Box 将在 5 分钟内因空闲而休眠。 |
 | `session.takeover` | 有人接管了 Agent 的终端会话。 |
+| `agent.question` | Box 内的 Agent 向你提出了问题。通知会给出问题内容，回复在 Box 页面中进行。见 [Box 内的 Agent](agents.md#box-内的-agent)。 |
 | `host.offline` | 原本在线的宿主机停止响应。MiniBox 启动时已处于离线状态的宿主机不会发送此通知。 |
 | `volume.usage_high` | 卷的用量达到软上限。该上限是尽力而为，不是配额。参见[用量、上限与剩余空间](volumes-and-storage.md#用量上限与剩余空间)。 |
 | `volume.usage_limit` | 卷的用量达到硬上限。通知会注明原因与动作，并列出被停止的 Box。 |
 | `host.disk_low` | 宿主机磁盘的剩余空间低于下限，因此拒绝创建新卷和检查点。 |
-
-Agent 提出的问题暂时还不会发送。
 
 ## 添加渠道
 
@@ -71,7 +70,7 @@ const valid = expected.length === received.length && timingSafeEqual(Buffer.from
 
 ### ntfy
 
-MiniBox 会把通知发送到 `<服务器>/<主题>`。**ntfy 服务器** 默认为 `https://ntfy.sh`。消息正文为标题，换行后接正文。标题通过请求头发送，只允许可打印的 ASCII 字符，其他字符会显示为 `?`。每种通知都有优先级：`box.oom`、`checkpoint.failed`、`host.offline`、`volume.usage_limit` 与 `host.disk_low` 为 4，其他为 3。每种通知还带有与其对应的标签，例如 `warning` 或 `zzz`。
+MiniBox 会把通知发送到 `<服务器>/<主题>`。**ntfy 服务器** 默认为 `https://ntfy.sh`。消息正文为标题，换行后接正文。标题通过请求头发送，只允许可打印的 ASCII 字符，其他字符会显示为 `?`。每种通知都有优先级：`box.oom`、`checkpoint.failed`、`agent.question`、`host.offline`、`volume.usage_limit` 与 `host.disk_low` 为 4，其他为 3。每种通知还带有与其对应的标签，例如 `warning` 或 `zzz`。
 
 知道主题名的人都能读取，请选择难以猜到的名称。如果主题需要令牌，请将其填入 **访问令牌**。MiniBox 会以 `Authorization: Bearer` 发送该令牌。
 

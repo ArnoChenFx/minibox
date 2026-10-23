@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 108 operations in 16 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 118 operations in 18 groups.
 
 ## Authentication
 
@@ -10,6 +10,7 @@ Send one of these with each request:
 
 - The session cookie that `POST /api/auth/login` sets in a browser.
 - An `Authorization: Bearer` header. The value is the access key, or an agent token (`mbx_…`). Create agent tokens in **Settings** or with `POST /api/tokens`.
+- An `Authorization: Bearer` header with a box's self token, which is written to `/run/minibox/self-token` in that box. It reaches only the `self` operations of its own box, and every other operation answers `403`. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent).
 
 Operations marked **public** need no credentials. A token can call only the operations its scopes allow. See [Access, sessions and tokens](../user-guide/access-and-tokens.md).
 
@@ -39,6 +40,7 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `port:expose` | `port:expose` |
 | `secret:use` | `secret:use`. Setting, removing or running a box's startup command also needs `exec`. |
 | `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `task:write`, `template:build`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+| `self` | None. Only the self token of the box can call these, and only for that box. |
 
 The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
 
@@ -128,10 +130,11 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes` | List boxes |
-| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. The response's `clone.taskId` names the clone task |
+| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. The response's `clone.taskId` names the clone task. `selfToken: true` gives the box's agent its self token |
 | `GET` | `/api/boxes/{id}` | Get one box |
 | `PATCH` | `/api/boxes/{id}` | Update a box in place |
 | `DELETE` | `/api/boxes/{id}` | Delete a box |
+| `DELETE` | `/api/boxes/{id}/self-token` | Revoke the box's self token. The box keeps running, and the feature stays off for it |
 | `POST` | `/api/boxes/{id}/start` | Start a box |
 | `POST` | `/api/boxes/{id}/stop` | Stop a box |
 | `POST` | `/api/boxes/{id}/restart` | Restart a box |
@@ -323,3 +326,25 @@ Notification channels. Only the owner can use these operations, because no token
 A `webhook` channel needs `url`. An `ntfy` channel needs `topic`, and takes an optional `server` that defaults to `https://ntfy.sh`. A `telegram` channel needs `chatId`, and a new one needs its bot token as `secret`. `boxes` limits the channel to the named boxes or ids, and host notices are never filtered by it.
 
 `secret` is the webhook signing key, the ntfy access token or the Telegram bot token. Omit it to keep the stored value, send `null` to clear it, or send a string of 8 to 512 characters to replace it. The value is never copied into an answer or an event.
+
+### questions
+
+Questions that a box's agent asked. A person reads and answers them in the console, on the box's page. The agent asks with `POST /api/self/questions`. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/boxes/{id}/questions` | List the questions a box's agent asked, newest first |
+| `POST` | `/api/questions/{id}/answer` | Answer a question, as `{ "answer" }`. When the question offers options, the answer must be one of them. An answer can be given once: a second one returns `409` |
+
+### self
+
+Operations for a box's own agent, which calls them with the box's self token. The owner and other tokens get `403`. Each operation acts on that box alone.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/self` | This box's name, state, template, size and remaining TTL |
+| `POST` | `/api/self/checkpoints` | Take a checkpoint of this box, as `{ "label", "reason", "consistency" }`, with `consistency` as `live` or `pause`. Returns `202` with a task |
+| `GET` | `/api/self/tasks/{id}` | A task that this box started |
+| `POST` | `/api/self/status` | Report `working`, `waiting`, `done` or `failed`, with a one-line `note` |
+| `POST` | `/api/self/questions` | Ask a person a question, as `{ "message", "options" }`. Returns `201` with the question |
+| `GET` | `/api/self/questions/{id}` | A question that this box asked, with its answer once one is given |

@@ -58,6 +58,7 @@ Creates and starts a box. It starts from the base template unless you choose ano
 | `--secret NAME` | With `--repo`: the secret that holds a token or deploy key |
 | `--startup-command TEXT` | A command that runs at every start of the box. See [Startup command](../user-guide/boxes.md#startup-command). |
 | `--startup-command-stdin` | Reads the startup command from standard input. Use it for a command that holds a secret, so the text stays out of the shell history. |
+| `--self-token` | Gives the box's agent a token for this box alone, written to `/run/minibox/self-token`. Off by default. See [A box's own agent](../user-guide/agents.md#a-boxs-own-agent). |
 | `--no-wait` | Prints the clone's task ID and returns without waiting for the clone |
 | `--json` | Prints the server's JSON response |
 
