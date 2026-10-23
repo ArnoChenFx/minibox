@@ -28,6 +28,7 @@ import { type EgressRequest, normalizeEgress } from "../src/egress/policy";
 import { PROXY_ALIAS } from "../src/egress/proxy";
 import type { HostCtx } from "../src/host/registry";
 import { egressNetworkName, egressProxyName } from "../src/labels";
+import { ipv4At, parseIpv4Cidr } from "../src/lib/cidr";
 import { proxyHttp, resolvePreview } from "../src/preview/proxy";
 import type { ExecSession, Runtime } from "../src/runtime";
 import { startServer } from "../src/server";
@@ -117,6 +118,10 @@ function newBox(name: string, egress?: EgressRequest): Promise<Box> {
 
 const eventsOf = (op: string, boxId: string) => app.events.list({ op, box: boxId }, { limit: 200 }).events;
 
+/** An event's detail fields. The store keeps the detail as `unknown`, and each operation fills in its own fields. */
+const fieldsOf = (event: { detail?: unknown }): Record<string, unknown> =>
+  typeof event.detail === "object" && event.detail !== null ? (event.detail as Record<string, unknown>) : {};
+
 /**
  * The NET_RAW bit of a process's bounding set, read from `/proc/self/status` output. The effective set is empty for the
  * non-root user an exec runs as, so the bounding set is the one that says what the box may ever use.
@@ -130,9 +135,9 @@ function netRawOf(status: string): boolean {
 /** The bridge gateway of a network, which Docker assigns as the first address of its subnet. */
 async function gatewayOf(network: string): Promise<string> {
   const subnet = (await runtime.listNetworks()).find((candidate) => candidate.name === network)?.subnets[0];
-  if (!subnet) throw new Error(`network ${network} has no subnet`);
-  const octets = subnet.split("/")[0].split(".");
-  return `${octets[0]}.${octets[1]}.${octets[2]}.1`;
+  const parsed = subnet ? parseIpv4Cidr(subnet) : null;
+  if (!parsed) throw new Error(`network ${network} has no IPv4 subnet`);
+  return ipv4At(parsed, 1);
 }
 
 /** A service on every interface of the host, so a box can reach it through the bridge gateway. */
@@ -175,7 +180,7 @@ async function previewOf(name: string): Promise<Response | null> {
   try {
     const resolved = await resolvePreview(app.hosts, url, { pulse: app.pulse, audit: () => {} });
     try {
-      return await proxyHttp(new Request(url), resolved, "path");
+      return await proxyHttp(new Request(url.href), resolved, "path");
     } finally {
       resolved.release();
     }
@@ -326,12 +331,12 @@ describe.skipIf(!enabled)("egress tiers on a real engine", () => {
     expect((await curl(gated, ["-o", "/dev/null", `https://${DENIED}/`])).code).not.toBe(0);
 
     const allowance = await until(
-      async () => eventsOf("egress.allowed", gated.id).find((e) => e.detail?.host === ALLOWED) ?? null,
+      async () => eventsOf("egress.allowed", gated.id).find((e) => fieldsOf(e).host === ALLOWED) ?? null,
       "the allowed event",
     );
     expect(allowance.detail).toMatchObject({ host: ALLOWED, port: 443, scheme: "https" });
     const denial = await until(
-      async () => eventsOf("egress.denied", gated.id).find((e) => e.detail?.host === DENIED) ?? null,
+      async () => eventsOf("egress.denied", gated.id).find((e) => fieldsOf(e).host === DENIED) ?? null,
       "the denial event",
     );
     expect(denial.detail).toMatchObject({ host: DENIED, port: 443, reason: "not_allowed" });
@@ -373,7 +378,7 @@ describe.skipIf(!enabled)("egress tiers on a real engine", () => {
     ]);
     expect(otherPort.code).not.toBe(0);
     const denial = await until(
-      async () => eventsOf("egress.denied", gated.id).find((e) => e.detail?.port === 8443) ?? null,
+      async () => eventsOf("egress.denied", gated.id).find((e) => fieldsOf(e).port === 8443) ?? null,
       "the port denial event",
     );
     expect(denial.detail).toMatchObject({ port: 8443, reason: "port" });
