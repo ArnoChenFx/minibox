@@ -39,7 +39,21 @@ const newBox = (name: string) => boxes.createBox(host, { name, cpus: 1, memoryMb
 const pastGrace = () => Date.now() + 2 * PRUNE_GRACE_MS;
 
 function pruning(overrides: Partial<PruneOptions> = {}): PruneOptions {
-  return { dryRun: true, olderThanMs: null, principal: "owner", may: EVERYONE, now: pastGrace(), ...overrides };
+  const options = {
+    dryRun: true,
+    olderThanMs: null,
+    principal: "owner",
+    may: EVERYONE,
+    now: pastGrace(),
+    ...overrides,
+  };
+  return { ...options, ids: overrides.ids ?? null };
+}
+
+/** The ids a dry run lists, which a prune that removes volumes must name. */
+async function listedIds(overrides: Partial<PruneOptions> = {}): Promise<string[]> {
+  const preview = await pruneVolumes([host], pruning({ ...overrides, dryRun: true }));
+  return preview.volumes.map((volume) => volume.id);
 }
 
 function recordOf(name: string) {
@@ -192,10 +206,11 @@ describe("dry run and removal", () => {
     const engines = new Map(host.volumes.list().map((volume) => [volume.name, volume.engineName]));
     const notes: AuditNote[] = [];
     const seen: string[] = [];
+    const ids = await listedIds();
 
     const result = await pruneVolumes(
       [host],
-      pruning({ dryRun: false, record: (note) => notes.push(note), onRemoval: (row) => seen.push(row.name) }),
+      pruning({ dryRun: false, ids, record: (note) => notes.push(note), onRemoval: (row) => seen.push(row.name) }),
     );
 
     expect(result.volumes.length).toBeGreaterThan(0);
@@ -230,6 +245,7 @@ describe("dry run and removal", () => {
       .list()
       .filter((volume) => volume.name.startsWith("alpha-"))
       .map((volume) => volume.engineName);
+    const ids = await listedIds();
     const listed = runtime.listContainers.bind(runtime);
     let listings = 0;
     const late = spyOn(runtime, "listContainers").mockImplementation(async (filter, options) => {
@@ -246,7 +262,7 @@ describe("dry run and removal", () => {
 
     let result: Awaited<ReturnType<typeof pruneVolumes>>;
     try {
-      result = await pruneVolumes([host], pruning({ dryRun: false }));
+      result = await pruneVolumes([host], pruning({ dryRun: false, ids }));
     } finally {
       late.mockRestore();
     }
@@ -262,6 +278,7 @@ describe("dry run and removal", () => {
   test("a volume the engine fails to remove is reported failed with its copy purged, and the other orphans are removed", async () => {
     await deletedWithDataKept("alpha");
     const workspace = recordOf("alpha-workspace").engineName;
+    const ids = await listedIds();
     const removed = runtime.removeVolume.bind(runtime);
     const broken = spyOn(runtime, "removeVolume").mockImplementation(async (name) => {
       if (name === workspace) throw new RuntimeError("engine", "device busy", "device busy");
@@ -270,7 +287,7 @@ describe("dry run and removal", () => {
 
     let result: Awaited<ReturnType<typeof pruneVolumes>>;
     try {
-      result = await pruneVolumes([host], pruning({ dryRun: false }));
+      result = await pruneVolumes([host], pruning({ dryRun: false, ids }));
     } finally {
       broken.mockRestore();
     }
@@ -344,6 +361,73 @@ describe("dry run and removal", () => {
     const result = await pruneVolumes([host], pruning({ tasks: starting }));
 
     expect(result.volumes.length).toBeGreaterThan(0);
+  });
+});
+
+describe("a prune names what it removes", () => {
+  test("applying without the ids a dry run listed is refused, and nothing is removed", async () => {
+    await deletedWithDataKept("alpha");
+    const before = host.volumes.list().length;
+    await expect(pruneVolumes([host], pruning({ dryRun: false }))).rejects.toMatchObject({
+      key: "volume_prune_ids_required",
+    });
+    expect(runtime.callsTo("removeVolume")).toHaveLength(0);
+    expect(host.volumes.list()).toHaveLength(before);
+  });
+
+  test("only the named orphans are removed, though more orphans appeared after the dry run", async () => {
+    await deletedWithDataKept("alpha");
+    const ids = await listedIds();
+    await deletedWithDataKept("beta");
+    const betas = host.volumes.list().filter((volume) => volume.name.startsWith("beta-"));
+    expect(betas.length).toBeGreaterThan(0);
+
+    const result = await pruneVolumes([host], pruning({ dryRun: false, ids }));
+
+    expect(result.volumes.map((volume) => volume.id)).toEqual(ids);
+    expect(result.volumes.every((volume) => volume.status === "removed")).toBe(true);
+    for (const beta of betas) expect(host.volumes.read(beta.id)).not.toBeNull();
+  });
+
+  test("a named volume a box mounts, a box owns again, or the tools volume is refused with its reason and kept", async () => {
+    await deletedWithDataKept("alpha");
+    await newBox("live");
+    const tools = host.volumes.list().find((volume) => volume.role === "tools");
+    if (!tools) throw new Error("the shared tools record is missing");
+    const ids = await listedIds();
+    const home = recordOf("alpha-home");
+    host.volumes.write({ ...home, ownership: "owned", ownerBoxId: recordOf("live-workspace").ownerBoxId });
+    const engines = host.volumes.list().map((volume) => volume.engineName);
+
+    const result = await pruneVolumes(
+      [host],
+      pruning({ dryRun: false, ids: [home.id, recordOf("live-workspace").id, tools.id, "vol_missing"] }),
+    );
+
+    expect(result.volumes.map((volume) => [volume.name, volume.status, volume.error?.key ?? null])).toEqual([
+      ["alpha-home", "refused", "volume_not_orphan"],
+      ["live-workspace", "refused", "volume_in_use_by_box"],
+      [tools.name, "refused", "volume_shared_tools"],
+      ["vol_missing", "refused", "volume_not_found"],
+    ]);
+    expect(ids).toContain(home.id);
+    expect(runtime.callsTo("removeVolume")).toHaveLength(0);
+    for (const engine of engines) expect(runtime.volumes.has(engine)).toBe(true);
+  });
+
+  test("a volume named like the shared tools volume is protected even if its record lost the role", async () => {
+    const odd = await createVolume(host, { name: "odd", role: null, createdBy: "owner" });
+    const engineName = `${host.prefix}-tools-elsewhere`;
+    runtime.volumes.set(engineName, { name: engineName, labels: { [host.keys.volume]: "true" } });
+    host.volumes.write({ ...recordOf("odd"), engineName });
+    const ids = [odd.id];
+
+    const result = await pruneVolumes([host], pruning({ dryRun: false, ids }));
+
+    expect(result.volumes.map((volume) => [volume.status, volume.error?.key])).toEqual([
+      ["refused", "volume_shared_tools"],
+    ]);
+    expect(runtime.volumes.has(engineName)).toBe(true);
   });
 });
 
@@ -425,6 +509,46 @@ describe("batch delete", () => {
     } finally {
       broken.mockRestore();
     }
+  });
+
+  test("a volume a container starts using between the plan and the delete is refused, and its copy discarded", async () => {
+    const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    const plans = await planDeletes(host, [host], ["notes"], EVERYONE);
+    expect(plans.map((plan) => plan.blocked)).toEqual([null]);
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "late",
+      mounts: [{ source: notes.engineName, target: "/data" }],
+    });
+
+    const deleted = await deleteVolumes(plans, { skipTrash: false, createdBy: "owner" });
+
+    expect(deleted.map((row) => [row.status, row.error?.key])).toEqual([["refused", "volume_in_use_by_box"]]);
+    expect(runtime.volumes.has(notes.engineName)).toBe(true);
+    expect(host.volumes.read(notes.id)).not.toBeNull();
+    expect(await listTrash(host)).toEqual([]);
+  });
+
+  test("a system volume, by its engine label, and a volume named like the tools volume are never deleted", async () => {
+    const system = await createVolume(host, { name: "system", role: null, createdBy: "owner" });
+    const info = runtime.volumes.get(system.engineName);
+    if (!info) throw new Error("no engine volume");
+    runtime.volumes.set(system.engineName, { ...info, labels: { ...info.labels, [host.keys.internal]: "true" } });
+    await createVolume(host, { name: "odd", role: null, createdBy: "owner" });
+    const engineName = `${host.prefix}-tools-elsewhere`;
+    runtime.volumes.set(engineName, { name: engineName, labels: { [host.keys.volume]: "true" } });
+    host.volumes.write({ ...recordOf("odd"), engineName });
+
+    const plans = await planDeletes(host, [host], ["system", "odd"], EVERYONE);
+    expect(plans.map((plan) => plan.blocked)).toEqual([null, "tools"]);
+    const deleted = await deleteVolumes(plans, { skipTrash: true, createdBy: "owner" });
+
+    expect(deleted.map((row) => [row.name, row.status, row.error?.key])).toEqual([
+      ["system", "refused", "volume_system"],
+      ["odd", "refused", "volume_shared_tools"],
+    ]);
+    expect(runtime.volumes.has(system.engineName)).toBe(true);
+    expect(runtime.volumes.has(engineName)).toBe(true);
   });
 
   test("skipTrash deletes without keeping a copy", async () => {

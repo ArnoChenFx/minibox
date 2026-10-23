@@ -399,6 +399,10 @@ export default {
   "err.volume_delete_forbidden": "This credential may delete only the volumes it created: {volume}.",
   "err.volume_shared_tools":
     "Volume {volume} is the shared tools volume. It holds the tools of every box, so it is not deleted.",
+  "err.volume_system": "Volume {volume} is a MiniBox system volume, so it is not deleted.",
+  "err.volume_not_orphan": "Volume {volume} is no longer an orphan, so it was kept.",
+  "err.volume_prune_ids_required":
+    "A prune that removes volumes must name them: send the ids its dry run listed, and only those are removed.",
   "err.volume_attach_forbidden": "This credential may not attach volume {volume}.",
   "err.volume_write_forbidden": "This credential may not write volume {volume}.",
   "err.volume_create_forbidden": "This credential may not create volumes.",

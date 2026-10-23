@@ -9,8 +9,9 @@ interface VolumeRow {
   trash?: boolean;
   pool?: string | null;
   bytes?: number | null;
-  lastUsedAt?: string;
+  lastUsedAt?: string | null;
   formerBox?: string | null;
+  keepsCopy?: boolean;
   error?: { message?: string } | null;
 }
 
@@ -77,19 +78,30 @@ async function volumeDeleteCommand(
 }
 
 /**
- * `volume prune`: lists the volumes MiniBox made that nothing uses, and with `--yes` removes them. A volume created or
- * last used in the last five minutes is never listed, and `--older-than` such as `30d` lists only the older ones.
+ * `volume prune [id|name...]`: lists the volumes MiniBox made that nothing uses. With `--yes` it removes the volumes it
+ * listed, by id, so a volume that becomes an orphan in between is not touched; naming volumes limits both steps to them.
+ * A volume created or last used in the last five minutes is never listed, and `--older-than` such as `30d` lists only
+ * the older ones.
  */
 async function volumePruneCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
   const options = parseOptions(argv, ["--older-than"], ["--json", "--yes"]);
-  if (options.positional.length > 0) throw new Error("minibox volume prune takes no arguments");
   const apply = options.switches.has("--yes");
   const olderThan = options.values.get("--older-than");
-  const res = await request(env, "POST", "/api/volumes/prune", {
-    dryRun: !apply,
+  const scope = {
     ...(olderThan === undefined ? {} : { olderThan }),
-  });
+    ...(options.positional.length > 0 ? { ids: options.positional } : {}),
+  };
+  let res = await request(env, "POST", "/api/volumes/prune", { dryRun: true, ...scope });
   if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  const listed = rowsOf<VolumeRow & { id: string }>(res.json, "volumes");
+  if (apply && listed.length > 0) {
+    res = await request(env, "POST", "/api/volumes/prune", {
+      dryRun: false,
+      ...scope,
+      ids: listed.map((row) => row.id),
+    });
+    if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  }
   if (options.switches.has("--json")) printJson(io, res.json);
   else {
     const volumes = rowsOf<VolumeRow>(res.json, "volumes");
@@ -104,6 +116,9 @@ async function volumePruneCommand(argv: string[], env: Record<string, string | u
     }
     if (volumes.length === 0) io.stdout("No orphaned volumes.\n");
     if (!apply) io.stdout("Nothing was removed. Add --yes to remove these volumes.\n");
+    if (volumes.some((row) => row.status === "candidate" && row.keepsCopy === false)) {
+      io.stdout("Cache volumes keep no copy in the recycle bin: once removed they cannot be restored.\n");
+    }
   }
   return rowsOf<VolumeRow>(res.json, "volumes").some((row) => row.status === "refused" || row.status === "failed")
     ? 1

@@ -1168,7 +1168,7 @@ async function recordScenario(): Promise<Exchange[]> {
       confirm: true,
     });
     await post("prune orphaned volumes as a dry run", "/api/volumes/prune", {});
-    await post("prune orphaned volumes", "/api/volumes/prune", { dryRun: false });
+    await post("prune orphaned volumes", "/api/volumes/prune", { dryRun: false, ids: ["nowhere"] });
   } finally {
     server.stop(true);
     app.throttle.stop();

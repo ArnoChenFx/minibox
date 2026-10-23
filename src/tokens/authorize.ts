@@ -533,7 +533,6 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["volume.create", noAccess],
   ["volume.delete", volumeDeleteRule],
   ["volume.delete.batch", noAccess],
-  ["volume.prune", noAccess],
   ["volume.attach", volumeAttachRule],
   ["volume.detach", volumeAttachRule],
   ["volume.usage", volumeRule],

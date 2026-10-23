@@ -295,6 +295,8 @@ const volumeDelete = defineOperation({
 
 /** A batch delete names at most this many volumes, so one request stays bounded. */
 const DELETE_BATCH_MAX = 100;
+/** A prune removes at most this many named volumes in one request. */
+const PRUNE_IDS_MAX = 500;
 
 const OutcomeSchema = z.object({
   message: z.string(),
@@ -314,11 +316,16 @@ const DeletedVolumeSchema = z.object({
 const PrunedVolumeSchema = z.object({
   id: z.string(),
   name: z.string(),
-  hostId: z.string(),
-  pool: z.string(),
+  hostId: z.string().nullable(),
+  pool: z.string().nullable(),
+  role: z.enum(["workspace", "home", "tools", "cache"]).nullable(),
   bytes: z.number().nullable(),
-  lastUsedAt: z.string(),
+  lastUsedAt: z.string().nullable(),
   formerBox: z.string().nullable(),
+  keepsCopy: z.boolean().meta({
+    description:
+      "Whether removing it keeps a copy of its data in the recycle bin. A cache volume keeps none and cannot be restored.",
+  }),
   status: z.enum(["candidate", "removed", "refused", "failed"]),
   trash: TrashRefSchema.nullable(),
   error: OutcomeSchema.nullable(),
@@ -410,13 +417,21 @@ const volumePrune = defineOperation({
   tag: "volumes",
   summary: "Prune orphaned volumes",
   kind: "destructive",
-  scope: "volume:delete",
+  scope: "volume:prune",
   async: false,
   conflicts: true,
   longSync: true,
   input: z.object({
     dryRun: dryRunFlag(),
     olderThan: olderThanOption(),
+    ids: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(PRUNE_IDS_MAX)
+      .optional()
+      .meta({
+        description: `The volumes to remove, by id (vol_…) or name: the ids a dry run listed. Required when dryRun is false, and nothing outside the list is removed; a named volume that is no longer an orphan is refused with its reason. With a dry run, it limits the listing to these volumes. At most ${PRUNE_IDS_MAX}.`,
+      }),
   }),
   output: z.object({
     dryRun: z.boolean(),
@@ -432,13 +447,14 @@ const volumePrune = defineOperation({
     toolset: "storage",
     name: "prune_volumes",
     description:
-      "Find or remove orphaned volumes: volumes MiniBox made that no box spec or container mounts. The shared tools volume and MiniBox's internal volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans; send dryRun false to remove them. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, as delete_volume keeps it. A token prunes only the volumes it created.",
+      "Find or remove orphaned volumes: volumes MiniBox made that no box spec mounts or owns and no container mounts. The shared tools volume and MiniBox's internal volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans. To remove them, send dryRun false with ids set to the ids the dry run listed: only those are removed, and one that is no longer an orphan is refused. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, except a cache volume's, which cannot be restored. Only the owner may prune.",
   },
   activity: { action: () => "volume.prune", target: () => "volumes", when: (input) => !input.dryRun },
   run: async (ctx, input) => {
     const olderThan = input.olderThan ?? null;
     const result = await pruneVolumes(grantedHosts(ctx), {
       dryRun: input.dryRun,
+      ids: input.ids ?? null,
       olderThanMs: olderThan === null ? null : ageMs(olderThan),
       principal: ctx.principal.id,
       may: (volume) => canDeleteVolume(ctx, volume),

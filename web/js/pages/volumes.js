@@ -94,8 +94,12 @@ function groupLabel(group) {
 
 function volumeRow(volume, selected) {
   const mounts = volume.mounts
-    .map((mount) => `${esc(mount.boxName)}:${esc(mount.path)} (${esc(mountModeLabel(mount.mode))})`)
-    .join(", ");
+    .map((mount) => {
+      const where = `${mount.boxName}:${mount.path}`;
+      const mode = mountModeLabel(mount.mode);
+      return `<div class="vol-mount" title="${esc(`${where} (${mode})`)}"><span class="vol-mount-path">${esc(where)}</span><span class="subtle">(${esc(mode)})</span></div>`;
+    })
+    .join("");
   const over =
     volume.usage?.level === "hard" || volume.usage?.level === "soft" ? ` volume-over-${volume.usage.level}` : "";
   const limits =
@@ -107,13 +111,13 @@ function volumeRow(volume, selected) {
   const pick = `<label class="checkbox"${tip}><input type="checkbox" data-select="${esc(volume.id)}" aria-label="${esc(t("vol.selectOne", { name: volume.name }))}"${selected.has(volume.id) ? " checked" : ""}${reason ? " disabled" : ""} /></label>`;
   return `<tr class="${over.trim()}">
     <td class="select-cell">${pick}</td>
-    <td><strong>${esc(volume.name)}</strong><div class="subtle mono">${esc(volume.id)}</div></td>
-    <td>${volume.role ? esc(roleLabel(volume.role)) : "—"}</td>
-    <td>${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
-    <td>${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>
-    <td>${mounts || "—"}</td>
-    <td>${usageCellHtml(volume)}</td>
-    <td><div class="actions">
+    <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong><div class="subtle mono">${esc(volume.id)}</div></td>
+    <td class="nowrap">${volume.role ? esc(roleLabel(volume.role)) : "—"}</td>
+    <td class="nowrap">${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
+    <td class="nowrap">${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>
+    <td class="vol-mounts">${mounts || "—"}</td>
+    <td class="vol-usage">${usageCellHtml(volume)}</td>
+    <td class="nowrap"><div class="actions">
       <button class="btn btn-sm" data-action="measure" data-id="${esc(volume.id)}">${t("vol.measure")}</button>
       ${limits}
       <button class="btn btn-sm" data-action="delete" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}">${t("vol.delete")}</button>
@@ -242,6 +246,7 @@ function pruneRowHtml(volume, showHost) {
     <td class="num">${esc(bytes(volume.bytes))}</td>
     <td>${esc(dateTime(volume.lastUsedAt))}</td>
     <td>${volume.formerBox ? esc(volume.formerBox) : "—"}</td>
+    <td class="nowrap">${esc(volume.keepsCopy ? t("vol.willKeepBin") : t("vol.willDeleteForever"))}</td>
   </tr>`;
 }
 
@@ -249,7 +254,7 @@ function deleteRowHtml(row, skipTrash, showHost) {
   const outcome = previewOutcome(row, skipTrash);
   const action = outcome.blocked
     ? `<span class="subtle">${esc(blockedText(outcome.blocked))}</span>`
-    : esc(outcome.keepsCopy ? t("vol.willKeepBin") : t("vol.willDelete"));
+    : esc(outcome.keepsCopy ? t("vol.willKeepBin") : t("vol.willDeleteForever"));
   return `<tr>
     <td><strong>${esc(row.name)}</strong></td>
     ${showHost ? `<td>${esc(hostName(row.hostId))}</td>` : ""}
@@ -313,7 +318,7 @@ export function render(view) {
         </div>
       </div>
       <div class="table-wrap"><table class="table">
-        <thead><tr><th class="select-cell"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th>${t("vol.colRole")}</th><th>${t("vol.colPool")}</th><th>${t("vol.colOwnership")}</th><th>${t("vol.colMounts")}</th><th>${t("vol.colBytes")}</th><th></th></tr></thead>
+        <thead><tr><th class="select-cell"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th class="nowrap">${t("vol.colRole")}</th><th class="nowrap">${t("vol.colPool")}</th><th class="nowrap">${t("vol.colOwnership")}</th><th>${t("vol.colMounts")}</th><th class="nowrap">${t("vol.colUsage")}</th><th></th></tr></thead>
         <tbody id="volRows">${skeletonRows(3, VOLUME_COLUMNS)}</tbody>
       </table></div>
     </div>`;
@@ -473,7 +478,7 @@ export function render(view) {
         confirmText: t("vol.pruneConfirm"),
       },
       (root) => {
-        const head = `<th>${t("vol.colName")}</th>${showHost ? `<th>${t("vol.colHost")}</th>` : ""}<th class="num">${t("vol.colBytes")}</th><th>${t("vol.lastUsed")}</th><th>${t("vol.formerBox")}</th>`;
+        const head = `<th>${t("vol.colName")}</th>${showHost ? `<th>${t("vol.colHost")}</th>` : ""}<th class="num">${t("vol.colBytes")}</th><th>${t("vol.lastUsed")}</th><th>${t("vol.formerBox")}</th><th>${t("vol.colAction")}</th>`;
         drawTable(root.querySelector(".prune-list"), scope, {
           head,
           items: preview.volumes,
@@ -484,7 +489,9 @@ export function render(view) {
     if (!confirmed) return;
     let result;
     try {
-      result = await api("/api/volumes/prune", { method: "POST", body: { dryRun: false } });
+      // Only the volumes the preview showed: the server refuses any that stopped being orphans and removes nothing else.
+      const ids = preview.volumes.map((volume) => volume.id);
+      result = await api("/api/volumes/prune", { method: "POST", body: { dryRun: false, ids } });
     } catch (err) {
       return toastError(t("vol.pruneFailed"), err);
     }

@@ -138,7 +138,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "volume.create": () => ({ name: "extra", confirm: true }),
   "volume.delete": () => ({ id: "spare", confirm: true }),
   "volume.delete.batch": () => ({ ids: ["spare"], confirm: true }),
-  "volume.prune": () => ({ dryRun: false }),
+  "volume.prune": () => ({ dryRun: false, ids: ["spare"] }),
   "volume.attach": (id) => ({
     id: "spare",
     box: id,

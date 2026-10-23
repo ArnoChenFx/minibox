@@ -113,7 +113,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `get_volume` | `GET /api/volumes/{id}` |
 | `delete_volume` | `DELETE /api/volumes/{id}` |
 | `delete_volumes` | `POST /api/volumes/delete`. Several volumes at once, each with its own result. Needs `confirm`. A token needs `volume:delete` |
-| `prune_volumes` | `POST /api/volumes/prune`. Lists the orphaned volumes, and removes them only when `dryRun` is `false`. A token needs `volume:delete` |
+| `prune_volumes` | `POST /api/volumes/prune`. Lists the orphaned volumes, and removes them only when `dryRun` is `false` and `ids` names the volumes the dry run listed. Owner only |
 | `attach_volume` | `POST /api/volumes/{id}/attach` |
 | `detach_volume` | `POST /api/volumes/{id}/detach` |
 | `measure_volume` | `POST /api/volumes/{id}/usage` |
@@ -188,7 +188,7 @@ Some tools change things that are hard to undo. They need `confirm: true` in the
 - `create_volume`, `delete_volume`, `delete_volumes`, `attach_volume`, `detach_volume` and `replace_pools`.
 - `rebuild_box` and `move_box`.
 
-`measure_volume` only refreshes a cached size, so it needs no confirmation. `attach_volume` and `detach_volume` rebuild the box, so the same mount rules apply as for `rebuild_box`. `prune_volumes` has no `confirm`: it lists the orphans while `dryRun` is `true`, which is the default, and removes them only when `dryRun` is `false`.
+`measure_volume` only refreshes a cached size, so it needs no confirmation. `attach_volume` and `detach_volume` rebuild the box, so the same mount rules apply as for `rebuild_box`. `prune_volumes` has no `confirm`: it lists the orphans while `dryRun` is `true`, which is the default, and removes them only when `dryRun` is `false`. Then `ids` must name the volumes to remove, as the dry run listed them: nothing else is removed, and a volume that stopped being an orphan is refused with its reason.
 
 `rebuild_box`, `attach_volume` and `detach_volume` take `safetyCheckpoint`, which defaults to `true`. Send `false` to skip the checkpoint of the box that is taken before the change. `delete_box`, `delete_volume` and `delete_volumes` take `skipTrash`. Set it to `true` to delete without keeping a copy in the recycle bin. That needs the owner, or a token with the `trash:skip` scope.
 

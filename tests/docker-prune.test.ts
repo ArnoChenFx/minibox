@@ -152,6 +152,7 @@ describe.skipIf(!enabled)("orphaned volumes against a real engine", () => {
 
       const preview = await pruneVolumes([host], {
         dryRun: true,
+        ids: null,
         olderThanMs: null,
         principal: "tester",
         may: async () => true,
@@ -173,6 +174,7 @@ describe.skipIf(!enabled)("orphaned volumes against a real engine", () => {
 
       const result = await pruneVolumes([host], {
         dryRun: false,
+        ids: [orphan.id],
         olderThanMs: null,
         principal: "tester",
         may: async () => true,

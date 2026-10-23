@@ -3421,6 +3421,6 @@
     "path": "/api/volumes/prune",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"dryRun\":false,\"olderThan\":null,\"volumes\":[],\"hosts\":[{\"hostId\":\"local\",\"name\":\"Local\",\"status\":\"checked\",\"error\":null}]}"
+    "body": "{\"dryRun\":false,\"olderThan\":null,\"volumes\":[{\"id\":\"nowhere\",\"name\":\"nowhere\",\"hostId\":null,\"pool\":null,\"role\":null,\"bytes\":null,\"lastUsedAt\":null,\"formerBox\":null,\"keepsCopy\":false,\"status\":\"refused\",\"trash\":null,\"error\":{\"message\":\"Volume nowhere was not found.\",\"key\":\"volume_not_found\",\"params\":{\"volume\":\"nowhere\"}}}],\"hosts\":[{\"hostId\":\"local\",\"name\":\"Local\",\"status\":\"checked\",\"error\":null}]}"
   }
 ]

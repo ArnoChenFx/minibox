@@ -29,6 +29,7 @@ import { type RebuildResult, rebuildWithSafety, type SafetyHook } from "./rebuil
 import { discardCopy, keepsVolume, trashVolume } from "./trash";
 import type { RecordNote } from "./volume-owner";
 import { errorOutcome, hostOffline, messageOutcome, type OutcomeError, volumesInUse } from "./volume-refs";
+import { protectedReason, removeGuarded } from "./volume-remove";
 
 export interface VolumeMountView {
   boxId: string;
@@ -330,9 +331,9 @@ async function planOne(
 ): Promise<DeletePlan> {
   if (!volume) return { ref, volume, host: null, blocked: "not_found", detail: null };
   if (!(await may(volume))) return { ref, volume, host: null, blocked: "forbidden", detail: null };
-  if (volume.role === "tools") return { ref, volume, host: null, blocked: "tools", detail: null };
   const host = hosts.find((item) => item.host.id === volume.hostId) ?? null;
   if (!host) return { ref, volume, host, blocked: "not_found", detail: null };
+  if (protectedReason(host, volume)) return { ref, volume, host: null, blocked: "tools", detail: null };
   if (hostOffline(host)) return { ref, volume, host, blocked: "offline", detail: null };
   try {
     const inUse = (await usageOf(host)).has(volume.engineName);
@@ -377,13 +378,16 @@ async function deleteOne(
     const status = blocked !== null && REFUSED_BLOCKS.has(blocked) ? "refused" : "failed";
     return { id, name, hostId, status, trash: null, error: blockOf(plan, blocked ?? "not_found") };
   }
-  try {
-    const removed = await deleteVolume(host, volume.id, opts);
-    return { id, name, hostId, status: "removed", trash: removed.trash, error: null };
-  } catch (e) {
-    const error = errorOutcome(e);
-    return { id, name, hostId, status: error.key === "volume_mounted" ? "refused" : "failed", trash: null, error };
+  const outcome = await removeGuarded(host, volume, {
+    skipTrash: opts.skipTrash,
+    principal: opts.createdBy,
+    record: opts.record,
+  });
+  if (outcome.status === "removed") {
+    log.info("volume.deleted", { id: volume.id, name: volume.name, trash: outcome.trash !== null });
+    return { id, name, hostId, status: "removed", trash: outcome.trash, error: null };
   }
+  return { id, name, hostId, status: outcome.status, trash: null, error: outcome.error };
 }
 
 function blockOf(plan: DeletePlan, block: DeleteBlock): OutcomeError {

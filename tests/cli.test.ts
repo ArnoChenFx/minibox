@@ -1754,6 +1754,14 @@ describe("CLI volume prune and delete", () => {
       expect(await runCli(["volume", "prune", "--yes"], env.env, removed, lines([]))).toBe(0);
       expect(removed.out).toMatch(/^notes\s.*removed$/m);
       expect(await volumeNames(env)).not.toContain("notes");
+
+      await orphanVolume(env, "scratch");
+      await orphanVolume(env, "keep");
+      const named = io();
+      expect(await runCli(["volume", "prune", "scratch", "--yes"], env.env, named, lines([]))).toBe(0);
+      expect(named.out).toMatch(/^scratch\s.*removed$/m);
+      expect(named.out).not.toContain("keep");
+      expect(await volumeNames(env)).toContain("keep");
     } finally {
       env.stop();
     }
@@ -1821,7 +1829,6 @@ describe("CLI volume prune and delete", () => {
       [["volume", "frobnicate"], "needs delete or prune"],
       [["volume", "delete"], "needs one or more volume ids or names"],
       [["volume", "delete", "notes", "--color", "red"], "Unknown option --color"],
-      [["volume", "prune", "notes"], "takes no arguments"],
       [["volume", "prune", "--older-than"], "--older-than needs a value"],
       [["volume", "prune", "--color", "red"], "Unknown option --color"],
     ];

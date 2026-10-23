@@ -135,12 +135,15 @@ const READ_SCOPES: readonly Scope[] = ["box:read", "files:read"];
 /**
  * Every scope but `secret:use`. A box that receives a host secret, and a startup command that may hold one, is the owner's
  * decision, so only the admin preset has it. `trash:skip` is in no preset: a token deletes into the recycle bin unless a
- * credential names that scope itself.
+ * credential names that scope itself. `volume:delete` (batch delete) is in no preset either, so it stays the owner's
+ * unless a credential names it; pruning orphans is the owner's alone.
  */
-const OPERATOR_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "secret:use" && scope !== "trash:skip");
-const ADMIN_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "trash:skip");
+const OPERATOR_SCOPES: readonly Scope[] = SCOPES.filter(
+  (scope) => scope !== "secret:use" && scope !== "trash:skip" && scope !== "volume:delete",
+);
+const ADMIN_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "trash:skip" && scope !== "volume:delete");
 const SANDBOX_SCOPES: readonly Scope[] = OPERATOR_SCOPES.filter(
-  (scope) => scope !== "volume:attach" && scope !== "volume:delete" && scope !== "tool:install" && scope !== "box:ssh",
+  (scope) => scope !== "volume:attach" && scope !== "tool:install" && scope !== "box:ssh",
 );
 
 /** Five boxes, 8 CPU cores and 16 GB between them, four hours, one request a second sustained, twenty checkpoints. */

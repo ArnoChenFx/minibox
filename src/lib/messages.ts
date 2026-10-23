@@ -444,6 +444,10 @@ export const MESSAGES = {
   volume_delete_forbidden: "This credential may delete only the volumes it created: {volume}.",
   volume_shared_tools:
     "Volume {volume} is the shared tools volume. It holds the tools of every box, so it is not deleted.",
+  volume_system: "Volume {volume} is a MiniBox system volume, so it is not deleted.",
+  volume_not_orphan: "Volume {volume} is no longer an orphan, so it was kept.",
+  volume_prune_ids_required:
+    "A prune that removes volumes must name them: send the ids its dry run listed, and only those are removed.",
   volume_attach_forbidden: "This credential may not attach volume {volume}.",
   volume_write_forbidden: "This credential may not write volume {volume}.",
   volume_create_forbidden: "This credential may not create volumes.",

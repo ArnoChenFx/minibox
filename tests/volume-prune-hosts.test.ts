@@ -7,6 +7,7 @@ import { call, mint } from "./support/tokens";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface VolumeRow {
+  id: string;
   name: string;
   hostId: string;
   status: string;
@@ -55,7 +56,7 @@ function namesOn(c: Cluster): string[] {
 }
 
 describe("POST /api/volumes/prune on several hosts", () => {
-  test("the owner's dry run lists orphans on every host, and a token's prune reads only the hosts it is granted", async () => {
+  test("the owner's dry run lists orphans on every host, a prune removes only the ones it names, and a token may not prune", async () => {
     const c = await boot();
     const maker = mint(c.app, {
       name: "maker",
@@ -71,13 +72,19 @@ describe("POST /api/volumes/prune on several hosts", () => {
     expect(listed.hosts.map((host) => host.hostId).toSorted()).toEqual(["large", "local", "small"]);
     expect(listed.volumes.map((row) => row.name).toSorted()).toEqual(["large-mine", "small-mine", "small-theirs"]);
 
-    const granted = await call(c.base, "/api/volumes/prune", { token: maker.secret, body: { dryRun: false } });
-    expect(granted.status).toBe(200);
-    const pruned = granted.json as unknown as PruneReply;
-    expect(pruned.hosts.map((host) => host.hostId).toSorted()).toEqual(["local", "small"]);
-    expect(pruned.volumes.map((row) => [row.name, row.status])).toEqual([["small-mine", "removed"]]);
-    expect(namesOn(c)).toEqual(expect.arrayContaining(["small-theirs", "large-mine"]));
+    const asToken = await call(c.base, "/api/volumes/prune", { token: maker.secret, body: {} });
+    expect(asToken.status).toBe(403);
+
+    const ids = listed.volumes.filter((row) => row.name !== "small-theirs").map((row) => row.id);
+    const pruned = (await call(c.base, "/api/volumes/prune", { body: { dryRun: false, ids } }))
+      .json as unknown as PruneReply;
+    expect(pruned.volumes.map((row) => [row.name, row.status]).toSorted()).toEqual([
+      ["large-mine", "removed"],
+      ["small-mine", "removed"],
+    ]);
+    expect(namesOn(c)).toContain("small-theirs");
     expect(namesOn(c)).not.toContain("small-mine");
+    expect(namesOn(c)).not.toContain("large-mine");
   });
 });
 

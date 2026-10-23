@@ -95,7 +95,15 @@ async function orphanedAlpha(app: App, host: HostCtx): Promise<void> {
   expect(app.activity.list()).toHaveLength(0);
 }
 
-const rowsOf = (json: Record<string, unknown>) => json.volumes as { name: string; status: string }[];
+const rowsOf = (json: Record<string, unknown>) =>
+  json.volumes as { id: string; name: string; status: string; keepsCopy: boolean; error: { key: string } | null }[];
+
+/** A dry run, then a prune of exactly the volumes it listed, as the Volumes page and the CLI send it. */
+async function pruneListed(base: string): Promise<Reply> {
+  const listed = await send(base, "POST", "/api/volumes/prune", {});
+  expect(listed.status).toBe(200);
+  return send(base, "POST", "/api/volumes/prune", { dryRun: false, ids: rowsOf(listed.json).map((row) => row.id) });
+}
 
 describe("POST /api/volumes/prune", () => {
   test("a request without dryRun only lists the orphans, and dryRun false removes them", async () => {
@@ -110,7 +118,8 @@ describe("POST /api/volumes/prune", () => {
     expect(runtime.callsTo("removeVolume")).toHaveLength(0);
     expect(app.activity.list()).toHaveLength(0);
 
-    const removed = await send(base, "POST", "/api/volumes/prune", { dryRun: false });
+    const ids = rowsOf(listed.json).map((row) => row.id);
+    const removed = await send(base, "POST", "/api/volumes/prune", { dryRun: false, ids });
     expect(removed.status).toBe(200);
     expect(rowsOf(removed.json).every((row) => row.status === "removed")).toBe(true);
     expect(host.volumes.list().map((volume) => volume.name)).not.toContain("alpha-workspace");
@@ -147,44 +156,82 @@ describe("POST /api/volumes/prune", () => {
     expect(nonsense.json.error).toMatchObject({ key: "volume_older_than_invalid" });
   });
 
-  test("a token without volume:delete is refused, and nothing is listed or removed", async () => {
-    const { app, host, base } = start();
+  test("a prune that removes volumes must name them, and a request with no ids removes nothing", async () => {
+    const { app, runtime, host, base } = start();
     await orphanedAlpha(app, host);
-    const token = await tokenWith(base, "tidy", { scopes: ["volume:read", "volume:write"] });
 
-    const res = await send(base, "POST", "/api/volumes/prune", { dryRun: false }, token);
-    expect(res.status).toBe(403);
+    const bare = await send(base, "POST", "/api/volumes/prune", { dryRun: false });
+    expect(bare.status).toBe(400);
+    expect(bare.json.error).toMatchObject({ key: "volume_prune_ids_required" });
+    const empty = await send(base, "POST", "/api/volumes/prune", { dryRun: false, ids: [] });
+    expect(empty.status).toBe(400);
+    expect(runtime.callsTo("removeVolume")).toHaveLength(0);
     expect(host.volumes.list().map((volume) => volume.name)).toContain("alpha-workspace");
   });
 
-  test("a token with volume:delete prunes only the volumes it created", async () => {
-    const { app, host, base } = start();
-    const token = await tokenWith(base, "maker", { scopes: ["volume:write", "volume:read", "volume:delete"] });
-    const made = await send(base, "POST", "/api/volumes", { name: "mine", confirm: true }, token);
-    expect(made.status).toBe(201);
-    await createVolume(host, { name: "theirs", role: null, createdBy: "owner" });
-    ageVolumes(host);
-
-    const asToken = await send(base, "POST", "/api/volumes/prune", {}, token);
-    expect(rowsOf(asToken.json).map((row) => row.name)).toEqual(["mine"]);
-
-    const asOwner = await send(base, "POST", "/api/volumes/prune", {});
-    expect(
-      rowsOf(asOwner.json)
-        .map((row) => row.name)
-        .toSorted(),
-    ).toEqual(["mine", "theirs"]);
-    expect(app.activity.list().filter((entry) => entry.action === "volume.prune")).toHaveLength(0);
-  });
-
-  test("a token not granted this host is refused, as a volume list is, and prunes nothing", async () => {
+  test("a confirmed prune removes only the volumes it names, even when more orphans appeared since the preview", async () => {
     const { app, host, base } = start();
     await orphanedAlpha(app, host);
-    const token = await tokenWith(base, "remote", { scopes: ["volume:delete"], hosts: ["other"] });
+    const listed = await send(base, "POST", "/api/volumes/prune", {});
+    const previewed = rowsOf(listed.json).map((row) => row.id);
+    expect(previewed.length).toBeGreaterThan(0);
 
-    const res = await send(base, "POST", "/api/volumes/prune", { dryRun: false }, token);
-    expect(res.status).toBe(403);
-    expect(res.json.error).toMatchObject({ key: "host_not_granted" });
+    // A box deleted after the preview leaves more orphans: the confirmation was not about them.
+    const beta = await boxes.createBox(host, { name: "beta", cpus: 1, memoryMb: 256 });
+    await boxes.deleteBox(host, beta.boxId, false);
+    ageVolumes(host);
+
+    const removed = await send(base, "POST", "/api/volumes/prune", { dryRun: false, ids: previewed });
+    expect(removed.status).toBe(200);
+    expect(rowsOf(removed.json).map((row) => row.id)).toEqual(previewed);
+    expect(rowsOf(removed.json).every((row) => row.status === "removed")).toBe(true);
+    const left = host.volumes.list().map((volume) => volume.name);
+    expect(left).toContain("beta-workspace");
+    expect(left).not.toContain("alpha-workspace");
+  });
+
+  test("a named volume a live box took back since the preview, and an unknown id, are refused with their reasons", async () => {
+    const { app, runtime, host, base } = start();
+    await orphanedAlpha(app, host);
+    const listed = await send(base, "POST", "/api/volumes/prune", {});
+    const workspace = rowsOf(listed.json).find((row) => row.name === "alpha-workspace");
+    if (!workspace) throw new Error("alpha-workspace was not listed");
+
+    // A box claims the previewed volume before the owner confirms: it is no longer an orphan.
+    const gamma = await boxes.createBox(host, { name: "gamma", cpus: 1, memoryMb: 256 });
+    const record = host.volumes.read(workspace.id);
+    if (!record) throw new Error("alpha-workspace has no record");
+    host.volumes.write({ ...record, ownership: "owned", ownerBoxId: gamma.boxId });
+
+    const res = await send(base, "POST", "/api/volumes/prune", {
+      dryRun: false,
+      ids: [workspace.id, "vol_doesnotexist"],
+    });
+    expect(res.status).toBe(200);
+    const rows = rowsOf(res.json);
+    expect(rows.map((row) => [row.name, row.status, row.error?.key])).toEqual([
+      ["alpha-workspace", "refused", "volume_not_orphan"],
+      ["vol_doesnotexist", "refused", "volume_not_found"],
+    ]);
+    expect(host.volumes.read(workspace.id)).not.toBeNull();
+    expect(runtime.callsTo("removeVolume")).toHaveLength(0);
+  });
+
+  test("a token is refused even with volume:delete, as pruning is the owner's alone, and nothing is removed", async () => {
+    const { app, host, base } = start();
+    await orphanedAlpha(app, host);
+    const listed = await send(base, "POST", "/api/volumes/prune", {});
+    const ids = rowsOf(listed.json).map((row) => row.id);
+    for (const scopes of [
+      ["volume:read", "volume:write"],
+      ["volume:read", "volume:write", "volume:delete"],
+    ]) {
+      const token = await tokenWith(base, `tidy-${scopes.length}`, { scopes });
+      const dry = await send(base, "POST", "/api/volumes/prune", {}, token);
+      expect(dry.status).toBe(403);
+      const res = await send(base, "POST", "/api/volumes/prune", { dryRun: false, ids }, token);
+      expect(res.status).toBe(403);
+    }
     expect(host.volumes.list().map((volume) => volume.name)).toContain("alpha-workspace");
   });
 
@@ -195,7 +242,7 @@ describe("POST /api/volumes/prune", () => {
     await send(base, "POST", "/api/volumes/prune", {});
     expect(app.activity.list()).toHaveLength(0);
 
-    await send(base, "POST", "/api/volumes/prune", { dryRun: false });
+    await pruneListed(base);
     const entries = app.activity.list();
     expect(entries).toContainEqual(
       expect.objectContaining({ action: "volume.prune", target: "alpha-workspace", ok: true }),
