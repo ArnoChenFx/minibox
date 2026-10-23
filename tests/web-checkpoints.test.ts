@@ -28,6 +28,7 @@ import {
 const WEB = join(ROOT, "web");
 const COMPONENT = join(WEB, "js", "components", "checkpoints.js");
 const STATE = join(WEB, "js", "lib", "checkpoint-state.js");
+const STORAGE = join(WEB, "js", "components", "storage-checkpoints.js");
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 9, 20, 10, minutes)).toISOString();
 
@@ -946,7 +947,7 @@ describe("checkpoint translations", () => {
   });
 
   test("every checkpoint key in English is used by the console", () => {
-    const used = new Set([...built, ...quotedKeys(COMPONENT), ...quotedKeys(STATE)]);
+    const used = new Set([...built, ...quotedKeys(COMPONENT), ...quotedKeys(STATE), ...quotedKeys(STORAGE)]);
     const unused = Object.keys(en).filter((key) => key.startsWith("ck.") && !used.has(key));
     expect(unused).toEqual([]);
   });

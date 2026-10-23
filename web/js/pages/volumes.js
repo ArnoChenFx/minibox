@@ -520,7 +520,9 @@ export function render(view) {
         searching: Boolean(query),
         limit: VOLUME_LIMIT,
       });
-      const html = shown.map((volume) => volumeRow(volume, { selected, pools: poolMap, latest, staged: stagedMounts })).join("");
+      const html = shown
+        .map((volume) => volumeRow(volume, { selected, pools: poolMap, latest, staged: stagedMounts }))
+        .join("");
       return toggle ? `${html}<tr class="toggle-row"><td colspan="${VOLUME_COLUMNS}">${toggle}</td></tr>` : html;
     };
     body.innerHTML = groupVolumes(matches, groupBy, { boxNames })
