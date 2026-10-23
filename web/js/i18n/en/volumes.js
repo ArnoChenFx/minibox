@@ -32,6 +32,12 @@ export default {
   "vol.unreachable": "Storage unreachable",
   "vol.unknown": "Unknown",
   "vol.lowSpace": "Low space",
+  "vol.engineMissing": "Engine volume missing",
+  "vol.engineMissingHint":
+    "The engine no longer has this volume, so no box can mount it. A shared tools volume is recreated when a box needs it. Restore any other one in the engine, or delete it here.",
+  "vol.ownerMissing": "Owner box deleted",
+  "vol.ownerMissingHint":
+    "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it.",
   "vol.defaultYes": "Default",
   "vol.addNfs": "Add NFS",
   "vol.addPath": "Add path",

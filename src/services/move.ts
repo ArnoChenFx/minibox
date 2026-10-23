@@ -13,7 +13,14 @@ import { type PlannedRebuild, REBUILD_LOSES } from "../specs/plan";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
-import { assertVolumesPresent, findSharedTools, labelsFor, mountedByAnotherBox } from "../volumes/engine";
+import {
+  assertVolumesPresent,
+  findSharedTools,
+  healSharedTools,
+  isSharedTools,
+  labelsFor,
+  mountedByAnotherBox,
+} from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { nfsDriverOpts } from "../volumes/pools";
 import { createIndependentVolume, freeName, materialize, removeEngine } from "../volumes/provision";
@@ -168,10 +175,14 @@ async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, rev
   const image = await sourceImage(from, spec.template.image);
   const transfer = await needsImage(to, spec.template.image, image);
   assertSecretsSet(to.secrets, spec.env);
-  await assertVolumesPresent(
-    from,
-    spec.mounts.map((mount) => mount.volume),
-  );
+  // A move never reads the source's shared tools volume, so a lost one is not refused here.
+  const sourceVolumes = spec.mounts
+    .map((mount) => mount.volume)
+    .filter((volume) => {
+      const record = from.volumes.findByEngine(from.host.id, volume);
+      return !record || !isSharedTools(from, record);
+    });
+  await assertVolumesPresent(from, sourceVolumes);
   const volumes = volumePlan(from, to, spec);
   await assertPoolsReachable(
     to,
@@ -515,6 +526,7 @@ async function sharedToolsOn(
 ): Promise<VolumeRecord> {
   const existing = findSharedTools(host, source.pool);
   if (existing) {
+    await healSharedTools(host, existing, known);
     await assertVolumesPresent(host, [existing.engineName]);
     return existing;
   }

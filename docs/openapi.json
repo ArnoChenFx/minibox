@@ -11702,6 +11702,14 @@
                           },
                           "rwMounts": {
                             "type": "number"
+                          },
+                          "engineMissing": {
+                            "type": "boolean",
+                            "description": "The engine no longer has this volume, so no box can mount it. A shared tools volume is recreated when a box needs it. Other volumes must be restored in the engine or deleted."
+                          },
+                          "ownerMissing": {
+                            "type": "boolean",
+                            "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
                           }
                         },
                         "required": [
@@ -11723,7 +11731,9 @@
                           "createdAt",
                           "mounts",
                           "unattached",
-                          "rwMounts"
+                          "rwMounts",
+                          "engineMissing",
+                          "ownerMissing"
                         ],
                         "additionalProperties": false
                       }
@@ -12072,6 +12082,14 @@
                         },
                         "rwMounts": {
                           "type": "number"
+                        },
+                        "engineMissing": {
+                          "type": "boolean",
+                          "description": "The engine no longer has this volume, so no box can mount it. A shared tools volume is recreated when a box needs it. Other volumes must be restored in the engine or deleted."
+                        },
+                        "ownerMissing": {
+                          "type": "boolean",
+                          "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
                         }
                       },
                       "required": [
@@ -12093,7 +12111,9 @@
                         "createdAt",
                         "mounts",
                         "unattached",
-                        "rwMounts"
+                        "rwMounts",
+                        "engineMissing",
+                        "ownerMissing"
                       ],
                       "additionalProperties": false
                     }
@@ -12425,6 +12445,14 @@
                         },
                         "rwMounts": {
                           "type": "number"
+                        },
+                        "engineMissing": {
+                          "type": "boolean",
+                          "description": "The engine no longer has this volume, so no box can mount it. A shared tools volume is recreated when a box needs it. Other volumes must be restored in the engine or deleted."
+                        },
+                        "ownerMissing": {
+                          "type": "boolean",
+                          "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
                         }
                       },
                       "required": [
@@ -12446,7 +12474,9 @@
                         "createdAt",
                         "mounts",
                         "unattached",
-                        "rwMounts"
+                        "rwMounts",
+                        "engineMissing",
+                        "ownerMissing"
                       ],
                       "additionalProperties": false
                     }
@@ -15016,6 +15046,14 @@
                         },
                         "rwMounts": {
                           "type": "number"
+                        },
+                        "engineMissing": {
+                          "type": "boolean",
+                          "description": "The engine no longer has this volume, so no box can mount it. A shared tools volume is recreated when a box needs it. Other volumes must be restored in the engine or deleted."
+                        },
+                        "ownerMissing": {
+                          "type": "boolean",
+                          "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
                         }
                       },
                       "required": [
@@ -15037,7 +15075,9 @@
                         "createdAt",
                         "mounts",
                         "unattached",
-                        "rwMounts"
+                        "rwMounts",
+                        "engineMissing",
+                        "ownerMissing"
                       ],
                       "additionalProperties": false
                     }
@@ -15415,6 +15455,14 @@
                         },
                         "rwMounts": {
                           "type": "number"
+                        },
+                        "engineMissing": {
+                          "type": "boolean",
+                          "description": "The engine no longer has this volume, so no box can mount it. A shared tools volume is recreated when a box needs it. Other volumes must be restored in the engine or deleted."
+                        },
+                        "ownerMissing": {
+                          "type": "boolean",
+                          "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
                         }
                       },
                       "required": [
@@ -15436,7 +15484,9 @@
                         "createdAt",
                         "mounts",
                         "unattached",
-                        "rwMounts"
+                        "rwMounts",
+                        "engineMissing",
+                        "ownerMissing"
                       ],
                       "additionalProperties": false
                     }
@@ -30452,6 +30502,14 @@
                     },
                     "rwMounts": {
                       "type": "number"
+                    },
+                    "engineMissing": {
+                      "type": "boolean",
+                      "description": "The engine no longer has this volume, so no box can mount it. A shared tools volume is recreated when a box needs it. Other volumes must be restored in the engine or deleted."
+                    },
+                    "ownerMissing": {
+                      "type": "boolean",
+                      "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
                     }
                   },
                   "required": [
@@ -30473,7 +30531,9 @@
                     "createdAt",
                     "mounts",
                     "unattached",
-                    "rwMounts"
+                    "rwMounts",
+                    "engineMissing",
+                    "ownerMissing"
                   ],
                   "additionalProperties": false
                 },

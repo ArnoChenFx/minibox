@@ -32,6 +32,11 @@ export default {
   "vol.unreachable": "存储不可达",
   "vol.unknown": "未知",
   "vol.lowSpace": "空间不足",
+  "vol.engineMissing": "引擎中的卷缺失",
+  "vol.engineMissingHint":
+    "引擎中已没有此卷，因此任何 Box 都无法挂载它。共享的 tools 卷会在 Box 需要时重新创建。其他卷请在引擎中恢复，或在此删除。",
+  "vol.ownerMissing": "所属 Box 已删除",
+  "vol.ownerMissingHint": "删除拥有此卷的 Box 时保留了它。删除此卷可释放空间，但仍被 Box 挂载时不能删除。",
   "vol.defaultYes": "默认",
   "vol.addNfs": "添加 NFS",
   "vol.addPath": "添加路径",

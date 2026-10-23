@@ -254,6 +254,8 @@ export default {
   "err.volume_in_use": "Volume {volume} is already mounted by another box.",
   "err.volume_missing":
     "Volume {volume} no longer exists in the engine. MiniBox does not recreate it. Restore the engine volume, or delete the volume record if you no longer need it.",
+  "err.volume_tools_recreated":
+    "The engine had lost the shared tools volume {volume}. MiniBox recreated it. On a local pool it is empty, so its tools must be installed again.",
   "err.network_reserved": "Boxes cannot join network {network}. Host, none and container networks are refused.",
   "err.network_not_managed": "Boxes cannot join network {network}. Boxes join {managed}.",
   "err.egress_mode_invalid": "Egress must be open, none or proxy-only, not {mode}.",

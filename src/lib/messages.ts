@@ -310,6 +310,8 @@ export const MESSAGES = {
   volume_in_use: "Volume {volume} is already mounted by another box.",
   volume_missing:
     "Volume {volume} no longer exists in the engine. MiniBox does not recreate it. Restore the engine volume, or delete the volume record if you no longer need it.",
+  volume_tools_recreated:
+    "The engine had lost the shared tools volume {volume}. MiniBox recreated it. On a local pool it is empty, so its tools must be installed again.",
   network_reserved: "Boxes cannot join network {network}. Host, none and container networks are refused.",
   network_not_managed: "Boxes cannot join network {network}. Boxes join {managed}.",
   egress_mode_invalid: "Egress must be open, none or proxy-only, not {mode}.",

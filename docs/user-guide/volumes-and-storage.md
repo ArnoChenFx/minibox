@@ -58,6 +58,16 @@ Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#r
 
 When you delete a box, you can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
 
+## When the engine loses a volume
+
+MiniBox records each volume, and the engine keeps its data. If the engine loses a volume that MiniBox still has a record for, the **Volumes** tab shows **Engine volume missing** on that volume.
+
+The shared **Tools** volume is recreated for you. When a box is created, started, rebuilt or moved to a host, when a tool is installed or listed, and at startup, MiniBox recreates the tools volume under the same name. The activity list shows **Recreated volume**. On a local pool the volume comes back empty, so the tools that were on it are gone and show as not installed. To install them again, click **Install missing** on a box's **Tools** tab. On an NFS or path pool the volume reuses its directory on the share, so the tools on it are still there.
+
+The workspace, home and cache volumes hold your data, so MiniBox does not recreate them. A box that mounts one of them does not start until you restore the engine volume. If you no longer need that data, delete the box and keep its volumes, then delete the volume. Deleting a volume the engine lost keeps no copy, because the engine no longer has its data.
+
+When you delete a box and keep its volumes, those volumes show **Owner box deleted**. Their data is still there. Delete a volume you no longer need to free its space. MiniBox does not delete a volume that a box still mounts.
+
 ## Delete several volumes, or clean up orphans
 
 On the **Volumes** tab, tick the volumes to delete. The header box selects every volume that the search shows. A volume that a box mounts, and the shared tools volume, cannot be selected. Click **Delete selected**. The dialog shows what happens to each volume before you confirm, and **Delete without keeping a copy** applies to the whole selection. A cache volume keeps no copy, so once deleted it cannot be restored. MiniBox checks each volume again as it deletes it: one that a box or container started using in the meantime, the shared tools volume and MiniBox's system volumes are never deleted.

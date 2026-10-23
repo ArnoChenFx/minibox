@@ -1,3 +1,4 @@
+import { ActivityLog } from "../activity";
 import type { BoxProfile } from "../box-profile";
 import type { SnapshotEngine } from "../checkpoints/engine";
 import type { CheckpointPolicy } from "../checkpoints/policy";
@@ -112,6 +113,8 @@ export interface HostCtx {
   egress: EgressLog;
   /** The source lists this host's firewall was last set to, for the egress block. Each host keeps its own. */
   firewall: EgressFirewall;
+  /** The recent-activity feed the console shows. Services write to it for changes the operation registry does not record. */
+  activity: ActivityLog;
   /** CPU and memory a single box may take on this host. The local host reads the machine, others read the engine. */
   capacity(): Promise<HostCapacity>;
   /** True when the control plane holds more than one host. Box payloads name their host only then. */
@@ -134,6 +137,8 @@ export interface SharedStores {
   readonly egress?: EgressLog;
   /** Defaults to a store that is kept in memory. The app keeps it under `DATA_DIR`. */
   readonly firewall?: FirewallStore;
+  /** Defaults to a feed of its own. The app passes the one the console reads. */
+  readonly activity?: ActivityLog;
 }
 
 export interface HostIdentity {
@@ -161,6 +166,7 @@ export interface LocalHostOptions {
   readonly multiHost?: () => boolean;
   readonly egress?: EgressLog;
   readonly firewall?: FirewallStore;
+  readonly activity?: ActivityLog;
 }
 
 /** The host every box has when no other is configured. Its runtime is passed in, so a test can supply a fake. */
@@ -216,6 +222,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
     diskPolicy: { minFreePercent: cfg.hostDiskMinFreePercent },
     egress: shared.egress ?? new EgressLog(() => undefined),
     firewall: new EgressFirewall(identity.id, shared.firewall ?? new FirewallStore(null)),
+    activity: shared.activity ?? new ActivityLog(),
     capacity: async () => {
       if (identity.transport !== "local") return engineCapacity(runtime);
       const metrics = await ctx.monitor.snapshot();
@@ -261,6 +268,7 @@ export function createLocalHost(
       multiHost: options.multiHost ?? (() => false),
       egress: options.egress,
       firewall: options.firewall,
+      activity: options.activity,
     },
     {
       id: options.id ?? LOCAL_HOST_ID,
