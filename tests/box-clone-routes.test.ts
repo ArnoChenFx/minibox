@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import type { HelperResult, HelperSpec } from "../src/runtime";
+import type { ExecSpec, HelperResult, HelperSpec } from "../src/runtime";
 import { silenceLogs } from "./support/app";
 import { call, finishedTask, type Harness, mint, refused, startHarness } from "./support/tokens";
 
@@ -33,6 +33,25 @@ const repo = { url: "https://github.com/org/app.git", branch: "main" };
 async function boxNames(): Promise<string[]> {
   const listed = await call(harness.base, "/api/boxes");
   return (listed.json.boxes ?? []).map((box) => box.name);
+}
+
+function isClone(spec: HelperSpec): boolean {
+  return spec.cmd[2]?.includes("credential.helper=") ?? false;
+}
+
+/** How many times the box's init session was started. */
+function launchesOf(containerId: string): number {
+  return harness.runtime
+    .callsTo("startExec")
+    .map((call) => call.args as [string, ExecSpec])
+    .filter(([id, spec]) => id === containerId && spec.cmd.includes("new-session")).length;
+}
+
+async function startupOf(
+  boxId: string,
+): Promise<{ status: string; command: string | null; error: { key: string } | null }> {
+  const reply = await call(harness.base, `/api/boxes/${boxId}/startup-command`);
+  return reply.json as unknown as { status: string; command: string | null; error: { key: string } | null };
 }
 
 describe("creating a box with a repository", () => {
@@ -151,5 +170,46 @@ describe("creating a box with a repository", () => {
       body: { name: "public", cpus: 1, memoryMb: 256, repo: { url: "https://github.com/org/public.git" } },
     });
     expect(reply.status).toBe(201);
+  });
+});
+
+describe("a startup command on a box created with a repository", () => {
+  test("the command starts once the clone succeeds, and reads as cloning until then", async () => {
+    const held = harness.runtime.hold("runHelper", (args) => isClone(args[0] as HelperSpec));
+    const created = await call(harness.base, "/api/boxes", {
+      body: { name: "alpha", cpus: 1, memoryMb: 256, repo, startupCommand: "npm run dev" },
+    });
+    expect(created.status).toBe(201);
+    const taskId = created.json.clone?.taskId ?? "";
+    const id = created.json.box?.id ?? "";
+    const boxId = created.json.box?.boxId ?? "";
+
+    expect(await startupOf(boxId)).toMatchObject({ status: "cloning", command: "npm run dev", error: null });
+    expect(launchesOf(id)).toBe(0);
+
+    held.release();
+    expect((await finishedTask(harness.base, taskId)).status).toBe("succeeded");
+    await harness.app.hosts.get().startup.settle();
+    expect(launchesOf(id)).toBe(1);
+    expect(await startupOf(boxId)).toMatchObject({ status: "running", command: "npm run dev", error: null });
+  });
+
+  test("a clone that fails leaves the command unstarted, and the status says the clone failed", async () => {
+    answer = () => ({ exitCode: 128, logs: "fatal: repository 'https://github.com/org/app.git/' not found\n" });
+    const created = await call(harness.base, "/api/boxes", {
+      body: { name: "beta", cpus: 1, memoryMb: 256, repo, startupCommand: "npm run dev" },
+    });
+    const id = created.json.box?.id ?? "";
+    const boxId = created.json.box?.boxId ?? "";
+
+    expect((await finishedTask(harness.base, created.json.clone?.taskId ?? "")).status).toBe("failed");
+    await harness.app.hosts.get().startup.settle();
+
+    expect(launchesOf(id)).toBe(0);
+    expect(await startupOf(boxId)).toMatchObject({
+      status: "failed",
+      command: "npm run dev",
+      error: { key: "startup_command_clone_failed" },
+    });
   });
 });

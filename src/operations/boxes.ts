@@ -31,6 +31,7 @@ import { placeBox } from "../services/placement";
 import { rebuildBox, rebuildWithSafety } from "../services/rebuild";
 import { preRebuildSafety } from "../services/safety";
 import { assertSelfTokenHost } from "../services/self-token";
+import { finishClone } from "../services/startup";
 import { templateSetupOf } from "../services/template-builds";
 import { deleteBoxToTrash } from "../services/trash";
 import { hasRebuildFields } from "../specs/plan";
@@ -206,7 +207,15 @@ const setupOperation = defineOperation<typeof SETUP_INPUT, typeof OkSchema, Box>
   run: async ({ host, task, previewBaseDomain }, input) => {
     if (!task) throw new Error("box.setup runs as a task");
     const log = (text: string) => task.log(text);
-    if (input.repo) await cloneIntoWorkspace(host, input.id, input.repo, log);
+    if (input.repo) {
+      try {
+        await cloneIntoWorkspace(host, input.id, input.repo, log);
+      } catch (e) {
+        await finishClone(host, input.id, msg("startup_command_clone_failed"));
+        throw e;
+      }
+      await finishClone(host, input.id, null);
+    }
     if (input.init?.forwardPorts?.length) {
       await forwardBoxPorts(host, input.id, input.init.forwardPorts, previewBaseDomain ?? null, log);
     }
@@ -346,6 +355,7 @@ export const boxCreate = defineOperation({
           ttlSec: ttlFor(principal, input.ttlSec),
           tools: input.tools,
           startupCommand: input.startupCommand,
+          awaitsClone: input.repo !== undefined,
           egress: input.egress,
           selfToken: input.selfToken,
         },
@@ -354,12 +364,18 @@ export const boxCreate = defineOperation({
     }));
     const started = sync === undefined ? created : { ...created, sync };
     if (input.repo === undefined && init === null) return started;
-    if (!ctx.startTask) throw new Error("box.create needs the executor to start a setup task");
-    const { taskId } = await ctx.startTask(
-      setupOperation,
-      { id: created.box.boxId, repo: input.repo, init: init ?? undefined },
-      created.box,
-    );
+    let taskId: string;
+    try {
+      if (!ctx.startTask) throw new Error("box.create needs the executor to start a setup task");
+      ({ taskId } = await ctx.startTask(
+        setupOperation,
+        { id: created.box.boxId, repo: input.repo, init: init ?? undefined },
+        created.box,
+      ));
+    } catch (e) {
+      if (input.repo !== undefined) await finishClone(host, created.box.boxId, msg("startup_command_clone_failed"));
+      throw e;
+    }
     const setup = { taskId };
     return input.repo === undefined ? { ...started, setup } : { ...started, clone: setup, setup };
   },

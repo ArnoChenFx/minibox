@@ -9060,12 +9060,13 @@
                       "type": "string",
                       "enum": [
                         "none",
+                        "cloning",
                         "waiting",
                         "running",
                         "exited",
                         "failed"
                       ],
-                      "description": "none: no command. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error."
+                      "description": "none: no command. cloning: the repository clone has not ended, and the command starts when it has. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error."
                     },
                     "exitCode": {
                       "anyOf": [
@@ -9327,12 +9328,13 @@
                       "type": "string",
                       "enum": [
                         "none",
+                        "cloning",
                         "waiting",
                         "running",
                         "exited",
                         "failed"
                       ],
-                      "description": "none: no command. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error."
+                      "description": "none: no command. cloning: the repository clone has not ended, and the command starts when it has. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error."
                     },
                     "exitCode": {
                       "anyOf": [
@@ -9599,12 +9601,13 @@
                       "type": "string",
                       "enum": [
                         "none",
+                        "cloning",
                         "waiting",
                         "running",
                         "exited",
                         "failed"
                       ],
-                      "description": "none: no command. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error."
+                      "description": "none: no command. cloning: the repository clone has not ended, and the command starts when it has. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error."
                     },
                     "exitCode": {
                       "anyOf": [
@@ -9863,12 +9866,13 @@
                       "type": "string",
                       "enum": [
                         "none",
+                        "cloning",
                         "waiting",
                         "running",
                         "exited",
                         "failed"
                       ],
-                      "description": "none: no command. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error."
+                      "description": "none: no command. cloning: the repository clone has not ended, and the command starts when it has. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error."
                     },
                     "exitCode": {
                       "anyOf": [

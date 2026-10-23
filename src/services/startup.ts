@@ -2,11 +2,20 @@ import type { HostCtx } from "../host/registry";
 import { AppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg, type Msg } from "../lib/messages";
-import { digestOf, encodeCommand, INIT_SESSION, type PaneState, RUNNER_SCRIPT, SWEEP_SCRIPT } from "../startup/command";
+import type { BoxSpec, StartupFailure } from "../specs/types";
+import {
+  digestOf,
+  encodeCommand,
+  INIT_SESSION,
+  type PaneState,
+  RUNNER_SCRIPT,
+  SWEEP_SCRIPT,
+  TREE_SWEEP_SCRIPT,
+} from "../startup/command";
 import { classifyTmuxFailure, paneLines, paneTarget, sessionTarget } from "../tmux/format";
 import { type BoxRun, runInBox, runTmux, unsupportedImage, within } from "./tmux-exec";
 
-/** How long a start waits for its startup command to launch. A launch still running after this is recorded and left to finish. */
+/** How long a request that runs a launch itself waits for it. A launch still running after this finishes in the background. */
 export const STARTUP_LAUNCH_BUDGET_MS = 5_000;
 /** Rows of history a status reads. This is tmux's default, so the start marker of a long run stays in reach. */
 const HISTORY_LINES = 2000;
@@ -15,45 +24,169 @@ const PANE_FORMAT = "#{pane_dead} #{pane_dead_status}";
 const PANE_STATE_RE = /^([01])(?: (\d+))?$/;
 
 /**
- * Why a box's startup command did not start, by container id. It lasts until the next launch or change of the command, and
- * it is not stored: a control plane that restarts forgets it, and the next start tries again.
+ * The launches of one host that have not ended. Each box's launches run one after another, so a launch never overlaps the
+ * one before it, and a launch that outlives its request keeps the box's later launches waiting. `settle` waits for all of
+ * them. A clone is tracked in memory only, since a clone cannot outlive the process that runs it.
  */
 export class StartupLaunches {
-  private readonly failures = new Map<string, Msg>();
+  private readonly pending = new Set<Promise<unknown>>();
+  private readonly chains = new Map<string, Promise<void>>();
+  private readonly cloning = new Set<string>();
 
-  fail(containerId: string, failure: Msg): void {
-    this.failures.set(containerId, failure);
+  track<T>(work: Promise<T>): Promise<T> {
+    this.pending.add(work);
+    work.finally(() => this.pending.delete(work)).catch(() => undefined);
+    return work;
   }
 
-  clear(containerId: string): void {
-    this.failures.delete(containerId);
+  /** Runs `body` once the box's earlier launch has ended. The result is the body's, and it rejects if the body does. */
+  launch(boxId: string, body: () => Promise<void>): Promise<void> {
+    const earlier = this.chains.get(boxId) ?? Promise.resolve();
+    const run = this.track(earlier.then(body));
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.chains.set(boxId, tail);
+    void tail.then(() => {
+      if (this.chains.get(boxId) === tail) this.chains.delete(boxId);
+    });
+    return run;
   }
 
-  failureOf(containerId: string): Msg | null {
-    return this.failures.get(containerId) ?? null;
+  /** Resolves once no launch is left, including those that launches started in turn. */
+  async settle(): Promise<void> {
+    while (this.pending.size > 0) await Promise.allSettled(this.pending);
+  }
+
+  beginClone(boxId: string): void {
+    this.cloning.add(boxId);
+  }
+
+  endClone(boxId: string): void {
+    this.cloning.delete(boxId);
+  }
+
+  isCloning(boxId: string): boolean {
+    return this.cloning.has(boxId);
   }
 }
 
+/** Whether a box has a launch to make: a command, or a clone its command waits for. */
+export function hasStartup(spec: BoxSpec): boolean {
+  return spec.startupCommand !== undefined || spec.startupAwaitsClone === true;
+}
+
 /**
- * Starts the box's startup command in its init session once the container has started. The runs of an earlier start are
- * ended first, so one command runs at a time. It never throws and never waits longer than the budget, so a box starts
- * whatever the command does; a failure is kept for the status instead.
+ * Starts a box's command in the background, once the box's power lock is free, and returns at once. A create, a clone that
+ * ends, an engine start and a reconcile use it, so none of them waits for the command. A failure is recorded on the box.
  */
-export async function launchStartup(
-  host: HostCtx,
-  containerId: string,
-  command: string | undefined,
-  budgetMs = STARTUP_LAUNCH_BUDGET_MS,
-): Promise<void> {
-  if (command === undefined) return;
-  const outcome = await within(launchOnce(host, containerId, command), budgetMs);
-  if (outcome === undefined) {
-    host.startup.fail(containerId, msg("startup_command_timeout", { max: budgetMs / 1000 }));
-  } else if (outcome === null) {
-    host.startup.clear(containerId);
-  } else {
-    host.startup.fail(containerId, outcome);
+export function scheduleStartup(host: HostCtx, boxId: string): void {
+  host.startup.track(host.power.run(boxId, () => ensureStartup(host, boxId)));
+}
+
+/**
+ * Starts a box's command and waits for the launch at most `budgetMs`. A start or a restart calls it while it holds the box's
+ * power lock, so it does not take the lock itself. A launch still going at the budget finishes in the background.
+ */
+export async function startupNow(host: HostCtx, boxId: string, budgetMs = STARTUP_LAUNCH_BUDGET_MS): Promise<void> {
+  await within(host.startup.track(ensureStartup(host, boxId)), budgetMs);
+}
+
+/**
+ * Runs the command of a running box unless its init session already exists. A launch makes the session, and only a new run
+ * or the container stopping ends it, so a second start of the same container finds it and does nothing. Docker can start a
+ * container without MiniBox, which this covers too.
+ */
+async function ensureStartup(host: HostCtx, boxId: string): Promise<void> {
+  try {
+    const spec = host.specs.read(boxId);
+    if (!spec || spec.lifecycle.desired !== "running") return;
+    if (spec.startupAwaitsClone) {
+      await awaitClone(host, boxId);
+      return;
+    }
+    if (spec.startupCommand === undefined) return;
+    await host.startup.launch(boxId, () => launchIfMissing(host, boxId));
+  } catch (e) {
+    log.warn("startup.ensure_failed", { id: boxId, error: e instanceof Error ? e.message : String(e) });
   }
+}
+
+async function launchIfMissing(host: HostCtx, boxId: string): Promise<void> {
+  const spec = host.specs.read(boxId);
+  if (!spec || spec.lifecycle.desired !== "running" || spec.startupCommand === undefined) return;
+  if (spec.startupAwaitsClone) return;
+  if (!(await isRunning(host, spec.containerId))) return;
+  try {
+    if (await hasSession(host, spec.containerId)) return;
+  } catch (e) {
+    await recordLaunch(host, boxId, spec.containerId, failureOf(e));
+    return;
+  }
+  await relaunch(host, boxId, spec.containerId, spec.startupCommand, spec.profile);
+}
+
+/**
+ * A box whose clone has not ended waits for it. A clone that is still marked on the spec, with no clone running in this
+ * process, was cut short by a restart, so the status says so and the command does not start by itself.
+ */
+async function awaitClone(host: HostCtx, boxId: string): Promise<void> {
+  if (host.startup.isCloning(boxId)) return;
+  await host.specs.exclusive(async () => {
+    const spec = host.specs.read(boxId);
+    if (!spec?.startupAwaitsClone || host.startup.isCloning(boxId)) return;
+    const next: BoxSpec = {
+      ...spec,
+      startupFailure: failureRecord(spec.containerId, msg("startup_command_clone_unfinished")),
+    };
+    delete next.startupAwaitsClone;
+    host.specs.write(next);
+  });
+}
+
+/**
+ * Ends a box's clone and releases its command. A clone that worked starts the command, now when the box runs. A clone that
+ * failed keeps its reason for the status, and the command waits for the box's next start.
+ */
+export async function finishClone(host: HostCtx, boxId: string, failure: Msg | null): Promise<void> {
+  const awaited = await host.specs.exclusive(async () => {
+    host.startup.endClone(boxId);
+    const spec = host.specs.read(boxId);
+    if (!spec?.startupAwaitsClone) return false;
+    const next: BoxSpec = { ...spec };
+    delete next.startupAwaitsClone;
+    delete next.startupFailure;
+    if (failure !== null) next.startupFailure = failureRecord(spec.containerId, failure);
+    host.specs.write(next);
+    return true;
+  });
+  if (awaited && failure === null) scheduleStartup(host, boxId);
+}
+
+/**
+ * Runs the box's command now, ending the run before it, even when a run is already going. The caller holds the box's power
+ * lock. The wait is bounded by the budget: a launch still going then finishes in the background, and its outcome is still
+ * recorded.
+ */
+export async function runNow(host: HostCtx, boxId: string, budgetMs = STARTUP_LAUNCH_BUDGET_MS): Promise<void> {
+  const spec = host.specs.read(boxId);
+  if (spec?.startupCommand === undefined || spec.startupAwaitsClone) return;
+  await within(
+    host.startup.launch(boxId, async () => {
+      const current = host.specs.read(boxId);
+      if (current?.startupCommand === undefined) return;
+      await relaunch(host, boxId, current.containerId, current.startupCommand, current.profile);
+    }),
+    budgetMs,
+  );
+}
+
+/** The failure a status reports for a container: the one recorded for that container, or none. */
+export function startupFailureOf(spec: BoxSpec | null, containerId: string): Msg | null {
+  const failure = spec?.startupFailure;
+  if (failure?.containerId !== containerId) return null;
+  return msg(failure.key, failure.params);
 }
 
 /**
@@ -101,9 +234,41 @@ export function failureOf(e: unknown): Msg {
   return msg("startup_command_failed", { detail: e instanceof Error ? firstLine(e.message) : String(e) });
 }
 
-async function launchOnce(host: HostCtx, containerId: string, command: string): Promise<Msg | null> {
+/**
+ * Starts the command in a new init session and records the outcome on the spec, so a restarted server still says why it did
+ * not start. It never rejects.
+ */
+async function relaunch(
+  host: HostCtx,
+  boxId: string,
+  containerId: string,
+  command: string,
+  profile: BoxSpec["profile"],
+): Promise<void> {
   try {
-    await endRuns(host, containerId);
+    const failure = await launchOnce(host, containerId, command, stopAsOf(profile));
+    await recordLaunch(host, boxId, containerId, failure);
+  } catch (e) {
+    log.warn("startup.record_failed", { id: boxId, container: containerId, error: String(e) });
+  }
+}
+
+/**
+ * The user the run's processes are ended as. A standard or relaxed box lets `sudo` start a process only root can signal, so
+ * the sweep runs as root there. A strict box cannot escalate, so its processes all belong to `dev`.
+ */
+function stopAsOf(profile: BoxSpec["profile"]): "dev" | "root" {
+  return profile === "strict" ? "dev" : "root";
+}
+
+async function launchOnce(
+  host: HostCtx,
+  containerId: string,
+  command: string,
+  stopAs: "dev" | "root",
+): Promise<Msg | null> {
+  try {
+    await endRuns(host, containerId, stopAs);
     const run = await runTmux(host, containerId, launchArgs(command));
     if (run.code === 0) return null;
     if (classifyTmuxFailure(run.code, run.stderr) === "unrunnable") return msg("session_image_unsupported");
@@ -116,12 +281,65 @@ async function launchOnce(host: HostCtx, containerId: string, command: string): 
 }
 
 /**
- * Ends the init session and any process an earlier run left behind. The sweep finds those by the variable the runner
- * exports, so a process that detached from the session (for example with `setsid`) is ended too.
+ * Ends the run before a new one. Its process tree goes first, found from its pane while the pane still exists, and it is
+ * signalled as `stopAs` so a process a `sudo` started is included. Then the init session goes, and last the processes that
+ * carry the runner's variable, which finds a process that detached from the tree with `setsid`.
  */
-async function endRuns(host: HostCtx, containerId: string): Promise<void> {
+async function endRuns(host: HostCtx, containerId: string, stopAs: "dev" | "root"): Promise<void> {
+  const anchor = await paneProcessOf(host, containerId);
+  if (anchor !== null) {
+    await runInBox(host, containerId, ["sh", "-c", TREE_SWEEP_SCRIPT, "minibox-sweep", String(anchor)], stopAs);
+  }
   await runTmux(host, containerId, ["kill-session", "-t", sessionTarget(INIT_SESSION)]);
   await runInBox(host, containerId, ["sh", "-c", SWEEP_SCRIPT]);
+}
+
+/** The process id of the init session's pane. tmux keeps it on a pane whose command has ended, while the pane is kept. */
+async function paneProcessOf(host: HostCtx, containerId: string): Promise<number | null> {
+  const probe = await runTmux(host, containerId, [
+    "display-message",
+    "-p",
+    "-t",
+    paneTarget(INIT_SESSION),
+    "#{pane_pid}",
+  ]);
+  if (probe.code !== 0) return null;
+  const pid = Number(probe.stdout.trim());
+  return Number.isInteger(pid) && pid > 1 ? pid : null;
+}
+
+async function hasSession(host: HostCtx, containerId: string): Promise<boolean> {
+  const probe = await runTmux(host, containerId, ["has-session", "-t", sessionTarget(INIT_SESSION)]);
+  return probe.code === 0;
+}
+
+async function isRunning(host: HostCtx, containerId: string): Promise<boolean> {
+  try {
+    return (await host.runtime.inspectContainer(containerId)).running;
+  } catch {
+    return false;
+  }
+}
+
+async function recordLaunch(host: HostCtx, boxId: string, containerId: string, failure: Msg | null): Promise<void> {
+  await host.specs.exclusive(async () => {
+    const spec = host.specs.read(boxId);
+    if (!spec || spec.containerId !== containerId) return;
+    if (failure === null && spec.startupFailure === undefined) return;
+    const next: BoxSpec = { ...spec };
+    delete next.startupFailure;
+    if (failure !== null) next.startupFailure = failureRecord(containerId, failure);
+    host.specs.write(next);
+  });
+}
+
+function failureRecord(containerId: string, failure: Msg): StartupFailure {
+  return {
+    containerId,
+    key: failure.key,
+    ...(failure.params === undefined ? {} : { params: failure.params }),
+    at: new Date().toISOString(),
+  };
 }
 
 /**

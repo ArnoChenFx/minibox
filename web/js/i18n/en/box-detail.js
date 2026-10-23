@@ -133,6 +133,7 @@ export default {
   "sc.applyNow": "Run it now as well",
   "sc.applyNowHelp": "The box is running, so the new command starts at once.",
   "sc.status.none": "Not set",
+  "sc.status.cloning": "Waiting for the repository clone",
   "sc.status.waiting": "Waiting for the next start",
   "sc.status.running": "Running",
   "sc.status.exited": "Exited with code {code}",

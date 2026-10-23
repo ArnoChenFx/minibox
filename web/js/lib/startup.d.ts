@@ -5,7 +5,7 @@ export type StartupProblem = "empty" | "too_long" | "control";
 
 /** The status a box's startup command reports, as the REST API returns it. */
 export interface StartupStateLike {
-  status: "none" | "waiting" | "running" | "exited" | "failed";
+  status: "none" | "cloning" | "waiting" | "running" | "exited" | "failed";
   command?: string | null;
   exitCode?: number | null;
 }
