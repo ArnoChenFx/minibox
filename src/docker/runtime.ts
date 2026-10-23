@@ -7,6 +7,7 @@ import { createEngine } from "./engine";
 import { eventMethods } from "./events";
 import { execMethods } from "./exec";
 import { helperMethods } from "./helpers";
+import { hostFirewallMethods } from "./host-firewall";
 import { imageMethods } from "./images";
 import { networkMethods } from "./networks";
 import { systemMethods } from "./system";
@@ -48,6 +49,7 @@ export function createDockerRuntime(target: string | EngineTarget): Runtime {
     ...imageMethods(engine),
     ...volumeMethods(engine),
     ...networkMethods(engine),
+    ...hostFirewallMethods(engine),
     ...helperMethods(engine),
   };
 }

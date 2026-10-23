@@ -11,9 +11,11 @@ Commands:
   minibox box ls [--json]              List boxes
   minibox box list [--json]            Same as box ls
   minibox box create <name> [--template IMAGE] [--cpus N] [--memory MB] [--profile P]
+                       [--egress open|none|proxy-only [--egress-preset NAME] [--egress-domain HOST]...]
                        [--repo URL [--branch BRANCH] [--secret NAME]]
                        [--startup-command TEXT | --startup-command-stdin] [--self-token] [--no-wait] [--json]
                                        Create and start a box. --repo clones into /workspace on the first create.
+                                       A devcontainer.json template runs its postCreateCommand once, after the clone.
                                        A startup command runs at every start of the box. --self-token gives the box's
                                        agent a token for this box alone, in /run/minibox/self-token.
   minibox box startup-command get <box> [--json]

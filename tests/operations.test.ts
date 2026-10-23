@@ -1211,6 +1211,7 @@ describe("projections", () => {
       "cpus",
       "memoryMb",
       "profile",
+      "egress",
       "mounts",
       "env",
       "idleTimeoutSec",

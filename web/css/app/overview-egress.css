@@ -1,0 +1,13 @@
+/* Network egress card: the tier badge and what it means share a row; the allowlist wraps as monospace tags. */
+.egress-tier {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 13px;
+}
+.egress-hosts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

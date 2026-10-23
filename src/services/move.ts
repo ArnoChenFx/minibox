@@ -26,6 +26,7 @@ import { beginMove } from "./moving";
 import { assertFresh, containerSpec, movedTag } from "./rebuild";
 import { provisionSelfToken } from "./self-token";
 import { launchStartup } from "./startup";
+import { copyRecipe } from "./template-builds";
 
 /** What a move keeps. Volumes are copied to the target, or attached again where the storage is shared. */
 export const MOVE_KEEPS = ["id", "name", "volumes", "env", "history"] as const;
@@ -155,6 +156,7 @@ async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, rev
   if (spec.hostId !== from.host.id) throw notFound(msg("box_not_found"));
   if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
   if (to.host.id === from.host.id) throw badRequest(msg("move_same_host", { host: to.host.id }), { field: "host" });
+  if (spec.egress) throw conflict(msg("egress_move_refused", { box: box.name, mode: spec.egress.mode }));
   if (from.host.transport === "agent" || to.host.transport === "agent") {
     throw new AppError(501, "unsupported", msg("move_agent_unsupported"));
   }
@@ -305,6 +307,7 @@ async function runMove(
       say(`Sending image ${spec.template.image} to ${to.host.id}.`);
       await sendImage(from, to, spec.template.image, plan.image.id, progress?.signal);
     }
+    copyRecipe(from, to, spec.template.image, plan.image.id);
     throwIfCancelled(progress);
     if (plan.running) {
       say("Pausing the box while its volumes are copied.");
@@ -324,6 +327,7 @@ async function runMove(
       mounts,
       env: spec.env,
       network: spec.network,
+      egress: null,
       profile: spec.profile,
       containerName: name,
     };

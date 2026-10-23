@@ -39,6 +39,7 @@ For the person who installs and runs MiniBox.
 - [Upgrades](admin/upgrades.md): move to a newer release.
 - [Backups](admin/backups.md): back up MiniBox while it runs, restore it, and keep copies off the host.
 - [Security](admin/security.md): the trust model and the security settings.
+- [Network egress](admin/network-egress.md): what a box can reach outside the host: open, none, or a proxy with an allowlist.
 
 ## Reference
 

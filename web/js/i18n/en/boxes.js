@@ -24,6 +24,9 @@ export default {
   "act.task.cancel": "Cancelled task",
   "act.box.update": "Updated box settings",
   "act.box.clone": "Cloned repository",
+  "act.box.setup": "Set up box",
+  "cb.settingUp": "Setting up the box",
+  "cb.settingUpText": "Watch progress in the Tasks panel.",
   "act.box.startup.set": "Set startup command",
   "act.box.startup.run": "Ran startup command",
   "act.box.startup.delete": "Removed startup command",
@@ -177,6 +180,9 @@ export default {
   "cb.memory": "Memory",
   "cb.profile": "Security profile",
   "cb.profileHelp": "Applied when the box is created. Existing boxes keep the profile they were created with.",
+  "cb.egress": "Network egress",
+  "cb.egressHelp":
+    "Applied when the box is created. Changing it later is a rebuild, which previews the change and asks for confirmation first.",
   "cb.advancedSummary": "Advanced · security profile: {profile}",
   "cb.startup": "Startup command",
   "cb.startupHelp":
@@ -292,6 +298,7 @@ export default {
   "rebuild.field.env": "Environment",
   "rebuild.field.network": "Network",
   "rebuild.field.profile": "Security profile",
+  "rebuild.field.egress": "Network egress",
   "rebuild.field.containerName": "Container name",
   "reset.idleTimeout": "idle timeout",
   "reset.ttl": "TTL",

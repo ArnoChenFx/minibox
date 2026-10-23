@@ -14,6 +14,7 @@ import type { VolumeRecord } from "../volumes/types";
 import type { Box, StartOptions, EnsureResult, DeleteBoxOptions, DeleteBoxResult } from "./box-model";
 import { attachToBoxNetwork } from "./box-network";
 import { getBox } from "./box-query";
+import { prepareEgress, removeEgress, stopEgressProxies, syncHostFirewall } from "./egress";
 import { deliverSelfToken } from "./self-token";
 import { launchStartup } from "./startup";
 
@@ -87,7 +88,13 @@ export async function startLocked(host: HostCtx, box: Box, options: StartOptions
   const previousReason = (host.specs.read(box.boxId)?.lifecycle.stopReason ?? null) as StopReason | null;
   await ensureRunningStorage(host, box);
   await attachToBoxNetwork(host, box);
-  await host.runtime.startContainer(box.id);
+  await prepareEgress(host, box);
+  try {
+    await host.runtime.startContainer(box.id);
+  } catch (e) {
+    await stopProxiesOf(host, box.boxId);
+    throw e;
+  }
   await setDesired(host, box.boxId, "running", null);
   if (!box.running || !host.selfTokens.has(box.boxId)) await deliverSelfToken(host, box.boxId, box.id);
   await host.sampler.observe(box.id);
@@ -130,12 +137,18 @@ export async function wakeIfSleeping(host: HostCtx, ref: string, options: StartO
 /** Stops the box for a caller that already holds its power lock (see `locked`). */
 export async function stopLocked(host: HostCtx, box: Box, reason?: StopReason): Promise<void> {
   await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
+  await stopProxiesOf(host, box.boxId);
   host.selfTokens.revoke(box.boxId);
   const existing = host.specs.read(box.boxId)?.lifecycle.stopReason ?? null;
   // Omitted reason: keep an existing idle/ttl reason (reconcile), otherwise mark manual.
   const next: StopReason = reason ?? existing ?? "manual";
   await setDesired(host, box.boxId, "stopped", next);
   await host.sampler.observe(box.id);
+}
+
+/** A box with egress has a proxy to stop with it. A box on the default network has none, and makes no engine call. */
+async function stopProxiesOf(host: HostCtx, boxId: string): Promise<void> {
+  if (host.specs.read(boxId)?.egress) await stopEgressProxies(host, boxId);
 }
 
 export async function stopBox(host: HostCtx, ref: string, reason?: StopReason): Promise<Box> {
@@ -169,6 +182,7 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
     assertMountsWithinLimits(host, host.specs.read(box.boxId)?.mounts ?? box.mounts);
     await ensureRunningStorage(host, box);
     await attachToBoxNetwork(host, box);
+    await prepareEgress(host, box);
     host.selfTokens.revoke(box.boxId);
     await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
     await setDesired(host, box.boxId, "running", null);
@@ -208,6 +222,7 @@ export async function deleteBox(
       if (trash !== null && box.running) await restartAfterFailedDelete(host, box);
       throw e;
     }
+    if (spec?.egress) await dropEgress(host, box.boxId);
     host.questions.forget(box.boxId);
     await host.sampler.observe(box.id);
     host.pulse.clear(box.boxId);
@@ -216,6 +231,19 @@ export async function deleteBox(
     host.checkpoints.removePendingRollback(box.boxId);
     log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
     return result;
+  });
+}
+
+/**
+ * Removes a deleted box's proxy and private network, then sets the firewall without its source. The box is already gone,
+ * so a failure here is logged; the sweep at startup removes whatever is left.
+ */
+async function dropEgress(host: HostCtx, boxId: string): Promise<void> {
+  await removeEgress(host, boxId).catch((e: unknown) => {
+    log.warn("box.delete_egress_failed", { id: boxId, error: String(e) });
+  });
+  await syncHostFirewall(host).catch((e: unknown) => {
+    log.warn("box.delete_egress_failed", { id: boxId, error: String(e) });
   });
 }
 

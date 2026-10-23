@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
 
 import { hardeningFor } from "../box-profile";
+import { OPEN_EGRESS } from "../egress/policy";
 import type { HostCtx } from "../host/registry";
 import { containerName } from "../labels";
 import { badRequest, notFound, conflict } from "../lib/errors";
@@ -21,6 +22,15 @@ import { assertMountAllowed, mountTarget } from "./attachments";
 import { type CreateBoxInput, type Box, MB } from "./box-model";
 import { ensureBoxNetwork } from "./box-network";
 import { getBox } from "./box-query";
+import {
+  egressEnvOf,
+  ensureEgressNetwork,
+  ensureEgressProxy,
+  planEgress,
+  removeEgress,
+  syncHostFirewall,
+  withoutRawSockets,
+} from "./egress";
 import { ensureImageOn } from "./images";
 import { assertSelfTokenHost, provisionSelfToken, selfTokenTmpfs } from "./self-token";
 import { launchStartup } from "./startup";
@@ -63,6 +73,8 @@ function engineMounts(mounts: BoxMount[]): { source: string; target: string; mod
 interface CreateAttempt {
   boxId: string | null;
   containerId: string | null;
+  /** True once the box's private network or proxy may exist. */
+  egress: boolean;
   changes: VolumeChanges;
 }
 
@@ -71,7 +83,7 @@ export async function createBox(
   input: CreateBoxInput & { templateLabel?: string },
   record?: RecordNote,
 ): Promise<Box> {
-  const attempt: CreateAttempt = { boxId: null, containerId: null, changes: new VolumeChanges() };
+  const attempt: CreateAttempt = { boxId: null, containerId: null, egress: false, changes: new VolumeChanges() };
   let containerId: string;
   try {
     containerId = await buildBox(host, input, attempt, record);
@@ -99,6 +111,13 @@ async function undoCreate(host: HostCtx, attempt: CreateAttempt): Promise<void> 
     }
     host.specs.retire(containerId);
   }
+  if (attempt.egress && attempt.boxId) {
+    try {
+      await removeEgress(host, attempt.boxId);
+    } catch (e) {
+      log.warn("box.create_rollback_failed", { id: attempt.boxId, error: String(e) });
+    }
+  }
   if (attempt.boxId) {
     host.selfTokens.revoke(attempt.boxId);
     try {
@@ -106,6 +125,11 @@ async function undoCreate(host: HostCtx, attempt: CreateAttempt): Promise<void> 
     } catch (e) {
       log.warn("box.create_rollback_failed", { id: attempt.boxId, error: String(e) });
     }
+  }
+  if (attempt.egress) {
+    await syncHostFirewall(host).catch((e: unknown) => {
+      log.warn("box.create_rollback_failed", { id: attempt.boxId, error: String(e) });
+    });
   }
   await attempt.changes.rollback();
 }
@@ -139,10 +163,19 @@ async function buildBox(
   const image = input.image ?? host.baseTemplateTag;
   const profile = input.profile ?? security.defaultProfile;
   const details = await ensureImageOn(host, image);
-  await ensureBoxNetwork(host);
+  const policy = input.egress ?? OPEN_EGRESS;
+  if (policy.mode === "open") await ensureBoxNetwork(host);
 
   const id = boxIdFor(host, input.id);
   attempt.boxId = id;
+  const reserved = await host.specs.exclusive(async () => {
+    const planned = await planEgress(host, policy);
+    if (!planned) return null;
+    attempt.egress = true;
+    return { egress: planned, network: await ensureEgressNetwork(host, id, planned) };
+  });
+  const egress = reserved?.egress ?? null;
+  const network = reserved?.network ?? security.network;
   const createdBy = input.createdBy ?? "owner";
   const known = new Set<string>([image]);
   const mounts = input.mounts
@@ -173,12 +206,13 @@ async function buildBox(
       [keys.memory]: String(memoryBytes),
       [keys.pids]: String(pids),
       [keys.createdBy]: createdBy,
+      ...(egress ? { [keys.egress]: JSON.stringify(egress) } : {}),
     };
     await assertVolumesPresent(
       host,
       mounts.map((mount) => mount.volume),
     );
-    const containerVars = containerEnv(host.secrets, env);
+    const containerVars = [...egressEnvOf(egress), ...containerEnv(host.secrets, env)];
     const created = await runtime
       .createContainer({
         name,
@@ -193,8 +227,8 @@ async function buildBox(
         memoryBytes,
         swapBytes: memoryBytes,
         init: true,
-        network: security.network,
-        hardening: hardeningFor(profile, security),
+        network,
+        hardening: egress ? withoutRawSockets(hardeningFor(profile, security)) : hardeningFor(profile, security),
         ...(containerVars.length > 0 ? { env: containerVars } : {}),
         ...(input.selfToken ? { tmpfs: selfTokenTmpfs() } : {}),
       })
@@ -235,7 +269,8 @@ async function buildBox(
         stopReason: null,
       },
       profile,
-      network: security.network,
+      network,
+      ...(egress ? { egress } : {}),
       restart: "no",
       containerName: name,
       containerId: created.id,
@@ -249,6 +284,8 @@ async function buildBox(
     return created.id;
   });
 
+  if (egress) await ensureEgressProxy(host, { boxId: id, id: containerId, name: input.name }, egress);
+  if (egress || security.blockHostGateway) await syncHostFirewall(host);
   await runtime.startContainer(containerId);
   if (input.selfToken) await provisionSelfToken(host, { boxId: id, name: input.name }, containerId);
   await host.sampler.observe(containerId);

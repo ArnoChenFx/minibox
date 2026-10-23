@@ -54,7 +54,11 @@ export const REQUEST_OPERATIONS = [
   "removeVolume",
   "setVolumeRootOwner",
   "ensureBridgeNetwork",
+  "removeNetwork",
+  "connectNetwork",
+  "listNetworks",
   "reattachNetwork",
+  "setHostIngressBlock",
 ] as const;
 
 /** Operations that open a stream. The request's id names the stream in every later frame. */

@@ -35,6 +35,10 @@ export interface LabelKeys {
   internal: string;
   /** Set on the checkpoint repository volume (value: host id) and on a checkpoint's system image (value: checkpoint id). */
   checkpoint: string;
+  /** On a box that is not `open`: the JSON record of its egress policy, which claim reads back if the spec is lost. */
+  egress: string;
+  /** On an egress proxy container. The value is the stable id of the box it serves. */
+  egressProxy: string;
 }
 
 export function labelKeys(prefix: string): LabelKeys {
@@ -61,6 +65,8 @@ export function labelKeys(prefix: string): LabelKeys {
     pool: `${prefix}.pool`,
     internal: `${prefix}.internal`,
     checkpoint: `${prefix}.checkpoint`,
+    egress: `${prefix}.egress`,
+    egressProxy: `${prefix}.egress-proxy`,
   };
 }
 
@@ -113,6 +119,11 @@ export function parseImageLabels(labels: Record<string, string> | undefined | nu
 export const containerName = (prefix: string, box: string) => `${prefix}-${box}`;
 export const volumeName = (prefix: string, box: string) => `${prefix}-ws-${box}`;
 export const boxNetworkName = (prefix: string) => `${prefix}-boxes`;
+/** The private network of one box with egress `none` or `proxy-only`. Its name carries the box id, not the container's. */
+export const egressNetworkName = (prefix: string, boxId: string) => `${prefix}-egress-${boxId}`;
+export const egressProxyName = (prefix: string, boxId: string) => `${prefix}-egress-proxy-${boxId}`;
+/** The shared network proxies reach the internet through. No box is ever attached to it. */
+export const egressUplinkName = (prefix: string) => `${prefix}-egress-uplink`;
 
 /** Container names from the Docker API have a leading slash. */
 export const stripSlash = (name: string | undefined) => (name ?? "").replace(/^\//, "");

@@ -6,6 +6,7 @@ import { ttlExpired } from "../specs/lifetime";
 import type { BoxSpec } from "../specs/types";
 import { claimEngineVolumes } from "../volumes/engine";
 import { sleepBox, startBox, stopBox } from "./boxes";
+import { followRunningProxies, sweepEgress, syncHostFirewall } from "./egress";
 import { settlePendingRollbacks } from "./rollback";
 import { deliverSelfToken } from "./self-token";
 
@@ -24,6 +25,8 @@ export interface ReconcileReport {
   rollbacksSettled: string[];
   /** Helper secret volumes a crash left behind, removed. */
   secretsRemoved: string[];
+  /** Egress proxies and private networks that no box spec names, removed. These are container and network names. */
+  egressRemoved: string[];
   /** Stable ids whose container is gone. The spec is kept. */
   missing: string[];
   /**
@@ -48,6 +51,7 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
     unpaused: [],
     rollbacksSettled: [],
     secretsRemoved: [],
+    egressRemoved: [],
     missing: [],
     failed: [],
   };
@@ -76,6 +80,12 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
     if (spec.hostId === host.host.id && !seen.has(spec.id)) report.missing.push(spec.id);
   }
 
+  try {
+    await syncHostFirewall(host, { force: true });
+  } catch (e) {
+    log.error("egress.firewall_sync_failed", { host: host.host.id, error: String(e) });
+  }
+
   for (const info of live) {
     const spec = host.specs.findByContainer(info.id, info.name, host.host.id);
     if (!spec) continue;
@@ -91,6 +101,16 @@ export async function reconcileHost(host: HostCtx): Promise<ReconcileReport> {
     log.error("checkpoint.rollback_settle_failed", { host: host.host.id, error: String(e) });
   }
   report.secretsRemoved = await removeStaleSecretVolumes(host);
+  try {
+    report.egressRemoved = await sweepEgress(host);
+  } catch (e) {
+    log.error("egress.sweep_failed", { host: host.host.id, error: String(e) });
+  }
+  try {
+    await followRunningProxies(host);
+  } catch (e) {
+    log.warn("egress.follow_resume_failed", { host: host.host.id, error: String(e) });
+  }
   return report;
 }
 

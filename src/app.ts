@@ -43,6 +43,8 @@ import { BackupService } from "./services/backup";
 import { CheckpointSweep } from "./services/checkpoint-retention";
 import { CheckpointScheduler } from "./services/checkpoint-schedule";
 import { ContainerWatch } from "./services/container-watch";
+import { FirewallStore } from "./services/egress-firewall";
+import { EgressLog } from "./services/egress-log";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
 import { reconcileHost } from "./services/reconcile";
@@ -240,6 +242,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const checkpointEngine = deps.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir });
   const multiHost = () => hosts.list().length > 1;
   const secrets = new SecretStore(cfg.dataDir);
+  const egress = new EgressLog((hostId, note) => recordNote(hostId, "system", OWNER, note));
+  const firewall = new FirewallStore(join(cfg.dataDir, "egress-firewall.json"));
   const selfTokens = new SelfTokenStore({ file: selfTokensPath(cfg.dataDir) });
   const questions = new QuestionStore({ file: questionsPath(cfg.dataDir) });
   const local = createLocalHost(
@@ -249,7 +253,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     volumes,
     bus,
     pulse,
-    { checkpoints, checkpointEngine, multiHost, secrets, selfTokens, questions },
+    { checkpoints, checkpointEngine, multiHost, secrets, egress, firewall, selfTokens, questions },
   );
   hosts.add(local);
   const activity = new ActivityLog();
@@ -338,6 +342,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       checkpoints,
       checkpointEngine,
       multiHost,
+      egress,
+      firewall,
       selfTokens,
       questions,
     },

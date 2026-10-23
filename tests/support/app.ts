@@ -67,6 +67,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     notifyAllowPrivate: false,
     volumeUsageIntervalSec: 600,
     hostDiskMinFreePercent: 10,
+    blockHostGateway: false,
     ...overrides,
   };
 }
