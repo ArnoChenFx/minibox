@@ -1,9 +1,10 @@
 /**
  * Declared templates, repository clones and image pulls on a real engine. A template is built from a pasted Dockerfile,
  * from a Git branch (a nested Dockerfile, rebuilt after a new commit, and kept when a rebuild fails), and from a
- * devcontainer.json whose containerEnv value stays literal. An image that is missing is pulled as a task. A box created
- * with a repository clones it into /workspace, from a public repository and from a private one whose token comes from
- * the secret store.
+ * devcontainer.json whose containerEnv value stays literal, whose build.target is the stage built, and whose
+ * postCreateCommand runs as dev after the clone. An
+ * image that is missing is pulled as a task. A box created with a repository clones it into /workspace, from a public
+ * repository and from a private one whose token comes from the secret store.
  *
  *   bun run test:docker
  *
@@ -58,6 +59,30 @@ const DEVCONTAINER = `{
 }
 `;
 
+/** Alpine has no `dev` user, so the build creates one: postCreateCommand runs as dev, and its ports are forwarded. */
+const DEVSETUP = `{
+  "build": { "dockerfile": "Dockerfile" },
+  "containerEnv": { "MB_SETUP": "ran" },
+  "postCreateCommand": "id -un > /tmp/mb-post-create && pwd >> /tmp/mb-post-create && cat /workspace/README.md >> /tmp/mb-post-create",
+  "forwardPorts": [3000, "db:5432"]
+}
+`;
+const DEVSETUP_DOCKERFILE = `FROM ${IMAGE}\nRUN adduser -D -u 1000 dev\n`;
+
+/** The target is the middle stage, so the last stage, which writes `last`, must not be what the template is. */
+const DEVTARGET = `{
+  "build": { "dockerfile": "Dockerfile", "target": "tools" },
+  "containerEnv": { "MB_TARGET": "env" }
+}
+`;
+const DEVTARGET_DOCKERFILE = `FROM ${IMAGE} AS base
+RUN echo base > /stage
+FROM base AS tools
+RUN echo tools > /stage
+FROM base AS last
+RUN echo last > /stage
+`;
+
 const dockerfileFor = (marker: string) => `FROM ${IMAGE}\nRUN echo ${marker} > /marker\n`;
 const refOf = (name: string) => `${prefix}-template:${name}`;
 
@@ -105,14 +130,19 @@ async function makeBox(
   name: string,
   template = IMAGE,
   repo?: Record<string, string>,
-): Promise<{ boxId: string; containerId: string; cloneTask: string | undefined }> {
+): Promise<{ boxId: string; containerId: string; cloneTask: string | undefined; setupTask: string | undefined }> {
   const made = await call(base, "/api/boxes", {
     body: { name, template, cpus: 1, memoryMb: 256, ...(repo ? { repo } : {}) },
   });
   if (made.status !== 201) throw new Error(`create ${name}: ${made.status} ${JSON.stringify(made.json)}`);
   const boxId = made.json.box?.boxId ?? "";
   madeBoxes.push(boxId);
-  return { boxId, containerId: (await boxes.getBox(host, boxId)).id, cloneTask: made.json.clone?.taskId };
+  return {
+    boxId,
+    containerId: (await boxes.getBox(host, boxId)).id,
+    cloneTask: made.json.clone?.taskId,
+    setupTask: made.json.setup?.taskId,
+  };
 }
 
 /** Starts a template build over REST and waits for it to finish. */
@@ -177,8 +207,20 @@ function seedRepositories(): void {
   git(work, "checkout", "-q", "-b", "devcontainer");
   commitFiles({ ".devcontainer/devcontainer.json": DEVCONTAINER }, "devcontainer");
   git(work, "checkout", "-q", "main");
+  git(work, "checkout", "-q", "-b", "devsetup");
+  commitFiles(
+    { ".devcontainer/devcontainer.json": DEVSETUP, ".devcontainer/Dockerfile": DEVSETUP_DOCKERFILE },
+    "devsetup",
+  );
+  git(work, "checkout", "-q", "main");
+  git(work, "checkout", "-q", "-b", "devtarget");
+  commitFiles(
+    { ".devcontainer/devcontainer.json": DEVTARGET, ".devcontainer/Dockerfile": DEVTARGET_DOCKERFILE },
+    "devtarget",
+  );
+  git(work, "checkout", "-q", "main");
   for (const name of ["app.git", "private.git"]) git(work, "init", "-q", "--bare", "-b", "main", join(repoRoot, name));
-  git(work, "push", "-q", join(repoRoot, "app.git"), "main", "feature", "devcontainer");
+  git(work, "push", "-q", join(repoRoot, "app.git"), "main", "feature", "devcontainer", "devsetup", "devtarget");
   git(work, "push", "-q", join(repoRoot, "private.git"), "main");
 }
 
@@ -407,6 +449,44 @@ describe.skipIf(!enabled)("Declared templates, repository clones and image pulls
 
       const made = await makeBox("devcon-box", refOf("devcon"));
       expect(await run(made.containerId, "root", 'printf "%s" "$MB_LITERAL"')).toBe("$HOME and \\ backslash");
+    },
+    LONG,
+  );
+
+  test(
+    "a devcontainer.json's postCreateCommand runs once after the clone, as dev in /workspace, and its ports are forwarded",
+    async () => {
+      const view = await buildTemplate("devsetup", {
+        kind: "devcontainer",
+        url: `${gitBase}/app.git`,
+        branch: "devsetup",
+      });
+      expect(view).toMatchObject({ status: "succeeded" });
+
+      const made = await makeBox("setup-box", refOf("devsetup"), { url: `${gitBase}/app.git`, branch: "main" });
+      expect(await finishedTask(base, made.setupTask ?? "")).toMatchObject({ status: "succeeded" });
+      expect(await run(made.containerId, "root", "cat /tmp/mb-post-create")).toBe("dev\n/workspace\n# app");
+      expect(await run(made.containerId, "root", 'printf "%s" "$MB_SETUP"')).toBe("ran");
+
+      const ports = await call(base, `/api/boxes/${made.boxId}/ports`);
+      expect(ports.json.ports).toEqual([expect.objectContaining({ port: 3000, source: "manual" })]);
+    },
+    LONG,
+  );
+
+  test(
+    "a devcontainer.json's build.target is the stage built, and its containerEnv is added on top of that stage",
+    async () => {
+      const view = await buildTemplate("devtarget", {
+        kind: "devcontainer",
+        url: `${gitBase}/app.git`,
+        branch: "devtarget",
+      });
+      expect(view).toMatchObject({ status: "succeeded" });
+
+      const made = await makeBox("devtarget-box", refOf("devtarget"));
+      expect(await run(made.containerId, "root", "cat /stage")).toBe("tools");
+      expect(await run(made.containerId, "root", 'printf "%s" "$MB_TARGET"')).toBe("env");
     },
     LONG,
   );

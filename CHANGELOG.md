@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### 新增
+- `devcontainer.json` 子集（Refs #15）：从 `.devcontainer/devcontainer.json` 构建的模板现在还读取 `build.target`、`remoteEnv`、`postCreateCommand`、`forwardPorts` 与 `remoteUser`（仅 `dev` 或 `1000`）。由它创建的 Box 在设置任务（`setup.taskId`）中依次克隆代码仓库、把 `forwardPorts` 加为手动预览端口，并以用户 `dev` 运行一次 `postCreateCommand`：挂载了 `/workspace` 时在其中运行，否则在 `/` 中运行。命令上限 30 分钟，失败或超时时保留 Box。`POST /api/boxes` 的响应新增 `setup`，`clone` 仍在并指向同一任务；`minibox box create` 会等待该任务。以令牌创建这类 Box 需要 `exec`（`postCreateCommand`）与 `port:expose`（`forwardPorts`）作用域。设置只在创建时运行，模板保存的 Box 不继承。复制到其他宿主机（同步或迁移）的模板则保留设置。见[模板](docs/zh-CN/user-guide/templates.md#devcontainerjson)。
+
+### 变更
+- `devcontainer.json` 中不支持的设置不再拒绝整个构建。它们在构建日志中以 `Warning:` 列出，其余设置照常应用。无法按原样应用的设置仍会拒绝构建，例如取值中的 `${…}` 引用，或 `postCreateCommand` 中的 devcontainer 变量（Refs #15）。
+
+### 文档
+- 模板指南的 `devcontainer.json` 一节改写：列出支持的设置、构建日志中的警告与被拒绝的设置，以及 Box 设置任务的顺序、运行用户、工作目录、时限与失败行为，中英文版本同步。API、CLI、MCP、安全与架构文档同步更新（Refs #15）。
+
 ## [0.5.1] - 2026-10-23
 
 ### 亮点

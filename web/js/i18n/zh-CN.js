@@ -84,7 +84,7 @@ export default {
   "tp.kindHelpGit": "MiniBox 克隆仓库，并从你指定的子目录构建。重新构建时会取分支的最新提交。",
   "tp.kindHelpContext": "MiniBox 下载 .tar 或 .tar.gz 构建上下文并从中构建。重新构建时会重新下载。",
   "tp.kindHelpDevcontainer":
-    "MiniBox 读取 image、build.dockerfile、build.context、build.args 和 containerEnv。其他设置会被拒绝，且从不执行 postCreateCommand 等生命周期命令。",
+    "MiniBox 读取 image、build（dockerfile、context、args、target）、containerEnv、remoteEnv、postCreateCommand 和 forwardPorts。由该模板创建的 Box 会以 dev 用户运行一次 postCreateCommand，若 Box 挂载了 /workspace，则在其中运行。其他设置会以警告形式列在构建日志中，且不会生效。",
   "tp.dockerfile": "Dockerfile",
   "tp.dockerfileHelp": "按原样发送。使用 FROM 选择基础镜像。最大 64 KB。",
   "tp.contextUrl": "构建上下文 URL",

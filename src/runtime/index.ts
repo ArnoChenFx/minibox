@@ -255,6 +255,8 @@ export interface BuildSpec {
   src?: string[];
   /** Build arguments, passed as `--build-arg`. */
   args?: Record<string, string>;
+  /** The stage to build, as `--target`. Absent builds the last stage. */
+  target?: string;
   tag: string;
   labels: Record<string, string>;
   /** Called with each chunk of build output as the engine produces it. */

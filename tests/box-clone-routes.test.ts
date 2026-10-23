@@ -44,6 +44,7 @@ describe("creating a box with a repository", () => {
     expect(created.status).toBe(201);
     const taskId = created.json.clone?.taskId ?? "";
     expect(taskId).not.toBe("");
+    expect(created.json.setup?.taskId).toBe(taskId);
     expect((await finishedTask(harness.base, taskId)).status).toBe("succeeded");
     expect(clones).toHaveLength(1);
     expect(clones[0]?.mounts?.[0]).toMatchObject({ target: "/workspace", mode: "rw" });
@@ -54,6 +55,7 @@ describe("creating a box with a repository", () => {
     const created = await call(harness.base, "/api/boxes", { body: { name: "plain", cpus: 1, memoryMb: 256 } });
     expect(created.status).toBe(201);
     expect(created.json.clone).toBeUndefined();
+    expect(created.json.setup).toBeUndefined();
     expect(clones).toEqual([]);
   });
 

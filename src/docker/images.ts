@@ -96,7 +96,13 @@ export function imageMethods(engine: Engine): ImageMethods {
       return call(async () => {
         const stream = await docker.buildImage(
           { context: spec.contextDir, src: spec.src ?? [spec.dockerfile] },
-          { t: spec.tag, labels: spec.labels, dockerfile: spec.dockerfile, buildargs: spec.args },
+          {
+            t: spec.tag,
+            labels: spec.labels,
+            dockerfile: spec.dockerfile,
+            buildargs: spec.args,
+            ...(spec.target === undefined ? {} : { target: spec.target }),
+          },
         );
         return await new Promise<string>((resolve, reject) => {
           let out = "";
