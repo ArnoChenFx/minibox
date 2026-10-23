@@ -47,7 +47,7 @@ Use at least 20 random characters. See [Security](security.md).
 ### Image tags
 
 - `X.Y.Z`, `X.Y` and `latest` point to releases. Pre-releases such as `1.0.0-rc.1` get only their exact tag.
-- To pin a version, use its full tag, such as `ghcr.io/arnochenfx/minibox:0.4.1`.
+- To pin a version, use its full tag, such as `ghcr.io/arnochenfx/minibox:0.5.0`.
 
 ### The base template
 
@@ -58,7 +58,7 @@ The release image does not include the base template. Build it once before you c
 From a checkout of the repository:
 
 ```bash
-docker build --build-arg MINIBOX_VERSION=0.4.1 -t minibox .
+docker build --build-arg MINIBOX_VERSION=0.5.0 -t minibox .
 ```
 
 Use the `minibox` image in the `docker run` command above in place of the release image.

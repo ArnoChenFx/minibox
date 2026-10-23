@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
 ### 亮点
 - **声明式模板**：从 Dockerfile、Git 代码仓库、构建上下文压缩包或 `devcontainer.json`（支持子集）构建模板，创建 Box 时可把代码仓库克隆到 `/workspace`。
 - **启动命令**：Box 每次启动时在 `minibox-init` tmux 会话中运行一条命令，不阻塞启动。
