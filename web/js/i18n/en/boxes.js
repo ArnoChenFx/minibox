@@ -47,6 +47,7 @@ export default {
   "act.checkpoint.schedule.clear": "Cleared checkpoint schedule",
   "act.template.create": "Built template",
   "act.template.rebuild": "Rebuilt template",
+  "act.template.sync": "Copied template to host",
   "act.image.pull": "Pulled image",
   "act.volume.create": "Created volume",
   "act.volume.delete": "Deleted volume",

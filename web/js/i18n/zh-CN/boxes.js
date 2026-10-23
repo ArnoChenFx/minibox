@@ -47,6 +47,7 @@ export default {
   "act.checkpoint.schedule.clear": "清除定时检查点",
   "act.template.create": "构建模板",
   "act.template.rebuild": "重新构建模板",
+  "act.template.sync": "将模板复制到宿主机",
   "act.image.pull": "拉取镜像",
   "act.volume.create": "创建卷",
   "act.volume.delete": "删除卷",
