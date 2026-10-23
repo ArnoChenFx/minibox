@@ -9,6 +9,7 @@ import { hostOperations } from "./hosts";
 import { imageOperations } from "./images";
 import { notifyOperations } from "./notify";
 import { operationIdOf } from "./openapi";
+import { overviewOperations } from "./overview";
 import { portOperations } from "./ports";
 import { questionOperations } from "./questions";
 import { secretOperations } from "./secrets";
@@ -46,6 +47,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...imageOperations,
   ...taskOperations,
   ...eventOperations,
+  ...overviewOperations,
   ...tokenOperations,
   ...hostOperations,
   ...notifyOperations,

@@ -1130,6 +1130,13 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("revoke the box's self token again", "DELETE", `/api/boxes/${selfBox}/self-token`);
     await asBox("the revoked self token is refused", "GET", "/api/self", self);
     await send("delete the self box", "DELETE", `/api/boxes/${selfBox}`);
+    const reader = await post("create a token that reads the overview", "/api/tokens", {
+      name: "reader",
+      preset: "readonly",
+    });
+    await send("a token reads the overview", "GET", "/api/overview", {
+      headers: { authorization: `Bearer ${String(reader.json?.token ?? "")}` },
+    });
   } finally {
     server.stop(true);
     app.throttle.stop();

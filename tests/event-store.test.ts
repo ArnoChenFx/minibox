@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createRedactor, REDACTED } from "../src/events/redact";
-import { DETAIL_MAX_BYTES, EventStore, tierOf } from "../src/events/store";
+import { DETAIL_MAX_BYTES, EventStore, matchesFilter, tierOf } from "../src/events/store";
 import type { EventInput } from "../src/events/types";
 import { ulid } from "../src/events/ulid";
 
@@ -138,6 +138,36 @@ describe("EventStore", () => {
     expect(s.after(0, {}, 1).map((e) => e.seq)).toEqual([first.seq]);
   });
 
+  test("recent() returns the newest events by time, not by arrival, bounded by the limit and by since", () => {
+    const s = open();
+    const older = s.append(input({ ts: NOW - 2 * MINUTE })).event;
+    const sameTime = s.append(input({ ts: NOW })).event;
+    const newest = s.append(input({ ts: NOW + MINUTE })).event;
+    const tie = s.append(input({ ts: NOW + MINUTE })).event;
+    const seqs = (filter: Parameters<EventStore["recent"]>[0], limit: number) =>
+      s.recent(filter, limit).map((e) => e.seq);
+
+    expect(seqs({}, 10)).toEqual([tie.seq, newest.seq, sameTime.seq, older.seq]);
+    expect(seqs({}, 2)).toEqual([tie.seq, newest.seq]);
+    expect(seqs({ since: NOW }, 10)).toEqual([tie.seq, newest.seq, sameTime.seq]);
+    expect(seqs({ since: NOW + 1 }, 10)).toEqual([tie.seq, newest.seq]);
+    expect(seqs({ since: NOW + MINUTE + 1 }, 10)).toEqual([]);
+  });
+
+  test("agents leaves out the owner's events, in reads and in matchesFilter, and keeps tokens and box agents", () => {
+    const s = open();
+    const owner = s.append(input({ ts: NOW })).event;
+    const token = s.append(input({ ts: NOW + 1, principal: { type: "token", id: "tok_1", name: "builder" } })).event;
+    const box = s.append(input({ ts: NOW + 2, principal: { type: "box-self", id: "bx_1", name: "alpha" } })).event;
+
+    expect(s.recent({ agents: true }, 10).map((e) => e.seq)).toEqual([box.seq, token.seq]);
+    expect(s.list({ agents: true }, { limit: 10 }).events.map((e) => e.seq)).toEqual([box.seq, token.seq]);
+    expect(s.recent({}, 10).map((e) => e.seq)).toEqual([box.seq, token.seq, owner.seq]);
+    expect(matchesFilter(owner, { agents: true })).toBe(false);
+    expect(matchesFilter(token, { agents: true })).toBe(true);
+    expect(matchesFilter(owner, {})).toBe(true);
+  });
+
   test("reads of one principal, operation and target share one row per minute", () => {
     const s = open();
     const first = s.append(read({ ts: NOW }));
@@ -254,7 +284,7 @@ describe("EventStore", () => {
     store = undefined;
 
     const raw = new Database(path, { readonly: true });
-    expect(raw.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version).toBe(1);
+    expect(raw.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version).toBe(2);
     raw.close();
 
     const again = open(path);

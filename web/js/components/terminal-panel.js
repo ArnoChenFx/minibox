@@ -4,6 +4,7 @@ import { esc } from "../lib/dom.js";
 import { duration } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { terminalHash } from "../lib/routes.js";
 import { confirmDialog, emptyState, promptDialog, toast, toastError } from "../lib/ui.js";
 
 const DEFAULT_NAME = "console";
@@ -38,13 +39,19 @@ function remember(boxId, name) {
   }
 }
 
+/** Writes the session on screen into the address, without a navigation, so a reload or a shared link opens it. */
+function reflectInAddress(boxId, name) {
+  if (!location.hash.startsWith(terminalHash(boxId))) return;
+  history.replaceState(history.state, "", terminalHash(boxId, name));
+}
+
 /**
  * The terminal tab. Each box has named tmux sessions that outlive the page. The session on screen is remembered per
- * box, so a refresh reattaches to it. An agent's session opens read-only; "Take over" gives this page the keyboard
- * until it is returned, by the button or by the idle timeout the server reports. A box that is not running shows why,
- * and no socket is opened for it until it runs.
+ * box, so a refresh reattaches to it. `session` is the one the address names, and it opens first. An agent's session
+ * opens read-only; "Take over" gives this page the keyboard until it is returned, by the button or by the idle timeout
+ * the server reports. A box that is not running shows why, and no socket is opened for it until it runs.
  */
-export function mountTerminal(root, { box, onChange, rerender }) {
+export function mountTerminal(root, { box, onChange, rerender, session = "" }) {
   let shown = null;
   let waking = false;
   let teardownLive = null;
@@ -57,7 +64,7 @@ export function mountTerminal(root, { box, onChange, rerender }) {
     shown = state;
     teardownLive?.();
     teardownLive = null;
-    if (state === "running") teardownLive = mountLive(root, box());
+    if (state === "running") teardownLive = mountLive(root, box(), session);
     else root.innerHTML = offlineView(state);
   };
 
@@ -108,8 +115,8 @@ function offlineView(state) {
   return `<div class="card">${emptyState({ iconName: "terminal", title: t("bd.notRunning"), text: t("bd.termNotRunningText"), action: `<button class="btn btn-primary" data-action="start">${icon("play")}${t("bd.startBox")}</button>` })}</div>`;
 }
 
-/** Mounts the live terminal for a running box. Returns the function that tears it down. */
-function mountLive(root, b) {
+/** Mounts the live terminal for a running box, on `session` when it is listed. Returns the function that tears it down. */
+function mountLive(root, b, session) {
   if (!window.Terminal || !window.FitAddon) {
     root.innerHTML = `<div class="callout danger">${t("bd.termLoadFailed")}</div>`;
     return null;
@@ -255,6 +262,7 @@ function mountLive(root, b) {
   const select = (name) => {
     current = name;
     remember(b.id, name);
+    reflectInAddress(b.id, name);
     renderList();
     connect();
   };
@@ -329,8 +337,8 @@ function mountLive(root, b) {
     try {
       const listed = await loadSessions();
       if (disposed) return;
-      const wanted = rememberedName(b.id);
-      const pick = listed.find((s) => s.name === wanted) ?? listed[0];
+      const pick =
+        listed.find((s) => s.name === session) ?? listed.find((s) => s.name === rememberedName(b.id)) ?? listed[0];
       if (pick) {
         select(pick.name);
         return;
