@@ -26,10 +26,20 @@ const KEY = "k".repeat(64);
 const SANDBOX = mkdtempSync(join(tmpdir(), "minibox-server-test-"));
 afterAll(() => rmSync(SANDBOX, { recursive: true, force: true }));
 
-/** Uses a temp DATA_DIR and .env, so the suite never creates the repository's data/ or reads its .env. */
+/**
+ * Uses a temp DATA_DIR and .env, so the suite never creates the repository's data/ or reads its .env. The owner key is
+ * pinned to true, so flipping DEFAULT_MCP_ALLOW_OWNER_KEY does not change these tests.
+ */
 function testConfig(env: Record<string, string> = {}): Config {
   const cfg = loadConfig(
-    { ACCESS_KEY: KEY, HOST: "127.0.0.1", LOG_LEVEL: "error", DATA_DIR: join(SANDBOX, "data"), ...env },
+    {
+      ACCESS_KEY: KEY,
+      HOST: "127.0.0.1",
+      LOG_LEVEL: "error",
+      DATA_DIR: join(SANDBOX, "data"),
+      MCP_ALLOW_OWNER_KEY: "true",
+      ...env,
+    },
     { envFile: join(SANDBOX, ".env") },
   );
   return { ...cfg, port: 0 };
