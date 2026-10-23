@@ -80,6 +80,7 @@
 - CI 新增 `official-templates` 任务：在 `linux/amd64` 上构建四个官方模板，并对每个镜像运行 `scripts/check-box-image.sh`；最小模板通过 `REQUIRED_TOOLS` 只检查它所带的工具。
 - Box 详情页的测试：`tests/web-box-detail.test.ts` 为无 DOM 的组件测试，覆盖设置分组与会话来源标记；`tests/web-box-detail-browser.test.ts` 用 Chromium 覆盖六个标签页的地址与切换、概览不滚动、设置分组、标题栏的「创建检查点」、会话来源、休眠的 Box 在终端中唤醒、工具栏对齐、手机上的单行工具栏与当前标签页可见，以及旧地址跳转。`tests/web-routes.test.ts` 补充了标签页、设置分组与移动后的地址。截图脚本改为打开检查点分组。
 - 概览的测试：`tests/overview.test.ts` 以行为方式覆盖 `GET /api/overview` 的权限、正在进行的命令与输出、各类需要关注的事项，以及跨宿主机的情况；`tests/web-overview.test.ts` 覆盖概览的文字、链接与轮询间隔，并核对事项类型与服务器输出 schema 一致；`tests/web-console-browser.test.ts` 在 Chromium 中覆盖概览的四个列表及其展开按钮、观察与接管的地址、会话的切换与刷新、需要关注的链接，以及 Box 列表的活动标记。
+- 启动命令的真实引擎测试 `tests/docker-startup-command.test.ts` 新增 Docker 自行启动容器（`docker restart`，以及先停止再 `docker start`）的用例：每次启动命令恰好运行一次。该用例的超时设为 60 秒（[#133](https://github.com/ArnoChenFx/minibox/issues/133)）。
 
 ### 文档
 - 模板指南新增「官方模板」一节（中英文），说明四个模板的内容、何时构建、重新构建时基础镜像的更新方式，以及权限；API、CLI 与 MCP 参考同步新增相应条目（[#15](https://github.com/ArnoChenFx/minibox/issues/15)）。
