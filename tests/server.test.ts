@@ -17,8 +17,10 @@ import {
 } from "../src/auth";
 import { type Config, loadConfig } from "../src/config";
 import { setLogLevel } from "../src/lib/logger";
+import { OWNER_KEY_HEADER } from "../src/mcp/owner-key";
 import { startServer, startupFields, warnIfWeakAccessKey } from "../src/server";
 import type { TerminalData } from "../src/ws/terminal";
+import { mint } from "./support/tokens";
 
 setLogLevel("error");
 
@@ -27,8 +29,8 @@ const SANDBOX = mkdtempSync(join(tmpdir(), "minibox-server-test-"));
 afterAll(() => rmSync(SANDBOX, { recursive: true, force: true }));
 
 /**
- * Uses a temp DATA_DIR and .env, so the suite never creates the repository's data/ or reads its .env. The owner key is
- * pinned to true, so flipping DEFAULT_MCP_ALLOW_OWNER_KEY does not change these tests.
+ * Uses a temp DATA_DIR and .env, so the suite never creates the repository's data/ or reads its .env. Nothing here sets
+ * MCP_ALLOW_OWNER_KEY unless a test asks for it, so these tests run on the release default.
  */
 function testConfig(env: Record<string, string> = {}): Config {
   const cfg = loadConfig(
@@ -37,7 +39,6 @@ function testConfig(env: Record<string, string> = {}): Config {
       HOST: "127.0.0.1",
       LOG_LEVEL: "error",
       DATA_DIR: join(SANDBOX, "data"),
-      MCP_ALLOW_OWNER_KEY: "true",
       ...env,
     },
     { envFile: join(SANDBOX, ".env") },
@@ -238,7 +239,7 @@ describe("bearer keys count toward the login limit (end to end)", () => {
   });
 
   test("wrong Bearer keys on /mcp are refused with 429 once the address is over the limit", async () => {
-    await withServer({}, async ({ base }) => {
+    await withServer({ MCP_ALLOW_OWNER_KEY: "true" }, async ({ base }) => {
       for (let i = 0; i < 10; i++) expect((await mcpPing(base, "wrong")).status).toBe(401);
       const refused = await mcpPing(base, "wrong");
       expect(refused.status).toBe(429);
@@ -246,6 +247,26 @@ describe("bearer keys count toward the login limit (end to end)", () => {
       const allowed = await mcpPing(base, KEY);
       expect(allowed.status).toBe(200);
       expect(await allowed.json()).toMatchObject({ result: {} });
+    });
+  });
+
+  test("the owner access key is refused on /mcp by default, and an agent token still opens it", async () => {
+    await withServer({}, async ({ base, app }) => {
+      const refused = await mcpPing(base, KEY);
+      expect(refused.status).toBe(401);
+      expect(await refused.json()).toMatchObject({ error: { code: "unauthorized", key: "mcp_owner_key_refused" } });
+      const agent = mint(app, { name: "agent", preset: "sandboxed-agent" });
+      const allowed = await mcpPing(base, agent.secret);
+      expect(allowed.status).toBe(200);
+      expect(allowed.headers.get(OWNER_KEY_HEADER)).toBeNull();
+    });
+  });
+
+  test("MCP_ALLOW_OWNER_KEY=true accepts the owner access key on /mcp again", async () => {
+    await withServer({ MCP_ALLOW_OWNER_KEY: "true" }, async ({ base }) => {
+      const allowed = await mcpPing(base, KEY);
+      expect(allowed.status).toBe(200);
+      expect(allowed.headers.get(OWNER_KEY_HEADER)).toBe("accepted");
     });
   });
 

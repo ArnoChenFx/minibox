@@ -276,7 +276,7 @@ describe("CLI", () => {
   });
 
   test("mcp proxies a JSON-RPC line and remembers the session", async () => {
-    const env = serve();
+    const env = serve({ mcpAllowOwnerKey: true });
     try {
       const sink = io();
       const code = await runCli(
@@ -334,13 +334,17 @@ describe("CLI", () => {
       }
     });
 
-    test("mcp exits 1 with the refusal and its hint once the owner access key is refused", async () => {
-      const env = serve({ mcpAllowOwnerKey: false });
+    test("mcp exits 1 with the refusal and a token-create hint, by default", async () => {
+      const env = serve();
       try {
         const sink = io();
         expect(await runCli(["mcp"], env.env, sink, lines([initLine]))).toBe(1);
+        expect(sink.err).toContain(
+          "the server refuses the owner access key on /mcp, because MCP_ALLOW_OWNER_KEY is false",
+        );
         expect(sink.err).toContain("The owner access key is not accepted on /mcp. Use an agent token.");
-        expect(sink.err).toContain("minibox token create");
+        expect(sink.err).toContain("minibox token create <name>");
+        expect(sink.err).not.toContain("owner access key, and the server accepts it");
       } finally {
         env.stop();
       }

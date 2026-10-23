@@ -7,7 +7,7 @@ export const OWNER_KEY_OP = "mcp.owner_key";
 /** Set on a successful `/mcp` response that the owner access key was accepted for. `minibox mcp` warns on it. */
 export const OWNER_KEY_HEADER = "x-minibox-owner-key";
 
-/** How long a use keeps the console banner up after the last one. */
+/** How long a use keeps the console banner up, and the startup warning, after the last one. */
 export const OWNER_KEY_NOTICE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type OwnerKeyOutcome = "accepted" | "refused";
@@ -19,21 +19,20 @@ export type OwnerKeyOutcome = "accepted" | "refused";
 export const OWNER_KEY_STATUS: Record<OwnerKeyOutcome, EventStatus> = { accepted: "ok", refused: "error" };
 
 export interface OwnerKeyNotice {
+  /** What `/mcp` does with the key under the current MCP_ALLOW_OWNER_KEY setting. */
   readonly outcome: OwnerKeyOutcome;
-  /** When the key last reached `/mcp` with this outcome. Events are kept per minute, so this is to the minute. */
+  /** When the key last reached `/mcp`, under any setting. Events are kept per minute, so this is to the minute. */
   readonly lastUsedAt: string;
 }
 
 /**
- * The latest use of the owner access key on `/mcp` within the notice window, for the console banner. The outcome is the
- * one the current `MCP_ALLOW_OWNER_KEY` setting produces, so a use under the old setting does not show after a flip.
+ * The latest use of the owner access key on `/mcp` within the notice window. A use recorded under an earlier setting
+ * still counts: after MCP_ALLOW_OWNER_KEY turns off, the console and the startup warning still name the agents that
+ * were using the key. The outcome is the one the current setting produces.
  */
 export function latestOwnerKeyUse(events: EventReader, allowed: boolean, now: number): OwnerKeyNotice | null {
-  const outcome: OwnerKeyOutcome = allowed ? "accepted" : "refused";
-  const page = events.list(
-    { op: OWNER_KEY_OP, status: OWNER_KEY_STATUS[outcome], since: now - OWNER_KEY_NOTICE_MS },
-    { limit: 1 },
-  );
+  const page = events.list({ op: OWNER_KEY_OP, since: now - OWNER_KEY_NOTICE_MS }, { limit: 1 });
   const latest = page.events[0];
-  return latest ? { outcome, lastUsedAt: new Date(latest.ts).toISOString() } : null;
+  if (!latest) return null;
+  return { outcome: allowed ? "accepted" : "refused", lastUsedAt: new Date(latest.ts).toISOString() };
 }

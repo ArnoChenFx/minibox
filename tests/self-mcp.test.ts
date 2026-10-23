@@ -79,7 +79,7 @@ describe("a box's own agent over MCP", () => {
 
   beforeEach(async () => {
     restoreLogs = silenceLogs();
-    harness = startHarness();
+    harness = startHarness({ mcpAllowOwnerKey: true });
     const created = await call(harness.base, "/api/boxes", {
       body: { name: "alpha", cpus: 1, memoryMb: 256, selfToken: true },
     });

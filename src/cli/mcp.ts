@@ -2,7 +2,9 @@ import { OWNER_KEY_HEADER } from "../mcp/owner-key";
 import { type CliIo, DEFAULT_URL, fail, flagValue } from "./shared";
 
 const OWNER_KEY_WARNING =
-  "minibox mcp: this key is the owner access key. Create an agent token with minibox token create <name>, and set MINIBOX_ACCESS_KEY to the token it prints. The next minor release refuses the owner key on /mcp by default.";
+  "minibox mcp: this key is the owner access key, and the server accepts it because MCP_ALLOW_OWNER_KEY=true. Create an agent token with minibox token create <name>, and set MINIBOX_ACCESS_KEY to the token it prints.";
+const OWNER_KEY_REFUSAL =
+  "minibox mcp: the server refuses the owner access key on /mcp, because MCP_ALLOW_OWNER_KEY is false. Create an agent token with minibox token create <name>, and set MINIBOX_ACCESS_KEY to the token it prints.";
 
 function parsedJson(text: string): unknown {
   try {
@@ -10,6 +12,10 @@ function parsedJson(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+function isOwnerKeyRefusal(json: unknown): boolean {
+  return (json as { error?: { key?: string } } | null)?.error?.key === "mcp_owner_key_refused";
 }
 
 export async function mcpProxy(
@@ -50,7 +56,11 @@ export async function mcpProxy(
     }
     const text = await res.text();
     if (text) io.stdout(text.endsWith("\n") ? text : `${text}\n`);
-    if (res.status === 401) return fail(io, res.status, parsedJson(text), text);
+    if (res.status === 401) {
+      const body = parsedJson(text);
+      if (isOwnerKeyRefusal(body)) io.stderr(`${OWNER_KEY_REFUSAL}\n`);
+      return fail(io, res.status, body, text);
+    }
   }
   return 0;
 }

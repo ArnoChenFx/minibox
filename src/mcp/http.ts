@@ -58,9 +58,9 @@ async function callerOf(app: App, req: Request, address: string): Promise<Caller
 }
 
 const OWNER_KEY_ACCEPTED_HINT =
-  "Give each agent an agent token from Settings or minibox token create, then set MCP_ALLOW_OWNER_KEY=false to refuse the owner key on /mcp. The next minor release refuses it by default.";
+  "MCP_ALLOW_OWNER_KEY is true, so /mcp accepts the owner access key. Give each agent an agent token from Settings or minibox token create, then remove MCP_ALLOW_OWNER_KEY=true to refuse the key again.";
 const OWNER_KEY_REFUSED_HINT =
-  "MCP_ALLOW_OWNER_KEY is false, so /mcp refused the owner access key. Give the agent an agent token.";
+  "MCP_ALLOW_OWNER_KEY is false, so /mcp refused the owner access key. Give the agent an agent token, or set MCP_ALLOW_OWNER_KEY=true to accept the key again.";
 
 /** The first warning of each outcome in a process. Stored per app, so a test that builds its own app sees its own warning. */
 const warnedOwnerKey = new WeakMap<App, Set<OwnerKeyOutcome>>();

@@ -16,6 +16,7 @@ import {
 } from "./auth";
 import { type Config, loadConfig } from "./config";
 import { accessKeyPath } from "./data-dir";
+import type { EventReader } from "./events/store";
 import type { Source } from "./events/types";
 import { guardRequest } from "./guard";
 import { AppError, badRequest } from "./lib/errors";
@@ -23,6 +24,7 @@ import { assertBodyAllowed, errorResponse, withSecurityHeaders } from "./lib/htt
 import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
 import { handleMcp } from "./mcp/http";
+import { latestOwnerKeyUse } from "./mcp/owner-key";
 import { isPreviewPath } from "./preview/path";
 import { proxyHttp, resolvePreview, upstreamSocket } from "./preview/proxy";
 import { isPreviewHostRequest, servePreviewHost } from "./preview/subdomain";
@@ -341,6 +343,20 @@ export function warnIfWeakAccessKey(cfg: Config): void {
   log.warn("auth.weak_key", { hint: WEAK_KEY_HINT, source: cfg.accessKeySource });
 }
 
+const OWNER_KEY_NOW_REFUSED_HINT =
+  "The owner access key reached /mcp recently, and MCP_ALLOW_OWNER_KEY is false, so those requests now get 401. Give each agent an agent token (minibox token create <name>), or set MCP_ALLOW_OWNER_KEY=true to accept the key again.";
+
+/**
+ * Warns at startup when the owner access key reached `/mcp` recently and MCP_ALLOW_OWNER_KEY refuses it. The agents that
+ * still send the key get 401 from now on, so the log names the fix before anyone has to find out from a failing agent.
+ */
+export function warnIfOwnerKeyRecentlyUsed(events: EventReader, allowed: boolean, now: number): void {
+  if (allowed) return;
+  const latest = latestOwnerKeyUse(events, allowed, now);
+  if (latest === null) return;
+  log.warn("mcp.owner_key_now_refused", { lastUsedAt: latest.lastUsedAt, hint: OWNER_KEY_NOW_REFUSED_HINT });
+}
+
 async function boot(): Promise<void> {
   const cfg = loadConfig();
   setLogLevel(cfg.logLevel);
@@ -348,6 +364,7 @@ async function boot(): Promise<void> {
   warnIfWeakAccessKey(cfg);
   const version = resolveVersion();
   const app = createApp(cfg, version);
+  warnIfOwnerKeyRecentlyUsed(app.events, cfg.mcpAllowOwnerKey, Date.now());
   const local = app.hosts.get();
   try {
     const report = await reconcileHost(local);

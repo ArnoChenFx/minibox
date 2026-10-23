@@ -215,10 +215,10 @@ function parseContainerRuntime(value: string | undefined): string | null {
 }
 
 /**
- * Whether the owner access key may call `/mcp`. It is accepted in this release, and the next minor release refuses it
- * by default. Flipping that default is a change to this one constant.
+ * Whether the owner access key may call `/mcp`. It may not by default, so an agent that holds the key cannot act as the
+ * owner over MCP. `MCP_ALLOW_OWNER_KEY=true` restores the earlier behavior. Changing this constant changes the default.
  */
-export const DEFAULT_MCP_ALLOW_OWNER_KEY: boolean = true;
+export const DEFAULT_MCP_ALLOW_OWNER_KEY: boolean = false;
 
 /** A security switch, so anything other than a clear true or false stops startup rather than picking a side. */
 function parseMcpAllowOwnerKey(value: string | undefined): boolean {

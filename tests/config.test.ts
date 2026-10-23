@@ -192,9 +192,10 @@ describe("BLOCK_HOST_GATEWAY", () => {
 });
 
 describe("MCP_ALLOW_OWNER_KEY", () => {
-  test("unset or blank takes the release default", () => {
-    expect(load({ ACCESS_KEY: KEY }).mcpAllowOwnerKey).toBe(DEFAULT_MCP_ALLOW_OWNER_KEY);
-    expect(load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: "  " }).mcpAllowOwnerKey).toBe(DEFAULT_MCP_ALLOW_OWNER_KEY);
+  test("is false by default, so /mcp refuses the owner access key unless the operator opts in", () => {
+    expect(DEFAULT_MCP_ALLOW_OWNER_KEY).toBe(false);
+    expect(load({ ACCESS_KEY: KEY }).mcpAllowOwnerKey).toBe(false);
+    expect(load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: "  " }).mcpAllowOwnerKey).toBe(false);
   });
   test("true and false are read in any letter case, with the usual yes, no, on, off, 1 and 0 spellings", () => {
     for (const value of ["true", "TRUE", "1", "yes", "On"]) {
@@ -204,9 +205,12 @@ describe("MCP_ALLOW_OWNER_KEY", () => {
       expect(load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: value }).mcpAllowOwnerKey).toBe(false);
     }
   });
-  test("can come from .env", () => {
-    writeFileSync(envFile, "MCP_ALLOW_OWNER_KEY=false\n");
-    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).mcpAllowOwnerKey).toBe(false);
+  test("true in .env restores the earlier behavior, and the process env wins over .env", () => {
+    writeFileSync(envFile, "MCP_ALLOW_OWNER_KEY=true\n");
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).mcpAllowOwnerKey).toBe(true);
+    expect(
+      loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir, MCP_ALLOW_OWNER_KEY: "false" }, { envFile }).mcpAllowOwnerKey,
+    ).toBe(false);
   });
   test("a value that is neither true nor false stops startup, since it guards a credential", () => {
     expect(() => load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: "maybe" })).toThrow(
