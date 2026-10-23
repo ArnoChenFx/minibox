@@ -213,7 +213,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
             <button type="button" class="seg" data-vol-mode="custom" aria-pressed="false"><strong>${t("cb.volumesCustom")}</strong><span>${t("cb.volumesCustomHint")}</span></button>
           </div>
           <div class="help" id="cbVolHelp">${t("cb.volumesDefaultHelp")}</div></div>
-        <div id="cbVolCustom" hidden>
+        <div class="row-editor" id="cbVolCustom" hidden>
           <div class="callout warn">${icon("alert")}<span>${t("cb.volumesReplace")}</span></div>
           <div class="rebuild-mounts" id="cbMountRows"></div>
           <button type="button" class="btn" id="cbAddMount">${t("mount.add")}</button>
@@ -231,8 +231,10 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         title: t("env.section"),
         body: `<div class="stack">
           <div class="help">${t("env.createHelp")}</div>
-          <div class="env-rows" id="cbEnvRows"></div>
-          <div><button type="button" class="btn" id="cbAddEnv">${icon("plus")}${t("env.add")}</button></div>
+          <div class="row-editor">
+            <div class="env-rows" id="cbEnvRows"></div>
+            <button type="button" class="btn" id="cbAddEnv">${icon("plus")}${t("env.add")}</button>
+          </div>
           <div class="error-text" id="cbEnvErr"></div>
         </div>`,
       });
