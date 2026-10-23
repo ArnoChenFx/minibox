@@ -167,6 +167,9 @@ export default {
   "cb.memory": "Memory",
   "cb.profile": "Security profile",
   "cb.profileHelp": "Applied when the box is created. Existing boxes keep the profile they were created with.",
+  "cb.egress": "Network egress",
+  "cb.egressHelp":
+    "Applied when the box is created. Changing it later is a rebuild, which previews the change and asks for confirmation first.",
   "cb.advancedSummary": "Advanced · security profile: {profile}",
   "cb.startup": "Startup command",
   "cb.startupHelp":
@@ -278,6 +281,7 @@ export default {
   "rebuild.field.env": "Environment",
   "rebuild.field.network": "Network",
   "rebuild.field.profile": "Security profile",
+  "rebuild.field.egress": "Network egress",
   "rebuild.field.containerName": "Container name",
   "reset.idleTimeout": "idle timeout",
   "reset.ttl": "TTL",

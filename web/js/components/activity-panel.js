@@ -34,6 +34,7 @@ const FILTERS = [
     label: "bd.filterSessions",
     match: (op) => op.startsWith("session.") || op.startsWith("terminal."),
   },
+  { key: "egress", label: "bd.filterEgress", match: (op) => op.startsWith("egress.") },
 ];
 
 const opLabel = (op) => (has(`ev.${op}`) ? t(`ev.${op}`) : op);
@@ -42,6 +43,7 @@ function iconOf(op) {
   if (op.startsWith("exec.")) return "zap";
   if (op.startsWith("container.")) return "box";
   if (op.startsWith("session.") || op.startsWith("terminal.")) return "terminal";
+  if (op.startsWith("egress.")) return "shield";
   return "activity";
 }
 
@@ -66,6 +68,7 @@ function describe(event) {
     return t("ev.io", { in: bytes(d.bytesIn ?? 0), out: bytes(d.bytesOut ?? 0) });
   }
   if (event.op.startsWith("exec.")) return commandOf(d);
+  if (event.op.startsWith("egress.")) return typeof d.host === "string" ? `${d.host}:${d.port ?? ""}` : "";
   if (typeof d.session === "string") return d.session;
   return "";
 }
