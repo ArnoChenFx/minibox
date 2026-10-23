@@ -81,5 +81,7 @@ export default {
   "actv.cat.tool": "工具",
   "actv.cat.host": "宿主机",
   "actv.cat.token": "访问令牌",
+  "actv.cat.ssh": "SSH 登录",
+  "actv.cat.sshkey": "SSH 公钥",
   "actv.cat.self": "Box 内 Agent",
 };

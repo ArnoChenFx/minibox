@@ -82,5 +82,7 @@ export default {
   "actv.cat.tool": "Tools",
   "actv.cat.host": "Hosts",
   "actv.cat.token": "Access tokens",
+  "actv.cat.ssh": "SSH logins",
+  "actv.cat.sshkey": "SSH keys",
   "actv.cat.self": "Box agent",
 };

@@ -16,6 +16,8 @@ export const CATEGORIES = [
   "tool",
   "host",
   "token",
+  "ssh",
+  "sshkey",
   "self",
 ];
 /** The query for one page: the filters that are set, the routine reads left out unless asked for, and the cursor. */

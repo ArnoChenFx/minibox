@@ -6,7 +6,7 @@ import zh from "../web/js/i18n/zh-CN.js";
 import { CATEGORIES, eventsQuery, PAGE_SIZE } from "../web/js/lib/activity-log.js";
 
 /** Families recorded by services rather than by a registered operation: container events, egress, terminals. */
-const SERVICE_FAMILIES = ["container", "egress", "terminal"];
+const SERVICE_FAMILIES = ["container", "egress", "ssh", "terminal"];
 
 const params = (filters: Record<string, unknown>, cursor?: number) =>
   Object.fromEntries(new URL(eventsQuery(filters, cursor), "http://x").searchParams);
