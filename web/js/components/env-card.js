@@ -93,8 +93,10 @@ export function mountEnvCard(container, { box }) {
       <div class="card-head"><h3>${esc(t("env.section"))}</h3></div>
       <div class="card-body stack">
         <p class="help">${esc(t("env.editHelp"))}</p>
-        <div class="env-rows" data-env-rows></div>
-        <div><button type="button" class="btn" data-env-action="add">${icon("plus")}${esc(t("env.add"))}</button></div>
+        <div class="row-editor">
+          <div class="env-rows" data-env-rows></div>
+          <button type="button" class="btn" data-env-action="add">${icon("plus")}${esc(t("env.add"))}</button>
+        </div>
         <div class="callout">${icon("info")}<span>${esc(t("env.saveNote"))}</span></div>
         <div class="error-text" data-env-error></div>
       </div>
