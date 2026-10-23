@@ -28,7 +28,7 @@ const ROUTES = [
   { re: /^\/trash$/, page: trash, nav: "trash", crumbs: ["nav.trash"] },
   { re: /^\/boxes\/([^/]+)(?:\/(\w+))?$/, page: boxDetail, nav: "boxes", crumbs: ["nav.boxes"] },
   { re: /^\/templates(?:\/([^/]+))?$/, page: templates, nav: "templates", crumbs: ["nav.templates"] },
-  { re: /^\/settings$/, page: settings, nav: "settings", crumbs: ["nav.settings"] },
+  { re: /^\/settings(?:\/([^/]*))?$/, page: settings, nav: "settings", crumbs: ["nav.settings"] },
   { re: /^\/about$/, page: about, nav: "about", crumbs: ["nav.about"] },
 ];
 

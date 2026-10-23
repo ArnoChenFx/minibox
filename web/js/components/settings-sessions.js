@@ -3,7 +3,9 @@ import { esc } from "../lib/dom.js";
 import { dateTime, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { pinFirst } from "../lib/list-limit.js";
 import { emptyState, confirmDialog, toastError, toast } from "../lib/ui.js";
+import { bindToggles, limitList } from "./list-toggle.js";
 
 export async function loadSessions(view) {
   const card = view.querySelector("#stSessions");
@@ -20,8 +22,13 @@ export async function loadSessions(view) {
     return;
   }
   const others = sessions.filter((s) => !s.current).length;
+  const { shown, toggle } = limitList(
+    view,
+    "sessions",
+    pinFirst(sessions, (s) => s.current),
+  );
   const rows = sessions.length
-    ? sessions.map(sessionRow).join("")
+    ? shown.map(sessionRow).join("")
     : `<tr><td colspan="4">${emptyState({ iconName: "key", title: t("st.sessionsNone") })}</td></tr>`;
   card.innerHTML = `
     <div class="card-head">
@@ -31,11 +38,13 @@ export async function loadSessions(view) {
     <div class="table-wrap"><table class="table">
       <thead><tr><th>${t("st.sessionDevice")}</th><th class="hide-sm">${t("st.sessionCreated")}</th><th>${t("st.sessionLastSeen")}</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table></div>
+    <div class="list-more">${toggle}</div>`;
   card
     .querySelectorAll("[data-revoke]")
     .forEach((btn) => btn.addEventListener("click", () => revokeSession(view, btn.dataset.revoke)));
   card.querySelector("#stSignOutOthers")?.addEventListener("click", () => signOutOthers(view));
+  bindToggles(view, card, () => loadSessions(view));
 }
 
 function sessionRow(s) {

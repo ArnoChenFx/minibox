@@ -513,19 +513,19 @@ const CAPTURES: Record<Screen, Capture> = {
     await page.screenshot({ path: out });
   },
   "settings-hosts": async (page, ctx, out) => {
-    await openRoute(page, ctx, "/settings", page.locator("#stHosts"));
+    await openRoute(page, ctx, "/settings/hosts", page.locator("#stHosts"));
     await page.locator("#stHosts").screenshot({ path: out });
   },
   "settings-tokens": async (page, ctx, out) => {
-    await openRoute(page, ctx, "/settings", exactText(page, "review-agent"));
+    await openRoute(page, ctx, "/settings/tokens", exactText(page, "review-agent"));
     await page.locator("#stTokens").screenshot({ path: out });
   },
   "settings-secrets": async (page, ctx, out) => {
-    await openRoute(page, ctx, "/settings", exactText(page, "OPENAI_API_KEY"));
+    await openRoute(page, ctx, "/settings/secrets", exactText(page, "OPENAI_API_KEY"));
     await page.locator("#stSecrets").screenshot({ path: out });
   },
   "settings-notifications": async (page, ctx, out) => {
-    await openRoute(page, ctx, "/settings", exactText(page, "Ops webhook"));
+    await openRoute(page, ctx, "/settings/notify", exactText(page, "Ops webhook"));
     await page.locator("#stNotify").screenshot({ path: out });
   },
   "create-box": async (page, ctx, out) => {
