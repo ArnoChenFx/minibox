@@ -83,3 +83,82 @@
   gap: 8px 12px;
   margin-top: 6px;
 }
+
+/* The staged-changes banner above a box's settings: the count and the fields on the left, its actions on one line at the
+   right. The fields are cut short before the actions wrap. */
+.staged-banner {
+  align-items: center;
+}
+.staged-banner .icon {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+.staged-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.staged-text strong {
+  white-space: nowrap;
+}
+.staged-fields {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.staged-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+/* On a narrow screen the actions take their own line, right-aligned, so the count is never covered. */
+@media (max-width: 640px) {
+  .staged-banner {
+    flex-wrap: wrap;
+  }
+  .staged-text {
+    flex-basis: calc(100% - 32px);
+  }
+  .staged-actions {
+    flex-basis: 100%;
+  }
+}
+.staged-problem {
+  margin-top: 8px;
+}
+#bsStaged[hidden] {
+  display: none;
+}
+pre.staged-changes {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  max-height: 240px;
+  overflow: auto;
+}
+.mount-pending-remove td:not(:last-child) {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+
+/* An inline-block badge is not crossed out with its cell. */
+.mount-pending .badge {
+  display: inline-block;
+  text-decoration: none;
+}
+
+/* The apply dialog spaces its parts by the stack's gap alone, and keeps that gap above the checkpoint checkbox. */
+.staged-apply {
+  margin-bottom: 16px;
+}
+.staged-apply > .fold-section {
+  margin-top: 0;
+}

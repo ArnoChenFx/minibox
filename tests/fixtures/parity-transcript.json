@@ -3422,5 +3422,85 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"dryRun\":false,\"olderThan\":null,\"volumes\":[{\"id\":\"nowhere\",\"name\":\"nowhere\",\"hostId\":null,\"pool\":null,\"role\":null,\"bytes\":null,\"lastUsedAt\":null,\"formerBox\":null,\"keepsCopy\":false,\"status\":\"refused\",\"trash\":null,\"error\":{\"message\":\"Volume nowhere was not found.\",\"key\":\"volume_not_found\",\"params\":{\"volume\":\"nowhere\"}}}],\"hosts\":[{\"hostId\":\"local\",\"name\":\"Local\",\"status\":\"checked\",\"error\":null}]}"
+  },
+  {
+    "step": "create a box to stage changes on",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"staging\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-staging\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"staging-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"staging-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"staging-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "read the staged changes of a box with none",
+    "method": "GET",
+    "path": "/api/boxes/<boxId>/staged",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"staged\":null}"
+  },
+  {
+    "step": "stage a profile change",
+    "method": "PUT",
+    "path": "/api/boxes/<boxId>/staged",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"staged\":{\"fields\":{\"profile\":\"strict\"},\"pending\":[\"profile\"],\"changes\":[{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"}],\"problem\":null,\"baseRevision\":1,\"updatedAt\":\"<time>\",\"updatedBy\":\"owner\"}}"
+  },
+  {
+    "step": "stage an env change on top",
+    "method": "PUT",
+    "path": "/api/boxes/<boxId>/staged",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"staged\":{\"fields\":{\"profile\":\"strict\",\"env\":[{\"name\":\"MODE\",\"value\":\"dev\"}]},\"pending\":[\"env\",\"profile\"],\"changes\":[{\"field\":\"env\",\"from\":\"[]\",\"to\":\"[{\\\"name\\\":\\\"MODE\\\",\\\"value\\\":\\\"dev\\\",\\\"secretRef\\\":null}]\"},{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"}],\"problem\":null,\"baseRevision\":1,\"updatedAt\":\"<time>\",\"updatedBy\":\"owner\"}}"
+  },
+  {
+    "step": "read the staged changes",
+    "method": "GET",
+    "path": "/api/boxes/<boxId>/staged",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"staged\":{\"fields\":{\"profile\":\"strict\",\"env\":[{\"name\":\"MODE\",\"value\":\"dev\"}]},\"pending\":[\"env\",\"profile\"],\"changes\":[{\"field\":\"env\",\"from\":\"[]\",\"to\":\"[{\\\"name\\\":\\\"MODE\\\",\\\"value\\\":\\\"dev\\\",\\\"secretRef\\\":null}]\"},{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"}],\"problem\":null,\"baseRevision\":1,\"updatedAt\":\"<time>\",\"updatedBy\":\"owner\"}}"
+  },
+  {
+    "step": "preview applying the staged changes",
+    "method": "GET",
+    "path": "/api/boxes/<boxId>/staged/preview",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"preview\":{\"changes\":[{\"field\":\"env\",\"from\":\"[]\",\"to\":\"[{\\\"name\\\":\\\"MODE\\\",\\\"value\\\":\\\"dev\\\",\\\"secretRef\\\":null}]\"},{\"field\":\"profile\",\"from\":\"standard\",\"to\":\"strict\"},{\"field\":\"containerName\",\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"}],\"diff\":[],\"keeps\":[\"volumes\",\"id\",\"name\",\"history\"],\"loses\":[\"writableLayer\",\"processes\",\"ip\"],\"containerName\":{\"from\":\"mbtest-staging\",\"to\":\"mbtest-<boxId>\"},\"revision\":{\"current\":1,\"next\":2},\"sessions\":0,\"systemCheckpoint\":true,\"stagedAt\":\"<time>\"}}"
+  },
+  {
+    "step": "apply the staged changes",
+    "method": "POST",
+    "path": "/api/boxes/<boxId>/staged/apply",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"staging\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"strict\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-<boxId>\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"staging-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"staging-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"staging-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[{\"name\":\"MODE\",\"value\":\"dev\"}],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}},\"safety\":null}"
+  },
+  {
+    "step": "apply with nothing staged",
+    "method": "POST",
+    "path": "/api/boxes/<boxId>/staged/apply",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"This box has no staged changes. They may have been applied or discarded already.\",\"retryable\":false,\"key\":\"staged_none\"}}"
+  },
+  {
+    "step": "stage a network change",
+    "method": "PUT",
+    "path": "/api/boxes/<boxId>/staged",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"staged\":{\"fields\":{\"network\":\"bridge\"},\"pending\":[\"network\"],\"changes\":[{\"field\":\"network\",\"from\":\"mbtest-boxes\",\"to\":\"bridge\"}],\"problem\":null,\"baseRevision\":2,\"updatedAt\":\"<time>\",\"updatedBy\":\"owner\"}}"
+  },
+  {
+    "step": "discard the staged changes",
+    "method": "DELETE",
+    "path": "/api/boxes/<boxId>/staged",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
   }
 ]

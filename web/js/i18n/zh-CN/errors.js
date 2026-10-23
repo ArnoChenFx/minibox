@@ -36,6 +36,8 @@ export default {
   "err.rebuild_empty": "这次请求没有改变模板、挂载、环境变量、网络或安全档位。",
   "err.rebuild_confirm_required":
     "这次变更会重建 Box，尚未应用。请在相同请求中带上 confirm 为 true 以应用预览。卷、稳定 ID 和名称会保留。可写层、运行中的进程和容器 IP 会丢失。",
+  "err.staged_none": "这个 Box 没有待应用的变更，可能已被应用或放弃。",
+  "err.staged_changed": "待应用的变更在你查看之后又被修改，请重新查看后再应用。",
   "err.rebuild_start_failed": "新容器没有启动。已恢复之前的容器和规格。",
   "err.rebuild_name_conflict": "重建时 {name} 仍被占用。请先移除该容器再试。",
   "err.rebuild_failed_safety_kept": "重建失败，且无法把 Box 原样恢复。安全检查点 {id} 已保留，可据此恢复该 Box。",

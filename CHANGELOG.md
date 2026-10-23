@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- 重建类变更暂存、统一应用（Refs [#26](https://github.com/ArnoChenFx/minibox/issues/26)）：Box 设置中修改环境变量或挂载不再立即重建，而是暂存在服务端（重启后保留）。设置页顶部显示「N 项变更待应用 [查看差异] [应用并重建] [放弃]」；应用前的确认框列出规格差异、将被结束的终端会话数、可展开的 Docker 差异、默认勾选的「先创建检查点（含系统层）」，并说明所有卷中的数据保持不变。接口为 `GET/PUT/DELETE /api/boxes/{id}/staged`、`GET /api/boxes/{id}/staged/preview` 与 `POST /api/boxes/{id}/staged/apply`；有 `box:write` 的令牌可以暂存与放弃，应用仅限所有者。
+
 ## [0.6.0] - 2026-10-23
 
 ### 亮点

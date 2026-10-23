@@ -92,7 +92,7 @@ export default {
   "vol.mounts": "Mounts",
   "vol.noMounts": "This box has no mounts.",
   "vol.rebuildNote":
-    "Changing mounts rebuilds the container and renames it to the stable box id. The box id in the address bar changes with the container.",
+    "Attaching or detaching a volume is staged; apply it from the banner above the settings. The rebuild renames the container to the stable box id, so the box id in the address bar changes.",
   "vol.storageUnreachable":
     "Pool {pools} cannot be reached. Starting this box is refused so a hard mount cannot hang it.",
   "vol.removePool": "Remove",

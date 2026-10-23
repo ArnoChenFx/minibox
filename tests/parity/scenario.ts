@@ -1167,6 +1167,33 @@ async function recordScenario(): Promise<Exchange[]> {
     });
     await post("prune orphaned volumes as a dry run", "/api/volumes/prune", {});
     await post("prune orphaned volumes", "/api/volumes/prune", { dryRun: false, ids: ["nowhere"] });
+    const staging = await post("create a box to stage changes on", "/api/boxes", {
+      name: "staging",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    // The stable id, because applying the changes gives the box a new container.
+    const stagingId = String((staging.json?.box as { boxId?: string } | undefined)?.boxId ?? "");
+    const stagingRev = String((staging.json?.box as { revision?: number } | undefined)?.revision ?? "");
+    await send("read the staged changes of a box with none", "GET", `/api/boxes/${stagingId}/staged`);
+    await put("stage a profile change", `/api/boxes/${stagingId}/staged`, { profile: "strict" });
+    await put("stage an env change on top", `/api/boxes/${stagingId}/staged`, {
+      env: [{ name: "MODE", value: "dev" }],
+    });
+    await send("read the staged changes", "GET", `/api/boxes/${stagingId}/staged`);
+    await send("preview applying the staged changes", "GET", `/api/boxes/${stagingId}/staged/preview`);
+    await send("apply the staged changes", "POST", `/api/boxes/${stagingId}/staged/apply`, {
+      body: JSON.stringify({ checkpoint: false }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": stagingRev },
+    });
+    await send("apply with nothing staged", "POST", `/api/boxes/${stagingId}/staged/apply`, {
+      body: JSON.stringify({ checkpoint: false }),
+      contentType: JSON_TYPE,
+      headers: { "if-match": "2" },
+    });
+    await put("stage a network change", `/api/boxes/${stagingId}/staged`, { network: "bridge" });
+    await send("discard the staged changes", "DELETE", `/api/boxes/${stagingId}/staged`);
   } finally {
     server.stop(true);
     app.throttle.stop();

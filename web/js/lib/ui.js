@@ -94,7 +94,7 @@ export function checkboxField({ id, label, help = "", checked = false }) {
 /**
  * Promise-based confirm dialog. `message` and `body` are HTML, and the checkboxes go below the body. Resolves to false
  * when cancelled, or to `{ [key]: checked }` for the checkboxes when confirmed. `checkbox` is one checkbox whose result
- * is `{ checked }`.
+ * is `{ checked }`. `onOpen(root)` runs once the dialog is in the page, to connect controls drawn in the body.
  */
 export function confirmDialog({
   title,
@@ -104,6 +104,7 @@ export function confirmDialog({
   danger = false,
   checkbox,
   checkboxes = [],
+  onOpen,
 }) {
   const fields = checkbox ? [{ key: "checked", ...checkbox }] : checkboxes;
   return new Promise((resolve) => {
@@ -117,6 +118,7 @@ export function confirmDialog({
       footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="cfm-ok">${esc(confirmText)}</button>`,
       onClose: () => resolve(result),
     });
+    onOpen?.(root);
     root.querySelector("#cfm-ok").addEventListener("click", () => {
       result = Object.fromEntries(fields.map(({ key }) => [key, !!root.querySelector(`#cfm-check-${key}`)?.checked]));
       close();

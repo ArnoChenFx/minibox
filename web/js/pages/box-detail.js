@@ -5,7 +5,7 @@ import { mountOverview } from "../components/box-overview.js";
 import { mountPorts } from "../components/box-ports.js";
 import { mountBoxSettings } from "../components/box-settings.js";
 import { openSshDialog } from "../components/box-ssh.js";
-import { attachVolume, detachMount } from "../components/box-volumes.js";
+import { attachVolume, detachMount, restoreMount } from "../components/box-volumes.js";
 import { takeCheckpoint } from "../components/checkpoints.js";
 import { mountFiles } from "../components/files.js";
 import { openSaveTemplate } from "../components/save-template.js";
@@ -20,7 +20,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
 import { subscribe, pollWhileDown } from "../lib/live.js";
-import { boxHash, movedBoxHash } from "../lib/routes.js";
+import { boxHash } from "../lib/routes.js";
 import { stateBadge, boxState, emptyState, toastError } from "../lib/ui.js";
 
 /** The points a chart keeps. The server keeps its own ring; this bounds what the page holds. */
@@ -198,11 +198,6 @@ export function render(view, id, tab = "overview", sub = undefined) {
     await mount();
   };
 
-  /** The box got a new container id, so the page opens it under that id and keeps the tab it shows. */
-  const followBoxId = (nextId) => {
-    location.hash = movedBoxHash(location.hash, id, nextId) ?? boxHash(nextId);
-  };
-
   delegate(view, {
     start: (b) => lifecycle(box, "start", b).then(rerender),
     stop: (b) => lifecycle(box, "stop", b).then(rerender),
@@ -230,18 +225,9 @@ export function render(view, id, tab = "overview", sub = undefined) {
       if (frames !== framesAtDelete) void rerender();
     },
     resources: () => editResources(box, rerender),
-    "attach-volume": () =>
-      attachVolume(box).then((next) => {
-        if (!next) return;
-        if (next.id !== id) followBoxId(next.id);
-        else rerender();
-      }),
-    "detach-mount": (el) =>
-      detachMount(box, el).then((next) => {
-        if (!next) return;
-        if (next.id !== id) followBoxId(next.id);
-        else rerender();
-      }),
+    "attach-volume": () => attachVolume(box),
+    "detach-mount": (el) => detachMount(box, el),
+    "restore-mount": (el) => restoreMount(box, el),
   });
 
   const offs = [
