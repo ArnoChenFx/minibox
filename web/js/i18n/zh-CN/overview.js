@@ -13,6 +13,8 @@ export default {
   "ov.running": "运行中",
   "ov.lastCommand": "最近命令",
   "ov.note": "备注",
+  "ov.showOutput": "显示最近几行输出",
+  "ov.hideOutput": "收起输出",
   "ov.observe": "观察",
   "ov.observeTitle": "以只读方式打开会话",
   "ov.observeActivityTitle": "打开该 Box 的活动，其中列出它执行过的命令",

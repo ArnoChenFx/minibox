@@ -531,7 +531,7 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     );
 
     test(
-      "a row names who acted, the command with its last lines, and the session it used",
+      "a row names who acted, the command and the session it used, and its last lines open on request",
       async () => {
         await openOverview();
         await page.locator("#ovProgress .list-toggle").click();
@@ -540,6 +540,12 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
         await webExpect(row.getByText("Token builder")).toBeVisible();
         await webExpect(row.getByText("Running", { exact: true })).toBeVisible();
         await webExpect(row.locator(".watch-code")).toHaveText("npm run dev");
+        const more = row.locator(".watch-more");
+        await webExpect(more).toHaveAttribute("aria-expanded", "false");
+        await webExpect(row.locator(".watch-output")).toBeHidden();
+        await more.click();
+        await webExpect(more).toHaveAttribute("aria-expanded", "true");
+        await webExpect(row.locator(".watch-output")).toBeVisible();
         await webExpect(row.locator(".watch-output span")).toHaveText([
           "compiling",
           "ready in 1.2s",

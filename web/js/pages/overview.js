@@ -37,18 +37,18 @@ export function render(view, focus = "") {
       <div><h1>${t("nav.overview")}</h1><p id="ovSub">${t("ov.subtitle")}</p></div>
       <div class="page-actions"><button class="btn btn-primary" data-action="create">${icon("plus")}${t("box.create")}</button></div>
     </div>
-    <div class="grid grid-2" style="margin-bottom:16px">
-      <section class="card watch-card" aria-labelledby="ovProgressTitle">
+    <div class="grid grid-4" id="ovHosts" style="margin-bottom:16px" hidden></div>
+    <div class="grid grid-4" id="ovMetrics">${metricSkeleton().repeat(4)}</div>
+    <div class="grid watch-grid" style="margin-top:16px">
+      <section class="card watch-card" id="ovProgressCard" aria-labelledby="ovProgressTitle">
         <div class="card-head"><h3 id="ovProgressTitle">${t("ov.progress")}</h3><span class="hint">${t("ov.progressHint")}</span></div>
         <div id="ovProgress"><div class="card-body"><div class="skeleton sk-line"></div></div></div>
       </section>
-      <section class="card watch-card" aria-labelledby="ovAttentionTitle">
+      <section class="card watch-card" id="ovAttentionCard" aria-labelledby="ovAttentionTitle">
         <div class="card-head"><h3 id="ovAttentionTitle">${t("ov.attention")}</h3><span class="hint">${t("ov.attentionHint")}</span></div>
         <div id="ovAttention"><div class="card-body"><div class="skeleton sk-line"></div></div></div>
       </section>
     </div>
-    <div class="grid grid-4" id="ovHosts" style="margin-bottom:16px" hidden></div>
-    <div class="grid grid-4" id="ovMetrics">${metricSkeleton().repeat(4)}</div>
     <div class="grid grid-3" style="margin-top:16px">
       <div class="card" style="grid-column: span 2" id="ovAlloc"><div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div></div>
       <div class="card" id="ovHost"><div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div></div>

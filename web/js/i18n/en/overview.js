@@ -13,6 +13,8 @@ export default {
   "ov.running": "Running",
   "ov.lastCommand": "Last command",
   "ov.note": "Note",
+  "ov.showOutput": "Show the last lines it printed",
+  "ov.hideOutput": "Hide the output",
   "ov.observe": "Observe",
   "ov.observeTitle": "Open the session read-only",
   "ov.observeActivityTitle": "Open the box's activity, which lists the commands it ran",
