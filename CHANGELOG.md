@@ -4,9 +4,13 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-23
+
 ### 亮点
 - **回收站与安全检查点**：删除 Box 或卷时，数据先保留在回收站中，默认保留 7 天（`TRASH_RETENTION_DAYS`），可恢复为新的 Box 或卷。重建 Box、挂载或卸载卷前，自动拍摄一个安全检查点。
 - **在线备份与异地目标**：MiniBox 运行时即可把数据目录备份为一个用口令封装的文件，并可离线恢复到空目录。检查点包与备份可推送到 S3 兼容存储桶或 SFTP 服务器，也可从那里拉取。
+- **宿主机功能对等**：模板、快照、存为模板、镜像拉取、回滚与端口预览可在 ssh、tcp 与 Unix 套接字宿主机上使用；创建 Box 时自动把缺少的模板同步到目标宿主机。
+- **Box 内 Agent 自助**：可为 Box 内的 Agent 开启仅限本 Box 的自助令牌，让它拍摄检查点、向人提问并报告状态。
 
 ### 新增
 - 回收站与重建安全检查点（[#115](https://github.com/ArnoChenFx/minibox/issues/115)）：删除 Box 或卷时保留其数据副本，保留期由 `TRASH_RETENTION_DAYS` 设定（默认 7，范围 1 到 365），到期后每小时清理一次。删除 Box 时保留其自有的 `/workspace` 与 home 卷；删除卷时保留卷的数据，缓存卷与工具卷除外。控制台的「回收站」页面列出各条记录，可恢复为新的 Box 或卷，或立即彻底删除。恢复 Box 时需要新名称，Box 保留模板、数据、资源与安全档位，但不保留环境变量、启动命令、标签、网络、TTL 与共享挂载。接口为 `GET /api/trash`、`POST /api/trash/:id/restore`（202，任务，可设置 `name`、`cpus`、`memoryMb`）与 `DELETE /api/trash/:id`（202，任务），仅所有者可用。回收站条目计入 `CHECKPOINT_CAPACITY_MB`：超过上限时先清除最旧的条目，仍不够则拒绝删除并说明原因，且不停止、不删除任何内容。宿主机剩余空间低于下限时，保留副本的删除返回 `507`。`DELETE /api/boxes/:id` 与 `DELETE /api/volumes/:id` 接受 `skipTrash=true`，表示不保留副本，需要所有者或持有新令牌权限 `trash:skip` 的令牌；该权限不属于任何预设。删除响应的 `trash` 字段给出保留的条目，没有保留时为 `null`。重建 Box（`POST /api/boxes/:id/rebuild`）以及挂载与卸载卷（`attach`、`detach`）默认先拍摄「重建前」的安全检查点，`safetyCheckpoint: false` 可关闭它。重建失败且 Box 恢复原状时丢弃该检查点；无法原样恢复时保留它，并在错误中给出 id。新增事件 `box.trashed`、`volume.trashed`、`trash.restored` 与 `trash.purged`。命令行新增 `minibox trash ls`、`restore` 与 `purge`；MCP 新增 `list_trash`、`restore_trash` 与 `purge_trash`，位于 `storage` 工具集，仅所有者可用。
