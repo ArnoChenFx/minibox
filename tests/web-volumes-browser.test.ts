@@ -173,9 +173,9 @@ describe.skipIf(!executablePath)("the volumes page: batch delete and prune (real
       await page.locator('#volBulk [data-action="bulk-delete"]').click();
       await webExpect(dialog(page)).toContainText("Delete the selected volumes?");
       await webExpect(dialog(page).locator("tr", { hasText: "notes" })).toContainText(
-        "Delete, keeping a copy in the recycle bin",
+        "Delete, copy kept in the recycle bin",
       );
-      await webExpect(dialog(page).locator("tr", { hasText: "cache-a" })).toContainText("Delete");
+      await webExpect(dialog(page).locator("tr", { hasText: "cache-a" })).toContainText("Delete, cannot be restored");
       await webExpect(dialog(page).locator("tr", { hasText: "cache-a" })).not.toContainText("recycle bin");
       await dialog(page).getByRole("button", { name: "Cancel" }).click();
       await webExpect(dialog(page)).toHaveCount(0);
@@ -212,6 +212,7 @@ describe.skipIf(!executablePath)("the volumes page: batch delete and prune (real
       await webExpect(list).toHaveCount(6);
       await webExpect(dialog(page).locator("[data-toggle]")).toContainText("Show less");
       await webExpect(dialog(page)).not.toContainText("alpha-workspace");
+      await webExpect(dialog(page)).toContainText("cannot be restored");
       await dialog(page).locator("#vol-ok").click();
       await webExpect(page.locator("#toasts")).toContainText("Orphaned volumes cleaned up");
       await webExpect(row(page, "extra-1")).toHaveCount(0);
