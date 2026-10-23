@@ -46,6 +46,15 @@ function checkStatus(value: unknown): Checked<EventStatus | undefined> {
   return status ? accept(status) : reject(msg("event_status_invalid"), "status");
 }
 
+const READS = ["all", "failed"] as const;
+type Reads = (typeof READS)[number];
+
+function checkReads(value: unknown): Checked<Reads | undefined> {
+  if (absent(value)) return accept(undefined);
+  const reads = READS.find((candidate) => candidate === value);
+  return reads ? accept(reads) : reject(msg("event_filter_invalid", { field: "reads" }), "reads");
+}
+
 function checkSince(value: unknown): Checked<number | undefined> {
   if (absent(value)) return accept(undefined);
   const text = typeof value === "string" ? value.trim() : "";
@@ -74,11 +83,16 @@ const text = (name: string, description: string) =>
 const filterShape = {
   box: text("box", "Box id or name. Matches the events about that box under either."),
   principal: text("principal", "Who made the call, such as owner."),
-  op: text("op", "Operation name, such as box.create."),
+  op: text("op", "Operation name, such as box.create, or a family of them, such as exec.*."),
   status: field(checkStatus, {
     type: "string",
     enum: [...STATUSES],
     description: "Outcome: started, ok, error or denied.",
+  }).optional(),
+  reads: field(checkReads, {
+    type: "string",
+    enum: [...READS],
+    description: "Which reads to include: all (the default), or failed for only the reads that failed or were refused.",
   }).optional(),
   run: text("run", "Client session that made the call, as sent in X-Minibox-Run."),
   since: field(checkSince, {
@@ -112,6 +126,7 @@ export function filterOf(input: {
   principal?: string;
   op?: string;
   status?: EventStatus;
+  reads?: Reads;
   run?: string;
   since?: number;
 }): EventFilter {
@@ -120,6 +135,7 @@ export function filterOf(input: {
     principal: input.principal,
     op: input.op,
     status: input.status,
+    hideOkReads: input.reads === "failed" ? true : undefined,
     run: input.run,
     since: input.since,
   };
@@ -138,7 +154,7 @@ export const eventList = defineOperation({
     {
       method: "GET",
       path: "/api/events",
-      query: ["box", "principal", "op", "status", "run", "since", "cursor", "limit"],
+      query: ["box", "principal", "op", "status", "reads", "run", "since", "cursor", "limit"],
     },
   ],
   run: async ({ events, principal, host, boxViews }, input) =>

@@ -14,6 +14,7 @@ import { onHost } from "./lib/store.js";
 import { applyTheme, currentTheme, toggleTheme } from "./lib/theme.js";
 import { confirmDialog } from "./lib/ui.js";
 import * as about from "./pages/about.js";
+import * as activity from "./pages/activity.js";
 import * as boxDetail from "./pages/box-detail.js";
 import * as boxes from "./pages/boxes.js";
 import * as library from "./pages/library.js";
@@ -22,7 +23,7 @@ import * as settings from "./pages/settings.js";
 import * as storage from "./pages/storage.js";
 import * as trash from "./pages/trash.js";
 
-const PAGES = { about, boxDetail, boxes, library, overview, settings, storage, trash };
+const PAGES = { about, activity, boxDetail, boxes, library, overview, settings, storage, trash };
 
 let cleanup = null;
 

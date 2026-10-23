@@ -35948,7 +35948,7 @@
             "schema": {
               "type": "string",
               "maxLength": 200,
-              "description": "Operation name, such as box.create."
+              "description": "Operation name, such as box.create, or a family of them, such as exec.*."
             }
           },
           {
@@ -35964,6 +35964,19 @@
                 "denied"
               ],
               "description": "Outcome: started, ok, error or denied."
+            }
+          },
+          {
+            "name": "reads",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "failed"
+              ],
+              "description": "Which reads to include: all (the default), or failed for only the reads that failed or were refused."
             }
           },
           {

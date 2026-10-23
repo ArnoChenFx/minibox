@@ -74,6 +74,14 @@ The **Overview** page is the first screen. It has two lists:
 - **In progress** shows the boxes an agent is working on. See [Watch an agent on the overview](terminal-and-sessions.md#watch-an-agent-on-the-overview).
 - **Needs attention** shows the problems MiniBox has recorded: a box that ran out of memory, a failed checkpoint, a box whose live settings differ from its spec, a rollback waiting for you to confirm or undo it, a volume over its hard limit, a storage pool that did not answer, an offline host, and a host whose disk is below its free-space minimum. Out-of-memory kills and failed checkpoints stay listed for a day. The other items stay listed while their condition lasts. **View** opens the box tab, the volumes or the host settings where the problem shows.
 
+**Recent activity** at the foot of the overview shows the last six operations MiniBox recorded, without routine reads and without the start of an operation that has its own finish. **View all** opens the **Activity** page.
+
+## The Activity page
+
+The **Activity** page in the sidebar is the full log of every recorded operation, newest first, 25 to a page. Each row shows when it happened, the operation, its target, who acted and through what (the owner, an access token or a box agent; REST, CLI or MCP), and the result. Click an operation to see the fields MiniBox recorded for it. **Previous** and **Next** move through older pages. The first page follows new operations as they happen.
+
+Filters above the log narrow it to one box, one kind of operation (boxes, commands, checkpoints, sessions, egress and so on), one result (done, failed, denied, started) or one actor. Successful reads, such as listing boxes, are left out unless you tick **Include successful reads**. A failed or denied read is always listed. The same filters are on `GET /api/events` as `box`, `op` (for example `op=exec.*`), `status`, `principal` and `reads=failed`. See the [API reference](../reference/api.md).
+
 The **Boxes** list shows **Agent active · 12 seconds ago** beside a box while an agent is working in it. An agent is working in a box when it acted there in the last 10 minutes, or a command it started still runs. The time is when the agent last acted there.
 
 ## Start, stop and restart

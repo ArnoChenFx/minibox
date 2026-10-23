@@ -1,7 +1,17 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import { bytes, dateTime } from "../lib/format.js";
-import { has, t } from "../lib/i18n.js";
+import {
+  countTag,
+  describe,
+  detailsJson,
+  iconOf,
+  isFailed,
+  isRoutine,
+  opLabel,
+  statusBadge,
+} from "../lib/event-view.js";
+import { dateTime } from "../lib/format.js";
+import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { lineWindow, openBoxLogs } from "../lib/logs-stream.js";
@@ -14,7 +24,6 @@ const POLL_MS = 5000;
 const LOG_FALLBACK_MS = 4000;
 /** A burst of events reads the list once, after it has settled. */
 const REFRESH_DEBOUNCE_MS = 300;
-const COMMAND_MAX = 160;
 
 /** The log panel's status badge: its colour and the key of its label. */
 const LOG_STATES = {
@@ -37,66 +46,13 @@ const FILTERS = [
   { key: "egress", label: "bd.filterEgress", match: (op) => op.startsWith("egress.") },
 ];
 
-const opLabel = (op) => (has(`ev.${op}`) ? t(`ev.${op}`) : op);
-
-function iconOf(op) {
-  if (op.startsWith("exec.")) return "zap";
-  if (op.startsWith("container.")) return "box";
-  if (op.startsWith("session.") || op.startsWith("terminal.")) return "terminal";
-  if (op.startsWith("egress.")) return "shield";
-  if (op === "box.self.revoke") return "key";
-  return "activity";
-}
-
-/** A reads that succeeded, such as polling a session list, is not history. Failed or refused reads still show. */
-const isRoutine = (event) => event.kind === "read" && event.status === "ok";
-
-function clip(text, max) {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-function commandOf(detail) {
-  const text = typeof detail.cmd === "string" ? detail.cmd : Array.isArray(detail.argv) ? detail.argv.join(" ") : "";
-  return clip(text, COMMAND_MAX);
-}
-
-/** A one-line reading of what an event did, taken from its fields. Nothing here is free text from the event. */
-function describe(event) {
-  const d = event.detail ?? {};
-  if (event.op === "exec.finish") {
-    const parts = [t("ev.exit", { code: d.exitCode ?? "—" })];
-    if (typeof d.durationMs === "number") parts.push(t("ev.duration", { s: (d.durationMs / 1000).toFixed(1) }));
-    return parts.join(" · ");
-  }
-  if (event.op === "session.send") return t("ev.send", { n: d.keys ?? 0, bytes: bytes(d.bytes ?? 0) });
-  if (event.op === "terminal.close") {
-    return t("ev.io", { in: bytes(d.bytesIn ?? 0), out: bytes(d.bytesOut ?? 0) });
-  }
-  if (event.op === "self.status") return [d.state, d.note].filter((part) => typeof part === "string").join(" · ");
-  if (event.op === "self.ask" && typeof d.message === "string") return clip(d.message, COMMAND_MAX);
-  if (event.op.startsWith("exec.")) return commandOf(d);
-  if (event.op.startsWith("egress.")) return typeof d.host === "string" ? `${d.host}:${d.port ?? ""}` : "";
-  if (typeof d.session === "string") return d.session;
-  return "";
-}
-
 function row(event) {
   const detail = describe(event);
-  const failed = event.status === "error" || event.status === "denied";
-  const badge =
-    event.status === "ok"
-      ? ""
-      : `<span class="badge ${failed ? "badge-danger" : event.status === "started" ? "badge-warning" : ""}">${esc(t(`ev.status.${event.status}`))}</span>`;
-  const count = event.count > 1 ? `<span class="tag">×${event.count}</span>` : "";
-  const json =
-    event.detail === undefined
-      ? ""
-      : `<details class="event-json"><summary>${esc(t("ev.details"))}</summary><pre>${esc(JSON.stringify(event.detail, null, 2))}</pre></details>`;
   return `<li class="event-row">
-      <span class="ico ${failed ? "fail" : ""}">${icon(iconOf(event.op))}</span>
+      <span class="ico ${isFailed(event) ? "fail" : ""}">${icon(iconOf(event.op))}</span>
       <div class="event-main">
-        <div class="event-title"><strong>${esc(opLabel(event.op))}</strong>${detail ? `<span class="event-detail mono">${esc(detail)}</span>` : ""}${badge}${count}</div>
-        <div class="subtle">${esc(t(`ev.source.${event.source}`))}</div>${json}
+        <div class="event-title"><strong>${esc(opLabel(event.op))}</strong>${detail ? `<span class="event-detail mono">${esc(detail)}</span>` : ""}${statusBadge(event)}${countTag(event)}</div>
+        <div class="subtle">${esc(t(`ev.source.${event.source}`))}</div>${detailsJson(event)}
       </div>
       <span class="time">${esc(dateTime(new Date(event.ts).toISOString()))}</span>
     </li>`;

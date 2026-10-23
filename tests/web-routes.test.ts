@@ -69,8 +69,12 @@ describe("pages without tabs", () => {
 });
 
 describe("the Activity entry", () => {
-  test("opens the overview with its recent-activity card in focus, and highlights Activity", () => {
-    expect(landing("/activity")).toMatchObject({ page: "overview", nav: "activity", args: ["activity"] });
+  test("opens the activity log, its own page, and highlights Activity", () => {
+    expect(landing("/activity")).toMatchObject({
+      page: "activity",
+      nav: "activity",
+      args: [],
+    });
   });
 });
 

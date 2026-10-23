@@ -2,14 +2,14 @@ import { openCreateBox } from "../components/create-box.js";
 import { bindToggles, limitList } from "../components/list-toggle.js";
 import { followOverview } from "../components/overview-feed.js";
 import { drawWatch } from "../components/overview-watch.js";
-import { ACTION_ICON, readableAction } from "../lib/activity.js";
 import { api } from "../lib/api.js";
 import { applyBoxFrame, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
+import { iconOf, isFailed, isRoutine, opLabel, statusBadge } from "../lib/event-view.js";
 import { bytes, cpus, duration, gbOrMb, mem, pct, relTime } from "../lib/format.js";
 import { boxesOnHost, HOST_BADGE, isUnreachable } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, onHosts } from "../lib/hosts.js";
-import { has, t } from "../lib/i18n.js";
+import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { sparkline } from "../lib/sparkline.js";
@@ -20,18 +20,13 @@ function metricSkeleton() {
   return '<div class="card"><div class="skeleton sk-block"></div></div>';
 }
 
-/** Highlights the recent-activity card and brings it to the middle of the view, which the Activity entry asks for. */
-function revealRecent(view) {
-  const card = view.querySelector("#ovRecentCard");
-  card.classList.add("is-focus");
-  card.scrollIntoView({ block: "center" });
-}
-
 /** How often the host cards re-read what each host runs and uses. The sampler keeps its figures current between reads. */
 const HOST_USAGE_MS = 10_000;
 
-/** `focus` is "activity" when the Activity entry opened the page: the recent-activity card is then brought into view. */
-export function render(view, focus = "") {
+/** How many recent events the overview summarises. It skips starts, whose finish has its own row; the Activity page has the whole log. */
+export const RECENT_EVENTS = 6;
+
+export function render(view) {
   view.innerHTML = `
     <div class="page-head">
       <div><h1>${t("nav.overview")}</h1><p id="ovSub">${t("ov.subtitle")}</p></div>
@@ -55,7 +50,7 @@ export function render(view, focus = "") {
     </div>
     <div class="grid grid-2" style="margin-top:16px">
       <div class="card"><div class="card-head"><h3>${t("nav.boxes")}</h3><a class="hint" href="#/boxes">${t("ov.viewAll")}</a></div><div id="ovBoxes"><div class="card-body"><div class="skeleton sk-line"></div></div></div></div>
-      <div class="card" id="ovRecentCard"><div class="card-head"><h3>${t("ov.recent")}</h3><span class="hint">${t("ov.thisRun")}</span></div><div id="ovActivity"><div class="card-body"><div class="skeleton sk-line"></div></div></div></div>
+      <div class="card" id="ovRecentCard"><div class="card-head"><h3>${t("ov.recent")}</h3><a class="hint" href="#/activity">${t("ov.viewAll")}</a></div><div id="ovActivity"><div class="card-body"><div class="skeleton sk-line"></div></div></div></div>
     </div>`;
 
   delegate(view, { create: () => openCreateBox({ onCreated: (b) => (location.hash = `#/boxes/${b.id}`) }) });
@@ -76,16 +71,12 @@ export function render(view, focus = "") {
       /* the host pill already signals connectivity issues */
     }
   };
-  let revealPending = focus === "activity";
   const loadActivity = async () => {
     try {
-      renderActivity(view, (await api("/api/activity")).activity);
+      const { events } = await api(`/api/events?reads=failed&limit=${RECENT_EVENTS * 3}`);
+      renderActivity(view, events.filter((event) => event.status !== "started").slice(0, RECENT_EVENTS));
     } catch {
       /* the host pill already signals connectivity issues */
-    }
-    if (revealPending) {
-      revealPending = false;
-      revealRecent(view);
     }
   };
   const loadAll = () => {
@@ -137,7 +128,10 @@ export function render(view, focus = "") {
       boxes = applyBoxFrame(boxes, frame);
       renderBoxes(view, boxes);
     }),
-    subscribe("event", refreshActivity),
+    // Reading the summary is itself a routine read, so routine reads never trigger a refresh.
+    subscribe("event", (event) => {
+      if (!isRoutine(event)) refreshActivity();
+    }),
     subscribe("reset", refreshActivity),
   ];
   loadAll();
@@ -295,9 +289,10 @@ function hostAllocation(host, usage) {
   </div>`;
 }
 
-function renderActivity(view, items) {
+/** The newest few changes, failures and refusals, each one line. The Activity page has the whole log with filters. */
+function renderActivity(view, events) {
   const root = view.querySelector("#ovActivity");
-  if (!items.length) {
+  if (!events.length) {
     root.innerHTML = emptyState({
       iconName: "activity",
       title: t("ov.noActivity"),
@@ -305,15 +300,13 @@ function renderActivity(view, items) {
     });
     return;
   }
-  const { shown, toggle } = limitList(view, "activity", items);
-  root.innerHTML = `<ul class="activity">${shown
-    .map((a) => {
-      const ic = ACTION_ICON[a.action] ?? "activity";
-      const label = has(`act.${a.action}`) ? t(`act.${a.action}`) : readableAction(a.action);
-      return `<li title="${esc(a.message ?? "")}"><span class="ico ${a.ok ? "" : "fail"}">${icon(a.ok ? ic : "alert")}</span>
-        <span>${esc(label)} <strong>${esc(a.target)}</strong>${a.ok ? "" : ` <span class="badge badge-danger">${t("common.failed")}</span>`}</span>
-        <span class="time">${relTime(a.t)}</span></li>`;
+  root.innerHTML = `<ul class="activity">${events
+    .map((event) => {
+      const target = event.target?.name ?? event.target?.id ?? "";
+      const failed = isFailed(event);
+      return `<li><span class="ico ${failed ? "fail" : ""}">${icon(failed ? "alert" : iconOf(event.op))}</span>
+        <span class="truncate">${esc(opLabel(event.op))}${target ? ` <strong>${esc(target)}</strong>` : ""}</span>${statusBadge(event)}
+        <span class="time">${relTime(new Date(event.ts).toISOString())}</span></li>`;
     })
-    .join("")}</ul><div class="list-more">${toggle}</div>`;
-  bindToggles(view, root, () => renderActivity(view, items));
+    .join("")}</ul>`;
 }

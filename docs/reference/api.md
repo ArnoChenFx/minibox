@@ -118,7 +118,7 @@ These are streams, sockets, file routes and preview routes. They are not describ
 
 The event log records every operation that changes state, and it can be searched.
 
-- `GET /api/events` lists events, newest first. Filter by `box`, `principal`, `op`, `status`, `run` or `since`, and page with `cursor` and `limit` (default 50, maximum 200).
+- `GET /api/events` lists events, newest first. Filter by `box`, `principal`, `op`, `status`, `run` or `since`, and page with `cursor` and `limit` (default 50, maximum 200). `op` takes one operation, such as `box.create`, or a family, such as `exec.*`. `reads=failed` leaves out the reads that succeeded and keeps the changes and the failed or refused reads.
 - `GET /api/events/stream` sends the same events live. A client that reconnects sends its last `id` as `Last-Event-ID`, and receives the events it missed.
 
 Events are kept according to the retention settings in [Configuration](configuration.md#events-and-logs).
