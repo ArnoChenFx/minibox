@@ -148,6 +148,30 @@ describe("streamed upload", () => {
     expect(leftovers(vol)).toEqual([]);
   });
 
+  test("a body that fails while it is read leaves nothing behind and keeps the file it would have replaced", async () => {
+    const vol = await volume();
+    await upload(vol, "a.txt", "first");
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from("ab"));
+      },
+      pull(controller) {
+        controller.error(new Error("the client went away"));
+      },
+    });
+    const err = await rejectionOf(
+      streamUpload(host, vol.id, {
+        path: "a.txt",
+        overwrite: true,
+        body: { stream, length: 10 },
+        maxBytes: LIMIT,
+      }),
+    );
+    expect((err as Error).message).toBe("the client went away");
+    expect(textOf(vol, "a.txt")).toBe("first");
+    expect(leftovers(vol)).toEqual([]);
+  });
+
   test("refuses a file over the size limit before any helper runs", async () => {
     const vol = await volume();
     const before = runtime.callsTo("putArchive").length;

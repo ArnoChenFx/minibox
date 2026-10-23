@@ -79,7 +79,7 @@ export async function streamUpload(
     if (existing !== null && !input.overwrite) throw conflict(msg("file_exists", { path: relative }));
 
     const tempRel = childOf(parent, temp);
-    const fault: { error: AppError | null } = { error: null };
+    const fault: { error: unknown } = { error: null };
     try {
       await host.runtime
         .putArchive(
@@ -88,8 +88,9 @@ export async function streamUpload(
           Readable.from(uploadTar(temp, input.body, fault), { objectMode: false }),
         )
         .catch((e: unknown) => {
-          throw fault.error ?? e;
+          if (fault.error === null) throw e;
         });
+      if (fault.error !== null) throw fault.error;
       const moved = await runVolumeHelper(host, volume, {
         image,
         user: "1000:1000",
@@ -122,25 +123,31 @@ export async function streamUpload(
 }
 
 /**
- * The tar of one uploaded file. The body must be exactly the declared length; a longer or shorter one is recorded in
- * `fault` and fails the stream, so the Engine never completes the entry.
+ * The tar of one uploaded file. A body that is not exactly the declared length, or that fails while it is read, ends
+ * the tar early and is recorded in `fault` instead of failing the stream: the Engine then answers only after it has
+ * written what it got, so the cleanup that follows sees every temporary name that was left.
  */
-async function* uploadTar(name: string, body: RawBody, fault: { error: AppError | null }): AsyncGenerator<Buffer> {
+async function* uploadTar(name: string, body: RawBody, fault: { error: unknown }): AsyncGenerator<Buffer> {
   yield fileHeader(name, body.length, { uid: DEV_UID, gid: DEV_GID });
   let received = 0;
-  if (body.stream) {
-    for await (const chunk of body.stream) {
-      received += chunk.byteLength;
-      if (received > body.length) {
-        fault.error = badRequest(msg("file_upload_mismatch", { length: body.length }), { field: "body" });
-        throw fault.error;
+  try {
+    if (body.stream) {
+      for await (const chunk of body.stream) {
+        received += chunk.byteLength;
+        if (received > body.length) {
+          fault.error = badRequest(msg("file_upload_mismatch", { length: body.length }), { field: "body" });
+          return;
+        }
+        yield Buffer.from(chunk);
       }
-      yield Buffer.from(chunk);
     }
+  } catch (e) {
+    fault.error = e;
+    return;
   }
   if (received !== body.length) {
     fault.error = badRequest(msg("file_upload_mismatch", { length: body.length }), { field: "body" });
-    throw fault.error;
+    return;
   }
   yield fileTrailer(body.length);
 }
