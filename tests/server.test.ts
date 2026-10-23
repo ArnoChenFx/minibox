@@ -249,6 +249,13 @@ describe("bearer keys count toward the login limit (end to end)", () => {
     });
   });
 
+  test("a refused owner key on /mcp does not count toward the login limit", async () => {
+    await withServer({ MCP_ALLOW_OWNER_KEY: "false" }, async ({ base }) => {
+      for (let i = 0; i < 12; i++) expect((await mcpPing(base, KEY)).status).toBe(401);
+      expect((await mcpPing(base, "wrong")).status).toBe(401);
+    });
+  });
+
   test("a wrong Bearer key is refused even when the request also carries a valid session cookie", async () => {
     await withServer({}, async ({ base }) => {
       const token = await signIn(base);

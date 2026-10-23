@@ -2,13 +2,15 @@ import type { App } from "../app";
 import { bearerKey, type Caller, callerGate, resolveCaller } from "../auth";
 import { AppError, toAppError } from "../lib/errors";
 import { errorResponse, JSON_BODY_MAX_BYTES, json, readBodyText } from "../lib/http";
+import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { mcpTools } from "../operations/projections";
 import { OPERATIONS } from "../operations/registry";
 import { RUN_ID_PATTERN } from "../operations/run";
-import type { Operation, Principal, Toolset } from "../operations/types";
+import { type Operation, OWNER, type Principal, type Toolset } from "../operations/types";
 import { scopeAllowed } from "../tokens/model";
 import { MCP_INSTRUCTIONS } from "./instructions";
+import { OWNER_KEY_HEADER, OWNER_KEY_OP, OWNER_KEY_STATUS, type OwnerKeyOutcome } from "./owner-key";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"] as const;
 const DEFAULT_PROTOCOL: (typeof PROTOCOL_VERSIONS)[number] = "2025-06-18";
@@ -32,13 +34,58 @@ function methodNotAllowed(): Response {
 /**
  * The caller of an MCP request. A Bearer header is required: a session cookie never opens MCP, since MCP is driven by
  * clients that hold a credential rather than a browser. A wrong key counts toward the login limit, as on the REST API.
+ * The owner access key then has to pass MCP_ALLOW_OWNER_KEY. A correct key never counts toward the limit, so a refusal
+ * does not either.
  */
 async function callerOf(app: App, req: Request, address: string): Promise<Caller> {
   const caller = bearerKey(req) === null ? null : await resolveCaller(req, callerGate(app), address);
   if (!caller) {
     throw new AppError(401, "unauthorized", msg("mcp_bearer_required"), undefined, { hint: msg("mcp_bearer_hint") });
   }
+  if (caller.principal.type === "owner") admitOwnerKey(app, address);
   return caller;
+}
+
+const OWNER_KEY_ACCEPTED_HINT =
+  "Give each agent an agent token from Settings or minibox token create, then set MCP_ALLOW_OWNER_KEY=false to refuse the owner key on /mcp. The next minor release refuses it by default.";
+const OWNER_KEY_REFUSED_HINT =
+  "MCP_ALLOW_OWNER_KEY is false, so /mcp refused the owner access key. Give the agent an agent token.";
+
+/** The first warning of each outcome in a process. Stored per app, so a test that builds its own app sees its own warning. */
+const warnedOwnerKey = new WeakMap<App, Set<OwnerKeyOutcome>>();
+
+/**
+ * Applies MCP_ALLOW_OWNER_KEY to the owner access key. Each use is recorded in the event store, and the first use of
+ * each outcome is logged. A refused key gets 401 with a hint toward agent tokens. Agent tokens never reach this check.
+ */
+function admitOwnerKey(app: App, address: string): void {
+  const outcome: OwnerKeyOutcome = app.cfg.mcpAllowOwnerKey ? "accepted" : "refused";
+  app.record(app.hosts.get().host.id, "mcp", OWNER, {
+    op: OWNER_KEY_OP,
+    kind: "read",
+    status: OWNER_KEY_STATUS[outcome],
+    summary: outcome === "accepted" ? "Owner access key used on /mcp" : "Owner access key refused on /mcp",
+    detail: { address },
+    error: outcome === "refused" ? { code: "unauthorized", status: 401 } : undefined,
+  });
+  warnOwnerKeyOnce(app, outcome, address);
+  if (outcome === "refused") {
+    throw new AppError(401, "unauthorized", msg("mcp_owner_key_refused"), undefined, {
+      hint: msg("mcp_owner_key_hint"),
+    });
+  }
+}
+
+function warnOwnerKeyOnce(app: App, outcome: OwnerKeyOutcome, address: string): void {
+  const seen = warnedOwnerKey.get(app) ?? new Set<OwnerKeyOutcome>();
+  warnedOwnerKey.set(app, seen);
+  if (seen.has(outcome)) return;
+  seen.add(outcome);
+  if (outcome === "accepted") {
+    log.warn("mcp.owner_key_used", { address, hint: OWNER_KEY_ACCEPTED_HINT });
+  } else {
+    log.warn("mcp.owner_key_refused", { address, hint: OWNER_KEY_REFUSED_HINT });
+  }
 }
 
 function acceptsRpc(req: Request): boolean {
@@ -117,6 +164,12 @@ function wireTools(principal: Principal, toolsets: readonly Toolset[]) {
 export async function handleMcp(app: App, req: Request, url: URL, address: string): Promise<Response> {
   if (req.method === "GET" || (req.method !== "POST" && req.method !== "DELETE")) return methodNotAllowed();
   const { principal } = await callerOf(app, req, address);
+  const res = await serveMcp(app, req, url, principal);
+  if (principal.type === "owner") res.headers.set(OWNER_KEY_HEADER, "accepted");
+  return res;
+}
+
+async function serveMcp(app: App, req: Request, url: URL, principal: Principal): Promise<Response> {
   if (req.method === "DELETE") {
     const id = req.headers.get("mcp-session-id");
     if (id) app.mcpSessions.close(id, principal);

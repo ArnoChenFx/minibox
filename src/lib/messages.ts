@@ -464,6 +464,9 @@ export const MESSAGES = {
   mcp_bearer_required: "MCP requires an Authorization Bearer access key or agent token.",
   mcp_bearer_hint:
     "Send the header Authorization: Bearer and the access key or an agent token. A browser session cookie is not accepted on /mcp.",
+  mcp_owner_key_refused: "The owner access key is not accepted on /mcp. Use an agent token.",
+  mcp_owner_key_hint:
+    "Create an agent token in Settings, or with minibox token create, and send it as the Bearer key. The setup is in the agents guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/agents.md#create-a-token-for-an-agent",
   mcp_toolset_invalid: "Unknown MCP toolset.",
   mcp_toolset_hint:
     "Use core, session, network, storage, tools, meta or rebuild, for example /mcp?toolsets=core,session.",

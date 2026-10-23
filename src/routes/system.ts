@@ -1,6 +1,7 @@
 import { probeHost } from "../host/registry";
 import { json } from "../lib/http";
 import { LIMITS } from "../lib/validation";
+import { latestOwnerKeyUse } from "../mcp/owner-key";
 import { type Route, route } from "./router";
 
 export const systemRoutes: Route[] = [
@@ -30,8 +31,10 @@ export const systemRoutes: Route[] = [
         boxPidsLimit: host.security.pidsLimit,
         containerRuntime: host.security.runtime,
         boxNetwork: host.security.network,
+        mcpAllowOwnerKey: app.cfg.mcpAllowOwnerKey,
       },
       limits: LIMITS,
+      mcpOwnerKey: latestOwnerKeyUse(app.events, app.cfg.mcpAllowOwnerKey, Date.now()),
     }),
   ),
   route("GET", "/api/host/metrics", async ({ app }) => json(await app.monitor.snapshot())),
