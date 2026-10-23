@@ -1,0 +1,122 @@
+/* Overview watch lists: what agents are doing now, and what needs attention. Each row keeps its actions at the right. */
+.watch-card .card-head h3 {
+  white-space: nowrap;
+}
+.watch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.watch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.watch-row:last-child {
+  border-bottom: 0;
+}
+.watch-ico {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--bg-subtle);
+  color: var(--text-2);
+}
+.watch-ico.fail {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.watch-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.watch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.watch-head .time {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.watch-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.watch-name:hover {
+  color: var(--accent-text);
+}
+.watch-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.watch-code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+/* The last lines a command printed. Each line keeps its own row, so a long line is cut at the edge, not wrapped. */
+.watch-output {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+.watch-output span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+.watch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 12px;
+}
+.watch-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+}
+/* The indicator on a box row. Its badge sets display, so the hidden attribute needs its own rule to hide it. */
+.agent-live[hidden] {
+  display: none;
+}
+@media (max-width: 900px) {
+  .watch-row {
+    flex-wrap: wrap;
+  }
+  .watch-main {
+    flex-basis: 100%;
+  }
+  .watch-actions {
+    margin-left: 38px;
+  }
+}

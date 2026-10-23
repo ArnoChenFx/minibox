@@ -1,4 +1,7 @@
 import { openCreateBox } from "../components/create-box.js";
+import { bindToggles, limitList } from "../components/list-toggle.js";
+import { followOverview } from "../components/overview-feed.js";
+import { drawWatch } from "../components/overview-watch.js";
 import { ACTION_ICON, readableAction } from "../lib/activity.js";
 import { api } from "../lib/api.js";
 import { applyBoxFrame, boxesOfSync } from "../lib/box-state.js";
@@ -33,6 +36,16 @@ export function render(view, focus = "") {
     <div class="page-head">
       <div><h1>${t("nav.overview")}</h1><p id="ovSub">${t("ov.subtitle")}</p></div>
       <div class="page-actions"><button class="btn btn-primary" data-action="create">${icon("plus")}${t("box.create")}</button></div>
+    </div>
+    <div class="grid grid-2" style="margin-bottom:16px">
+      <section class="card watch-card" aria-labelledby="ovProgressTitle">
+        <div class="card-head"><h3 id="ovProgressTitle">${t("ov.progress")}</h3><span class="hint">${t("ov.progressHint")}</span></div>
+        <div id="ovProgress"><div class="card-body"><div class="skeleton sk-line"></div></div></div>
+      </section>
+      <section class="card watch-card" aria-labelledby="ovAttentionTitle">
+        <div class="card-head"><h3 id="ovAttentionTitle">${t("ov.attention")}</h3><span class="hint">${t("ov.attentionHint")}</span></div>
+        <div id="ovAttention"><div class="card-body"><div class="skeleton sk-line"></div></div></div>
+      </section>
     </div>
     <div class="grid grid-4" id="ovHosts" style="margin-bottom:16px" hidden></div>
     <div class="grid grid-4" id="ovMetrics">${metricSkeleton().repeat(4)}</div>
@@ -86,6 +99,12 @@ export function render(view, focus = "") {
     activityTimer = setTimeout(loadActivity, 300);
   };
 
+  let latest = null;
+  const stopFeed = followOverview((overview) => {
+    latest = overview;
+    drawWatch(view, overview);
+  });
+
   let hostList = hostsNow();
   let usageById = new Map();
   const drawHosts = () => renderHostCards(view, hostList, usageById);
@@ -106,6 +125,7 @@ export function render(view, focus = "") {
       drawHosts();
       void loadUsage();
       if (loaded) renderBoxes(view, boxes);
+      if (latest) drawWatch(view, latest);
     }),
     subscribe("sync", (frame) => {
       const next = boxesOfSync(frame);
@@ -126,6 +146,7 @@ export function render(view, focus = "") {
     off();
     for (const unsubscribe of offs) unsubscribe();
     stopPolling();
+    stopFeed();
     clearTimeout(activityTimer);
     clearInterval(usageTimer);
   };
@@ -218,15 +239,16 @@ function renderBoxes(view, boxes) {
     });
     return;
   }
-  root.innerHTML = `<ul class="activity">${scoped
-    .slice(0, 6)
+  const { shown, toggle } = limitList(view, "boxes", scoped);
+  root.innerHTML = `<ul class="activity">${shown
     .map(
       (
         b,
       ) => `<li class="${isUnreachable(b) ? "is-unreachable" : ""}"><span class="ico">${icon("box")}</span><a href="#/boxes/${b.id}"><strong>${esc(b.name)}</strong></a>
       <span class="subtle">${cpus(b.cpus)} · ${mem(b.memory)}</span><span class="time">${stateBadge(boxState(b))}</span></li>`,
     )
-    .join("")}</ul>`;
+    .join("")}</ul><div class="list-more">${toggle}</div>`;
+  bindToggles(view, root, () => renderBoxes(view, boxes));
 }
 
 function renderHostCards(view, hosts, usageById) {
@@ -283,8 +305,8 @@ function renderActivity(view, items) {
     });
     return;
   }
-  root.innerHTML = `<ul class="activity">${items
-    .slice(0, 6)
+  const { shown, toggle } = limitList(view, "activity", items);
+  root.innerHTML = `<ul class="activity">${shown
     .map((a) => {
       const ic = ACTION_ICON[a.action] ?? "activity";
       const label = has(`act.${a.action}`) ? t(`act.${a.action}`) : readableAction(a.action);
@@ -292,5 +314,6 @@ function renderActivity(view, items) {
         <span>${esc(label)} <strong>${esc(a.target)}</strong>${a.ok ? "" : ` <span class="badge badge-danger">${t("common.failed")}</span>`}</span>
         <span class="time">${relTime(a.t)}</span></li>`;
     })
-    .join("")}</ul>`;
+    .join("")}</ul><div class="list-more">${toggle}</div>`;
+  bindToggles(view, root, () => renderActivity(view, items));
 }
