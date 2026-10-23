@@ -51,6 +51,14 @@ A notification channel sends a message to an address that you give it.
 - **Addresses that are not public are refused.** A channel reaches only public addresses, unless `NOTIFY_ALLOW_PRIVATE` is turned on. Loopback, private, link-local, shared (`100.64.0.0/10`) and reserved IPv4 addresses are refused, and so are the IPv6 loopback, unique-local, link-local, site-local and multicast ranges, and IPv4-mapped or NAT64 (`64:ff9b::/96`) forms of a refused IPv4 address. `198.18.0.0/15` is allowed, because fake-IP DNS proxies such as Clash or Surge answer every name from it and connect to the real address themselves. MiniBox resolves the name once, checks the address, and connects to that address, so a second lookup cannot send the request elsewhere. Redirects are not followed. Unlike template builds and repository clones, notifications do not reach private addresses by default.
 - **Bounded.** A send makes at most three attempts, and each attempt has a 10-second timeout that includes the name lookup. At most 256 notices can wait to be sent.
 
+## Backups and off-site targets
+
+- **Backup archives.** A backup is sealed with AES-256-GCM, under a key that scrypt derives from the passphrase. MiniBox never stores the passphrase. The CLI reads it from `MINIBOX_BACKUP_PASSPHRASE` or from standard input, never from an argument. An archive holds the access key and the secrets, so keep it as protected as `DATA_DIR`.
+- **Target credentials.** They are written once, to `DATA_DIR/secrets/env/target.<id>.<field>`, with mode 600. No API returns them. Events, the audit log and the server log show only a target's name and address.
+- **SFTP host keys.** The host key is pinned when a target is added. MiniBox sends nothing to a server that presents another key.
+- **Plain HTTP.** An S3-compatible target accepts `http` only for loopback addresses.
+- **Owner only.** Backups and targets need the access key. No token scope grants them.
+
 ## Template builds and repository clones
 
 Building a template, rebuilding one and pulling an image are for the owner only. A repository clone at box create needs `box:write`, and `secret:use` when it names a secret. Each of these makes MiniBox fetch content from an address that someone supplies.

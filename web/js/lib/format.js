@@ -16,7 +16,9 @@ export function bytes(n, digits = 1) {
 
 export const gb = (n) => (n == null ? "—" : `${(n / 1024 ** 3).toFixed(n >= 10 * 1024 ** 3 ? 0 : 1)} GB`);
 export const pct = (n, d = 1) => (n == null || Number.isNaN(n) ? "—" : `${Number(n).toFixed(d)}%`);
-export const cpus = (c) => (c == null ? t("common.unlimited") : t("unit.cores", { n: Number(c) }));
+/** English counts one core and many cores; Chinese has one form, so its `unit.core` matches `unit.cores`. */
+export const cpus = (c) =>
+  c == null ? t("common.unlimited") : t(Number(c) === 1 ? "unit.core" : "unit.cores", { n: Number(c) });
 export const mem = (m) => (m == null ? t("common.unlimited") : gbOrMb(m));
 export function gbOrMb(b) {
   const mb = b / 1024 / 1024;

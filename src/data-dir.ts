@@ -57,6 +57,11 @@ export function notifyPath(dataDir: string): string {
   return join(dataDir, "notify.json");
 }
 
+/** Off-site targets: their places and last syncs, never a credential. Mode 600. Credentials live under `secrets/env`. */
+export function targetsPath(dataDir: string): string {
+  return join(dataDir, "targets.json");
+}
+
 /** Paired host agents: ids, public keys and revocation, never a private key. Mode 600. */
 export function agentsPath(dataDir: string): string {
   return join(dataDir, "agents.json");

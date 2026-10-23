@@ -37,12 +37,14 @@ import { type PreviewProbe, systemProbe } from "./preview/selfcheck";
 import type { EngineTarget, Runtime } from "./runtime";
 import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
+import { BackupService } from "./services/backup";
 import { CheckpointSweep } from "./services/checkpoint-retention";
 import { CheckpointScheduler } from "./services/checkpoint-schedule";
 import { ContainerWatch } from "./services/container-watch";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
 import { reconcileHost } from "./services/reconcile";
+import { TargetService } from "./services/targets";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { VolumeUsageWatcher } from "./services/volume-usage";
 import { SessionStore } from "./sessions";
@@ -98,6 +100,10 @@ export interface App {
   /** Takes the checkpoints that box schedules are due for. Only runs once the server has started. */
   checkpointScheduler: CheckpointScheduler;
   tasks: TaskManager;
+  /** Backups of DATA_DIR: created, kept, and streamed to a download or a target. */
+  backups: BackupService;
+  /** Off-site targets that packages and backups are pushed to and pulled from. */
+  targets: TargetService;
   operations: Executor;
   throttle: LoginLimiter;
   sessions: SessionStore;
@@ -251,12 +257,31 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       ttlMs: cfg.sessionTtlMs,
       idleMs: cfg.sessionIdleMs,
     });
-  const events = openEventStore(deps.eventsPath ?? join(cfg.dataDir, "events.db"), redactor);
+  const eventsPath = deps.eventsPath ?? join(cfg.dataDir, "events.db");
+  const tasksPath = join(cfg.dataDir, "tasks.db");
+  const events = openEventStore(eventsPath, redactor);
+  const backups = new BackupService({
+    dataDir: cfg.dataDir,
+    databases: [
+      { name: "events.db", path: eventsPath },
+      { name: "tasks.db", path: tasksPath },
+    ],
+  });
+  const swept = backups.sweepPartial();
+  if (swept > 0) log.info("backup.partial_swept", { count: swept });
+  const targets = new TargetService({
+    dataDir: cfg.dataDir,
+    secrets,
+    checkpoints,
+    backups,
+    onSecret: (value) => knownSecrets.push(value),
+  });
+  targets.start();
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const execs = new ExecManager(outputs, (text) => redactor.text(text));
   execs.setActivityHandler((boxId) => pulse.touch(boxId, "exec"));
   const tasks = new TaskManager(
-    openTaskStore(join(cfg.dataDir, "tasks.db")),
+    openTaskStore(tasksPath),
     redactor,
     (event) => bus.publish("task", event),
     (subject) => touchSettledBox(hosts, pulse, subject),
@@ -350,6 +375,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     checkpointSweep: new CheckpointSweep(hosts, undefined, recordNote),
     checkpointScheduler: new CheckpointScheduler(hosts, recordNote),
     tasks,
+    backups,
+    targets,
     operations: new Executor(OPERATIONS, {
       activity,
       tasks,
@@ -357,6 +384,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       hostAdmin,
       previewBaseDomain: cfg.previewBaseDomain,
       notify,
+      backups,
+      targets,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,
         audit,

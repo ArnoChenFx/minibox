@@ -1,3 +1,4 @@
+import { backupOperations } from "./backup";
 import { boxOperations } from "./boxes";
 import { checkpointPackageOperations } from "./checkpoint-packages";
 import { checkpointOperations } from "./checkpoints";
@@ -13,6 +14,7 @@ import { secretOperations } from "./secrets";
 import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
 import { startupOperations } from "./startup";
+import { targetOperations } from "./targets";
 import { taskOperations } from "./tasks";
 import { templateOperations } from "./templates";
 import { tokenOperations } from "./tokens";
@@ -35,6 +37,8 @@ export const OPERATIONS: readonly Operation[] = [
   ...snapshotOperations,
   ...checkpointOperations,
   ...checkpointPackageOperations,
+  ...backupOperations,
+  ...targetOperations,
   ...trashOperations,
   ...templateOperations,
   ...imageOperations,

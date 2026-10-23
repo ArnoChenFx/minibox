@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 
+import { backupCommand, restoreCommand } from "./cli/backup";
 import { boxLs, boxCreateCommand } from "./cli/box";
 import { boxStartupCommand } from "./cli/box-startup";
 import { execCommand } from "./cli/exec";
@@ -64,6 +65,8 @@ export async function runCli(
     if (command === "ssh-config") return await sshConfig(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "ssh-proxy")
       return await sshProxy(sub === undefined ? [] : [sub, ...rest], await proxyEnv(env), io, version);
+    if (command === "backup") return await backupCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "restore") return await restoreCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     io.stderr(`Unknown command ${command}\n${HELP}`);
     return 2;
   } catch (e) {

@@ -20,7 +20,7 @@ import { type CheckpointView, type Progress, viewOf } from "./checkpoints";
 export interface PackageView {
   id: string;
   checkpointId: string | null;
-  origin: "export" | "upload";
+  origin: "export" | "upload" | "target";
   bytes: number;
   sha256: string;
   createdAt: string;

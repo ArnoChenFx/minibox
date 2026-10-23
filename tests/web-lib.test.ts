@@ -148,7 +148,9 @@ describe("format helpers", () => {
           pctRounded: format.pct(12.345, 0),
           pctNaN: format.pct(NaN),
           cpusNull: format.cpus(null),
+          cpus1: format.cpus(1),
           cpus2: format.cpus(2),
+          cpusHalf: format.cpus(0.5),
           memNull: format.mem(null),
           mem512: format.mem(512 * 1024 * 1024),
           mem2g: format.mem(2 * 1024 ** 3),
@@ -166,7 +168,9 @@ describe("format helpers", () => {
       pctRounded: "12%",
       pctNaN: "—",
       cpusNull: "Unlimited",
+      cpus1: "1 core",
       cpus2: "2 cores",
+      cpusHalf: "0.5 cores",
       memNull: "Unlimited",
       mem512: "512 MB",
       mem2g: "2 GB",
@@ -224,11 +228,12 @@ describe("format helpers", () => {
         `({
           mem: format.mem(null),
           cpus: format.cpus(2),
+          cpus1: format.cpus(1),
           hours: format.duration(3700),
           justNow: format.relTime(new Date(Date.now() - 5000).toISOString()),
         })`,
       ),
-    ).toEqual({ mem: "不限", cpus: "2 核", hours: "1 小时 1 分钟", justNow: "刚刚" });
+    ).toEqual({ mem: "不限", cpus: "2 核", cpus1: "1 核", hours: "1 小时 1 分钟", justNow: "刚刚" });
   });
 
   test("shortId strips the sha256 prefix and keeps twelve characters", () => {

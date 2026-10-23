@@ -45,4 +45,7 @@ export default {
   "task.op.tool.reconcile": "补装工具",
   "task.op.trash.restore": "从回收站恢复",
   "task.op.trash.purge": "从回收站彻底删除",
+  "task.op.backup.create": "创建备份",
+  "task.op.target.push": "推送到目标",
+  "task.op.target.pull": "从目标拉取",
 };

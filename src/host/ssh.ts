@@ -29,6 +29,9 @@ export interface SshTarget {
   readonly hostKeyFingerprint: string | null;
 }
 
+/** What a login to a pinned SSH server needs. The Docker socket is not part of it. */
+export type PinnedTarget = Pick<SshTarget, "user" | "hostname" | "port" | "privateKey" | "hostKeyFingerprint">;
+
 /** The host presented a key other than the one it was added with. Nothing was sent to it. */
 export class HostKeyMismatchError extends Error {
   constructor(
@@ -69,7 +72,7 @@ export function checkSshKey(privateKey: string): void {
  * Connects to the host and checks its key before anything else is sent. The login follows only after the presented key
  * matches the pinned one, so the private key never reaches a server that is not the one the operator confirmed.
  */
-function connectClient(target: SshTarget): Promise<Client> {
+export function connectClient(target: PinnedTarget): Promise<Client> {
   let presented: string | null = null;
   return new Promise<Client>((resolve, reject) => {
     const client = new Client();

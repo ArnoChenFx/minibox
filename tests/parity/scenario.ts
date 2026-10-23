@@ -32,6 +32,7 @@ export function normalize(text: string): string {
     .replace(/vol_[0-9a-z]+/g, "<volumeId>")
     .replace(/\bbx_[0-9a-z]+/g, "<boxId>")
     .replace(/\bck_[0-9a-z]{8,32}\b/g, "ck_<checkpoint>")
+    .replace(/\bbk_[0-9a-z]{8,32}\b/g, "bk_<backup>")
     .replace(/tok_[0-9a-f]+/g, "<tokenId>")
     .replace(/sha256:[0-9a-f]{64}/g, "sha256:<image>")
     .replace(/ex_[0-9A-HJKMNP-TV-Z]{26}/g, "ex_<ulid>")
@@ -997,6 +998,47 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("list notification deliveries with a zero limit", "GET", "/api/notify/deliveries?limit=0");
     await send("delete the webhook channel", "DELETE", alerts);
     await send("delete the webhook channel again", "DELETE", alerts);
+
+    await send("list backups before any is made", "GET", "/api/backups");
+    await post("back up with a short passphrase", "/api/backups", { passphrase: "short" });
+    const made = await post("back up the data directory", "/api/backups", { passphrase: PASSPHRASE });
+    const backup = (await waitTask(base, made.json)).result as { backup?: { id?: string } } | undefined;
+    await send("download a backup that does not exist", "GET", "/api/backups/bk_0000000000000000/download");
+    await send("delete the backup", "DELETE", `/api/backups/${String(backup?.backup?.id ?? "")}`);
+    await send("delete the backup again", "DELETE", `/api/backups/${String(backup?.backup?.id ?? "")}`);
+
+    const offsite = {
+      name: "Offsite",
+      kind: "s3",
+      endpoint: "https://s3.example.com",
+      region: "us-east-1",
+      bucket: "archive",
+      accessKeyId: "AKIAEXAMPLE",
+      secretAccessKey: "secret-value",
+    };
+    const missingTarget = "tgt_0000000000000000";
+    await send("list targets before any is added", "GET", "/api/targets");
+    await post("add a target without a bucket", "/api/targets", { ...offsite, bucket: undefined });
+    await post("add a target over plain http", "/api/targets", { ...offsite, endpoint: "http://s3.example.com" });
+    await post("add an SFTP field to an S3 target", "/api/targets", { ...offsite, host: "sftp.example.com" });
+    await post("test a target over plain http", "/api/targets/test", { ...offsite, endpoint: "http://s3.example.com" });
+    await send("check a target that does not exist", "GET", `/api/targets/${missingTarget}/check`);
+    await send("list the objects of a target that does not exist", "GET", `/api/targets/${missingTarget}/objects`);
+    await send("remove a target that does not exist", "DELETE", `/api/targets/${missingTarget}`);
+    const backupObject = { object: "bk_0000000000000000" };
+    await post("push a backup to a target that does not exist", `/api/targets/${missingTarget}/push`, backupObject);
+    await post("pull a backup from a target that does not exist", `/api/targets/${missingTarget}/pull`, backupObject);
+    const notAnObject = { object: "nope" };
+    await post(
+      "push an object that is neither a package nor a backup",
+      `/api/targets/${missingTarget}/push`,
+      notAnObject,
+    );
+    await post(
+      "pull an object that is neither a package nor a backup",
+      `/api/targets/${missingTarget}/pull`,
+      notAnObject,
+    );
 
     const doomed = await post("create a box to delete into the recycle bin", "/api/boxes", {
       name: "doomed",

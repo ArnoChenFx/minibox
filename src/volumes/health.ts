@@ -144,7 +144,7 @@ async function probeRemote(host: HostCtx, pool: StoragePool): Promise<PoolHealth
     const result = await host.runtime.runHelper({
       image,
       user: DEV_OWNER,
-      cmd: ["sh", "-c", 'test -f -- "$1" && df -B1 -P /mnt', "minibox", `/mnt/${marker}`],
+      cmd: ["sh", "-c", 'test -f "$1" && df -B1 -P /mnt', "minibox", `/mnt/${marker}`],
       mounts: [{ source: pool.root ?? "/", target: "/mnt", kind: "bind", mode: "ro" }],
       timeoutSec: 20,
       labels: { [keys.internal]: "true" },

@@ -548,4 +548,36 @@ export default {
     "tools.d/{file} also defines “{id}”, so the saved entry would not take effect. Remove or rename that file, then try again.",
   "err.tool_custom_file_other":
     "tools.d/{file} defines “{other}”. Saving “{id}” there would replace that entry. Remove or rename that file, then try again.",
+  "err.backup_not_found": "Backup {id} was not found.",
+  "err.backup_exists": "Backup {id} is already stored here, so it was not stored again.",
+  "err.backup_invalid": "The backup is not valid: {reason}",
+  "err.backup_passphrase_invalid":
+    "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
+  "err.secret_name_reserved":
+    "Names that start with target. are reserved for a target's credentials. Manage targets in Settings.",
+  "err.target_not_found": "Target {id} was not found.",
+  "err.target_name_taken": "A target named {name} already exists.",
+  "err.target_name_invalid": "A target name is 1 to 64 characters, with no line breaks or control characters.",
+  "err.target_field_not_allowed": "{label} does not apply to this kind of target.",
+  "err.target_field_invalid": "{label} is not valid.",
+  "err.target_endpoint_invalid":
+    "The endpoint must be an https address. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+  "err.target_path_invalid":
+    "The path must be relative to the target's folder, with no . or .. segments and no control characters.",
+  "err.target_key_invalid": "The private key cannot be used: {reason}.",
+  "err.target_host_key_required": "Confirm the server's host key before saving this target.",
+  "err.target_host_key_unconfirmed": "The server presented the host key {fingerprint}, which has not been confirmed.",
+  "err.target_host_key_mismatch":
+    "The server presented the host key {fingerprint}, which is not the one this target was saved with. Nothing was sent to it.",
+  "err.target_unreachable": "The target cannot be reached. Check its address and the network.",
+  "err.target_auth_failed": "The target refused the credentials.",
+  "err.target_forbidden": "The target denied access to its folder.",
+  "err.target_failed": "The target failed: {reason}",
+  "err.target_credentials_missing": "The credentials of target {name} are missing. Remove the target and add it again.",
+  "err.target_object_missing": "{object} is not on the target.",
+  "err.target_object_differs": "{object} is on the target with other contents, so it was not replaced.",
+  "err.target_object_held": "{object} is already stored here with other contents, so it was not replaced.",
+  "err.target_object_invalid": "The object is not valid: {reason}",
+  "err.target_busy": "Target {name} is busy with another transfer. Try again when it finishes.",
+  "err.target_object_busy": "{object} is already being pulled. Try again when that transfer finishes.",
 };

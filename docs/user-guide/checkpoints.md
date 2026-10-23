@@ -6,7 +6,7 @@ A checkpoint includes the box's `/workspace` folder and its home folder. A templ
 
 Checkpoints are available in the console, and in the [REST API](../reference/api.md). The [MCP](../reference/mcp.md) storage toolset also exports, imports and schedules them, for the owner only. The command-line tool does not manage them.
 
-Checkpoints are not a backup of the whole server. They are stored on the same host as the boxes. Keep an off-host copy of anything you cannot lose. [Export](#export-and-import) a checkpoint to make a copy you can carry elsewhere.
+Checkpoints are not a backup of the whole server. They are stored on the same host as the boxes. Keep an off-host copy of anything you cannot lose. [Export](#export-and-import) a checkpoint to make a copy you can carry elsewhere, or push the package to an [off-site target](#off-site-targets). To back up the whole server, see [Backups](../admin/backups.md).
 
 ## Create a checkpoint
 
@@ -127,6 +127,12 @@ A wrong passphrase fails the import, and the package stays, so you can try again
 An imported checkpoint keeps the id of the box it came from. It appears in that box's list only when a box with that id exists on this instance, and it always appears in `GET /api/checkpoints`. A checkpoint without a system layer forks from the template it was taken from, so the host needs that template's image.
 
 The package size is limited by `CHECKPOINT_PACKAGE_MAX_MB`, which is 2048 MB by default. A larger export fails with `payload_too_large`. Over the REST API, export with `POST /api/checkpoints/{id}/export`, upload the file with `POST /api/packages` as `application/octet-stream`, and import it with `POST /api/packages/{id}/import`. See the [API reference](../reference/api.md).
+
+## Off-site targets
+
+An off-site target is an S3-compatible bucket or an SFTP folder outside this host. Targets are listed in **Settings**, under **Off-site targets**. Pushing and pulling packages is an owner operation of the [REST API](../reference/api.md) and the [MCP](../reference/mcp.md) storage toolset, and each one runs as a task.
+
+Push an exported package before it expires, 24 hours after the export. A package that you pull from a target can be imported as described above, within 24 hours of the pull. See [Backups](../admin/backups.md#off-site-targets) for how to add a target.
 
 ## Scheduled checkpoints
 

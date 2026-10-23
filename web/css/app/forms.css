@@ -465,3 +465,8 @@ input[type="range"] {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
+
+/* Kind panels in the off-site target dialog: hide the inactive kind's fields. */
+[data-target-kind][hidden] {
+  display: none;
+}

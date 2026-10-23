@@ -2856,6 +2856,150 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Notification channel alerts was not found.\",\"retryable\":false,\"key\":\"notify_channel_not_found\",\"params\":{\"channel\":\"alerts\"}}}"
   },
   {
+    "step": "list backups before any is made",
+    "method": "GET",
+    "path": "/api/backups",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"backups\":[]}"
+  },
+  {
+    "step": "back up with a short passphrase",
+    "method": "POST",
+    "path": "/api/backups",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.\",\"retryable\":false,\"key\":\"backup_passphrase_invalid\",\"details\":{\"field\":\"passphrase\"}}}"
+  },
+  {
+    "step": "back up the data directory",
+    "method": "POST",
+    "path": "/api/backups",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "download a backup that does not exist",
+    "method": "GET",
+    "path": "/api/backups/bk_<backup>/download",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Backup bk_<backup> was not found.\",\"retryable\":false,\"key\":\"backup_not_found\",\"params\":{\"id\":\"bk_<backup>\"}}}"
+  },
+  {
+    "step": "delete the backup",
+    "method": "DELETE",
+    "path": "/api/backups/bk_<backup>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "delete the backup again",
+    "method": "DELETE",
+    "path": "/api/backups/bk_<backup>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Backup bk_<backup> was not found.\",\"retryable\":false,\"key\":\"backup_not_found\",\"params\":{\"id\":\"bk_<backup>\"}}}"
+  },
+  {
+    "step": "list targets before any is added",
+    "method": "GET",
+    "path": "/api/targets",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"targets\":[]}"
+  },
+  {
+    "step": "add a target without a bucket",
+    "method": "POST",
+    "path": "/api/targets",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Bucket is required.\",\"retryable\":false,\"key\":\"field_required\",\"params\":{\"label\":\"bucket\"},\"details\":{\"field\":\"bucket\"}}}"
+  },
+  {
+    "step": "add a target over plain http",
+    "method": "POST",
+    "path": "/api/targets",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The endpoint must be an https address. Plain http is accepted only for localhost, 127.0.0.1 and [::1].\",\"retryable\":false,\"key\":\"target_endpoint_invalid\",\"details\":{\"field\":\"endpoint\"}}}"
+  },
+  {
+    "step": "add an SFTP field to an S3 target",
+    "method": "POST",
+    "path": "/api/targets",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Host does not apply to this kind of target.\",\"retryable\":false,\"key\":\"target_field_not_allowed\",\"params\":{\"label\":\"host\"},\"details\":{\"field\":\"host\"}}}"
+  },
+  {
+    "step": "test a target over plain http",
+    "method": "POST",
+    "path": "/api/targets/test",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The endpoint must be an https address. Plain http is accepted only for localhost, 127.0.0.1 and [::1].\",\"retryable\":false,\"key\":\"target_endpoint_invalid\",\"details\":{\"field\":\"endpoint\"}}}"
+  },
+  {
+    "step": "check a target that does not exist",
+    "method": "GET",
+    "path": "/api/targets/tgt_0000000000000000/check",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Target tgt_0000000000000000 was not found.\",\"retryable\":false,\"key\":\"target_not_found\",\"params\":{\"id\":\"tgt_0000000000000000\"}}}"
+  },
+  {
+    "step": "list the objects of a target that does not exist",
+    "method": "GET",
+    "path": "/api/targets/tgt_0000000000000000/objects",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Target tgt_0000000000000000 was not found.\",\"retryable\":false,\"key\":\"target_not_found\",\"params\":{\"id\":\"tgt_0000000000000000\"}}}"
+  },
+  {
+    "step": "remove a target that does not exist",
+    "method": "DELETE",
+    "path": "/api/targets/tgt_0000000000000000",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Target tgt_0000000000000000 was not found.\",\"retryable\":false,\"key\":\"target_not_found\",\"params\":{\"id\":\"tgt_0000000000000000\"}}}"
+  },
+  {
+    "step": "push a backup to a target that does not exist",
+    "method": "POST",
+    "path": "/api/targets/tgt_0000000000000000/push",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Target tgt_0000000000000000 was not found.\",\"retryable\":false,\"key\":\"target_not_found\",\"params\":{\"id\":\"tgt_0000000000000000\"}}}"
+  },
+  {
+    "step": "pull a backup from a target that does not exist",
+    "method": "POST",
+    "path": "/api/targets/tgt_0000000000000000/pull",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Target tgt_0000000000000000 was not found.\",\"retryable\":false,\"key\":\"target_not_found\",\"params\":{\"id\":\"tgt_0000000000000000\"}}}"
+  },
+  {
+    "step": "push an object that is neither a package nor a backup",
+    "method": "POST",
+    "path": "/api/targets/tgt_0000000000000000/push",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The object is not valid: nope is not a package or backup id\",\"retryable\":false,\"key\":\"target_object_invalid\",\"params\":{\"reason\":\"nope is not a package or backup id\"},\"details\":{\"field\":\"object\"}}}"
+  },
+  {
+    "step": "pull an object that is neither a package nor a backup",
+    "method": "POST",
+    "path": "/api/targets/tgt_0000000000000000/pull",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The object is not valid: nope is not a package or backup id\",\"retryable\":false,\"key\":\"target_object_invalid\",\"params\":{\"reason\":\"nope is not a package or backup id\"},\"details\":{\"field\":\"object\"}}}"
+  },
+  {
     "step": "create a box to delete into the recycle bin",
     "method": "POST",
     "path": "/api/boxes",
