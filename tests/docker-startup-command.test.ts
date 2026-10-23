@@ -259,7 +259,7 @@ describe.skipIf(!enabled)("startup command on a real engine", () => {
       app.startups.stop();
       host.sampler.stop();
     }
-  });
+  }, 60_000);
 
   test("a process a sudo started for the run, and the run's own processes, end when the command runs again", async () => {
     // The sudo'd process ignores the hangup that ending the pane's session sends, so only the sweep ends it.
