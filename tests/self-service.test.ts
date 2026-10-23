@@ -283,7 +283,7 @@ describe("the self operations over REST", () => {
       expect(refused(over)).toEqual({ status: 403, key: "quota_checkpoints" });
     });
 
-    test("a checkpoint waits while a person holds the terminal, and the agent is told it was taken over", async () => {
+    test("a checkpoint is refused while a person holds the terminal, and the agent is told it was taken over", async () => {
       const held = spyOn(harness.app.terminals, "humanHolds").mockReturnValue(true);
       try {
         const res = await agent(alphaToken).post("/api/self/checkpoints", { label: "blocked", reason: "Taken" });
