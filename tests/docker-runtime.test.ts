@@ -1442,7 +1442,11 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
         expect(toolsOf(second.boxId)).toBe(toolsEngine);
         expect(await volumeExists(toolsEngine)).toBe(true);
         expect((await docker.getVolume(toolsEngine).inspect()).Labels).toMatchObject(labelsFor(host, tools));
-        expect(host.volumes.read(tools.id)).toEqual(tools);
+        // The record is the same one. Only the unmount note moves on, to the box deleted before the volume was lost.
+        const { lastMount: _before, updatedAt: _beforeAt, ...kept } = tools;
+        const after = host.volumes.read(tools.id);
+        expect(after).toMatchObject(kept);
+        expect(after?.lastMount?.boxId).toBe(first.boxId);
         expect(await rootOwnerOf(host, toolsEngine)).toEqual({ uid: 1000, gid: 1000 });
         expect(
           await shell(second.id, "touch /opt/minibox/tools/probe 2>/dev/null && echo writable || echo read-only"),
