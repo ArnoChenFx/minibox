@@ -68,7 +68,7 @@ async function resourceAllowed(request: AuthorizeRequest, principal: TokenPrinci
   if (!resource) return scopeAllowed(principal.grants, scope);
   const record = recordOf(host, resource);
   if (!record) {
-    if (resource.id !== undefined) return false;
+    if (resource.id !== undefined || scope === "volume:delete") return false;
     if (await inspectVolumeOrNull(host, resource.name)) return false;
     return scopeAllowed(principal.grants, scope);
   }
@@ -77,6 +77,8 @@ async function resourceAllowed(request: AuthorizeRequest, principal: TokenPrinci
   const views = specViews(host.specs.list());
   if (scope === "volume:write") return volumeWritable(principal, record, views);
   if (scope === "volume:attach") return volumeVisible(principal, record, views);
+  if (scope === "volume:delete")
+    return hostAllowed(principal.grants.hosts, record.hostId) && record.createdBy === principal.id;
   return false;
 }
 
@@ -530,6 +532,8 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["volume.get", volumeRule],
   ["volume.create", noAccess],
   ["volume.delete", volumeDeleteRule],
+  ["volume.delete.batch", noAccess],
+  ["volume.prune", noAccess],
   ["volume.attach", volumeAttachRule],
   ["volume.detach", volumeAttachRule],
   ["volume.usage", volumeRule],

@@ -22,6 +22,7 @@ export const SCOPES = [
   "volume:read",
   "volume:write",
   "volume:attach",
+  "volume:delete",
   "tool:install",
   "secret:use",
   "trash:skip",
@@ -139,7 +140,7 @@ const READ_SCOPES: readonly Scope[] = ["box:read", "files:read"];
 const OPERATOR_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "secret:use" && scope !== "trash:skip");
 const ADMIN_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "trash:skip");
 const SANDBOX_SCOPES: readonly Scope[] = OPERATOR_SCOPES.filter(
-  (scope) => scope !== "volume:attach" && scope !== "tool:install" && scope !== "box:ssh",
+  (scope) => scope !== "volume:attach" && scope !== "volume:delete" && scope !== "tool:install" && scope !== "box:ssh",
 );
 
 /** Five boxes, 8 CPU cores and 16 GB between them, four hours, one request a second sustained, twenty checkpoints. */
@@ -306,6 +307,8 @@ export function requiredScopes(operationScope: string): readonly Scope[] | "owne
       return ["volume:write"];
     case "volume:attach":
       return ["volume:attach"];
+    case "volume:delete":
+      return ["volume:delete"];
     case "files:read":
       return ["files:read", "exec"];
     case "files:write":
