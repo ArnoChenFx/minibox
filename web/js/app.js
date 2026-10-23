@@ -1,4 +1,5 @@
 import { initDropdowns } from "./components/dropdown.js";
+import { mountOwnerKeyBanner } from "./components/owner-key-banner.js";
 import { mountTasks } from "./components/tasks.js";
 import { api } from "./lib/api.js";
 import { $, $$, esc } from "./lib/dom.js";
@@ -120,6 +121,7 @@ function init() {
   bindLangButton($("#langBtn"), icon);
   initDropdowns();
   mountTasks();
+  mountOwnerKeyBanner($("#ownerKeyBanner"));
   initHostFilter();
   api("/api/system")
     .then((s) => {

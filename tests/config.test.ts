@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { loadConfig } from "../src/config";
+import { DEFAULT_MCP_ALLOW_OWNER_KEY, loadConfig } from "../src/config";
 import { setLogLevel } from "../src/lib/logger";
 
 const KEY = "k".repeat(64);
@@ -164,6 +164,31 @@ describe("box security settings", () => {
     expect(() => load({ ACCESS_KEY: KEY, BOX_PIDS_LIMIT: "-1" })).toThrow("BOX_PIDS_LIMIT");
     expect(() => load({ ACCESS_KEY: KEY, BOX_PIDS_LIMIT: "1.5" })).toThrow("BOX_PIDS_LIMIT");
     expect(() => load({ ACCESS_KEY: KEY, RUNTIME: "runsc --debug" })).toThrow("RUNTIME");
+  });
+});
+
+describe("MCP_ALLOW_OWNER_KEY", () => {
+  test("unset or blank takes the release default", () => {
+    expect(load({ ACCESS_KEY: KEY }).mcpAllowOwnerKey).toBe(DEFAULT_MCP_ALLOW_OWNER_KEY);
+    expect(load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: "  " }).mcpAllowOwnerKey).toBe(DEFAULT_MCP_ALLOW_OWNER_KEY);
+  });
+  test("true and false are read in any letter case, with the usual yes, no, on, off, 1 and 0 spellings", () => {
+    for (const value of ["true", "TRUE", "1", "yes", "On"]) {
+      expect(load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: value }).mcpAllowOwnerKey).toBe(true);
+    }
+    for (const value of ["false", "False", "0", "no", "OFF"]) {
+      expect(load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: value }).mcpAllowOwnerKey).toBe(false);
+    }
+  });
+  test("can come from .env", () => {
+    writeFileSync(envFile, "MCP_ALLOW_OWNER_KEY=false\n");
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).mcpAllowOwnerKey).toBe(false);
+  });
+  test("a value that is neither true nor false stops startup, since it guards a credential", () => {
+    expect(() => load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: "maybe" })).toThrow(
+      'MCP_ALLOW_OWNER_KEY: "maybe" must be true or false',
+    );
+    expect(() => load({ ACCESS_KEY: KEY, MCP_ALLOW_OWNER_KEY: "2" })).toThrow("MCP_ALLOW_OWNER_KEY");
   });
 });
 

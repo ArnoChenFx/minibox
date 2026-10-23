@@ -13,6 +13,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 | Variable | Default | Meaning |
 |---|---|---|
 | `ACCESS_KEY` | Generated into `DATA_DIR/access_key` | The access key for the console and the API. Use at least 20 random characters. A key that you set takes precedence over the generated one. MiniBox never writes this value to `.env`. See [Security](../admin/security.md). |
+| `MCP_ALLOW_OWNER_KEY` | `true` | Whether the access key may call `/mcp`. Agent tokens always may. `true` accepts the key and records each use. `false` refuses it with `401`. The next minor release changes the default to `false`. See [Upgrades](../admin/upgrades.md). |
 | `HOST` | `127.0.0.1` | The address that MiniBox listens on. The release image sets `0.0.0.0`. |
 | `PORT` | `3920` | The port that MiniBox listens on. A positive whole number. Other values use the default. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` from a reverse proxy. Turn it on only behind a proxy that overwrites these headers, and only when the proxy is the only way in. See [Remote access and TLS](../admin/remote-access.md). |

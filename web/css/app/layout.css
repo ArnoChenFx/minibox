@@ -116,6 +116,9 @@
   padding: 28px;
   width: 100%;
 }
+.owner-key-banner:not([hidden]) {
+  padding: 16px 28px 0;
+}
 /* Single-column pages (settings) read best at a fixed measure, so they are centered rather than stretched. */
 .page-narrow {
   max-width: 960px;

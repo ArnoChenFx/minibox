@@ -257,10 +257,18 @@ Notification channels have no commands yet. Set them up in **Settings**, or thro
 
 See [SSH access and the command-line tool](../user-guide/ssh-and-cli.md) for the setup steps.
 
+## Tokens
+
+| Command | Meaning |
+|---|---|
+| `minibox token create <name> [--preset P] [--scopes LIST] [--expires-in SEC] [--json]` | Creates an agent token and prints its secret on standard output, once. The summary goes to standard error. `--preset` names a preset, and `--scopes` takes a comma-separated list of scopes instead. With neither, the preset is `sandboxed-agent`. `--expires-in` is in seconds. `--json` prints the response. Only the owner can create a token, so set `MINIBOX_ACCESS_KEY` to the access key. |
+
+See [Access, sessions and tokens](../user-guide/access-and-tokens.md) for the presets and scopes.
+
 ## MCP
 
 | Command | Meaning |
 |---|---|
 | `minibox mcp [--toolsets LIST]` | Runs an MCP server over standard input and output, and forwards it to the server's `/mcp` endpoint. `LIST` is a comma-separated list of toolsets. The default is `core,meta`. |
 
-See [MCP tools](mcp.md) for the toolsets.
+See [MCP tools](mcp.md) for the toolsets. When `MINIBOX_ACCESS_KEY` is the access key, `minibox mcp` warns on standard error. The server refuses the key on `/mcp` once `MCP_ALLOW_OWNER_KEY` is `false`.

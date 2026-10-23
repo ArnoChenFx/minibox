@@ -13,6 +13,7 @@ import type { CliIo } from "./cli/shared";
 import { sshConfig, proxyEnv } from "./cli/ssh";
 import { sshProxy } from "./cli/ssh-proxy";
 import { templateCommand } from "./cli/template";
+import { tokenCommand } from "./cli/token";
 import { toolCommand } from "./cli/tool";
 import { transferCommand } from "./cli/transfer";
 import { trashCommand } from "./cli/trash";
@@ -59,6 +60,7 @@ export async function runCli(
       return await transferCommand(command, sub === undefined ? [] : [sub, ...rest], env, io);
     }
     if (command === "tool") return await toolCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "token") return await tokenCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "mcp") return await mcpProxy(sub === undefined ? [] : [sub, ...rest], env, io, lines);
     if (command === "ssh-config") return await sshConfig(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "ssh-proxy")

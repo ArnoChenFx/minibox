@@ -23,6 +23,7 @@ import {
   validMountPath,
   volumeChoices,
 } from "../web/js/lib/mounts.js";
+import { ownerKeyNotice } from "../web/js/lib/owner-key.js";
 import { retiredRedirect } from "../web/js/lib/retired-routes.js";
 import { daysLeft } from "../web/js/lib/trash.js";
 
@@ -871,6 +872,22 @@ describe("recycle bin countdown", () => {
     expect(daysLeft(at(0), now)).toBe(0);
     expect(daysLeft(at(-DAY), now)).toBe(0);
     expect(daysLeft("not a date", now)).toBe(0);
+  });
+});
+
+describe("owner key notice", () => {
+  const lastUsedAt = "2026-10-23T01:00:00.000Z";
+
+  test("is the outcome the server reports, and nothing when the owner key was not used lately", () => {
+    expect(ownerKeyNotice({ mcpOwnerKey: { outcome: "accepted", lastUsedAt } })).toBe("accepted");
+    expect(ownerKeyNotice({ mcpOwnerKey: { outcome: "refused", lastUsedAt } })).toBe("refused");
+    expect(ownerKeyNotice({ mcpOwnerKey: null })).toBeNull();
+    expect(ownerKeyNotice({})).toBeNull();
+    expect(ownerKeyNotice(null)).toBeNull();
+  });
+
+  test("an outcome the console does not know shows nothing", () => {
+    expect(ownerKeyNotice({ mcpOwnerKey: { outcome: "maybe" as "accepted", lastUsedAt } })).toBeNull();
   });
 });
 

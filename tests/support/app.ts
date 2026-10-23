@@ -45,6 +45,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     trustProxy: false,
     cookieSecure: false,
     allowedOrigins: [],
+    mcpAllowOwnerKey: true,
     boxProfile: DEFAULT_BOX_PROFILE,
     boxPidsLimit: DEFAULT_PIDS_LIMIT,
     containerRuntime: null,

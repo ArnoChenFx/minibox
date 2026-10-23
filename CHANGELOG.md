@@ -10,6 +10,7 @@
 
 ### 新增
 - 回收站与重建安全检查点（[#115](https://github.com/ArnoChenFx/minibox/issues/115)）：删除 Box 或卷时保留其数据副本，保留期由 `TRASH_RETENTION_DAYS` 设定（默认 7，范围 1 到 365），到期后每小时清理一次。删除 Box 时保留其自有的 `/workspace` 与 home 卷；删除卷时保留卷的数据，缓存卷与工具卷除外。控制台的「回收站」页面列出各条记录，可恢复为新的 Box 或卷，或立即彻底删除。恢复 Box 时需要新名称，Box 保留模板、数据、资源与安全档位，但不保留环境变量、启动命令、标签、网络、TTL 与共享挂载。接口为 `GET /api/trash`、`POST /api/trash/:id/restore`（202，任务，可设置 `name`、`cpus`、`memoryMb`）与 `DELETE /api/trash/:id`（202，任务），仅所有者可用。回收站条目计入 `CHECKPOINT_CAPACITY_MB`：超过上限时先清除最旧的条目，仍不够则拒绝删除并说明原因，且不停止、不删除任何内容。宿主机剩余空间低于下限时，保留副本的删除返回 `507`。`DELETE /api/boxes/:id` 与 `DELETE /api/volumes/:id` 接受 `skipTrash=true`，表示不保留副本，需要所有者或持有新令牌权限 `trash:skip` 的令牌；该权限不属于任何预设。删除响应的 `trash` 字段给出保留的条目，没有保留时为 `null`。重建 Box（`POST /api/boxes/:id/rebuild`）以及挂载与卸载卷（`attach`、`detach`）默认先拍摄「重建前」的安全检查点，`safetyCheckpoint: false` 可关闭它。重建失败且 Box 恢复原状时丢弃该检查点；无法原样恢复时保留它，并在错误中给出 id。新增事件 `box.trashed`、`volume.trashed`、`trash.restored` 与 `trash.purged`。命令行新增 `minibox trash ls`、`restore` 与 `purge`；MCP 新增 `list_trash`、`restore_trash` 与 `purge_trash`，位于 `storage` 工具集，仅所有者可用。
+- `/mcp` 所有者访问密钥的记录与提示：新增 `MCP_ALLOW_OWNER_KEY`（默认 `true`）。访问密钥每次用于 `/mcp` 都会记入事件，同一分钟内的读取合并为一行；首次使用时写入 `mcp.owner_key_used` 警告日志，控制台在最近 7 天内有使用时显示横幅。`minibox mcp` 使用访问密钥时在标准错误输出警告，并提示 `minibox token create`。新增 `minibox token create <name>`，在标准输出打印一次密钥，支持 `--preset`、`--scopes`、`--expires-in` 与 `--json`（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 - 在线备份与异地目标（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）：`POST /api/backups`（任务）在 MiniBox 运行时生成数据目录的一致备份。数据库取自 SQLite 的 `VACUUM INTO` 快照，其余文件逐个复制。归档用口令封装（AES-256-GCM，密钥由 scrypt 派生），口令为 12 到 1024 个字符，只用于封装，不写入归档、日志、审计或任务结果。备份可下载（`GET /api/backups/:id/download`）、列出与删除。命令行：`minibox backup` 创建备份，`--out FILE` 下载到本机，`--passphrase-stdin` 从标准输入读取口令；`minibox backup ls` 与 `minibox backup rm <id>` 列出与删除；`minibox restore <文件> --data-dir DIR` 离线恢复到空目录，口令错误、文件损坏、不是备份或目录非空时拒绝恢复。异地目标（`/api/targets`，推送与拉取为任务）支持 S3 兼容存储与 SFTP：凭据保存为 `target.<id>.*` 密钥，SFTP 的主机密钥须先确认才能保存。检查点包与备份可推送到目标或从目标拉取，同一目标同一时间只运行一次传输。设置页新增「异地目标」卡片（中英文），MCP 的 `storage` 工具集提供对应工具。备份与目标操作只对所有者开放，令牌不能使用。
 
 ### 变更
@@ -17,6 +18,7 @@
 - 重建 Box、挂载与卸载卷默认先拍摄安全检查点。需要旧行为的调用方传入 `safetyCheckpoint: false`。
 - 检查点的容量上限现在也统计回收站条目。
 - 控制台各页面标题栏的按钮改为右对齐，换行到标题下方时也是如此。带搜索框的页面（Box、模板）把工具栏放在标题下方一行，搜索框在左，按钮在右。
+- `/mcp` 对所有者访问密钥的处理：本版本默认仍接受（`MCP_ALLOW_OWNER_KEY=true`），但每次使用都会记录并警告。默认值将在下一个次要版本改为 `false`，届时访问密钥访问 `/mcp` 将返回 `401` 并提示使用 Agent 令牌，Agent 令牌不受影响。升级前请为每个 Agent 创建令牌；需要保留旧行为时设置 `MCP_ALLOW_OWNER_KEY=true`。见[升级说明](docs/admin/upgrades.md)（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 
 ### 修复
 - 设置了标记文件（`marker`）的路径存储池不再总被报告为不可达：健康检查原先运行 `test -f -- 文件`，在 busybox、dash 与 bash 中都会失败（[#143](https://github.com/ArnoChenFx/minibox/issues/143)）。

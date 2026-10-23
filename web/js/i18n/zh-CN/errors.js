@@ -400,6 +400,9 @@ export default {
   "err.session_attach_limit_hint": "关闭其中一个，然后重试。",
   "err.mcp_bearer_required": "MCP 需要 Authorization Bearer 访问密钥或 Agent 令牌。",
   "err.mcp_bearer_hint": "请发送 Authorization: Bearer 和访问密钥或 Agent 令牌。/mcp 不接受浏览器会话 Cookie。",
+  "err.mcp_owner_key_refused": "/mcp 不接受所有者访问密钥，请改用 Agent 令牌。",
+  "err.mcp_owner_key_hint":
+    "请在设置中创建 Agent 令牌，或运行 minibox token create，然后将它作为 Bearer 密钥发送。设置方法见 https://github.com/ArnoChenFx/minibox/blob/main/docs/zh-CN/user-guide/agents.md#为-agent-创建令牌",
   "err.mcp_toolset_invalid": "未知的 MCP 工具集。",
   "err.mcp_toolset_hint":
     "可用 core、session、network、storage、tools、meta 或 rebuild，例如 /mcp?toolsets=core,session。",

@@ -45,6 +45,11 @@ export default {
   "shell.hostFilter": "显示该宿主机上的 Box",
   "shell.memShort": "内存",
   "shell.dockerUnavailable": "Docker 不可用",
+  "shell.ownerKeyAccepted":
+    "有 Agent 使用所有者访问密钥访问 /mcp，最近一次在 {time}。请为每个 Agent 分配各自的 Agent 令牌。下一个次要版本将默认拒绝 /mcp 上的所有者访问密钥。",
+  "shell.ownerKeyRefused":
+    "有 Agent 向 /mcp 发送所有者访问密钥，MiniBox 已拒绝该请求。最近一次拒绝在 {time}。请为该 Agent 分配 Agent 令牌。",
+  "shell.ownerKeyAction": "创建 Agent 令牌",
   "login.title": "登录 · MiniBox",
   "login.heroTitle": "为 AI Agent 准备的<br />个人开发环境",
   "login.lead": "在自己的机器上一键创建隔离的 Box，统一管理生命周期、资源配额、检查点与模板。",

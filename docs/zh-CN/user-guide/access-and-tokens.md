@@ -2,7 +2,7 @@
 
 MiniBox 有三种方式证明你的身份：
 
-- **访问密钥**用于登录控制台，也是 REST API、CLI 和 MCP 的所有者密钥。
+- **访问密钥**用于登录控制台，也是 REST API、CLI 和 MCP 的所有者密钥。MCP 目前仍接受它，见 [连接 AI Agent](agents.md)。
 - **浏览器会话**是你在每个浏览器中保持的登录状态。
 - **Agent 令牌**供 Agent 和脚本使用的密钥。每个令牌只有你授予的权限。
 
@@ -43,6 +43,8 @@ Agent API 令牌是以 `mbx_` 开头的密钥。每个 Agent 或脚本使用一�
 6. 点击**新建令牌**。请立即复制密钥。MiniBox 不会再次显示。
 
 创建令牌后，MiniBox 会显示 **REST** 和 **MCP 客户端配置**的示例，并已填入密钥。复制其中任意一种即可。
+
+也可以在命令行运行 `minibox token create <name>`，它会打印一次密钥。见 [CLI 参考（英文）](../../reference/cli.md#tokens)。
 
 ### 预设
 

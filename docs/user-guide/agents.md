@@ -17,6 +17,8 @@ Use an agent token for each agent, not the access key. The access key is the own
 
 See [Access, sessions and tokens](access-and-tokens.md) for the presets and scopes.
 
+From a shell, `minibox token create <name>` makes a token too, and prints its secret once. See the [CLI reference](../reference/cli.md#tokens).
+
 ## Connect an MCP client
 
 Add a server to the client's MCP settings. Use the URL of your MiniBox server, and the token as a bearer token:
@@ -26,6 +28,8 @@ Add a server to the client's MCP settings. Use the URL of your MiniBox server, a
 ```
 
 For a client that starts a command, run `minibox mcp`. Set `MINIBOX_URL` and `MINIBOX_ACCESS_KEY` to the server address and the agent's token.
+
+`/mcp` still accepts the access key. MiniBox records each use and warns about it in the console and the log, and `minibox mcp` warns when it runs on the key. The next minor release refuses the key on `/mcp` by default, so give each agent a token now. [Upgrading](../admin/upgrades.md) names the `MCP_ALLOW_OWNER_KEY` setting.
 
 ## Toolsets
 
@@ -61,7 +65,7 @@ Paste this into the `AGENTS.md` file of the project that the agent works in. It 
 ```markdown
 ## MiniBox
 
-Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work inside a box.
+Use the MiniBox MCP server (`/mcp`, Bearer agent token) to work inside a box.
 
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision, unless the box's TTL has passed: then exec fails with box_ttl_expired. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.

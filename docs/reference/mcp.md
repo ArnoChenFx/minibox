@@ -12,7 +12,7 @@ For how to connect an agent, see [Connecting AI agents](../user-guide/agents.md)
 | `GET` | `/mcp` | Returns `405` with `Allow: POST, DELETE`. The server does not open a server-to-client stream. |
 | `DELETE` | `/mcp` | Closes the session named by the `Mcp-Session-Id` header. |
 
-Send `Authorization: Bearer` with the access key or an agent token. A browser sign-in cookie is refused. A wrong bearer key counts toward the same sign-in limit as a wrong login key.
+Send `Authorization: Bearer` with an agent token. The access key is accepted too while `MCP_ALLOW_OWNER_KEY` is `true`, the default in this release, and then each response to it carries `x-minibox-owner-key: accepted`. With `MCP_ALLOW_OWNER_KEY=false` the access key gets `401`. A browser sign-in cookie is refused. A wrong bearer key counts toward the same sign-in limit as a wrong login key.
 
 A session belongs to the credential that opened it. It ends when that token is revoked.
 

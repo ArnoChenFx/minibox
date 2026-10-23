@@ -17,6 +17,8 @@ MiniBox 让 AI Agent 在 Box 内工作。Agent 可通过三种方式连接：
 
 预设与 scope 见 [访问、会话与令牌](access-and-tokens.md)。
 
+也可以在命令行运行 `minibox token create <name>`，它会打印一次密钥。见 [CLI 参考（英文）](../../reference/cli.md#tokens)。
+
 ## 连接 MCP 客户端
 
 在客户端的 MCP 设置中添加服务器。使用 MiniBox 服务器 URL，并将令牌作为 bearer 令牌：
@@ -26,6 +28,8 @@ MiniBox 让 AI Agent 在 Box 内工作。Agent 可通过三种方式连接：
 ```
 
 对于启动命令的客户端，运行 `minibox mcp`。将 `MINIBOX_URL` 和 `MINIBOX_ACCESS_KEY` 设为服务器地址和 Agent 的令牌。
+
+`/mcp` 仍接受访问密钥。MiniBox 会记录每次使用，并在控制台和日志中发出警告；`minibox mcp` 在使用该密钥时也会发出警告。下一个次要版本默认拒绝 `/mcp` 上的访问密钥，因此请现在就为每个 Agent 分配令牌。`MCP_ALLOW_OWNER_KEY` 设置见[升级说明（英文）](../../admin/upgrades.md)。
 
 ## 工具集
 
@@ -61,7 +65,7 @@ Agent 不能查看或使用其令牌未允许的 Box、卷或宿主机。
 ```markdown
 ## MiniBox
 
-Use the MiniBox MCP server (`/mcp`, Bearer access key or agent token) to work inside a box.
+Use the MiniBox MCP server (`/mcp`, Bearer agent token) to work inside a box.
 
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision, unless the box's TTL has passed: then exec fails with box_ttl_expired. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
