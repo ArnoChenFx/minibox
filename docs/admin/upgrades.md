@@ -71,7 +71,7 @@ These are the manual steps for changes made in 0.4 and later. Read the ones that
    docker pull ghcr.io/arnochenfx/minibox:latest
    ```
 
-   To pin a version, use its tag, such as `ghcr.io/arnochenfx/minibox:0.6.1`.
+   To pin a version, use its tag, such as `ghcr.io/arnochenfx/minibox:0.6.2`.
 
 2. If you set `ACCESS_KEY` only in the container environment and not in the `minibox-data` volume, copy it before you remove the container. When the key lives in the volume, skip this step:
 
