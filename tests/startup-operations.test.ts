@@ -69,6 +69,7 @@ async function createBox(
   principal: Principal = OWNER,
 ): Promise<BoxView> {
   const { box } = await run<{ box: BoxView }>("box.create", { name, cpus: 1, memoryMb: 256, ...extra }, principal);
+  await app.hosts.get().startup.settle();
   return box;
 }
 

@@ -30,6 +30,8 @@ export function startupStatusView(state) {
   switch (state.status) {
     case "running":
       return { tone: "badge-success", key: "sc.status.running" };
+    case "cloning":
+      return { tone: "badge-accent", key: "sc.status.cloning" };
     case "waiting":
       return { tone: "badge-accent", key: "sc.status.waiting" };
     case "exited":

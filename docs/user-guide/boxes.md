@@ -90,7 +90,7 @@ A box can also stop by itself. A box that is idle can sleep, and a box can have 
 
 A startup command is a shell command that runs each time the box's container starts. Use it for something that should come back with the box, such as a dev server.
 
-The command runs when the box is created, started or woken from sleep, restarted, rebuilt, or restored from a checkpoint. A box created from a template, a snapshot or a checkpoint does not get the source box's command. Set one on the new box if you want it. A template does not carry a startup command.
+The command runs when the box is created, started or woken from sleep, restarted, rebuilt, or restored from a checkpoint. It also runs when Docker starts the box's container without MiniBox, such as with `docker start` on the host, or through a restart policy set on the container. Each start of the container runs it once, and restarting MiniBox does not run a command that is already running. MiniBox resets the restart policy to `no` when it reconciles the box. A box created from a template, a snapshot or a checkpoint does not get the source box's command. Set one on the new box if you want it. A template does not carry a startup command.
 
 To set the command, open the **Startup command** card in the **Settings** tab, under **Lifecycle**, click **Set command** or **Edit**, and then **Save**. You can also enter it in the create dialog, under **Advanced**. You can change or remove it at any time, including while the box is stopped or asleep, and no rebuild is needed. A change takes effect at the next start. On a running box, tick **Run it now as well** before you save to run the new command at once. **Run again** runs the saved command without changing it.
 
@@ -98,21 +98,28 @@ The command runs:
 
 - As the user `dev`, in `/workspace`, with `bash -lc` and the box's environment variables. It is stored exactly as you typed it.
 - In a tmux session named `minibox-init`. To watch it, open the box's terminal, or connect over SSH, and run `tmux attach -t minibox-init`. Detach with `Ctrl+B`, then `D`.
-- Without holding up the start. MiniBox waits at most five seconds for the command to launch, and a command that fails does not stop the box from starting.
+- Without holding up creation or starts. Creating a box returns at once. A start or restart waits at most five seconds for the command to launch, and a launch that takes longer finishes in the background. A command that fails does not stop the box from starting.
+
+A box created with a repository runs the command only after the repository has been cloned. Until then the card reads **Waiting for the repository clone**. If the clone fails, or a server restart cuts it short, the card says why. The command then starts at the box's next start, or when you choose **Run again** on a running box.
 
 The card shows the command's status:
 
 | Status | Meaning |
 |---|---|
 | **Not set** | The box has no startup command. |
+| **Waiting for the repository clone** | The box was created with a repository, and the command starts when the clone ends. |
 | **Waiting for the next start** | A command is set, and it has not run since the box last started. |
 | **Running** | The command is running now. |
 | **Exited with code N** | The last run ended with exit code N. The card also shows when it ended, and the end of its output. |
-| **Could not start** | MiniBox could not start the command. The card shows why. |
+| **Could not start** | MiniBox could not start the command, or the repository clone failed. The card shows why, and the reason still shows after a MiniBox restart, until the command starts. |
 
 If the card says that the latest run used an earlier version of the command, run it again to use the current one.
 
+**The command is not secret.** While it runs, its text is visible in `ps` to anyone who can run commands in the box. It is also stored as typed, so anyone with the `secret:use` scope can read it. Do not put a password or a token in it. Give the box a [variable or secret](environment-and-secrets.md) instead, and let the program read it from its environment.
+
 A command can be up to 4096 bytes long. It may span several lines and contain tabs, but no other control characters.
+
+Running the command again, with **Run again** or **Run it now as well**, first ends the earlier run, including the processes it started and those that `sudo` started for it. A process that `sudo` started and then detached, for example with `setsid`, can keep running, because `sudo` clears the variable that marks the run's processes. Restarting or stopping the box ends every process in it.
 
 A startup command does not keep the box awake. Its `minibox-init` session counts as use only while someone is attached to it. Running the command again, with **Run again** or **Run it now as well**, restarts the idle timer, as an `exec` does. See [Idle sleep and TTL](idle-sleep.md).
 

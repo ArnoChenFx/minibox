@@ -16,7 +16,7 @@ import { attachToBoxNetwork } from "./box-network";
 import { getBox } from "./box-query";
 import { prepareEgress, removeEgress, stopEgressProxies, syncHostFirewall } from "./egress";
 import { deliverSelfToken } from "./self-token";
-import { launchStartup } from "./startup";
+import { startupNow } from "./startup";
 
 /** Bumps the revision only when the desired state actually changes, so a reconcile does not invalidate If-Match. */
 async function setDesired(
@@ -107,7 +107,7 @@ export async function startLocked(host: HostCtx, box: Box, options: StartOptions
   if (!box.running || !host.selfTokens.has(box.boxId)) await deliverSelfToken(host, box.boxId, box.id);
   await host.sampler.observe(box.id);
   host.pulse.touch(box.boxId, "wake");
-  if (!box.running) await launchStartup(host, box.id, host.specs.read(box.boxId)?.startupCommand);
+  if (!box.running) await startupNow(host, box.boxId);
   if (options.record && (previousReason === "idle" || previousReason === "ttl")) {
     options.record({
       op: "box.wake",
@@ -198,7 +198,7 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
     await host.sampler.observe(box.id);
     // Same as a start: clear a stale idle heartbeat so LifecycleWatcher does not re-sleep the box at once.
     host.pulse.touch(box.boxId, "wake");
-    await launchStartup(host, box.id, host.specs.read(box.boxId)?.startupCommand);
+    await startupNow(host, box.boxId);
     return getBox(host, box.boxId);
   });
 }

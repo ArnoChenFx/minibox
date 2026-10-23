@@ -38,8 +38,16 @@ import {
 import { assertImageAvailable, ensureImageOn } from "./images";
 import { beginChange } from "./moving";
 import { provisionSelfToken, selfTokenTmpfs } from "./self-token";
-import { launchStartup } from "./startup";
+import { startupNow } from "./startup";
 import { alignVolumeRoot, type RecordNote, restoreVolumeRoot, writableWorkspaceVolume } from "./volume-owner";
+
+/**
+ * The box whose startup command a swap starts once the spec lock is released. A launch records its outcome under that
+ * lock, so it cannot run inside it.
+ */
+interface StartupDue {
+  boxId: string | null;
+}
 
 interface SwapState {
   createdId: string | null;
@@ -145,44 +153,50 @@ async function rebuildChanging(
   record: RecordNote | undefined,
   safety: SafetyHook | null,
 ): Promise<RebuildResult> {
-  const point = await host.specs.exclusive(async () => {
-    const spec = host.specs.read(box.boxId);
-    if (!spec) throw notFound(msg("box_not_found"));
-    if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
-    refuseExpired(host, spec.id);
+  const due: StartupDue = { boxId: null };
+  let point: SafetyPoint | null;
+  try {
+    point = await host.specs.exclusive(async () => {
+      const spec = host.specs.read(box.boxId);
+      if (!spec) throw notFound(msg("box_not_found"));
+      if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
+      refuseExpired(host, spec.id);
 
-    const previous = structuredClone(spec);
-    const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;
-    // An empty request is allowed: a moved tag alone is still a rebuild. rebuild_empty only when nothing changed.
-    const planned = planRebuild(
-      host.prefix,
-      spec,
-      named,
-      await movedTag(host, spec),
-      await rotatedSecrets(host, spec, named.env ?? spec.env),
-      await egressAfter(host, spec, named),
-      host.security.network,
-    );
-    if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
-    assertSecretsSet(host.secrets, planned.env);
-    await assertRebuildAttachments(host, spec, planned.mounts, planned.network, planned.egress !== null);
+      const previous = structuredClone(spec);
+      const named = request.mounts ? { ...request, mounts: engineRefs(host, request.mounts) } : request;
+      // An empty request is allowed: a moved tag alone is still a rebuild. rebuild_empty only when nothing changed.
+      const planned = planRebuild(
+        host.prefix,
+        spec,
+        named,
+        await movedTag(host, spec),
+        await rotatedSecrets(host, spec, named.env ?? spec.env),
+        await egressAfter(host, spec, named),
+        host.security.network,
+      );
+      if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
+      assertSecretsSet(host.secrets, planned.env);
+      await assertRebuildAttachments(host, spec, planned.mounts, planned.network, planned.egress !== null);
 
-    if (planned.templateRef) await assertImageAvailable(host, planned.templateRef);
-    if (!confirm) {
-      const diff = await host.runtime.containerDiff(spec.containerId);
-      throw new AppError(409, "confirmation_required", msg("rebuild_confirm_required"), {
-        preview: previewOf(spec, planned, diff),
-      });
-    }
-    let template = spec.template;
-    if (planned.templateRef) {
-      const details = await ensureImageOn(host, planned.templateRef);
-      template = { ref: planned.templateRef, image: planned.templateRef, digest: details.id };
-    }
-    const taken = safety ? await safety(box) : null;
-    await swap(host, previous, planned, template, request, record, taken);
-    return taken;
-  });
+      if (planned.templateRef) await assertImageAvailable(host, planned.templateRef);
+      if (!confirm) {
+        const diff = await host.runtime.containerDiff(spec.containerId);
+        throw new AppError(409, "confirmation_required", msg("rebuild_confirm_required"), {
+          preview: previewOf(spec, planned, diff),
+        });
+      }
+      let template = spec.template;
+      if (planned.templateRef) {
+        const details = await ensureImageOn(host, planned.templateRef);
+        template = { ref: planned.templateRef, image: planned.templateRef, digest: details.id };
+      }
+      const taken = safety ? await safety(box) : null;
+      await swap(host, previous, planned, template, request, record, taken, due);
+      return taken;
+    });
+  } finally {
+    if (due.boxId !== null) await startupNow(host, due.boxId);
+  }
   await host.sampler.observe(box.id, host.specs.read(box.boxId)?.containerId ?? box.id);
   const rebuilt = await getBox(host, box.boxId);
   return { box: rebuilt, safety: point ? { id: point.id, label: point.label } : null };
@@ -452,8 +466,17 @@ function writeNext(
   host.specs.write(next);
 }
 
-/** Puts the box back as it was. Returns false when any step could not be undone, so the box may not match its spec. */
-async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?: RecordNote): Promise<boolean> {
+/**
+ * Puts the box back as it was. Returns false when any step could not be undone, so the box may not match its spec. The
+ * startup command of a restarted box is left to `due`, since its launch records under the spec lock this runs in.
+ */
+async function undo(
+  host: HostCtx,
+  previous: BoxSpec,
+  state: SwapState,
+  due: StartupDue,
+  record?: RecordNote,
+): Promise<boolean> {
   let clean = true;
   const fail = async (fn: () => Promise<void>) => {
     try {
@@ -491,7 +514,7 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
       if (previous.selfToken) {
         await provisionSelfToken(host, { boxId: previous.id, name: previous.name }, previous.containerId);
       }
-      await launchStartup(host, previous.containerId, previous.startupCommand);
+      due.boxId = previous.id;
     });
   }
   if (!(await state.changes.rollback())) clean = false;
@@ -552,6 +575,7 @@ async function swap(
   request: RebuildRequest,
   record: RecordNote | undefined,
   taken: SafetyPoint | null,
+  due: StartupDue,
 ): Promise<void> {
   const state: SwapState = {
     createdId: null,
@@ -627,7 +651,7 @@ async function swap(
         log.warn("box.rebuild_egress_cleanup_failed", { id: previous.id, error: String(e) });
       });
     }
-    if (previous.lifecycle.desired === "running") await launchStartup(host, created.id, previous.startupCommand);
+    if (previous.lifecycle.desired === "running") due.boxId = previous.id;
     log.info("box.rebuilt", {
       id: previous.id,
       name: previous.name,
@@ -642,7 +666,7 @@ async function swap(
         .filter((engineName) => !resolved.mounts.some((mount) => mount.volume === engineName)),
     );
   } catch (e) {
-    const clean = await undo(host, previous, state, record);
+    const clean = await undo(host, previous, state, due, record);
     if (taken === null) throw e;
     if (!clean) {
       log.error("box.rebuild_safety_kept", { id: previous.id, safety: taken.id, error: String(e) });

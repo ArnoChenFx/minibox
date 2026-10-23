@@ -32,7 +32,7 @@ import { needsImage, sendImage } from "./image-transfer";
 import { beginMove } from "./moving";
 import { assertFresh, containerSpec, movedTag } from "./rebuild";
 import { provisionSelfToken } from "./self-token";
-import { launchStartup } from "./startup";
+import { startupNow } from "./startup";
 import { copyRecipe } from "./template-builds";
 
 /** What a move keeps. Volumes are copied to the target, or attached again where the storage is shared. */
@@ -360,7 +360,7 @@ async function runMove(
     throwIfCancelled(progress);
     await commitMove(from, to, spec.id, revision, { containerId: created.id, containerName: name, mounts, template });
     if (!plan.starts) to.selfTokens.revoke(spec.id);
-    if (plan.starts) await launchStartup(to, created.id, spec.startupCommand);
+    if (plan.starts) await startupNow(to, spec.id);
     say(`The box now runs on ${to.host.id}.`);
   } catch (e) {
     await undoMove(from, to, spec, state, changes, oldId);

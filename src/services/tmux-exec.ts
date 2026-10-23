@@ -49,13 +49,18 @@ export function runTmux(host: HostCtx, containerId: string, args: readonly strin
   return runInBox(host, containerId, ["tmux", "-u", ...args]);
 }
 
-/** Runs a command in the box as `dev`, collects what it prints, and returns its status. */
-export async function runInBox(host: HostCtx, containerId: string, cmd: readonly string[]): Promise<BoxRun> {
+/** Runs a command in the box as `dev` unless another user is named, collects what it prints, and returns its status. */
+export async function runInBox(
+  host: HostCtx,
+  containerId: string,
+  cmd: readonly string[],
+  user: "dev" | "root" = "dev",
+): Promise<BoxRun> {
   const session = await startInBox(host, containerId, {
     cmd: [...cmd],
     env: TMUX_ENV,
     workingDir: "/",
-    user: "dev",
+    user,
     tty: false,
   });
   const stdout = collectText(session.stdout);

@@ -48,6 +48,7 @@
 - 顶栏的宿主机筛选器只在配置了不止一台宿主机时显示。
 - 设置页改为左侧分类导航（窄屏时为可横向滚动的一行）。每次只显示一个分类，每个分类有自己的地址（如 `#/settings/secrets`），浏览器的前进与后退可在分类之间切换，默认显示「会话」。令牌横幅的链接直接打开「Agent API 令牌」分类。
 - 长列表默认只显示前 5 项，其余通过「展开全部（N）」展开，「收起」收回。涉及设置页的会话、令牌、密钥、通知渠道与投递记录、宿主机与异地目标，创建 Box 的工具与模板选择器，以及模板页的卡片列表。设置页中当前会话排在最前。
+- 创建带启动命令的 Box 立即返回，不再等待命令启动。启动与重启仍最多等待 5 秒，超时的启动在后台完成（[#133](https://github.com/ArnoChenFx/minibox/issues/133)）。
 
 ### 修复
 - 卡片标题栏中相邻的按钮不再挤在一起：检查点的「导入」与「创建检查点」、端口的「刷新」与「添加端口」、模板卡片底部的「构建」与「用此模板创建」与页面标题栏一样间隔 8px，并靠右对齐（Refs [#26](https://github.com/ArnoChenFx/minibox/issues/26)）。
@@ -60,6 +61,9 @@
 - 共享 tools 卷在引擎中丢失后，MiniBox 会以同一记录与引擎名称重新创建该卷（[#128](https://github.com/ArnoChenFx/minibox/issues/128)），不再以 `409 volume_missing` 拒绝创建、启动、重建或移动 Box。本地池上的卷以空卷返回，其中的工具需在 Box 的**工具**标签页点击**补装缺失**重新安装。工作区、主目录与缓存卷仍然拒绝挂载。
 - 休眠中的 Box 在终端标签页唤醒后，会话启动完成时页面没有切换到实时终端：终端标签页原先缺少重新渲染的回调，唤醒后停留在「正在唤醒」。
 - 重建、移动 Box，或挂载与卸载卷之后，页面留在原来的标签页与设置分组上，不再跳回概览。
+- 启动命令：带仓库创建的 Box 在克隆完成后才运行命令。克隆失败或被服务器重启打断时，状态显示原因，命令不会自行运行；等待克隆时的状态为新增的 `cloning`（[#133](https://github.com/ArnoChenFx/minibox/issues/133)）。
+- 启动命令：Docker 在 MiniBox 之外启动容器时（例如 `docker start`，或宿主机重启后设有重启策略的容器），命令会再运行一次。每次容器启动只运行一次，重启 MiniBox 不会重复运行（[#133](https://github.com/ArnoChenFx/minibox/issues/133)）。
+- 启动命令：启动失败的原因保存在 Box 上，MiniBox 重启后仍会显示，直到命令成功启动。重新运行时，`sudo` 启动的进程也会被结束，经 `sudo` 启动后又脱离的进程除外（[#133](https://github.com/ArnoChenFx/minibox/issues/133)）。
 
 ### 工程化
 - 新增 `.cursor/environment.json` 与 `.cursor/install.sh`：Cursor 云端 Agent 构建环境时把 Bun 升到最新版并对照 `engines.bun` 检查，再安装依赖；新增 `AGENTS.md`，要求 Agent 不得降低 Bun 版本或改回 `tsc` 类型检查。
@@ -80,6 +84,7 @@
 - Box 内 Agent 与宿主机指南（中英文）说明：Agent 宿主机无法把令牌文件写入 Box，因此不能在其上创建带自助令牌的 Box（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）。
 - Box 指南、检查点、环境变量与密钥、空闲休眠、NFS、工具、终端与会话，以及管理文档的网络出站，中英文同步改为新的标签页与设置分组（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）。
 - 终端与会话指南新增「在概览中观察 Agent」一节，Box 指南新增「概览与 Box 列表」一节，中英文同步（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）。
+- 启动命令指南说明命令在 `ps` 中可见、不应写入密钥，以及带仓库创建、Docker 重启与 `sudo` 进程的行为；环境变量与密钥指南补充对应规则，中英文同步（[#133](https://github.com/ArnoChenFx/minibox/issues/133)）。
 
 ## [0.5.1] - 2026-10-23
 

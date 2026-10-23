@@ -4,10 +4,16 @@ import { msg } from "../lib/messages";
 import { pushHistory } from "../specs/history";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxRecovery, BoxSpec } from "../specs/types";
-import { startupCommandProblem, startupProblemMessage, type StartupView, viewOf } from "../startup/command";
+import {
+  cloningView,
+  startupCommandProblem,
+  startupProblemMessage,
+  type StartupView,
+  viewOf,
+} from "../startup/command";
 import { type Box, getBox, locked } from "./boxes";
 import { beginChange } from "./moving";
-import { failureOf, launchStartup, readPane } from "./startup";
+import { failureOf, readPane, runNow, startupFailureOf } from "./startup";
 
 /** A box's startup command with its status. `command` is the text as typed, so only a caller that may read it gets it. */
 export interface StartupCommandState extends StartupView {
@@ -43,11 +49,10 @@ export async function setStartupCommand(
   return locked(host, ref, async (box) => {
     const release = beginChange(box.boxId);
     try {
-      const changed = await writeCommand(host, box.boxId, input.command, input.expectedRevision);
-      if (changed) host.startup.clear(box.id);
+      await writeCommand(host, box.boxId, input.command, input.expectedRevision);
       if (input.applyNow === true && box.running) {
         host.pulse.touch(box.boxId, "exec");
-        await launchStartup(host, box.id, input.command);
+        await runNow(host, box.boxId);
       }
       return await stateOf(host, box);
     } finally {
@@ -65,7 +70,7 @@ export async function clearStartupCommand(
   return locked(host, ref, async (box) => {
     const release = beginChange(box.boxId);
     try {
-      if (await writeCommand(host, box.boxId, undefined, expectedRevision)) host.startup.clear(box.id);
+      await writeCommand(host, box.boxId, undefined, expectedRevision);
       return await stateOf(host, box);
     } finally {
       release();
@@ -73,18 +78,19 @@ export async function clearStartupCommand(
   });
 }
 
-/** Runs the stored command again now. The box must be running, and the command must be set. */
+/** Runs the stored command again now. The box must be running, and the command must be set and not waiting for a clone. */
 export async function runStartupCommand(host: HostCtx, ref: string): Promise<StartupCommandState> {
   return locked(host, ref, async (box) => {
     const release = beginChange(box.boxId);
     try {
-      const command = host.specs.read(box.boxId)?.startupCommand;
-      if (command === undefined) throw conflict(msg("startup_command_none"));
+      const spec = host.specs.read(box.boxId);
+      if (spec?.startupCommand === undefined) throw conflict(msg("startup_command_none"));
       if (!box.running) {
         throw conflict(msg("startup_command_box_stopped"), { hint: msg("startup_command_box_stopped_hint") });
       }
+      if (spec.startupAwaitsClone) throw conflict(msg("startup_command_awaits_clone"));
       host.pulse.touch(box.boxId, "exec");
-      await launchStartup(host, box.id, command);
+      await runNow(host, box.boxId);
       return await stateOf(host, box);
     } finally {
       release();
@@ -94,7 +100,7 @@ export async function runStartupCommand(host: HostCtx, ref: string): Promise<Sta
 
 /**
  * Writes the command and returns whether it changed. Setting the text it already has changes nothing, so the revision
- * stays. A change is one revision, with the earlier revision kept in history.
+ * stays. A change is one revision, with the earlier revision kept in history, and it clears the failure of the old text.
  */
 async function writeCommand(
   host: HostCtx,
@@ -116,6 +122,7 @@ async function writeCommand(
       history: pushHistory(spec),
       recovery: withoutReset(spec.recovery),
     };
+    delete next.startupFailure;
     if (command === undefined) delete next.startupCommand;
     else next.startupCommand = command;
     host.specs.write(next);
@@ -138,14 +145,22 @@ async function stateOf(host: HostCtx, box: Box): Promise<StartupCommandState> {
 }
 
 /**
- * The status of a command. A stopped box has no session, so it reads as waiting; a running box is asked for its pane. A
- * failure to read the pane is reported as the status, so a status read does not fail.
+ * The status of a command. A stopped box has no session, so it reads as waiting, or as failed when its last launch
+ * failed. A running box is asked for its pane. A failure to read the pane is reported as the status, so a status read
+ * does not fail.
  */
 async function viewFor(host: HostCtx, box: Box, command: string | null): Promise<StartupView> {
   if (command === null) return viewOf(null, null);
-  if (!box.running) return viewOf(command, null);
+  const spec = host.specs.read(box.boxId);
+  if (spec?.startupAwaitsClone) {
+    return host.startup.isCloning(box.boxId)
+      ? cloningView()
+      : viewOf(command, null, msg("startup_command_clone_unfinished"));
+  }
+  const failure = startupFailureOf(spec, box.id);
+  if (!box.running) return viewOf(command, null, failure);
   try {
-    return viewOf(command, await readPane(host, box.id), host.startup.failureOf(box.id));
+    return viewOf(command, await readPane(host, box.id), failure);
   } catch (e) {
     return viewOf(command, null, failureOf(e));
   }
