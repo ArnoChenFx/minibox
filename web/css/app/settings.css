@@ -136,3 +136,17 @@ pre.staged-changes {
   text-decoration: line-through;
   color: var(--text-3);
 }
+
+/* An inline-block badge is not crossed out with its cell. */
+.mount-pending .badge {
+  display: inline-block;
+  text-decoration: none;
+}
+
+/* The apply dialog spaces its parts by the stack's gap alone, and keeps that gap above the checkpoint checkbox. */
+.staged-apply {
+  margin-bottom: 16px;
+}
+.staged-apply > .fold-section {
+  margin-top: 0;
+}

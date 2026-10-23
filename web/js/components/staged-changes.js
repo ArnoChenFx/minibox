@@ -46,12 +46,49 @@ export function stagedField(staged, field) {
   return staged?.pending?.includes(field) ? staged.fields[field] : null;
 }
 
-/** The planned changes, one line each: field, then the value before and after. */
+function parseMounts(text) {
+  try {
+    const rows = JSON.parse(text);
+    return Array.isArray(rows) ? rows : null;
+  } catch {
+    return null;
+  }
+}
+
+const modeText = (mode) => t(mode === "ro" ? "vol.modeRo" : "vol.modeRw");
+
+/**
+ * The mounts a change adds, removes or switches to another volume or mode, one line each by path. Null when either
+ * side is not the JSON a rebuild plan names mounts in.
+ */
+export function mountLines(change) {
+  const before = parseMounts(change.from);
+  const after = parseMounts(change.to);
+  if (!before || !after) return null;
+  const old = new Map(before.map((row) => [row.path, row]));
+  const now = new Map(after.map((row) => [row.path, row]));
+  const lines = [];
+  for (const row of after) {
+    const was = old.get(row.path);
+    if (!was) lines.push(`+ ${row.path} (${modeText(row.mode)})`);
+    else if (was.volume !== row.volume || was.mode !== row.mode) {
+      lines.push(`~ ${row.path} (${modeText(was.mode)} → ${modeText(row.mode)})`);
+    }
+  }
+  for (const row of before) if (!now.has(row.path)) lines.push(`− ${row.path}`);
+  return lines;
+}
+
+function changeLines(change) {
+  const label = t(`rebuild.field.${change.field}`);
+  const mounts = change.field === "mounts" ? mountLines(change) : null;
+  if (mounts?.length) return [`${label}:`, ...mounts.map((line) => `  ${line}`)];
+  return [`${label}: ${changeText(change, change.from)} → ${changeText(change, change.to)}`];
+}
+
+/** The planned changes: field, then the value before and after. Mounts list each path that changes on its own line. */
 export function changesHtml(changes) {
-  const lines = (changes ?? []).map(
-    (change) =>
-      `${t(`rebuild.field.${change.field}`)}: ${changeText(change, change.from)} → ${changeText(change, change.to)}`,
-  );
+  const lines = (changes ?? []).flatMap(changeLines);
   return `<pre class="mono staged-changes">${esc(lines.join("\n") || "—")}</pre>`;
 }
 
