@@ -157,6 +157,15 @@ describe("list toggle", () => {
     expect(html).toContain('data-toggle="a&quot;b"');
   });
 
+  test("a toggle reports whether its list is expanded", () => {
+    expect(listToggle<string>(`return listToggleHtml("k", { expanded: false, total: 9 });`)).toContain(
+      'aria-expanded="false"',
+    );
+    expect(listToggle<string>(`return listToggleHtml("k", { expanded: true, total: 9 });`)).toContain(
+      'aria-expanded="true"',
+    );
+  });
+
   test("a press redraws the toggles and returns focus to the same toggle", () => {
     const out = listToggle<{ flipped: boolean; focused: boolean; redrawn: boolean }>(`
       const scope = {};

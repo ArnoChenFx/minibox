@@ -25,7 +25,7 @@ export function flip(scope, key) {
 /** The button under a long list. Its label gives the full length while the list is collapsed. */
 export function listToggleHtml(key, { expanded, total }) {
   const label = expanded ? t("list.collapse") : t("list.showAll", { n: total });
-  return `<button type="button" class="list-toggle${expanded ? " is-expanded" : ""}" data-toggle="${esc(key)}">${icon("chevron")}<span>${esc(label)}</span></button>`;
+  return `<button type="button" class="list-toggle${expanded ? " is-expanded" : ""}" data-toggle="${esc(key)}" aria-expanded="${expanded}">${icon("chevron")}<span>${esc(label)}</span></button>`;
 }
 
 /**
