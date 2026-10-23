@@ -5,6 +5,7 @@ import { AppError, notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { boxesUsing } from "../secrets/env";
 import type { SecretMeta } from "../secrets/store";
+import { isTargetSecretName } from "../targets/types";
 import { defineOperation } from "./define";
 import { forceFlag, secretName, secretValue } from "./validation";
 
@@ -34,7 +35,12 @@ export const secretList = defineOperation({
   output: z.object({ secrets: z.array(SecretSchema) }),
   rest: [{ method: "GET", path: "/api/secrets" }],
   cli: "secret ls",
-  run: async ({ host }) => ({ secrets: host.secrets.list().map((meta) => withBoxes(host, meta)) }),
+  run: async ({ host }) => ({
+    secrets: host.secrets
+      .list()
+      .filter((meta) => !isTargetSecretName(meta.name))
+      .map((meta) => withBoxes(host, meta)),
+  }),
 });
 
 export const secretSet = defineOperation({

@@ -25,6 +25,18 @@ export const LABELS = {
   toolUninstall: "Uninstall command",
   toolStop: "Stop command",
   toolDetect: "Detect command",
+  targetName: "Target name",
+  endpoint: "Endpoint",
+  region: "Region",
+  bucket: "Bucket",
+  accessKeyId: "Access key id",
+  secretAccessKey: "Secret access key",
+  host: "Host",
+  port: "Port",
+  user: "User",
+  privateKey: "Private key",
+  hostKeyFingerprint: "Host key fingerprint",
+  path: "Path",
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
@@ -248,6 +260,11 @@ export const MESSAGES = {
   package_too_large:
     "The checkpoint package is larger than the limit of {limit} MB. Raise CHECKPOINT_PACKAGE_MAX_MB to allow it.",
   package_not_found: "Package {id} was not found. Packages are kept for a day, so it may have expired.",
+  backup_not_found: "Backup {id} was not found.",
+  backup_exists: "Backup {id} is already stored here, so it was not stored again.",
+  backup_invalid: "The backup is not valid: {reason}",
+  backup_passphrase_invalid:
+    "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
   package_upload_type: "A package is uploaded as application/octet-stream.",
   payload_too_large: "The request body is larger than the limit of {limit} MB.",
   schedule_rule_invalid:
@@ -567,6 +584,33 @@ export const MESSAGES = {
     "A startup command runs in the box and may hold secrets. This credential may not set, remove or run one. It needs the exec and secret:use scopes, or the admin preset.",
   startup_session_forbidden:
     "The minibox-init session shows a box's startup command output. This credential may not use it. It needs the exec and secret:use scopes, or the admin preset.",
+  secret_name_reserved:
+    "Names that start with target. are reserved for a target's credentials. Manage targets in Settings.",
+  target_not_found: "Target {id} was not found.",
+  target_name_taken: "A target named {name} already exists.",
+  target_name_invalid: "A target name is 1 to 64 characters, with no line breaks or control characters.",
+  target_field_not_allowed: "{label} does not apply to this kind of target.",
+  target_field_invalid: "{label} is not valid.",
+  target_endpoint_invalid:
+    "The endpoint must be an https address. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+  target_path_invalid:
+    "The path must be relative to the target's folder, with no . or .. segments and no control characters.",
+  target_key_invalid: "The private key cannot be used: {reason}.",
+  target_host_key_required: "Confirm the server's host key before saving this target.",
+  target_host_key_unconfirmed: "The server presented the host key {fingerprint}, which has not been confirmed.",
+  target_host_key_mismatch:
+    "The server presented the host key {fingerprint}, which is not the one this target was saved with. Nothing was sent to it.",
+  target_unreachable: "The target cannot be reached. Check its address and the network.",
+  target_auth_failed: "The target refused the credentials.",
+  target_forbidden: "The target denied access to its folder.",
+  target_failed: "The target failed: {reason}",
+  target_credentials_missing: "The credentials of target {name} are missing. Remove the target and add it again.",
+  target_object_missing: "{object} is not on the target.",
+  target_object_differs: "{object} is on the target with other contents, so it was not replaced.",
+  target_object_held: "{object} is already stored here with other contents, so it was not replaced.",
+  target_object_invalid: "The object is not valid: {reason}",
+  target_busy: "Target {name} is busy with another transfer. Try again when it finishes.",
+  target_object_busy: "{object} is already being pulled. Try again when that transfer finishes.",
 } as const;
 export type MessageKey = keyof typeof MESSAGES;
 

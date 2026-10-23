@@ -6,7 +6,9 @@ import type { HostManager } from "../host/manager";
 import type { HostCtx } from "../host/registry";
 import type { RawBody } from "../lib/body";
 import type { Notifications } from "../notify/service";
+import type { BackupService } from "../services/backup";
 import type { ExecService } from "../services/exec";
+import type { TargetService } from "../services/targets";
 import type { TerminalService } from "../services/terminals";
 import type { TaskHandle, TaskReader } from "../tasks/types";
 import type { BoxView, TokenGrants } from "../tokens/model";
@@ -75,6 +77,10 @@ export interface OperationContext {
   readonly task?: TaskHandle;
   /** The task manager. The executor fills it in; task operations read it. */
   readonly tasks?: TaskReader;
+  /** Backups of DATA_DIR. The executor fills it in; backup operations read it. */
+  readonly backups?: BackupService;
+  /** Off-site targets. The executor fills it in; target operations read it. */
+  readonly targets?: TargetService;
   /** Command exec. Present on REST, MCP and the CLI. */
   readonly execs?: ExecService;
   /** Terminal sessions (tmux in the box). Present on REST, MCP and the CLI. */

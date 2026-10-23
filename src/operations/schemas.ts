@@ -178,11 +178,24 @@ export const CheckpointUsageSchema = z.object({
 export const CheckpointPackageSchema = z.object({
   id: z.string(),
   checkpointId: z.string().nullable(),
-  origin: z.enum(["export", "upload"]),
+  origin: z.enum(["export", "upload", "target"]),
   bytes: z.number().int(),
   sha256: z.string(),
   createdAt: z.string(),
   expiresAt: z.string(),
+  url: z.string(),
+});
+
+/** A stored backup of DATA_DIR. The archive is downloaded from `url` until the backup is deleted. */
+export const BackupSchema = z.object({
+  id: z.string(),
+  origin: z.enum(["create", "target"]),
+  targetId: z.string().nullable(),
+  createdBy: z.string().nullable(),
+  bytes: z.number().int(),
+  sha256: z.string(),
+  entries: z.number().int(),
+  createdAt: z.string(),
   url: z.string(),
 });
 

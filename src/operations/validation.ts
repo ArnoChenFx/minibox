@@ -30,6 +30,7 @@ import {
 } from "../lib/validation";
 import type { BoxEnv, BoxMount } from "../specs/types";
 import { STARTUP_COMMAND_MAX_BYTES, startupCommandProblem, startupProblemMessage } from "../startup/command";
+import { isTargetSecretName } from "../targets/types";
 
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
@@ -253,24 +254,26 @@ export const checkpointReason = () =>
 const PASSPHRASE_MIN = 12;
 const PASSPHRASE_MAX = 1024;
 
-const passphraseInvalid = (): Checked<string> => reject(msg("package_passphrase_invalid"), "passphrase");
+type Sealed = "package" | "backup";
 
-function checkPassphrase(value: unknown): Checked<string> {
-  if (typeof value !== "string") return passphraseInvalid();
+const passphraseInvalid = (sealed: Sealed): Checked<string> =>
+  reject(msg(sealed === "backup" ? "backup_passphrase_invalid" : "package_passphrase_invalid"), "passphrase");
+
+function checkPassphrase(value: unknown, sealed: Sealed): Checked<string> {
+  if (typeof value !== "string") return passphraseInvalid(sealed);
   const length = [...value].length;
-  if (length < PASSPHRASE_MIN || length > PASSPHRASE_MAX) return passphraseInvalid();
-  if (value !== value.trim() || /[\r\n\0]/.test(value)) return passphraseInvalid();
+  if (length < PASSPHRASE_MIN || length > PASSPHRASE_MAX) return passphraseInvalid(sealed);
+  if (value !== value.trim() || /[\r\n\0]/.test(value)) return passphraseInvalid(sealed);
   return accept(value);
 }
 
-/** Seals a package. The value is never stored, logged or echoed back, so only the sealed file keeps anything of it. */
-export const passphrase = () =>
-  field(checkPassphrase, {
+/** Seals a package or a backup. The value is never stored, logged or echoed back, so only the sealed file keeps anything of it. */
+export const passphrase = (sealed: Sealed = "package") =>
+  field((value) => checkPassphrase(value, sealed), {
     type: "string",
     minLength: PASSPHRASE_MIN,
     maxLength: PASSPHRASE_MAX,
-    description:
-      "Passphrase that seals the package: 12 to 1024 characters, no leading or trailing spaces, no line breaks. MiniBox never stores it, so a package cannot be opened without it.",
+    description: `Passphrase that seals the ${sealed}: 12 to 1024 characters, no leading or trailing spaces, no line breaks. MiniBox never stores it, so a ${sealed} cannot be opened without it.`,
   });
 
 export const packageRef = () =>
@@ -572,6 +575,7 @@ function checkEnv(value: unknown): Checked<BoxEnv[] | undefined> {
       next.value = entry.value;
     } else {
       if (typeof entry.secretRef !== "string" || !IDENT_RE.test(entry.secretRef)) return invalid();
+      if (isTargetSecretName(entry.secretRef)) return reject(msg("secret_name_reserved"), "env");
       next.secretRef = entry.secretRef;
     }
     names.add(entry.name);
@@ -614,6 +618,7 @@ const SECRET_NAME_META: Meta = {
 
 function checkSecretName(value: unknown): Checked<string> {
   if (typeof value !== "string" || !IDENT_RE.test(value)) return reject(msg("secret_name_invalid"), "name");
+  if (isTargetSecretName(value)) return reject(msg("secret_name_reserved"), "name");
   return accept(value);
 }
 
@@ -783,6 +788,7 @@ function checkRepo(value: unknown): Checked<RepoInput | undefined> {
     if (typeof entry.secretRef !== "string" || !IDENT_RE.test(entry.secretRef)) {
       return reject(msg("secret_name_invalid"), "repo");
     }
+    if (isTargetSecretName(entry.secretRef)) return reject(msg("secret_name_reserved"), "repo");
     repo.secretRef = entry.secretRef;
   }
   return accept(repo);

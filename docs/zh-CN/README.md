@@ -37,7 +37,7 @@
 - [远程访问与 TLS（英文）](../admin/remote-access.md)：从其他机器访问 MiniBox。
 - [子域名预览](admin/preview-subdomains.md)：让每个端口预览拥有自己的地址，需要通配符域名。
 - [升级（英文）](../admin/upgrades.md)：迁移到较新版本。
-- [备份（英文）](../admin/backups.md)：备份内容与恢复方法。
+- [备份](admin/backups.md)：在运行时备份 MiniBox，恢复备份，并将副本保存在宿主机之外。
 - [安全（英文）](../admin/security.md)：信任模型与安全设置。
 
 ## 参考

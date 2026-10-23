@@ -72,6 +72,14 @@ Commands:
                                        Print the ~/.ssh/config block and host key pin. --append writes both and saves
                                        the server and key for ssh-proxy. --token leaves the key in shell history.
   minibox ssh-proxy <box>              Carry one SSH connection over stdio (the ProxyCommand from ssh-config)
+  minibox backup [--out FILE] [--overwrite] [--passphrase-stdin] [--json]
+                                       Back up DATA_DIR while MiniBox runs. Sealed with MINIBOX_BACKUP_PASSPHRASE
+                                       (or --passphrase-stdin). --out saves the archive here after a size/checksum check.
+  minibox backup ls [--json]           List the backups kept on the server
+  minibox backup rm <id> [--json]      Delete a backup kept on the server
+  minibox restore <file> --data-dir DIR [--passphrase-stdin]
+                                       Restore offline into an empty DATA_DIR. The passphrase is
+                                       read as for backup.
   minibox --version                    Print the MiniBox version this CLI was built from
 
 Every command takes --help. Install this CLI from the server: curl -fsSL <MINIBOX_URL>/cli/install.sh | sh
