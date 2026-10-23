@@ -3278,5 +3278,77 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"name\":\"selfbox\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
+  },
+  {
+    "step": "list the official templates",
+    "method": "GET",
+    "path": "/api/templates/official",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"templates\":[{\"name\":\"node\",\"ref\":\"mbtest-template:node\",\"description\":\"Debian 12 · Node.js 26 · pnpm · yarn · git · tmux · build-essential · non-root dev user\",\"base\":\"node:26-bookworm-slim\"},{\"name\":\"python\",\"ref\":\"mbtest-template:python\",\"description\":\"Debian 12 · Python 3.14 · uv · git · tmux · build-essential · non-root dev user\",\"base\":\"python:3.14-slim-bookworm\"},{\"name\":\"go\",\"ref\":\"mbtest-template:go\",\"description\":\"Debian 12 · Go 1.26 · gopls · git · tmux · build-essential · non-root dev user\",\"base\":\"golang:1.26-bookworm\"},{\"name\":\"minimal\",\"ref\":\"mbtest-template:minimal\",\"description\":\"Debian 12 · git · tmux · jq · ripgrep · non-root dev user\",\"base\":\"debian:bookworm-slim\"}]}"
+  },
+  {
+    "step": "build an official template that does not exist",
+    "method": "POST",
+    "path": "/api/templates/official/rust/build",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid option: expected one of \\\"node\\\"|\\\"python\\\"|\\\"go\\\"|\\\"minimal\\\"\",\"retryable\":false}}"
+  },
+  {
+    "step": "build an official template on a host that is not added",
+    "method": "POST",
+    "path": "/api/templates/official/minimal/build?host=nowhere",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
+    "step": "build the minimal official template",
+    "method": "POST",
+    "path": "/api/templates/official/minimal/build",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "read the minimal build task",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"template.official.build\",\"status\":\"succeeded\",\"summary\":\"Build an official template: minimal\",\"subject\":\"minimal\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"minimal\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"template\":{\"ref\":\"mbtest-template:minimal\",\"name\":\"minimal\"}},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
+  },
+  {
+    "step": "build the minimal official template again",
+    "method": "POST",
+    "path": "/api/templates/official/minimal/build",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"A template named “minimal” already exists.\",\"retryable\":false,\"key\":\"template_name_taken\",\"params\":{\"name\":\"minimal\"}}}"
+  },
+  {
+    "step": "create a box from an official template nobody has built",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"pybox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:python\",\"template\":\"mbtest-template:python\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-pybox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"pybox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"pybox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"pybox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}},\"sync\":{\"taskId\":\"<ulid>\"}}"
+  },
+  {
+    "step": "read the build that the box create waited for",
+    "method": "GET",
+    "path": "/api/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"template.official.build\",\"status\":\"succeeded\",\"summary\":\"Build an official template: python\",\"subject\":\"python\",\"hostId\":\"local\",\"target\":{\"kind\":\"template\",\"name\":\"python\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"template\":{\"ref\":\"mbtest-template:python\",\"name\":\"python\"}},\"output\":\"Successfully built fake\\n\",\"truncated\":false,\"logSeq\":2}"
+  },
+  {
+    "step": "list templates after the official builds",
+    "method": "GET",
+    "path": "/api/templates",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:python\",\"tags\":[\"mbtest-template:python\"],\"name\":\"python\",\"description\":\"Debian 12 · Python 3.14 · uv · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"official\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:minimal\",\"tags\":[\"mbtest-template:minimal\"],\"name\":\"minimal\",\"description\":\"Debian 12 · git · tmux · jq · ripgrep · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"official\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:sample\",\"tags\":[\"mbtest-template:sample\"],\"name\":\"sample\",\"description\":\"Built from a Dockerfile\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"dockerfile\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:saved\",\"tags\":[\"mbtest-template:saved\"],\"name\":\"saved\",\"description\":\"Saved from box ckbox\",\"source\":\"ckbox\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"}],\"baseTemplate\":\"mbtest-template:base\"}"
   }
 ]

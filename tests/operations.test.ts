@@ -220,6 +220,8 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.build": () => ({}),
   "template.sync": () => ({ ref: SYNCED_TEMPLATE_REF, host: "local" }),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
+  "template.official.list": () => ({}),
+  "template.official.build": () => ({ name: "node" }),
   "image.pull": () => ({ ref: "alpine:3.20" }),
   "task.list": () => ({}),
   "task.get": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
@@ -1171,10 +1173,12 @@ describe("projections", () => {
         .map((tool) => tool.name)
         .toSorted(),
     ).toEqual([
+      "build_official_template",
       "create_template",
       "delete_custom_tool",
       "install_tool",
       "list_custom_tools",
+      "list_official_templates",
       "list_templates",
       "list_tools",
       "pull_image",

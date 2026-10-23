@@ -15,8 +15,9 @@ import { NAME_RE } from "../lib/validation";
 import { type ImageDetails, isRuntimeError } from "../runtime";
 import { assertDirIn, assertFileIn, extractContextUrl, pathParts } from "./build-context";
 import { cloneInto, copyVolumeOut, ROOT_OWNER } from "./git-clone";
+import { type OfficialName, officialContextDir, officialTemplate } from "./official-templates";
 
-export const BUILD_KINDS = ["dockerfile", "git", "context", "devcontainer"] as const;
+export const BUILD_KINDS = ["dockerfile", "git", "context", "devcontainer", "official"] as const;
 export type BuildKind = (typeof BUILD_KINDS)[number];
 
 /** A devcontainer.json larger than this is refused unread, and so is a repository Dockerfile larger than it. */
@@ -25,13 +26,15 @@ const REPO_FILE_MAX_BYTES = 256 * 1024;
 /**
  * Where a declared template's files come from. A Dockerfile is pasted in and kept in the recipe. The other kinds are
  * fetched on every build, so a rebuild picks up the newest commit or archive. Credentials are never stored here:
- * `secretRef` names a secret the clone reads when it runs.
+ * `secretRef` names a secret the clone reads when it runs. An official template's Dockerfile ships with MiniBox, so its
+ * recipe keeps only the name, and a rebuild uses the Dockerfile of the running version.
  */
 export type TemplateSource =
   | { kind: "dockerfile"; text: string }
   | { kind: "git"; url: string; branch?: string; subdir?: string; dockerfile?: string; secretRef?: string }
   | { kind: "context"; url: string; dockerfile?: string }
-  | { kind: "devcontainer"; url: string; branch?: string; path?: string; secretRef?: string };
+  | { kind: "devcontainer"; url: string; branch?: string; path?: string; secretRef?: string }
+  | { kind: "official"; name: OfficialName };
 
 /**
  * What a box created from a declared template does once it exists: its postCreateCommand as argv, and the ports its
@@ -76,6 +79,9 @@ function recipePath(host: HostCtx, name: string): string {
 
 function isSource(value: unknown): value is TemplateSource {
   if (typeof value !== "object" || value === null || !("kind" in value)) return false;
+  if (value.kind === "official") {
+    return "name" in value && typeof value.name === "string" && officialTemplate(value.name) !== undefined;
+  }
   return (BUILD_KINDS as readonly unknown[]).includes(value.kind);
 }
 
@@ -183,6 +189,8 @@ export function defaultDescription(source: TemplateSource): string {
   if (source.kind === "git") return `Built from ${source.url}${source.branch ? ` (${source.branch})` : ""}`;
   if (source.kind === "devcontainer")
     return `Built from ${source.url}${source.branch ? ` (${source.branch})` : ""}, devcontainer.json`;
+  if (source.kind === "official")
+    return officialTemplate(source.name)?.description ?? "Built from an official template";
   return `Built from ${source.url}`;
 }
 
@@ -335,6 +343,14 @@ async function materialize(
     if (dockerfileProblem(source.text)) throw badRequest(msg("dockerfile_invalid"), { field: "source" });
     await writeFile(join(work, "Dockerfile"), source.text, { mode: 0o644 });
     return { contextDir: work, dockerfile: "Dockerfile", src: ["Dockerfile"], args: {} };
+  }
+  if (source.kind === "official") {
+    return {
+      contextDir: officialContextDir(host, source.name),
+      dockerfile: "Dockerfile",
+      src: ["Dockerfile"],
+      args: {},
+    };
   }
   const root = join(work, "src");
   await mkdir(root, { mode: 0o755 });

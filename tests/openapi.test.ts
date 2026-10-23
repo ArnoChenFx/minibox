@@ -177,6 +177,8 @@ describe("OpenAPI document", () => {
       "template.create",
       "template.delete",
       "template.list",
+      "template.official.build",
+      "template.official.list",
       "template.promote",
       "template.rebuild",
       "template.save",
