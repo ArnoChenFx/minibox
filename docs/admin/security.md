@@ -125,9 +125,13 @@ Every profile also:
 - Sets the open-file limit to 65536.
 - Connects the box to the `<LABEL_PREFIX>-boxes` network (`minibox-boxes` by default). Boxes cannot reach each other on it.
 
+### Network egress
+
+A box on the `open` tier, the default, reaches the internet without filtering. A box on the `none` tier has no route out. A box on `proxy-only` reaches only the hosts on its allowlist, through a MiniBox proxy. Boxes on `none` and `proxy-only` each have a private network instead of the shared one. `BLOCK_HOST_GATEWAY` keeps boxes on the shared network off the host's services. See [Network egress](network-egress.md) for the tiers, the events and the limits.
+
 ### Limits
 
-- **No egress filtering.** Box traffic leaves through Docker's normal NAT, without filtering. Boxes can reach services on the host's bridge gateway.
+- **Open egress by default.** A box on the `open` tier leaves through Docker's normal NAT, without filtering. Unless `BLOCK_HOST_GATEWAY` is on, it can reach services on the host's bridge gateway. Use `none` or `proxy-only` to filter a box's outbound traffic. Those tiers have their own limits, listed in [Network egress](network-egress.md#limits).
 - **No hard disk quotas.** Nothing stops a box from writing as much as the disk holds. MiniBox samples each volume's usage, can stop the boxes that mount a volume over its hard limit, and refuses new volumes and checkpoints while the host disk is below its free-space minimum. Soft alerts are best effort, not a quota, and they are checked between samples. Filesystem quotas are later work. See [Volumes and storage](../user-guide/volumes-and-storage.md#usage-limits-and-free-space).
 
 ### Host scripts

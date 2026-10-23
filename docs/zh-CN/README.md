@@ -39,6 +39,7 @@
 - [升级（英文）](../admin/upgrades.md)：迁移到较新版本。
 - [备份](admin/backups.md)：在运行时备份 MiniBox，恢复备份，并将副本保存在宿主机之外。
 - [安全（英文）](../admin/security.md)：信任模型与安全设置。
+- [网络出站](admin/network-egress.md)：选择 Box 可以访问宿主机之外的哪些地址：开放、无，或带白名单的代理。
 
 ## 参考
 
