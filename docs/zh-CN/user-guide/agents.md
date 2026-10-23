@@ -65,6 +65,7 @@ Box 内的 Agent 可以用它自己的**自助令牌**（self 令牌）使用 Mi
 - **何时变化。** 每次启动都会给 Box 一个新令牌，因此重启或重建会替换旧令牌。停止或删除 Box 会使它失效。若想在 Box 运行时使其失效，在 Box 页面的 **Agent** 卡片中点击**吊销令牌**，或发送 `DELETE /api/boxes/{id}/self-token`。这会关闭该 Box 的功能，并且在重新创建带令牌的 Box 之前保持关闭。
 - **提问。** Agent 提出的问题会显示在 Box 页面的 **Agent** 卡片中，你可以在那里回复。若已设置通知，还会发送 `agent.question` 通知。Agent 不会等待你的回复，它会在此期间继续工作。一个 Box 最多保留 20 个未回答的问题。
 - **网络。** Agent 通过网络连接 MiniBox。Box 通过 `minibox-boxes` 网络的网关访问宿主机，因此 MiniBox 必须监听该网络能够访问的地址。`HOST` 不能保持为 `127.0.0.1`，Box 无法访问它。发行镜像监听 `0.0.0.0`。MiniBox 不会把自己的地址告诉 Box，需要你自己提供，例如在 Box 的环境变量中设置 `MINIBOX_URL`。用 `docker network inspect minibox-boxes` 查看网关地址。
+- **宿主机。** Agent 宿主机无法把令牌文件写入 Box，因此不能在其上创建带自助令牌的 Box。请改为在其他宿主机上创建。
 
 Agent 的 MCP 端点为 `/mcp`，只提供 `self` 工具集：`get_info`、`checkpoint`、`get_task`、`ask_human`、`get_question` 与 `report_status`。它的请求限制为每分钟 60 次，手动检查点限制为 20 个。见 [MCP 参考（英文）](../../reference/mcp.md#self-tools)。
 

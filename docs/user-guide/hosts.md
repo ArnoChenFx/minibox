@@ -45,7 +45,7 @@ Credentials are saved on the MiniBox host, and the console never shows them agai
 
 In the create dialog, choose the **Host**. The default is **local**. Choose **Auto** to let MiniBox pick: it uses the online host that holds the template and has the most CPU and memory left once the box is placed. An agent token picks only among the hosts it is granted.
 
-A box on another host needs its template image on that host's Docker engine. If the host does not have the template, MiniBox copies it there first. The create dialog says how large the copy is, the copy runs as a **Sync template** task, and the create waits for it to finish. To copy a template without creating a box, click **Copy here** on the template's card in **Templates**, or run `minibox template sync <ref> --host <id>`.
+A box on another host needs its template image on that host's Docker engine. If the host does not have the template, MiniBox copies it there first. The create dialog says how large the copy is, the copy runs as a **Sync template** task, and the create waits for it to finish. To copy a template without creating a box, click **Copy here** on the template's card in the **Templates** tab of **Library**, or run `minibox template sync <ref> --host <id>`.
 
 A copy sends the image the same way a move does, so the target engine must keep image IDs. See [Limits](#limits).
 
@@ -89,7 +89,7 @@ To stop an agent at once, click **Revoke** on its host first. Revoking disconnec
 
 - A copy or a move needs the target engine to keep image IDs. Docker's classic image store does. The containerd image store changes an image's ID when the image loads, so MiniBox refuses the copy with a `docker_error` that names both IDs. An engine on the containerd image store shows `driver-type io.containerd.snapshotter.v1` in `docker info`.
 - Each host keeps its own checkpoints, and they are not copied between hosts. To move one, [export](checkpoints.md#export-and-import) it, then import it and choose the other host. See [Checkpoints](checkpoints.md).
-- A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead. An agent host does not support templates, snapshots or port preview yet.
+- A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead. An agent host does not support templates, snapshots or port preview yet, and a box with a self token cannot be created on one, because an agent cannot write the token file.
 - Host-level CPU and memory use is shown for the local host only. A remote host shows the cores and memory that its engine reports, and the use of its own boxes.
 - The command-line tool has no host commands. Use the console, or the [REST API](../reference/api.md).
 - An [agent token](access-and-tokens.md) can be limited to specific hosts.

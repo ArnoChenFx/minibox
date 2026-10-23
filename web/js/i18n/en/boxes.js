@@ -156,7 +156,7 @@ export default {
   "cb.presetSpec": "{cpus} cores · {gb} GB",
   "cb.fromSnapshotHint": "Created from a legacy snapshot: the system layer as it was when the snapshot was taken",
   "cb.noTemplates":
-    'No templates available. Build the base template on the <a href="#/templates">Templates</a> page first.',
+    'No templates available. Build the base template on the <a href="#/library/templates">Templates</a> tab first.',
   "cb.titleSnapshot": "Create box from legacy snapshot",
   "cb.title": "Create box",
   "cb.desc": "A box is an isolated Docker container; its /workspace lives in a dedicated volume.",
@@ -308,6 +308,9 @@ export default {
   "reset.createdBy": "created by",
   "reset.sep": ", ",
   "cb.tools": "Tools",
+  "cb.toolsChosen": "{n} chosen: {names}",
+  "cb.toolsNone": "None chosen",
+  "cb.templateChosen": "Chosen: {name}",
   "cb.toolsHelp":
     "Optional. Installed onto the shared tools volume after the box starts. Tools already in the template are skipped. Progress appears in Tasks.",
   "cb.toolsInstalling": "Installing tools",

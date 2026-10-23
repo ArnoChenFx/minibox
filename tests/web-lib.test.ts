@@ -24,7 +24,6 @@ import {
   volumeChoices,
 } from "../web/js/lib/mounts.js";
 import { ownerKeyNotice } from "../web/js/lib/owner-key.js";
-import { retiredRedirect } from "../web/js/lib/retired-routes.js";
 import { daysLeft } from "../web/js/lib/trash.js";
 
 const LIB = join(ROOT, "web", "js", "lib");
@@ -730,6 +729,23 @@ const TOOLS = `
   ];
 `;
 
+/** Ten tools in catalog order. Seven are languages, so the collapsed picker has a group that folds and hides rows. */
+const PICKER_TOOLS = `
+  const tool = (fields) => ({ description: "", needsRoot: false, installed: false, managed: false, ...fields });
+  const languages = ["bun", "zig", "go", "rust", "deno", "lua", "julia"].map((id) => tool({ id, name: id, category: "languages" }));
+  const catalog = [
+    tool({ id: "codex", name: "Codex", category: "agents" }),
+    ...languages,
+    tool({ id: "herdr", name: "herdr", category: "terminal" }),
+    tool({ id: "tailscale", name: "Tailscale", category: "networking" }),
+  ];
+  const shape = (view) => ({
+    groups: view.groups.map((group) => [group.id, group.count, group.folded, group.rows.map((row) => row.id)]),
+    count: view.count,
+    toggle: view.toggle,
+  });
+`;
+
 describe("tool picker", () => {
   test("a query finds a tool by name, id, description or category label, every word must match, and case is ignored", () => {
     expect(
@@ -834,6 +850,119 @@ describe("tool picker", () => {
       ),
     ).toEqual(["needsRoot", "install", "managed", "outside", "needsRoot"]);
   });
+
+  test("a collapsed picker shows the first five tools in display order, and a tool picked past them stays in its place", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${PICKER_TOOLS}
+          return {
+            collapsed: shape(toolList.pickerView(catalog, { selected: new Set() })),
+            picked: shape(toolList.pickerView(catalog, { selected: new Set(["julia"]) })),
+          };
+        })()`,
+      ),
+    ).toEqual({
+      collapsed: {
+        groups: [
+          ["category:agents", 1, false, ["codex"]],
+          ["category:languages", 7, false, ["bun", "zig", "go", "rust"]],
+        ],
+        count: 10,
+        toggle: true,
+      },
+      picked: {
+        groups: [
+          ["category:agents", 1, false, ["codex"]],
+          ["category:languages", 7, false, ["bun", "zig", "go", "rust", "julia"]],
+        ],
+        count: 10,
+        toggle: true,
+      },
+    });
+  });
+
+  test("an expanded picker shows every tool, and a folded group keeps only its picked tools, or none", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${PICKER_TOOLS}
+          const folded = (id) => id === "category:languages";
+          return {
+            expanded: shape(toolList.pickerView(catalog, { selected: new Set(), expanded: true })),
+            picked: shape(toolList.pickerView(catalog, { selected: new Set(["zig"]), isFolded: folded })),
+            empty: shape(toolList.pickerView(catalog, { selected: new Set(), isFolded: folded })),
+          };
+        })()`,
+      ),
+    ).toEqual({
+      expanded: {
+        groups: [
+          ["category:agents", 1, false, ["codex"]],
+          ["category:languages", 7, false, ["bun", "zig", "go", "rust", "deno", "lua", "julia"]],
+          ["category:terminal", 1, false, ["herdr"]],
+          ["category:networking", 1, false, ["tailscale"]],
+        ],
+        count: 10,
+        toggle: true,
+      },
+      picked: {
+        groups: [
+          ["category:agents", 1, false, ["codex"]],
+          ["category:languages", 7, true, ["zig"]],
+        ],
+        count: 10,
+        toggle: true,
+      },
+      empty: {
+        groups: [
+          ["category:agents", 1, false, ["codex"]],
+          ["category:languages", 7, true, []],
+        ],
+        count: 10,
+        toggle: true,
+      },
+    });
+  });
+
+  test("a search shows every match and folds nothing, a search with no match shows nothing, and only more than five tools get a toggle", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          ${PICKER_TOOLS}
+          const folded = () => true;
+          return {
+            search: shape(toolList.pickerView(catalog, { query: "languages", selected: new Set(), isFolded: folded })),
+            none: shape(toolList.pickerView(catalog, { query: "nothing", selected: new Set() })),
+            toggles: [catalog.slice(0, 5), catalog.slice(0, 6)].map((list) => toolList.pickerView(list, { selected: new Set() }).toggle),
+          };
+        })()`,
+      ),
+    ).toEqual({
+      search: {
+        groups: [["category:languages", 7, false, ["bun", "zig", "go", "rust", "deno", "lua", "julia"]]],
+        count: 7,
+        toggle: false,
+      },
+      none: { groups: [], count: 0, toggle: false },
+      toggles: [false, true],
+    });
+  });
+
+  test("the create dialog searches template cards without the badge, which that dialog does not show", () => {
+    expect(
+      inBrowser(
+        { languages: ["en-US"] },
+        `(() => {
+          const templates = [{ id: "sha256:aaa111", ref: "minibox-template:base", tags: [], name: "base", description: null }];
+          return search.filterBySearch(templates, "built-in", (tp) => templateList.templateSearchFields(tp, "")).length;
+        })()`,
+      ),
+    ).toBe(0);
+  });
 });
 
 describe("box state badges", () => {
@@ -888,18 +1017,6 @@ describe("owner key notice", () => {
 
   test("an outcome the console does not know shows nothing", () => {
     expect(ownerKeyNotice({ mcpOwnerKey: { outcome: "maybe" as "accepted", lastUsedAt } })).toBeNull();
-  });
-});
-
-describe("retired console addresses", () => {
-  test("the old Snapshots address opens Templates, which lists the snapshots that remain", () => {
-    expect(retiredRedirect("/snapshots")).toBe("#/templates");
-  });
-
-  test("a path that still has a page is not redirected", () => {
-    for (const path of ["/templates", "/templates/python-ml", "/boxes/bx_1", "/snapshotsx", "/constructor"]) {
-      expect([path, retiredRedirect(path)]).toEqual([path, ""]);
-    }
   });
 });
 

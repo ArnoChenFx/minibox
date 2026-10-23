@@ -411,4 +411,26 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     }
     expect(edgeEngine.callsTo("commitContainer")).toHaveLength(0);
   });
+
+  test("a box with a self token is refused on an agent host, which cannot write the token file, and nothing is created", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge" })).json()) as { code: string };
+    const stored = await enrollAgent(code, tempDir());
+    runAgent(stored, edgeEngine);
+    await waitFor(() => app.agents.status(stored.identity.agentId)?.connected === true, "the agent to connect");
+
+    const refused = await post("/api/boxes", {
+      name: "epsilon",
+      cpus: 1,
+      memoryMb: 256,
+      host: "edge",
+      selfToken: true,
+    });
+    expect(refused.status).toBe(501);
+    expect(((await refused.json()) as { error: { code: string; key: string } }).error).toMatchObject({
+      code: "unsupported",
+      key: "self_token_host_unsupported",
+    });
+    expect(edgeEngine.callsTo("createContainer")).toHaveLength(0);
+    expect(app.hosts.get("edge").specs.findByName("epsilon")).toBeNull();
+  });
 });

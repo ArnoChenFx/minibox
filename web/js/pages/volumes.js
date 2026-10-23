@@ -158,7 +158,7 @@ export function render(view) {
   ).join("");
   view.innerHTML = `
     <div class="page-head">
-      <div><h1>${t("nav.volumes")}</h1><p>${t("vol.subtitle")}</p></div>
+      <div><p>${t("vol.subtitle")}</p></div>
       <div class="page-actions">
         <button class="btn" data-action="refresh">${icon("refresh")}${t("common.refresh")}</button>
         <button class="btn" data-action="add-nfs">${t("vol.addNfs")}</button>

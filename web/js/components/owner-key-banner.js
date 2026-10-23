@@ -27,7 +27,7 @@ export function mountOwnerKeyBanner(root) {
     }
     const time = dateTime(system.mcpOwnerKey.lastUsedAt);
     const text = outcome === "refused" ? t("shell.ownerKeyRefused", { time }) : t("shell.ownerKeyAccepted", { time });
-    root.innerHTML = `<div class="callout warn">${icon("alert")}<span>${esc(text)} <a href="#/settings">${esc(t("shell.ownerKeyAction"))}</a></span></div>`;
+    root.innerHTML = `<div class="callout warn">${icon("alert")}<span>${esc(text)} <a href="#/settings/tokens">${esc(t("shell.ownerKeyAction"))}</a></span></div>`;
   };
   const refresh = () =>
     api("/api/system")

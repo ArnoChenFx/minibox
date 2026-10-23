@@ -4,61 +4,55 @@ import { mountTasks } from "./components/tasks.js";
 import { api } from "./lib/api.js";
 import { $, $$, esc } from "./lib/dom.js";
 import { pct } from "./lib/format.js";
+import { hostFilterShown } from "./lib/host-list.js";
 import { onHosts, refreshHosts, setHostFilter } from "./lib/hosts.js";
 import { applyI18n, bindLangButton, t } from "./lib/i18n.js";
 import { icon } from "./lib/icons.js";
 import { setCrumbs } from "./lib/layout.js";
-import { retiredRedirect } from "./lib/retired-routes.js";
+import { resolveRoute } from "./lib/routes.js";
 import { onHost } from "./lib/store.js";
 import { applyTheme, currentTheme, toggleTheme } from "./lib/theme.js";
 import { confirmDialog } from "./lib/ui.js";
 import * as about from "./pages/about.js";
 import * as boxDetail from "./pages/box-detail.js";
 import * as boxes from "./pages/boxes.js";
+import * as library from "./pages/library.js";
 import * as overview from "./pages/overview.js";
 import * as settings from "./pages/settings.js";
-import * as templates from "./pages/templates.js";
+import * as storage from "./pages/storage.js";
 import * as trash from "./pages/trash.js";
-import * as volumes from "./pages/volumes.js";
 
-const ROUTES = [
-  { re: /^\/overview$/, page: overview, nav: "overview", crumbs: ["nav.overview"] },
-  { re: /^\/boxes$/, page: boxes, nav: "boxes", crumbs: ["nav.boxes"] },
-  { re: /^\/volumes$/, page: volumes, nav: "volumes", crumbs: ["nav.volumes"] },
-  { re: /^\/trash$/, page: trash, nav: "trash", crumbs: ["nav.trash"] },
-  { re: /^\/boxes\/([^/]+)(?:\/(\w+))?$/, page: boxDetail, nav: "boxes", crumbs: ["nav.boxes"] },
-  { re: /^\/templates(?:\/([^/]+))?$/, page: templates, nav: "templates", crumbs: ["nav.templates"] },
-  { re: /^\/settings$/, page: settings, nav: "settings", crumbs: ["nav.settings"] },
-  { re: /^\/about$/, page: about, nav: "about", crumbs: ["nav.about"] },
-];
+const PAGES = { about, boxDetail, boxes, library, overview, settings, storage, trash };
 
 let cleanup = null;
 
 function route() {
-  const path = location.hash.replace(/^#/, "") || "/overview";
-  const retired = retiredRedirect(path);
-  if (retired) {
-    history.replaceState(null, "", retired);
-    route();
+  const hit = resolveRoute(location.hash.replace(/^#/, ""));
+  if (!hit) {
+    location.hash = "#/overview";
     return;
   }
-  const match = ROUTES.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m);
-  if (!match) {
-    location.hash = "#/overview";
+  if (hit.redirect) {
+    history.replaceState(null, "", `#${hit.redirect}`);
+    route();
     return;
   }
   cleanup?.();
   cleanup = null;
-  $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === match.r.nav));
+  for (const link of $$(".sidebar [data-nav]")) {
+    const current = link.dataset.nav === hit.nav;
+    link.classList.toggle("active", current);
+    if (current) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
   $("#shell").classList.remove("nav-open");
-  const crumbs = match.r.crumbs.map((k) => t(k));
+  const crumbs = hit.crumbs.map((k) => t(k));
   setCrumbs(crumbs);
   // Fresh element per route so page-level event listeners never leak across pages.
   const old = $("#view");
   const view = old.cloneNode(false);
   old.replaceWith(view);
-  const params = match.m.slice(1).map((s) => (s ? decodeURIComponent(s) : s));
-  cleanup = match.r.page.render(view, ...params) ?? null;
+  cleanup = PAGES[hit.page].render(view, ...hit.args) ?? null;
   document.title = `${crumbs[0]} · MiniBox`;
 }
 
@@ -74,7 +68,7 @@ function initHostFilter() {
   const select = $("#hostFilter");
   select.addEventListener("change", () => setHostFilter(select.value));
   onHosts((list, current) => {
-    select.hidden = list.length < 2;
+    select.hidden = !hostFilterShown(list);
     select.innerHTML = [`<option value="">${esc(t("shell.allHosts"))}</option>`]
       .concat(list.map((host) => `<option value="${esc(host.id)}">${esc(host.name)}</option>`))
       .join("");

@@ -137,7 +137,7 @@ The Docker daemon does the NFS mount, so the server address must be reachable fr
 
 ### Add the pool in the console
 
-1. Click **Volumes** in the sidebar.
+1. Click **Storage** in the sidebar, then open the **Volumes** tab.
 2. Click **Add NFS**.
 3. Fill in the fields:
 
@@ -189,8 +189,8 @@ MiniBox's reachability check does not use your `hard` or `soft` setting. It moun
 
 ### Verify the pool
 
-1. On the **Volumes** page, the pool shows **Reachable** and its free space.
-2. Create a box. On the **Volumes** page, its workspace and home volumes use the NFS pool, and its cache uses `local`.
+1. On the **Volumes** tab, the pool shows **Reachable** and its free space.
+2. Create a box. On the **Volumes** tab, its workspace and home volumes use the NFS pool, and its cache uses `local`.
 3. In the box's **Terminal** tab, run:
 
    ```bash
@@ -200,7 +200,7 @@ MiniBox's reachability check does not use your `hard` or `soft` setting. It moun
    ```
 
    `/workspace` and `/home/dev` show `type nfs4` with `vers=4.1` and `hard`. `/opt/minibox/tools` shows the same, but read-only. `/home/dev/.cache` is a local filesystem.
-4. On the server, the file is at `<export>/<workspace volume id>/nfs-test`, owned by 1000:1000. The volume ID is the `vol_…` value shown under the volume's name on the **Volumes** page.
+4. On the server, the file is at `<export>/<workspace volume id>/nfs-test`, owned by 1000:1000. The volume ID is the `vol_…` value shown under the volume's name on the **Volumes** tab.
 5. Restart the box, and read the file again.
 
 ## When the NAS is down
@@ -209,7 +209,7 @@ MiniBox's reachability check does not use your `hard` or `soft` setting. It moun
 - Creating, starting or restarting a box on that pool fails with `503` and the code `docker_unavailable`. This happens within about 5 seconds. Nothing is created, and nothing is written to the local disk.
 - Stopping a box still works.
 - A **running** box with a `hard` mount freezes any process that touches `/workspace` or `/home/dev` until the server returns. That includes commands from `exec` and terminals. A foreground `exec` with a timeout still returns soon after the timeout. See [Known issues](#known-issues).
-- The pools are checked side by side. A pool that does not answer within 5 seconds shows as unreachable, with the message `no answer within 5 s`. The **Volumes** page answers within about 5 seconds, however many NFS servers are down.
+- The pools are checked side by side. A pool that does not answer within 5 seconds shows as unreachable, with the message `no answer within 5 s`. The **Volumes** tab answers within about 5 seconds, however many NFS servers are down.
 - Usage sampling does not wait for the NAS either. A share's usage is read with a 30-second deadline. A share that does not answer in time is recorded as a failed sample, with its reason, and the other volumes are still sampled on their own schedule.
 - When the server returns, frozen processes continue. The next check shows the pool as **Reachable**, and stopped boxes can start again. Nothing needs to be remounted.
 
@@ -260,7 +260,7 @@ If you prefer to mount the NAS on the host yourself, for example with `autofs` o
    sudo touch /mnt/nas/minibox/.minibox-mounted
    ```
 
-3. Click **Volumes**, then **Add path**, and add the pool.
+3. On the **Volumes** tab, click **Add path**, and add the pool.
 
 MiniBox refuses to write when the marker file is missing. An unmounted share is never filled from the local disk.
 

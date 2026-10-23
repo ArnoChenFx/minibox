@@ -6,6 +6,7 @@ import { refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { openDialog, toast, toastError, confirmDialog } from "../lib/ui.js";
+import { bindToggles, limitList } from "./list-toggle.js";
 import {
   pairingView,
   watchAgent,
@@ -31,6 +32,7 @@ export async function loadHosts(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  const { shown, toggle } = limitList(view, "hosts", hosts);
   card.innerHTML = `
     <div class="card-head">
       <div><h3>${t("st.hosts")}</h3><p class="help">${t("st.hostsHelp")}</p></div>
@@ -41,8 +43,9 @@ export async function loadHosts(view) {
         <th>${t("st.hostColName")}</th><th class="hide-sm">${t("st.hostColEndpoint")}</th><th>${t("st.hostColStatus")}</th>
         <th class="hide-sm">${t("st.hostColCapacity")}</th><th class="hide-sm">${t("st.hostColBoxes")}</th><th></th>
       </tr></thead>
-      <tbody>${hosts.map(hostRow).join("")}</tbody>
-    </table></div>`;
+      <tbody>${shown.map(hostRow).join("")}</tbody>
+    </table></div>
+    <div class="list-more">${toggle}</div>`;
   card.querySelector("#stHostAdd").addEventListener("click", () => addHost(view));
   card.querySelectorAll("[data-remove-host]").forEach((btn) => {
     btn.addEventListener("click", () => removeHost(view, btn.dataset.removeHost, btn.dataset.hostName));
@@ -50,6 +53,7 @@ export async function loadHosts(view) {
   card.querySelectorAll("[data-revoke-host]").forEach((btn) => {
     btn.addEventListener("click", () => revokeAgent(view, btn.dataset.revokeHost, btn.dataset.hostName));
   });
+  bindToggles(view, card, () => loadHosts(view));
 }
 
 function hostRow(host) {
