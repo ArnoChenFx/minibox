@@ -339,11 +339,4 @@ export default {
   "st.targetTrust": "信任并测试",
   "st.targetSave": "保存目标",
   "st.targetAdded": "已添加目标",
-  "act.backup.create": "创建备份",
-  "act.backup.delete": "删除备份",
-  "act.target.add": "添加异地目标",
-  "act.target.remove": "移除异地目标",
-  "act.target.test": "测试异地目标",
-  "act.target.push": "推送到异地目标",
-  "act.target.pull": "从异地目标拉取",
 };

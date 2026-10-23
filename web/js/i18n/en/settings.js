@@ -359,11 +359,4 @@ export default {
   "st.targetTrust": "Trust and test",
   "st.targetSave": "Save target",
   "st.targetAdded": "Target added",
-  "act.backup.create": "Created backup",
-  "act.backup.delete": "Deleted backup",
-  "act.target.add": "Added off-site target",
-  "act.target.remove": "Removed off-site target",
-  "act.target.test": "Tested off-site target",
-  "act.target.push": "Pushed to off-site target",
-  "act.target.pull": "Pulled from off-site target",
 };
