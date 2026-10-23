@@ -1,7 +1,18 @@
 import { createHash } from "node:crypto";
 import { Duplex } from "node:stream";
 
-import { Client, type ClientChannel, type ConnectConfig } from "ssh2";
+import { Client, type ClientChannel, type ConnectConfig, utils } from "ssh2";
+
+/**
+ * A fresh ed25519 pair in OpenSSH form. ssh2's generator drops a leading zero byte of the public key about one time in
+ * 256, and then neither half parses, so a pair is kept only once its public key parses, as `src/ssh/host-key.ts` does.
+ */
+export function ed25519Pair(comment?: string): { readonly public: string; readonly private: string } {
+  for (;;) {
+    const pair = utils.generateKeyPairSync("ed25519", comment === undefined ? undefined : { comment });
+    if (!(utils.parseKey(pair.public) instanceof Error)) return pair;
+  }
+}
 
 /** The SHA-256 fingerprint OpenSSH prints for a host key blob. */
 export const fingerprintOf = (blob: Buffer) =>

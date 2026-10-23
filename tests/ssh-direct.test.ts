@@ -11,7 +11,7 @@ import { DirectSshServer } from "../src/ssh/direct";
 import { SshLoginLimiter } from "../src/ssh/limits";
 import { createTestApp, silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
-import { runCommand } from "./support/ssh";
+import { ed25519Pair, runCommand } from "./support/ssh";
 import { call, mint } from "./support/tokens";
 
 const STRONG_KEY = "Direct-SSH-access-key-0123456789";
@@ -119,7 +119,7 @@ describe("direct SSH login", () => {
 
   test("an owner key logs in with its signature, and the key's last use is recorded", async () => {
     const box = await makeBox("charlie");
-    const pair = utils.generateKeyPairSync("ed25519", { comment: "laptop" });
+    const pair = ed25519Pair("laptop");
     const added = app.sshKeys.add(pair.public);
     const client = await connect({ username: box.name, privateKey: pair.private });
     expect((await runCommand(client, "true")).code).toBe(0);
@@ -143,7 +143,7 @@ describe("direct SSH login", () => {
 
   test("an unregistered key, a wrong password and an unknown box are refused alike", async () => {
     const box = await makeBox("delta");
-    const stranger = utils.generateKeyPairSync("ed25519");
+    const stranger = ed25519Pair();
     await expect(connect({ username: box.name, privateKey: stranger.private })).rejects.toThrow();
     await expect(connect({ username: box.name, password: "wrong-password" })).rejects.toThrow();
     await expect(connect({ username: "nobody", password: STRONG_KEY })).rejects.toThrow();
@@ -217,7 +217,7 @@ describe("direct SSH settings", () => {
   });
 
   test("SSH keys are managed by the owner over REST, and a token cannot list them", async () => {
-    const pair = utils.generateKeyPairSync("ed25519", { comment: "me@laptop" });
+    const pair = ed25519Pair("me@laptop");
     const added = await call(base, "/api/ssh-keys", { body: { publicKey: pair.public }, token: STRONG_KEY });
     expect(added.status).toBe(200);
     const listed = await call(base, "/api/ssh-keys", { token: STRONG_KEY });

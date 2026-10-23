@@ -26,6 +26,8 @@ Open the box, click **Settings**, and then **Tools**. The table shows each tool'
 - **Uninstall** removes a tool from the shared tools volume and from the box's tool list.
 - **Install missing** installs every tool in the box's list that still shows as not installed.
 
+Tool changes on one host run one at a time, because they write to the same shared tools volume. If you start one while another runs, it waits in a queue: the tool shows **Queued**, and so does its task in the **Tasks** panel. It starts when the changes ahead of it finish, in the order you started them. Clicking the same action again while it waits does not add a second task. To drop a queued change, cancel its task.
+
 A tool that is already in the box's image or home folder shows as installed, with its version. MiniBox leaves it alone. Upgrade and uninstall apply only to tools that MiniBox installed.
 
 Some tools need root, and a system service. MiniBox never runs those. The catalog marks them **Needs root**. Install them on the host yourself.

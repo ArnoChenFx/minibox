@@ -384,6 +384,7 @@ export default {
   "bd.toolsInstalled": "已安装",
   "bd.toolsNotInstalled": "未安装",
   "bd.toolsTaskStarted": "工具任务已开始",
+  "bd.toolsTaskQueued": "已加入工具队列，前面的操作完成后开始",
   "bd.toolsTaskFailed": "工具任务失败",
   "bd.customAdd": "自定义工具",
   "bd.customBadge": "自定义",

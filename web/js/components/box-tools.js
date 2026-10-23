@@ -28,8 +28,16 @@ function toolInstalledCell(tool) {
   return `<div class="tool-state"><span class="badge badge-success">${esc(t("bd.toolsInstalled"))}</span>${version}${outside}</div>`;
 }
 
-function toolActionCell(tool) {
+/** A tool with a queued or running task shows that task's state in place of its buttons, so it is not started twice. */
+function busyBadge(status) {
+  const queued = status === "queued";
+  const mark = queued ? "" : '<span class="spinner" aria-hidden="true"></span>';
+  return `<span class="badge${queued ? "" : " badge-accent"} tool-busy">${mark}${esc(t(`task.status.${status}`))}</span>`;
+}
+
+function toolActionCell(tool, busy) {
   const id = esc(tool.id);
+  if (busy) return busyBadge(busy);
   switch (toolAction(tool)) {
     case "needsRoot":
       return `<span class="badge badge-warning" title="${esc(t("tool.needsRootHelp"))}">${esc(t("tool.needsRoot"))}</span>`;
@@ -49,7 +57,7 @@ function customActionCell(tool) {
         <button class="btn btn-sm btn-ghost" data-action="tool-custom-delete" data-tool="${id}">${esc(t("bd.customDelete"))}</button>`;
 }
 
-function toolRow(tool, isCustom) {
+function toolRow(tool, isCustom, busy) {
   const badge = isCustom
     ? ` <span class="badge badge-accent" title="${esc(t("bd.customBadgeHelp"))}">${esc(t("bd.customBadge"))}</span>`
     : "";
@@ -58,7 +66,7 @@ function toolRow(tool, isCustom) {
     <td class="mono">${esc(tool.id)}</td>
     <td>${tool.desiredVersion ? esc(tool.desiredVersion) : "—"}</td>
     <td>${toolInstalledCell(tool)}</td>
-    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool)}${isCustom ? customActionCell(tool) : ""}</div></td>
+    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool, busy)}${isCustom ? customActionCell(tool) : ""}</div></td>
   </tr>`;
 }
 
@@ -68,7 +76,9 @@ function toolRow(tool, isCustom) {
  */
 export function mountTools(root, { box, refreshBox }) {
   const collapsed = new Set();
-  const pending = new Set();
+  /** Tool tasks for this box that have not ended: task id to `{ tool, status }`. */
+  const pending = new Map();
+  const busyOf = (toolId) => [...pending.values()].find((entry) => entry.tool === toolId)?.status;
   let tools = null;
   /** The custom entries by id. Only an owner can list them, so for everyone else this stays empty. */
   let custom = new Map();
@@ -103,16 +113,18 @@ export function mountTools(root, { box, refreshBox }) {
     body.innerHTML = groupTools(matches)
       .map((group) => {
         const isCollapsed = !searching && collapsed.has(group.id);
-        const rows = group.rows.map((tool) => toolRow(tool, custom.has(tool.id))).join("");
+        const rows = group.rows.map((tool) => toolRow(tool, custom.has(tool.id), busyOf(tool.id))).join("");
         return toolGroupRow(group, isCollapsed) + (isCollapsed ? "" : rows);
       })
       .join("");
   };
   const load = async () => {
-    const [listed, entries] = await Promise.allSettled([
+    const [listed, entries, recent] = await Promise.allSettled([
       api(`/api/tools?id=${enc(box().id)}`),
       api("/api/tools/custom"),
+      api("/api/tasks?limit=30"),
     ]);
+    if (recent.status === "fulfilled") notePending(recent.value.tasks ?? []);
     custom = new Map(entries.status === "fulfilled" ? entries.value.tools.map((entry) => [entry.id, entry]) : []);
     addButton.hidden = entries.status !== "fulfilled";
     if (listed.status === "rejected") {
@@ -139,15 +151,28 @@ export function mountTools(root, { box, refreshBox }) {
     drawRows();
     [...root.querySelectorAll(".group-toggle")].find((button) => button.dataset.group === id)?.focus();
   };
+  /** Picks up this box's tool tasks that are queued or running, including ones started elsewhere (API, MCP). */
+  const notePending = (list) => {
+    for (const task of list) {
+      if (!task.op?.startsWith("tool.") || task.target?.id !== box().id || !task.subject) continue;
+      if (task.status === "queued" || task.status === "running")
+        pending.set(task.id, { tool: task.subject, status: task.status });
+      else pending.delete(task.id);
+    }
+  };
   const start = async (path, tool) => {
     try {
       const payload = tool ? { tool, version: "latest" } : undefined;
       const res = await api(path, { method: "POST", ...(payload ? { body: payload } : {}) });
+      let queued = false;
       if (res?.taskId) {
-        pending.add(res.taskId);
+        const task = await api(`/api/tasks/${enc(res.taskId)}`).catch(() => null);
+        queued = task?.status === "queued";
+        if (tool) pending.set(res.taskId, { tool, status: task?.status ?? "running" });
+        drawRows();
         openTasks(res.taskId);
       }
-      toast(t("bd.toolsTaskStarted"));
+      toast(t(queued ? "bd.toolsTaskQueued" : "bd.toolsTaskStarted"));
       await load();
       void refreshBox?.().catch(() => {});
     } catch (e) {
@@ -155,7 +180,15 @@ export function mountTools(root, { box, refreshBox }) {
     }
   };
   const offTask = subscribe("task", (frame) => {
-    if (frame.kind !== "status" || frame.status === "running") return;
+    if (frame.kind !== "status") return;
+    const entry = pending.get(frame.taskId);
+    if (frame.status === "running") {
+      if (entry) {
+        entry.status = "running";
+        drawRows();
+      }
+      return;
+    }
     if (pending.delete(frame.taskId)) void load();
   });
   root.addEventListener("click", (event) => {

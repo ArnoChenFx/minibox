@@ -281,7 +281,10 @@ export class Executor {
       run: ctx.run,
       parentId: ctx.parentId,
       exclusiveKey: operation.exclusive?.(ctx, input, resolved),
+      queue: operation.queue,
     });
+    // The same request repeated while the first is queued or running joins that task instead of doing the work twice.
+    if (begun.duplicate) return { taskId: begun.id };
     this.emit(eventOf(id, operation, ctx, started, { status: "started", input, resolved, ref: { taskId: begun.id } }));
     tasks.track(begun.id, this.finishAsync(operation, ctx, input, resolved, started, id, begun.handle));
     return { taskId: begun.id };
@@ -306,6 +309,7 @@ export class Executor {
       this.emit(eventOf(ulid(), operation, child, started, { ...outcome, ref }));
     };
     try {
+      if (tasks.get(handle.id, { output: false })?.status === "queued") await tasks.turn(handle.id);
       const result = operation.output.parse(await operation.run(running, input, resolved));
       if (tasks.finish(handle.id, { status: "succeeded", result })) {
         this.note(operation, input, resolved, true);
