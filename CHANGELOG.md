@@ -7,11 +7,15 @@
 ### 亮点
 - **回收站与安全检查点**：删除 Box 或卷时，数据先保留在回收站中，默认保留 7 天（`TRASH_RETENTION_DAYS`），可恢复为新的 Box 或卷。重建 Box、挂载或卸载卷前，自动拍摄一个安全检查点。
 - **在线备份与异地目标**：MiniBox 运行时即可把数据目录备份为一个用口令封装的文件，并可离线恢复到空目录。检查点包与备份可推送到 S3 兼容存储桶或 SFTP 服务器，也可从那里拉取。
+- **Box 网络出站策略**：每个 Box 可选择 `open`（默认，与以往相同）、`none`（没有对外路由，exec、SSH 与端口预览仍可使用）或 `proxy-only`（只能经 MiniBox 代理访问白名单中的主机，并记录每次连接的主机、端口与字节数）。`BLOCK_HOST_GATEWAY` 可阻止默认网络上的 Box 访问宿主机服务。
 
 ### 新增
 - 回收站与重建安全检查点（[#115](https://github.com/ArnoChenFx/minibox/issues/115)）：删除 Box 或卷时保留其数据副本，保留期由 `TRASH_RETENTION_DAYS` 设定（默认 7，范围 1 到 365），到期后每小时清理一次。删除 Box 时保留其自有的 `/workspace` 与 home 卷；删除卷时保留卷的数据，缓存卷与工具卷除外。控制台的「回收站」页面列出各条记录，可恢复为新的 Box 或卷，或立即彻底删除。恢复 Box 时需要新名称，Box 保留模板、数据、资源与安全档位，但不保留环境变量、启动命令、标签、网络、TTL 与共享挂载。接口为 `GET /api/trash`、`POST /api/trash/:id/restore`（202，任务，可设置 `name`、`cpus`、`memoryMb`）与 `DELETE /api/trash/:id`（202，任务），仅所有者可用。回收站条目计入 `CHECKPOINT_CAPACITY_MB`：超过上限时先清除最旧的条目，仍不够则拒绝删除并说明原因，且不停止、不删除任何内容。宿主机剩余空间低于下限时，保留副本的删除返回 `507`。`DELETE /api/boxes/:id` 与 `DELETE /api/volumes/:id` 接受 `skipTrash=true`，表示不保留副本，需要所有者或持有新令牌权限 `trash:skip` 的令牌；该权限不属于任何预设。删除响应的 `trash` 字段给出保留的条目，没有保留时为 `null`。重建 Box（`POST /api/boxes/:id/rebuild`）以及挂载与卸载卷（`attach`、`detach`）默认先拍摄「重建前」的安全检查点，`safetyCheckpoint: false` 可关闭它。重建失败且 Box 恢复原状时丢弃该检查点；无法原样恢复时保留它，并在错误中给出 id。新增事件 `box.trashed`、`volume.trashed`、`trash.restored` 与 `trash.purged`。命令行新增 `minibox trash ls`、`restore` 与 `purge`；MCP 新增 `list_trash`、`restore_trash` 与 `purge_trash`，位于 `storage` 工具集，仅所有者可用。
 - `/mcp` 所有者访问密钥的记录与提示：新增 `MCP_ALLOW_OWNER_KEY`（默认 `true`）。访问密钥每次用于 `/mcp` 都会记入事件，同一分钟内的读取合并为一行；首次使用时写入 `mcp.owner_key_used` 警告日志，控制台在最近 7 天内有使用时显示横幅。`minibox mcp` 使用访问密钥时在标准错误输出警告，并提示 `minibox token create`。新增 `minibox token create <name>`，在标准输出打印一次密钥，支持 `--preset`、`--scopes`、`--expires-in` 与 `--json`（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 - 在线备份与异地目标（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）：`POST /api/backups`（任务）在 MiniBox 运行时生成数据目录的一致备份。数据库取自 SQLite 的 `VACUUM INTO` 快照，其余文件逐个复制。归档用口令封装（AES-256-GCM，密钥由 scrypt 派生），口令为 12 到 1024 个字符，只用于封装，不写入归档、日志、审计或任务结果。备份可下载（`GET /api/backups/:id/download`）、列出与删除。命令行：`minibox backup` 创建备份，`--out FILE` 下载到本机，`--passphrase-stdin` 从标准输入读取口令；`minibox backup ls` 与 `minibox backup rm <id>` 列出与删除；`minibox restore <文件> --data-dir DIR` 离线恢复到空目录，口令错误、文件损坏、不是备份或目录非空时拒绝恢复。异地目标（`/api/targets`，推送与拉取为任务）支持 S3 兼容存储与 SFTP：凭据保存为 `target.<id>.*` 密钥，SFTP 的主机密钥须先确认才能保存。检查点包与备份可推送到目标或从目标拉取，同一目标同一时间只运行一次传输。设置页新增「异地目标」卡片（中英文），MCP 的 `storage` 工具集提供对应工具。备份与目标操作只对所有者开放，令牌不能使用。
+- 网络出站策略（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：`POST /api/boxes`、`minibox box create --egress` 与 MCP 的 `create_box` 接受 `egress` 对象，其中 `mode` 为 `open`、`none` 或 `proxy-only`，`proxy-only` 另可指定 `presets` 与 `domains`。`POST /api/boxes/{id}/rebuild` 与 `rebuild_box` 同样接受它。预设为 `agent-default` 与 `package-registries`；白名单最多 100 个主机，支持 `*.` 通配子域名。`none` 与 `proxy-only` 的 Box 使用各自的私有网络，并由宿主机防火墙链 `MINIBOX-EGRESS` 阻止访问宿主机。
+- `proxy-only` 代理只转发 80 与 443 端口，拒绝私有、回环与保留地址，并为每次连接记录 `egress.allowed`、`egress.denied` 或 `egress.failed` 事件。事件只含主机、端口、字节数、耗时与原因，不记录路径、查询、请求头或正文。Box 概览显示档位、允许的主机与最近被拒绝的连接，活动列表可按**出站**筛选，创建对话框的**高级**中新增**网络出站**选择器。
+- `BLOCK_HOST_GATEWAY`（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：设为 `true` 后，默认网络上的 Box 无法通过桥接网关访问宿主机上的服务。默认关闭。
 
 ### 变更
 - 删除 Box 与卷的默认行为改变：数据先保留在回收站中，而不是立即删除。要立即删除且不保留副本，需传入 `skipTrash=true`（所有者或 `trash:skip`）。
@@ -19,6 +23,8 @@
 - 检查点的容量上限现在也统计回收站条目。
 - 控制台各页面标题栏的按钮改为右对齐，换行到标题下方时也是如此。带搜索框的页面（Box、模板）把工具栏放在标题下方一行，搜索框在左，按钮在右。
 - `/mcp` 对所有者访问密钥的处理：本版本默认仍接受（`MCP_ALLOW_OWNER_KEY=true`），但每次使用都会记录并警告。默认值将在下一个次要版本改为 `false`，届时访问密钥访问 `/mcp` 将返回 `401` 并提示使用 Agent 令牌，Agent 令牌不受影响。升级前请为每个 Agent 创建令牌；需要保留旧行为时设置 `MCP_ALLOW_OWNER_KEY=true`。见[升级说明](docs/admin/upgrades.md)（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
+- 更改已有 Box 的出站档位属于重建：API 与 MCP 先返回预览，带 `confirm: true` 确认后才会重建。Box 保留名称、ID 与卷。
+- 出站档位不为 `open` 的 Box 无法迁移到其他宿主机（返回 `409`，`egress_move_refused`）。回收站恢复与检查点派生会保留出站策略，并为其创建新的私有网络。Box 视图仅在档位不是 `open` 时包含 `egress` 字段。
 
 ### 修复
 - 设置了标记文件（`marker`）的路径存储池不再总被报告为不可达：健康检查原先运行 `test -f -- 文件`，在 busybox、dash 与 bash 中都会失败（[#143](https://github.com/ArnoChenFx/minibox/issues/143)）。
@@ -27,10 +33,12 @@
 ### 工程化
 - 工作流中的 GitHub Actions 引用改为各 action 最新的主版本标签（如 `actions/checkout@v7`、`docker/build-push-action@v7`），不再固定到 commit SHA。`docker/build-push-action` 从 v6 升到 v7，`actions/configure-pages` 升到 v6，`actions/upload-pages-artifact` 与 `actions/deploy-pages` 升到 v5；所用输入在新版本中均未变化。
 - Bun 最低版本升到 1.4.4（`engines.bun`、`@types/bun`、Pages 工作流与文档同步更新）。`bun run typecheck` 改用 Bun 内置的类型检查器 `bun check --no-script`（与 TypeScript 7.0.2 报告相同的错误），替代 `tsc --noEmit`；`--no-script` 确保它不会转去运行同名的 `check` 脚本。`typescript` 仍保留为开发依赖，供编辑器使用。
+- 新增真实引擎的出站集成测试 `tests/docker-egress.test.ts`，由 `bun run test:docker` 运行。它覆盖 `none` 的断网、exec、SSH 与端口预览，`proxy-only` 的允许、拒绝、事件与绕过，以及 `BLOCK_HOST_GATEWAY`。测试使用独立的标签前缀、数据目录与网络，并清理其代理、网络、防火墙规则与镜像。
 
 ### 文档
 - 检查点、Box、卷、令牌、配置、API、CLI、MCP 与架构文档，以及 `.env.example`，补充回收站与安全检查点的说明，并提供中文版本。
 - 备份指南（`docs/admin/backups.md`，并提供 `docs/zh-CN/admin/backups.md` 中文版本）说明备份内容、一致性、恢复、卷备份与异地目标，并在检查点、设置、密钥、CLI、API、MCP、数据目录、安全与架构文档中补充相关内容（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）。
+- 新增网络出站文档：英文 `docs/admin/network-egress.md` 与中文 `docs/zh-CN/admin/network-egress.md`，说明各档位、白名单、事件、`BLOCK_HOST_GATEWAY` 与限制（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）。安全指南、配置、CLI、检查点与 Box 指南，以及 `.env.example` 同步更新。
 
 ## [0.5.0] - 2026-10-23
 
