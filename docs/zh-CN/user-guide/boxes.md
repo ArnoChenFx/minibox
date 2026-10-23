@@ -146,6 +146,8 @@ minibox box startup-command rm my-box
 - 运行中的进程，包括 `tmux` 会话。
 - 容器的 IP 地址。
 
+重建前，MiniBox 会先拍摄 Box 数据的[安全检查点](checkpoints.md#安全检查点)。预览中的**重建前先拍摄安全检查点**默认勾选。重建失败时，MiniBox 会恢复 Box 并丢弃该检查点；若无法原样恢复，则保留检查点。
+
 若要保留手动安装的软件，重建前将 Box 存为模板。见 [模板](templates.md)。
 
 ## 删除 Box
@@ -153,6 +155,8 @@ minibox box startup-command rm my-box
 1. 打开 Box，点击**删除 Box**。
 2. 若要移除仅该 Box 使用的卷，勾选**同时删除这个 Box 自有的数据卷**。
 3. 点击**删除 Box**。
+
+删除 Box 时，无论是否勾选删除卷，MiniBox 都会把 Box 的 workspace 与 home 数据副本保留在[回收站](checkpoints.md#回收站)中，保留 `TRASH_RETENTION_DAYS` 天，默认 7 天。要恢复该 Box，可在**回收站**页面恢复对应记录，它会作为新 Box 创建。若要删除且不保留副本，请勾选**删除时不保留副本**。只有所有者，或持有 `trash:skip` 权限的令牌可以这样做。
 
 其他 Box 使用的卷，以及你在**卷**页面创建的卷，会保留。删除 Box 不会删除仍被其他 Box 挂载的卷。
 

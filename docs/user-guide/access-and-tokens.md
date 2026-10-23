@@ -73,11 +73,14 @@ Each preset is a set of these scopes:
 | `volume:attach` | Mount existing volumes into boxes |
 | `tool:install` | Install, upgrade and remove tools. Save a box as a template, and delete templates. |
 | `secret:use` | Give a box a host secret, or the secret for a repository clone |
+| `trash:skip` | Delete a box or a volume without keeping a copy in the recycle bin. No preset includes it. |
 
 Only the owner can create, change or revoke tokens. A token cannot create other tokens. Building or rebuilding a template, and pulling an image, are for the owner only. No scope allows them.
+
+A box or volume delete keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) unless the request sets `skipTrash`, which needs `trash:skip`. The recycle bin itself, its list, restore and purge, is for the owner only.
 
 ### Revoke a token
 
 Click **Revoke** on the token, and confirm. Scripts that use the token stop at once. Any open terminal or event stream that uses it closes too.
 
-To delete the boxes that the token created at the same time, tick **Also delete boxes this token created**. Their workspace volumes are deleted as well.
+To delete the boxes that the token created at the same time, tick **Also delete boxes this token created**. Their workspace volumes are deleted as well, and their data is kept in the recycle bin for the retention period, as with any box delete.

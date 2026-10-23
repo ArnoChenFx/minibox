@@ -28,14 +28,14 @@ Checkpoints are not a backup of the whole server. They are stored on the same ho
 
 The checkpoint appears in the list when it is ready. Follow the progress in the **Tasks** panel.
 
-While the host disk is below its free-space minimum, MiniBox refuses a checkpoint you create by hand, a box you make from a checkpoint, and a rollback, which takes a safety checkpoint first. Each returns `507` (`insufficient_storage`) at once. A scheduled checkpoint is skipped instead. See [Volumes and storage](volumes-and-storage.md#usage-limits-and-free-space).
+While the host disk is below its free-space minimum, MiniBox refuses a checkpoint you create by hand, a box you make from a checkpoint, a rollback, a rebuild that takes a [safety checkpoint](#safety-checkpoints), and a delete that keeps a copy in the [recycle bin](#recycle-bin). Each returns `507` (`insufficient_storage`) at once. A scheduled checkpoint is skipped instead. See [Volumes and storage](volumes-and-storage.md#usage-limits-and-free-space).
 
 ## Checkpoint list
 
 The list shows each checkpoint's **Taken** time, **Label**, **Kind** and **Contents**. The kinds are:
 
 - **Manual**: a checkpoint that you took.
-- **Automatic**: a checkpoint that MiniBox took. MiniBox takes one before each rollback, and on a [schedule](#scheduled-checkpoints) if you set one.
+- **Automatic**: a checkpoint that MiniBox took. MiniBox takes one before each rollback, before a box is rebuilt or has a volume attached or detached (a [safety checkpoint](#safety-checkpoints)), and on a [schedule](#scheduled-checkpoints) if you set one.
 - **Pinned**: a checkpoint that you pinned.
 - **Legacy snapshot**: a snapshot from before checkpoints existed. You can fork it or delete it, but not roll back to it.
 
@@ -63,10 +63,44 @@ After a rollback, the old volumes are kept, so you can decide what to do with th
 - **Confirm and clean up** deletes the old volumes.
 - **Undo rollback** mounts the old volumes again. Anything written since the rollback is lost.
 
+## Safety checkpoints
+
+Before MiniBox rebuilds a box, it takes a safety checkpoint of the box's data, so the data can be recovered if the rebuild goes wrong. This covers a rebuild from the **Rebuild** button, a change to a box's template, environment, mounts or security profile, and attaching or detaching a volume. The safety checkpoint is labelled **Before rebuild**, and it is automatic.
+
+It is taken by default. To skip it, clear **Take a safety checkpoint first** in the rebuild preview, or in the dialog that confirms an attach or a detach. The REST API takes `safetyCheckpoint: false` for the same purpose, and so do the MCP tools `rebuild_box`, `attach_volume` and `detach_volume`.
+
+- If the rebuild fails and MiniBox restores the box, the safety checkpoint is discarded.
+- If the box cannot be restored exactly, the safety checkpoint is kept, and the error names it. Fork it to get the data back.
+- A box with no volumes of its own has no data to keep, so MiniBox takes no checkpoint for it.
+- A repository at its limit refuses the checkpoint, as it refuses a rollback. A host disk below its free-space minimum refuses it with `507`.
+
 ## Pin and delete
 
 - Click **Pin** to keep a checkpoint, even when automatic cleanup runs. Click **Unpin** to allow cleanup again.
 - Click **Delete** to remove a checkpoint. The data is removed from the repository, and this cannot be undone. A pinned checkpoint must be unpinned before you delete it.
+
+## Recycle bin
+
+When you delete a box or a volume, MiniBox keeps a copy of its data in the recycle bin, so you can bring it back for a while. Open **Recycle bin** in the sidebar to see the entries, newest deletion first, with their size and the time each one has left.
+
+A delete keeps:
+
+- **A box**: the data of its workspace and home volumes, which are the volumes it owns and that checkpoints include. The copy is taken before the box is removed, and it is kept whether or not you also delete the box's volumes. The cache volume, the shared tools volume and independent volumes are not kept.
+- **A volume**: its data. A cache or tools volume keeps nothing.
+
+To restore an entry, click **Restore**, and type a **Name**. The name must be free on its host. A box comes back as a new box, with its template, data, resources and security profile. It does not get back the environment variables, startup command, labels, network, TTL or shared mounts of the box it came from. A volume comes back as a new volume. The restore runs as a task, and the entry is removed when it has finished, so a failed restore leaves the entry in place.
+
+Click **Purge now** to remove an entry and its data at once. You confirm first, and the data cannot be restored afterwards.
+
+An entry is kept for `TRASH_RETENTION_DAYS` days, 7 by default. The administrator can set 1 to 365 days. An hourly cleanup removes the entries whose time is up. Entries do not count against the [limits for automatic checkpoints](#how-long-checkpoints-are-kept).
+
+To delete without keeping a copy, tick **Delete without keeping a copy** in the delete dialog. The data is removed at once and cannot be restored. Only the owner, or a token with the `trash:skip` scope, may do this. Over the REST API, send `skipTrash=true` with `DELETE /api/boxes/{id}` or `DELETE /api/volumes/{id}`. The MCP tools `delete_box` and `delete_volume` take `skipTrash: true`.
+
+Entries are kept in the checkpoint repository, so they count against the size limit, `CHECKPOINT_CAPACITY_MB`. When a delete would take the repository past that limit, MiniBox first purges the oldest entries. If that is not enough, the delete is refused, with the sizes in the message, and nothing is stopped or removed. While the host disk is below its free-space minimum, a delete that keeps a copy is refused with `507`.
+
+Entries do not appear in the checkpoint list. Each host keeps its own recycle bin. The page lists the entries of every host, and a restore or purge runs on the host the entry is on. Each delete, restore and purge is recorded in the event log, as `box.trashed` or `volume.trashed`, `trash.restored` and `trash.purged`. The recycle bin is for the owner only.
+
+On the command line, `minibox trash ls` lists the entries, `minibox trash restore <id>` restores one, with `--name`, `--cpus` and `--memory`, and `minibox trash purge <id>` purges one. The MCP tools are `list_trash`, `restore_trash` and `purge_trash`.
 
 ## Export and import
 
@@ -116,5 +150,6 @@ Over the REST API, `PUT /api/boxes/{id}/checkpoint-schedule` sets a schedule and
 ## How long checkpoints are kept
 
 - Manual and pinned checkpoints are kept until you delete them.
-- Automatic checkpoints are kept for each box, and scheduled checkpoints are automatic too. MiniBox keeps the newest 20, and removes any older than 30 days. The administrator can change these limits. See [Configuration](../reference/configuration.md).
-- The administrator can also set a size limit for all checkpoints. When the limit is reached, MiniBox does not take new automatic checkpoints. Rollbacks are refused for the same reason, because they start with a safety checkpoint.
+- Automatic checkpoints are kept for each box. Scheduled checkpoints and safety checkpoints are automatic too. MiniBox keeps the newest 20, and removes any older than 30 days. The administrator can change these limits. See [Configuration](../reference/configuration.md).
+- Recycle bin entries are not checkpoints. Each is kept for its own period, as described in [Recycle bin](#recycle-bin).
+- The administrator can also set a size limit for all checkpoints. When the limit is reached, MiniBox does not take new automatic checkpoints. Rollbacks and rebuilds that take a safety checkpoint are refused for the same reason. The recycle bin counts against the same limit: a delete that keeps a copy purges the oldest entries first, and is refused only when that is not enough.
