@@ -92,6 +92,7 @@ export function projectBox(host: HostCtx, spec: BoxSpec, info: ContainerInfo): B
     env: spec.env,
     tools: spec.tools,
     storage: storageOf(host, spec),
+    ...(spec.selfToken ? { selfToken: true } : {}),
   };
 }
 
@@ -140,5 +141,6 @@ export function unreachableBox(host: HostCtx, spec: BoxSpec): Box {
     tools: spec.tools,
     storage: { status: "unknown", pools: [] },
     hostId: host.host.id,
+    ...(spec.selfToken ? { selfToken: true } : {}),
   };
 }

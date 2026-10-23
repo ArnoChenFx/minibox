@@ -178,7 +178,11 @@ async function servePreview(box: Box): Promise<ExecSession> {
 async function previewOf(name: string): Promise<Response | null> {
   const url = new URL(`http://minibox.test/box/${name}/${PREVIEW_PORT}/`);
   try {
-    const resolved = await resolvePreview(app.hosts, url, { pulse: app.pulse, audit: () => {} });
+    const resolved = await resolvePreview(app.hosts, url, {
+      pulse: app.pulse,
+      audit: () => {},
+      relay: app.previewRelay,
+    });
     try {
       return await proxyHttp(new Request(url.href), resolved, "path");
     } finally {

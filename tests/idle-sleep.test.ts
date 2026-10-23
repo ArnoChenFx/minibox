@@ -129,6 +129,7 @@ function previewDeps(): PreviewDeps {
     audit: (hostId, note) => {
       notes.push({ hostId, source: "ui", op: note.op, detail: note.detail });
     },
+    relay: app.previewRelay,
   };
 }
 
@@ -780,6 +781,7 @@ describe("more than one Docker host", () => {
     const resolved = await resolvePreview(app.hosts, new URL("http://minibox.test/box/lab-preview/3000/"), {
       pulse: app.pulse,
       audit: (hostId, note) => audited.push({ hostId, op: note.op }),
+      relay: app.previewRelay,
     });
     try {
       expect(resolved.host.host.id).toBe("lab");

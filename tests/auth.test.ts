@@ -26,6 +26,7 @@ import { setLogLevel } from "../src/lib/logger";
 import { OWNER } from "../src/operations/types";
 import { SessionStore } from "../src/sessions";
 import { compileToken } from "../src/tokens/model";
+import { SelfTokenStore } from "../src/tokens/self-store";
 import { TokenStore } from "../src/tokens/store";
 
 setLogLevel("error");
@@ -354,11 +355,13 @@ describe("bearer keys", () => {
   let dir: string;
   let sessions: SessionStore;
   let tokens: TokenStore;
+  let selfTokens: SelfTokenStore;
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "minibox-bearer-"));
     sessions = new SessionStore({ file: join(dir, "sessions.json"), accessKey: KEY, ttlMs: 60_000, idleMs: null });
     tokens = new TokenStore({ file: join(dir, "tokens.json") });
+    selfTokens = new SelfTokenStore({ file: join(dir, "self-tokens.json") });
   });
 
   afterAll(() => {
@@ -371,6 +374,7 @@ describe("bearer keys", () => {
     accessKey: KEY,
     sessions,
     tokens,
+    selfTokens,
     throttle: new LoginLimiter({ penaltyMs: 0, perAddress: 1, total: 100, ...limits }),
   });
 
@@ -394,6 +398,27 @@ describe("bearer keys", () => {
       expect(caller).toMatchObject({ sessionId: null, principal: { type: "token", id: created.record.id } });
       tokens.revoke(created.record.id);
       expect(await resolveCaller(req({ authorization: `Bearer ${created.secret}` }), gate, "198.51.100.6")).toBeNull();
+    } finally {
+      gate.throttle.stop();
+    }
+  });
+
+  test("a box's self token passes as that box, and ends when it is replaced or revoked", async () => {
+    const gate = gateWith({ perAddress: 100 });
+    const boxId = "bx_01hzselftoken0001";
+    try {
+      const first = selfTokens.issue(boxId, "agent-box");
+      expect(await resolveCaller(req({ authorization: `Bearer ${first}` }), gate, "198.51.100.8")).toEqual({
+        principal: { type: "box-self", id: boxId, name: "agent-box" },
+        sessionId: null,
+      });
+      const second = selfTokens.issue(boxId, "agent-box");
+      expect(await resolveCaller(req({ authorization: `Bearer ${first}` }), gate, "198.51.100.8")).toBeNull();
+      expect(await resolveCaller(req({ authorization: `Bearer ${second}` }), gate, "198.51.100.8")).toMatchObject({
+        principal: { type: "box-self", id: boxId },
+      });
+      selfTokens.revoke(boxId);
+      expect(await resolveCaller(req({ authorization: `Bearer ${second}` }), gate, "198.51.100.8")).toBeNull();
     } finally {
       gate.throttle.stop();
     }

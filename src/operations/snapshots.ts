@@ -9,7 +9,7 @@ import { underQuota } from "../tokens/quota";
 import { assertCanCreateDefaultMounts } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
-import { hostOfBox, localOnly } from "./routing";
+import { fromEveryHost, hostOfBox, hostOfImage, imageHosts, refuseAgent } from "./routing";
 import { BoxSchema, ImageSchema, OkSchema, SnapshotSchema } from "./schemas";
 import {
   boxId,
@@ -17,6 +17,7 @@ import {
   boxProfile,
   cpusWithDefault,
   egressInput,
+  hostId,
   memoryWithDefault,
   snapshotName,
   snapshotRef,
@@ -37,7 +38,7 @@ export const snapshotCreate = defineOperation({
   rest: [{ method: "POST", path: "/api/boxes/:id/snapshots", body: true, status: 202 }],
   cli: "snapshot create",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
-  precondition: async ({ host }) => localOnly(host, "snapshots"),
+  precondition: async ({ host }) => refuseAgent(host, "snapshots"),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, _input, box) => assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []),
   exclusive: ({ host }, _input, box) => `snapshot.create:${host.host.id}:${box.id}`,
@@ -70,6 +71,7 @@ export const snapshotFork = defineOperation({
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/snapshots/:ref/boxes", body: true, status: 201 }],
   cli: "snapshot fork",
+  hostFor: (ctx, input) => hostOfImage(ctx, input.ref.trim()),
   precondition: ({ host }, input) => assertNewBox(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
   audit: { target: (input, _box, result) => ({ kind: "box", id: result?.box.id, name: input.name }) },
@@ -104,12 +106,15 @@ export const snapshotList = defineOperation({
   kind: "read",
   scope: "snapshot:read",
   async: false,
-  input: z.object({}),
+  input: z.object({ host: hostId().optional() }),
   output: z.object({ snapshots: z.array(ImageSchema) }),
-  rest: [{ method: "GET", path: "/api/snapshots" }],
+  rest: [{ method: "GET", path: "/api/snapshots", query: ["host"] }],
   cli: "snapshot list",
-  run: async ({ host, principal }) => {
-    const snapshots = await listSnapshots(host);
+  run: async (ctx, input) => {
+    const { principal, host } = ctx;
+    const snapshots = await fromEveryHost(imageHosts(ctx, input.host), async (on) =>
+      (await listSnapshots(on)).map((image) => ({ ...image, hostId: on.host.id })),
+    );
     if (principal.type === "owner") return { snapshots };
     const boxes = specViews(host.specs.list());
     return {
@@ -127,10 +132,12 @@ export const snapshotDelete = defineOperation({
   kind: "destructive",
   scope: "snapshot:delete",
   async: false,
-  input: z.object({ ref: snapshotRef() }),
+  input: z.object({ ref: snapshotRef(), host: hostId().optional() }),
   output: OkSchema,
-  rest: [{ method: "DELETE", path: "/api/snapshots/:ref" }],
+  rest: [{ method: "DELETE", path: "/api/snapshots/:ref", query: ["host"] }],
   cli: "snapshot rm",
+  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "snapshots"),
   activity: { action: () => "snapshot.delete", target: ({ ref }) => ref },
   audit: { target: ({ ref }) => ({ kind: "snapshot", name: ref }) },
   run: async ({ host }, input) => {

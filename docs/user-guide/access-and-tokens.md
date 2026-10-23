@@ -33,6 +33,8 @@ To see the browsers that are signed in, open **Settings**. Under **Signed-in ses
 
 An agent API token is a secret that starts with `mbx_`. Use one for each agent or script. It can do only what its scopes and limits allow.
 
+A box's own agent has a different token, the self token. The owner gives it to a box when the box is created. It reaches only that box, and it is not listed here. See [A box's own agent](agents.md#a-boxs-own-agent).
+
 ### Create a token
 
 1. Open **Settings**, and click **New token** in **Agent API tokens**.

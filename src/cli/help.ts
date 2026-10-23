@@ -13,9 +13,10 @@ Commands:
   minibox box create <name> [--template IMAGE] [--cpus N] [--memory MB] [--profile P]
                        [--egress open|none|proxy-only [--egress-preset NAME] [--egress-domain HOST]...]
                        [--repo URL [--branch BRANCH] [--secret NAME]]
-                       [--startup-command TEXT | --startup-command-stdin] [--no-wait] [--json]
+                       [--startup-command TEXT | --startup-command-stdin] [--self-token] [--no-wait] [--json]
                                        Create and start a box. --repo clones into /workspace on the first create.
-                                       A startup command runs at every start of the box.
+                                       A startup command runs at every start of the box. --self-token gives the box's
+                                       agent a token for this box alone, in /run/minibox/self-token.
   minibox box startup-command get <box> [--json]
                                        Print the startup command; its status and last output lines go to stderr
   minibox box startup-command set <box> (--command TEXT | --stdin) [--apply] [--json]
@@ -25,11 +26,13 @@ Commands:
   minibox box startup-command run <box> [--json]
                                        Run the command again now. The box must be running and have a command
   minibox template create <name> (--dockerfile FILE | --repo URL | --context URL | --devcontainer URL)
-                       [--description TEXT] [source options] [--no-wait] [--json]
-                                       Build a template in the background, and print its ref
-  minibox template rebuild <ref> [--no-wait] [--json]
+                       [--description TEXT] [--host ID] [source options] [--no-wait] [--json]
+                                       Build a template in the background, and print its ref. --host builds it on that host
+  minibox template rebuild <ref> [--host ID] [--no-wait] [--json]
                                        Rebuild a template from the source it was built from
-  minibox image pull <ref> [--no-wait] [--json]
+  minibox template sync <ref> --host ID [--no-wait] [--json]
+                                       Copy a template from a host that holds it to ID, so a box can start there
+  minibox image pull <ref> [--host ID] [--no-wait] [--json]
                                        Pull an image from its registry, when the engine does not have it
   minibox trash ls [--json]            List the recycle bin: deleted boxes and volumes, kept until they expire
   minibox trash restore <id> [--name NAME] [--cpus N] [--memory MB] [--no-wait] [--json]

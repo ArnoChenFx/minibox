@@ -33,6 +33,8 @@ docker exec minibox cat /data/access_key
 
 Agent API 令牌是以 `mbx_` 开头的密钥。每个 Agent 或脚本使用一枚。它只能在其 scope 和配额允许范围内操作。
 
+Box 内 Agent 使用的是另一种令牌，即自助令牌。所有者在创建 Box 时为其开启，它只能访问该 Box，不会出现在这里。见 [Box 内的 Agent](agents.md#box-内的-agent)。
+
 ### 创建令牌
 
 1. 打开**设置**，在 **Agent API 令牌**中点击**新建令牌**。

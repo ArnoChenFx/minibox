@@ -34,6 +34,8 @@ export interface CreateBoxInput {
   startupCommand?: string;
   /** The checked egress policy. Absent, like `open`, keeps the box on the default network. */
   egress?: EgressPolicy;
+  /** Give the box's agent a `self` token, delivered as a file in the box. Absent or false means none. */
+  selfToken?: boolean;
 }
 
 export interface BoxUpdate {
@@ -105,6 +107,8 @@ export interface Box {
   stats?: ContainerStats | null;
   /** The host the box runs on. Present only when the control plane holds more than one host. */
   hostId?: string;
+  /** True when the box was created with a `self` token. Absent otherwise, so older payloads do not change. */
+  selfToken?: boolean;
 }
 
 export interface BoxMountView extends BoxMount {

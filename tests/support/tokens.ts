@@ -98,7 +98,15 @@ export interface Body {
   id?: string;
   restoredBuiltin?: boolean;
   isError?: boolean;
-  error?: { code: string; key?: string; details?: { field?: string; taskId?: string; preview?: RollbackPreviewBody } };
+  ok?: boolean;
+  remainingTtlSec?: number | null;
+  error?: {
+    code: string;
+    key?: string;
+    message?: string;
+    retryable?: boolean;
+    details?: { field?: string; taskId?: string; preview?: RollbackPreviewBody };
+  };
 }
 
 export interface TrashRefBody {

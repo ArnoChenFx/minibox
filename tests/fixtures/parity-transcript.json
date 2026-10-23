@@ -581,7 +581,7 @@
     "path": "/api/snapshots",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"snapshots\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-snap:nightly-<stamp>\",\"tags\":[\"mbtest-snap:nightly-<stamp>\"],\"name\":\"nightly\",\"description\":\"Snapshot of box alpha\",\"source\":\"alpha\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024}]}"
+    "body": "{\"snapshots\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-snap:nightly-<stamp>\",\"tags\":[\"mbtest-snap:nightly-<stamp>\"],\"name\":\"nightly\",\"description\":\"Snapshot of box alpha\",\"source\":\"alpha\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"}]}"
   },
   {
     "step": "snapshot alpha with no body",
@@ -749,7 +749,7 @@
     "path": "/api/templates",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:gold\",\"tags\":[\"mbtest-template:gold\"],\"name\":\"gold\",\"description\":\"Gold image\",\"source\":\"alpha\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024}],\"baseTemplate\":\"mbtest-template:base\"}"
+    "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:gold\",\"tags\":[\"mbtest-template:gold\"],\"name\":\"gold\",\"description\":\"Gold image\",\"source\":\"alpha\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"}],\"baseTemplate\":\"mbtest-template:base\"}"
   },
   {
     "step": "delete gold",
@@ -3102,5 +3102,181 @@
     "status": 404,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Recycle bin entry ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"trash_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "sync a template to a host that is not added",
+    "method": "POST",
+    "path": "/api/templates/mbtest-template%3Agold/sync",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
+    "step": "create a box with a self token",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"selfbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-selfbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]},\"selfToken\":true}}"
+  },
+  {
+    "step": "the box reads its own info",
+    "method": "GET",
+    "path": "/api/self",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"boxId\":\"<boxId>\",\"name\":\"selfbox\",\"state\":\"running\",\"running\":true,\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"cpus\":1,\"memoryMb\":256,\"createdAt\":\"<time>\",\"ttlEndsAt\":null,\"remainingTtlSec\":null}"
+  },
+  {
+    "step": "the box reports its status",
+    "method": "POST",
+    "path": "/api/self/status",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "the box asks a person a question",
+    "method": "POST",
+    "path": "/api/self/questions",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"question\":{\"id\":\"q_<ulid>\",\"boxId\":\"<boxId>\",\"message\":\"Ship the release?\",\"options\":[\"yes\",\"no\"],\"askedAt\":\"<time>\",\"answer\":null,\"answeredAt\":null,\"answeredBy\":null}}"
+  },
+  {
+    "step": "the box reads its question",
+    "method": "GET",
+    "path": "/api/self/questions/q_<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"question\":{\"id\":\"q_<ulid>\",\"boxId\":\"<boxId>\",\"message\":\"Ship the release?\",\"options\":[\"yes\",\"no\"],\"askedAt\":\"<time>\",\"answer\":null,\"answeredAt\":null,\"answeredBy\":null}}"
+  },
+  {
+    "step": "the box takes a checkpoint of itself",
+    "method": "POST",
+    "path": "/api/self/checkpoints",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "the box reads its checkpoint task",
+    "method": "GET",
+    "path": "/api/self/tasks/<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"<ulid>\",\"op\":\"self.checkpoint\",\"status\":\"succeeded\",\"summary\":\"Take a checkpoint of this box: selfbox\",\"hostId\":\"local\",\"target\":{\"kind\":\"box\",\"id\":\"<id>\",\"name\":\"selfbox\"},\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"finishedAt\":\"<time>\",\"result\":{\"checkpoint\":{\"id\":\"ck_<checkpoint>\",\"legacy\":false,\"hostId\":\"local\",\"boxId\":\"<boxId>\",\"boxName\":\"selfbox\",\"label\":\"before the release\",\"reason\":\"Before a risky step\",\"createdBy\":\"<boxId>\",\"pinned\":false,\"auto\":false,\"consistency\":\"live\",\"specRevision\":1,\"spec\":{\"template\":{\"ref\":\"mbtest-template:base\",\"image\":\"mbtest-template:base\",\"digest\":\"sha256:<image>\"},\"cpus\":1,\"memoryBytes\":268435456,\"profile\":\"standard\"},\"data\":[{\"volumeId\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"role\":\"workspace\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0},{\"volumeId\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"role\":\"home\",\"ownership\":\"owned\",\"owner\":{\"uid\":0,\"gid\":0},\"snapshotId\":\"<id>\",\"bytes\":0}],\"system\":null,\"bytes\":0,\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\"}},\"output\":\"Backing up /workspace…\\nBacking up /home/dev…\\n\",\"truncated\":false,\"logSeq\":3}"
+  },
+  {
+    "step": "list the questions of the box",
+    "method": "GET",
+    "path": "/api/boxes/<id>/questions",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"questions\":[{\"id\":\"q_<ulid>\",\"boxId\":\"<boxId>\",\"message\":\"Ship the release?\",\"options\":[\"yes\",\"no\"],\"askedAt\":\"<time>\",\"answer\":null,\"answeredAt\":null,\"answeredBy\":null}]}"
+  },
+  {
+    "step": "answer the question with an option it does not offer",
+    "method": "POST",
+    "path": "/api/questions/q_<ulid>/answer",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The answer must be one of the options the question offered.\",\"retryable\":false,\"key\":\"question_option_invalid\",\"details\":{\"field\":\"answer\"}}}"
+  },
+  {
+    "step": "answer the question",
+    "method": "POST",
+    "path": "/api/questions/q_<ulid>/answer",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"question\":{\"id\":\"q_<ulid>\",\"boxId\":\"<boxId>\",\"message\":\"Ship the release?\",\"options\":[\"yes\",\"no\"],\"askedAt\":\"<time>\",\"answer\":\"yes\",\"answeredAt\":\"<time>\",\"answeredBy\":\"owner\"}}"
+  },
+  {
+    "step": "answer the question again",
+    "method": "POST",
+    "path": "/api/questions/q_<ulid>/answer",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Question q_<ulid> has already been answered.\",\"retryable\":false,\"key\":\"question_answered\",\"params\":{\"id\":\"q_<ulid>\"}}}"
+  },
+  {
+    "step": "the box reads its answered question",
+    "method": "GET",
+    "path": "/api/self/questions/q_<ulid>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"question\":{\"id\":\"q_<ulid>\",\"boxId\":\"<boxId>\",\"message\":\"Ship the release?\",\"options\":[\"yes\",\"no\"],\"askedAt\":\"<time>\",\"answer\":\"yes\",\"answeredAt\":\"<time>\",\"answeredBy\":\"owner\"}}"
+  },
+  {
+    "step": "the box reads another box",
+    "method": "GET",
+    "path": "/api/boxes/<id>",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run GET /api/boxes/<id>.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"GET /api/boxes/<id>\"}}}"
+  },
+  {
+    "step": "the box lists another box's questions",
+    "method": "GET",
+    "path": "/api/boxes/<id>/questions",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run GET /api/boxes/<id>/questions.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"GET /api/boxes/<id>/questions\"}}}"
+  },
+  {
+    "step": "the box lists tokens",
+    "method": "GET",
+    "path": "/api/tokens",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run GET /api/tokens.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"GET /api/tokens\"}}}"
+  },
+  {
+    "step": "the box lists secrets",
+    "method": "GET",
+    "path": "/api/secrets",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run GET /api/secrets.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"GET /api/secrets\"}}}"
+  },
+  {
+    "step": "the box deletes itself",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run DELETE /api/boxes/<id>.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"DELETE /api/boxes/<id>\"}}}"
+  },
+  {
+    "step": "revoke the box's self token",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/self-token",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"selfbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-selfbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "revoke the box's self token again",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>/self-token",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"selfbox\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":2,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-selfbox\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"selfbox-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "the revoked self token is refused",
+    "method": "GET",
+    "path": "/api/self",
+    "status": 401,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Not signed in, or the access key is invalid.\",\"retryable\":false,\"key\":\"unauthorized\"}}"
+  },
+  {
+    "step": "delete the self box",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"selfbox\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
   }
 ]

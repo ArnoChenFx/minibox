@@ -11,6 +11,7 @@ export const NOTICE_KINDS = Object.freeze([
   "box.ttl_soon",
   "box.idle_soon",
   "session.takeover",
+  "agent.question",
   "host.offline",
   "volume.usage_high",
   "volume.usage_limit",

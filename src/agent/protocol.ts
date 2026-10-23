@@ -69,11 +69,13 @@ export const SESSION_OPERATIONS = ["execResize", "execInspect", "execKill"] as c
 
 /**
  * Runtime methods an agent never runs. A control plane that asks for one gets `unsupported`, and so does an agent that
- * is sent one. They read or write archives, build or save images, run arbitrary helper containers, or measure the disk.
+ * is sent one. They read or write archives or files in a box, build or save images, run arbitrary helper containers,
+ * or measure the disk.
  */
 export const REFUSED_OPERATIONS = [
   "commitContainer",
   "putArchive",
+  "writeContainerFile",
   "getArchive",
   "statPath",
   "volumeRootOwner",

@@ -387,4 +387,28 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     expect(moved.status).toBe(501);
     expect(((await moved.json()) as { error: { code: string } }).error.code).toBe("unsupported");
   });
+
+  test("templates, snapshots and image pulls stay off an agent host, which refuses them as unsupported", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge" })).json()) as { code: string };
+    const stored = await enrollAgent(code, tempDir());
+    runAgent(stored, edgeEngine);
+    await waitFor(() => app.agents.status(stored.identity.agentId)?.connected === true, "the agent to connect");
+
+    const made = await post("/api/boxes", { name: "delta", cpus: 1, memoryMb: 256, host: "edge" });
+    expect(made.status).toBe(201);
+    const { boxId } = ((await made.json()) as { box: { boxId: string } }).box;
+    const refusals = [
+      await post(`/api/boxes/${boxId}/snapshots`, {}),
+      await post(`/api/boxes/${boxId}/template`, { name: "delta-tpl" }),
+      await post("/api/images/pull", { ref: "alpine:3.20", host: "edge" }),
+    ];
+    for (const res of refusals) {
+      expect(res.status).toBe(501);
+      expect(((await res.json()) as { error: { code: string; key: string } }).error).toMatchObject({
+        code: "unsupported",
+        key: "agent_host_unsupported",
+      });
+    }
+    expect(edgeEngine.callsTo("commitContainer")).toHaveLength(0);
+  });
 });

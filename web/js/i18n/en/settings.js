@@ -96,6 +96,7 @@ export default {
   "st.notifyKind.box.ttl_soon": "Box TTL ends soon",
   "st.notifyKind.box.idle_soon": "Box sleeps soon",
   "st.notifyKind.session.takeover": "Terminal taken over",
+  "st.notifyKind.agent.question": "Agent asked a question",
   "st.notifyKind.host.offline": "Host offline",
   "st.notifyKind.volume.usage_high": "Volume over soft limit",
   "st.notifyKind.volume.usage_limit": "Volume over hard limit",

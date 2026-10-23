@@ -57,9 +57,15 @@ Without this setting, pages load their scripts and styles from the wrong address
 
 WebSocket connections work through the preview. Hot module reload in Vite uses a WebSocket, so it works too.
 
+## Boxes on another host
+
+A box on another host, reached through SSH, mutual TLS or a Unix socket, is previewed through that host's engine. The addresses are the same as for a local box. MiniBox starts a small relay in the box with `python3`, and the relay connects to the port on the box's loopback address. The remote host opens no port.
+
+The box needs `python3` on its path. The base template includes it. Without it, the preview fails with a `502` error that names the cause. HTTP and WebSocket work the same way as on the local host. A request to a sleeping box wakes it, and the box stays awake while a response or a WebSocket is open.
+
 ## Limits
 
-- Previews work only for boxes on the local host. A box on a remote host shows an error.
+- A box on an agent host has no port preview yet.
 - Share links are not available. Open a preview from the **Ports** tab while you are signed in. In subdomain mode, the preview's address does not open on its own. Opening it from the **Ports** tab lets that browser use the preview for up to 8 hours, or until you sign out.
 - Renaming a box can change its subdomain address. After a rename, the preview stops loading, so open it again from the **Ports** tab.
 - In subdomain mode, a page in one preview cannot change another port's preview, and cannot open a WebSocket to it. Its own page works as usual.

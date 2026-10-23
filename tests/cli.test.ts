@@ -132,6 +132,7 @@ describe("CLI", () => {
     expect(help.out).toContain("minibox exec");
     expect(help.out).toContain("minibox box ls");
     expect(help.out).toContain("minibox box startup-command set <box> (--command TEXT | --stdin) [--apply] [--json]");
+    expect(help.out).toContain("[--self-token]");
     expect(help.err).toBe("");
     const bare = io();
     expect(await runCli([], {}, bare, lines([]))).toBe(2);
@@ -652,6 +653,24 @@ describe("CLI box create and startup command", () => {
         box: { egress?: unknown };
       };
       expect(sealedBox.box.egress).toEqual({ mode: "none", presets: [], domains: [], allow: [] });
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("box create --self-token gives the box a self token, and a box created without the flag has none", async () => {
+    const env = serve();
+    try {
+      const withToken = io();
+      expect(await runCli(["box", "create", "delta", "--self-token", "--json"], env.env, withToken, lines([]))).toBe(0);
+      expect(JSON.parse(withToken.out)).toMatchObject({ box: { name: "delta", selfToken: true } });
+
+      const plain = io();
+      expect(await runCli(["box", "create", "epsilon"], env.env, plain, lines([]))).toBe(0);
+      const epsilon = (await env.app.operations.run("box.get", env.ctx, { id: "epsilon" })) as {
+        box: { selfToken?: boolean };
+      };
+      expect(epsilon.box.selfToken).toBeFalsy();
     } finally {
       env.stop();
     }

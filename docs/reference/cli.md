@@ -62,6 +62,7 @@ Creates and starts a box. It starts from the base template unless you choose ano
 | `--secret NAME` | With `--repo`: the secret that holds a token or deploy key |
 | `--startup-command TEXT` | A command that runs at every start of the box. See [Startup command](../user-guide/boxes.md#startup-command). |
 | `--startup-command-stdin` | Reads the startup command from standard input. Use it for a command that holds a secret, so the text stays out of the shell history. |
+| `--self-token` | Gives the box's agent a token for this box alone, written to `/run/minibox/self-token`. Off by default. See [A box's own agent](../user-guide/agents.md#a-boxs-own-agent). |
 | `--no-wait` | Prints the clone's task ID and returns without waiting for the clone |
 | `--json` | Prints the server's JSON response |
 
@@ -183,8 +184,9 @@ Building a template, rebuilding one and pulling an image are for the owner only.
 | Command | Meaning |
 |---|---|
 | `minibox template create <name> (--dockerfile FILE \| --repo URL \| --context URL \| --devcontainer URL) [options]` | Builds a template from one source, and prints its reference, such as `minibox-template:node-tools` |
-| `minibox template rebuild <ref>` | Rebuilds a template from the source it was built from. The tag moves only when the build succeeds. |
-| `minibox image pull <ref>` | Pulls an image from its registry, unless the engine already has it |
+| `minibox template rebuild <ref> [--host ID]` | Rebuilds a template from the source it was built from. The tag moves only when the build succeeds. Without `--host`, the first host that holds the template. |
+| `minibox template sync <ref> --host ID` | Copies a template from a host that holds it to host `ID`, so a box can start there |
+| `minibox image pull <ref> [--host ID]` | Pulls an image from its registry, unless the engine already has it. Default: `local` |
 
 The options of `template create`:
 
@@ -200,6 +202,7 @@ The options of `template create`:
 | `--dockerfile-path PATH` | With `--repo` or `--context`: the Dockerfile, relative to the build context |
 | `--devcontainer-path PATH` | With `--devcontainer`: the `devcontainer.json` inside the repository |
 | `--description TEXT` | A description of up to 200 characters |
+| `--host ID` | Builds on host `ID`. Default: `local` |
 
 ```bash
 minibox template create node-tools --dockerfile ./Dockerfile

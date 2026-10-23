@@ -6,7 +6,7 @@ A checkpoint includes the box's `/workspace` folder and its home folder. A templ
 
 Checkpoints are available in the console, and in the [REST API](../reference/api.md). The [MCP](../reference/mcp.md) storage toolset also exports, imports and schedules them, for the owner only. The command-line tool does not manage them.
 
-Checkpoints are not a backup of the whole server. They are stored on the same host as the boxes. Keep an off-host copy of anything you cannot lose. [Export](#export-and-import) a checkpoint to make a copy you can carry elsewhere, or push the package to an [off-site target](#off-site-targets). To back up the whole server, see [Backups](../admin/backups.md).
+Checkpoints are not a backup of the whole server. They are stored on the host the box was on when the checkpoint was taken, and they stay there when the box moves. With more than one host, a checkpoint's row names its host. A rollback uses the checkpoint from the box's own host, so to roll back to a checkpoint on another host, move the box there first. Keep an off-host copy of anything you cannot lose. [Export](#export-and-import) a checkpoint to make a copy you can carry elsewhere, or push the package to an [off-site target](#off-site-targets). To back up the whole server, see [Backups](../admin/backups.md).
 
 ## Create a checkpoint
 

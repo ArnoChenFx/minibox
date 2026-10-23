@@ -21,8 +21,10 @@ import type { StoragePool, VolumeRecord, VolumeRole } from "../volumes/types";
 import { type Box, ensureBoxNetwork, getBox, refuseExpired } from "./boxes";
 import { assertCapacity, assertRoom } from "./capacity";
 import { type Progress, underBox } from "./checkpoints";
+import { needsImage, sendImage } from "./image-transfer";
 import { beginMove } from "./moving";
 import { assertFresh, containerSpec, movedTag } from "./rebuild";
+import { provisionSelfToken } from "./self-token";
 import { launchStartup } from "./startup";
 
 /** What a move keeps. Volumes are copied to the target, or attached again where the storage is shared. */
@@ -99,6 +101,8 @@ interface MovePlan {
 interface RunState {
   created: string | null;
   paused: boolean;
+  /** The box's self token was issued on the target, which replaces the source's: undo must issue the source a new one. */
+  tokenIssued: boolean;
 }
 
 /** The 409 a move answers without `confirm`. It carries the preview, and nothing has changed. */
@@ -207,26 +211,6 @@ async function sourceImage(host: HostCtx, ref: string): Promise<ImageDetails> {
   }
 }
 
-/**
- * True when the target must load the image. Loading an archive moves every tag it carries, so each tag the image has on
- * the source is checked. A tag the target holds for a different image is refused rather than moved away from it.
- */
-async function needsImage(host: HostCtx, ref: string, image: ImageDetails): Promise<boolean> {
-  let transfer = false;
-  for (const tag of new Set([ref, ...image.tags])) {
-    let held: ImageDetails;
-    try {
-      held = await host.runtime.inspectImage(tag);
-    } catch (e) {
-      if (!isRuntimeError(e, "not_found")) throw e;
-      transfer = true;
-      continue;
-    }
-    if (held.id !== image.id) throw conflict(msg("move_template_differs", { host: host.host.id, tag }));
-  }
-  return transfer;
-}
-
 async function assertRoomFor(host: HostCtx, spec: BoxSpec): Promise<void> {
   const { cpus, memoryBytes } = spec.resources;
   await assertCapacity(host, {
@@ -312,7 +296,7 @@ async function runMove(
   const { spec } = plan;
   const oldId = spec.containerId;
   const changes = new VolumeChanges();
-  const state: RunState = { created: null, paused: false };
+  const state: RunState = { created: null, paused: false, tokenIssued: false };
   const say = (text: string) => progress?.log?.(`${text}\n`);
   let moved: MovedVolumes = { resolved: new Map(), copies: [], remounts: [] };
   try {
@@ -355,9 +339,14 @@ async function runMove(
       await to.runtime.startContainer(created.id);
       const started = await to.runtime.inspectContainer(created.id);
       if (!started.running) throw new AppError(502, "docker_error", msg("move_start_failed", { host: to.host.id }));
+      if (spec.selfToken) {
+        state.tokenIssued = true;
+        await provisionSelfToken(to, { boxId: spec.id, name: spec.name }, created.id);
+      }
     }
     throwIfCancelled(progress);
     await commitMove(from, to, spec.id, revision, { containerId: created.id, containerName: name, mounts, template });
+    if (!plan.starts) to.selfTokens.revoke(spec.id);
     if (plan.starts) await launchStartup(to, created.id, spec.startupCommand);
     say(`The box now runs on ${to.host.id}.`);
   } catch (e) {
@@ -379,33 +368,6 @@ async function targetContainerName(host: HostCtx, boxId: string): Promise<string
 
 function throwIfCancelled(progress: Progress | undefined): void {
   if (progress?.signal?.aborted) throw abortError();
-}
-
-/** Loads the image on the target under the id it has on the source, so the box's digest holds there. */
-async function sendImage(
-  from: HostCtx,
-  to: HostCtx,
-  ref: string,
-  expectedId: string,
-  signal: AbortSignal | undefined,
-): Promise<void> {
-  const archive = await from.runtime.saveImage(ref);
-  const stop = () => archive.destroy();
-  signal?.addEventListener("abort", stop, { once: true });
-  try {
-    await to.runtime.loadImage(archive);
-  } finally {
-    signal?.removeEventListener("abort", stop);
-    archive.destroy();
-  }
-  const landed = await to.runtime.inspectImage(ref);
-  if (landed.id !== expectedId) {
-    throw new AppError(
-      502,
-      "docker_error",
-      msg("docker_error", { detail: `image ${ref} loaded as ${landed.id}, not ${expectedId}` }),
-    );
-  }
 }
 
 interface MovedVolumes {
@@ -618,10 +580,14 @@ async function undoMove(
       }
     }
   }
+  if (state.tokenIssued) to.selfTokens.revoke(spec.id);
   await changes.rollback();
   if (state.paused) {
     try {
       await from.runtime.unpauseContainer(oldId);
+      if (state.tokenIssued) {
+        await provisionSelfToken(from, { boxId: spec.id, name: spec.name }, oldId);
+      }
     } catch (e) {
       log.warn("box.move_rollback_failed", { id: spec.id, container: oldId, error: String(e) });
     }

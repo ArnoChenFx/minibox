@@ -124,9 +124,20 @@ export function noticeOfEvent(event: StoredEvent): Notice | null {
       return box
         ? notice("session.takeover", event, `Terminal session taken over in ${name}`, box, sessionLine(detail))
         : null;
+    case "self.ask":
+      return box && event.status === "ok"
+        ? notice("agent.question", event, `Question from the agent in ${name}`, box, questionLine(detail))
+        : null;
     default:
       return null;
   }
+}
+
+function questionLine(detail: Fields): string | undefined {
+  const message = textOf(detail.message);
+  if (message === undefined) return undefined;
+  const options = Array.isArray(detail.options) ? detail.options.filter((o): o is string => typeof o === "string") : [];
+  return options.length > 0 ? `${message}\nOptions: ${options.join(", ")}` : message;
 }
 
 function deadline(label: string, detail: Fields): string | undefined {

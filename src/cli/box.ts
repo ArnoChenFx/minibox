@@ -43,7 +43,7 @@ const BOX_CREATE_VALUE_FLAGS = [
   "--startup-command",
 ];
 
-const BOX_CREATE_SWITCHES = [...OUTPUT_SWITCHES, "--startup-command-stdin"];
+const BOX_CREATE_SWITCHES = [...OUTPUT_SWITCHES, "--startup-command-stdin", "--self-token"];
 
 /** Every value a repeatable flag names, in the order given. `parseOptions` keeps only the last one. */
 function repeatedValues(argv: string[], flag: string): string[] {
@@ -106,6 +106,7 @@ export async function boxCreateCommand(
   }
   if (inline !== undefined) body.startupCommand = inline;
   if (fromStdin) body.startupCommand = await readStdinText(io);
+  if (options.switches.has("--self-token")) body.selfToken = true;
 
   const res = await request(env, "POST", "/api/boxes", body);
   if (res.status >= 400) return fail(io, res.status, res.json, res.text);

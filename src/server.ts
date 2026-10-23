@@ -24,7 +24,7 @@ import { log, setLogLevel } from "./lib/logger";
 import { msg } from "./lib/messages";
 import { handleMcp } from "./mcp/http";
 import { isPreviewPath } from "./preview/path";
-import { proxyHttp, resolvePreview, upstreamSocketUrl } from "./preview/proxy";
+import { proxyHttp, resolvePreview, upstreamSocket } from "./preview/proxy";
 import { isPreviewHostRequest, servePreviewHost } from "./preview/subdomain";
 import { attachPreviewUpstream, type PreviewSocketData, watchPreviewSocket } from "./preview/ws";
 import { routes } from "./routes";
@@ -149,6 +149,7 @@ async function dispatch(app: App, req: Request, url: URL, server: Server<SocketD
       grants: app.previewGrants,
       pulse: app.pulse,
       record: app.record,
+      relay: app.previewRelay,
     });
   }
   guardRequest(req, app.cfg);
@@ -170,6 +171,7 @@ async function dispatch(app: App, req: Request, url: URL, server: Server<SocketD
     const { host, box: found } = await locateBox(app.hosts, decodeURIComponent(tm[1] ?? ""));
     const principal = caller.principal;
     const source: Source = caller.sessionId ? "ui" : "rest";
+    if (principal.type === "box-self") throw refusal("box_out_of_scope");
     if (
       principal.type === "token" &&
       (!scopeAllowed(principal.grants, "box:session") || !boxVisible(principal, viewOfBox(found, host.host.id)))
@@ -226,12 +228,13 @@ async function pathPreview(
   const resolved = await resolvePreview(app.hosts, url, {
     pulse: app.pulse,
     audit: (hostId, note) => app.record(hostId, "ui", caller.principal, note),
+    relay: app.previewRelay,
   });
   if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
     const data: PreviewSocketData = {
       kind: "preview",
       boxId: resolved.box.boxId,
-      pendingUpstream: upstreamSocketUrl(resolved),
+      pendingUpstream: upstreamSocket(resolved),
       pendingHeaders: req.headers,
       release: resolved.release,
       sessionId: caller.sessionId ?? undefined,
@@ -386,6 +389,7 @@ async function boot(): Promise<void> {
     const force = setTimeout(() => process.exit(1), 5000);
     await server.stop(true);
     clearTimeout(force);
+    app.previewRelay.stop();
     await app.tasks.shutdown();
     app.events.close();
     log.info("server.stopped");

@@ -269,6 +269,10 @@ export class AgentRuntime implements Runtime {
     throw refused("putArchive");
   }
 
+  async writeContainerFile(): Promise<void> {
+    throw refused("writeContainerFile");
+  }
+
   async getArchive(): Promise<Readable> {
     throw refused("getArchive");
   }

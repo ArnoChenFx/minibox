@@ -44,15 +44,20 @@ function iconOf(op) {
   if (op.startsWith("container.")) return "box";
   if (op.startsWith("session.") || op.startsWith("terminal.")) return "terminal";
   if (op.startsWith("egress.")) return "shield";
+  if (op === "box.self.revoke") return "key";
   return "activity";
 }
 
 /** A reads that succeeded, such as polling a session list, is not history. Failed or refused reads still show. */
 const isRoutine = (event) => event.kind === "read" && event.status === "ok";
 
+function clip(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 function commandOf(detail) {
   const text = typeof detail.cmd === "string" ? detail.cmd : Array.isArray(detail.argv) ? detail.argv.join(" ") : "";
-  return text.length > COMMAND_MAX ? `${text.slice(0, COMMAND_MAX - 1)}…` : text;
+  return clip(text, COMMAND_MAX);
 }
 
 /** A one-line reading of what an event did, taken from its fields. Nothing here is free text from the event. */
@@ -67,6 +72,8 @@ function describe(event) {
   if (event.op === "terminal.close") {
     return t("ev.io", { in: bytes(d.bytesIn ?? 0), out: bytes(d.bytesOut ?? 0) });
   }
+  if (event.op === "self.status") return [d.state, d.note].filter((part) => typeof part === "string").join(" · ");
+  if (event.op === "self.ask" && typeof d.message === "string") return clip(d.message, COMMAND_MAX);
   if (event.op.startsWith("exec.")) return commandOf(d);
   if (event.op.startsWith("egress.")) return typeof d.host === "string" ? `${d.host}:${d.port ?? ""}` : "";
   if (typeof d.session === "string") return d.session;

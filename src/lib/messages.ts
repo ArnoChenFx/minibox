@@ -40,7 +40,7 @@ export const LABELS = {
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
-/** Features a `host_unsupported` error names. The UI translates each key through `feature.<key>`. */
+/** Features an `agent_host_unsupported` error names. The UI translates each key through `feature.<key>`. */
 export const FEATURES = {
   snapshots: "Snapshots",
   templates: "Templates",
@@ -118,6 +118,8 @@ export const MESSAGES = {
   preview_box_stopped: "Start the box before opening a port preview.",
   preview_no_ip: "The box has no container IP yet. Wait until it is fully started, then try again.",
   preview_upstream_failed: "Could not reach the service inside the box: {detail}",
+  preview_bridge_failed: "Could not open the preview through the box's engine: {detail}",
+  preview_bridge_hint: "A box on another host needs python3 to serve a preview.",
   preview_port_invalid: "Port must be an integer between 1 and 65535.",
   preview_port_not_manual: "That port is not on the manual preview list.",
   preview_unauthorized: "Sign in to open a box port preview.",
@@ -325,6 +327,22 @@ export const MESSAGES = {
   token_limit: "At most {max} live tokens can exist. Revoke one, then create another.",
   token_rate_limited: "This token has used its rate limit. Try again in a moment.",
   box_out_of_scope: "This credential cannot use that box.",
+  box_taken_over: "A person has taken over box {name}, so the agent may not take a checkpoint of it now.",
+  box_taken_over_hint: "A person is working in this box. Try again once they have finished.",
+  self_token_host_unsupported:
+    "A self token cannot be given to a box on this host, because a paired host agent cannot write a file into a box.",
+  question_not_found: "Question {id} does not exist.",
+  question_answered: "Question {id} has already been answered.",
+  question_option_invalid: "The answer must be one of the options the question offered.",
+  question_answer_long: "The answer is too long.",
+  question_limit: "This box already has {max} unanswered questions. Wait for a person to answer one.",
+  question_limit_total: "The question log holds {max} unanswered questions. Answer one before asking another.",
+  question_message_invalid: "A question needs a message of 1 to {max} characters.",
+  question_options_invalid:
+    "Options must be up to {max} different choices, each one line of 1 to {length} characters, or none for a free-text answer.",
+  question_answer_invalid: "An answer needs 1 to {max} characters.",
+  self_state_invalid: "The state must be one of {states}.",
+  self_note_invalid: "A note needs 1 to {max} characters on one line.",
   volume_not_granted: "This credential cannot mount the volume “{volume}”. It needs volume:attach on that volume.",
   host_not_granted: "This credential cannot use host “{host}”.",
   host_id_invalid: "A host id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.",
@@ -345,7 +363,7 @@ export const MESSAGES = {
   host_key_mismatch:
     "The SSH host key {presented} is not the key you confirmed ({expected}). No credentials were sent to the host.",
   host_unreachable: "The host could not be reached: {detail}",
-  host_unsupported: "{feature} is not supported on remote hosts yet.",
+  agent_host_unsupported: "{feature} is not supported on agent hosts yet.",
   host_endpoint_agent:
     "Agent hosts are paired with a code, not added by endpoint. Create a pairing code, then run the agent on the host.",
   host_not_agent: "Host “{host}” is not an agent host.",
@@ -365,7 +383,7 @@ export const MESSAGES = {
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
     "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
-  preview_remote_unsupported: "Port preview is not supported on remote hosts yet.",
+  preview_agent_unsupported: "Port preview is not supported on agent hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
   move_confirm:

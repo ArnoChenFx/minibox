@@ -12,6 +12,7 @@ import { getBox, stopBox } from "../src/services/boxes";
 import type { SocketData } from "../src/ws/socket";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
+import { selfTokenOf } from "./support/self";
 import { fingerprintOf, openShell, openSsh, runCommand } from "./support/ssh";
 import { call, mint } from "./support/tokens";
 
@@ -183,6 +184,20 @@ describe("SSH handshake and scope", () => {
     const attempt = await upgradeAttempt(`/api/ssh/${box.name}`, { authorization: `Bearer ${sandbox.secret}` });
     expect(attempt.status).toBe(403);
     expect(errorKeyOf(attempt)).toBe("ssh_forbidden");
+  });
+
+  test("a box's own self token is refused with 403 and the ssh_forbidden key, even for its own box", async () => {
+    const created = await call(base, "/api/boxes", {
+      body: { name: "self-ssh", cpus: 1, memoryMb: 256, selfToken: true },
+    });
+    expect(created.status).toBe(201);
+    const self = created.json.box;
+    if (!self) throw new Error("the box was not created");
+    const token = await selfTokenOf(runtime, self.id);
+    const attempt = await upgradeAttempt(`/api/ssh/${self.name}`, { authorization: `Bearer ${token}` });
+    expect(attempt.status).toBe(403);
+    expect(errorKeyOf(attempt)).toBe("ssh_forbidden");
+    expect(await statusOf(`/api/ssh/${self.name}`, AUTH)).toBe(101);
   });
 
   test("a token with box:ssh cannot open a box it cannot see", async () => {

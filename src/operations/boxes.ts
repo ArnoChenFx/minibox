@@ -3,8 +3,9 @@ import { z } from "zod";
 import type { EventTarget } from "../events/types";
 import { type HostCtx, LOCAL_HOST_ID } from "../host/registry";
 import { AUTO_HOST } from "../host/store";
-import { AppError, badRequest } from "../lib/errors";
+import { AppError, badRequest, conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
+import { assertSecretsSet } from "../secrets/env";
 import {
   type Box,
   type BoxUpdate,
@@ -44,8 +45,10 @@ import {
   SafetyCheckpointSchema,
   StatSampleSchema,
   StatsSchema,
+  TaskAcceptedSchema,
   TrashRefSchema,
 } from "./schemas";
+import { ensureTemplateOn } from "./templates";
 import type { OperationContext } from "./types";
 import {
   boxEnv,
@@ -75,6 +78,7 @@ import {
   hostId,
   hostOrAuto,
   statsFlag,
+  selfTokenOption,
   startupCommandOption,
   storageConfirmFlag,
   tail,
@@ -251,16 +255,17 @@ export const boxCreate = defineOperation({
           "Catalog tool ids to record on the box spec (version latest). After create, call reconcile_tools (or install_tool) to install them onto the shared tools volume.",
       }),
     startupCommand: startupCommandOption(),
+    selfToken: selfTokenOption(),
     repo: repoSource(),
   }),
-  output: z.object({ box: BoxSchema, clone: CloneStartedSchema.optional() }),
+  output: z.object({ box: BoxSchema, clone: CloneStartedSchema.optional(), sync: TaskAcceptedSchema.optional() }),
   rest: [{ method: "POST", path: "/api/boxes", body: true, status: 201 }],
   cli: "box create",
   mcp: {
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional repo clones a Git repository into /workspace once, on this first create: url, optional branch, and secretRef for a token or base64 deploy key, which is read from the secret store and never stored in the box. The clone runs as a task, returned as clone.taskId, and needs a writable /workspace. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Optional egress sets the box's network access: open (the default, which reaches the internet), none (a private network with no route out, while exec, SSH and preview still work), or proxy-only with presets and domains, which reach the internet only through a MiniBox proxy that logs each host it allows or refuses. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Optional startupCommand is a shell command the box runs at every start, through bash -lc in /workspace; it needs the exec and secret:use scopes, and get_startup_command reads it back. A box created from a template does not inherit a startup command unless one is passed. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional selfToken gives the box's agent a self token, written to /run/minibox/self-token, for the self operations (see get_info); the token is rotated on every start and removed on stop. Optional repo clones a Git repository into /workspace once, on this first create: url, optional branch, and secretRef for a token or base64 deploy key, which is read from the secret store and never stored in the box. The clone runs as a task, returned as clone.taskId, and needs a writable /workspace. When the host lacks the template and another host holds it, an owner's create first copies the template there as a task, returned as sync.taskId, and waits for the copy. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Optional egress sets the box's network access: open (the default, which reaches the internet), none (a private network with no route out, while exec, SSH and preview still work), or proxy-only with presets and domains, which reach the internet only through a MiniBox proxy that logs each host it allows or refuses. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Optional startupCommand is a shell command the box runs at every start, through bash -lc in /workspace; it needs the exec and secret:use scopes, and get_startup_command reads it back. A box created from a template does not inherit a startup command unless one is passed. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
   hostFor: (ctx, input) => {
     if (input.host !== AUTO_HOST) return hostById(ctx, input.host ?? LOCAL_HOST_ID);
@@ -291,6 +296,10 @@ export const boxCreate = defineOperation({
     } else {
       await assertCanCreateDefaultMounts(ctx, input.name);
     }
+    // Checked before any copy, so a create that createBox would refuse does not first move a template across.
+    if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
+    assertSecretsSet(host.secrets, input.env ?? []);
+    const sync = await ensureTemplateOn(ctx, host, input.template ?? host.baseTemplateTag);
     const created = await underQuota(ctx, { kind: "create", cpus: input.cpus, memoryMb: input.memoryMb }, async () => ({
       box: await createBox(
         host,
@@ -308,14 +317,16 @@ export const boxCreate = defineOperation({
           tools: input.tools,
           startupCommand: input.startupCommand,
           egress: input.egress,
+          selfToken: input.selfToken,
         },
         record,
       ),
     }));
-    if (input.repo === undefined) return created;
+    const started = sync === undefined ? created : { ...created, sync };
+    if (input.repo === undefined) return started;
     if (!ctx.startTask) throw new Error("box.create needs the executor to start a clone");
     const clone = await ctx.startTask(cloneOperation, { id: created.box.boxId, repo: input.repo }, created.box);
-    return { ...created, clone };
+    return { ...started, clone };
   },
 });
 

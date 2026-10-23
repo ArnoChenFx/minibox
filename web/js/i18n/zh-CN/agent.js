@@ -1,0 +1,25 @@
+export default {
+  "ag.section": "Agent",
+  "ag.tokenOn": "已启用自助令牌",
+  "ag.tokenOff": "未启用自助令牌",
+  "ag.help":
+    "这个 Box 的 Agent 可以在这里向你提问，并报告它的状态。它的令牌只能访问这个 Box。提问不会让 Agent 停下：它会继续工作，并在检查时读取你的回复。",
+  "ag.helpRevoked": "这个 Box 的 Agent 令牌已吊销。它之前提出的问题仍在这里等待回复。",
+  "ag.nonePending": "没有等待回复的问题。",
+  "ag.asked": "提问于 {time}",
+  "ag.answered": "已回复",
+  "ag.answeredAt": "回复于 {time}",
+  "ag.reply": "回复",
+  "ag.replyPlaceholder": "输入回复",
+  "ag.answerEmpty": "请先输入回复。",
+  "ag.answerOption": "请从给出的选项中选择一个。",
+  "ag.answeredToast": "回复已发送",
+  "ag.answerFailed": "无法发送回复",
+  "ag.revoke": "吊销令牌",
+  "ag.revokeTitle": "吊销 {name} 的 Agent 令牌？",
+  "ag.revokeText":
+    "这个 Box 的 Agent 会立即失去访问权限，并关闭该 Box 的自助令牌。它的问题会保留在这里，直到有人回复。",
+  "ag.revoked": "Agent 令牌已吊销",
+  "ag.revokedText": "{name} 已不再有自助令牌。",
+  "ag.revokeFailed": "无法吊销 Agent 令牌",
+};

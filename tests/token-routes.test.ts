@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { LoginLimiter } from "../src/auth";
 import { OPERATIONS } from "../src/operations/registry";
-import { OWNER, type TokenPrincipal } from "../src/operations/types";
+import { OWNER, type Principal, type TokenPrincipal } from "../src/operations/types";
 import { routes } from "../src/routes";
 import { matchRoute, type Route, routeAllows } from "../src/routes/router";
 import { authorizeOperation, hasAccessRule } from "../src/tokens/authorize";
 import { hostAllowed, requiredScopes, type Scope, type TokenCreateInput } from "../src/tokens/model";
+import { SELF_SCOPE } from "../src/tokens/self-policy";
 import { rejectionOf, silenceLogs } from "./support/app";
 import { call, type Harness, mint, principalOf, refused, startHarness } from "./support/tokens";
 
@@ -71,6 +72,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/templates",
   "POST /api/templates/base/build",
   "POST /api/templates/:id/rebuild",
+  "POST /api/templates/:id/sync",
   "POST /api/tasks/:id/cancel",
   "POST /api/tokens",
   "POST /api/trash/:id/restore",
@@ -80,6 +82,16 @@ const OWNER_ONLY_ROUTES = [
   "PUT /api/secrets/:id",
   "PUT /api/tools/custom/:id",
   "PUT /api/volumes/:id/limits",
+];
+
+/** The routes a box's own agent reaches, written out. Only the box-self principal reaches them. */
+const SELF_ROUTES = [
+  "GET /api/self",
+  "GET /api/self/questions/:id",
+  "GET /api/self/tasks/:id",
+  "POST /api/self/checkpoints",
+  "POST /api/self/questions",
+  "POST /api/self/status",
 ];
 
 /** The path a route was compiled from, read back from its pattern: `/api/boxes/:id`. */
@@ -98,8 +110,12 @@ function concretePathOf(route: Route): string {
     .replace(/\\(.)/g, "$1");
 }
 
+function isSelfRoute(route: Route): boolean {
+  return !route.public && route.access.kind === "scope" && route.access.scope === SELF_SCOPE;
+}
+
 function isOwnerOnly(route: Route): boolean {
-  if (route.public) return false;
+  if (route.public || isSelfRoute(route)) return false;
   return route.access.kind === "owner" || requiredScopes(route.access.scope) === "owner";
 }
 
@@ -152,6 +168,19 @@ describe("default-deny route table", () => {
           false,
         );
       }
+    }
+  });
+
+  test("the self routes are exactly the listed ones, and only a box's own agent reaches them", () => {
+    const self = routes
+      .filter(isSelfRoute)
+      .map((route) => `${route.method} ${templateOf(route)}`)
+      .toSorted();
+    expect(self).toEqual(SELF_ROUTES.toSorted());
+    const agent: Principal = { type: "box-self", id: "bx_01ARZ3NDEKTSV4RRFFQ69G5FAV", name: "alpha" };
+    for (const route of routes) {
+      if (route.public) continue;
+      expect(routeAllows(route, agent), `${route.method} ${templateOf(route)}`).toBe(isSelfRoute(route));
     }
   });
 
@@ -210,7 +239,7 @@ describe("default-deny route table", () => {
 
 describe("fail-closed authorization", () => {
   test("every operation is owner-only or has an access rule, and the owner-only operations are the listed ones", () => {
-    const ownerOperations = OPERATIONS.filter((op) => requiredScopes(op.scope) === "owner")
+    const ownerOperations = OPERATIONS.filter((op) => op.scope !== SELF_SCOPE && requiredScopes(op.scope) === "owner")
       .map((op) => op.name)
       .toSorted();
     expect(ownerOperations).toEqual([
@@ -254,6 +283,7 @@ describe("fail-closed authorization", () => {
       "template.build",
       "template.create",
       "template.rebuild",
+      "template.sync",
       "token.create",
       "token.list",
       "token.revoke",
@@ -267,6 +297,26 @@ describe("fail-closed authorization", () => {
     ]);
     const unruled = OPERATIONS.filter((op) => requiredScopes(op.scope) !== "owner" && !hasAccessRule(op.name));
     expect(unruled.map((op) => op.name)).toEqual([]);
+  });
+
+  test("the self operations are a box's own agent's alone: no token reaches them, and the owner is refused", async () => {
+    const selfOperations = OPERATIONS.filter((op) => op.scope === SELF_SCOPE).map((op) => op.name);
+    expect(selfOperations.toSorted()).toEqual([
+      "self.ask",
+      "self.checkpoint",
+      "self.info",
+      "self.question",
+      "self.status",
+      "self.task",
+    ]);
+    for (const name of selfOperations) {
+      const operation = OPERATIONS.find((op) => op.name === name);
+      if (!operation) throw new Error(`no operation ${name}`);
+      expect(await authorizeOperation({ principal: OWNER, operation })).toBe(false);
+      for (const subject of subjects) {
+        expect(await authorizeOperation({ principal: subject.principal, operation })).toBe(false);
+      }
+    }
   });
 
   test("an operation with no access rule passes the scope check and is refused at access, even for a token that holds every scope", async () => {

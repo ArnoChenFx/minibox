@@ -151,6 +151,52 @@ describe.skipIf(!enabled)("the file browser's volume operations on a real engine
   );
 
   test(
+    "a body that is longer than its declared length is refused, and no file or temporary name is left",
+    async () => {
+      const err = await rejectionOf(
+        streamUpload(host, vol.id, {
+          path: "long.txt",
+          overwrite: false,
+          body: bodyOf("abcdefghij", 3),
+          maxBytes: LIMIT,
+        }),
+      );
+      expect(err).toMatchObject({ status: 400, key: "file_upload_mismatch" });
+      const listing = await listFiles(host, vol.id, { maxDepth: 1 });
+      expect(listing.entries.map((entry) => entry.path)).not.toContain("long.txt");
+      expect(listing.entries.filter((entry) => entry.path.includes(".minibox-upload-"))).toEqual([]);
+    },
+    LONG,
+  );
+
+  test(
+    "a body that fails while it is read is refused, and no file or temporary name is left",
+    async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(Buffer.from("ab"));
+        },
+        pull(controller) {
+          controller.error(new Error("the client went away"));
+        },
+      });
+      const err = await rejectionOf(
+        streamUpload(host, vol.id, {
+          path: "dropped.txt",
+          overwrite: false,
+          body: { stream, length: 10 },
+          maxBytes: LIMIT,
+        }),
+      );
+      expect((err as Error).message).toBe("the client went away");
+      const listing = await listFiles(host, vol.id, { maxDepth: 1 });
+      expect(listing.entries.map((entry) => entry.path)).not.toContain("dropped.txt");
+      expect(listing.entries.filter((entry) => entry.path.includes(".minibox-upload-"))).toEqual([]);
+    },
+    LONG,
+  );
+
+  test(
     "an existing file is kept unless overwrite is asked for, and then its contents are replaced",
     async () => {
       await streamUpload(host, vol.id, { path: "keep.txt", overwrite: false, body: bodyOf("one"), maxBytes: LIMIT });

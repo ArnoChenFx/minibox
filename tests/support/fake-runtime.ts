@@ -58,6 +58,13 @@ function contextFiles(spec: BuildSpec): Map<string, string> {
   return files;
 }
 
+/** A file a process wrote into a container, with the mode and user it was given. */
+export interface FakeContainerFile {
+  readonly data: Buffer;
+  readonly mode: number;
+  readonly user: string;
+}
+
 export interface FakeContainer {
   id: string;
   name: string;
@@ -82,6 +89,8 @@ export interface FakeContainer {
   networkId: string | null;
   /** Endpoints on networks other than the primary one, which `connectNetwork` adds. */
   extraEndpoints: { name: string; networkId: string; aliases: string[] }[];
+  /** Files written through a process in the container. Files under a tmpfs mount go when the container stops. */
+  files: Map<string, FakeContainerFile>;
 }
 
 export interface FakeImage {
@@ -688,6 +697,7 @@ export class FakeRuntime implements Runtime {
       diff: [],
       networkId: running ? this.networkIdOf(spec.network) : null,
       extraEndpoints: [],
+      files: new Map(),
     };
     this.containers.set(c.id, c);
     for (const mount of spec.mounts ?? []) {
@@ -696,6 +706,14 @@ export class FakeRuntime implements Runtime {
       this.volumeOwners.set(mount.source, owner ?? ROOT_OWNER);
     }
     return c;
+  }
+
+  /** A tmpfs mount lives as long as its container process, so its files go when the container stops or restarts. */
+  private dropTmpfsFiles(c: FakeContainer): void {
+    const mounts = Object.keys(c.spec.tmpfs ?? {});
+    for (const path of c.files.keys()) {
+      if (mounts.some((mount) => path === mount || path.startsWith(`${mount}/`))) c.files.delete(path);
+    }
   }
 
   async ping(): Promise<void> {
@@ -781,6 +799,7 @@ export class FakeRuntime implements Runtime {
     if (!c.running) return;
     c.running = false;
     c.paused = false;
+    this.dropTmpfsFiles(c);
     this.announce("die", c);
     this.announce("stop", c);
     this.endLogFollows(c.id);
@@ -792,6 +811,7 @@ export class FakeRuntime implements Runtime {
     this.ensureVolumes(c.spec.mounts);
     this.attach(c);
     this.tmux.stop(c.id);
+    this.dropTmpfsFiles(c);
     c.running = true;
     c.startedAt = now();
     this.announce("restart", c);
@@ -978,6 +998,24 @@ export class FakeRuntime implements Runtime {
     });
     if (!walked) throw new RuntimeError("not_found", `Could not find the requested path ${path}`);
     applyTarToVolume(walked.store, walked.relative, bytes);
+  }
+
+  async writeContainerFile(
+    id: string,
+    path: string,
+    data: Buffer,
+    opts: { user: string; mode: number },
+  ): Promise<void> {
+    this.enter("writeContainerFile", [id, path, data, opts]);
+    await this.gate("writeContainerFile", [id, path, data, opts]);
+    const c = this.getContainer(id);
+    if (!c.running) throw new RuntimeError("conflict", `Container ${c.id} is not running`);
+    c.files.set(path, { data: Buffer.from(data), mode: opts.mode, user: opts.user });
+  }
+
+  /** The file a process wrote into a container at `path`, if any. Reading does not record a call. */
+  containerFile(id: string, path: string): FakeContainerFile | undefined {
+    return this.getContainer(id).files.get(path);
   }
 
   async getArchive(id: string, path: string): Promise<Readable> {

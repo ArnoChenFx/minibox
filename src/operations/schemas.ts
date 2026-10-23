@@ -101,6 +101,8 @@ export const BoxSchema = z.object({
   storage: StorageStatusSchema,
   /** The host the box runs on. Present only when the control plane holds more than one host. */
   hostId: z.string().optional(),
+  /** Present and true when the box was created with a `self` token. The token itself is never shown. */
+  selfToken: z.boolean().optional(),
 });
 
 /** One sample of a box's usage. `t` is epoch milliseconds. */
@@ -255,9 +257,10 @@ export const PendingRollbackSchema = z.object({
   restored: z.array(RollbackVolumeSchema),
 });
 
-/** A snapshot or template image, as the image list shows it. */
+/** A snapshot or template image, as the image list shows it. `hostId` is the host whose engine holds the image. */
 export const ImageSchema = z.object({
   id: z.string(),
+  hostId: z.string(),
   ref: z.string(),
   tags: z.array(z.string()),
   name: z.string(),
@@ -282,6 +285,13 @@ export const TemplateSchema = ImageSchema.extend({
 export const ImagePulledSchema = z.object({
   ref: z.string(),
   id: z.string(),
+});
+
+/** A template copied to a host. `sent` is false when the host already held the same image, so nothing was copied. */
+export const TemplateSyncedSchema = z.object({
+  ref: z.string(),
+  host: z.string(),
+  sent: z.boolean(),
 });
 
 /** The task that clones a new box's repository into its workspace. */
@@ -336,6 +346,33 @@ export const TaskAcceptedSchema = z.object({
 
 export const OkSchema = z.object({
   ok: z.literal(true),
+});
+
+/** A question a box's agent asked a person. `answer` is null until one answers it. */
+export const QuestionSchema = z.object({
+  id: z.string(),
+  boxId: z.string(),
+  message: z.string(),
+  options: z.array(z.string()),
+  askedAt: z.string(),
+  answer: z.string().nullable(),
+  answeredAt: z.string().nullable(),
+  answeredBy: z.string().nullable(),
+});
+
+/** What a box's own agent learns about its box. Sizes are the spec's, not the engine's. */
+export const SelfInfoSchema = z.object({
+  boxId: z.string(),
+  name: z.string(),
+  state: z.string(),
+  running: z.boolean(),
+  template: z.string(),
+  profile: z.enum(BOX_PROFILES).nullable(),
+  cpus: z.number().nullable(),
+  memoryMb: z.number().nullable(),
+  createdAt: z.string(),
+  ttlEndsAt: z.string().nullable(),
+  remainingTtlSec: z.number().nullable(),
 });
 
 /** One recorded event. `seq` is the cursor: pass it back as `cursor` to read the page before it. */

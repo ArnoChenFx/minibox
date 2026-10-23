@@ -4,7 +4,9 @@ import type { CheckpointPolicy } from "../checkpoints/policy";
 import { ResticEngine } from "../checkpoints/restic";
 import { CheckpointStore } from "../checkpoints/store";
 import type { Config } from "../config";
+import { questionsPath, selfTokensPath } from "../data-dir";
 import { boxNetworkName, type LabelKeys, labelKeys } from "../labels";
+import { QuestionStore } from "../questions/store";
 import { type Runtime, RuntimeError } from "../runtime";
 import { SecretStore } from "../secrets/store";
 import { ActivityPulse } from "../services/activity-pulse";
@@ -13,6 +15,7 @@ import { EgressLog } from "../services/egress-log";
 import { BoxPower } from "../services/power";
 import { StartupLaunches } from "../services/startup";
 import { SpecStore } from "../specs/store";
+import { SelfTokenStore } from "../tokens/self-store";
 import { VolumeStore } from "../volumes/store";
 import { type LiveSink, NO_LIVE } from "./live";
 import { HostMonitor } from "./metrics";
@@ -87,6 +90,10 @@ export interface HostCtx {
   pulse: ActivityPulse;
   /** Checkpoint records. One store is shared by every host, files live under `DATA_DIR/checkpoints`. */
   checkpoints: CheckpointStore;
+  /** The `self` tokens of boxes. One store is shared by every host, the file lives under `DATA_DIR`. */
+  selfTokens: SelfTokenStore;
+  /** Questions boxes' agents asked people. One store is shared by every host, the file lives under `DATA_DIR`. */
+  questions: QuestionStore;
   /** Largest single file a volume upload accepts, from FILE_UPLOAD_MAX_MB. */
   fileUploadMaxBytes: number;
   /** Stores volume contents for checkpoints. Each host keeps its own repository behind this engine. */
@@ -120,6 +127,8 @@ export interface SharedStores {
   readonly pulse: ActivityPulse;
   readonly checkpoints: CheckpointStore;
   readonly checkpointEngine: SnapshotEngine;
+  readonly selfTokens: SelfTokenStore;
+  readonly questions: QuestionStore;
   readonly multiHost: () => boolean;
   /** Defaults to a log that records nothing. The app passes the one that writes events. */
   readonly egress?: EgressLog;
@@ -142,6 +151,10 @@ export interface LocalHostOptions {
   readonly checkpoints?: CheckpointStore;
   /** Defaults to the restic engine. */
   readonly checkpointEngine?: SnapshotEngine;
+  /** Defaults to the store in `DATA_DIR`. */
+  readonly selfTokens?: SelfTokenStore;
+  /** Defaults to the store in `DATA_DIR`. */
+  readonly questions?: QuestionStore;
   /** Defaults to a store under `DATA_DIR/secrets/env`. */
   readonly secrets?: SecretStore;
   /** Defaults to a control plane with one host. The app passes the registry's count. */
@@ -187,6 +200,8 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
     secrets: shared.secrets,
     pulse: shared.pulse,
     checkpoints: shared.checkpoints,
+    selfTokens: shared.selfTokens,
+    questions: shared.questions,
     fileUploadMaxBytes: cfg.fileUploadMaxMb * 1024 * 1024,
     checkpointEngine: shared.checkpointEngine,
     checkpointPolicy: {
@@ -241,6 +256,8 @@ export function createLocalHost(
       pulse,
       checkpoints: options.checkpoints ?? new CheckpointStore(cfg.dataDir),
       checkpointEngine: options.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir }),
+      selfTokens: options.selfTokens ?? new SelfTokenStore({ file: selfTokensPath(cfg.dataDir) }),
+      questions: options.questions ?? new QuestionStore({ file: questionsPath(cfg.dataDir) }),
       multiHost: options.multiHost ?? (() => false),
       egress: options.egress,
       firewall: options.firewall,

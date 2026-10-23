@@ -28,6 +28,7 @@ import { type S3Double, startS3Double } from "./support/s3-double";
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 const SNAPSHOT_REF = "mbtest-snap:nightly";
 const TEMPLATE_REF = "mbtest-template:gold";
+const SYNCED_TEMPLATE_REF = "mbtest-template:synced";
 const CHECKPOINT_PLACEHOLDER = `ck_${"0".repeat(16)}`;
 const PACKAGE_PLACEHOLDER = `pk_${"0".repeat(16)}`;
 const BACKUP_PLACEHOLDER = `bk_${"0".repeat(16)}`;
@@ -217,6 +218,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.create": () => ({ name: "sample", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" } }),
   "template.rebuild": () => ({ ref: "mbtest-template:sample" }),
   "template.build": () => ({}),
+  "template.sync": () => ({ ref: SYNCED_TEMPLATE_REF, host: "local" }),
   "template.delete": () => ({ ref: TEMPLATE_REF }),
   "image.pull": () => ({ ref: "alpine:3.20" }),
   "task.list": () => ({}),
@@ -240,6 +242,15 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "notify.channel.delete": () => ({ id: NOTIFY_CHANNEL.id }),
   "notify.channel.test": () => ({ id: NOTIFY_CHANNEL.id }),
   "notify.delivery.list": () => ({}),
+  "self.info": () => ({}),
+  "self.checkpoint": () => ({ label: "before-edit", reason: "Before a risky edit" }),
+  "self.task": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
+  "self.ask": () => ({ message: "Ship the change?", options: ["yes", "no"] }),
+  "self.question": () => ({ id: `q_${"0".repeat(26)}` }),
+  "self.status": () => ({ state: "working", note: "Running the tests" }),
+  "box.self.revoke": (id) => ({ id }),
+  "box.questions": (id) => ({ id }),
+  "question.answer": () => ({ id: `q_${"0".repeat(26)}`, answer: "yes" }),
 };
 
 /** Operations that act on a checkpoint which must already exist, so `preparedInput` takes one first. */
@@ -340,16 +351,66 @@ function rawBodyOf(bytes: Buffer): RawBody {
 }
 
 /** A real id for operations that cannot succeed against the placeholder in `SAMPLES`. */
+interface Prepared {
+  input: unknown;
+  release?: () => void;
+  body?: RawBody;
+  /** Set when the operation acts as a box's own agent, which the owner may not be. */
+  principal?: Principal;
+}
+
+/** The context an operation runs under: the caller's, with the principal and body a prepared input needs. */
+function runContext(ctx: OperationContext, prepared: Prepared): OperationContext {
+  return {
+    ...ctx,
+    ...(prepared.principal ? { principal: prepared.principal } : {}),
+    ...(prepared.body ? { body: prepared.body } : {}),
+  };
+}
+
+/** The box's own agent: the principal a self token authenticates, whose id is the box's stable id. */
+async function agentOf(app: App, ctx: OperationContext, boxId: string): Promise<OperationContext> {
+  const { box } = (await app.operations.run("box.get", ctx, { id: boxId })) as { box: { boxId: string; name: string } };
+  return { ...ctx, principal: { type: "box-self", id: box.boxId, name: box.name } };
+}
+
 async function preparedInput(
   app: App,
   ctx: OperationContext,
   runtime: FakeRuntime,
   operation: Operation,
   boxId: string,
-): Promise<{ input: unknown; release?: () => void; body?: RawBody }> {
+): Promise<Prepared> {
+  if (operation.name === "self.task") {
+    const agent = await agentOf(app, ctx, boxId);
+    const started = (await app.operations.run("self.checkpoint", agent, SAMPLES["self.checkpoint"]?.(boxId, app))) as {
+      taskId: string;
+    };
+    await app.tasks.drain();
+    return { input: { id: started.taskId }, principal: agent.principal };
+  }
+  if (operation.name === "self.question" || operation.name === "question.answer") {
+    const agent = await agentOf(app, ctx, boxId);
+    const asked = (await app.operations.run("self.ask", agent, SAMPLES["self.ask"]?.(boxId, app))) as {
+      question: { id: string };
+    };
+    if (operation.name === "question.answer") return { input: { id: asked.question.id, answer: "yes" } };
+    return { input: { id: asked.question.id }, principal: agent.principal };
+  }
+  if (operation.name.startsWith("self.")) {
+    const agent = await agentOf(app, ctx, boxId);
+    return { input: SAMPLES[operation.name]?.(boxId, app), principal: agent.principal };
+  }
   if (operation.name === "template.rebuild") {
     await app.operations.run("template.create", ctx, SAMPLES["template.create"]?.(boxId, app));
     await app.tasks.drain();
+  }
+  if (operation.name === "template.sync") {
+    await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });
+    (app.hosts.get("lab").runtime as FakeRuntime).seedImage(SYNCED_TEMPLATE_REF, {
+      [app.hosts.get().keys.template]: "true",
+    });
+    return { input: { ref: SYNCED_TEMPLATE_REF, host: "local" } };
   }
   if (operation.name === "task.get") {
     const started = (await app.operations.run("template.build", ctx, {})) as { taskId: string };
@@ -701,11 +762,7 @@ describe("executor", () => {
     const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
     events.length = 0;
     try {
-      const result = await app.operations.run(
-        operation.name,
-        prepared.body ? { ...ctx, body: prepared.body } : ctx,
-        prepared.input,
-      );
+      const result = await app.operations.run(operation.name, runContext(ctx, prepared), prepared.input);
       if (isByteStream(result)) await result.body.cancel();
       prepared.release?.();
       await app.tasks.drain();
@@ -889,11 +946,7 @@ describe("event log", () => {
       const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
       const before = app.events.head();
       try {
-        const result = await app.operations.run(
-          operation.name,
-          prepared.body ? { ...ctx, body: prepared.body } : ctx,
-          prepared.input,
-        );
+        const result = await app.operations.run(operation.name, runContext(ctx, prepared), prepared.input);
         if (isByteStream(result)) await result.body.cancel();
         prepared.release?.();
         await app.tasks.drain();
@@ -1122,12 +1175,14 @@ describe("projections", () => {
       "delete_custom_tool",
       "install_tool",
       "list_custom_tools",
+      "list_templates",
       "list_tools",
       "pull_image",
       "put_custom_tool",
       "rebuild_template",
       "reconcile_tools",
       "save_template",
+      "sync_template",
       "uninstall_tool",
       "upgrade_tool",
     ]);
@@ -1164,6 +1219,7 @@ describe("projections", () => {
       "host",
       "tools",
       "startupCommand",
+      "selfToken",
       "repo",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });

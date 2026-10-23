@@ -31,6 +31,7 @@ MiniBox is built for one trusted user, on a machine that the user controls. Read
 - Rotating `ACCESS_KEY` does not revoke tokens. Revoke them in **Settings**.
 - `exec` and `box:ssh` can read and write every mount of the boxes that the token may use. Grant them only where needed.
 - Only the owner can create tokens. No preset can create one.
+- A box's self token is not an agent token. It is issued for one box and reaches only that box's `self` operations. MiniBox keeps only its hash and never logs it, and the file in the box is on a memory filesystem. See [A box's own agent](../user-guide/agents.md#a-boxs-own-agent).
 
 **`/mcp` accepts the access key in this release, and the key grants full owner access over MCP.** A client with the key can run `exec` as root in any box that is not `strict`, delete boxes and rebuild them. MiniBox records each use. Set `MCP_ALLOW_OWNER_KEY=false` to refuse the key on `/mcp`. The next minor release refuses it by default. Give agents an agent token instead. A token's tool list and every call are held to its scopes. See [Connecting AI agents](../user-guide/agents.md).
 
@@ -101,6 +102,7 @@ Keep the preview domain under your control. Point its wildcard record only at Mi
 - **Bind to `127.0.0.1`**, which is the default. Do not set `HOST=0.0.0.0` on a machine with a public address.
 - **Use HTTPS for remote access.** The session cookie gets the `Secure` flag when the request is HTTPS, or when it carries an `https://` origin. See [Remote access and TLS](remote-access.md).
 - **Public tunnels are discoverable.** Tunnel addresses can appear in public certificate logs, and the tunnel adds no sign-in of its own. Prefer a private network, or a reverse proxy that requires its own sign-in.
+- **A box's agent needs the server on the box network.** Boxes reach MiniBox through the gateway of the `minibox-boxes` network, so a box's self token works only if `HOST` is that gateway's address (see `docker network inspect minibox-boxes`), or `0.0.0.0` as the release image sets. Every box can reach that address, but the self token reaches only its own box, and MiniBox never puts the access key in a box.
 
 ## Boxes
 

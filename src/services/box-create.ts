@@ -32,6 +32,7 @@ import {
   withoutRawSockets,
 } from "./egress";
 import { ensureImageOn } from "./images";
+import { assertSelfTokenHost, provisionSelfToken, selfTokenTmpfs } from "./self-token";
 import { launchStartup } from "./startup";
 import { desiredToolsOf } from "./tools";
 import { type RecordNote, writableWorkspaceVolume, alignVolumeRoot } from "./volume-owner";
@@ -118,6 +119,7 @@ async function undoCreate(host: HostCtx, attempt: CreateAttempt): Promise<void> 
     }
   }
   if (attempt.boxId) {
+    host.selfTokens.revoke(attempt.boxId);
     try {
       host.specs.remove(attempt.boxId);
     } catch (e) {
@@ -154,6 +156,7 @@ async function buildBox(
 ): Promise<string> {
   const { runtime, keys, prefix, security } = host;
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
+  if (input.selfToken) assertSelfTokenHost(host);
   const env = input.env ?? [];
   assertSecretsSet(host.secrets, env);
 
@@ -227,6 +230,7 @@ async function buildBox(
         network,
         hardening: egress ? withoutRawSockets(hardeningFor(profile, security)) : hardeningFor(profile, security),
         ...(containerVars.length > 0 ? { env: containerVars } : {}),
+        ...(input.selfToken ? { tmpfs: selfTokenTmpfs() } : {}),
       })
       .catch((e: unknown) => {
         // The engine enforces unique container names, so a name it already holds is refused here, not by a racy list.
@@ -256,6 +260,7 @@ async function buildBox(
       env,
       tools: desiredToolsOf(input.tools, loadCatalog(dirname(host.specs.dir()))),
       ...(input.startupCommand !== undefined ? { startupCommand: input.startupCommand } : {}),
+      ...(input.selfToken ? { selfToken: true } : {}),
       labels: {},
       lifecycle: {
         desired: "running",
@@ -282,6 +287,7 @@ async function buildBox(
   if (egress) await ensureEgressProxy(host, { boxId: id, id: containerId, name: input.name }, egress);
   if (egress || security.blockHostGateway) await syncHostFirewall(host);
   await runtime.startContainer(containerId);
+  if (input.selfToken) await provisionSelfToken(host, { boxId: id, name: input.name }, containerId);
   await host.sampler.observe(containerId);
   host.pulse.touch(id, "create");
   await launchStartup(host, containerId, input.startupCommand);

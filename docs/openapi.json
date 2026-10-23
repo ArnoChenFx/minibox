@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MiniBox API",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "description": "Generated from the operation registry: boxes, volumes, storage pools, snapshots, checkpoints and their schedules, templates, tasks and the event log. Sign-in, host and activity routes, the package upload and download (POST /api/packages and GET /api/packages/{id}/download, raw application/octet-stream), and the streams (GET /api/events/stream, GET /api/tasks/{id}/events and GET /api/boxes/{id}/logs/stream, text/event-stream), are not listed yet.",
     "license": {
       "name": "Apache-2.0"
@@ -65,6 +65,12 @@
     },
     {
       "name": "notify"
+    },
+    {
+      "name": "self"
+    },
+    {
+      "name": "questions"
     }
   ],
   "paths": {
@@ -511,6 +517,9 @@
                           "hostId": {
                             "type": "string"
                           },
+                          "selfToken": {
+                            "type": "boolean"
+                          },
                           "stats": {
                             "anyOf": [
                               {
@@ -867,6 +876,10 @@
                     "minLength": 1,
                     "maxLength": 4096,
                     "description": "A shell command the box runs at every start, once its container has started: as its user, with bash -lc in /workspace and the box's env, in the minibox-init tmux session. It is stored as typed, up to 4096 bytes. It may hold secrets, so only a credential with the secret:use scope reads it back."
+                  },
+                  "selfToken": {
+                    "type": "boolean",
+                    "description": "Give the box's agent a self token, written to /run/minibox/self-token, for the self operations. Omitted or false gives none."
                   },
                   "repo": {
                     "type": "object",
@@ -1298,6 +1311,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -1337,6 +1353,18 @@
                       "additionalProperties": false
                     },
                     "clone": {
+                      "type": "object",
+                      "properties": {
+                        "taskId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "taskId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "sync": {
                       "type": "object",
                       "properties": {
                         "taskId": {
@@ -1888,6 +1916,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         },
                         "stats": {
                           "anyOf": [
@@ -2844,6 +2875,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -3452,6 +3486,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -4020,6 +4057,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -4588,6 +4628,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -5196,6 +5239,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -5907,6 +5953,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -6693,6 +6742,9 @@
                 },
                 "hostId": {
                   "type": "string"
+                },
+                "selfToken": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -13152,6 +13204,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -13831,6 +13886,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -18819,6 +18877,16 @@
         "summary": "List snapshots",
         "parameters": [
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -18845,6 +18913,9 @@
                         "type": "object",
                         "properties": {
                           "id": {
+                            "type": "string"
+                          },
+                          "hostId": {
                             "type": "string"
                           },
                           "ref": {
@@ -18892,6 +18963,7 @@
                         },
                         "required": [
                           "id",
+                          "hostId",
                           "ref",
                           "tags",
                           "name",
@@ -19710,6 +19782,9 @@
                         },
                         "hostId": {
                           "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -19882,6 +19957,16 @@
             }
           },
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -19957,6 +20042,16 @@
           },
           "415": {
             "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22579,6 +22674,9 @@
                 },
                 "hostId": {
                   "type": "string"
+                },
+                "selfToken": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -23228,6 +23326,9 @@
                 },
                 "hostId": {
                   "type": "string"
+                },
+                "selfToken": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -24320,6 +24421,9 @@
                 },
                 "hostId": {
                   "type": "string"
+                },
+                "selfToken": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -28953,6 +29057,9 @@
                     },
                     "hostId": {
                       "type": "string"
+                    },
+                    "selfToken": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -29405,6 +29512,16 @@
         "summary": "List templates",
         "parameters": [
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -29431,6 +29548,9 @@
                         "type": "object",
                         "properties": {
                           "id": {
+                            "type": "string"
+                          },
+                          "hostId": {
                             "type": "string"
                           },
                           "ref": {
@@ -29487,6 +29607,7 @@
                         },
                         "required": [
                           "id",
+                          "hostId",
                           "ref",
                           "tags",
                           "name",
@@ -29577,7 +29698,11 @@
         "x-kind": "read",
         "x-scope": "template:read",
         "x-async": false,
-        "x-cli": "template list"
+        "x-cli": "template list",
+        "x-mcp": {
+          "name": "list_templates",
+          "toolset": "tools"
+        }
       },
       "post": {
         "operationId": "template.create",
@@ -29664,6 +29789,11 @@
                         "maxLength": 128
                       }
                     }
+                  },
+                  "host": {
+                    "description": "Host to build the template on. Omitted, the local host.",
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
                   }
                 },
                 "required": [
@@ -29868,6 +29998,11 @@
                     "type": "string",
                     "maxLength": 200,
                     "description": "One line, at most 200 characters. Line breaks and other control characters are refused."
+                  },
+                  "host": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                    "description": "Host id: local, or the id of a host added under Settings."
                   }
                 },
                 "required": [
@@ -29952,6 +30087,16 @@
           },
           "415": {
             "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -30228,6 +30373,16 @@
             }
           },
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Host that holds the template. Omitted, the first host that holds it.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -30405,6 +30560,16 @@
         "summary": "Build the bundled base template",
         "parameters": [
           {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
             "name": "X-Minibox-Run",
             "in": "header",
             "required": false,
@@ -30487,6 +30652,16 @@
               }
             }
           },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected server error.",
             "content": {
@@ -30536,6 +30711,207 @@
         "x-cli": "template build"
       }
     },
+    "/api/templates/{ref}/sync": {
+      "post": {
+        "operationId": "template.sync",
+        "tags": [
+          "templates"
+        ],
+        "summary": "Copy a template to another host",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Template image reference, URL-encoded."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                    "description": "The host to copy the template to."
+                  }
+                },
+                "required": [
+                  "host"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "template:build",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "sent": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ref",
+            "host",
+            "sent"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "template sync",
+        "x-mcp": {
+          "name": "sync_template",
+          "toolset": "tools"
+        }
+      }
+    },
     "/api/templates/{ref}": {
       "delete": {
         "operationId": "template.delete",
@@ -30551,6 +30927,16 @@
             "schema": {
               "type": "string",
               "description": "Template image reference, URL-encoded."
+            }
+          },
+          {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Host that holds the template. Omitted, the first host that holds it.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
             }
           },
           {
@@ -30637,6 +31023,16 @@
               }
             }
           },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected server error.",
             "content": {
@@ -30706,6 +31102,11 @@
                     "type": "string",
                     "maxLength": 255,
                     "description": "Image to pull from its registry, such as node:24-bookworm-slim or ghcr.io/org/image:tag."
+                  },
+                  "host": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                    "description": "Host id: local, or the id of a host added under Settings."
                   }
                 },
                 "required": [
@@ -35368,6 +35769,7 @@
                                 "box.ttl_soon",
                                 "box.idle_soon",
                                 "session.takeover",
+                                "agent.question",
                                 "host.offline",
                                 "volume.usage_high",
                                 "volume.usage_limit",
@@ -35591,6 +35993,7 @@
                         "box.ttl_soon",
                         "box.idle_soon",
                         "session.takeover",
+                        "agent.question",
                         "host.offline",
                         "volume.usage_high",
                         "volume.usage_limit",
@@ -35685,6 +36088,7 @@
                               "box.ttl_soon",
                               "box.idle_soon",
                               "session.takeover",
+                              "agent.question",
                               "host.offline",
                               "volume.usage_high",
                               "volume.usage_limit",
@@ -36406,6 +36810,2361 @@
           "name": "list_notify_deliveries",
           "toolset": "meta"
         }
+      }
+    },
+    "/api/self": {
+      "get": {
+        "operationId": "self.info",
+        "tags": [
+          "self"
+        ],
+        "summary": "Get this box's name, size and remaining TTL",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "boxId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "template": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "standard",
+                            "strict",
+                            "relaxed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cpus": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "memoryMb": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "ttlEndsAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "remainingTtlSec": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "boxId",
+                    "name",
+                    "state",
+                    "running",
+                    "template",
+                    "profile",
+                    "cpus",
+                    "memoryMb",
+                    "createdAt",
+                    "ttlEndsAt",
+                    "remainingTtlSec"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "self",
+        "x-async": false,
+        "x-mcp": {
+          "name": "get_info",
+          "toolset": "self"
+        }
+      }
+    },
+    "/api/self/checkpoints": {
+      "post": {
+        "operationId": "self.checkpoint",
+        "tags": [
+          "self"
+        ],
+        "summary": "Take a checkpoint of this box",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Label shown in the checkpoint list, one line, at most 200 characters. Defaults to the box name."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Why the checkpoint is taken, one line, at most 200 characters."
+                  },
+                  "consistency": {
+                    "default": "live",
+                    "description": "How the box is held for the backup. live (default) reads the volumes while the box runs. pause freezes the box, and so the agent, until the backup is done. Stopping the box is not offered to its own agent.",
+                    "type": "string",
+                    "enum": [
+                      "live",
+                      "pause"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "self",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "checkpoint": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "legacy": {
+                  "type": "boolean"
+                },
+                "hostId": {
+                  "type": "string"
+                },
+                "boxId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "boxName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "createdBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pinned": {
+                  "type": "boolean"
+                },
+                "auto": {
+                  "type": "boolean"
+                },
+                "consistency": {
+                  "type": "string",
+                  "enum": [
+                    "live",
+                    "pause",
+                    "stop"
+                  ]
+                },
+                "specRevision": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "spec": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "cpus": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "volumeId": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "rw",
+                          "ro"
+                        ]
+                      },
+                      "role": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "workspace",
+                              "home",
+                              "tools",
+                              "cache"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ownership": {
+                        "type": "string",
+                        "enum": [
+                          "owned",
+                          "independent"
+                        ]
+                      },
+                      "owner": {
+                        "type": "object",
+                        "properties": {
+                          "uid": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "gid": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "uid",
+                          "gid"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "snapshotId": {
+                        "type": "string"
+                      },
+                      "bytes": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "volumeId",
+                      "path",
+                      "mode",
+                      "role",
+                      "ownership",
+                      "owner",
+                      "snapshotId",
+                      "bytes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "system": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "image": {
+                          "type": "string"
+                        },
+                        "imageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "image",
+                        "imageId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bytes": {
+                  "type": "number"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "legacy",
+                "hostId",
+                "boxId",
+                "boxName",
+                "label",
+                "reason",
+                "createdBy",
+                "pinned",
+                "auto",
+                "consistency",
+                "specRevision",
+                "spec",
+                "data",
+                "system",
+                "bytes",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "checkpoint"
+          ],
+          "additionalProperties": false
+        },
+        "x-mcp": {
+          "name": "checkpoint",
+          "toolset": "self"
+        }
+      }
+    },
+    "/api/self/tasks/{id}": {
+      "get": {
+        "operationId": "self.task",
+        "tags": [
+          "self"
+        ],
+        "summary": "Get a task this box started",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "Task id, a 26-character ULID."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "cancelled",
+                        "interrupted"
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "hostId": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "params": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": [
+                              "string",
+                              "number"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "result": {},
+                    "output": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "logSeq": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "op",
+                    "status",
+                    "summary",
+                    "hostId",
+                    "createdAt",
+                    "updatedAt",
+                    "truncated",
+                    "logSeq"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "self",
+        "x-async": false,
+        "x-mcp": {
+          "name": "get_task",
+          "toolset": "self"
+        }
+      }
+    },
+    "/api/self/questions": {
+      "post": {
+        "operationId": "self.ask",
+        "tags": [
+          "self"
+        ],
+        "summary": "Ask a person a question",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000,
+                    "description": "The question to ask the person, at most 1000 characters."
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "maxItems": 10,
+                    "description": "Up to 10 choices, each one line of at most 200 characters. The answer must be one of them. Omit it, or pass an empty list, for a free-text answer."
+                  }
+                },
+                "required": [
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "answeredAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "answeredBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "boxId",
+                        "message",
+                        "options",
+                        "askedAt",
+                        "answer",
+                        "answeredAt",
+                        "answeredBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "self",
+        "x-async": false,
+        "x-mcp": {
+          "name": "ask_human",
+          "toolset": "self"
+        }
+      }
+    },
+    "/api/self/questions/{id}": {
+      "get": {
+        "operationId": "self.question",
+        "tags": [
+          "self"
+        ],
+        "summary": "Get a question this box asked",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "Question id (q_…), as the agent's ask_human call returned it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "answeredAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "answeredBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "boxId",
+                        "message",
+                        "options",
+                        "askedAt",
+                        "answer",
+                        "answeredAt",
+                        "answeredBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "self",
+        "x-async": false,
+        "x-mcp": {
+          "name": "get_question",
+          "toolset": "self"
+        }
+      }
+    },
+    "/api/self/status": {
+      "post": {
+        "operationId": "self.status",
+        "tags": [
+          "self"
+        ],
+        "summary": "Report what this box's agent is doing",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "working",
+                      "waiting",
+                      "done",
+                      "failed"
+                    ],
+                    "description": "What the agent is doing: working, waiting for a person, done, or failed."
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": "One line of plain text, at most 500 characters, saying what the state means now."
+                  }
+                },
+                "required": [
+                  "state",
+                  "note"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "self",
+        "x-async": false,
+        "x-mcp": {
+          "name": "report_status",
+          "toolset": "self"
+        }
+      }
+    },
+    "/api/boxes/{id}/self-token": {
+      "delete": {
+        "operationId": "box.self.revoke",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Revoke a box's self token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "box": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "image": {
+                          "type": "string"
+                        },
+                        "template": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "network": {
+                          "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "cpus": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "memory": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "pids": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "volume": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "stopped"
+                          ]
+                        },
+                        "idleTimeoutSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "ttlSec": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "stopReason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "idle",
+                                "ttl",
+                                "manual",
+                                "volume_limit"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sleeping": {
+                          "type": "boolean"
+                        },
+                        "lastActivityAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "containerName": {
+                          "type": "string"
+                        },
+                        "drift": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "field",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "recovery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claim",
+                                    "degraded"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "needsReset": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "observedRestart": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "at",
+                                "needsReset",
+                                "observedRestart"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "volume": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "rw",
+                                  "ro"
+                                ]
+                              },
+                              "volumeId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "volumeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "role": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "workspace",
+                                      "home",
+                                      "tools",
+                                      "cache"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "pool": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "volume",
+                              "path",
+                              "mode",
+                              "volumeId",
+                              "volumeName",
+                              "role",
+                              "pool"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "env": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "secretRef": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "storage": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ok",
+                                "unreachable",
+                                "unknown"
+                              ]
+                            },
+                            "pools": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reachable",
+                                      "unreachable",
+                                      "unknown"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "status"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "pools"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "hostId": {
+                          "type": "string"
+                        },
+                        "selfToken": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "boxId",
+                        "name",
+                        "state",
+                        "status",
+                        "running",
+                        "image",
+                        "template",
+                        "profile",
+                        "network",
+                        "cpus",
+                        "memory",
+                        "pids",
+                        "createdAt",
+                        "startedAt",
+                        "volume",
+                        "revision",
+                        "desired",
+                        "idleTimeoutSec",
+                        "ttlSec",
+                        "stopReason",
+                        "sleeping",
+                        "lastActivityAt",
+                        "labels",
+                        "createdBy",
+                        "containerName",
+                        "drift",
+                        "recovery",
+                        "mounts",
+                        "env",
+                        "tools",
+                        "storage"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "box"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:write",
+        "x-async": false
+      }
+    },
+    "/api/boxes/{id}/questions": {
+      "get": {
+        "operationId": "box.questions",
+        "tags": [
+          "questions"
+        ],
+        "summary": "List the questions a box's agent asked",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Box id: a container id, a container name, a stable box id (bx_…), or the box name."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "boxId": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "askedAt": {
+                            "type": "string"
+                          },
+                          "answer": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "answeredAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "answeredBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "boxId",
+                          "message",
+                          "options",
+                          "askedAt",
+                          "answer",
+                          "answeredAt",
+                          "answeredBy"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "questions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:read",
+        "x-async": false
+      }
+    },
+    "/api/questions/{id}/answer": {
+      "post": {
+        "operationId": "question.answer",
+        "tags": [
+          "questions"
+        ],
+        "summary": "Answer a question a box's agent asked",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "Question id (q_…), as the agent's ask_human call returned it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000,
+                    "description": "The answer, at most 1000 characters. It must be one of the question's options when it has any."
+                  }
+                },
+                "required": [
+                  "answer"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "boxId": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "answeredAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "answeredBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "boxId",
+                        "message",
+                        "options",
+                        "askedAt",
+                        "answer",
+                        "answeredAt",
+                        "answeredBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "box:write",
+        "x-async": false
       }
     }
   },

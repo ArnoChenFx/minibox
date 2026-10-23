@@ -197,3 +197,17 @@ export function takenOverError(name: string): AppError {
     },
   );
 }
+
+/** A box's agent asked for a change to the box while a person holds one of its terminals. */
+export function boxTakenOverError(name: string): AppError {
+  return new AppError(
+    409,
+    "taken_over",
+    msg("box_taken_over", { name }),
+    { box: name },
+    {
+      hint: msg("box_taken_over_hint"),
+      retryable: true,
+    },
+  );
+}

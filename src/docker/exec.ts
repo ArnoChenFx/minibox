@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import { type Duplex, PassThrough } from "node:stream";
 
 import Docker from "dockerode";
 
-import { RuntimeError, isRuntimeError, type Runtime } from "../runtime";
+import { type ExecSession, type ExecStatus, isRuntimeError, type Runtime, RuntimeError } from "../runtime";
 import { call, within, type Engine } from "./engine";
 
 /**
@@ -287,12 +288,22 @@ function streamEnds(stream: Duplex, ms: number): Promise<void> {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-type ExecMethods = Pick<Runtime, "startExec">;
+const WRITE_FILE_MS = 30_000;
+
+async function untilExited(session: ExecSession): Promise<ExecStatus> {
+  for (;;) {
+    const status = await session.inspect();
+    if (!status.running) return status;
+    await sleep(50);
+  }
+}
+
+type ExecMethods = Pick<Runtime, "startExec" | "writeContainerFile">;
 
 export function execMethods(engine: Engine): ExecMethods {
   const { docker } = engine;
 
-  return {
+  const methods: ExecMethods = {
     async startExec(containerId, spec) {
       // Every exec runs through the wrapper, terminal included, so kill() can stop its process tree from inside the box.
       // Absent tty is the web terminal: one stream. Command exec sets tty false so stdout and stderr stay separate.
@@ -342,5 +353,31 @@ export function execMethods(engine: Engine): ExecMethods {
         },
       };
     },
+    async writeContainerFile(containerId, path, data, { user, mode }) {
+      const umask = (~mode & 0o777).toString(8).padStart(3, "0");
+      const session = await methods.startExec(containerId, {
+        cmd: ["/bin/sh", "-c", 'rm -f -- "$1" && umask "$2" && cat > "$1"', "sh", path, umask],
+        env: [],
+        workingDir: "/",
+        tty: false,
+        user,
+      });
+      let stderr = "";
+      session.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
+      session.stdout.resume();
+      const ended = once(session.stdout, "end");
+      session.stream.end(data);
+      const status = await within(
+        ended.then(() => untilExited(session)),
+        WRITE_FILE_MS,
+      );
+      if (!status) throw new RuntimeError("engine", `writing ${path} in ${containerId} did not finish`);
+      if (status.exitCode !== 0) {
+        throw new RuntimeError("engine", `writing ${path} in ${containerId} failed: ${stderr.trim() || "no output"}`);
+      }
+    },
   };
+  return methods;
 }

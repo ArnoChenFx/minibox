@@ -78,6 +78,11 @@ export interface BoxSpec {
    * secrets, so it is returned only to callers that may use them, and it stays out of events and audit records.
    */
   startupCommand?: string;
+  /**
+   * The box's agent holds a `self` token, which MiniBox issues at every start and revokes at every stop. Absent or false
+   * when the box has none. The container gets the tmpfs the token file lives in only when it is created with this set.
+   */
+  selfToken?: boolean;
   /** User labels. Mutable, and never copied onto the container. */
   labels: Record<string, string>;
   lifecycle: {
