@@ -25,7 +25,7 @@ export interface ReconcileReport {
   rollbacksSettled: string[];
   /** Helper secret volumes a crash left behind, removed. */
   secretsRemoved: string[];
-  /** Engine names of shared tools volumes the engine had lost. Each is recreated empty on this pass. */
+  /** Engine names of shared tools volumes the engine had lost. Each is recreated on this pass. */
   toolsRecreated: string[];
   /** Egress proxies and private networks that no box spec names, removed. These are container and network names. */
   egressRemoved: string[];

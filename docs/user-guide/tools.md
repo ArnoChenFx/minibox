@@ -32,7 +32,7 @@ Some tools need root, and a system service. MiniBox never runs those. The catalo
 
 Tools go to the shared tools volume, which is mounted read-only in each box. Each tool's program files are shared by every box on that host that uses the same pool's tools volume. A tool that you install into one box is available to the other boxes that share that volume.
 
-If the engine loses the shared tools volume, MiniBox recreates it empty. The tools that were on it show as not installed. Click **Install missing** to install them again. See [Volumes and storage](volumes-and-storage.md#when-the-engine-loses-a-volume).
+If the engine loses the shared tools volume, MiniBox recreates it. On a local pool the volume comes back empty, so the tools that were on it show as not installed. Click **Install missing** to install them again. See [Volumes and storage](volumes-and-storage.md#when-the-engine-loses-a-volume).
 
 ## Tailscale
 

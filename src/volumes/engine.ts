@@ -460,9 +460,10 @@ export function findSharedTools(host: HostCtx, poolName: string): VolumeRecord |
 
 /**
  * Recreates the engine volume of a shared tools record that the engine no longer has. The record and its engine name stay,
- * so the boxes that mount the volume find it again. It comes back empty: the tools installed in it are gone until a box
- * installs them again. Nothing is undone afterwards, because the record still puts the volume on this host, and removing
- * the empty volume would only restore the state this repairs. The caller holds the volume lock, or uses `healSharedTools`.
+ * so the boxes that mount the volume find it again. On a local pool the volume comes back empty, so the tools installed
+ * in it are gone until a box installs them again. An NFS or path volume reuses its directory, so its tools remain.
+ * Nothing is undone afterwards, because the record still puts the volume on this host, and removing the volume again
+ * would only restore the state this repairs. The caller holds the volume lock, or uses `healSharedTools`.
  * Returns false when the engine already has the volume.
  */
 export async function restoreSharedTools(host: HostCtx, volume: VolumeRecord, known: Set<string>): Promise<boolean> {

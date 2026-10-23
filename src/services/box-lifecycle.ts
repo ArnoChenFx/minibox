@@ -44,7 +44,7 @@ async function setDesired(
 
 /**
  * Start and restart refuse a box whose pool is unreachable or whose volume is gone, instead of letting Docker recreate it.
- * The exception is a shared tools volume the engine lost, which is recreated empty first.
+ * The exception is a shared tools volume the engine lost, which is recreated first.
  */
 async function ensureRunningStorage(host: HostCtx, box: Box): Promise<void> {
   const spec = host.specs.read(box.boxId);

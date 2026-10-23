@@ -62,7 +62,7 @@ When you delete a box, you can also delete the volumes that the box owns. See [B
 
 MiniBox records each volume, and the engine keeps its data. If the engine loses a volume that MiniBox still has a record for, the **Volumes** tab shows **Engine volume missing** on that volume.
 
-The shared **Tools** volume is recreated for you. When a box is created, started, rebuilt or moved to a host, when a tool is installed or listed, and at startup, MiniBox recreates an empty tools volume under the same name. The activity list shows **Recreated volume**. The tools that were on the volume are gone, so they show as not installed. To install them again, click **Install missing** on a box's **Tools** tab.
+The shared **Tools** volume is recreated for you. When a box is created, started, rebuilt or moved to a host, when a tool is installed or listed, and at startup, MiniBox recreates the tools volume under the same name. The activity list shows **Recreated volume**. On a local pool the volume comes back empty, so the tools that were on it are gone and show as not installed. To install them again, click **Install missing** on a box's **Tools** tab. On an NFS or path pool the volume reuses its directory on the share, so the tools on it are still there.
 
 The workspace, home and cache volumes hold your data, so MiniBox does not recreate them. A box that mounts one of them does not start until you restore the engine volume. If you no longer need that data, delete the box and keep its volumes, then delete the volume. Deleting a volume the engine lost keeps no copy, because the engine no longer has its data.
 
