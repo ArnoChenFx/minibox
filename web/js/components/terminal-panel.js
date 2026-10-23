@@ -101,6 +101,15 @@ export function mountTerminal(root, { box, onChange, rerender, session = "" }) {
   };
 }
 
+/**
+ * One session's chip: its name, and who created it. A session without an origin mark reads as an agent's, as the API
+ * says.
+ */
+export function sessionChipHtml(session, current) {
+  const origin = session.origin === "human" ? t("bd.originHuman") : t("bd.originAgent");
+  return `<button type="button" class="session-chip" data-session="${esc(session.name)}" aria-pressed="${session.name === current}" title="${esc(origin)}">${icon("terminal")}<span class="mono">${esc(session.name)}</span><span class="chip-meta">${esc(origin)}</span></button>`;
+}
+
 /** What the tab shows in place of the terminal while the box is not running. */
 function offlineView(state) {
   if (state === "expired") {
@@ -163,14 +172,7 @@ function mountLive(root, b, session) {
 
   const renderList = () => {
     list.innerHTML = sessions.length
-      ? sessions
-          .map(
-            (
-              s,
-            ) => `<button type="button" class="session-chip" data-session="${esc(s.name)}" aria-pressed="${s.name === current}" title="${esc(s.origin === "human" ? t("bd.originHuman") : t("bd.originAgent"))}">
-              ${icon("terminal")}<span class="mono">${esc(s.name)}</span><span class="chip-meta">${esc(s.controller === "human" ? t("bd.chipYou") : t("bd.chipAgent"))}</span></button>`,
-          )
-          .join("")
+      ? sessions.map((s) => sessionChipHtml(s, current)).join("")
       : `<span class="subtle">${t("bd.noSessions")}</span>`;
     root.querySelector("#tTitle").textContent = current ? `${b.name}: ${current}` : b.name;
   };

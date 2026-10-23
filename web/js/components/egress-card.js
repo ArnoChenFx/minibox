@@ -56,7 +56,7 @@ export function egressCardHtml({ box, denials = null, denialsError = "" }) {
       </dl>
       <div class="stack"><span class="label">${esc(t("egress.denials"))}</span><p class="help">${esc(t("egress.denialsHelp"))}</p>${denialsHtml(denials, denialsError)}</div>`
     : "";
-  return `<div class="card" style="margin-top:16px">
+  return `<div class="card">
     <div class="card-head"><h3>${esc(t("egress.section"))}</h3></div>
     <div class="card-body stack">
       <div class="egress-tier"><span class="badge ${TIER_TONE[mode] ?? ""}">${esc(t(tierKey(mode)))}</span><span class="help">${esc(t(tierHintKey(mode)))}</span></div>

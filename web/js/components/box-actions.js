@@ -5,6 +5,7 @@ import { cpus as formatCpus, dateTime, gbOrMb } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { canonicalMounts } from "../lib/mounts.js";
+import { movedBoxHash } from "../lib/routes.js";
 import { hostNow, refreshHost } from "../lib/store.js";
 import { checkboxField, confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
@@ -307,7 +308,8 @@ export async function openRebuild(box) {
       toast(t("rb.done"), { message: t("rb.doneText", { name: box.name }) + safety });
       refreshHost();
       const next = result?.box?.id;
-      if (next && next !== box.id) location.hash = `#/boxes/${next}`;
+      const address = next && next !== box.id ? movedBoxHash(location.hash, box.id, next) : null;
+      if (address) location.hash = address;
     } catch (err) {
       root.querySelector("#rbErr").textContent = err?.message ?? String(err);
       toastError(t("rb.failed"), err);

@@ -62,6 +62,10 @@ function toolRow(tool, isCustom) {
   </tr>`;
 }
 
+/**
+ * The box's tool catalog with its groups. The groups start open; each folds from its header. A search always shows its
+ * matches, whichever groups are folded.
+ */
 export function mountTools(root, { box, refreshBox }) {
   const collapsed = new Set();
   const pending = new Set();
@@ -95,9 +99,10 @@ export function mountTools(root, { box, refreshBox }) {
       })}</td></tr>`;
       return;
     }
+    const searching = query.trim() !== "";
     body.innerHTML = groupTools(matches)
       .map((group) => {
-        const isCollapsed = collapsed.has(group.id);
+        const isCollapsed = !searching && collapsed.has(group.id);
         const rows = group.rows.map((tool) => toolRow(tool, custom.has(tool.id))).join("");
         return toolGroupRow(group, isCollapsed) + (isCollapsed ? "" : rows);
       })

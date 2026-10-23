@@ -2,6 +2,7 @@ import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { hostName, hostsNow, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
+import { movedBoxHash } from "../lib/routes.js";
 import { refreshHost } from "../lib/store.js";
 import { openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
@@ -125,7 +126,8 @@ async function followMove(box, taskId, to) {
     toast(t("mv.done"), { message: t("mv.doneText", { name: box.name, to: hostName(to) }) });
     refreshHost();
     const next = task.result?.box?.id;
-    if (next && location.hash === `#/boxes/${enc(box.id)}` && next !== box.id) location.hash = `#/boxes/${enc(next)}`;
+    const address = next && next !== box.id ? movedBoxHash(location.hash, box.id, next) : null;
+    if (address) location.hash = address;
     return;
   }
   toast(t("mv.failed"), {

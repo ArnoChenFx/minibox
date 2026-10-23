@@ -19,7 +19,7 @@ If you tick tools, MiniBox installs them after the box starts. Follow the progre
 
 ## Manage tools in a box
 
-Open the box, and click the **Tools** tab. The table shows each tool's **Desired** state and its **Installed** state.
+Open the box, click **Settings**, and then **Tools**. The table shows each tool's **Desired** state and its **Installed** state. The groups start open: fold a group from its header, or search for a tool to see its matches in every group.
 
 - **Install** adds a catalog tool to the shared tools volume and to the box's tool list.
 - **Upgrade** refreshes an installed tool to the current catalog version on that volume.
@@ -52,7 +52,7 @@ Keep these points in mind:
 
 Only the owner of the MiniBox installation can add or change custom tools. Custom tools are not available to agent tokens.
 
-1. Open a box, click the **Tools** tab, and click **Custom tool**.
+1. Open a box, click **Settings**, then **Tools**, and click **Custom tool**.
 2. Fill in the form:
    - **Id**: lowercase letters, digits and hyphens, starting with a letter.
    - **Name**, **Description** and **Category**.

@@ -5,7 +5,7 @@ A box can stop itself when nothing has used it for a while. This is called sleep
 ## Idle sleep
 
 - The administrator sets the default idle timeout with `BOX_IDLE_TIMEOUT_SEC`. The default is `0`, which means idle sleep is off.
-- Each box can use the default timeout, or its own. The box's **Overview** tab shows its **Idle timeout**: **Global default**, **Never sleep**, or the box's own number of seconds.
+- Each box can use the default timeout, or its own. The box's **Settings** tab, under **Lifecycle**, shows its **Idle timeout**: **Global default**, **Never sleep**, or the box's own number of seconds.
 - A box sleeps when all of these are true:
   - Nothing is using it.
   - Nothing has used it for at least the timeout.
