@@ -78,6 +78,7 @@ export default {
   "act.target.remove": "Removed off-site target",
   "act.target.push": "Pushed to off-site target",
   "act.target.pull": "Pulled from off-site target",
+  "act.mcp.owner_key": "Used owner access key on /mcp",
   "box.create": "Create box",
   "bx.subtitle": "Each box is an isolated dev environment that agents can use via the terminal or the API.",
   "bx.search": "Search by name or template",

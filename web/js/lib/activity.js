@@ -81,6 +81,7 @@ export const ACTION_ICON = {
   "target.remove": "trash",
   "target.push": "upload",
   "target.pull": "download",
+  "mcp.owner_key": "key",
 };
 
 /** An action without a label, such as one a newer server records, read as words: `notify.channel.test` → "Notify channel test". */

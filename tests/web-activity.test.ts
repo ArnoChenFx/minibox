@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { OWNER_KEY_OP } from "../src/mcp/owner-key";
 import { OPERATIONS } from "../src/operations/registry";
 import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
@@ -15,12 +16,14 @@ const PROBES: Record<string, unknown>[] = [
   { action: "restart" },
 ];
 
+/** The MCP gate records the owner access key's use on /mcp itself, so the registry scan does not reach it. */
 const recorded = [
-  ...new Set(
-    OPERATIONS.flatMap((operation) =>
+  ...new Set([
+    OWNER_KEY_OP,
+    ...OPERATIONS.flatMap((operation) =>
       operation.activity ? PROBES.map((input) => operation.activity?.action(input) ?? "") : [],
     ),
-  ),
+  ]),
 ]
   .filter((action) => action && !action.includes("undefined"))
   .toSorted();
