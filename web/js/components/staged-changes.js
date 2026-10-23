@@ -46,7 +46,7 @@ export function stagedField(staged, field) {
   return staged?.pending?.includes(field) ? staged.fields[field] : null;
 }
 
-function parseMounts(text) {
+function parseList(text) {
   try {
     const rows = JSON.parse(text);
     return Array.isArray(rows) ? rows : null;
@@ -62,8 +62,8 @@ const modeText = (mode) => t(mode === "ro" ? "vol.modeRo" : "vol.modeRw");
  * side is not the JSON a rebuild plan names mounts in.
  */
 export function mountLines(change) {
-  const before = parseMounts(change.from);
-  const after = parseMounts(change.to);
+  const before = parseList(change.from);
+  const after = parseList(change.to);
   if (!before || !after) return null;
   const old = new Map(before.map((row) => [row.path, row]));
   const now = new Map(after.map((row) => [row.path, row]));
@@ -79,14 +79,42 @@ export function mountLines(change) {
   return lines;
 }
 
+const envValue = (entry) =>
+  entry.secretRef ? t("env.secretLabel", { name: entry.secretRef }) : String(entry.value ?? "");
+
+/**
+ * The variables a change adds, removes or sets to another value, one line each by name. Null when either side is not
+ * the JSON a rebuild plan names the environment in, such as the note about a rotated secret.
+ */
+export function envLines(change) {
+  const before = parseList(change.from);
+  const after = parseList(change.to);
+  if (!before || !after) return null;
+  const old = new Map(before.map((entry) => [entry.name, entry]));
+  const now = new Map(after.map((entry) => [entry.name, entry]));
+  const lines = [];
+  for (const entry of after) {
+    const was = old.get(entry.name);
+    if (!was) lines.push(`+ ${entry.name}=${envValue(entry)}`);
+    else if (envValue(was) !== envValue(entry)) lines.push(`~ ${entry.name}: ${envValue(was)} → ${envValue(entry)}`);
+  }
+  for (const entry of before) if (!now.has(entry.name)) lines.push(`− ${entry.name}`);
+  return lines;
+}
+
+const LINES_OF = { mounts: mountLines, env: envLines };
+
 function changeLines(change) {
   const label = t(`rebuild.field.${change.field}`);
-  const mounts = change.field === "mounts" ? mountLines(change) : null;
-  if (mounts?.length) return [`${label}:`, ...mounts.map((line) => `  ${line}`)];
+  const rows = LINES_OF[change.field]?.(change) ?? null;
+  if (rows?.length) return [`${label}:`, ...rows.map((line) => `  ${line}`)];
   return [`${label}: ${changeText(change, change.from)} → ${changeText(change, change.to)}`];
 }
 
-/** The planned changes: field, then the value before and after. Mounts list each path that changes on its own line. */
+/**
+ * The planned changes: field, then the value before and after. Mounts list each path that changes on its own line, and
+ * the environment each variable.
+ */
 export function changesHtml(changes) {
   const lines = (changes ?? []).flatMap(changeLines);
   return `<pre class="mono staged-changes">${esc(lines.join("\n") || "—")}</pre>`;
