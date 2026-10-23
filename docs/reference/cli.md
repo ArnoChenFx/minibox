@@ -54,6 +54,9 @@ Creates and starts a box. It starts from the base template unless you choose ano
 | `--cpus N` | CPU cores for the box |
 | `--memory MB` | Memory limit, in MB |
 | `--profile P` | Security profile: `standard`, `strict` or `relaxed`. Default: the `BOX_PROFILE` setting, `standard` unless changed. |
+| `--egress MODE` | Network egress: `open` (the default), `none` or `proxy-only`. See [Network egress](../admin/network-egress.md). |
+| `--egress-preset NAME` | With `--egress proxy-only`: a preset of allowed hosts, `agent-default` or `package-registries`. Repeat it for more presets. |
+| `--egress-domain HOST` | With `--egress proxy-only`: an extra allowed host, such as `pypi.org` or `*.example.com`. Repeat it for more hosts. |
 | `--repo URL` | Clones a Git repository into `/workspace` on the first create. See [Clone a repository](../user-guide/boxes.md#clone-a-repository). |
 | `--branch BRANCH` | With `--repo`: a branch or tag. Default: the repository's default branch. |
 | `--secret NAME` | With `--repo`: the secret that holds a token or deploy key |
@@ -67,6 +70,8 @@ With `--repo`, the command waits for the clone. If the clone fails, the box is k
 ```bash
 minibox box create my-app --template node-tools --repo https://github.com/example/app.git --branch main --secret GITHUB_TOKEN
 minibox box create my-box --cpus 2 --memory 4096 --startup-command "python3 -m http.server 8000"
+minibox box create offline --egress none
+minibox box create agent --egress proxy-only --egress-preset agent-default --egress-domain pypi.org
 ```
 
 ### `minibox box startup-command <subcommand> <box> [options]`
