@@ -60,7 +60,7 @@
   color: var(--text-3);
 }
 
-/* The tool picker in the create dialog. Its heading is `.picker-head` in lists.css. */
+/* The tool picker in the create dialog. Its heading is `.fold-head` in lists.css. */
 .tool-groups {
   display: flex;
   flex-direction: column;

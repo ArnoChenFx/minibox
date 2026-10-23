@@ -4,6 +4,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { toastError, openDialog, confirmDialog, toast } from "../lib/ui.js";
 import { rebuildPreviewHtml } from "./box-actions.js";
+import { mountModeLabel } from "./mount-editor.js";
 import { usageInlineHtml } from "./volume-usage.js";
 
 const ROLE_LABEL = {
@@ -23,7 +24,7 @@ export function mountsCard(box, volumes) {
         <td class="mono">${esc(mount.path)}</td>
         <td>${esc(mount.volumeName || mount.volume)}</td>
         <td>${mount.role ? esc(t(ROLE_LABEL[mount.role])) : "—"}</td>
-        <td>${esc(mount.mode)}</td>
+        <td>${esc(mountModeLabel(mount.mode))}</td>
         <td>${esc(mount.pool || "—")}</td>
         <td>${usageInlineHtml(volumes.get(mount.volumeId))}</td>
         <td>${detach}</td>
@@ -65,7 +66,7 @@ export async function attachVolume(box) {
       onClose: () => resolve(value),
       body: `<label class="field"><span>${t("vol.choose")}</span><select class="select" id="m-vol">${options}</select></label>
         <label class="field"><span>${t("vol.pathLabel")}</span><input class="input" id="m-path" value="/srv/data" /></label>
-        <label class="field"><span>${t("vol.colMode")}</span><select class="select" id="m-mode"><option value="rw">${esc(t("vol.modeRw"))}</option><option value="ro">${esc(t("vol.modeRo"))}</option></select></label>`,
+        <label class="field"><span>${t("vol.colMode")}</span><select class="select" id="m-mode"><option value="rw">${esc(mountModeLabel("rw"))}</option><option value="ro">${esc(mountModeLabel("ro"))}</option></select></label>`,
       footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="m-ok">${t("vol.attach")}</button>`,
     });
     const vol = root.querySelector("#m-vol");
