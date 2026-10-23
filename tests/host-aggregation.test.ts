@@ -149,3 +149,41 @@ describe("a failure on the local host still fails the list", () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("docker_unavailable");
   });
 });
+
+async function pingsOnTick(): Promise<number> {
+  const before = edge.callsTo("ping").length;
+  await app.hostAdmin.probeDue();
+  return edge.callsTo("ping").length - before;
+}
+
+describe("the background check backs off for a host that stays offline", () => {
+  test("an offline host is checked on fewer ticks after each failure, and no more than every five minutes", async () => {
+    edge.down = true;
+    const checked: number[] = [];
+    for (let tick = 0; tick < 16; tick++) checked.push(await pingsOnTick());
+    expect(checked).toEqual([1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1]);
+    expect(app.hosts.get("edge").host.status).toBe("offline");
+  });
+
+  test("a host that answers again is online by its next turn, and is then checked on every tick", async () => {
+    edge.down = true;
+    for (let tick = 0; tick < 8; tick++) await pingsOnTick();
+    edge.down = false;
+    let ticks = 0;
+    while (app.hosts.get("edge").host.status !== "online" && ticks < 12) {
+      await app.hostAdmin.probeDue();
+      ticks += 1;
+    }
+    expect(app.hosts.get("edge").host.status).toBe("online");
+    expect(ticks).toBeLessThanOrEqual(10);
+    expect([await pingsOnTick(), await pingsOnTick()]).toEqual([1, 1]);
+  });
+
+  test("an explicit refresh checks an offline host at once, whatever its backoff", async () => {
+    edge.down = true;
+    for (let tick = 0; tick < 4; tick++) await pingsOnTick();
+    const before = edge.callsTo("ping").length;
+    await app.hostAdmin.refresh();
+    expect(edge.callsTo("ping").length - before).toBe(1);
+  });
+});
