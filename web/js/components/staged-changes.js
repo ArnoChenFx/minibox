@@ -174,6 +174,10 @@ async function applyStaged(box) {
     });
   } catch (err) {
     toastError(t("stg.applyFailed"), err);
+    // The staged changes may have moved on (a 412) or gone; the banner shows them as they now stand.
+    fetchStaged(fresh.id)
+      .then((staged) => announceStaged(fresh.boxId, staged))
+      .catch(() => undefined);
     return false;
   }
   const safety = result?.safety ? ` ${t("rb.safetyTaken")}` : "";

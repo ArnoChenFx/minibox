@@ -206,8 +206,8 @@ async function sessionCount(host: HostCtx, box: Box, terminals: TerminalService 
 }
 
 /**
- * Rebuilds the box with its staged changes and clears them once the rebuild has succeeded. With `checkpoint`, a
- * checkpoint of the box's data and writable layer is taken first. A failed rebuild leaves the box and the staged
+ * Rebuilds the box with its staged changes and clears them once the rebuild has succeeded, unless more were staged
+ * while it ran. With `checkpoint`, a checkpoint of the box's data and writable layer is taken first. A failed rebuild leaves the box and the staged
  * changes as they were. With `stagedAt`, changes staged after that preview are refused with 412 and nothing is done.
  */
 export async function applyStaged(
@@ -234,6 +234,7 @@ export async function applyStaged(
     record,
     checkpoint ? preRebuildSafety(host, principalId, { system: true }) : null,
   );
-  host.specs.staged.remove(box.boxId);
+  // A change staged while the rebuild ran is kept: its fields that the rebuild applied drop out when it is next read.
+  if (host.specs.staged.read(box.boxId)?.updatedAt === staged.updatedAt) host.specs.staged.remove(box.boxId);
   return result;
 }
