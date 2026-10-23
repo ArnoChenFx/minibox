@@ -96,6 +96,14 @@ export interface Config {
    * the check off.
    */
   hostDiskMinFreePercent: number;
+  /** TCP port of the direct SSH listener, or null when it is off. Standard SSH clients connect to it without the CLI. */
+  sshPort: number | null;
+  /** Address the direct SSH listener binds to. Defaults to HOST. */
+  sshBind: string;
+  /** Host name the console shows for direct SSH, when clients reach the port under another name. Null uses the page's host. */
+  sshPublicHost: string | null;
+  /** Port the console shows for direct SSH, when a port mapping or forward changes it. Null shows SSH_PORT. */
+  sshPublicPort: number | null;
 }
 
 /** Parse a dotenv-style file (KEY=VALUE, `#` comments, optional quotes). */
@@ -248,9 +256,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 
   const labelPrefix = get("LABEL_PREFIX")?.trim() || "minibox";
   const level = get("LOG_LEVEL");
+  const host = get("HOST")?.trim() || "127.0.0.1";
+  const port = intOr(get("PORT"), 3920);
+  const sshPort = parsePort(get("SSH_PORT"), "SSH_PORT");
+  if (sshPort !== null && sshPort === port) throw new Error(`SSH_PORT: ${sshPort} is already the web PORT`);
   return {
-    host: get("HOST")?.trim() || "127.0.0.1",
-    port: intOr(get("PORT"), 3920),
+    host,
+    port,
     accessKey,
     accessKeySource,
     dataDir,
@@ -293,7 +305,29 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     volumeUsageIntervalSec: intInRange(get("VOLUME_USAGE_INTERVAL_SEC"), 600, 60, 86400),
     hostDiskMinFreePercent: intInRange(get("HOST_DISK_MIN_FREE_PERCENT"), 10, 0, 100),
     blockHostGateway: isTruthy(get("BLOCK_HOST_GATEWAY")),
+    sshPort,
+    sshBind: nonBlank(get("SSH_BIND")) ?? host,
+    sshPublicHost: parsePublicHost(get("SSH_PUBLIC_HOST")),
+    sshPublicPort: parsePort(get("SSH_PUBLIC_PORT"), "SSH_PUBLIC_PORT"),
   };
+}
+
+/** A TCP port from 1 to 65535. Blank means unset; anything else stops startup, so a typo does not open a random port. */
+function parsePort(value: string | undefined, name: string): number | null {
+  const v = nonBlank(value);
+  if (v === undefined) return null;
+  const n = Number(v);
+  if (!/^\d+$/.test(v) || n < 1 || n > 65535) throw new Error(`${name}: "${v}" must be a port from 1 to 65535`);
+  return n;
+}
+
+const PUBLIC_HOST_RE = /^[A-Za-z0-9.:[\]-]{1,253}$/;
+
+function parsePublicHost(value: string | undefined): string | null {
+  const v = nonBlank(value);
+  if (v === undefined) return null;
+  if (!PUBLIC_HOST_RE.test(v)) throw new Error(`SSH_PUBLIC_HOST: "${v}" must be a host name or an IP address`);
+  return v;
 }
 
 /** Lay out DATA_DIR at startup. A failure is logged rather than fatal: only generating a key needs it writable. */

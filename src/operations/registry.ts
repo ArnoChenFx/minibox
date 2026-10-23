@@ -16,6 +16,7 @@ import { secretOperations } from "./secrets";
 import { selfOperations } from "./self";
 import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
+import { sshKeyOperations } from "./ssh-keys";
 import { stagedOperations } from "./staged";
 import { startupOperations } from "./startup";
 import { targetOperations } from "./targets";
@@ -38,6 +39,7 @@ export const OPERATIONS: readonly Operation[] = [
   ...volumeOperations,
   ...toolOperations,
   ...secretOperations,
+  ...sshKeyOperations,
   ...sessionOperations,
   ...snapshotOperations,
   ...checkpointOperations,

@@ -68,6 +68,10 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     volumeUsageIntervalSec: 600,
     hostDiskMinFreePercent: 10,
     blockHostGateway: false,
+    sshPort: null,
+    sshBind: "127.0.0.1",
+    sshPublicHost: null,
+    sshPublicPort: null,
     ...overrides,
   };
 }

@@ -31,3 +31,17 @@ export function connectCommands(name) {
   const host = sshHost(name);
   return [`ssh ${host}`, `scp ./file ${host}:/workspace/`].join("\n");
 }
+
+/**
+ * Where a standard SSH client connects. The server names the host when SSH_PUBLIC_HOST is set; otherwise it is the host
+ * the console was opened on. Null when direct SSH is off.
+ */
+export function directAddress(direct, hostname) {
+  if (!direct || !Number.isInteger(direct.port)) return null;
+  return { host: direct.host || hostname, port: direct.port };
+}
+
+/** The one-line OpenSSH command for a direct connection. The username is the box name; port 22 needs no flag. */
+export function directCommand(user, { host, port }) {
+  return port === 22 ? `ssh ${user}@${host}` : `ssh -p ${port} ${user}@${host}`;
+}

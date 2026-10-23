@@ -6,6 +6,7 @@ export const SETTINGS_SECTIONS = [
   { id: "sessions", label: "st.sessions" },
   { id: "tokens", label: "st.tokens" },
   { id: "secrets", label: "st.secrets" },
+  { id: "ssh-keys", label: "st.sshKeys" },
   { id: "notify", label: "st.notify" },
   { id: "targets", label: "st.targets" },
   { id: "hosts", label: "st.hosts" },

@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- 直连 SSH（[#195](https://github.com/ArnoChenFx/minibox/issues/195)）：设置 `SSH_PORT` 后，MiniBox 开放一个 TCP SSH 端口，Termius 等 SSH 应用或普通的 `ssh` 无需 `minibox` 命令行工具即可连接 Box。用户名为 Box 的名称或 ID；密码为带 `box:ssh` 权限的 Agent 令牌（令牌的 Box 限制同样生效），或足够强的访问密钥；也可用私钥登录，其公钥由所有者在「设置 › SSH 公钥」中添加（显示标签、指纹、添加与最近使用时间）。直连与经命令行工具的 SSH 共用同一个主机密钥、同样的拒绝规则与连接上限；已停止的 Box 在连接时启动。不存在的 Box 与错误的凭据得到相同的拒绝；同一地址多次失败后按指数退避锁定，未认证连接数与每个连接的尝试次数也有上限；每次登录都连同客户端地址与方式记入活动日志，从不记录密码。Box 的 SSH 对话框新增「SSH 客户端」标签页，列出主机、端口、用户名与主机密钥指纹，均可一键复制。新增配置 `SSH_PORT`、`SSH_BIND`（默认同 `HOST`）、`SSH_PUBLIC_HOST` 与 `SSH_PUBLIC_PORT`；接口为 `GET/POST /api/ssh-keys` 与 `DELETE /api/ssh-keys/{id}`（仅所有者），`GET /api/ssh/host-key` 新增 `direct` 字段。
+
 ### 修复
 - 宿主机上没有基础模板镜像时，新建 Box 的工具安装不再失败。工具安装、卷准备、文件浏览、代码克隆、出站代理与检查点恢复的辅助容器，以及从基础模板新建的 Box，会在需要时先构建基础模板（同时需要时只构建一次），只有构建失败时才报错并给出原因。通过 Agent 连接的宿主机不能构建镜像，仍需复制模板过去（[#193](https://github.com/ArnoChenFx/minibox/issues/193)）。
 

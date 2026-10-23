@@ -3502,5 +3502,61 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"ok\":true}"
+  },
+  {
+    "step": "list SSH keys with none",
+    "method": "GET",
+    "path": "/api/ssh-keys",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"keys\":[]}"
+  },
+  {
+    "step": "add an SSH key",
+    "method": "POST",
+    "path": "/api/ssh-keys",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"key\":{\"id\":\"sk_<sshKey>\",\"label\":\"laptop\",\"algorithm\":\"ssh-ed25519\",\"fingerprint\":\"SHA256:aH4Dc4oNI3sbgz6u5Gi+1j5TPeqm49wINPaTaP/ZBoI\",\"publicKey\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE8d1T0l/tZAUL3o6B4VSlhu/I57QvxHqNchsKhABjJh\",\"createdAt\":\"<time>\",\"lastUsedAt\":null}}"
+  },
+  {
+    "step": "add the same SSH key again",
+    "method": "POST",
+    "path": "/api/ssh-keys",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"This key is already added, as laptop.\",\"retryable\":false,\"key\":\"ssh_key_taken\",\"params\":{\"label\":\"laptop\"}}}"
+  },
+  {
+    "step": "add a malformed SSH key",
+    "method": "POST",
+    "path": "/api/ssh-keys",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"That is not an SSH public key. Paste one line such as ssh-ed25519 AAAA... you@laptop.\",\"retryable\":false,\"key\":\"ssh_key_invalid\"}}"
+  },
+  {
+    "step": "list SSH keys",
+    "method": "GET",
+    "path": "/api/ssh-keys",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"keys\":[{\"id\":\"sk_<sshKey>\",\"label\":\"laptop\",\"algorithm\":\"ssh-ed25519\",\"fingerprint\":\"SHA256:aH4Dc4oNI3sbgz6u5Gi+1j5TPeqm49wINPaTaP/ZBoI\",\"publicKey\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE8d1T0l/tZAUL3o6B4VSlhu/I57QvxHqNchsKhABjJh\",\"createdAt\":\"<time>\",\"lastUsedAt\":null}]}"
+  },
+  {
+    "step": "delete an SSH key",
+    "method": "DELETE",
+    "path": "/api/ssh-keys/sk_<sshKey>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"key\":{\"id\":\"sk_<sshKey>\",\"label\":\"laptop\",\"algorithm\":\"ssh-ed25519\",\"fingerprint\":\"SHA256:aH4Dc4oNI3sbgz6u5Gi+1j5TPeqm49wINPaTaP/ZBoI\",\"publicKey\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE8d1T0l/tZAUL3o6B4VSlhu/I57QvxHqNchsKhABjJh\",\"createdAt\":\"<time>\",\"lastUsedAt\":null}}"
+  },
+  {
+    "step": "delete a missing SSH key",
+    "method": "DELETE",
+    "path": "/api/ssh-keys/sk_<sshKey>",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"SSH key not found.\",\"retryable\":false,\"key\":\"ssh_key_not_found\"}}"
   }
 ]

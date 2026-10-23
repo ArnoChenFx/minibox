@@ -1,4 +1,9 @@
+import type { Socket } from "node:net";
+
+import type { AuthContext } from "ssh2";
+
 import type { Caller } from "../auth";
+import type { Source } from "../events/types";
 import type { BoxFrame } from "../host/live";
 import type { HostCtx } from "../host/registry";
 import { AppError, forbidden } from "../lib/errors";
@@ -16,6 +21,12 @@ export interface SshGatewayOptions {
   readonly hostKey: HostKey;
   readonly pulse: ActivityPulse;
   readonly record: RecordNote;
+}
+
+/** How a connection reached the gateway, for its audit events. */
+export interface SshEntry {
+  readonly source: Source;
+  readonly via?: Readonly<Record<string, string>>;
 }
 
 /** A WebSocket's place in the connection limits. It is taken before the box wakes and given back when the socket ends. */
@@ -48,14 +59,19 @@ export class SshGateway {
     return (this.perBox.get(boxId) ?? 0) > 0;
   }
 
-  async enter(host: HostCtx, ref: string, caller: Caller): Promise<SshLease> {
+  /**
+   * Checks the caller, takes a slot and wakes the box. `entry` is how the connection arrived: a WebSocket records as
+   * `rest`, and a direct login records as `ssh` with its source IP and method in `via`.
+   */
+  async enter(host: HostCtx, ref: string, caller: Caller, entry: SshEntry = { source: "rest" }): Promise<SshLease> {
     const { box, forward } = await this.authorize(host, ref, caller);
     const release = this.admit(box.boxId);
     try {
       const awake = await awakeBox(host, box.boxId, (note) =>
-        this.options.record(host.host.id, "rest", caller.principal, note),
+        this.options.record(host.host.id, entry.source, caller.principal, note),
       );
-      return { target: { host, box: awake, principal: caller.principal, source: "rest", forward }, release };
+      const target: SshTarget = { host, box: awake, principal: caller.principal, source: entry.source, forward };
+      return { target: entry.via ? { ...target, via: entry.via } : target, release };
     } catch (error) {
       release();
       throw error;
@@ -74,27 +90,86 @@ export class SshGateway {
   connect(lease: SshLease, socket: FrameSocket): SshConnection {
     const boxId = lease.target.box.boxId;
     const connection = new SshConnection(
-      lease.target,
+      { kind: "fixed", target: lease.target },
       {
         hostKey: this.options.hostKey.privateKey,
         pulse: this.options.pulse,
         record: this.options.record,
         onEnd: () => {
-          const set = this.open.get(boxId);
-          set?.delete(connection);
-          if (set?.size === 0) this.open.delete(boxId);
+          this.forget(boxId, connection);
           lease.release();
         },
       },
-      socket,
+      { kind: "ws", socket },
     );
+    this.remember(boxId, connection);
+    return connection;
+  }
+
+  /**
+   * Runs SSH on a socket of the direct listener. `login` answers each authentication attempt and returns a lease, from
+   * `enter`, for the one that succeeds. From then on the connection counts against the limits and ends with its box,
+   * as a WebSocket connection does. `hooks.onEnd` runs once when the socket closes, logged in or not.
+   */
+  accept(
+    socket: Socket,
+    login: (ctx: AuthContext) => Promise<SshLease | null>,
+    hooks: { onLogin?: (connection: SshConnection) => void; onEnd?: () => void } = {},
+  ): SshConnection {
+    let lease: SshLease | null = null;
+    const connection: SshConnection = new SshConnection(
+      {
+        kind: "login",
+        login: async (ctx) => {
+          const granted = await login(ctx);
+          if (!granted) return null;
+          if (connection.isEnded) {
+            granted.release();
+            return null;
+          }
+          lease = granted;
+          this.remember(granted.target.box.boxId, connection);
+          return granted.target;
+        },
+      },
+      {
+        hostKey: this.options.hostKey.privateKey,
+        pulse: this.options.pulse,
+        record: this.options.record,
+        onLogin: hooks.onLogin,
+        onEnd: () => {
+          if (lease) {
+            this.forget(lease.target.box.boxId, connection);
+            lease.release();
+          }
+          hooks.onEnd?.();
+        },
+      },
+      { kind: "tcp", socket },
+    );
+    return connection;
+  }
+
+  private remember(boxId: string, connection: SshConnection): void {
     let set = this.open.get(boxId);
     if (!set) {
       set = new Set();
       this.open.set(boxId, set);
     }
     set.add(connection);
-    return connection;
+  }
+
+  private forget(boxId: string, connection: SshConnection): void {
+    const set = this.open.get(boxId);
+    set?.delete(connection);
+    if (set?.size === 0) this.open.delete(boxId);
+  }
+
+  /** Ends every open connection, as the server shuts down. */
+  disconnectAll(reason: string): void {
+    for (const set of Array.from(this.open.values())) {
+      for (const connection of Array.from(set)) connection.disconnect(reason);
+    }
   }
 
   /**

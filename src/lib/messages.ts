@@ -172,6 +172,13 @@ export const MESSAGES = {
   ssh_box_limit: "This box already has {max} SSH connections open.",
   ssh_total_limit: "MiniBox already has {max} SSH connections open.",
   ssh_limit_hint: "Close an SSH session you no longer need, then try again.",
+  ssh_key_invalid: "That is not an SSH public key. Paste one line such as ssh-ed25519 AAAA... you@laptop.",
+  ssh_key_private:
+    "That is a private key. Paste the public key, the .pub file, instead, and keep the private key secret.",
+  ssh_key_type: "{type} keys are not accepted. Use an ed25519, ECDSA or RSA key.",
+  ssh_key_taken: "This key is already added, as {label}.",
+  ssh_key_limit: "At most {max} SSH keys can be added. Delete one you no longer use first.",
+  ssh_key_not_found: "SSH key not found.",
   terminal_read_only: "This terminal is read-only. Take over the session in the console to type.",
   too_many_attempts: "Too many attempts. Please try again in 5 minutes.",
   stream_limit: "Too many live connections are open (at most {max}). Close a MiniBox tab or wait, then try again.",

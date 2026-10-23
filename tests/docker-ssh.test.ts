@@ -2,7 +2,8 @@
  * SSH into a box against a real engine, with the OpenSSH client itself. The client reads the config that
  * `minibox ssh-config --append` writes, and reaches the box through a `minibox` on PATH, so the test covers the setup a
  * person runs. It checks a command's output and exit status, stdin, scp, sftp, a local forward (-L), the refusals (-R
- * and root), and that a stopped box wakes on connect.
+ * and root), and that a stopped box wakes on connect. It also connects straight to the server's SSH port, as Termius
+ * does, with a token as the password and with an owner key, and checks that a wrong password is refused.
  *
  *   bun run test:docker
  *
@@ -18,15 +19,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Server } from "bun";
+import { utils } from "ssh2";
 
 import { type App, createApp } from "../src/app";
 import { createDockerRuntime } from "../src/docker/runtime";
 import type { HostCtx } from "../src/host/registry";
 import type { ExecSession, Runtime } from "../src/runtime";
-import { startServer } from "../src/server";
+import { startDirectSsh, startServer } from "../src/server";
 import { type Box, createBox, getBox, stopBox } from "../src/services/boxes";
 import type { SocketData } from "../src/ws/socket";
 import { TEST_KEY, testConfig } from "./support/app";
+import { mint } from "./support/tokens";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
 const SOCKET = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
@@ -47,6 +50,7 @@ let server: Server<SocketData>;
 let base: string;
 let home: string;
 let box: Box;
+let directPort: number;
 
 function environment(): Record<string, string> {
   const inherited = Object.fromEntries(
@@ -135,6 +139,8 @@ beforeAll(async () => {
     dockerSocket: SOCKET,
     baseTemplateTag: `${prefix}-template:base`,
     dataDir: mkdtempSync(join(tmpdir(), "minibox-ssh-data-")),
+    sshPort: 0,
+    sshBind: "127.0.0.1",
   });
   app = createApp(cfg, "0.0.0-test", { runtime, eventsPath: ":memory:" });
   host = app.hosts.get();
@@ -146,6 +152,9 @@ beforeAll(async () => {
   });
   server = startServer(app);
   base = `http://127.0.0.1:${server.port}`;
+  const listening = await startDirectSsh(app);
+  if (listening === null) throw new Error("direct SSH did not start");
+  directPort = listening;
 
   home = mkdtempSync(join(tmpdir(), "minibox-ssh-home-"));
   mkdirSync(join(home, "bin"));
@@ -159,6 +168,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!enabled) return;
+  await app?.sshDirect?.close();
   server?.stop(true);
   app?.sessions.stop();
   app?.tokens.stop();
@@ -310,5 +320,89 @@ describe.skipIf(!enabled)("SSH into a box with the OpenSSH client", () => {
     const result = await ssh([`${BOX_NAME}.minibox`, "echo awake"]);
     expect(result).toMatchObject({ code: 0, out: "awake\n" });
     expect((await getBox(host, box.boxId)).running).toBe(true);
+  });
+});
+
+/** A known_hosts line that pins the server's host key for the direct port, as a first connection would save it. */
+function pinDirectHostKey(): string {
+  const path = join(home, ".ssh", "direct_known_hosts");
+  writeFileSync(path, `[127.0.0.1]:${directPort} ${app.ssh.hostKeyView().publicKey}\n`);
+  return path;
+}
+
+/**
+ * OpenSSH straight to the direct port, with no config file and no minibox CLI: the user is the box name. A password is
+ * typed by an askpass script, the way sshpass would type it, so the test needs nothing beyond OpenSSH.
+ */
+async function directSsh(options: { password?: string; identity?: string }, command: string): Promise<Result> {
+  const args = [
+    "ssh",
+    "-F",
+    "/dev/null",
+    "-p",
+    String(directPort),
+    "-o",
+    `UserKnownHostsFile=${pinDirectHostKey()}`,
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "NumberOfPasswordPrompts=1",
+    "-o",
+    "ConnectTimeout=20",
+  ];
+  const env: Record<string, string> = {};
+  if (options.identity) {
+    args.push("-i", options.identity, "-o", "IdentitiesOnly=yes", "-o", "PreferredAuthentications=publickey");
+    args.push("-o", "BatchMode=yes");
+  } else {
+    const askpass = join(home, "bin", "askpass");
+    writeFileSync(join(home, "password"), options.password ?? "");
+    writeFileSync(askpass, `#!/bin/sh\ncat "${join(home, "password")}"\n`);
+    chmodSync(askpass, 0o755);
+    args.push("-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "PubkeyAuthentication=no");
+    Object.assign(env, { SSH_ASKPASS: askpass, SSH_ASKPASS_REQUIRE: "force", DISPLAY: ":0" });
+  }
+  args.push(`${BOX_NAME}@127.0.0.1`, command);
+  const proc = Bun.spawn(args, {
+    cwd: home,
+    env: { ...environment(), ...env },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const timer = setTimeout(() => proc.kill(), 60_000);
+  try {
+    const [out, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { code, out, err };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+describe.skipIf(!enabled)("direct SSH to the server's SSH port with the OpenSSH client", () => {
+  test("an agent token with box:ssh is the password, and the user is the box name", async () => {
+    const token = mint(app, { name: "termius", scopes: ["box:ssh"], boxes: { type: "all" } });
+    const result = await directSsh({ password: token.secret }, "id -un; echo direct");
+    expect(result).toMatchObject({ code: 0, out: "dev\ndirect\n" });
+  });
+
+  test("a private key whose public half the owner added logs in", async () => {
+    const pair = utils.generateKeyPairSync("ed25519", { comment: "laptop" });
+    app.sshKeys.add(pair.public, "laptop");
+    const identity = join(home, ".ssh", "id_direct");
+    writeFileSync(identity, pair.private, { mode: 0o600 });
+    const result = await directSsh({ identity }, "echo keyed");
+    expect(result).toMatchObject({ code: 0, out: "keyed\n" });
+  });
+
+  test("a wrong password is refused, and nothing runs", async () => {
+    const result = await directSsh({ password: "not-a-token" }, "echo never");
+    expect(result.code).toBe(255);
+    expect(result.out).toBe("");
+    expect(result.err).toContain("Permission denied");
   });
 });

@@ -1,4 +1,5 @@
 import type { Socket } from "node:net";
+import type { Duplex } from "node:stream";
 import { finished } from "node:stream/promises";
 
 import {
@@ -55,7 +56,7 @@ const READY_TIMEOUT_MS = 30_000;
 const ACTIVITY_TOUCH_MS = 60_000;
 const NAME_MAX = 64;
 
-/** What one SSH connection is bound to: a box, reached as the principal that opened the WebSocket. */
+/** What one SSH connection is bound to: a box, reached as the principal that opened the WebSocket or logged in. */
 export interface SshTarget {
   readonly host: HostCtx;
   readonly box: Box;
@@ -63,7 +64,23 @@ export interface SshTarget {
   readonly source: Source;
   /** Whether the principal may forward ports, which needs `port:expose` on top of `box:ssh`. */
   readonly forward: boolean;
+  /** Extra audit detail of the connect and disconnect events, such as the source IP and login method of direct SSH. */
+  readonly via?: Readonly<Record<string, string>>;
 }
+
+/**
+ * How a connection learns its target. `fixed`: the WebSocket handshake already proved the caller, so the SSH layer only
+ * checks the user name. `login`: a direct TCP client proves itself in SSH authentication. The login answers every
+ * attempt itself, rejecting or sending PK_OK, and returns a target only for the one the connection should accept.
+ */
+export type SshAuth =
+  | { readonly kind: "fixed"; readonly target: SshTarget }
+  | { readonly kind: "login"; readonly login: (ctx: AuthContext) => Promise<SshTarget | null> };
+
+/** The byte stream SSH runs over: a WebSocket's frames, or a plain TCP socket of the direct listener. */
+export type SshTransport =
+  | { readonly kind: "ws"; readonly socket: FrameSocket }
+  | { readonly kind: "tcp"; readonly socket: Socket };
 
 export interface SshConnectionOptions {
   /** OpenSSH-format private host key. */
@@ -72,6 +89,8 @@ export interface SshConnectionOptions {
   readonly record: RecordNote;
   /** Called once when the connection ends, so the gateway can count it out. */
   readonly onEnd: () => void;
+  /** Called once when a direct connection logs in, with its target set. */
+  readonly onLogin?: (connection: SshConnection) => void;
 }
 
 /** The box with its container running. A stopped or sleeping box is started, which is how a connection wakes it. */
@@ -118,15 +137,18 @@ async function exitStatus(exec: ExecSession): Promise<number> {
 }
 
 /**
- * One SSH protocol session carried over one WebSocket. The WebSocket handshake has already proved who the caller is, so
- * the SSH layer accepts any method for the box's `dev` user or its id, and refuses every other name. Each channel runs as
- * one process in the box, and every process is stopped when its channel or the whole connection goes away.
+ * One SSH protocol session, over one WebSocket or one direct TCP socket. Over a WebSocket the handshake has already
+ * proved who the caller is, so the SSH layer accepts any method for the box's `dev` user or its id, and refuses every
+ * other name. Over TCP the login strategy decides. Each channel runs as one process in the box, and every process is
+ * stopped when its channel or the whole connection goes away.
  */
 export class SshConnection {
-  private readonly duplex: WsDuplex;
+  private readonly duplex: WsDuplex | null;
   private readonly server: Server;
-  private readonly socket: FrameSocket;
+  private readonly closeTransport: (code: number, reason: string) => void;
+  private target: SshTarget | null;
   private client: Connection | null = null;
+  private authenticating = false;
   private readonly live = new Set<ExecSession>();
   private readonly startedAt = Date.now();
   private readonly readyTimer: ReturnType<typeof setTimeout>;
@@ -136,12 +158,25 @@ export class SshConnection {
   private ended = false;
 
   constructor(
-    private readonly target: SshTarget,
+    private readonly auth: SshAuth,
     private readonly options: SshConnectionOptions,
-    socket: FrameSocket,
+    transport: SshTransport,
   ) {
-    this.socket = socket;
-    this.duplex = new WsDuplex(socket);
+    this.target = auth.kind === "fixed" ? auth.target : null;
+    let stream: Duplex;
+    if (transport.kind === "ws") {
+      const { socket } = transport;
+      this.duplex = new WsDuplex(socket);
+      stream = this.duplex;
+      this.closeTransport = (code, reason) => socket.close(code, reason);
+    } else {
+      const { socket } = transport;
+      this.duplex = null;
+      stream = socket;
+      this.closeTransport = () => socket.destroy();
+      socket.once("close", () => this.close());
+      socket.on("error", (error: Error) => log.debug("ssh.socket_error", { error: String(error) }));
+    }
     this.server = new Server(
       {
         hostKeys: [options.hostKey],
@@ -151,19 +186,36 @@ export class SshConnection {
       },
       (client) => this.bind(client),
     );
-    this.server.on("error", (error: Error) => log.debug("ssh.server_error", { box: this.boxId, error: String(error) }));
+    this.server.on("error", (error: Error) =>
+      log.debug("ssh.server_error", { box: this.boxRef, error: String(error) }),
+    );
     // ssh2 types injectSocket as net.Socket, but it only reads and writes the stream methods a Duplex has.
-    this.server.injectSocket(this.duplex as unknown as Socket);
-    this.readyTimer = setTimeout(() => socket.close(1008, "ssh handshake timed out"), READY_TIMEOUT_MS);
+    this.server.injectSocket(stream as unknown as Socket);
+    this.readyTimer = setTimeout(() => this.closeTransport(1008, "ssh handshake timed out"), READY_TIMEOUT_MS);
     this.readyTimer.unref();
   }
 
   receive(bytes: Uint8Array): void {
-    this.duplex.onMessage(bytes);
+    this.duplex?.onMessage(bytes);
   }
 
   drained(): void {
-    this.duplex.onDrain();
+    this.duplex?.onDrain();
+  }
+
+  /** Whether the connection has ended. A login that finishes after that must give back what it took. */
+  get isEnded(): boolean {
+    return this.ended;
+  }
+
+  /** The box the connection is bound to, once it is. A direct connection has none before it logs in. */
+  get boxId(): string | null {
+    return this.target?.box.boxId ?? null;
+  }
+
+  /** The principal the connection acts as, once it has logged in. */
+  get principal(): Principal | null {
+    return this.target?.principal ?? null;
   }
 
   close(): void {
@@ -171,24 +223,25 @@ export class SshConnection {
     this.ended = true;
     clearTimeout(this.readyTimer);
     for (const exec of this.live) this.stop(exec);
-    if (this.user !== null) {
-      this.audit("ssh.disconnect", "ok", `SSH disconnect: ${this.target.box.name}`, {
+    if (this.user !== null && this.target) {
+      this.audit("ssh.disconnect", "ok", `SSH disconnect: ${this.bound.box.name}`, {
         user: this.user,
         durationMs: Date.now() - this.startedAt,
+        ...this.target.via,
       });
     }
-    this.duplex.onClosed();
+    this.duplex?.onClosed();
     this.options.onEnd();
   }
 
   /** The container the connection was opened to. A rebuild replaces it, which ends the connection. */
-  get containerId(): string {
-    return this.target.box.id;
+  get containerId(): string | null {
+    return this.target?.box.id ?? null;
   }
 
   /**
    * Ends the connection from the server side: the client gets an SSH disconnect, then the WebSocket closes with the
-   * reason, which `minibox ssh-proxy` prints. The socket's close handler then runs `close()`.
+   * reason, which `minibox ssh-proxy` prints, or the TCP socket closes. The socket's close handler then runs `close()`.
    */
   disconnect(reason: string): void {
     if (this.ended) return;
@@ -198,19 +251,25 @@ export class SshConnection {
       // The protocol already ended.
     }
     try {
-      this.socket.close(1001, reason);
+      this.closeTransport(1001, reason);
     } catch {
       // The socket already closed.
     }
   }
 
-  private get boxId(): string {
-    return this.target.box.boxId;
+  /** The target of a channel. Channels open only after authentication, which is when a direct connection gets one. */
+  private get bound(): SshTarget {
+    if (!this.target) throw new Error("the SSH connection has not logged in");
+    return this.target;
+  }
+
+  private get boxRef(): string {
+    return this.target?.box.boxId ?? "-";
   }
 
   private bind(client: Connection): void {
     this.client = client;
-    client.on("error", (error: Error) => log.debug("ssh.client_error", { box: this.boxId, error: String(error) }));
+    client.on("error", (error: Error) => log.debug("ssh.client_error", { box: this.boxRef, error: String(error) }));
     client.on("authentication", (ctx) => this.authenticate(ctx));
     client.on("request", (_accept, reject, name) => {
       if (REMOTE_FORWARD_REQUESTS.has(name)) this.refuse(name);
@@ -226,15 +285,43 @@ export class SshConnection {
 
   private authenticate(ctx: AuthContext): void {
     const user = ctx.username.slice(0, NAME_MAX);
-    if (!userAllowed(ctx.username, this.boxId)) {
-      this.audit("ssh.connect", "denied", `SSH refused: ${this.target.box.name}`, { user, method: ctx.method });
-      ctx.reject([]);
+    if (this.auth.kind === "fixed") {
+      const { target } = this.auth;
+      if (!userAllowed(ctx.username, target.box.boxId)) {
+        this.audit("ssh.connect", "denied", `SSH refused: ${target.box.name}`, { user, method: ctx.method });
+        ctx.reject([]);
+        return;
+      }
+      this.accepted(ctx, user, target);
       return;
     }
+    // ssh2 waits for one answer before it reads the next attempt, but a slow login must not overlap a second one.
+    if (this.authenticating || this.target) {
+      ctx.reject();
+      return;
+    }
+    this.authenticating = true;
+    void this.auth
+      .login(ctx)
+      .catch((error: unknown) => {
+        log.warn("ssh.login_failed", { error: failureText(error) });
+        ctx.reject();
+        return null;
+      })
+      .then((target) => {
+        this.authenticating = false;
+        if (!target || this.ended) return;
+        this.target = target;
+        this.accepted(ctx, user, target);
+        this.options.onLogin?.(this);
+      });
+  }
+
+  private accepted(ctx: AuthContext, user: string, target: SshTarget): void {
     this.user = user;
     clearTimeout(this.readyTimer);
     ctx.accept();
-    this.audit("ssh.connect", "ok", `SSH connect: ${this.target.box.name}`, { user, method: ctx.method });
+    this.audit("ssh.connect", "ok", `SSH connect: ${target.box.name}`, { user, method: ctx.method, ...target.via });
   }
 
   /**
@@ -317,7 +404,7 @@ export class SshConnection {
     }
     state.started = true;
     const channel = accept();
-    this.audit("ssh.channel", "ok", `SSH ${request.type}: ${this.target.box.name}`, {
+    this.audit("ssh.channel", "ok", `SSH ${request.type}: ${this.bound.box.name}`, {
       type: request.type,
       tty: request.tty,
       ...(request.command === undefined ? {} : { command: request.command }),
@@ -333,7 +420,7 @@ export class SshConnection {
     });
     const env = defaultEnv(state.pty?.term ?? null, state.env);
     const exec = await this.start(request.argv, request.tty, env).catch((error: unknown) => {
-      log.warn("ssh.start_failed", { box: this.boxId, error: failureText(error) });
+      log.warn("ssh.start_failed", { box: this.boxRef, error: failureText(error) });
       if (!closed) {
         channel.stderr.write(`minibox: ${failureText(error)}\n`);
         channel.exit(1);
@@ -376,7 +463,7 @@ export class SshConnection {
   }
 
   private openForward(accept: AcceptConnection<ServerChannel>, reject: RejectConnection, info: TcpipRequestInfo): void {
-    if (!this.target.forward || !forwardAllowed(info.destIP, info.destPort)) {
+    if (!this.bound.forward || !forwardAllowed(info.destIP, info.destPort)) {
       this.refuse("forward", { host: info.destIP.slice(0, NAME_MAX), port: info.destPort });
       reject();
       return;
@@ -396,7 +483,7 @@ export class SshConnection {
     release: () => void,
   ): Promise<void> {
     const exec = await this.start(relayArgv(port), false, defaultEnv(null, {}), "/").catch((error: unknown) => {
-      log.warn("ssh.relay_failed", { box: this.boxId, port, error: failureText(error) });
+      log.warn("ssh.relay_failed", { box: this.boxRef, port, error: failureText(error) });
       return null;
     });
     if (!exec) {
@@ -406,7 +493,7 @@ export class SshConnection {
     }
     const channel = accept();
     channel.on("error", noop);
-    this.audit("ssh.channel", "ok", `SSH forward: ${this.target.box.name}`, { type: "direct-tcpip", port });
+    this.audit("ssh.channel", "ok", `SSH forward: ${this.bound.box.name}`, { type: "direct-tcpip", port });
     this.live.add(exec);
     let closed = false;
     channel.once("close", () => {
@@ -435,8 +522,8 @@ export class SshConnection {
    */
   private async start(argv: string[], tty: boolean, env: string[], workingDir = SSH_WORKDIR): Promise<ExecSession> {
     if (this.ended) throw new Error("the SSH connection has ended");
-    const box = await awakeBox(this.target.host, this.boxId, (note) => this.recordFor(note));
-    const exec = await this.target.host.runtime.startExec(box.id, {
+    const box = await awakeBox(this.bound.host, this.bound.box.boxId, (note) => this.recordFor(note));
+    const exec = await this.bound.host.runtime.startExec(box.id, {
       cmd: argv,
       env,
       workingDir,
@@ -447,7 +534,7 @@ export class SshConnection {
     if (this.ended) {
       exec
         .kill()
-        .catch((error: unknown) => log.warn("ssh.kill_failed", { box: this.boxId, error: failureText(error) }));
+        .catch((error: unknown) => log.warn("ssh.kill_failed", { box: this.boxRef, error: failureText(error) }));
       throw new Error("the SSH connection has ended");
     }
     return exec;
@@ -466,18 +553,18 @@ export class SshConnection {
 
   private stop(exec: ExecSession): void {
     if (!this.live.delete(exec)) return;
-    exec.kill().catch((error: unknown) => log.warn("ssh.kill_failed", { box: this.boxId, error: failureText(error) }));
+    exec.kill().catch((error: unknown) => log.warn("ssh.kill_failed", { box: this.boxRef, error: failureText(error) }));
   }
 
   private noteInput(): void {
     const now = Date.now();
     if (now - this.touchedAt < ACTIVITY_TOUCH_MS) return;
     this.touchedAt = now;
-    this.options.pulse.touch(this.boxId, "ssh", now);
+    if (this.target) this.options.pulse.touch(this.target.box.boxId, "ssh", now);
   }
 
   private refuse(type: string, detail: Record<string, string | number> = {}): void {
-    this.audit("ssh.channel", "denied", `SSH refused ${type}: ${this.target.box.name}`, { type, ...detail });
+    this.audit("ssh.channel", "denied", `SSH refused ${type}: ${this.bound.box.name}`, { type, ...detail });
   }
 
   private audit(op: string, status: EventStatus, summary: string, detail: Record<string, unknown>): void {
@@ -486,12 +573,13 @@ export class SshConnection {
       kind: "write",
       status,
       summary,
-      target: { kind: "box", id: this.target.box.id, name: this.target.box.name },
+      target: { kind: "box", id: this.bound.box.id, name: this.bound.box.name },
       detail,
     });
   }
 
   private recordFor(note: AuditNote): void {
-    this.options.record(this.target.host.host.id, this.target.source, this.target.principal, note);
+    const target = this.bound;
+    this.options.record(target.host.host.id, target.source, target.principal, note);
   }
 }
