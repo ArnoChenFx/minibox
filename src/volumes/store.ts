@@ -233,7 +233,11 @@ export class VolumeStore {
       const id = name.slice(0, -".json".length);
       if (!isVolumeId(id)) continue;
       const record = this.readJson(this.pathFor(id), isRecord, "volume.unreadable", id);
-      if (record) records.push(Object.freeze({ ...record, limits: normalizeLimits(record.limits) }));
+      if (record) {
+        records.push(
+          Object.freeze({ ...record, limits: normalizeLimits(record.limits), lastMount: record.lastMount ?? null }),
+        );
+      }
     }
     return records;
   }

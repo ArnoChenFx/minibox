@@ -19,7 +19,7 @@ import { type MovedTag, planRebuild, previewOf, type PlannedRebuild, type Rebuil
 import { revisionMismatch } from "../specs/revision";
 import type { BoxEnv, BoxMount, BoxRecovery, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
-import { assertVolumesPresent } from "../volumes/engine";
+import { assertVolumesPresent, noteUnmounted } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox, locked, refuseExpired } from "./boxes";
@@ -629,6 +629,13 @@ async function swap(
       changes: planned.changes.map((change) => change.field),
       containerName: formal,
     });
+    noteUnmounted(
+      host,
+      { boxId: previous.id, name: previous.name },
+      previous.mounts
+        .map((mount) => mount.volume)
+        .filter((engineName) => !resolved.mounts.some((mount) => mount.volume === engineName)),
+    );
   } catch (e) {
     const clean = await undo(host, previous, state, record);
     if (taken === null) throw e;
