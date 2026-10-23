@@ -60,6 +60,7 @@ export default {
   "act.volume.detach": "卸载卷",
   "act.volume.limits": "修改卷配额",
   "act.volume.usage": "统计卷用量",
+  "act.volume.prune": "清理孤立卷",
   "act.pool.replace": "更新存储池",
   "act.tool.install": "安装工具",
   "act.tool.upgrade": "升级工具",

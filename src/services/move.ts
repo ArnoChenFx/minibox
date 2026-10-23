@@ -625,25 +625,24 @@ async function finishMove(
   }
   from.specs.retire(oldId);
   for (const source of moved.copies) {
-    if (!removed) {
+    const keep = (): void => {
+      const now = new Date().toISOString();
       from.volumes.write({
         ...source,
         ownership: "independent",
         ownerBoxId: null,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
+        lastMount: { at: now, boxId: spec.id, boxName: spec.name },
       });
       leftovers.push({ kind: "volume", name: source.name });
+    };
+    if (!removed) {
+      keep();
       continue;
     }
     const outcome = await removeEngine(from, source.engineName);
     if (outcome.status === "failed") {
-      from.volumes.write({
-        ...source,
-        ownership: "independent",
-        ownerBoxId: null,
-        updatedAt: new Date().toISOString(),
-      });
-      leftovers.push({ kind: "volume", name: source.name });
+      keep();
       continue;
     }
     from.volumes.remove(source.id);

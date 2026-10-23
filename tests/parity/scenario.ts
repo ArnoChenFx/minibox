@@ -1160,6 +1160,15 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("a token reads the overview", "GET", "/api/overview", {
       headers: { authorization: `Bearer ${String(reader.json?.token ?? "")}` },
     });
+    const batch = await post("create a volume for a batch delete", "/api/volumes", { name: "batch", confirm: true });
+    const batchId = String((batch.json?.volume as { id?: string } | undefined)?.id ?? "");
+    await post("batch delete without confirm", "/api/volumes/delete", { ids: [batchId, "nowhere"] });
+    await post("batch delete a volume and a missing one", "/api/volumes/delete", {
+      ids: [batchId, "nowhere"],
+      confirm: true,
+    });
+    await post("prune orphaned volumes as a dry run", "/api/volumes/prune", {});
+    await post("prune orphaned volumes", "/api/volumes/prune", { dryRun: false, ids: ["nowhere"] });
   } finally {
     server.stop(true);
     app.throttle.stop();

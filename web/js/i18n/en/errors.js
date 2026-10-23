@@ -389,6 +389,20 @@ export default {
     "The engine already has a volume named {volume} that MiniBox did not create, so MiniBox will not use it. Remove that volume and try again.",
   "err.volume_mounted": "Volume {name} is mounted by {box}.",
   "err.volume_delete_failed": "Volume {name} could not be deleted: {detail}",
+  "err.volume_in_use_by_box": "Volume {volume} is in use by a box or a container.",
+  "err.volume_prune_busy":
+    "A box is being moved, restored or rolled back, and its volumes may still be filling. Prune again when it has finished.",
+  "err.volume_prune_changed": "Volume {volume} changed while it was being pruned, so it was kept.",
+  "err.volume_host_offline": "Host {host} is offline, so its volumes were not checked.",
+  "err.volume_host_failed": "Host {host} could not list its containers, so its volumes were not checked: {detail}",
+  "err.volume_older_than_invalid": "olderThan must be a whole number followed by s, m, h, d or w, such as 30d.",
+  "err.volume_delete_forbidden": "This credential may delete only the volumes it created: {volume}.",
+  "err.volume_shared_tools":
+    "Volume {volume} is the shared tools volume. It holds the tools of every box, so it is not deleted.",
+  "err.volume_system": "Volume {volume} is a MiniBox system volume, so it is not deleted.",
+  "err.volume_not_orphan": "Volume {volume} is no longer an orphan, so it was kept.",
+  "err.volume_prune_ids_required":
+    "A prune that removes volumes must name them: send the ids its dry run listed, and only those are removed.",
   "err.volume_attach_forbidden": "This credential may not attach volume {volume}.",
   "err.volume_write_forbidden": "This credential may not write volume {volume}.",
   "err.volume_create_forbidden": "This credential may not create volumes.",

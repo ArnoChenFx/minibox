@@ -49,6 +49,13 @@ export interface PoolsFile {
   roles: RolePools;
 }
 
+/** The last box that mounted a volume and stopped doing so: a delete, a detach, a rebuild away from it, or a move. */
+export interface VolumeLastMount {
+  at: string;
+  boxId: string;
+  boxName: string;
+}
+
 /**
  * A volume MiniBox knows about. The engine name is what Docker mounts; `name` is what people see.
  * Records live under DATA_DIR, not on the engine, so a host can be added later without renaming volumes.
@@ -76,6 +83,8 @@ export interface VolumeRecord {
   bytes: number | null;
   bytesAt: string | null;
   limits: VolumeLimits;
+  /** Null until a box stops mounting the volume. Records written before this field existed read as null. */
+  lastMount: VolumeLastMount | null;
 }
 
 export type LimitAction = "warn" | "stop";

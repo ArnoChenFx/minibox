@@ -56,6 +56,7 @@ export const ACTION_ICON = {
   "volume.detach": "x",
   "volume.limits": "sliders",
   "volume.usage": "scale",
+  "volume.prune": "trash",
   "pool.replace": "disk",
   "tool.install": "download",
   "tool.upgrade": "upload",

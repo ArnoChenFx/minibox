@@ -44,6 +44,11 @@ Commands:
                                        Restore an entry as a new box or volume, and remove the entry
   minibox trash purge <id> [--no-wait] [--json]
                                        Remove an entry and the data it keeps, before it expires
+  minibox volume delete <id|name>... [--skip-trash] [--yes] [--json]
+                                       Delete volumes on any host. Without --yes, only the preview prints
+  minibox volume prune [id|name...] [--older-than 30d] [--yes] [--json]
+                                       List the orphaned volumes: MiniBox volumes no box or container uses.
+                                       --yes removes them. A volume used in the last five minutes is kept
   minibox exec <box> [options] -- <argv...>
       --cwd DIR         Working directory (default /workspace)
       --user USER       Container user (default dev; the strict profile allows only dev or 1000)

@@ -39,6 +39,7 @@ function record(id: string, engineName: string, name = engineName): VolumeRecord
     bytes: null,
     bytesAt: null,
     limits: { softBytes: null, hardBytes: null, action: "warn" },
+    lastMount: null,
   };
 }
 

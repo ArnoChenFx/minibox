@@ -434,6 +434,20 @@ export const MESSAGES = {
     "The engine already has a volume named {volume} that MiniBox did not create, so MiniBox will not use it. Remove that volume and try again.",
   volume_mounted: "Volume {name} is mounted by {box}.",
   volume_delete_failed: "Volume {name} could not be deleted: {detail}",
+  volume_in_use_by_box: "Volume {volume} is in use by a box or a container.",
+  volume_prune_busy:
+    "A box is being moved, restored or rolled back, and its volumes may still be filling. Prune again when it has finished.",
+  volume_prune_changed: "Volume {volume} changed while it was being pruned, so it was kept.",
+  volume_host_offline: "Host {host} is offline, so its volumes were not checked.",
+  volume_host_failed: "Host {host} could not list its containers, so its volumes were not checked: {detail}",
+  volume_older_than_invalid: "olderThan must be a whole number followed by s, m, h, d or w, such as 30d.",
+  volume_delete_forbidden: "This credential may delete only the volumes it created: {volume}.",
+  volume_shared_tools:
+    "Volume {volume} is the shared tools volume. It holds the tools of every box, so it is not deleted.",
+  volume_system: "Volume {volume} is a MiniBox system volume, so it is not deleted.",
+  volume_not_orphan: "Volume {volume} is no longer an orphan, so it was kept.",
+  volume_prune_ids_required:
+    "A prune that removes volumes must name them: send the ids its dry run listed, and only those are removed.",
   volume_attach_forbidden: "This credential may not attach volume {volume}.",
   volume_write_forbidden: "This credential may not write volume {volume}.",
   volume_create_forbidden: "This credential may not create volumes.",

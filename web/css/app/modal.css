@@ -13,6 +13,21 @@
 .dialog.wide {
   width: min(640px, 100%);
 }
+/* A volume preview: the notes about hosts that were not checked, then a compact table, which folds when it is long. */
+.preview-notes {
+  display: grid;
+  gap: 8px;
+}
+.prune-list {
+  margin-top: 14px;
+}
+.prune-list .table th,
+.prune-list .table td {
+  padding: 8px 10px;
+}
+.prune-list .list-more {
+  padding: 10px 0 0;
+}
 /* A list of editable rows and the button that adds one: the button sits one row gap below the last row and keeps its
    own width. An empty list takes no space, so the button does not hang below a gap. */
 .row-editor {

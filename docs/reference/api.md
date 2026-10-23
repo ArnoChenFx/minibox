@@ -35,6 +35,7 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `volume:read` | `volume:read` |
 | `volume:write` | `volume:write` |
 | `volume:attach` | `volume:attach` |
+| `volume:delete` | `volume:delete`. Only the batch delete uses it, and no preset includes it. A token acts only on the volumes it created |
 | `files:read` | `files:read` or `exec` |
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
@@ -42,7 +43,7 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:copy`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `template:official`, `trash:read`, `trash:restore`, `trash:purge`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 | `self` | None. Only the self token of the box can call these, and only for that box. |
 
-The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. The `skipTrash` option of `DELETE /api/boxes/{id}` and `DELETE /api/volumes/{id}` also needs the `trash:skip` token scope, or the owner. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
+The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. The `skipTrash` option of `DELETE /api/boxes/{id}`, `DELETE /api/volumes/{id}` and `POST /api/volumes/delete` also needs the `trash:skip` token scope, or the owner. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
 
 ## Requests
 
@@ -189,6 +190,8 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/volumes` | Create an independent volume |
 | `GET` | `/api/volumes/{id}` | Get a volume |
 | `DELETE` | `/api/volumes/{id}` | Delete a volume. Its data is kept in the recycle bin unless `skipTrash=true`. The response's `trash` names the entry, or is `null` |
+| `POST` | `/api/volumes/delete` | Delete up to 100 volumes by `ids`, on any host. Without `confirm: true` the answer is `409` with `details.preview`. Each volume has its own result in `volumes`, and one failure does not stop the others. Takes `skipTrash` |
+| `POST` | `/api/volumes/prune` | List the orphaned volumes: MiniBox volumes that no box or container uses. With `dryRun: false` the volumes named in `ids`, which must be the ids the dry run listed, are removed; nothing else is, and a named volume that is no longer an orphan, or is the tools volume, a system volume or in use, is refused with its reason. `dryRun` defaults to `true`. Owner only. `olderThan`, such as `30d`, keeps the volumes used more recently. Each host is reported in `hosts`. An offline or failing host is skipped |
 | `POST` | `/api/volumes/{id}/attach` | Mount a volume on a box. Takes a safety checkpoint of the box first, unless `safetyCheckpoint` is `false` |
 | `POST` | `/api/volumes/{id}/detach` | Unmount a volume from a box. Takes a safety checkpoint of the box first, unless `safetyCheckpoint` is `false` |
 | `POST` | `/api/volumes/{id}/usage` | Measure a volume |
