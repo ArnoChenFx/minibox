@@ -271,6 +271,9 @@ afterAll(async () => {
   for (const network of await runtime.listNetworks().catch(() => [])) {
     if (network.name.startsWith(`${prefix}-`)) await runtime.removeNetwork(network.name).catch(() => {});
   }
+  for (const volume of await runtime.listVolumes().catch(() => [])) {
+    if (volume.name.startsWith(`${prefix}-`)) await runtime.removeVolume(volume.name).catch(() => {});
+  }
   await runtime.setHostIngressBlock([]).catch(() => {});
   await runtime.removeImage(BOX_IMAGE, { force: true }).catch(() => {});
   await runtime.removeImage(PROXY_BASE, { force: true }).catch(() => {});
