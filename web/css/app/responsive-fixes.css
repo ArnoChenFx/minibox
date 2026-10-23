@@ -72,7 +72,10 @@
   .env-row > [data-env-remove] {
     width: 112px;
   }
-  .env-rows {
+  /* Each row wraps onto several lines here, so rows and the add button sit further apart than the controls in a row. */
+  .env-rows,
+  .rebuild-mounts,
+  .row-editor {
     gap: 14px;
   }
 }

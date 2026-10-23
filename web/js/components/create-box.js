@@ -31,6 +31,7 @@ import { cloneRepo } from "../lib/template-source.js";
 import { pickerView } from "../lib/tool-list.js";
 import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretChoicesHtml, secretNames } from "./env-editor.js";
+import { bindFoldSections, foldSectionHtml, setFoldOpen } from "./fold-section.js";
 import { bindToggles, isToggled, limitList, listToggleHtml } from "./list-toggle.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "./search-box.js";
@@ -77,16 +78,6 @@ function toolGroupHtml(group, selected) {
     <button type="button" class="tool-group-head" data-toggle="${esc(group.id)}" aria-expanded="${!group.folded}">${icon("chevron")}<strong>${label}</strong><span class="badge">${group.count}</span></button>
     <div class="tool-checks">${group.rows.map((tool) => toolCheckHtml(tool, selected.has(tool.id))).join("")}</div>
   </section>`;
-}
-
-/**
- * A foldable section's heading: a chevron button holding the title and a summary of what is chosen, which stays visible
- * while the section is folded, and the section's search at the right.
- */
-function sectionHeadHtml({ id, label, searchHtml, folded }) {
-  return `<div class="picker-head">
-    <button type="button" class="section-toggle" id="${id}Toggle" aria-expanded="${!folded}" aria-controls="${id}Body">${icon("chevron")}<span class="label">${label}</span><span class="section-summary" id="${id}Summary"></span></button>
-    ${searchHtml}</div>`;
 }
 
 function templateOptionHtml(template, selectedRef) {
@@ -199,24 +190,38 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   const picker = !snapshot && catalog.length > 0;
   const folded = loadFolded();
   const toolsSection = picker
-    ? `<div class="field fold-section" id="cbToolsField">
-          ${sectionHeadHtml({ id: "cbTools", label: t("cb.tools"), folded: folded.has("tools"), searchHtml: searchBoxHtml({ id: "cbToolSearch", placeholder: t("tool.searchPlaceholder"), label: t("tool.search") }) })}
-          <div class="section-body" id="cbToolsBody">
-          <div class="help">${t("cb.toolsHelp")}</div>
+    ? foldSectionHtml({
+        id: "cbToolsField",
+        title: t("cb.tools"),
+        open: !folded.has("tools"),
+        extraHtml: searchBoxHtml({
+          id: "cbToolSearch",
+          placeholder: t("tool.searchPlaceholder"),
+          label: t("tool.search"),
+        }),
+        body: `<div class="help">${t("cb.toolsHelp")}</div>
           <div class="tool-groups" id="cbTools"></div>
-          <div class="list-more" id="cbToolsMore"></div></div></div>`
+          <div class="list-more" id="cbToolsMore"></div>`,
+      })
     : "";
 
   const templateSection = snapshot
     ? `<div class="field"><span class="label">${t("cb.sourceSnapshot")}</span><div class="option" aria-checked="true"><span class="avatar">${icon("camera")}</span><span class="meta"><strong>${esc(snapshot)}</strong><span>${t("cb.fromSnapshotHint")}</span></span></div></div>`
     : templates.length
-      ? `<div class="field fold-section" id="cbTemplatesField">
-          ${sectionHeadHtml({ id: "cbTemplates", label: t("cb.template"), folded: folded.has("templates"), searchHtml: searchBoxHtml({ id: "cbTemplateSearch", placeholder: t("tp.searchPlaceholder"), label: t("tp.search") }) })}
-          <div class="section-body" id="cbTemplatesBody">
-          <div class="option-list" role="radiogroup" aria-label="${esc(t("cb.template"))}" id="cbTemplates"></div>
+      ? foldSectionHtml({
+          id: "cbTemplatesField",
+          title: t("cb.template"),
+          open: !folded.has("templates"),
+          extraHtml: searchBoxHtml({
+            id: "cbTemplateSearch",
+            placeholder: t("tp.searchPlaceholder"),
+            label: t("tp.search"),
+          }),
+          body: `<div class="option-list" role="radiogroup" aria-label="${esc(t("cb.template"))}" id="cbTemplates"></div>
           <div id="cbTemplatesEmpty" hidden></div>
           <div class="list-more" id="cbTemplatesMore"></div>
-          <div class="callout info" id="cbBuildNote" hidden>${icon("info")}<span>${t("cb.buildHint")}</span></div></div></div>`
+          <div class="callout info" id="cbBuildNote" hidden>${icon("info")}<span>${t("cb.buildHint")}</span></div>`,
+        })
       : `<div class="field"><span class="label">${t("cb.template")}</span><div class="callout warn">${icon("alert")}<span>${t("cb.noTemplates")}</span></div></div>`;
 
   const initialHost = hostFilter() || "local";
@@ -234,15 +239,16 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
 
   const volumesSection = snapshot
     ? ""
-    : `<details class="advanced" id="cbVolumes">
-        <summary id="cbVolSummary">${t("cb.volumesSummary", { mode: t("cb.volumesModeDefault") })}</summary>
-        <div class="field"><span class="label">${t("vol.mounts")}</span>
+    : foldSectionHtml({
+        id: "cbVolumes",
+        title: t("cb.volumesSummary", { mode: t("cb.volumesModeDefault") }),
+        body: `<div class="field"><span class="label">${t("vol.mounts")}</span>
           <div class="segmented segmented-2" id="cbVolMode">
             <button type="button" class="seg" data-vol-mode="default" aria-pressed="true"><strong>${t("cb.volumesDefault")}</strong><span>${t("cb.volumesDefaultHint")}</span></button>
             <button type="button" class="seg" data-vol-mode="custom" aria-pressed="false"><strong>${t("cb.volumesCustom")}</strong><span>${t("cb.volumesCustomHint")}</span></button>
           </div>
           <div class="help" id="cbVolHelp">${t("cb.volumesDefaultHelp")}</div></div>
-        <div id="cbVolCustom" hidden>
+        <div class="row-editor" id="cbVolCustom" hidden>
           <div class="callout warn">${icon("alert")}<span>${t("cb.volumesReplace")}</span></div>
           <div class="rebuild-mounts" id="cbMountRows"></div>
           <button type="button" class="btn" id="cbAddMount">${t("mount.add")}</button>
@@ -250,20 +256,23 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           <div class="help" id="cbMountsOwned" hidden>${t("cb.mountsOwned")}</div>
           <div id="cbSharedNote" hidden></div>
         </div>
-        <div class="error-text" id="cbVolErr"></div>
-      </details>`;
+        <div class="error-text" id="cbVolErr"></div>`,
+      });
 
   const envSection = snapshot
     ? ""
-    : `<details class="advanced" id="cbEnv">
-        <summary id="cbEnvSummary">${t("env.section")}</summary>
-        <div class="stack">
+    : foldSectionHtml({
+        id: "cbEnv",
+        title: t("env.section"),
+        body: `<div class="stack">
           <div class="help">${t("env.createHelp")}</div>
-          <div class="env-rows" id="cbEnvRows"></div>
-          <div><button type="button" class="btn" id="cbAddEnv">${icon("plus")}${t("env.add")}</button></div>
+          <div class="row-editor">
+            <div class="env-rows" id="cbEnvRows"></div>
+            <button type="button" class="btn" id="cbAddEnv">${icon("plus")}${t("env.add")}</button>
+          </div>
           <div class="error-text" id="cbEnvErr"></div>
-        </div>
-      </details>`;
+        </div>`,
+      });
 
   const startupSection = `<div class="field" id="cbStartupField">
           <label class="label" for="cbStartup">${t("cb.startup")}</label>
@@ -299,9 +308,10 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       </label>`;
   const repoSection = snapshot
     ? ""
-    : `<details class="advanced" id="cbRepo">
-        <summary id="cbRepoSummary">${t("cb.repoSummary")}</summary>
-        <div class="stack">
+    : foldSectionHtml({
+        id: "cbRepo",
+        title: t("cb.repoSummary"),
+        body: `<div class="stack">
           <div class="help">${t("cb.repoHelp")}</div>
           <div class="field"><label class="label" for="cbRepoUrl">${t("src.url")}</label>
             <input class="input mono" id="cbRepoUrl" placeholder="https://github.com/org/app.git" autocomplete="off" autocapitalize="off" spellcheck="false" />
@@ -314,8 +324,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
               <div class="help">${secrets === null ? t("env.secretsUnavailable") : t("src.secretHelp")}</div></div>
           </div>
           <div class="error-text" id="cbRepoErr"></div>
-        </div>
-      </details>`;
+        </div>`,
+      });
 
   const { root, close } = openDialog({
     title: snapshot ? t("cb.titleSnapshot") : t("cb.title"),
@@ -343,17 +353,18 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       <div id="cbCapacity"></div>
       ${templateSection}
       ${selfTokenSection}
-      <details class="advanced" id="cbAdvanced">
-        <summary>${t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) })}</summary>
-        <div class="field"><span class="label">${t("cb.profile")}</span>
+      ${foldSectionHtml({
+        id: "cbAdvanced",
+        title: t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) }),
+        body: `<div class="field"><span class="label">${t("cb.profile")}</span>
           <div class="segmented segmented-3" id="cbProfiles">${PROFILES.map(
             (p) =>
               `<button type="button" class="seg" data-profile="${p}" aria-pressed="${p === state.profile}"><strong>${t(`profile.${p}`)}</strong><span>${t(`profile.${p}Hint`)}</span></button>`,
           ).join("")}</div>
           <div class="help">${t("cb.profileHelp")}</div></div>
         ${egressField}
-        ${startupSection}
-      </details>${repoSection}${toolsSection}${volumesSection}${envSection}`,
+        ${startupSection}`,
+      })}${repoSection}${toolsSection}${volumesSection}${envSection}`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
   });
 
@@ -470,7 +481,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     if (!b) return;
     state.profile = b.dataset.profile;
     $$("#cbProfiles .seg", root).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    q("#cbAdvanced summary").textContent = t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) });
+    q("#cbAdvancedTitle").textContent = t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) });
   });
   q("#cbEgressTiers").addEventListener("click", (e) => {
     const b = e.target.closest(".seg");
@@ -493,22 +504,22 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       q("#cbResErr").textContent = message;
       return;
     }
-    q("#cbVolumes").open = true;
+    setFoldOpen(root, "cbVolumes", true);
     q("#cbVolErr").textContent = message;
   };
 
   const showEnvError = (message) => {
-    q("#cbEnv").open = true;
+    setFoldOpen(root, "cbEnv", true);
     q("#cbEnvErr").textContent = message;
   };
 
   const showStartupError = (message) => {
-    q("#cbAdvanced").open = true;
+    setFoldOpen(root, "cbAdvanced", true);
     q("#cbStartupErr").textContent = message;
   };
 
   const showEgressError = (message) => {
-    q("#cbAdvanced").open = true;
+    setFoldOpen(root, "cbAdvanced", true);
     q("#cbEgressErr").textContent = message;
   };
 
@@ -517,7 +528,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   });
 
   const showRepoError = (message) => {
-    q("#cbRepo").open = true;
+    setFoldOpen(root, "cbRepo", true);
     q("#cbRepoErr").textContent = message;
   };
 
@@ -568,7 +579,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     $$("#cbVolMode .seg", root).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.volMode === mode)));
     q("#cbVolCustom").hidden = !custom;
     q("#cbVolHelp").textContent = t(custom ? "cb.volumesCustomHelp" : "cb.volumesDefaultHelp");
-    q("#cbVolSummary").textContent = t("cb.volumesSummary", {
+    q("#cbVolumesTitle").textContent = t("cb.volumesSummary", {
       mode: t(custom ? "cb.volumesModeCustom" : "cb.volumesModeDefault"),
     });
     q("#cbMountsOwned").hidden = !custom || !choices?.some((choice) => choice.disabled);
@@ -587,29 +598,20 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbMountRows").addEventListener("change", refreshMounts);
     q("#cbMountRows").addEventListener("click", refreshMounts);
   }
-  /** Connects a section's fold button. Folding hides the body and the search; the summary stays in the heading. */
-  const bindSection = (id, key, searchId) => {
-    const button = q(`#${id}Toggle`);
-    const apply = (isFolded) => {
-      button.setAttribute("aria-expanded", String(!isFolded));
-      q(`#${id}Body`).hidden = isFolded;
-      q(`#${searchId}`).hidden = isFolded;
-    };
-    apply(folded.has(key));
-    button.addEventListener("click", () => {
-      const next = button.getAttribute("aria-expanded") === "true";
-      apply(next);
-      saveFolded(key, next);
-    });
-  };
+  /** Tools and Template remember being folded in this browser. The other sections open folded every time. */
+  const savedFolds = { cbToolsField: "tools", cbTemplatesField: "templates" };
+  bindFoldSections(root, (id, open) => {
+    if (savedFolds[id]) saveFolded(savedFolds[id], !open);
+  });
   const selectedTools = new Set();
   if (picker) {
     const paintToolsSummary = () => {
       const names = catalog.filter((tool) => selectedTools.has(tool.id)).map((tool) => tool.name);
       const { count, names: list } = chosenSummary(names);
-      q("#cbToolsSummary").textContent = count ? t("cb.toolsChosen", { n: count, names: list }) : t("cb.toolsNone");
+      q("#cbToolsFieldSummary").textContent = count
+        ? t("cb.toolsChosen", { n: count, names: list })
+        : t("cb.toolsNone");
     };
-    bindSection("cbTools", "tools", "cbToolSearch");
     paintToolsSummary();
     let toolQuery = "";
     const drawTools = () => {
@@ -653,9 +655,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     let templateQuery = "";
     const paintTemplateSummary = () => {
       const chosen = templates.find((tp) => tp.ref === state.template);
-      q("#cbTemplatesSummary").textContent = chosen ? t("cb.templateChosen", { name: chosen.name }) : "";
+      q("#cbTemplatesFieldSummary").textContent = chosen ? t("cb.templateChosen", { name: chosen.name }) : "";
     };
-    bindSection("cbTemplates", "templates", "cbTemplateSearch");
     paintTemplateSummary();
     const chooseTemplate = (option) => {
       state.template = option.dataset.ref;
@@ -709,7 +710,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     const refreshEnv = () => {
       q("#cbEnvErr").textContent = "";
       const n = rows.children.length;
-      q("#cbEnvSummary").textContent = n ? t("env.sectionCount", { n }) : t("env.section");
+      q("#cbEnvTitle").textContent = n ? t("env.sectionCount", { n }) : t("env.section");
     };
     bindEnvRows(rows, refreshEnv);
     q("#cbAddEnv").addEventListener("click", () => {
