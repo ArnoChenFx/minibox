@@ -8,6 +8,7 @@
 - **Box 网络出站策略**：每个 Box 可选择 `open`（默认，与以往相同）、`none`（没有对外路由，exec、SSH 与端口预览仍可使用）或 `proxy-only`（只能经 MiniBox 代理访问白名单中的主机，并记录每次连接的主机、端口与字节数）。`BLOCK_HOST_GATEWAY` 可阻止默认网络上的 Box 访问宿主机服务。
 
 ### 新增
+- 卷的批量删除与清理孤立卷（[#178](https://github.com/ArnoChenFx/minibox/issues/178)）：卷页可勾选多个卷批量删除，删除前列出每个卷的去向。「清理孤立卷」预览没有任何 Box 或容器使用的卷，确认后删除。接口为 `POST /api/volumes/delete` 与 `POST /api/volumes/prune`（`dryRun` 默认为 `true`），需要新令牌权限 `volume:delete`，且只能操作令牌自己创建的卷。命令行新增 `minibox volume delete` 与 `minibox volume prune`，MCP 的 `storage` 工具集新增 `delete_volumes` 与 `prune_volumes`。
 - 网络出站策略（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：`POST /api/boxes`、`minibox box create --egress` 与 MCP 的 `create_box` 接受 `egress` 对象，其中 `mode` 为 `open`、`none` 或 `proxy-only`，`proxy-only` 另可指定 `presets` 与 `domains`。`POST /api/boxes/{id}/rebuild` 与 `rebuild_box` 同样接受它。预设为 `agent-default` 与 `package-registries`；白名单最多 100 个主机，支持 `*.` 通配子域名。`none` 与 `proxy-only` 的 Box 使用各自的私有网络，并由各安装自己的宿主机防火墙链 `MINIBOX-EGRESS-<hash>` 阻止访问宿主机。
 - `proxy-only` 代理只转发 80 与 443 端口，拒绝私有、回环与保留地址，并为每次连接记录 `egress.allowed`、`egress.denied` 或 `egress.failed` 事件。事件只含主机、端口、字节数、耗时与原因，不记录路径、查询、请求头或正文。Box 概览显示档位、允许的主机与最近被拒绝的连接，活动列表可按**出站**筛选，创建对话框的**高级**中新增**网络出站**选择器。
 - `BLOCK_HOST_GATEWAY`（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：设为 `true` 后，默认网络上的 Box 无法通过桥接网关访问宿主机上的服务。默认关闭。
