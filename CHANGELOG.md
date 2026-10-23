@@ -40,6 +40,7 @@
 - 新增真实引擎的出站集成测试 `tests/docker-egress.test.ts`，由 `bun run test:docker` 运行。它覆盖 `none` 的断网、exec、SSH 与端口预览，`proxy-only` 的允许、拒绝、事件与绕过，以及 `BLOCK_HOST_GATEWAY`。测试使用独立的标签前缀、数据目录与网络，并清理其代理、网络、防火墙规则与镜像。
 - 控制台导航的测试：`tests/web-routes.test.ts` 覆盖地址解析、标签页与旧地址的跳转，`tests/web-console-browser.test.ts` 用 Chromium 覆盖导航、标签页切换、刷新后的状态、宿主机筛选器与中文界面。浏览器测试与预览隔离测试一样，未配置 Chromium 时跳过，CI 中缺失则失败。
 - Dependabot 监控四个官方模板 Dockerfile（`templates/official/{node,python,go,minimal}`）的基础镜像，与基础模板一样每周检查、提交前缀为 `build`。
+- CI 新增 `official-templates` 任务：在 `linux/amd64` 上构建四个官方模板，并对每个镜像运行 `scripts/check-box-image.sh`；最小模板通过 `REQUIRED_TOOLS` 只检查它所带的工具。
 
 ### 文档
 - 模板指南新增「官方模板」一节（中英文），说明四个模板的内容、何时构建、重新构建时基础镜像的更新方式，以及权限；API、CLI 与 MCP 参考同步新增相应条目（[#15](https://github.com/ArnoChenFx/minibox/issues/15)）。
