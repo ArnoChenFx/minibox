@@ -81,8 +81,19 @@ describe("save as template strings", () => {
   });
 });
 
-describe("list and settings navigation strings", () => {
-  const added = ["list.showAll", "list.collapse", "st.navLabel"];
+describe("list, settings navigation and secret strings", () => {
+  const added = [
+    "list.showAll",
+    "list.collapse",
+    "st.navLabel",
+    "st.secretGenerate",
+    "st.secretGenerateHelp",
+    "st.secretShow",
+    "st.secretHide",
+    "st.secretCopy",
+    "st.secretCopied",
+    "st.secretCopyFailed",
+  ];
 
   test("each one has its own Chinese text, not the English copied across", () => {
     for (const key of added) expect([key, zh[key] !== en[key]]).toEqual([key, true]);

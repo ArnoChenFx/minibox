@@ -49,3 +49,22 @@
     padding-bottom: 4px;
   }
 }
+
+/* The add-secret form's value: a masked field with reveal and copy beside it, and the generator's line under it. */
+.secret-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.secret-input .input {
+  flex: 1;
+  min-width: 0;
+}
+.secret-gen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
