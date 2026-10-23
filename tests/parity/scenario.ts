@@ -1130,6 +1130,16 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("revoke the box's self token again", "DELETE", `/api/boxes/${selfBox}/self-token`);
     await asBox("the revoked self token is refused", "GET", "/api/self", self);
     await send("delete the self box", "DELETE", `/api/boxes/${selfBox}`);
+
+    const batch = await post("create a volume for a batch delete", "/api/volumes", { name: "batch", confirm: true });
+    const batchId = String((batch.json?.volume as { id?: string } | undefined)?.id ?? "");
+    await post("batch delete without confirm", "/api/volumes/delete", { ids: [batchId, "nowhere"] });
+    await post("batch delete a volume and a missing one", "/api/volumes/delete", {
+      ids: [batchId, "nowhere"],
+      confirm: true,
+    });
+    await post("prune orphaned volumes as a dry run", "/api/volumes/prune", {});
+    await post("prune orphaned volumes", "/api/volumes/prune", { dryRun: false });
   } finally {
     server.stop(true);
     app.throttle.stop();

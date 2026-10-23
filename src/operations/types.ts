@@ -99,6 +99,8 @@ export interface OperationContext {
   readonly body?: RawBody;
   /** Records an audit event parented to this operation. Exec uses it for start, finish and kill. */
   record?(note: AuditNote): void;
+  /** Adds an entry to the activity feed. A batch that changes many objects records one entry for each of them. */
+  recordActivity?(entry: ActivityRecord): void;
   /**
    * Starts an async operation as a child task of this one, with input and resolved values the caller has already
    * checked. A sync operation uses it for a long step it must not make its caller wait for, and gets the task id back.
@@ -109,6 +111,14 @@ export interface OperationContext {
    * Absent in tests that call a service directly; those callers are already inside the process.
    */
   authorize?(request: { scope: string; resource?: VolumeResource }): boolean | Promise<boolean>;
+}
+
+/** One entry of the activity feed, as an operation records it. */
+export interface ActivityRecord {
+  readonly action: string;
+  readonly target: string;
+  readonly ok: boolean;
+  readonly message?: string;
 }
 
 /** How one HTTP route maps onto an operation. Path params fill the input key with the same name. */
@@ -197,10 +207,14 @@ export interface OperationSpec<I extends z.ZodObject, O extends z.ZodType, R> ex
    * caller, not a failed task, so a confirmation that needs the target's preview can be answered at once.
    */
   readonly beforeTask?: (ctx: OperationContext, input: z.output<I>, resolved: R) => Promise<void>;
-  /** Recorded in the activity feed while the handler runs. Reads leave it out. */
+  /**
+   * Recorded in the activity feed while the handler runs. Reads leave it out. `when` false leaves the call out of the
+   * feed, as a dry run is, so that the handler records what it did.
+   */
   readonly activity?: {
     action(input: z.output<I>): string;
     target(input: z.output<I>, resolved: R): string;
+    when?(input: z.output<I>): boolean;
   };
   readonly audit?: AuditSpec<z.output<I>, z.input<O>, R>;
   /**
@@ -225,6 +239,7 @@ export interface Operation extends OperationMeta {
   activity?: {
     action(input: unknown): string;
     target(input: unknown, resolved: unknown): string;
+    when?(input: unknown): boolean;
   };
   audit?: {
     target?(input: unknown, resolved: unknown, result: unknown): EventTarget | undefined;

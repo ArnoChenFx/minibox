@@ -199,10 +199,12 @@ describe("OpenAPI document", () => {
       "volume.attach",
       "volume.create",
       "volume.delete",
+      "volume.delete.batch",
       "volume.detach",
       "volume.get",
       "volume.limits.set",
       "volume.list",
+      "volume.prune",
       "volume.usage",
     ]);
   });

@@ -33,6 +33,7 @@ export function defineOperation<I extends z.ZodObject, O extends z.ZodType, R = 
     activity: activity && {
       action: (value) => activity.action(value as z.output<I>),
       target: (value, resolved) => activity.target(value as z.output<I>, resolved as R),
+      when: activity.when && ((value) => activity.when?.(value as z.output<I>) ?? true),
     },
     audit: audit && {
       target:

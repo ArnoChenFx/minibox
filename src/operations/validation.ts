@@ -39,6 +39,7 @@ import {
 import type { BoxEnv, BoxMount } from "../specs/types";
 import { STARTUP_COMMAND_MAX_BYTES, startupCommandProblem, startupProblemMessage } from "../startup/command";
 import { isTargetSecretName } from "../targets/types";
+import { AGE_PATTERN, ageMs } from "../volumes/age";
 
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
@@ -372,6 +373,31 @@ export const skipTrashFlag = () =>
       false,
     ),
   }).default(false);
+
+const checkDryRun = boolFlag("dryRun", true);
+
+export const dryRunFlag = () =>
+  field(checkDryRun, {
+    type: "boolean",
+    description: withDefault(
+      "List the orphaned volumes without removing any. Send false to remove them. Accepts true, false, 1 or 0.",
+      true,
+    ),
+  }).default(true);
+
+function checkOlderThan(value: unknown): Checked<string | undefined> {
+  if (value === undefined || value === null || value === "") return accept(undefined);
+  if (typeof value === "string" && ageMs(value) !== null) return accept(value);
+  return reject(msg("volume_older_than_invalid"), "olderThan");
+}
+
+export const olderThanOption = () =>
+  field(checkOlderThan, {
+    type: "string",
+    pattern: AGE_PATTERN.source,
+    description:
+      "Prune only volumes whose last use is at least this old: a whole number and one unit of s, m, h, d or w, such as 30d. Omitted, every orphan qualifies.",
+  }).optional();
 
 export const safetyCheckpointFlag = () =>
   field(checkSafetyCheckpoint, {
