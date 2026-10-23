@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { log } from "../lib/logger";
 import { type CliBuilder, compileWithBun } from "./build";
@@ -152,7 +152,7 @@ export class CliDistribution {
   }
 
   private async prepare(): Promise<string> {
-    const key = await cacheKey(this.options.version, this.entry);
+    const key = await cacheKey(this.options.version, this.options.root);
     const dir = join(this.cacheRoot, key);
     await mkdir(dir, { recursive: true, mode: 0o700 });
     await removeOtherVersions(this.cacheRoot, [key, RUNTIMES_DIR]);
@@ -187,13 +187,30 @@ async function hashFile(path: string): Promise<string> {
   return hasher.digest("hex");
 }
 
-/** Names the cache directory after the version and the CLI source, so an edit that keeps the version still rebuilds. */
-async function cacheKey(version: string, entry: string): Promise<string> {
-  const source = createHash("sha256")
-    .update(await readFile(entry))
-    .digest("hex")
-    .slice(0, 16);
+/** Names the cache directory after the version and the CLI sources, so an edit that keeps the version still rebuilds. */
+async function cacheKey(version: string, root: string): Promise<string> {
+  const hash = createHash("sha256");
+  for (const file of await cliSources(root)) {
+    hash.update(relative(root, file));
+    hash.update(await readFile(file));
+  }
+  const source = hash.digest("hex").slice(0, 16);
   return `${version.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64)}-${source}`;
+}
+
+/** The entry and every module under `src/cli/`, in a fixed order. The binary is built from all of them. */
+async function cliSources(root: string): Promise<string[]> {
+  const dir = join(root, "src", "cli");
+  const modules = await readdir(dir, { recursive: true }).catch((e: unknown) => {
+    if (isEnoent(e)) return [];
+    throw e;
+  });
+  const files = modules.filter((name) => name.endsWith(".ts")).map((name) => join(dir, name));
+  return [join(root, "src", "cli.ts"), ...files.toSorted()];
+}
+
+function isEnoent(e: unknown): boolean {
+  return typeof e === "object" && e !== null && "code" in e && e.code === "ENOENT";
 }
 
 async function removeOtherVersions(root: string, keep: string[]): Promise<void> {
