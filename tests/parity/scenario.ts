@@ -1039,6 +1039,7 @@ async function recordScenario(): Promise<Exchange[]> {
       `/api/targets/${missingTarget}/pull`,
       notAnObject,
     );
+
     const doomed = await post("create a box to delete into the recycle bin", "/api/boxes", {
       name: "doomed",
       cpus: 1,

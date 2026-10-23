@@ -45,4 +45,7 @@ export default {
   "task.op.tool.reconcile": "Reconcile tools",
   "task.op.trash.restore": "Restore from the recycle bin",
   "task.op.trash.purge": "Purge from the recycle bin",
+  "task.op.backup.create": "Create backup",
+  "task.op.target.push": "Push to target",
+  "task.op.target.pull": "Pull from target",
 };
