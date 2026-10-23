@@ -368,6 +368,26 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
       },
       TIMEOUT_MS,
     );
+
+    test(
+      "a card's toolbar keeps the title bar's gap between its buttons, on Checkpoints and on Ports",
+      async () => {
+        for (const tab of ["/settings/checkpoints", "/ports"]) {
+          await page.goto(boxUrl(running, tab));
+          const buttons = page.locator("#tabBody .card-head .actions > .btn");
+          await webExpect(buttons.nth(1)).toBeVisible();
+          const gaps = await buttons.evaluateAll((list) =>
+            list.slice(1).map((b, i) => b.getBoundingClientRect().left - list[i]!.getBoundingClientRect().right),
+          );
+          const titleBarGap = await page
+            .locator(".detail-head .page-actions")
+            .evaluate((bar) => parseFloat(bar.ownerDocument.defaultView!.getComputedStyle(bar).columnGap));
+          expect(titleBarGap).toBe(8);
+          for (const gap of gaps) expect([tab, Math.round(gap)]).toEqual([tab, titleBarGap]);
+        }
+      },
+      TIMEOUT_MS,
+    );
   });
 
   describe("terminal sessions", () => {
