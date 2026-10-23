@@ -2,9 +2,8 @@ import type { HostCtx } from "../host/registry";
 import { AppError, badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { within } from "../lib/within";
-import { ensureBaseImage } from "../services/base-template";
 import { assertVolumesPresent } from "./engine";
-import { assertPoolsReachable, probePool } from "./health";
+import { assertPoolsReachable, helperImage, probePool } from "./health";
 import type { VolumeStore } from "./store";
 import type { StoragePool, UsageScope, VolumeRecord } from "./types";
 
@@ -45,7 +44,9 @@ function poolOf(host: HostCtx, volume: VolumeRecord): StoragePool | undefined {
  */
 export async function measureTree(host: HostCtx, engineName: string): Promise<number> {
   await assertVolumesPresent(host, [engineName]);
-  const image = await ensureBaseImage(host);
+  // The usage sampler calls this on a timer, so a missing base template is reported here, never built.
+  const image = await helperImage(host);
+  if (!image) throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
   const result = await host.runtime.runHelper({
     image,
     user: "0:0",
