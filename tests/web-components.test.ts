@@ -238,3 +238,27 @@ describe("fold sections", () => {
     expect(src.match(/foldSectionHtml\(\{/g)?.length).toBe(6);
   });
 });
+
+describe("row editors", () => {
+  test("every mount and variable list sits in a row editor with its add button, one row gap apart", () => {
+    for (const file of ["create-box.js", "box-actions.js", "env-card.js"]) {
+      const source = readFileSync(join(WEB, "js", "components", file), "utf8");
+      const lists = source.match(/<div class="(?:rebuild-mounts|env-rows)"[^>]*><\/div>/g) ?? [];
+      expect(lists.length).toBeGreaterThan(0);
+      for (const list of lists) {
+        const at = source.indexOf(list);
+        const open = source.lastIndexOf('class="row-editor"', at);
+        expect(open).toBeGreaterThan(-1);
+        // The list is a direct child: every div opened since the editor's own tag is closed again.
+        const between = source.slice(open, at);
+        expect((between.match(/<div/g) ?? []).length).toBe((between.match(/<\/div>/g) ?? []).length);
+        expect(source.slice(at + list.length).trimStart()).toMatch(/^<button type="button" class="btn"/);
+      }
+    }
+    const css = readFileSync(join(WEB, "css", "app", "modal.css"), "utf8");
+    const editor = css.match(/\.row-editor \{[^}]*\}/)?.[0] ?? "";
+    expect(editor).toContain("display: flex;");
+    expect(editor).toContain("gap: 8px;");
+    expect(css).toMatch(/\.row-editor\[hidden\],\s*\.row-editor > :empty \{\s*display: none;/);
+  });
+});

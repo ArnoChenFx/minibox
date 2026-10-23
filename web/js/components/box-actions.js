@@ -222,12 +222,16 @@ export async function openRebuild(box) {
       <div class="field"><label class="label" for="rbNetwork">${esc(t("rb.network"))}</label>
         <input class="input" id="rbNetwork" value="${esc(box.network || "")}" /></div>
       <div class="field"><span class="label">${esc(t("rb.env"))}</span>
-        <div class="env-rows" id="rbEnvRows"></div>
-        <button type="button" class="btn" id="rbAddEnv">${icon("plus")}${esc(t("env.add"))}</button>
+        <div class="row-editor">
+          <div class="env-rows" id="rbEnvRows"></div>
+          <button type="button" class="btn" id="rbAddEnv">${icon("plus")}${esc(t("env.add"))}</button>
+        </div>
         <div class="help">${esc(t("rb.envHelp"))}</div></div>
       <div class="field"><span class="label">${esc(t("rb.mounts"))}</span>
-        <div class="rebuild-mounts" id="rbMounts"></div>
-        <button type="button" class="btn" id="rbAddMount">${esc(t("mount.add"))}</button>
+        <div class="row-editor">
+          <div class="rebuild-mounts" id="rbMounts"></div>
+          <button type="button" class="btn" id="rbAddMount">${esc(t("mount.add"))}</button>
+        </div>
         <div class="help">${esc(t("rb.mountsHelp"))}</div></div>
       <div class="error-text" id="rbErr"></div>
       <div id="rbPreview" hidden></div>`,
