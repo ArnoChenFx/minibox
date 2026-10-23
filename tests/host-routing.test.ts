@@ -107,6 +107,16 @@ describe("box operations go to the host the box lives on", () => {
     expect(edge.callsTo("inspectContainer").length).toBeGreaterThan(0);
   });
 
+  test("the rollback state of a box on another host is read there, so the checkpoints tab can load", async () => {
+    const box = await boxOn("edge", "alpha");
+    const localCalls = local.calls.length;
+
+    const res = await api(`/api/boxes/${box.boxId}/rollback`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ rollback: null });
+    expect(local.calls.length).toBe(localCalls);
+  });
+
   test("a box created without a host is on the local host, which is the default", async () => {
     const box = await boxOn(undefined, "beta");
     expect(box.hostId).toBe("local");
