@@ -300,6 +300,7 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `GET` | `/api/templates` | List templates |
 | `POST` | `/api/templates` | Build a template from a source, as a task. Owner only |
 | `POST` | `/api/templates/{ref}/rebuild` | Rebuild a template from the source it was built from, as a task. Owner only |
+| `POST` | `/api/templates/{ref}/sync` | Copy a template to another host, as a task. The body is `{ host }`. Owner only |
 | `POST` | `/api/images/pull` | Pull an image from its registry, as a task, unless the engine has it. Owner only |
 | `POST` | `/api/snapshots/{ref}/promote` | Promote a snapshot to a template |
 | `POST` | `/api/boxes/{id}/template` | Save a box as a template |
@@ -307,6 +308,8 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `DELETE` | `/api/templates/{ref}` | Delete a template |
 
 `POST /api/templates` takes `name`, an optional `description` and a `source`. The source's `kind` is `dockerfile` (with `text`), `git` (with `url`, and optional `branch`, `subdir`, `dockerfile` and `secretRef`), `context` (with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`) or `devcontainer` (with `url`, and optional `branch`, `path` and `secretRef`). The task's result holds `template.ref`, such as `minibox-template:node-tools`. `POST /api/images/pull` takes `ref`, such as `node:24-bookworm-slim`, and its task's result holds `image.ref` and `image.id`. See [Templates](../user-guide/templates.md).
+
+`host` names the host an operation runs on. In a body it is the `host` field, as in `POST /api/templates`, `POST /api/images/pull` and `POST /api/templates/{ref}/sync`, where it is the host to copy to. As a query parameter it is `?host=`, as in `POST /api/templates/{ref}/rebuild`, `POST /api/templates/base/build` and `DELETE /api/templates/{ref}`. Without it, a build or a pull runs on `local`, and a rebuild or a delete runs on the first host that holds the template.
 
 ### tasks
 

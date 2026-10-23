@@ -178,8 +178,9 @@ Building a template, rebuilding one and pulling an image are for the owner only.
 | Command | Meaning |
 |---|---|
 | `minibox template create <name> (--dockerfile FILE \| --repo URL \| --context URL \| --devcontainer URL) [options]` | Builds a template from one source, and prints its reference, such as `minibox-template:node-tools` |
-| `minibox template rebuild <ref>` | Rebuilds a template from the source it was built from. The tag moves only when the build succeeds. |
-| `minibox image pull <ref>` | Pulls an image from its registry, unless the engine already has it |
+| `minibox template rebuild <ref> [--host ID]` | Rebuilds a template from the source it was built from. The tag moves only when the build succeeds. Without `--host`, the first host that holds the template. |
+| `minibox template sync <ref> --host ID` | Copies a template from a host that holds it to host `ID`, so a box can start there |
+| `minibox image pull <ref> [--host ID]` | Pulls an image from its registry, unless the engine already has it. Default: `local` |
 
 The options of `template create`:
 
@@ -195,6 +196,7 @@ The options of `template create`:
 | `--dockerfile-path PATH` | With `--repo` or `--context`: the Dockerfile, relative to the build context |
 | `--devcontainer-path PATH` | With `--devcontainer`: the `devcontainer.json` inside the repository |
 | `--description TEXT` | A description of up to 200 characters |
+| `--host ID` | Builds on host `ID`. Default: `local` |
 
 ```bash
 minibox template create node-tools --dockerfile ./Dockerfile

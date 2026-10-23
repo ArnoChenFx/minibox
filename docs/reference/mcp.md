@@ -36,7 +36,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
 | `storage` | Volumes, storage pools, the owner's recycle bin, the owner's checkpoint export, import and schedules, and the owner's backups and off-site targets |
-| `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, and pulling images |
+| `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, pulling images, and copying templates to another host |
 | `network` | Preview ports |
 
 ## Tools by toolset
@@ -152,6 +152,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `save_template` | `POST /api/boxes/{id}/template` |
 | `create_template` | `POST /api/templates`. Owner only |
 | `rebuild_template` | `POST /api/templates/{ref}/rebuild`. Owner only |
+| `sync_template` | `POST /api/templates/{ref}/sync`. Owner only |
 | `pull_image` | `POST /api/images/pull`. Owner only |
 
 ### network
@@ -214,7 +215,7 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 - `context`, with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`.
 - `devcontainer`, with `url`, and optional `branch`, `path` and `secretRef`. It reads `image`, `build` and `containerEnv` from the `devcontainer.json` file, and refuses any other setting, including lifecycle commands.
 
-`rebuild_template` takes the template's `ref`, and `pull_image` takes an image `ref`, such as `node:24-bookworm-slim`. Building, rebuilding and pulling are owner only. Each returns a task, and its log shows the build or the layers. See [Templates](../user-guide/templates.md).
+`rebuild_template` takes the template's `ref`, and `pull_image` takes an image `ref`, such as `node:24-bookworm-slim`. `sync_template` takes the template's `ref` and the `host` to copy it to. Building, rebuilding and pulling are owner only. Each returns a task, and its log shows the build or the layers. See [Templates](../user-guide/templates.md).
 
 ## Notification tools
 
