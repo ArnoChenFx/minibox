@@ -615,6 +615,48 @@ describe("CLI box create and startup command", () => {
   });
   afterEach(() => restoreLogs());
 
+  test("box create takes the egress tier with its presets and domains, and the box reports them", async () => {
+    const env = serve();
+    try {
+      const sealed = io();
+      expect(await runCli(["box", "create", "sealed", "--egress", "none"], env.env, sealed, lines([]))).toBe(0);
+      expect(sealed.out).toBe("sealed\n");
+
+      const walled = io();
+      const walledArgs = [
+        "box",
+        "create",
+        "walled",
+        "--egress",
+        "proxy-only",
+        "--egress-preset",
+        "agent-default",
+        "--egress-domain",
+        "*.example.org",
+        "--egress-domain",
+        "example.com",
+      ];
+      expect(await runCli(walledArgs, env.env, walled, lines([]))).toBe(0);
+
+      const boxes = (await env.app.operations.run("box.list", env.ctx, {})) as { boxes: { name: string }[] };
+      expect(boxes.boxes.map((box) => box.name).toSorted()).toEqual(["sealed", "walled"]);
+      const walledBox = (await env.app.operations.run("box.get", env.ctx, { id: "walled" })) as {
+        box: { egress?: { mode: string; presets: string[]; domains: string[] } };
+      };
+      expect(walledBox.box.egress).toMatchObject({
+        mode: "proxy-only",
+        presets: ["agent-default"],
+        domains: ["*.example.org", "example.com"],
+      });
+      const sealedBox = (await env.app.operations.run("box.get", env.ctx, { id: "sealed" })) as {
+        box: { egress?: unknown };
+      };
+      expect(sealedBox.box.egress).toEqual({ mode: "none", presets: [], domains: [], allow: [] });
+    } finally {
+      env.stop();
+    }
+  });
+
   test("box create takes the startup command from a flag or stdin, and get reads it back as typed", async () => {
     const env = serve();
     try {
@@ -787,6 +829,11 @@ describe("CLI box create and startup command", () => {
         "minibox box create takes --startup-command or --startup-command-stdin, not both",
       ],
       [["box", "create", "alpha", "--cpus"], "--cpus needs a value"],
+      [
+        ["box", "create", "alpha", "--egress-domain", "example.com"],
+        "minibox box create takes --egress-preset and --egress-domain only with --egress",
+      ],
+      [["box", "create", "alpha", "--egress", "none", "--egress-preset"], "--egress-preset needs a value"],
       [["box", "create", "alpha", "--color", "red"], "Unknown option --color"],
       [["box", "startup-command"], "minibox box startup-command needs one of get, set, rm, run"],
       [["box", "startup-command", "frobnicate", "alpha"], "minibox box startup-command needs one of get, set, rm, run"],

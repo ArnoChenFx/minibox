@@ -1,4 +1,13 @@
-import { type CliIo, request, fail, OUTPUT_SWITCHES, parseOptions, numberOption, readStdinText } from "./shared";
+import {
+  type CliIo,
+  request,
+  fail,
+  OUTPUT_SWITCHES,
+  type Options,
+  parseOptions,
+  numberOption,
+  readStdinText,
+} from "./shared";
 import { followTask } from "./task";
 
 export async function boxLs(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
@@ -25,6 +34,9 @@ const BOX_CREATE_VALUE_FLAGS = [
   "--cpus",
   "--memory",
   "--profile",
+  "--egress",
+  "--egress-preset",
+  "--egress-domain",
   "--repo",
   "--branch",
   "--secret",
@@ -32,6 +44,29 @@ const BOX_CREATE_VALUE_FLAGS = [
 ];
 
 const BOX_CREATE_SWITCHES = [...OUTPUT_SWITCHES, "--startup-command-stdin"];
+
+/** Every value a repeatable flag names, in the order given. `parseOptions` keeps only the last one. */
+function repeatedValues(argv: string[], flag: string): string[] {
+  return argv.flatMap((token, index) => (token === flag ? [argv[index + 1] ?? ""] : []));
+}
+
+/** `--egress` names the tier. The presets and domains of `proxy-only` may repeat, and mean nothing without a tier. */
+function egressOption(argv: string[], options: Options): Record<string, unknown> | undefined {
+  const mode = options.values.get("--egress");
+  const presets = repeatedValues(argv, "--egress-preset");
+  const domains = repeatedValues(argv, "--egress-domain");
+  if (mode === undefined) {
+    if (presets.length > 0 || domains.length > 0) {
+      throw new Error("minibox box create takes --egress-preset and --egress-domain only with --egress");
+    }
+    return undefined;
+  }
+  return {
+    mode,
+    ...(presets.length > 0 ? { presets } : {}),
+    ...(domains.length > 0 ? { domains } : {}),
+  };
+}
 
 export async function boxCreateCommand(
   argv: string[],
@@ -59,6 +94,8 @@ export async function boxCreateCommand(
   if (memoryMb !== undefined) body.memoryMb = memoryMb;
   const profile = options.values.get("--profile");
   if (profile !== undefined) body.profile = profile;
+  const egress = egressOption(argv, options);
+  if (egress !== undefined) body.egress = egress;
   if (url !== undefined) {
     const repo: Record<string, string> = { url };
     const branch = options.values.get("--branch");

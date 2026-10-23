@@ -163,6 +163,48 @@
                           "network": {
                             "type": "string"
                           },
+                          "egress": {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "open",
+                                  "none",
+                                  "proxy-only"
+                                ]
+                              },
+                              "presets": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "agent-default",
+                                    "package-registries"
+                                  ]
+                                }
+                              },
+                              "domains": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "allow": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "presets",
+                              "domains",
+                              "allow"
+                            ],
+                            "additionalProperties": false
+                          },
                           "cpus": {
                             "type": [
                               "number",
@@ -677,6 +719,42 @@
                     ],
                     "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
                   },
+                  "egress": {
+                    "type": "object",
+                    "required": [
+                      "mode"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "none",
+                          "proxy-only"
+                        ]
+                      },
+                      "presets": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "agent-default",
+                            "package-registries"
+                          ]
+                        }
+                      },
+                      "domains": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 253
+                        }
+                      }
+                    },
+                    "description": "Network egress for the box. open, the default, reaches the internet like any container. none gives the box a private network with no route out: exec, SSH and preview still reach it. proxy-only gives it a private network whose only way out is a MiniBox proxy, which forwards to the hosts named by presets and domains and refuses the rest. presets (agent-default, package-registries) and domains (a host, or *. and a suffix for its subdomains) apply to proxy-only only. The proxy logs each host it allows or refuses, never paths or bodies. Changing egress rebuilds the box, so an update or rebuild without confirm true returns the preview."
+                  },
                   "mounts": {
                     "description": "Mounts to use instead of the four role volumes. An empty list creates a box with no mounts. Omitted, MiniBox creates workspace, home, tools and cache.",
                     "type": "array",
@@ -872,6 +950,48 @@
                         },
                         "network": {
                           "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
                         },
                         "cpus": {
                           "type": [
@@ -1420,6 +1540,48 @@
                         },
                         "network": {
                           "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
                         },
                         "cpus": {
                           "type": [
@@ -2232,6 +2394,42 @@
                     "maxLength": 128,
                     "description": "Docker network the rebuilt container joins: the host's box network (created when missing) or the network the box already uses. Host, none and container networks, and any other network, are refused."
                   },
+                  "egress": {
+                    "type": "object",
+                    "required": [
+                      "mode"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "none",
+                          "proxy-only"
+                        ]
+                      },
+                      "presets": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "agent-default",
+                            "package-registries"
+                          ]
+                        }
+                      },
+                      "domains": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 253
+                        }
+                      }
+                    },
+                    "description": "Network egress for the box. open, the default, reaches the internet like any container. none gives the box a private network with no route out: exec, SSH and preview still reach it. proxy-only gives it a private network whose only way out is a MiniBox proxy, which forwards to the hosts named by presets and domains and refuses the rest. presets (agent-default, package-registries) and domains (a host, or *. and a suffix for its subdomains) apply to proxy-only only. The proxy logs each host it allows or refuses, never paths or bodies. Changing egress rebuilds the box, so an update or rebuild without confirm true returns the preview."
+                  },
                   "profile": {
                     "type": "string",
                     "enum": [
@@ -2298,6 +2496,48 @@
                         },
                         "network": {
                           "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
                         },
                         "cpus": {
                           "type": [
@@ -2865,6 +3105,48 @@
                         "network": {
                           "type": "string"
                         },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -3391,6 +3673,48 @@
                         "network": {
                           "type": "string"
                         },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -3916,6 +4240,48 @@
                         },
                         "network": {
                           "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
                         },
                         "cpus": {
                           "type": [
@@ -4483,6 +4849,48 @@
                         "network": {
                           "type": "string"
                         },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -5041,6 +5449,42 @@
                     "maxLength": 128,
                     "description": "Docker network the rebuilt container joins: the host's box network (created when missing) or the network the box already uses. Host, none and container networks, and any other network, are refused."
                   },
+                  "egress": {
+                    "type": "object",
+                    "required": [
+                      "mode"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "none",
+                          "proxy-only"
+                        ]
+                      },
+                      "presets": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "agent-default",
+                            "package-registries"
+                          ]
+                        }
+                      },
+                      "domains": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 253
+                        }
+                      }
+                    },
+                    "description": "Network egress for the box. open, the default, reaches the internet like any container. none gives the box a private network with no route out: exec, SSH and preview still reach it. proxy-only gives it a private network whose only way out is a MiniBox proxy, which forwards to the hosts named by presets and domains and refuses the rest. presets (agent-default, package-registries) and domains (a host, or *. and a suffix for its subdomains) apply to proxy-only only. The proxy logs each host it allows or refuses, never paths or bodies. Changing egress rebuilds the box, so an update or rebuild without confirm true returns the preview."
+                  },
                   "profile": {
                     "type": "string",
                     "enum": [
@@ -5115,6 +5559,48 @@
                         },
                         "network": {
                           "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
                         },
                         "cpus": {
                           "type": [
@@ -5859,6 +6345,48 @@
                 },
                 "network": {
                   "type": "string"
+                },
+                "egress": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "none",
+                        "proxy-only"
+                      ]
+                    },
+                    "presets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "agent-default",
+                          "package-registries"
+                        ]
+                      }
+                    },
+                    "domains": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "presets",
+                    "domains",
+                    "allow"
+                  ],
+                  "additionalProperties": false
                 },
                 "cpus": {
                   "type": [
@@ -12277,6 +12805,48 @@
                         "network": {
                           "type": "string"
                         },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
+                        },
                         "cpus": {
                           "type": [
                             "number",
@@ -12913,6 +13483,48 @@
                         },
                         "network": {
                           "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
                         },
                         "cpus": {
                           "type": [
@@ -18635,6 +19247,42 @@
                     ],
                     "description": "Security profile: standard, strict or relaxed. Omitted, the host's default profile is used."
                   },
+                  "egress": {
+                    "type": "object",
+                    "required": [
+                      "mode"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "none",
+                          "proxy-only"
+                        ]
+                      },
+                      "presets": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "agent-default",
+                            "package-registries"
+                          ]
+                        }
+                      },
+                      "domains": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 253
+                        }
+                      }
+                    },
+                    "description": "Network egress for the box. open, the default, reaches the internet like any container. none gives the box a private network with no route out: exec, SSH and preview still reach it. proxy-only gives it a private network whose only way out is a MiniBox proxy, which forwards to the hosts named by presets and domains and refuses the rest. presets (agent-default, package-registries) and domains (a host, or *. and a suffix for its subdomains) apply to proxy-only only. The proxy logs each host it allows or refuses, never paths or bodies. Changing egress rebuilds the box, so an update or rebuild without confirm true returns the preview."
+                  },
                   "ttlSec": {
                     "description": "Time to live in seconds. A positive integer, at most 365 days, or null for none. Omitted or null stores no TTL, except for an agent token with a max TTL, which stores that cap. A value above the cap is refused. When the time elapses the box stops, and its container is kept.",
                     "anyOf": [
@@ -18714,6 +19362,48 @@
                         },
                         "network": {
                           "type": "string"
+                        },
+                        "egress": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "none",
+                                "proxy-only"
+                              ]
+                            },
+                            "presets": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "agent-default",
+                                  "package-registries"
+                                ]
+                              }
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "allow": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "presets",
+                            "domains",
+                            "allow"
+                          ],
+                          "additionalProperties": false
                         },
                         "cpus": {
                           "type": [
@@ -21542,6 +22232,48 @@
                 "network": {
                   "type": "string"
                 },
+                "egress": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "none",
+                        "proxy-only"
+                      ]
+                    },
+                    "presets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "agent-default",
+                          "package-registries"
+                        ]
+                      }
+                    },
+                    "domains": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "presets",
+                    "domains",
+                    "allow"
+                  ],
+                  "additionalProperties": false
+                },
                 "cpus": {
                   "type": [
                     "number",
@@ -22148,6 +22880,48 @@
                 },
                 "network": {
                   "type": "string"
+                },
+                "egress": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "none",
+                        "proxy-only"
+                      ]
+                    },
+                    "presets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "agent-default",
+                          "package-registries"
+                        ]
+                      }
+                    },
+                    "domains": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "presets",
+                    "domains",
+                    "allow"
+                  ],
+                  "additionalProperties": false
                 },
                 "cpus": {
                   "type": [
@@ -23198,6 +23972,48 @@
                 },
                 "network": {
                   "type": "string"
+                },
+                "egress": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "none",
+                        "proxy-only"
+                      ]
+                    },
+                    "presets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "agent-default",
+                          "package-registries"
+                        ]
+                      }
+                    },
+                    "domains": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "presets",
+                    "domains",
+                    "allow"
+                  ],
+                  "additionalProperties": false
                 },
                 "cpus": {
                   "type": [
@@ -27789,6 +28605,48 @@
                     },
                     "network": {
                       "type": "string"
+                    },
+                    "egress": {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "none",
+                            "proxy-only"
+                          ]
+                        },
+                        "presets": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "agent-default",
+                              "package-registries"
+                            ]
+                          }
+                        },
+                        "domains": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "allow": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "presets",
+                        "domains",
+                        "allow"
+                      ],
+                      "additionalProperties": false
                     },
                     "cpus": {
                       "type": [
