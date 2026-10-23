@@ -1,7 +1,7 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { canonicalEnv, checkEnvRows, envRowsOf } from "../lib/env.js";
-import { dateTime, gbOrMb } from "../lib/format.js";
+import { cpus as formatCpus, dateTime, gbOrMb } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { canonicalMounts } from "../lib/mounts.js";
@@ -101,7 +101,11 @@ export function editResources(box, onSaved) {
       );
       close();
       toast(t("ba.resUpdated"), {
-        message: t("ba.resUpdatedText", { name: box.name, cpus, mem: gbOrMb(memoryMb * 1024 * 1024) }),
+        message: t("ba.resUpdatedText", {
+          name: box.name,
+          cpus: formatCpus(cpus),
+          mem: gbOrMb(memoryMb * 1024 * 1024),
+        }),
       });
       refreshHost();
       onSaved?.();
