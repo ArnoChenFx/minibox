@@ -191,6 +191,24 @@ describe("moving a box to another host", () => {
     );
   });
 
+  test("a move off a host whose shared tools volume the engine lost is not refused for it, and the box takes the target's tools", async () => {
+    const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
+    const tools = cluster.app.hosts
+      .get()
+      .volumes.list()
+      .find((volume) => volume.role === "tools");
+    if (!tools) throw new Error("the local host has no shared tools record");
+    cluster.engines.local.volumes.delete(tools.engineName);
+
+    expect((await confirmed(box.boxId, "small", box.revision)).status).toBe("succeeded");
+    const target = cluster.app.hosts.get("small");
+    const targetTools = target.volumes.list().find((volume) => volume.role === "tools")?.engineName;
+    expect(target.specs.read(box.boxId)?.mounts.find((mount) => mount.path === "/opt/minibox/tools")?.volume).toBe(
+      targetTools,
+    );
+    expect(cluster.engines.small.volumes.has(targetTools ?? "")).toBe(true);
+  });
+
   test("a start that fails on the target undoes the move: the box stays on its host and runs", async () => {
     const box = await boxOn(cluster, undefined, "dev");
     cluster.engines.small.fail("startContainer", new RuntimeError("engine", "start refused"));

@@ -17,6 +17,7 @@ import {
   assertVolumesPresent,
   findSharedTools,
   healSharedTools,
+  isSharedTools,
   labelsFor,
   mountedByAnotherBox,
 } from "../volumes/engine";
@@ -174,10 +175,14 @@ async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, rev
   const image = await sourceImage(from, spec.template.image);
   const transfer = await needsImage(to, spec.template.image, image);
   assertSecretsSet(to.secrets, spec.env);
-  await assertVolumesPresent(
-    from,
-    spec.mounts.map((mount) => mount.volume),
-  );
+  // A move never reads the source's shared tools volume, so a lost one is not refused here.
+  const sourceVolumes = spec.mounts
+    .map((mount) => mount.volume)
+    .filter((volume) => {
+      const record = from.volumes.findByEngine(from.host.id, volume);
+      return !record || !isSharedTools(from, record);
+    });
+  await assertVolumesPresent(from, sourceVolumes);
   const volumes = volumePlan(from, to, spec);
   await assertPoolsReachable(
     to,
