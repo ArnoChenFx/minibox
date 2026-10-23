@@ -58,6 +58,14 @@ Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#r
 
 When you delete a box, you can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
 
+## Delete several volumes, or clean up orphans
+
+On the **Volumes** tab, tick the volumes to delete. The header box selects every volume that the search shows. A volume that a box mounts, and the shared tools volume, cannot be selected. Click **Delete selected**. The dialog shows what happens to each volume before you confirm, and **Delete without keeping a copy** applies to the whole selection.
+
+**Clean up orphaned volumes** lists the volumes that MiniBox made and that nothing uses: no box spec and no container mounts them. A volume left behind by a deleted box is an orphan. The dialog shows each orphan's size, when it was last used, and its former box. The shared tools volume, MiniBox's internal volumes, and any volume created or used in the last five minutes are never listed. On several hosts, an offline or failing host is skipped, and the dialog says so.
+
+Each deletion is recorded in the activity feed. On the command line, use `minibox volume delete` and `minibox volume prune`. See the [CLI reference](../reference/cli.md#volumes).
+
 ## Usage, limits and free space
 
 MiniBox measures every volume's usage every 10 minutes by default. You can set a soft and a hard limit on each volume, and the host keeps a free-space floor. **Soft alerts are best effort, not a quota.** They tell you early that a volume is growing, but nothing stops the volume from growing past them.

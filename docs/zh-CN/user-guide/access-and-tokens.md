@@ -54,7 +54,7 @@ Box 内 Agent 使用的是另一种令牌，即自助令牌。所有者在创建
 |---|---|
 | `readonly` | 在本宿主机上读取 Box 和文件。默认只能看到它创建的 Box，且不能创建 Box。指定具体 Box 或全部 Box 后才有用。 |
 | `operator` | 除使用密钥外的一切操作，仅限本宿主机。仅限该令牌创建的 Box。 |
-| `sandboxed-agent` | 类似 `operator`，但不能挂载已有卷、安装工具或使用 SSH。适用配额：5 个 Box、合计 8 核 CPU 和 16 GB 内存、4 小时 TTL、每分钟 60 次请求、20 个手动检查点。 |
+| `sandboxed-agent` | 类似 `operator`，但不能挂载已有卷、安装工具、使用 SSH，或批量删除与清理卷。适用配额：5 个 Box、合计 8 核 CPU 和 16 GB 内存、4 小时 TTL、每分钟 60 次请求、20 个手动检查点。 |
 | `admin` | 全部 scope，全部 Box 和全部宿主机。仅用于可信工具。 |
 
 ### scope
@@ -75,6 +75,7 @@ Box 内 Agent 使用的是另一种令牌，即自助令牌。所有者在创建
 | `volume:read` | 查看卷 |
 | `volume:write` | 创建卷 |
 | `volume:attach` | 将已有卷挂载到 Box |
+| `volume:delete` | 批量删除卷，或清理孤立卷。令牌只能操作它创建的卷。 |
 | `tool:install` | 安装、升级和卸载工具；把 Box 存为模板、删除模板 |
 | `secret:use` | 让 Box 引用密钥，包括代码仓库克隆使用的密钥 |
 | `trash:skip` | 删除 Box 或卷时不在回收站中保留副本。没有任何预设包含它。 |

@@ -54,7 +54,7 @@ The command line can create one too: `minibox token create <name>` prints the se
 |---|---|
 | `readonly` | Read boxes and files on this host. By default it sees only the boxes it created, and it cannot create boxes. Give it specific boxes, or every box, to make it useful. |
 | `operator` | Everything except secret use, on this host. Only the boxes the token created. |
-| `sandboxed-agent` | Like `operator`, but without mounting existing volumes, installing tools or SSH. Quotas apply: 5 boxes, 8 CPU cores and 16 GB in total, a 4-hour TTL, 60 requests a minute, and 20 manual checkpoints. |
+| `sandboxed-agent` | Like `operator`, but without mounting existing volumes, installing tools, SSH, or deleting volumes in a batch or pruning them. Quotas apply: 5 boxes, 8 CPU cores and 16 GB in total, a 4-hour TTL, 60 requests a minute, and 20 manual checkpoints. |
 | `admin` | Every scope, on every box and every host. Use it only for a trusted tool. |
 
 ### Scopes
@@ -75,6 +75,7 @@ Each preset is a set of these scopes:
 | `volume:read` | See volumes |
 | `volume:write` | Create volumes |
 | `volume:attach` | Mount existing volumes into boxes |
+| `volume:delete` | Delete several volumes at once, or prune orphaned volumes. A token acts only on the volumes it created. |
 | `tool:install` | Install, upgrade and remove tools. Save a box as a template, and delete templates. |
 | `secret:use` | Give a box a host secret, or the secret for a repository clone |
 | `trash:skip` | Delete a box or a volume without keeping a copy in the recycle bin. No preset includes it. |

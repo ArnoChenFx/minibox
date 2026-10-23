@@ -140,6 +140,15 @@ minibox session read my-box build --lines 50
 
 A session that a person has taken over in the console refuses `session send` with `taken_over`. `session read` still works.
 
+## Volumes
+
+| Command | What it does |
+|---|---|
+| `minibox volume delete <id\|name>... [--skip-trash] [--yes] [--json]` | Deletes volumes on any host. Without `--yes`, only the preview prints. Each volume is deleted as `DELETE /api/volumes/{id}` deletes one: its data is kept in the recycle bin unless `--skip-trash` is set, and a volume that a box or container uses is refused. Exits `1` when a volume is not removed |
+| `minibox volume prune [--older-than 30d] [--yes] [--json]` | Lists the orphaned volumes, which are MiniBox volumes that no box or container uses. `--yes` removes them. `--older-than` keeps the volumes used more recently. A volume created or used in the last five minutes is never listed |
+
+`--skip-trash` needs the owner, or a token with the `trash:skip` scope. Both commands need the `volume:delete` scope, and a token acts only on the volumes it created. See [Volumes and storage](../user-guide/volumes-and-storage.md#delete-several-volumes-or-clean-up-orphans).
+
 ## Files in volumes
 
 These commands work on volumes, even when no box is running. See [Volumes and storage](../user-guide/volumes-and-storage.md).
