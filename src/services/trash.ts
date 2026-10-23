@@ -6,9 +6,9 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { VolumeChanges } from "../volumes/changes";
 import { inspectVolumeOrNull } from "../volumes/engine";
-import { measureEngine } from "../volumes/measure";
 import { createRestoredVolume, planIndependentVolume } from "../volumes/provision";
 import type { VolumeRecord } from "../volumes/types";
+import { measureTree } from "../volumes/usage";
 import { type Box, deleteBox, type DeleteBoxResult } from "./boxes";
 import { assertNewBox } from "./capacity";
 import { usageOf } from "./checkpoint-capacity";
@@ -232,7 +232,10 @@ async function presentLayers(host: HostCtx, layers: PlannedLayer[]): Promise<Pla
 async function layersBytes(host: HostCtx, layers: PlannedLayer[]): Promise<number> {
   let total = 0;
   for (const layer of layers) {
-    total += (await measureEngine(host, layer.volume.engineName)) ?? layer.volume.bytes ?? 0;
+    total += await measureTree(host, layer.volume.engineName).catch((e) => {
+      log.warn("trash.size_unmeasured", { volume: layer.volume.name, error: String(e) });
+      return layer.volume.bytes ?? 0;
+    });
   }
   return total;
 }

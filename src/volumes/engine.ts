@@ -1,12 +1,14 @@
+import { randomBytes } from "node:crypto";
+
 import type { HostCtx } from "../host/registry";
 import { volumeName } from "../labels";
 import { AppError, badRequest, conflict, forbidden } from "../lib/errors";
 import { log } from "../lib/logger";
 import { type Msg, msg } from "../lib/messages";
-import { RuntimeError, type VolumeInfo } from "../runtime";
+import { isRuntimeError, RuntimeError, type VolumeInfo, type VolumeOwner } from "../runtime";
 import type { BoxSpec } from "../specs/types";
 import { VolumeChanges } from "./changes";
-import { assertPoolsReachable, poolRootVolume } from "./health";
+import { assertPoolsReachable, helperImage, poolRootVolume } from "./health";
 import { nfsDriverOpts, pathDriverOpts, poolForRole } from "./pools";
 import type { StoragePool, VolumeOwnership, VolumeRecord, VolumeRole } from "./types";
 import { DEV_OWNER, LOCAL_POOL, ROLE_MOUNT, UNLIMITED } from "./types";
@@ -490,4 +492,35 @@ export function poolsUsed(host: HostCtx, mounts: { volume: string }[]): string[]
 export function mountFor(role: VolumeRole, engineName: string): { volume: string; path: string; mode: "rw" | "ro" } {
   const point = ROLE_MOUNT[role];
   return { volume: engineName, path: point.path, mode: point.mode };
+}
+
+const HELPER_PATH = "/mnt";
+
+/**
+ * The owner of a volume's root, read through a helper that mounts it. A volume that no box mounts has no container of
+ * its own to read it from, so a checkpoint of one needs this.
+ */
+export async function rootOwnerOf(host: HostCtx, engineName: string): Promise<VolumeOwner> {
+  const image = await helperImage(host);
+  if (!image) throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
+  const created = await host.runtime.createContainer({
+    image,
+    name: `${host.prefix}-owner-${randomBytes(4).toString("hex")}`,
+    cmd: ["true"],
+    mounts: [{ source: engineName, target: HELPER_PATH, mode: "ro", noCopy: true }],
+    network: "none",
+    labels: { [host.keys.internal]: "true" },
+    readonlyRootfs: true,
+    tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=16m" },
+    hardening: { capDrop: ["ALL"], noNewPrivileges: true, pidsLimit: 64 },
+  });
+  try {
+    return await host.runtime.volumeRootOwner(created.id, HELPER_PATH);
+  } finally {
+    try {
+      await host.runtime.removeContainer(created.id, { force: true });
+    } catch (e) {
+      if (!isRuntimeError(e, "not_found")) log.warn("volume.owner_helper_remove_failed", { error: String(e) });
+    }
+  }
 }

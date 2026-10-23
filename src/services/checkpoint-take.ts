@@ -13,7 +13,7 @@ import { msg } from "../lib/messages";
 import { assertNoSecretInImage } from "../secrets/env";
 import type { BoxSpec } from "../specs/types";
 import { assertHostDiskRoom } from "../volumes/disk";
-import { rootOwnerOf } from "../volumes/measure";
+import { rootOwnerOf } from "../volumes/engine";
 import { type Box, getBox } from "./boxes";
 import { planLayers, type PlannedLayer, commitSystemLayer, tagsFor, discardTaken } from "./checkpoint-layers";
 import type { TakeCheckpointInput, Progress, CheckpointView } from "./checkpoint-model";
