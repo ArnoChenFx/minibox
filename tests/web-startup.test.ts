@@ -89,6 +89,7 @@ describe("startup command rules in the browser", () => {
 
   test("each status has its badge tone and its label, and an exit code names itself", () => {
     expect(startupStatusView({ status: "running" })).toEqual({ tone: "badge-success", key: "sc.status.running" });
+    expect(startupStatusView({ status: "cloning" })).toEqual({ tone: "badge-accent", key: "sc.status.cloning" });
     expect(startupStatusView({ status: "waiting" })).toEqual({ tone: "badge-accent", key: "sc.status.waiting" });
     expect(startupStatusView({ status: "failed" })).toEqual({ tone: "badge-danger", key: "sc.status.failed" });
     expect(startupStatusView({ status: "none" })).toEqual({ tone: "", key: "sc.status.none" });

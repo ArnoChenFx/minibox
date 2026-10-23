@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
+import { msg } from "../src/lib/messages";
 import type { ExecSpec } from "../src/runtime";
 import { RuntimeError } from "../src/runtime";
 import {
@@ -15,7 +16,8 @@ import {
   wakeIfSleeping,
 } from "../src/services/boxes";
 import { rebuildBox } from "../src/services/rebuild";
-import { launchStartup } from "../src/services/startup";
+import { reconcileHost } from "../src/services/reconcile";
+import { finishClone, runNow, scheduleStartup } from "../src/services/startup";
 import {
   clearStartupCommand,
   readStartupCommand,
@@ -44,8 +46,22 @@ beforeEach(() => {
 
 afterEach(() => restoreLogs());
 
-function newBox(name: string, startupCommand?: string): Promise<Box> {
-  return createBox(host, { name, cpus: 1, memoryMb: 256, startupCommand });
+async function newBox(name: string, startupCommand?: string): Promise<Box> {
+  const box = await createBox(host, { name, cpus: 1, memoryMb: 256, startupCommand });
+  await host.startup.settle();
+  return box;
+}
+
+/** A box made with a repository: its command waits for the clone that the setup task runs after the create. */
+async function newClonedBox(name: string, startupCommand: string): Promise<Box> {
+  const box = await createBox(host, { name, cpus: 1, memoryMb: 256, startupCommand, awaitsClone: true });
+  await host.startup.settle();
+  return box;
+}
+
+/** A server started again on the same data directory and engine. Its startup launches are its own. */
+function restartedServer(): HostCtx {
+  return createTestApp({ labelPrefix: "mbtest", dataDir: app.cfg.dataDir }, runtime).app.hosts.get();
 }
 
 function specOf(boxId: string): BoxSpec {
@@ -137,15 +153,17 @@ describe("startup command: the launch", () => {
     });
   });
 
-  test("a launch that runs past its budget is kept as a timeout, and the caller is not held", async () => {
-    const box = await newBox("zeta");
+  test("a launch that runs past its budget finishes in the background, and the caller is not held", async () => {
+    const box = await newBox("zeta", "npm run dev");
     const held = runtime.hold("startExec", (args) => (args[1] as ExecSpec).cmd.includes("new-session"));
     try {
-      await launchStartup(host, box.id, "npm run dev", 20);
-      expect(host.startup.failureOf(box.id)).toMatchObject({ key: "startup_command_timeout" });
+      await runNow(host, box.boxId, 20);
+      expect(await readStartupCommand(host, box.boxId)).toMatchObject({ status: "waiting", error: null });
     } finally {
       held.release();
     }
+    await host.startup.settle();
+    expect(await readStartupCommand(host, box.boxId)).toMatchObject({ status: "running" });
   });
 
   test("a live run reads as running, with its start time and the output so far", async () => {
@@ -386,5 +404,196 @@ describe("startup command: rebuilds and the record", () => {
     expect(read).not.toHaveProperty("startupCommand");
     expect(JSON.stringify(read)).not.toContain("sekret-value");
     expect(specOf(box.boxId).startupCommand).toBe("export TOKEN=sekret-value; npm run dev");
+  });
+});
+
+describe("startup command: a launch that is already running", () => {
+  test("asking for the launch again while the run is going does not run the command twice", async () => {
+    const box = await newBox("dup", "echo one");
+    scheduleStartup(host, box.boxId);
+    scheduleStartup(host, box.boxId);
+    await host.startup.settle();
+    expect(launchesOf(box.id)).toHaveLength(1);
+  });
+});
+
+describe("startup command: create does not wait for the launch", () => {
+  test("a create with a command returns while its launch is held, and reads as waiting until the launch lands", async () => {
+    const held = runtime.hold("startExec", (args) => (args[1] as ExecSpec).cmd.includes("new-session"));
+    let boxId = "";
+    try {
+      const created = await Promise.race([
+        createBox(host, { name: "held", cpus: 1, memoryMb: 256, startupCommand: "npm run dev" }),
+        Bun.sleep(1000).then(() => null),
+      ]);
+      expect(created).not.toBeNull();
+      boxId = created?.boxId ?? "";
+      expect(await readStartupCommand(host, boxId)).toMatchObject({ status: "waiting", error: null });
+    } finally {
+      held.release();
+    }
+    await host.startup.settle();
+    expect(await readStartupCommand(host, boxId)).toMatchObject({ status: "running", command: "npm run dev" });
+  });
+});
+
+describe("startup command: waiting for a clone", () => {
+  test("a box whose clone is pending runs nothing until the clone ends, and then runs the command", async () => {
+    const box = await newClonedBox("clone-ok", "npm run dev");
+    expect(launchesOf(box.id)).toHaveLength(0);
+    expect(await readStartupCommand(host, box.boxId)).toMatchObject({
+      status: "cloning",
+      command: "npm run dev",
+      error: null,
+    });
+
+    await finishClone(host, box.boxId, null);
+    await host.startup.settle();
+    expect(runningText(box.id)).toBe("npm run dev");
+    expect(specOf(box.boxId).startupAwaitsClone).toBeUndefined();
+  });
+
+  test("a clone that fails keeps the command from starting, and the status says the clone failed", async () => {
+    const box = await newClonedBox("clone-bad", "npm run dev");
+    await finishClone(host, box.boxId, msg("startup_command_clone_failed"));
+    await host.startup.settle();
+
+    expect(launchesOf(box.id)).toHaveLength(0);
+    expect(await readStartupCommand(host, box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_clone_failed" },
+    });
+  });
+
+  test("a failed clone is kept on the spec, so a restarted server still reports it", async () => {
+    const box = await newClonedBox("clone-kept", "npm run dev");
+    await finishClone(host, box.boxId, msg("startup_command_clone_failed"));
+
+    expect(await readStartupCommand(restartedServer(), box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_clone_failed" },
+    });
+  });
+
+  test("a clone that ends while the box is stopped runs the command at the box's next start", async () => {
+    const box = await newClonedBox("clone-stopped", "npm run dev");
+    await stopBox(host, box.boxId);
+    await finishClone(host, box.boxId, null);
+    await host.startup.settle();
+    expect(launchesOf(box.id)).toHaveLength(0);
+
+    await startBox(host, box.boxId);
+    expect(runningText(box.id)).toBe("npm run dev");
+  });
+
+  test("a clone cut short by a restart is reported when the server reconciles, and the command does not start", async () => {
+    const box = await newClonedBox("clone-cut", "npm run dev");
+    const restarted = restartedServer();
+
+    await reconcileHost(restarted);
+    await restarted.startup.settle();
+
+    expect(launchesOf(box.id)).toHaveLength(0);
+    expect(await readStartupCommand(restarted, box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_clone_unfinished" },
+    });
+    expect(restarted.specs.read(box.boxId)?.startupAwaitsClone).toBeUndefined();
+  });
+
+  test("a start after a restart that cut the clone short reports it, and does not launch the command", async () => {
+    const box = await newClonedBox("clone-start", "npm run dev");
+    await stopBox(host, box.boxId);
+
+    const restarted = restartedServer();
+    await startBox(restarted, box.boxId);
+
+    expect(launchesOf(box.id)).toHaveLength(0);
+    expect(await readStartupCommand(restarted, box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_clone_unfinished" },
+    });
+  });
+
+  test("a stopped box whose clone a restart cut short reads as failed at once, not as cloning", async () => {
+    const box = await newClonedBox("clone-stopped-cut", "npm run dev");
+    await stopBox(host, box.boxId);
+
+    expect(await readStartupCommand(restartedServer(), box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_clone_unfinished" },
+    });
+  });
+});
+
+describe("startup command: a failure outlives the server", () => {
+  test("a launch that failed is reported by a restarted server, and a later run clears it", async () => {
+    const box = await newBox("persist", "npm run dev");
+    await stopBox(host, box.boxId);
+    runtime.fail("startExec", new RuntimeError("engine", "exec refused by the engine"));
+    await startBox(host, box.boxId);
+
+    const restarted = restartedServer();
+    expect(await readStartupCommand(restarted, box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_failed", params: { detail: "exec refused by the engine" } },
+    });
+
+    await runStartupCommand(restarted, box.boxId);
+    expect(specOf(box.boxId).startupFailure).toBeUndefined();
+    expect(await readStartupCommand(restarted, box.boxId)).toMatchObject({ status: "running", error: null });
+  });
+});
+
+describe("startup command: a container the engine starts while MiniBox is down", () => {
+  test("its command runs once the server reconciles, and a later reconcile does not run it again", async () => {
+    const box = await newBox("omega", "npm run dev");
+    expect(launchesOf(box.id)).toHaveLength(1);
+    await runtime.restartContainer(box.id, { timeoutSec: 1 });
+    expect(runtime.tmux.sessionNames(box.id)).not.toContain(INIT_SESSION);
+
+    const restarted = restartedServer();
+    await reconcileHost(restarted);
+    await restarted.startup.settle();
+    expect(launchesOf(box.id)).toHaveLength(2);
+    expect(runningText(box.id)).toBe("npm run dev");
+    expect(await readStartupCommand(restarted, box.boxId)).toMatchObject({ status: "running", error: null });
+
+    await reconcileHost(restarted);
+    await restarted.startup.settle();
+    expect(launchesOf(box.id)).toHaveLength(2);
+  });
+
+  test("a reconcile of a container whose command is still running launches nothing", async () => {
+    const box = await newBox("psi", "make watch");
+
+    await reconcileHost(restartedServer());
+    expect(launchesOf(box.id)).toHaveLength(1);
+  });
+});
+
+describe("startup command: a rebuild's launch", () => {
+  test("a rebuild returns once the new container runs the command, without waiting out the launch budget", async () => {
+    const box = await newBox("beta3", "echo one");
+
+    const began = Date.now();
+    const rebuilt = await rebuildBox(host, box.boxId, box.revision, { env: [{ name: "FOO", value: "bar" }] }, true);
+    expect(Date.now() - began).toBeLessThan(2500);
+    expect(await readStartupCommand(host, rebuilt.boxId)).toMatchObject({ status: "running", error: null });
+  });
+
+  test("a rebuild whose new container cannot run the command records why on the rebuilt box", async () => {
+    const box = await newBox("gamma3", "echo one");
+
+    runtime.tmuxMissing = true;
+    const rebuilt = await rebuildBox(host, box.boxId, box.revision, { env: [{ name: "FOO", value: "bar" }] }, true);
+    expect(await readStartupCommand(host, rebuilt.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "session_image_unsupported" },
+    });
+    expect(specOf(box.boxId).startupFailure).toMatchObject({
+      containerId: rebuilt.id,
+      key: "session_image_unsupported",
+    });
   });
 });

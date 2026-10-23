@@ -9,6 +9,7 @@ import { sleepBox, startBox, stopBox } from "./boxes";
 import { followRunningProxies, sweepEgress, syncHostFirewall } from "./egress";
 import { settlePendingRollbacks } from "./rollback";
 import { deliverSelfToken } from "./self-token";
+import { hasStartup, scheduleStartup } from "./startup";
 
 export interface ReconcileReport {
   /** Stable ids of containers that had no spec file and were claimed on this pass. */
@@ -167,6 +168,9 @@ async function converge(host: HostCtx, info: ContainerInfo, spec: BoxSpec, repor
   } else if (!host.selfTokens.has(spec.id)) {
     await deliverSelfToken(host, spec.id, info.id);
   }
+  // A container the engine started while MiniBox was not watching has no init session. The startup check launches the
+  // command only when that session is missing, so a container that already runs it is left alone.
+  if (info.running && spec.lifecycle.desired === "running" && hasStartup(spec)) scheduleStartup(host, spec.id);
 }
 
 function recordFailure(host: HostCtx, report: ReconcileReport, id: string, container: string, e: unknown): void {

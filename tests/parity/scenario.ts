@@ -815,16 +815,14 @@ async function recordScenario(): Promise<Exchange[]> {
     await moveBox("move a box to a host that is not added", mover, { host: "lab", confirm: true }, 1);
     await moveBox("move a missing box", "missing", { host: "lab", confirm: true }, 1);
 
-    const startbox = boxId(
-      (
-        await post("create a box with a startup command", "/api/boxes", {
-          name: "startbox",
-          cpus: 1,
-          memoryMb: 256,
-          startupCommand: "echo ready",
-        })
-      ).json,
-    );
+    const created = await post("create a box with a startup command", "/api/boxes", {
+      name: "startbox",
+      cpus: 1,
+      memoryMb: 256,
+      startupCommand: "echo ready",
+    });
+    await app.hosts.get().startup.settle();
+    const startbox = boxId(created.json);
     const startupAt = `/api/boxes/${startbox}/startup-command`;
     await post("create a box with a startup command that is not text", "/api/boxes", {
       name: "startbad",

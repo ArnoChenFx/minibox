@@ -142,10 +142,11 @@ export interface PaneState {
 }
 
 /**
- * `none`: no command is set. `waiting`: a command is set and has not run in this box's current start. `running`: its
- * pane is alive. `exited`: the run ended, with its code. `failed`: MiniBox could not start the command.
+ * `none`: no command is set. `cloning`: the box's repository clone has not ended, and the command starts when it has.
+ * `waiting`: a command is set and has not run in this box's current start. `running`: its pane is alive. `exited`: the
+ * run ended, with its code. `failed`: MiniBox could not start the command.
  */
-export type StartupStatus = "none" | "waiting" | "running" | "exited" | "failed";
+export type StartupStatus = "none" | "cloning" | "waiting" | "running" | "exited" | "failed";
 
 export interface StartupView {
   readonly status: StartupStatus;
@@ -168,6 +169,11 @@ const EMPTY_VIEW: StartupView = {
   log: [],
   error: null,
 };
+
+/** The view of a command whose box is still cloning its repository. Nothing runs until the clone ends. */
+export function cloningView(): StartupView {
+  return { ...EMPTY_VIEW, status: "cloning" };
+}
 
 /**
  * The status a caller sees. `pane` is null when the init session does not exist. `failure` is the reason the last launch

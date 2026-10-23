@@ -1,5 +1,6 @@
 import type { BoxProfile } from "../box-profile";
 import type { BoxEgress } from "../egress/policy";
+import type { MessageKey, Params } from "../lib/messages";
 
 /** On-disk schema version of `DATA_DIR/boxes/<id>.json`. */
 export const SPEC_VERSION = 1;
@@ -37,6 +38,14 @@ export interface BoxEnv {
 export interface BoxTool {
   id: string;
   version: string;
+}
+
+/** A startup command that did not start, and the message that says why. It reads only for the container it failed in. */
+export interface StartupFailure {
+  containerId: string;
+  key: MessageKey;
+  params?: Params;
+  at: string;
 }
 
 /**
@@ -78,6 +87,13 @@ export interface BoxSpec {
    * secrets, so it is returned only to callers that may use them, and it stays out of events and audit records.
    */
   startupCommand?: string;
+  /**
+   * Set when the box is created with a repository and a startup command. The command waits for the clone, so no start
+   * launches it until the clone ends. Absent once the clone has ended, or when the box has no clone.
+   */
+  startupAwaitsClone?: boolean;
+  /** Why the startup command last failed to start. Cleared by a launch that works, or by a change of the command. */
+  startupFailure?: StartupFailure;
   /**
    * The box's agent holds a `self` token, which MiniBox issues at every start and revokes at every stop. Absent or false
    * when the box has none. The container gets the tmpfs the token file lives in only when it is created with this set.
