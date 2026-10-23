@@ -44,7 +44,7 @@ export async function resolveTarget(
 ): Promise<PreviewResolve> {
   const named = hostOfSpecRef(hosts, target.ref);
   if (named && named.host.transport !== "local") {
-    throw new AppError(501, "unsupported", msg("preview_remote_unsupported"));
+    throw new AppError(501, "unsupported", msg("preview_agent_unsupported"));
   }
   const { host, box: found } = await locateBox(hosts, target.ref);
   const release = deps.pulse.hold(found.boxId);

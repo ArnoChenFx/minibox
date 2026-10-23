@@ -80,6 +80,8 @@ export interface TaskReader {
   get(id: string, options: { output: boolean }): TaskView | undefined;
   list(filter: { status?: TaskStatus; limit: number }): TaskView[];
   cancel(id: string): TaskView;
+  /** Resolves once the task's background work has ended, so a caller can read its final status. */
+  done(id: string): Promise<void>;
 }
 
 /** Who started a task. Stored with the task; the audit event records the same principal. */

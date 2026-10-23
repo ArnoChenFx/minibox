@@ -24,11 +24,13 @@ Commands:
   minibox box startup-command run <box> [--json]
                                        Run the command again now. The box must be running and have a command
   minibox template create <name> (--dockerfile FILE | --repo URL | --context URL | --devcontainer URL)
-                       [--description TEXT] [source options] [--no-wait] [--json]
-                                       Build a template in the background, and print its ref
-  minibox template rebuild <ref> [--no-wait] [--json]
+                       [--description TEXT] [--host ID] [source options] [--no-wait] [--json]
+                                       Build a template in the background, and print its ref. --host builds it on that host
+  minibox template rebuild <ref> [--host ID] [--no-wait] [--json]
                                        Rebuild a template from the source it was built from
-  minibox image pull <ref> [--no-wait] [--json]
+  minibox template sync <ref> --host ID [--no-wait] [--json]
+                                       Copy a template from a host that holds it to ID, so a box can start there
+  minibox image pull <ref> [--host ID] [--no-wait] [--json]
                                        Pull an image from its registry, when the engine does not have it
   minibox trash ls [--json]            List the recycle bin: deleted boxes and volumes, kept until they expire
   minibox trash restore <id> [--name NAME] [--cpus N] [--memory MB] [--no-wait] [--json]

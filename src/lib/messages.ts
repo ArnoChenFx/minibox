@@ -40,7 +40,7 @@ export const LABELS = {
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
-/** Features a `host_unsupported` error names. The UI translates each key through `feature.<key>`. */
+/** Features an `agent_host_unsupported` error names. The UI translates each key through `feature.<key>`. */
 export const FEATURES = {
   snapshots: "Snapshots",
   templates: "Templates",
@@ -330,7 +330,7 @@ export const MESSAGES = {
   host_key_mismatch:
     "The SSH host key {presented} is not the key you confirmed ({expected}). No credentials were sent to the host.",
   host_unreachable: "The host could not be reached: {detail}",
-  host_unsupported: "{feature} is not supported on remote hosts yet.",
+  agent_host_unsupported: "{feature} is not supported on agent hosts yet.",
   host_endpoint_agent:
     "Agent hosts are paired with a code, not added by endpoint. Create a pairing code, then run the agent on the host.",
   host_not_agent: "Host “{host}” is not an agent host.",
@@ -350,7 +350,7 @@ export const MESSAGES = {
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
     "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
-  preview_remote_unsupported: "Port preview is not supported on remote hosts yet.",
+  preview_agent_unsupported: "Port preview is not supported on agent hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
   move_confirm:

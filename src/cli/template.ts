@@ -4,6 +4,7 @@ import { type CliIo, readStdinText, parseOptions, OUTPUT_SWITCHES, request, fail
 import { awaitStarted } from "./task";
 
 const TEMPLATE_CREATE_VALUE_FLAGS = [
+  "--host",
   "--dockerfile",
   "--repo",
   "--context",
@@ -75,6 +76,8 @@ async function templateCreateCommand(
   const body: Record<string, unknown> = { name, source: payload };
   const description = options.values.get("--description");
   if (description !== undefined) body.description = description;
+  const host = options.values.get("--host");
+  if (host !== undefined) body.host = host;
 
   const started = await request(env, "POST", "/api/templates", body);
   if (started.status >= 400) return fail(io, started.status, started.json, started.text);
@@ -92,10 +95,12 @@ async function templateRebuildCommand(
   env: Record<string, string | undefined>,
   io: CliIo,
 ): Promise<number> {
-  const options = parseOptions(argv, [], OUTPUT_SWITCHES);
+  const options = parseOptions(argv, ["--host"], OUTPUT_SWITCHES);
   const [ref, ...more] = options.positional;
   if (!ref || more.length > 0) throw new Error("minibox template rebuild needs one template ref");
-  const started = await request(env, "POST", `/api/templates/${encodeURIComponent(ref)}/rebuild`);
+  const host = options.values.get("--host");
+  const query = host === undefined ? "" : `?host=${encodeURIComponent(host)}`;
+  const started = await request(env, "POST", `/api/templates/${encodeURIComponent(ref)}/rebuild${query}`);
   if (started.status >= 400) return fail(io, started.status, started.json, started.text);
   return awaitStarted(
     env,
@@ -106,7 +111,23 @@ async function templateRebuildCommand(
   );
 }
 
-/** `template create` and `template rebuild`. Templates are built from a source, and the build runs as a task. */
+async function templateSyncCommand(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+): Promise<number> {
+  const options = parseOptions(argv, ["--host"], OUTPUT_SWITCHES);
+  const [ref, ...more] = options.positional;
+  const host = options.values.get("--host");
+  if (!ref || more.length > 0 || host === undefined) {
+    throw new Error("minibox template sync needs one template ref and --host ID");
+  }
+  const started = await request(env, "POST", `/api/templates/${encodeURIComponent(ref)}/sync`, { host });
+  if (started.status >= 400) return fail(io, started.status, started.json, started.text);
+  return awaitStarted(env, io, started.json, options, (task) => (task.result as { ref: string }).ref);
+}
+
+/** `template create`, `template rebuild` and `template sync`. Templates are built or copied as a task. */
 export async function templateCommand(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -115,5 +136,6 @@ export async function templateCommand(
   const [sub, ...rest] = argv;
   if (sub === "create") return templateCreateCommand(rest, env, io);
   if (sub === "rebuild") return templateRebuildCommand(rest, env, io);
-  throw new Error("minibox template needs create or rebuild");
+  if (sub === "sync") return templateSyncCommand(rest, env, io);
+  throw new Error("minibox template needs create, rebuild or sync");
 }

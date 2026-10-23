@@ -22,7 +22,41 @@ export function hostOfBox(ctx: OperationContext, ref: string): HostCtx {
   return spec ? hostById(ctx, spec.hostId) : ctx.host;
 }
 
-/** The host a volume lives on. Volume ids and names are looked up across the control plane. */
+/**
+ * The host an image reference names: the one `host` picks when a request gives one, else the first host that holds the
+ * image, the request's own host first. A reference no host holds stays on the request's host, so its not-found answer
+ * is the same as it always was.
+ */
+export async function hostOfImage(ctx: OperationContext, ref: string, host?: string): Promise<HostCtx> {
+  if (host !== undefined) return hostById(ctx, host);
+  const others = (ctx.allHosts?.() ?? [ctx.host]).filter((candidate) => candidate !== ctx.host);
+  for (const candidate of [ctx.host, ...others]) {
+    if (candidate.host.status === "offline") continue;
+    try {
+      await untilAborted(candidate.runtime.inspectImage(ref), AbortSignal.timeout(candidate.readTimeoutMs));
+      return candidate;
+    } catch {
+      // A host that does not hold the image, or cannot answer, is passed over.
+    }
+  }
+  return ctx.host;
+}
+
+/** The host a named request runs on, or the request's own host when it names none. */
+export function hostNamed(ctx: OperationContext, host?: string): HostCtx {
+  return host === undefined ? ctx.host : hostById(ctx, host);
+}
+
+/**
+ * The hosts an image list reads: every host that runs an engine, or only the one `host` names. An agent holds no
+ * images the control plane can read, so it is never asked.
+ */
+export function imageHosts(ctx: OperationContext, host?: string): HostCtx[] {
+  if (host !== undefined) return [hostById(ctx, host)];
+  return (ctx.allHosts?.() ?? [ctx.host]).filter((candidate) => candidate.host.transport !== "agent");
+}
+
+/** The volume's host. Volume ids and names are looked up across the control plane. */
 export function hostOfVolume(ctx: OperationContext, ref: string): HostCtx {
   const record = ctx.host.volumes.resolve(ref);
   return record ? hostById(ctx, record.hostId) : ctx.host;
@@ -60,8 +94,11 @@ export async function fromEveryHost<T>(hosts: readonly HostCtx[], read: (host: H
   return groups.flat();
 }
 
-/** Refuses a feature that has no remote form yet. The local host always passes. */
-export function localOnly(host: HostCtx, feature: FeatureKey): void {
-  if (host.host.transport === "local") return;
-  throw new AppError(501, "unsupported", msg("host_unsupported", { feature }));
+/**
+ * Refuses a feature an agent host cannot run. An agent runs boxes only: it cannot build, commit or move an image, so
+ * templates and snapshots stay off it. Local, socket, TCP and SSH hosts all have the engine these features need.
+ */
+export function refuseAgent(host: HostCtx, feature: FeatureKey): void {
+  if (host.host.transport !== "agent") return;
+  throw new AppError(501, "unsupported", msg("agent_host_unsupported", { feature }));
 }

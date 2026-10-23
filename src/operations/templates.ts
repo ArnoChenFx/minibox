@@ -1,22 +1,35 @@
 import { z } from "zod";
 
+import type { HostCtx } from "../host/registry";
+import { type ErrorCode, AppError, notFound } from "../lib/errors";
+import { msg } from "../lib/messages";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
 import { createDeclaredTemplate, declaredTemplate, rebuildDeclaredTemplate } from "../services/template-builds";
+import { copyTemplate, findTemplateSource, heldImage } from "../services/template-sync";
 import {
   assertTemplateNameAvailable,
   buildBaseTemplate,
-  holdingTemplateName,
   deleteTemplate,
+  holdingTemplateName,
   listTemplates,
   promoteSnapshot,
   saveBoxAsTemplate,
 } from "../services/templates";
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
-import { hostOfBox, localOnly } from "./routing";
-import { BuildResultSchema, OkSchema, PromotedTemplateSchema, TemplateSchema } from "./schemas";
-import { boxId, snapshotRef, templateDescription, templateName, templateRef, templateSource } from "./validation";
+import { fromEveryHost, hostById, hostNamed, hostOfBox, hostOfImage, imageHosts, refuseAgent } from "./routing";
+import { BuildResultSchema, OkSchema, PromotedTemplateSchema, TemplateSchema, TemplateSyncedSchema } from "./schemas";
+import type { OperationContext } from "./types";
+import {
+  boxId,
+  hostId,
+  snapshotRef,
+  templateDescription,
+  templateName,
+  templateRef,
+  templateSource,
+} from "./validation";
 
 export const templateList = defineOperation({
   name: "template.list",
@@ -25,12 +38,21 @@ export const templateList = defineOperation({
   kind: "read",
   scope: "template:read",
   async: false,
-  input: z.object({}),
+  input: z.object({ host: hostId().optional() }),
   output: z.object({ templates: z.array(TemplateSchema), baseTemplate: z.string() }),
-  rest: [{ method: "GET", path: "/api/templates" }],
+  rest: [{ method: "GET", path: "/api/templates", query: ["host"] }],
   cli: "template list",
-  run: async ({ host, principal }) => {
-    const templates = await listTemplates(host);
+  mcp: {
+    toolset: "tools",
+    name: "list_templates",
+    description:
+      "List the templates on every host, each with the hostId that holds it, so a template present on one host and missing from another shows. Pass host to list one host. Returns the base template's tag too.",
+  },
+  run: async (ctx, input) => {
+    const { principal, host } = ctx;
+    const templates = await fromEveryHost(imageHosts(ctx, input.host), async (on) =>
+      (await listTemplates(on)).map((image) => ({ ...image, hostId: on.host.id })),
+    );
     return {
       templates: templates.filter((image) => templateVisible(principal, image)),
       baseTemplate: host.baseTemplateTag,
@@ -45,10 +67,17 @@ export const templatePromote = defineOperation({
   kind: "write",
   scope: "template:write",
   async: false,
-  input: z.object({ ref: snapshotRef(), name: templateName(), description: templateDescription() }),
+  input: z.object({
+    ref: snapshotRef(),
+    name: templateName(),
+    description: templateDescription(),
+    host: hostId().optional(),
+  }),
   output: z.object({ template: PromotedTemplateSchema }),
   rest: [{ method: "POST", path: "/api/snapshots/:ref/promote", body: true, status: 201 }],
   cli: "template promote",
+  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
   activity: { action: () => "template.promote", target: ({ name }) => name },
   audit: { target: ({ name }) => ({ kind: "template", name }) },
   run: async ({ host, principal }, input) => ({
@@ -75,7 +104,7 @@ export const templateSave = defineOperation({
       "Save a box as a template: the packages it installed and the system files it changed. /workspace and home volumes are not included, so use a checkpoint for data. Long-running; returns a task id.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
-  precondition: async ({ host }) => localOnly(host, "templates"),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, input, box) => {
     assertNoSecretInImage(host.specs.read(box.boxId)?.env ?? []);
@@ -103,7 +132,12 @@ export const templateCreate = defineOperation({
   scope: "template:build",
   async: true,
   conflicts: true,
-  input: z.object({ name: templateName(), description: templateDescription(), source: templateSource() }),
+  input: z.object({
+    name: templateName(),
+    description: templateDescription(),
+    source: templateSource(),
+    host: hostId().optional().meta({ description: "Host to build the template on. Omitted, the local host." }),
+  }),
   output: z.object({ template: PromotedTemplateSchema }),
   rest: [{ method: "POST", path: "/api/templates", body: true, status: 202 }],
   cli: "template create",
@@ -111,9 +145,10 @@ export const templateCreate = defineOperation({
     toolset: "tools",
     name: "create_template",
     description:
-      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv is kept, and any other devcontainer.json setting is refused. Owner only. Returns a task id; the task log shows the build.",
+      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv is kept, and any other devcontainer.json setting is refused. Optional host builds on that host, default local. Owner only. Returns a task id; the task log shows the build.",
   },
-  precondition: async ({ host }) => localOnly(host, "templates"),
+  hostFor: (ctx, input) => hostNamed(ctx, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
   beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
   exclusive: ({ host }, input) => `template.name:${host.host.id}:${input.name}`,
   subject: (input) => input.name,
@@ -142,9 +177,14 @@ export const templateRebuild = defineOperation({
   scope: "template:build",
   async: true,
   conflicts: true,
-  input: z.object({ ref: templateRef() }),
+  input: z.object({
+    ref: templateRef(),
+    host: hostId()
+      .optional()
+      .meta({ description: "Host that holds the template. Omitted, the first host that holds it." }),
+  }),
   output: z.object({ template: PromotedTemplateSchema }),
-  rest: [{ method: "POST", path: "/api/templates/:ref/rebuild", status: 202 }],
+  rest: [{ method: "POST", path: "/api/templates/:ref/rebuild", query: ["host"], status: 202 }],
   cli: "template rebuild",
   mcp: {
     toolset: "tools",
@@ -152,7 +192,8 @@ export const templateRebuild = defineOperation({
     description:
       "Rebuild a template from the source it was built from, so a branch or an archive gives its newest content. The tag moves only when the build succeeds, and a failed rebuild keeps the image the template had. Owner only. Returns a task id.",
   },
-  precondition: async ({ host }) => localOnly(host, "templates"),
+  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
   resolve: ({ host }, input) => declaredTemplate(host, input.ref),
   exclusive: ({ host }, _input, declared) => `template.name:${host.host.id}:${declared.name}`,
   subject: (_input, declared) => declared.name,
@@ -171,10 +212,12 @@ export const templateBuild = defineOperation({
   scope: "template:build",
   async: true,
   conflicts: true,
-  input: z.object({}),
+  input: z.object({ host: hostId().optional() }),
   output: BuildResultSchema,
-  rest: [{ method: "POST", path: "/api/templates/base/build", status: 202 }],
+  rest: [{ method: "POST", path: "/api/templates/base/build", query: ["host"], status: 202 }],
   cli: "template build",
+  hostFor: (ctx, input) => hostNamed(ctx, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
   resolve: async ({ host }) => ({ ref: host.baseTemplateTag }),
   exclusive: ({ host }) => `template.build:${host.host.id}`,
   subject: () => "base",
@@ -186,6 +229,86 @@ export const templateBuild = defineOperation({
   },
 });
 
+export const templateSync = defineOperation({
+  name: "template.sync",
+  tag: "templates",
+  summary: "Copy a template to another host",
+  kind: "write",
+  scope: "template:build",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    ref: templateRef(),
+    host: hostId().meta({ description: "The host to copy the template to." }),
+  }),
+  output: TemplateSyncedSchema,
+  rest: [{ method: "POST", path: "/api/templates/:ref/sync", body: true, status: 202 }],
+  cli: "template sync",
+  mcp: {
+    toolset: "tools",
+    name: "sync_template",
+    description:
+      "Copy a template from a host that holds it to another host, so a box can be created there. The image keeps its id, and the copy is skipped when the target already holds it. Owner only. Returns a task id; the task log shows the transfer.",
+  },
+  hostFor: (ctx, input) => hostById(ctx, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  resolve: async (ctx, input) => {
+    const others = imageHosts(ctx).filter((candidate) => candidate.host.id !== ctx.host.host.id);
+    const source = await findTemplateSource(others, input.ref);
+    if (!source) throw notFound(msg("template_not_found"));
+    return source;
+  },
+  exclusive: ({ host }, input) => `template.sync:${host.host.id}:${input.ref}`,
+  subject: (input) => input.ref,
+  activity: { action: () => "template.sync", target: (input) => input.ref },
+  audit: { target: (input) => ({ kind: "template", name: input.ref }) },
+  run: async ({ host, task }, input, source) => ({
+    ref: input.ref,
+    host: host.host.id,
+    sent: await copyTemplate(source, host, input.ref, task?.signal),
+  }),
+});
+
+/**
+ * Copies the template `ref` to `host` before a box is created there, when `host` lacks it and another host holds it. The
+ * copy runs as a task of its own, and the create waits for it, so the box starts from the image it names. A copy that is
+ * already running for the same template is joined rather than started twice. Only an owner's create copies: a token's
+ * create is judged by the template its host shows it, as it always was.
+ */
+export async function ensureTemplateOn(
+  ctx: OperationContext,
+  host: HostCtx,
+  ref: string,
+): Promise<{ taskId: string } | undefined> {
+  if (ctx.principal.type !== "owner" || host.host.transport === "agent" || !ctx.startTask || !ctx.tasks)
+    return undefined;
+  if (await heldImage(host, ref)) return undefined;
+  const others = imageHosts(ctx).filter((candidate) => candidate.host.id !== host.host.id);
+  const source = await findTemplateSource(others, ref);
+  if (!source) return undefined;
+
+  let taskId: string;
+  try {
+    ({ taskId } = await ctx.startTask(templateSync, { ref, host: host.host.id }, source));
+  } catch (e) {
+    const running = e instanceof AppError && e.key === "task_busy" ? runningTaskOf(e.details) : undefined;
+    if (running === undefined) throw e;
+    taskId = running;
+  }
+  await ctx.tasks.done(taskId);
+  const finished = ctx.tasks.get(taskId, { output: false });
+  if (finished?.status !== "succeeded") {
+    const error = finished?.error;
+    throw new AppError(error?.status ?? 502, (error?.code ?? "docker_error") as ErrorCode, error?.message ?? "");
+  }
+  return { taskId };
+}
+
+function runningTaskOf(details: unknown): string | undefined {
+  const taskId = (details as { taskId?: unknown } | undefined)?.taskId;
+  return typeof taskId === "string" ? taskId : undefined;
+}
+
 export const templateDelete = defineOperation({
   name: "template.delete",
   tag: "templates",
@@ -193,10 +316,17 @@ export const templateDelete = defineOperation({
   kind: "destructive",
   scope: "template:delete",
   async: false,
-  input: z.object({ ref: templateRef() }),
+  input: z.object({
+    ref: templateRef(),
+    host: hostId()
+      .optional()
+      .meta({ description: "Host that holds the template. Omitted, the first host that holds it." }),
+  }),
   output: OkSchema,
-  rest: [{ method: "DELETE", path: "/api/templates/:ref" }],
+  rest: [{ method: "DELETE", path: "/api/templates/:ref", query: ["host"] }],
   cli: "template rm",
+  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
   activity: { action: () => "template.delete", target: ({ ref }) => ref },
   audit: { target: ({ ref }) => ({ kind: "template", name: ref }) },
   run: async ({ host }, input) => {
@@ -212,5 +342,6 @@ export const templateOperations = [
   templateCreate,
   templateRebuild,
   templateBuild,
+  templateSync,
   templateDelete,
 ];
