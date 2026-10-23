@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### 修复
+- Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：在 Agent 宿主机上创建带自助令牌的 Box 时，请求在创建流程开始前即返回 `501`（`self_token_host_unsupported`），不再进入后续检查。
+
+### 文档
+- Box 内 Agent 与宿主机指南（中英文）说明：Agent 宿主机无法把令牌文件写入 Box，因此不能在其上创建带自助令牌的 Box（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）。
+
 ## [0.5.1] - 2026-10-23
 
 ### 亮点
