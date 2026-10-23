@@ -58,6 +58,16 @@ Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#r
 
 When you delete a box, you can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
 
+## When the engine loses a volume
+
+MiniBox records each volume, and the engine keeps its data. If the engine loses a volume that MiniBox still has a record for, the **Volumes** tab shows **Engine volume missing** on that volume.
+
+The shared **Tools** volume is recreated for you. When a box is created, started, rebuilt or moved to a host, when a tool is installed or listed, and at startup, MiniBox recreates an empty tools volume under the same name. The activity list shows **Recreated volume**. The tools that were on the volume are gone, so they show as not installed. To install them again, click **Install missing** on a box's **Tools** tab.
+
+The workspace, home and cache volumes hold your data, so MiniBox does not recreate them. A box that mounts one of them does not start until you restore the engine volume. If you no longer need that data, delete the box and keep its volumes, then delete the volume. Deleting a volume the engine lost keeps no copy, because the engine no longer has its data.
+
+When you delete a box and keep its volumes, those volumes show **Owner box deleted**. Their data is still there. Delete a volume you no longer need to free its space. MiniBox does not delete a volume that a box still mounts.
+
 ## Usage, limits and free space
 
 MiniBox measures every volume's usage every 10 minutes by default. You can set a soft and a hard limit on each volume, and the host keeps a free-space floor. **Soft alerts are best effort, not a quota.** They tell you early that a volume is growing, but nothing stops the volume from growing past them.
