@@ -38,6 +38,7 @@ export default {
   "task.op.checkpoint.delete": "删除检查点",
   "task.op.checkpoint.export": "导出检查点",
   "task.op.checkpoint.import": "导入检查点",
+  "task.op.checkpoint.copy": "复制检查点",
   "task.op.box.move": "迁移 Box",
   "task.op.box.rollback": "回滚 Box",
   "task.op.box.rollback.confirm": "确认回滚",

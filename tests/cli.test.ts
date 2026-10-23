@@ -16,6 +16,7 @@ import { gunzipSync } from "node:zlib";
 
 import { Client } from "ssh2";
 
+import { createApp } from "../src/app";
 import { isNewerVersion, runCli } from "../src/cli";
 import type { Config } from "../src/config";
 import type { OperationContext, Principal } from "../src/operations/types";
@@ -23,9 +24,11 @@ import type { HelperSpec } from "../src/runtime";
 import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
 import { parseTar } from "../src/services/files-tar";
-import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
+import { createTestApp, silenceLogs, TEST_KEY, testConfig } from "./support/app";
+import { FakeRuntime } from "./support/fake-runtime";
+import { FakeCheckpointEngine } from "./support/fake-snapshots";
 import { fingerprintOf, runCommand } from "./support/ssh";
-import { mint } from "./support/tokens";
+import { call, mint } from "./support/tokens";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
 
@@ -1090,6 +1093,172 @@ describe("CLI templates, images and box clones", () => {
     ];
     for (const argv of cases) {
       const sink = io(bytesOf("FROM alpine:3.20\n"));
+      expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
+      expect(sink.err.length).toBeGreaterThan(0);
+      expect(sink.out).toBe("");
+    }
+  });
+});
+
+const EDGE_SOCKET = "/run/minibox-test/edge-docker.sock";
+
+/** The local host and an edge host over one checkpoint engine. The edge host is added through the API. */
+async function serveTwoHosts() {
+  const local = new FakeRuntime();
+  const edge = new FakeRuntime();
+  const app = createApp(testConfig({ labelPrefix: "mbtest" }), "0.0.0-test", {
+    runtime: local,
+    connect: (target) => ("socketPath" in target && target.socketPath === EDGE_SOCKET ? edge : new FakeRuntime()),
+    checkpointEngine: new FakeCheckpointEngine(),
+    eventsPath: ":memory:",
+  });
+  const keys = app.hosts.get().keys;
+  for (const runtime of [local, edge]) {
+    runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
+  }
+  const server = startServer(app);
+  const base = `http://127.0.0.1:${server.port}`;
+  const added = await call(base, "/api/hosts", { body: { id: "edge", endpoint: `unix://${EDGE_SOCKET}` } });
+  expect(added.status).toBe(201);
+  return {
+    app,
+    base,
+    env: { MINIBOX_URL: base, MINIBOX_ACCESS_KEY: TEST_KEY },
+    stop: () => {
+      app.hostAdmin.close();
+      app.sessions.stop();
+      app.tokens.stop();
+      app.throttle.stop();
+      server.stop(true);
+    },
+  };
+}
+
+type TwoHosts = Awaited<ReturnType<typeof serveTwoHosts>>;
+
+async function newBox(served: TwoHosts, name: string): Promise<string> {
+  const created = await call(served.base, "/api/boxes", { body: { name, cpus: 1, memoryMb: 256 } });
+  expect(created.status).toBe(201);
+  return created.json.box?.boxId ?? "";
+}
+
+async function checkpointOf(served: TwoHosts, boxId: string): Promise<string> {
+  const started = await call(served.base, `/api/boxes/${boxId}/checkpoints`, { body: {} });
+  expect(started.status).toBe(202);
+  await served.app.tasks.drain();
+  const task = (await call(served.base, `/api/tasks/${started.json.taskId ?? ""}`)).json as unknown as {
+    status: string;
+    result?: { checkpoint: { id: string } };
+  };
+  expect(task.status).toBe("succeeded");
+  return task.result?.checkpoint.id ?? "";
+}
+
+async function checkpointIdsOn(served: TwoHosts, hostId: string): Promise<string[]> {
+  const listed = (await call(served.base, "/api/checkpoints")).json as unknown as {
+    checkpoints: { id: string; hostId: string }[];
+  };
+  return listed.checkpoints.filter((item) => item.hostId === hostId).map((item) => item.id);
+}
+
+describe("CLI checkpoint copy", () => {
+  let restoreLogs: () => void;
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+  });
+  afterEach(() => restoreLogs());
+
+  test("checkpoint copy waits for the copy, prints the copy's id, and its log says what it moves", async () => {
+    const served = await serveTwoHosts();
+    try {
+      const origin = await checkpointOf(served, await newBox(served, "alpha"));
+      const copied = io();
+      expect(await runCli(["checkpoint", "copy", origin, "--host", "edge"], served.env, copied, lines([]))).toBe(0);
+
+      const ids = await checkpointIdsOn(served, "edge");
+      expect(ids).toHaveLength(1);
+      expect(copied.out).toBe(`${ids[0]}\n`);
+      expect(copied.err).toContain("Packing");
+      expect(copied.err).toContain("Restoring");
+    } finally {
+      served.stop();
+    }
+  });
+
+  test("--json prints the finished task, and --no-wait prints only the task's id, leaving the copy to run", async () => {
+    const served = await serveTwoHosts();
+    try {
+      const boxId = await newBox(served, "alpha");
+      const first = await checkpointOf(served, boxId);
+      const second = await checkpointOf(served, boxId);
+
+      const json = io();
+      expect(await runCli(["checkpoint", "copy", first, "--host", "edge", "--json"], served.env, json, lines([]))).toBe(
+        0,
+      );
+      expect(JSON.parse(json.out)).toMatchObject({
+        status: "succeeded",
+        result: { checkpoint: { hostId: "edge", boxName: "alpha" } },
+      });
+
+      const detached = io();
+      expect(
+        await runCli(["checkpoint", "copy", second, "--host", "edge", "--no-wait"], served.env, detached, lines([])),
+      ).toBe(0);
+      expect(detached.out).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}\n$/);
+      expect(detached.err).toBe("");
+      await served.app.tasks.drain();
+      expect(await checkpointIdsOn(served, "edge")).toHaveLength(2);
+    } finally {
+      served.stop();
+    }
+  });
+
+  test("a copy that is refused prints the server's message and exits 1, and makes no copy", async () => {
+    const served = await serveTwoHosts();
+    try {
+      const origin = await checkpointOf(served, await newBox(served, "alpha"));
+
+      const nohost = io();
+      expect(await runCli(["checkpoint", "copy", origin, "--host", "nowhere"], served.env, nohost, lines([]))).toBe(1);
+      expect(nohost.out).toBe("");
+      expect(nohost.err).toContain("Host “nowhere” was not found.");
+
+      const missing = io();
+      expect(
+        await runCli(["checkpoint", "copy", "ck_neverexisted", "--host", "edge"], served.env, missing, lines([])),
+      ).toBe(1);
+      expect(missing.err).toContain("Checkpoint ck_neverexisted was not found.");
+
+      expect(await runCli(["checkpoint", "copy", origin, "--host", "edge"], served.env, io(), lines([]))).toBe(0);
+      const again = io();
+      expect(await runCli(["checkpoint", "copy", origin, "--host", "edge"], served.env, again, lines([]))).toBe(1);
+      expect(again.out).toBe("");
+      expect(again.err).toContain("already has a copy on host edge");
+      expect(await checkpointIdsOn(served, "edge")).toHaveLength(1);
+    } finally {
+      served.stop();
+    }
+  });
+
+  test("usage errors exit 2 before any request, and --help names the command", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    const helped = io();
+    expect(await runCli(["checkpoint", "copy", "--help"], env, helped, lines([]))).toBe(0);
+    expect(helped.out).toContain("minibox checkpoint copy <id> --host ID");
+
+    const cases: string[][] = [
+      ["checkpoint"],
+      ["checkpoint", "frobnicate"],
+      ["checkpoint", "copy"],
+      ["checkpoint", "copy", "ck_a"],
+      ["checkpoint", "copy", "--host", "edge"],
+      ["checkpoint", "copy", "ck_a", "ck_b", "--host", "edge"],
+      ["checkpoint", "copy", "ck_a", "--host"],
+      ["checkpoint", "copy", "ck_a", "--host", "edge", "--color", "red"],
+    ];
+    for (const argv of cases) {
+      const sink = io();
       expect({ argv, code: await runCli(argv, env, sink, lines([])) }).toEqual({ argv, code: 2 });
       expect(sink.err.length).toBeGreaterThan(0);
       expect(sink.out).toBe("");

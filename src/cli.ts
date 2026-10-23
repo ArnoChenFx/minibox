@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 import { backupCommand, restoreCommand } from "./cli/backup";
 import { boxLs, boxCreateCommand } from "./cli/box";
 import { boxStartupCommand } from "./cli/box-startup";
+import { checkpointCommand } from "./cli/checkpoint";
 import { execCommand } from "./cli/exec";
 import { filesCommand } from "./cli/files";
 import { HELP, asksForHelp } from "./cli/help";
@@ -51,6 +52,7 @@ export async function runCli(
     if (command === "box" && sub === "create") return await boxCreateCommand(rest, env, io);
     if (command === "box" && sub === "startup-command") return await boxStartupCommand(rest, env, io);
     if (command === "template") return await templateCommand(sub === undefined ? [] : [sub, ...rest], env, io);
+    if (command === "checkpoint") return await checkpointCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "image") return await imageCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "trash") return await trashCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "exec") return await execCommand(sub === undefined ? [] : [sub, ...rest], env, io);

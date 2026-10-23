@@ -46,6 +46,7 @@ export default {
   "act.files.delete": "Deleted files",
   "act.checkpoint.export": "Exported checkpoint",
   "act.checkpoint.import": "Imported checkpoint",
+  "act.checkpoint.copy": "Copied checkpoint to host",
   "act.checkpoint.schedule": "Set checkpoint schedule",
   "act.checkpoint.schedule.clear": "Cleared checkpoint schedule",
   "act.template.create": "Built template",

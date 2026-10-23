@@ -76,7 +76,7 @@ function addEdgeHost(): { host: HostCtx; runtime: FakeRuntime } {
     undefined,
     {
       checkpoints: harness.app.hosts.get().checkpoints,
-      checkpointEngine: new FakeCheckpointEngine(runtime),
+      checkpointEngine: new FakeCheckpointEngine(),
     },
   );
   host.host.id = "edge";

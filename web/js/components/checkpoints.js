@@ -16,7 +16,7 @@ import {
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime } from "../lib/format.js";
 import { hostOfBox } from "../lib/host-list.js";
-import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
+import { hostFilter, hostName, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { subscribe } from "../lib/live.js";
@@ -154,6 +154,55 @@ export async function forkCheckpoint(checkpoint, box) {
     toast(t("ck.forked"), { message: input.name });
     location.hash = `#/boxes/${enc(done.result.box.id)}`;
     return done.result.box;
+  });
+}
+
+/** The host a copy goes to: each host but the one the checkpoint is kept on. */
+export function copyFormHtml({ hosts, from }) {
+  const options = hosts
+    .filter((host) => host.id !== from)
+    .map((host) => `<option value="${esc(host.id)}">${esc(host.name)}</option>`)
+    .join("");
+  return `<div class="field"><label class="label" for="ckCopyHost">${esc(t("cb.host"))}</label>
+      <select class="select" id="ckCopyHost">${options}</select>
+      <div class="help">${esc(t("ck.copyHostHelp"))}</div></div>
+    ${callout("info", t("ck.copyHow"))}`;
+}
+
+function askCopy(checkpoint, hosts) {
+  return new Promise((resolve) => {
+    let result = null;
+    const { root, close } = openDialog({
+      title: t("ck.copyTitle", { label: checkpoint.label }),
+      description: esc(t("ck.copyDesc")),
+      iconName: "server",
+      body: copyFormHtml({ hosts, from: checkpoint.hostId }),
+      footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button><button class="btn btn-primary" id="ckCopyOk">${esc(t("ck.copyConfirm"))}</button>`,
+      onClose: () => resolve(result),
+    });
+    root.querySelector("#ckCopyOk").addEventListener("click", () => {
+      const host = root.querySelector("#ckCopyHost").value;
+      if (!host) return;
+      result = { host };
+      close();
+    });
+  });
+}
+
+/** Asks for the host to copy a checkpoint to, copies it there and waits for the task. Resolves to the copy, or null. */
+export async function copyCheckpoint(checkpoint) {
+  const input = await askCopy(checkpoint, hostsNow());
+  if (!input) return null;
+  return guarded("ck.copyFailed", async () => {
+    const started = await api(`/api/checkpoints/${enc(checkpoint.id)}/copy`, { method: "POST", body: input });
+    toast(t("ck.copyStarted"), { type: "info", message: hostName(input.host) });
+    const done = await waitTask(started.taskId);
+    if (done.status !== "succeeded") {
+      toastError(t("ck.copyFailed"), { message: failureOf(done) });
+      return null;
+    }
+    toast(t("ck.copied"), { message: hostName(input.host) });
+    return done.result.checkpoint;
   });
 }
 
@@ -685,6 +734,7 @@ export function checkpointRowHtml(checkpoint, state) {
     <td><div class="actions ck-row-actions">
       ${rowButton("ck-fork", checkpoint, "copy", t("ck.fork"), rules.fork)}
       ${rowButton("ck-export", checkpoint, "download", t("ck.export"), rules.export)}
+      ${state.hosts?.length > 1 ? rowButton("ck-copy", checkpoint, "server", t("ck.copy"), rules.copy) : ""}
       ${rowButton("ck-rollback", checkpoint, "refresh", t("ck.rollback"), rules.rollback)}
       ${rowButton("ck-pin", checkpoint, "layers", checkpoint.pinned ? t("ck.unpin") : t("ck.pin"), rules.pin)}
       ${rowButton("ck-delete", checkpoint, "trash", t("ck.delete"), rules.delete)}
@@ -774,6 +824,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
     ["ck-take", (current) => takeCheckpoint(current)],
     ["ck-import", () => importCheckpoint()],
     ["ck-export", (_current, checkpoint) => exportCheckpoint(checkpoint)],
+    ["ck-copy", (_current, checkpoint) => copyCheckpoint(checkpoint)],
     ["ck-fork", (current, checkpoint) => forkCheckpoint(checkpoint, current)],
     ["ck-rollback", (current, checkpoint) => rollBack(current, checkpoint).then(settled)],
     ["ck-pin", (_current, checkpoint) => setPinned(checkpoint, !checkpoint.pinned)],

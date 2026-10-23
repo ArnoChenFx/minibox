@@ -1151,6 +1151,8 @@ async function recordScenario(): Promise<Exchange[]> {
     const copied = (pyBox.json?.sync as { taskId?: string } | undefined)?.taskId;
     await send("read the build that the box create waited for", "GET", `/api/tasks/${copied ?? ""}`);
     await send("list templates after the official builds", "GET", "/api/templates");
+    await post("copy a missing checkpoint", "/api/checkpoints/ck_0000000000000000000000000/copy", { host: "lab" });
+    await post("copy a checkpoint with no host", "/api/checkpoints/ck_0000000000000000000000000/copy", {});
     const reader = await post("create a token that reads the overview", "/api/tokens", {
       name: "reader",
       preset: "readonly",

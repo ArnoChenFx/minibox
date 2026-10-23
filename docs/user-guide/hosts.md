@@ -41,6 +41,10 @@ For an SSH host, MiniBox shows the host's key fingerprint, which starts with `SH
 
 Credentials are saved on the MiniBox host, and the console never shows them again.
 
+## Access to every host
+
+With more than one host, this console is the entry to all of them. A Docker engine has the power of root on its machine, so anyone who signs in to this console can act on every host. Keep the owner key private, and give each [agent token](access-and-tokens.md) only the hosts it needs. The **Settings** page shows this warning while a host other than this machine is held.
+
 ## Create a box on another host
 
 In the create dialog, choose the **Host**. The default is **local**. Choose **Auto** to let MiniBox pick: it uses the online host that holds the template and has the most CPU and memory left once the box is placed. When no host that holds an official template has room, the template is built on the online host with the most CPU and memory left that does not hold it yet. An agent token picks only among the hosts it is granted.
@@ -65,7 +69,7 @@ What a move does:
 - Local volumes are copied to the target. A running box is paused while they are copied. NFS volumes are attached on the target and not copied. The tools volume is replaced by the target's shared tools volume.
 - The box is created on the target and started there if it was running. The box is removed from the old host only after it runs on the target. If any step fails before that, the move is undone and the box stays where it was.
 - The box keeps its id, name, volumes, environment variables and history. Its writable layer, running processes and IP address are lost, as in a rebuild.
-- Checkpoints stay on the old host and are not restored on the new one. The preview counts them. A checkpoint holds its volume data, and copying every checkpoint would make a move slow, so a move leaves them behind. To keep one with the box, [export](checkpoints.md#export-and-import) it and import it on the new host.
+- Checkpoints stay on the old host and are not restored on the new one. The preview counts them. A checkpoint holds its volume data, and copying every checkpoint would make a move slow, so a move leaves them behind. To keep one with the box, [copy it](checkpoints.md#copy-to-another-host) to the new host, or [export](checkpoints.md#export-and-import) it and import it there.
 
 Only the owner or an admin token can move a box. Boxes with bind-mount volumes, or with volumes another box also mounts, cannot be moved.
 
@@ -76,7 +80,7 @@ The **Settings** page lists each host with its **Status**, its **Capacity**, and
 - Each box names its host.
 - The overview page shows a card for each host, with its status, latency, containers, and the CPU and memory its boxes reserve and use.
 - The top bar can filter the list by host.
-- A host that is offline shows its boxes as unreachable, and the rest of the list still loads.
+- A host that is offline shows its boxes as unreachable, and the rest of the list still loads. MiniBox checks an offline host again in the background. Each failed check waits longer than the one before, up to about five minutes.
 - An agent host shows the agent's version and when it was last seen. If the agent speaks another protocol than this MiniBox, the host shows **Agent needs an upgrade**. Pull the latest `minibox-agent` image and recreate the container with the same data volume.
 
 ## Remove a host
@@ -88,7 +92,8 @@ To stop an agent at once, click **Revoke** on its host first. Revoking disconnec
 ## Limits
 
 - A copy or a move needs the target engine to keep image IDs. Docker's classic image store does. The containerd image store changes an image's ID when the image loads, so MiniBox refuses the copy with a `docker_error` that names both IDs. An engine on the containerd image store shows `driver-type io.containerd.snapshotter.v1` in `docker info`.
-- Each host keeps its own checkpoints, and they are not copied between hosts. To move one, [export](checkpoints.md#export-and-import) it, then import it and choose the other host. See [Checkpoints](checkpoints.md).
+- Each host keeps its own checkpoints. To make one available on another host, [copy it](checkpoints.md#copy-to-another-host). The copy is a new checkpoint, and the original stays where it is. A checkpoint with a system layer cannot be copied yet.
+- **Auto** only considers hosts that already hold the template, and it does not match labels such as `arch` or `gpu` yet. Copy the template to a host first, or name the host.
 - A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead. An agent host does not support templates, snapshots or port preview yet, and a box with a self token cannot be created on one, because an agent cannot write the token file.
 - Host-level CPU and memory use is shown for the local host only. A remote host shows the cores and memory that its engine reports, and the use of its own boxes.
 - The command-line tool has no host commands. Use the console, or the [REST API](../reference/api.md).

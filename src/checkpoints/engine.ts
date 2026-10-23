@@ -1,4 +1,5 @@
 import type { HostCtx } from "../host/registry";
+import type { ByteProgress } from "../lib/transfer";
 import type { PackageDigest } from "./package";
 
 /** What one backup produced: the snapshot id the engine assigned, and the bytes it read from the volume. */
@@ -12,10 +13,25 @@ export interface EngineUsage {
   bytes: number;
 }
 
-/** A snapshot in a repository, with the tags it was taken with. */
+/**
+ * A snapshot in a repository, with the tags it was taken with. A copy gets a new id but keeps its tags, and `original`
+ * names the snapshot it was first taken as, at the root of its copy chain. Null for a snapshot taken in this repository.
+ */
 export interface SnapshotRef {
   id: string;
   tags: string[];
+  original: string | null;
+}
+
+/**
+ * A copy was asked for a snapshot whose chain the repository already holds. The copy would duplicate that data under the
+ * same origin, so it is refused. `root` is the origin both snapshots name.
+ */
+export class SnapshotHeld extends Error {
+  constructor(readonly root: string) {
+    super(`the repository already holds snapshot ${root}`);
+    this.name = "SnapshotHeld";
+  }
 }
 
 /**
@@ -36,8 +52,11 @@ export interface OpenedPackage {
   readonly snapshots: SnapshotRef[];
   /** The manifest text of one of the package's snapshots. */
   readManifest(snapshotId: string): Promise<string>;
-  /** Copies snapshots of the package into this host's repository. Tags are kept, so `tagged` finds the new ids. */
-  unpack(snapshotIds: string[]): Promise<void>;
+  /**
+   * Copies snapshots of the package into this host's repository, and returns the new id of each, keyed by the package's
+   * id. A snapshot whose chain this repository already holds is refused with `SnapshotHeld` before anything is copied.
+   */
+  unpack(snapshotIds: string[]): Promise<Map<string, string>>;
   /** Releases what the package staged. Calling it again does nothing. */
   close(): Promise<void>;
 }
@@ -59,12 +78,18 @@ export interface SnapshotEngine {
   tagged(host: HostCtx, tag: string): Promise<SnapshotRef[]>;
   /**
    * Writes a package for `input` to `file`, which must not exist yet. The stream is checked as it is written, and one
-   * that is too long or refused leaves no file behind.
+   * that is too long or refused leaves no file behind. `onBytes` reports the bytes written so far.
    */
-  pack(host: HostCtx, input: PackageInput, file: string, maxBytes: number): Promise<PackageDigest>;
+  pack(
+    host: HostCtx,
+    input: PackageInput,
+    file: string,
+    maxBytes: number,
+    onBytes?: ByteProgress,
+  ): Promise<PackageDigest>;
   /**
    * Opens a package file with its passphrase. A passphrase that does not open the package, or a file that holds no
-   * repository, is refused with `PackageRejected`.
+   * repository, is refused with `PackageRejected`. `onBytes` reports the bytes staged so far.
    */
-  open(host: HostCtx, file: string, passphrase: string): Promise<OpenedPackage>;
+  open(host: HostCtx, file: string, passphrase: string, onBytes?: ByteProgress): Promise<OpenedPackage>;
 }

@@ -275,7 +275,7 @@ export const templateSync = defineOperation({
   run: async ({ host, task }, input, source) => ({
     ref: input.ref,
     host: host.host.id,
-    sent: await copyTemplate(source, host, input.ref, task?.signal),
+    sent: await copyTemplate(source, host, input.ref, task),
   }),
 });
 

@@ -3352,6 +3352,22 @@
     "body": "{\"templates\":[{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:python\",\"tags\":[\"mbtest-template:python\"],\"name\":\"python\",\"description\":\"Debian 12 · Python 3.14 · uv · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"official\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:minimal\",\"tags\":[\"mbtest-template:minimal\"],\"name\":\"minimal\",\"description\":\"Debian 12 · git · tmux · jq · ripgrep · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"official\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:sample\",\"tags\":[\"mbtest-template:sample\"],\"name\":\"sample\",\"description\":\"Built from a Dockerfile\",\"source\":null,\"sourceId\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"buildKind\":\"dockerfile\",\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:saved\",\"tags\":[\"mbtest-template:saved\"],\"name\":\"saved\",\"description\":\"Saved from box ckbox\",\"source\":\"ckbox\",\"sourceId\":\"<boxId>\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"mbtest-template:base\",\"tags\":[\"mbtest-template:base\"],\"name\":\"base\",\"description\":\"Debian 12 · Node.js 26 · Python 3 · git · tmux · build-essential · non-root dev user\",\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"},{\"id\":\"sha256:<image>\",\"ref\":\"sha256:<image>\",\"tags\":[],\"name\":\"base\",\"description\":null,\"source\":null,\"sourceId\":null,\"createdBy\":null,\"createdAt\":\"<time>\",\"size\":1024,\"hostId\":\"local\"}],\"baseTemplate\":\"mbtest-template:base\"}"
   },
   {
+    "step": "copy a missing checkpoint",
+    "method": "POST",
+    "path": "/api/checkpoints/ck_<checkpoint>/copy",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Checkpoint ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"checkpoint_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "copy a checkpoint with no host",
+    "method": "POST",
+    "path": "/api/checkpoints/ck_<checkpoint>/copy",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid input: expected string, received undefined\",\"retryable\":false}}"
+  },
+  {
     "step": "create a token that reads the overview",
     "method": "POST",
     "path": "/api/tokens",

@@ -39,7 +39,7 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
 | `secret:use` | `secret:use`. Setting, removing or running a box's startup command also needs `exec`. |
-| `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `template:official`, `trash:read`, `trash:restore`, `trash:purge`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+| `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:copy`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `template:official`, `trash:read`, `trash:restore`, `trash:purge`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 | `self` | None. Only the self token of the box can call these, and only for that box. |
 
 The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. The `skipTrash` option of `DELETE /api/boxes/{id}` and `DELETE /api/volumes/{id}` also needs the `trash:skip` token scope, or the owner. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
@@ -53,7 +53,7 @@ The scope check comes first. The token's box, volume and host grants, its quotas
 
 ## Long-running operations
 
-Some operations take a while, such as template builds, checkpoints, exports, imports, forks, rollbacks, recycle bin restores and purges, and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
+Some operations take a while, such as template builds, checkpoints, exports, imports, copies, forks, rollbacks, recycle bin restores and purges, and tool installs. They return `202` with a `taskId` at once. The work continues on the server.
 
 - `GET /api/tasks/{id}` shows the task, including its status and result.
 - `GET /api/tasks/{id}/events` streams its progress as server-sent events. It is not in the OpenAPI document.
@@ -248,6 +248,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `DELETE` | `/api/checkpoints/{id}` | Delete a checkpoint |
 | `POST` | `/api/boxes/{id}/checkpoints` | Take a checkpoint of a box |
 | `POST` | `/api/checkpoints/{id}/fork` | Create a box from a checkpoint |
+| `POST` | `/api/checkpoints/{id}/copy` | Copy a checkpoint to another host `{ "host" }`. Returns `202`; the task result holds the copy. Owner only |
 | `GET` | `/api/boxes/{id}/rollback` | Read the rollback of a box that waits for its confirm or undo |
 | `POST` | `/api/boxes/{id}/rollback` | Roll a box back to one of its checkpoints |
 | `POST` | `/api/boxes/{id}/rollback/confirm` | Confirm a rollback: delete the volumes it replaced |

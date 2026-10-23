@@ -100,6 +100,7 @@ export default {
   "label.toolDetect": "检测命令",
   "feature.snapshots": "快照",
   "feature.templates": "模板",
+  "feature.checkpoints": "检查点",
   "ui.nameRequired": "请输入{what}。",
   "ui.nameInvalid": "{what}只能包含字母、数字、点、下划线和连字符，须以字母或数字开头。",
   "state.running": "运行中",

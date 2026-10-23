@@ -224,6 +224,7 @@ describe("MCP", () => {
         "attach_volume",
         "check_target",
         "clear_checkpoint_schedule",
+        "copy_checkpoint",
         "create_backup",
         "create_volume",
         "delete_backup",

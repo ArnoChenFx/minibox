@@ -9,6 +9,8 @@
 
 ### 新增
 - 官方模板（[#15](https://github.com/ArnoChenFx/minibox/issues/15)）：MiniBox 内置 `node`、`python`、`go` 与 `minimal` 四个官方模板，各由源码中的一份 Dockerfile 构建，基础镜像固定到具体版本与发行版代号（Node.js 26、Python 3.14、Go 1.26 与 Debian 12）。它们不在启动时构建，也没有预热池：某台宿主机首次需要某个模板时才在该宿主机上构建。创建 Box 时若没有宿主机持有该模板，构建会在 Box 所在的宿主机上作为任务运行，创建请求等待其完成；使用自动选择宿主机时，由余量最大、且可以构建该模板的在线宿主机承担。模板页与创建 Box 对话框列出尚未构建的官方模板，并标注「首次使用时构建」。API 为 `GET /api/templates/official` 与 `POST /api/templates/official/{name}/build`，CLI 为 `minibox template build-official`，MCP 为 `list_official_templates` 与 `build_official_template`。构建与列出仅限所有者；令牌只能在所有者已于该宿主机上构建模板之后使用它。
+- 宿主机之间复制检查点（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）：`POST /api/checkpoints/{id}/copy`（请求体 `{ host }`，返回 `202` 与任务）、`minibox checkpoint copy <id> --host ID` 与 MCP 工具 `copy_checkpoint`（`storage` 工具集，仅所有者）把检查点复制到另一台宿主机，检查点行中的「复制到宿主机」按钮提供同样的操作。源宿主机把数据打包成一个口令只为本次复制而生的密封包，包经控制面转交目标宿主机，用完（无论成功与否）即删除。目标缺少基础模板或检查点所用的模板时，先复制这些模板。副本是目标上的新检查点，保留原检查点的标签、置顶、创建时间与 Box 设置；失败时目标上不留下副本的快照，已复制过去的模板保留。包的大小受 `CHECKPOINT_PACKAGE_MAX_MB` 限制，带系统层的检查点暂不能复制。
+- 设置 → 宿主机在配置了多台宿主机且其中含非本机宿主机时显示访问提醒：本控制台是所有宿主机的入口，能登录的人可以操作全部宿主机，因此应只给每个 Agent 令牌它需要的宿主机（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）。
 - 网络出站策略（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：`POST /api/boxes`、`minibox box create --egress` 与 MCP 的 `create_box` 接受 `egress` 对象，其中 `mode` 为 `open`、`none` 或 `proxy-only`，`proxy-only` 另可指定 `presets` 与 `domains`。`POST /api/boxes/{id}/rebuild` 与 `rebuild_box` 同样接受它。预设为 `agent-default` 与 `package-registries`；白名单最多 100 个主机，支持 `*.` 通配子域名。`none` 与 `proxy-only` 的 Box 使用各自的私有网络，并由各安装自己的宿主机防火墙链 `MINIBOX-EGRESS-<hash>` 阻止访问宿主机。
 - `proxy-only` 代理只转发 80 与 443 端口，拒绝私有、回环与保留地址，并为每次连接记录 `egress.allowed`、`egress.denied` 或 `egress.failed` 事件。事件只含主机、端口、字节数、耗时与原因，不记录路径、查询、请求头或正文。Box 概览显示档位、允许的主机与最近被拒绝的连接，活动列表可按**出站**筛选，创建对话框的**高级**中新增**网络出站**选择器。
 - `BLOCK_HOST_GATEWAY`（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：设为 `true` 后，默认网络上的 Box 无法通过桥接网关访问宿主机上的服务。默认关闭。
@@ -27,6 +29,7 @@
 ### 变更
 - **破坏性变更：`/mcp` 默认拒绝所有者访问密钥。** `MCP_ALLOW_OWNER_KEY` 的默认值由 `true` 改为 `false`。此后，用访问密钥访问 `/mcp` 的请求返回 `401`（`mcp_owner_key_refused`），Agent 令牌不受影响。升级前请为每个 Agent 创建令牌（控制台的**设置**，或 `minibox token create <name>`），并把它设为 Agent 的 Bearer 密钥或 `MINIBOX_ACCESS_KEY`。若要暂时保留旧行为，设置 `MCP_ALLOW_OWNER_KEY=true`，每次使用仍会被记录。启动时若最近 7 天内有访问密钥访问过 `/mcp`，日志会写入 `mcp.owner_key_now_refused` 警告，控制台横幅也会给出同样的做法。`minibox mcp` 遇到拒绝时会说明原因，并提示 `minibox token create`。见[升级说明](docs/admin/upgrades.md)（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 - 自动选择宿主机找不到可用宿主机时，错误信息改为「持有该模板，或能够构建它的在线宿主机都没有余量」，因为官方模板可在没有宿主机持有时由余量最大的宿主机构建。
+- 离线宿主机的后台检查改为退避。此前每 30 秒检查一次所有宿主机；现在每次连续失败后等待更久，最长约五分钟检查一次。宿主机恢复在线后，检查恢复为每 30 秒一次（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）。
 - 更改已有 Box 的出站档位属于重建：API 与 MCP 先返回预览，带 `confirm: true` 确认后才会重建。Box 保留名称、ID 与卷。
 - 出站档位不为 `open` 的 Box 无法迁移到其他宿主机（返回 `409`，`egress_move_refused`）。回收站恢复与检查点派生会保留出站策略，并为其创建新的私有网络。Box 视图仅在档位不是 `open` 时包含 `egress` 字段。
 - `devcontainer.json` 中不支持的设置不再拒绝整个构建。它们在构建日志中以 `Warning:` 列出，其余设置照常应用。无法按原样应用的设置仍会拒绝构建，例如取值中的 `${…}` 引用，或 `postCreateCommand` 中的 devcontainer 变量（Refs #15）。
@@ -54,6 +57,7 @@
 
 ### 文档
 - 模板指南新增「官方模板」一节（中英文），说明四个模板的内容、何时构建、重新构建时基础镜像的更新方式，以及权限；API、CLI 与 MCP 参考同步新增相应条目（[#15](https://github.com/ArnoChenFx/minibox/issues/15)）。
+- 检查点指南新增「复制到其他宿主机」一节，宿主机指南新增「对所有宿主机的访问」，并说明 `auto` 只考虑持有模板的宿主机、暂不按 `arch` 或 `gpu` 标签放置。API、CLI、MCP 参考与 Agent 指南同步更新，中英文版本一致（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）。
 - 新增网络出站文档：英文 `docs/admin/network-egress.md` 与中文 `docs/zh-CN/admin/network-egress.md`，说明各档位、白名单、事件、`BLOCK_HOST_GATEWAY` 与限制（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）。安全指南、配置、CLI、检查点与 Box 指南，以及 `.env.example` 同步更新。
 - 模板指南的 `devcontainer.json` 一节改写：列出支持的设置、构建日志中的警告与被拒绝的设置，以及 Box 设置任务的顺序、运行用户、工作目录、时限与失败行为，中英文版本同步。API、CLI、MCP、安全与架构文档同步更新（Refs #15）。
 - `/mcp` 访问密钥的说明更新：安全指南、升级说明、配置、MCP 与 CLI 参考，以及 Agent 与访问和令牌指南，中英文同步（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。

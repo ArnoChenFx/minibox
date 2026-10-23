@@ -193,6 +193,8 @@ export default {
   "st.hosts": "宿主机",
   "st.hostsHelp":
     "运行 Box 的机器。可通过套接字、双向 TLS 或 SSH 添加 Docker 引擎。凭据保存在本控制面上，保存后不再显示。",
+  "st.hostAccessWarn":
+    "本控制台是所有宿主机的 root 入口。每个 Docker 引擎在其机器上都拥有 root 权限，能登录这里的人都可以操作全部宿主机。请妥善保管所有者密钥，并只给每个 Agent 令牌它需要的宿主机。",
   "st.hostAdd": "添加宿主机",
   "st.hostAddHelp": "Agent 由宿主机主动连入。也可以填写 Docker 地址：套接字、双向 TLS 或 SSH 密钥登录。",
   "st.hostAddSubmit": "添加宿主机",

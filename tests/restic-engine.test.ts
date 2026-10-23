@@ -1,15 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { SnapshotHeld } from "../src/checkpoints/engine";
 import { ResticEngine, RESTIC_IMAGE } from "../src/checkpoints/restic";
 import { createLocalHost, type HostCtx } from "../src/host/registry";
 import type { HelperResult, HelperSpec } from "../src/runtime";
 import { rejectionOf, testConfig } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
+import { tarBytes } from "./support/tar";
 
 const SNAPSHOT = "a".repeat(64);
 const SECOND = "b".repeat(64);
+const ORIGIN = "3".repeat(64);
+const PACKED = "2".repeat(64);
+const COPIED = "1".repeat(64);
+const PASSPHRASE = "a passphrase for one package";
 const REPO_VOLUME = "mbtest-checkpoints-local";
 
 interface Scripted {
@@ -261,5 +267,126 @@ describe("ResticEngine restore and forget", () => {
     const error = await rejectionOf(new ResticEngine({ dataDir: s.dataDir }).restore(s.host, SNAPSHOT, "fresh"));
     expect(error).toMatchObject({ kind: "engine" });
     expect((error as Error).message).toContain("restic restore exited with status 1");
+  });
+});
+
+/** What `snapshots --json` prints for these rows. */
+function listed(rows: { id: string; tags?: string[]; original?: string }[]): HelperResult {
+  return { exitCode: 0, logs: JSON.stringify(rows) };
+}
+
+/** A package file whose repository holds `ids`. The helpers are scripted, so the bytes need only be a tar of the repository. */
+function packageFile(dataDir: string, ids: string[]): string {
+  const file = join(dataDir, "package.mbckpt");
+  writeFileSync(
+    file,
+    tarBytes([
+      { name: "repo/config", body: Buffer.from("{}") },
+      ...ids.map((id) => ({ name: `repo/snapshots/${id}`, body: Buffer.from("{}") })),
+    ]),
+  );
+  return file;
+}
+
+describe("ResticEngine copies: the origins a listing reports, and what unpacking keeps", () => {
+  test("a listing reads the origin of each copied snapshot, and an empty repository lists none, as [] or null", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const engine = new ResticEngine({ dataDir: s.dataDir });
+    await engine.backup(s.host, "src", ["ck_abc"]);
+
+    s.next(
+      "snapshots",
+      listed([
+        { id: COPIED, tags: ["ck_abc"], original: SNAPSHOT },
+        { id: SECOND, tags: ["ck_abc"] },
+      ]),
+    );
+    expect(await engine.tagged(s.host, "ck_abc")).toEqual([
+      { id: COPIED, tags: ["ck_abc"], original: SNAPSHOT },
+      { id: SECOND, tags: ["ck_abc"], original: null },
+    ]);
+
+    s.next("snapshots", { exitCode: 0, logs: "[]\n" });
+    expect(await engine.tagged(s.host, "ck_abc")).toEqual([]);
+    s.next("snapshots", { exitCode: 0, logs: "null\n" });
+    expect(await engine.tagged(s.host, "ck_abc")).toEqual([]);
+  });
+
+  test("a snapshots listing that is not a list is a failure", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const engine = new ResticEngine({ dataDir: s.dataDir });
+    await engine.backup(s.host, "src", ["ck_abc"]);
+
+    s.next("snapshots", { exitCode: 0, logs: '{"id":"not a list"}' });
+    expect(await rejectionOf(engine.tagged(s.host, "ck_abc"))).toMatchObject({ kind: "engine" });
+  });
+
+  test("a package whose origin the repository already holds is refused with SnapshotHeld, before restic copies anything", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const engine = new ResticEngine({ dataDir: s.dataDir });
+    await engine.backup(s.host, "src", ["ck_abc"]);
+    const file = packageFile(s.dataDir, [PACKED]);
+    s.next("snapshots", listed([{ id: PACKED, tags: ["ck_abc"], original: SNAPSHOT }]));
+    const opened = await engine.open(s.host, file, PASSPHRASE);
+    s.next("snapshots", listed([{ id: SNAPSHOT, tags: ["ck_abc"] }]));
+
+    s.helpers.length = 0;
+    expect(await rejectionOf(opened.unpack([PACKED]))).toBeInstanceOf(SnapshotHeld);
+    expect(commandsOf(s.helpers)).toEqual(["snapshots"]);
+    await opened.close();
+  });
+
+  test("unpacking copies each package snapshot in, and maps it to the copy restic wrote", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const engine = new ResticEngine({ dataDir: s.dataDir });
+    await engine.backup(s.host, "src", ["ck_abc"]);
+    const file = packageFile(s.dataDir, [PACKED]);
+    s.next("snapshots", listed([{ id: PACKED, tags: ["ck_abc"], original: ORIGIN }]));
+    const opened = await engine.open(s.host, file, PASSPHRASE);
+    s.next("snapshots", listed([{ id: SNAPSHOT, tags: ["ck_abc"] }]));
+    s.next(
+      "snapshots",
+      listed([
+        { id: SNAPSHOT, tags: ["ck_abc"] },
+        { id: COPIED, tags: ["ck_abc"], original: ORIGIN },
+      ]),
+    );
+
+    s.helpers.length = 0;
+    expect(await opened.unpack([PACKED])).toEqual(new Map([[PACKED, COPIED]]));
+    expect(commandsOf(s.helpers)).toEqual(["snapshots", "copy", "snapshots"]);
+    expect(s.helpers[1]?.cmd).toEqual(expect.arrayContaining(["copy", PACKED]));
+    await opened.close();
+  });
+
+  test("a copy restic fails forgets the copies it left, and no other snapshot", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const engine = new ResticEngine({ dataDir: s.dataDir });
+    await engine.backup(s.host, "src", ["ck_abc"]);
+    const file = packageFile(s.dataDir, [PACKED]);
+    s.next("snapshots", listed([{ id: PACKED, tags: ["ck_abc"], original: ORIGIN }]));
+    const opened = await engine.open(s.host, file, PASSPHRASE);
+    s.next("snapshots", listed([{ id: SNAPSHOT, tags: ["ck_abc"] }]));
+    s.next("copy", { exitCode: 1, logs: "Fatal: no space left on device" });
+    s.next(
+      "snapshots",
+      listed([
+        { id: SNAPSHOT, tags: ["ck_abc"] },
+        { id: COPIED, tags: ["ck_abc"], original: ORIGIN },
+      ]),
+    );
+
+    s.helpers.length = 0;
+    const error = await rejectionOf(opened.unpack([PACKED]));
+    expect(error).toMatchObject({ kind: "engine" });
+    expect((error as Error).message).toContain("restic copy out of the package exited with status 1");
+    expect(commandsOf(s.helpers)).toEqual(["snapshots", "copy", "snapshots", "forget"]);
+    expect(s.helpers[3]?.cmd).toEqual(["--no-cache", "forget", COPIED, "--prune"]);
+    await opened.close();
   });
 });

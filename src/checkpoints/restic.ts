@@ -1,10 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 
 import { createSecretFile, ensureDataDir, readSecretFile } from "../data-dir";
 import type { HostCtx } from "../host/registry";
 import { log } from "../lib/logger";
+import { type ByteProgress, countingChunks } from "../lib/transfer";
 import {
   type CreateContainerSpec,
   HELPER_SECRETS_DIR,
@@ -14,7 +16,15 @@ import {
   type Mount,
   RuntimeError,
 } from "../runtime";
-import type { BackupResult, EngineUsage, OpenedPackage, PackageInput, SnapshotEngine, SnapshotRef } from "./engine";
+import {
+  type BackupResult,
+  type EngineUsage,
+  type OpenedPackage,
+  type PackageInput,
+  type SnapshotEngine,
+  SnapshotHeld,
+  type SnapshotRef,
+} from "./engine";
 import { MANIFEST_FILE, MANIFEST_TAG, PackageRejected, type PackageDigest, writePackageFile } from "./package";
 
 /** Pinned engine image. Its flags below follow restic 0.18. */
@@ -144,15 +154,52 @@ export class ResticEngine implements SnapshotEngine {
         if (isRuntimeError(e, "not_found")) return [];
         throw e;
       }
-      const result = await this.run(host, { args: ["snapshots", "--tag", tag, "--json"] });
-      this.assertOk(host, result, "restic snapshots");
-      const refs = snapshotsOf(result.logs);
-      if (refs === null) throw failure("restic snapshots printed no list", result);
-      return refs;
+      return this.listing(host, ["--tag", tag]);
     });
   }
 
-  pack(host: HostCtx, input: PackageInput, file: string, maxBytes: number): Promise<PackageDigest> {
+  /** The snapshots of this repository that match the `snapshots` filter flags. The caller holds the host's queue. */
+  private async listing(host: HostCtx, filter: string[]): Promise<SnapshotRef[]> {
+    const result = await this.run(host, { args: ["snapshots", ...filter, "--json"] });
+    this.assertOk(host, result, "restic snapshots");
+    const refs = snapshotsOf(result.logs);
+    if (refs === null) throw failure("restic snapshots printed no list", result);
+    return refs;
+  }
+
+  /**
+   * Forgets what a failed copy left: the snapshots that appeared during it, under one of its roots. It runs inside the
+   * host's queue, so it calls restic directly, since `forget` would wait for the queue it already holds.
+   */
+  private async forgetCopies(host: HostCtx, known: Set<string>, roots: Set<string>): Promise<void> {
+    let leftovers: SnapshotRef[];
+    try {
+      leftovers = (await this.listing(host, [])).filter(
+        (snapshot) => !known.has(snapshot.id) && snapshot.original !== null && roots.has(snapshot.original),
+      );
+    } catch (e) {
+      log.warn("checkpoint.copy_cleanup_failed", { host: host.host.id, error: String(e) });
+      return;
+    }
+    for (const snapshot of leftovers) {
+      try {
+        const result = await this.run(host, { args: ["forget", snapshot.id, "--prune"] });
+        if (result.exitCode !== 0) {
+          log.warn("checkpoint.copy_cleanup_failed", { host: host.host.id, snapshot: snapshot.id });
+        }
+      } catch (e) {
+        log.warn("checkpoint.copy_cleanup_failed", { host: host.host.id, snapshot: snapshot.id, error: String(e) });
+      }
+    }
+  }
+
+  pack(
+    host: HostCtx,
+    input: PackageInput,
+    file: string,
+    maxBytes: number,
+    onBytes?: ByteProgress,
+  ): Promise<PackageDigest> {
     return this.serial(host, async () => {
       input.snapshotIds.forEach(assertSnapshotId);
       await this.ensureRepo(host, { create: false });
@@ -192,17 +239,17 @@ export class ResticEngine implements SnapshotEngine {
           env,
         });
         if (manifest.exitCode !== 0) throw failure("restic backup of the manifest", manifest);
-        return await this.writeArchive(host, volume, file, maxBytes);
+        return await this.writeArchive(host, volume, file, maxBytes, onBytes);
       } finally {
         await this.unstage(host, volume);
       }
     });
   }
 
-  async open(host: HostCtx, file: string, passphrase: string): Promise<OpenedPackage> {
+  async open(host: HostCtx, file: string, passphrase: string, onBytes?: ByteProgress): Promise<OpenedPackage> {
     const volume = await this.stage(host);
     try {
-      await this.loadArchive(host, volume, file);
+      await this.loadArchive(host, volume, file, onBytes);
       const sealed: HelperSecret[] = [{ name: PACKAGE_KEY_NAME, value: passphrase }];
       const env = repoEnv(PACKAGE_KEY_NAME, PACKAGE_REPO);
       const mounts = [packageMountOf(volume, "rw")];
@@ -244,20 +291,36 @@ export class ResticEngine implements SnapshotEngine {
       unpack: (snapshotIds) =>
         this.serial(host, async () => {
           snapshotIds.forEach(assertSnapshotId);
+          const roots = rootsOf(snapshots, snapshotIds);
+          const rootSet = new Set(roots.values());
           await this.ensureRepo(host, { create: true });
-          const result = await this.run(host, {
-            args: [
-              "copy",
-              "--from-repo",
-              PACKAGE_REPO,
-              "--from-password-file",
-              `${HELPER_SECRETS_DIR}/${PACKAGE_KEY_NAME}`,
-              ...snapshotIds,
-            ],
-            mounts,
-            secrets: sealed,
-          });
-          this.assertOk(host, result, "restic copy out of the package");
+          const before = await this.listing(host, []);
+          const known = new Set(before.map((snapshot) => snapshot.id));
+          for (const root of rootSet) {
+            if (before.some((snapshot) => snapshot.id === root || snapshot.original === root)) {
+              throw new SnapshotHeld(root);
+            }
+          }
+          try {
+            const result = await this.run(host, {
+              args: [
+                "copy",
+                "--from-repo",
+                PACKAGE_REPO,
+                "--from-password-file",
+                `${HELPER_SECRETS_DIR}/${PACKAGE_KEY_NAME}`,
+                ...snapshotIds,
+              ],
+              mounts,
+              secrets: sealed,
+            });
+            this.assertOk(host, result, "restic copy out of the package");
+            const copies = (await this.listing(host, [])).filter((snapshot) => !known.has(snapshot.id));
+            return copiedIds(roots, copies);
+          } catch (e) {
+            await this.forgetCopies(host, known, rootSet);
+            throw e;
+          }
         }),
       close: async () => {
         if (closed) return;
@@ -357,11 +420,12 @@ export class ResticEngine implements SnapshotEngine {
   }
 
   /** Copies a package file into an empty staging volume, which then holds the repository at `/pkg/repo`. */
-  private async loadArchive(host: HostCtx, volume: string, file: string): Promise<void> {
+  private async loadArchive(host: HostCtx, volume: string, file: string, onBytes?: ByteProgress): Promise<void> {
     const created = await host.runtime.createContainer(stagingSpec(host, this.image, volume, "rw"));
     const source = createReadStream(file);
     try {
-      await host.runtime.putArchive(created.id, PACKAGE_MOUNT, source);
+      const body = onBytes ? Readable.from(countingChunks(source, onBytes), { objectMode: false }) : source;
+      await host.runtime.putArchive(created.id, PACKAGE_MOUNT, body);
     } finally {
       source.destroy();
       await host.runtime.removeContainer(created.id, { force: true }).catch(() => undefined);
@@ -369,12 +433,18 @@ export class ResticEngine implements SnapshotEngine {
   }
 
   /** Streams the staged repository out as a package file, checked as it is written. */
-  private async writeArchive(host: HostCtx, volume: string, file: string, maxBytes: number): Promise<PackageDigest> {
+  private async writeArchive(
+    host: HostCtx,
+    volume: string,
+    file: string,
+    maxBytes: number,
+    onBytes?: ByteProgress,
+  ): Promise<PackageDigest> {
     const created = await host.runtime.createContainer(stagingSpec(host, this.image, volume, "ro"));
     try {
       const archive = await host.runtime.getArchive(created.id, PACKAGE_REPO);
       try {
-        return await writePackageFile(archive, file, maxBytes);
+        return await writePackageFile(onBytes ? countingChunks(archive, onBytes) : archive, file, maxBytes);
       } finally {
         archive.destroy();
       }
@@ -472,12 +542,45 @@ function snapshotsOf(logs: string): SnapshotRef[] | null {
   if (!Array.isArray(value)) return null;
   const refs: SnapshotRef[] = [];
   for (const item of value) {
-    const { id, tags } = (typeof item === "object" && item !== null ? item : {}) as { id?: unknown; tags?: unknown };
+    const { id, tags, original } = (typeof item === "object" && item !== null ? item : {}) as {
+      id?: unknown;
+      tags?: unknown;
+      original?: unknown;
+    };
     if (typeof id !== "string" || !SNAPSHOT_ID_RE.test(id)) return null;
     const names = Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === "string") : [];
-    refs.push({ id, tags: names });
+    const origin = typeof original === "string" && SNAPSHOT_ID_RE.test(original) ? original : null;
+    refs.push({ id, tags: names, original: origin });
   }
   return refs;
+}
+
+/**
+ * The origin of each package snapshot: the snapshot it was first taken as, or itself when it was taken here. Two of
+ * them with one origin cannot be copied together, so that is refused.
+ */
+function rootsOf(snapshots: SnapshotRef[], ids: string[]): Map<string, string> {
+  const roots = new Map<string, string>();
+  for (const id of ids) {
+    const snapshot = snapshots.find((item) => item.id === id);
+    if (!snapshot) throw new PackageRejected("invalid", `the package holds no snapshot ${id}`);
+    const root = snapshot.original ?? snapshot.id;
+    if ([...roots.values()].includes(root))
+      throw new PackageRejected("invalid", "the package holds one snapshot twice");
+    roots.set(id, root);
+  }
+  return roots;
+}
+
+/** Each package snapshot's copy in the repository: the new snapshot that carries the same origin. */
+function copiedIds(roots: Map<string, string>, copies: SnapshotRef[]): Map<string, string> {
+  const ids = new Map<string, string>();
+  for (const [packaged, root] of roots) {
+    const copy = copies.find((snapshot) => snapshot.original === root);
+    if (!copy) throw new RuntimeError("engine", `restic copy wrote no snapshot for ${packaged}`);
+    ids.set(packaged, copy.id);
+  }
+  return ids;
 }
 
 /** The manifest `dump` printed: the text from its first brace to its last. Null when there are no braces. */

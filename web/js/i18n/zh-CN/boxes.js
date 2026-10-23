@@ -46,6 +46,7 @@ export default {
   "act.files.delete": "删除文件",
   "act.checkpoint.export": "导出检查点",
   "act.checkpoint.import": "导入检查点",
+  "act.checkpoint.copy": "将检查点复制到宿主机",
   "act.checkpoint.schedule": "设置定时检查点",
   "act.checkpoint.schedule.clear": "清除定时检查点",
   "act.template.create": "构建模板",
