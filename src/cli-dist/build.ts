@@ -6,7 +6,10 @@ export const CLI_BUILD_TIMEOUT_MS = 5 * 60_000;
 export interface CliBuildJob {
   readonly target: CliTarget;
   readonly version: string;
-  /** The CLI's entry point. The CLI imports only Node built-ins, so this file is the whole build input. */
+  /**
+   * The CLI's entry point. The CLI imports only Node built-ins and the modules under src/cli, so those files are the
+   * whole build input.
+   */
   readonly entry: string;
   readonly outFile: string;
   /** Where Bun keeps the target runtimes it downloads, so a later build of the same runtime needs no network. */

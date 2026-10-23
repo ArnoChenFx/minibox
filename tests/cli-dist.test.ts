@@ -406,6 +406,22 @@ describe("CliDistribution", () => {
     expect(after.path).not.toBe(before.path);
   });
 
+  test("an edit to a module under src/cli rebuilds even when the version has not changed", async () => {
+    const dataDir = tempDir();
+    const root = fakeRoot();
+    mkdirSync(join(root, "src", "cli"));
+    writeFileSync(join(root, "src", "cli", "box.ts"), "export const box = 1;\n");
+    const linux = target("minibox-linux-x64");
+    const before = await new CliDistribution({ dataDir, version: "1.0.0", root, build: stubBuilder().build }).artifact(
+      linux,
+    );
+    writeFileSync(join(root, "src", "cli", "box.ts"), "export const box = 2;\n");
+    const next = stubBuilder();
+    const after = await new CliDistribution({ dataDir, version: "1.0.0", root, build: next.build }).artifact(linux);
+    expect(next.jobs).toHaveLength(1);
+    expect(after.path).not.toBe(before.path);
+  });
+
   test("checksums lists the binaries built so far, in sha256sum format and target order", async () => {
     const dist = new CliDistribution({
       dataDir: tempDir(),
