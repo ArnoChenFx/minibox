@@ -381,6 +381,16 @@ async function ensureTemplate(
 }
 
 /**
+ * Refuses a copy the target already holds. A copy keeps the tags of the checkpoint it came from, so the tag finds the
+ * copies made from that checkpoint. A copy of a copy is refused when its snapshots are copied in, since they share an origin.
+ */
+export async function assertNotCopied(target: HostCtx, id: string): Promise<void> {
+  if ((await target.checkpointEngine.tagged(target, checkpointTag(id))).length > 0) {
+    throw conflict(msg("checkpoint_copy_exists", { id, host: target.host.id }));
+  }
+}
+
+/**
  * Marks the checkpoint as being copied, under the record lock, so retention leaves its snapshots alone until the copy
  * ends. A checkpoint that cannot be copied is refused here, and so is one the target already holds a copy of.
  */
@@ -391,9 +401,7 @@ async function reserveCopy(source: HostCtx, target: HostCtx, id: string): Promis
       throw notFound(msg("checkpoint_not_found", { id }));
     }
     assertCopyable(viewOf(found));
-    if ((await target.checkpointEngine.tagged(target, checkpointTag(id))).length > 0) {
-      throw conflict(msg("checkpoint_copy_exists", { id, host: target.host.id }));
-    }
+    await assertNotCopied(target, id);
     source.checkpoints.exporting.add(id);
     return found;
   });

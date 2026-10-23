@@ -9,6 +9,7 @@ import { clearSchedule, scheduleOf, setSchedule } from "../services/checkpoint-s
 import {
   assertCopyable,
   assertExportable,
+  assertNotCopied,
   copyCheckpoint,
   exportCheckpoint,
   importPackage,
@@ -156,6 +157,7 @@ export const checkpointCopy = defineOperation({
       throw conflict(msg("checkpoint_copy_same_host", { id: checkpoint.id, host: target.host.id }));
     }
     refuseAgent(target, "checkpoints");
+    await assertNotCopied(target, checkpoint.id);
     await assertHostDiskRoom(target);
   },
   exclusive: ({ host }, _input, checkpoint) => `checkpoint.item:${host.host.id}:${checkpoint.id}`,
