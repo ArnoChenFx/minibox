@@ -67,7 +67,7 @@ beforeAll(() => {
   const local = new FakeRuntime();
   app = createApp(testConfig({ labelPrefix: "mbtest" }), "0.0.0-test", {
     runtime: local,
-    checkpointEngine: new FakeCheckpointEngine(local),
+    checkpointEngine: new FakeCheckpointEngine(),
     eventsPath: ":memory:",
     hooks: { audit: (event) => audits.push(event) } as Partial<ExecutorHooks>,
   });

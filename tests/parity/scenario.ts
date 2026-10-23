@@ -1130,6 +1130,9 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("revoke the box's self token again", "DELETE", `/api/boxes/${selfBox}/self-token`);
     await asBox("the revoked self token is refused", "GET", "/api/self", self);
     await send("delete the self box", "DELETE", `/api/boxes/${selfBox}`);
+
+    await post("copy a missing checkpoint", "/api/checkpoints/ck_0000000000000000000000000/copy", { host: "lab" });
+    await post("copy a checkpoint with no host", "/api/checkpoints/ck_0000000000000000000000000/copy", {});
     const reader = await post("create a token that reads the overview", "/api/tokens", {
       name: "reader",
       preset: "readonly",

@@ -4,6 +4,9 @@ export const hostOfBox = (box) => box.hostId ?? "local";
 /** The host filter in the top bar shows only when the control plane holds more than one host. */
 export const hostFilterShown = (hosts) => hosts.length > 1;
 
+/** The access warning shows once a host other than this machine is held: the console then reaches more than one machine. */
+export const accessWarningShown = (hosts) => hosts.some((host) => host.transport !== "local");
+
 /** The boxes on one host, or every box when `host` is empty. */
 export function boxesOnHost(boxes, host) {
   return host ? boxes.filter((box) => hostOfBox(box) === host) : boxes;

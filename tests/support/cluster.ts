@@ -76,7 +76,7 @@ export async function bootCluster(
   const app = createApp(testConfig({ labelPrefix: "mbtest", ...overrides }), "0.0.0-test", {
     runtime: local,
     connect: (target: EngineTarget) => ("socketPath" in target && target.socketPath === LARGE_SOCKET ? large : small),
-    checkpointEngine: new FakeCheckpointEngine(local),
+    checkpointEngine: new FakeCheckpointEngine(),
     eventsPath: ":memory:",
   });
   for (const host of templates) {

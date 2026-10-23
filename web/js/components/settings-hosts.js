@@ -1,7 +1,7 @@
 import { api, enc } from "../lib/api.js";
 import { esc, copyText } from "../lib/dom.js";
 import { cpus, mem, relTime } from "../lib/format.js";
-import { HOST_BADGE, agentState } from "../lib/host-list.js";
+import { HOST_BADGE, accessWarningShown, agentState } from "../lib/host-list.js";
 import { refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -38,6 +38,7 @@ export async function loadHosts(view) {
       <div><h3>${t("st.hosts")}</h3><p class="help">${t("st.hostsHelp")}</p></div>
       <button class="btn btn-sm btn-primary" id="stHostAdd">${icon("plus")}${t("st.hostAdd")}</button>
     </div>
+    ${accessWarningShown(hosts) ? `<div class="card-body"><div class="callout warn">${icon("alert")}<span>${esc(t("st.hostAccessWarn"))}</span></div></div>` : ""}
     <div class="table-wrap"><table class="table">
       <thead><tr>
         <th>${t("st.hostColName")}</th><th class="hide-sm">${t("st.hostColEndpoint")}</th><th>${t("st.hostColStatus")}</th>
