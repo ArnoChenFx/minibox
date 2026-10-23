@@ -38,6 +38,7 @@ export const ACTION_ICON = {
   "checkpoint.delete": "trash",
   "checkpoint.export": "download",
   "checkpoint.import": "upload",
+  "checkpoint.copy": "copy",
   "checkpoint.schedule": "clock",
   "checkpoint.schedule.clear": "clock",
   "template.create": "hammer",

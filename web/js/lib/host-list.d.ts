@@ -6,6 +6,8 @@ export interface HostedBox {
 
 export declare const hostFilterShown: (hosts: readonly unknown[]) => boolean;
 
+export declare const accessWarningShown: (hosts: readonly { id?: string; transport?: string }[]) => boolean;
+
 export declare const hostOfBox: (box: HostedBox) => string;
 
 export declare function boxesOnHost<T extends HostedBox>(boxes: readonly T[], host: string): T[];

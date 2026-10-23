@@ -79,7 +79,7 @@ export function createTestApp(
   deps: Pick<AppDeps, "cliBuild" | "previewProbe" | "notify"> = {},
 ): { app: App; runtime: FakeRuntime; checkpoints: FakeCheckpointEngine } {
   const cfg = testConfig(overrides);
-  const checkpoints = new FakeCheckpointEngine(runtime);
+  const checkpoints = new FakeCheckpointEngine();
   const app = createApp(cfg, "0.0.0-test", {
     runtime,
     connect: () => new FakeRuntime(),

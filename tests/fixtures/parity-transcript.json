@@ -3278,5 +3278,37 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"name\":\"selfbox\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
+  },
+  {
+    "step": "copy a missing checkpoint",
+    "method": "POST",
+    "path": "/api/checkpoints/ck_<checkpoint>/copy",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Checkpoint ck_<checkpoint> was not found.\",\"retryable\":false,\"key\":\"checkpoint_not_found\",\"params\":{\"id\":\"ck_<checkpoint>\"}}}"
+  },
+  {
+    "step": "copy a checkpoint with no host",
+    "method": "POST",
+    "path": "/api/checkpoints/ck_<checkpoint>/copy",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Invalid input: expected string, received undefined\",\"retryable\":false}}"
+  },
+  {
+    "step": "create a token that reads the overview",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"reader\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+  },
+  {
+    "step": "a token reads the overview",
+    "method": "GET",
+    "path": "/api/overview",
+    "status": 403,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run GET /api/overview.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"GET /api/overview\"}}}"
   }
 ]

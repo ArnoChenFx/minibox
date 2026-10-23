@@ -39,10 +39,15 @@ const TABS = [
   ["settings", "bd.tabSettings", "sliders"],
 ];
 
-/** The page for one box. `tab` names its tab and `section` the settings section; an unknown tab shows the overview. */
-export function render(view, id, tab = "overview", section) {
+/**
+ * The page for one box. `tab` names its tab; `sub` names the settings section on the settings tab and the terminal
+ * session on the terminal tab. An unknown tab shows the overview.
+ */
+export function render(view, id, tab = "overview", sub = undefined) {
   if (!TABS.some(([k]) => k === tab)) tab = "overview";
+  const section = tab === "settings" ? sub : undefined;
   const onCheckpoints = tab === "settings" && boxSettingsOf(section).id === "checkpoints";
+  let entrySession = tab === "terminal" ? sub : undefined;
   let box = null;
   let disposed = false;
   let painted = false;
@@ -169,6 +174,10 @@ export function render(view, id, tab = "overview", section) {
     ).join("")}</div>
     <div id="tabBody"></div>`;
     painted = true;
+    // The session the address names opens once. A later mount of this page keeps the session on screen, which the
+    // terminal remembers as the box's last one.
+    const entry = entrySession;
+    entrySession = undefined;
     tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), {
       box: () => box,
       history,
@@ -176,6 +185,7 @@ export function render(view, id, tab = "overview", section) {
       refreshBox: fetchBox,
       rerender,
       section,
+      session: entry,
     });
   };
 
@@ -264,8 +274,8 @@ export function render(view, id, tab = "overview", section) {
 const TAB_RENDER = {
   overview: mountOverview,
 
-  terminal(root, { box, onChange, rerender }) {
-    return mountTerminal(root, { box, onChange, rerender });
+  terminal(root, { box, onChange, rerender, session }) {
+    return mountTerminal(root, { box, onChange, rerender, session });
   },
 
   files(root, { box, onChange }) {

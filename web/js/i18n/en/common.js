@@ -101,6 +101,7 @@ export default {
   "label.toolDetect": "Detect command",
   "feature.snapshots": "Snapshots",
   "feature.templates": "Templates",
+  "feature.checkpoints": "Checkpoints",
   "ui.nameRequired": "Please enter a {what}.",
   "ui.nameInvalid":
     "{what} may only contain letters, digits, dots, underscores and hyphens, and must start with a letter or digit.",

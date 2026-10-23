@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { boxHash, movedBoxHash, resolveRoute, tabHash } from "../web/js/lib/routes.js";
+import { boxHash, movedBoxHash, resolveRoute, tabHash, terminalHash } from "../web/js/lib/routes.js";
 
 /** The page an address finally opens, once its redirects are followed. `address` is where the person ends up. */
 function landing(path: string) {
@@ -71,6 +71,46 @@ describe("pages without tabs", () => {
 describe("the Activity entry", () => {
   test("opens the overview with its recent-activity card in focus, and highlights Activity", () => {
     expect(landing("/activity")).toMatchObject({ page: "overview", nav: "activity", args: ["activity"] });
+  });
+});
+
+describe("a box's terminal session", () => {
+  test("the address names the session the terminal opens", () => {
+    expect(landing("/boxes/bx_1/terminal/work")).toMatchObject({ page: "boxDetail", nav: "boxes" });
+    expect(landing("/boxes/bx_1/terminal/work")?.args).toEqual(["bx_1", "terminal", "work"]);
+  });
+
+  test("a session name reaches the page decoded", () => {
+    expect(landing("/boxes/bx_1/terminal/my%20session")?.args).toEqual(["bx_1", "terminal", "my session"]);
+  });
+
+  test("the terminal's address without a session keeps its two segments", () => {
+    expect(landing("/boxes/bx_1/terminal")?.args).toEqual(["bx_1", "terminal"]);
+  });
+
+  test("a session named on any other tab is dropped, and that tab's address opens", () => {
+    expect(landing("/boxes/bx_1/files/work")).toMatchObject({
+      address: "/boxes/bx_1/files",
+      args: ["bx_1", "files", undefined],
+    });
+  });
+
+  test("an address with more segments than a session opens no page", () => {
+    expect(landing("/boxes/bx_1/terminal/work/extra")).toBeNull();
+  });
+
+  test("terminalHash round trips the box and the session, including names that need encoding", () => {
+    for (const [boxId, session] of [
+      ["bx_1", "work"],
+      ["bx one", "a/b"],
+    ] as const) {
+      expect(landing(pathOf(terminalHash(boxId, session)))?.args).toEqual([boxId, "terminal", session]);
+    }
+  });
+
+  test("terminalHash without a session addresses the terminal tab itself", () => {
+    expect(terminalHash("bx_1")).toBe("#/boxes/bx_1/terminal");
+    expect(landing(pathOf(terminalHash("bx_1")))?.args).toEqual(["bx_1", "terminal"]);
   });
 });
 

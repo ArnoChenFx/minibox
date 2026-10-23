@@ -33,6 +33,8 @@ import { checkSshKey, HostKeyMismatchError, HostKeyUnconfirmedError, probeHostKe
 import { AUTO_HOST, HOST_ID_RE, type HostStore, type StoredHost } from "./store";
 
 export const PROBE_INTERVAL_MS = 30_000;
+/** The most ticks an offline host sits out between two checks. At the interval above, that is about five minutes. */
+const MAX_SKIPPED_PROBES = 9;
 /** Longest one connection check takes: the link, a ping and the engine's version and capacity. */
 const CHECK_TIMEOUT_MS = 10_000;
 const MAX_CREDENTIAL_CHARS = 16 * 1024;
@@ -140,6 +142,17 @@ interface Probe {
   error: string | null;
 }
 
+/** An offline host's failed checks in a row, and the ticks it still sits out before its next check. */
+interface Backoff {
+  failures: number;
+  skip: number;
+}
+
+/** Ticks an offline host waits after its `failures`-th failure in a row: none, then 1, 3, 7, and the cap from then on. */
+function skipAfter(failures: number): number {
+  return Math.min(2 ** (failures - 1) - 1, MAX_SKIPPED_PROBES);
+}
+
 interface Prepared {
   readonly endpoint: Endpoint;
   readonly credentials: HostCredentials;
@@ -204,6 +217,7 @@ export class HostManager {
   private readonly stored = new Map<string, StoredHost>();
   private readonly links = new Map<string, Link>();
   private readonly probes = new Map<string, Probe>();
+  private readonly backoff = new Map<string, Backoff>();
   private queue: Promise<unknown> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | undefined;
   private readonly now: () => Date;
@@ -220,10 +234,10 @@ export class HostManager {
     }
   }
 
-  /** Starts the periodic check of every host's latency and capacity, and runs the first check now. Tests call `refresh`. */
+  /** Starts the periodic check of every host's latency and capacity, and runs the first check of each now. Tests call `probeDue`. */
   start(intervalMs: number = PROBE_INTERVAL_MS): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.refresh(), intervalMs);
+    this.timer = setInterval(() => void this.probeDue(), intervalMs);
     this.timer.unref?.();
     void this.refresh();
   }
@@ -248,9 +262,19 @@ export class HostManager {
     return Promise.all(this.options.registry.list().map((ctx) => this.usageView(ctx)));
   }
 
-  /** Probes each host's engine. A failed probe marks the host offline and records why. */
+  /** Probes each host's engine now, whatever its backoff. A failed probe marks the host offline and records why. */
   async refresh(): Promise<void> {
     await Promise.all(this.options.registry.list().map((ctx) => this.probe(ctx)));
+  }
+
+  /**
+   * One tick of the background check. An online host is probed on every tick. An offline host is probed less often after
+   * each failure in a row, so a host that stays down is not dialled every interval. Its link, when it has one, still
+   * reports a return at once.
+   */
+  async probeDue(): Promise<void> {
+    const due = this.options.registry.list().filter((ctx) => this.takesTurn(ctx.host.id));
+    await Promise.all(due.map((ctx) => this.probe(ctx)));
   }
 
   /**
@@ -320,6 +344,7 @@ export class HostManager {
       this.links.delete(id);
       this.stored.delete(id);
       this.probes.delete(id);
+      this.backoff.delete(id);
       this.options.store.removeCredentials(id);
       log.info("host.removed", { host: id });
       return view;
@@ -586,6 +611,13 @@ export class HostManager {
     return { ssh: { privateKey, hostKeyFingerprint: stored.hostKeyFingerprint } };
   }
 
+  private takesTurn(id: string): boolean {
+    const backoff = this.backoff.get(id);
+    if (backoff === undefined || backoff.skip === 0) return true;
+    backoff.skip -= 1;
+    return false;
+  }
+
   private async probe(ctx: HostCtx): Promise<void> {
     const id = ctx.host.id;
     const previous = this.probes.get(id);
@@ -595,6 +627,7 @@ export class HostManager {
       const latencyMs = Math.round(performance.now() - started);
       const info = await within(ctx.runtime.info(), ENGINE_READ_TIMEOUT_MS);
       ctx.host.status = "online";
+      this.backoff.delete(id);
       this.probes.set(id, {
         latencyMs,
         capacity: { cpus: info.cpus, memoryBytes: info.memoryBytes },
@@ -604,6 +637,8 @@ export class HostManager {
       });
     } catch (e) {
       ctx.host.status = "offline";
+      const failures = (this.backoff.get(id)?.failures ?? 0) + 1;
+      this.backoff.set(id, { failures, skip: skipAfter(failures) });
       this.probes.set(id, {
         latencyMs: null,
         capacity: previous?.capacity ?? null,

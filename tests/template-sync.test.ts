@@ -81,7 +81,7 @@ beforeEach(async () => {
   app = createApp(testConfig({ labelPrefix: "mbtest" }), "0.0.0-test", {
     runtime: local,
     connect: () => edge,
-    checkpointEngine: new FakeCheckpointEngine(local),
+    checkpointEngine: new FakeCheckpointEngine(),
     eventsPath: ":memory:",
   });
   keys = app.hosts.get().keys;

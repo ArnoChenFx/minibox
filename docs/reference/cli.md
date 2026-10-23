@@ -221,6 +221,18 @@ Only the owner can use these commands. See [Tools](../user-guide/tools.md).
 | `minibox tool custom put <id> (--file FILE \| --stdin) [--override-builtin] [--json]` | Saves an entry from a JSON document. `--override-builtin` replaces a built-in tool's entry. |
 | `minibox tool custom delete <id> [--json]` | Removes the entry. Nothing is uninstalled from the shared tools volume. |
 
+## Checkpoints
+
+Only the owner can use this command. A copy runs as a task. The command waits for the task, prints the task log to standard error, and prints the ID of the copy. It exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. See [Checkpoints](../user-guide/checkpoints.md#copy-to-another-host).
+
+| Command | Meaning |
+|---|---|
+| `minibox checkpoint copy <id> --host ID [--no-wait] [--json]` | Copies a checkpoint to host `ID`, so a box can be forked there. The copy is a new checkpoint with its own ID. `--json` prints the task. |
+
+```bash
+minibox checkpoint copy ck_3f9a --host lab
+```
+
 ## Backups
 
 The `backup` commands use the access key, and they are for the owner only. `restore` works on an archive file, and it needs no running server. See [Backups](../admin/backups.md).

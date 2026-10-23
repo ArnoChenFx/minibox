@@ -289,6 +289,10 @@ describe("exporting a checkpoint", () => {
     const record = local.checkpoints.read(checkpoint.id);
     if (!record) throw new Error("the checkpoint has no record");
     local.checkpoints.write({ ...record, hostId: "lab" });
+    for (const layer of record.data) {
+      const snapshot = harness.checkpoints.snapshots.get(layer.snapshotId);
+      if (snapshot) snapshot.host = "lab";
+    }
     const pack = spyOn(local.checkpointEngine, "pack");
 
     const pkg = await exportOf(harness, checkpoint.id);

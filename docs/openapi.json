@@ -58,6 +58,9 @@
       "name": "events"
     },
     {
+      "name": "overview"
+    },
+    {
       "name": "tokens"
     },
     {
@@ -25161,6 +25164,457 @@
         }
       }
     },
+    "/api/checkpoints/{id}/copy": {
+      "post": {
+        "operationId": "checkpoint.copy",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Copy a checkpoint to another host",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Checkpoint id (ck_…), as the checkpoint list shows it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                    "description": "The host to copy the checkpoint to."
+                  }
+                },
+                "required": [
+                  "host"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "checkpoint:copy",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "checkpoint": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "legacy": {
+                  "type": "boolean"
+                },
+                "hostId": {
+                  "type": "string"
+                },
+                "boxId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "boxName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "createdBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pinned": {
+                  "type": "boolean"
+                },
+                "auto": {
+                  "type": "boolean"
+                },
+                "consistency": {
+                  "type": "string",
+                  "enum": [
+                    "live",
+                    "pause",
+                    "stop"
+                  ]
+                },
+                "specRevision": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "spec": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "template": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "image",
+                            "digest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "cpus": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "memoryBytes": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "standard",
+                                "strict",
+                                "relaxed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "template",
+                        "cpus",
+                        "memoryBytes",
+                        "profile"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "volumeId": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "rw",
+                          "ro"
+                        ]
+                      },
+                      "role": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "workspace",
+                              "home",
+                              "tools",
+                              "cache"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ownership": {
+                        "type": "string",
+                        "enum": [
+                          "owned",
+                          "independent"
+                        ]
+                      },
+                      "owner": {
+                        "type": "object",
+                        "properties": {
+                          "uid": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "gid": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "uid",
+                          "gid"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "snapshotId": {
+                        "type": "string"
+                      },
+                      "bytes": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "volumeId",
+                      "path",
+                      "mode",
+                      "role",
+                      "ownership",
+                      "owner",
+                      "snapshotId",
+                      "bytes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "system": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "image": {
+                          "type": "string"
+                        },
+                        "imageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "image",
+                        "imageId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bytes": {
+                  "type": "number"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "legacy",
+                "hostId",
+                "boxId",
+                "boxName",
+                "label",
+                "reason",
+                "createdBy",
+                "pinned",
+                "auto",
+                "consistency",
+                "specRevision",
+                "spec",
+                "data",
+                "system",
+                "bytes",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "checkpoint"
+          ],
+          "additionalProperties": false
+        },
+        "x-cli": "checkpoint copy",
+        "x-mcp": {
+          "name": "copy_checkpoint",
+          "toolset": "storage"
+        }
+      }
+    },
     "/api/boxes/{id}/checkpoint-schedule": {
       "get": {
         "operationId": "checkpoint.schedule.get",
@@ -32387,6 +32841,326 @@
         },
         "x-kind": "read",
         "x-scope": "events:read",
+        "x-async": false
+      }
+    },
+    "/api/overview": {
+      "get": {
+        "operationId": "overview.get",
+        "tags": [
+          "overview"
+        ],
+        "summary": "Read what agents are doing now and what needs attention",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inProgress": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "box": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "description": "The box's container id, the id the console's box pages use."
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "hostId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "hostId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "principal": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "token",
+                                  "box-self"
+                                ]
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string",
+                                "description": "The token's name, or the box's name for its own agent."
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "lastAt": {
+                            "type": "string",
+                            "description": "When the newest agent activity on the box was recorded, ISO 8601."
+                          },
+                          "lastOp": {
+                            "type": "string",
+                            "description": "The operation of that activity, such as `exec.start` or `box.read`."
+                          },
+                          "command": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "text": {
+                                    "type": "string",
+                                    "description": "The command as the agent sent it: `cmd`, or its `argv` joined by spaces."
+                                  },
+                                  "execId": {
+                                    "type": "string"
+                                  },
+                                  "running": {
+                                    "type": "boolean"
+                                  },
+                                  "output": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "The last 3 lines of output of a running command, oldest first, with terminal escape sequences left in. Empty once the command has ended."
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "execId",
+                                  "running",
+                                  "output"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The command an agent started most recently: the one still running if there is one, else the last one."
+                          },
+                          "session": {
+                            "description": "The terminal session the agent used last. Null when it used none, or when the session is not known.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "note": {
+                            "description": "The status note the box's agent reported last, if it reported one.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "box",
+                          "principal",
+                          "lastAt",
+                          "lastOp",
+                          "command",
+                          "session",
+                          "note"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "Boxes an agent acted on recently, or is running a command on, newest first."
+                    },
+                    "attention": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "box.oom",
+                              "box.checkpoint_failed",
+                              "box.drift",
+                              "box.rollback_pending",
+                              "volume.over_limit",
+                              "pool.unreachable",
+                              "host.offline",
+                              "host.disk_low"
+                            ]
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "error",
+                              "warning"
+                            ]
+                          },
+                          "hostId": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "description": "When the condition was recorded, ISO 8601. Null for a condition read from current state, which has no time of its own.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "subject": {
+                            "type": "string",
+                            "description": "The name of the box, volume, pool or host the condition is about."
+                          },
+                          "box": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "description": "The box's container id, the id the console's box pages use."
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The box the condition is about, when it is still there."
+                          },
+                          "params": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number"
+                              ]
+                            },
+                            "description": "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, and `detail` is the message the engine or the pool reported."
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "severity",
+                          "hostId",
+                          "at",
+                          "subject",
+                          "box",
+                          "params"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "Conditions the server knows about that need a person, errors first, then the newest."
+                    }
+                  },
+                  "required": [
+                    "inProgress",
+                    "attention"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "overview:read",
         "x-async": false
       }
     },

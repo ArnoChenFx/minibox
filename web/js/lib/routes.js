@@ -13,6 +13,12 @@ const SECTIONS = {
 };
 const SECTION_RE = /^\/(storage|library)(?:\/([^/]+)(?:\/([^/]+))?)?$/;
 
+/**
+ * A box's address: `/boxes/:id` opens its overview, `/boxes/:id/:tab` one of its tabs, `/boxes/:id/terminal/:session`
+ * one terminal session and `/boxes/:id/settings/:section` one settings section. Any other tab drops a third segment.
+ */
+const BOX_RE = /^\/boxes\/([^/]+)(?:\/(\w+)(?:\/([^/]+))?)?$/;
+
 /** The pages without tabs. `args` gives what the page's render() receives after its view. */
 const PAGES = [
   { re: /^\/overview$/, page: "overview", nav: "overview", crumbs: ["nav.overview"] },
@@ -24,13 +30,6 @@ const PAGES = [
     args: () => ["activity"],
   },
   { re: /^\/boxes$/, page: "boxes", nav: "boxes", crumbs: ["nav.boxes"] },
-  {
-    re: /^\/boxes\/([^/]+)(?:\/(\w+)(?:\/(\w+))?)?$/,
-    page: "boxDetail",
-    nav: "boxes",
-    crumbs: ["nav.boxes"],
-    args: (m) => [decode(m[1]), m[2], m[3] === undefined ? undefined : decode(m[3])],
-  },
   { re: /^\/trash$/, page: "trash", nav: "storage", crumbs: ["nav.storage", "nav.trash"] },
   {
     re: /^\/settings(?:\/([^/]*))?$/,
@@ -66,6 +65,8 @@ export function resolveRoute(path) {
   if (section) return resolveSection(section);
   const moved = MOVED.find(({ re }) => re.test(address));
   if (moved) return { redirect: moved.to(address.match(moved.re)) };
+  const box = address.match(BOX_RE);
+  if (box) return resolveBox(box);
   for (const route of PAGES) {
     const m = address.match(route.re);
     if (m) return { page: route.page, nav: route.nav, crumbs: route.crumbs, args: route.args?.(m) ?? [] };
@@ -83,6 +84,12 @@ function resolveSection([, section, tab, arg]) {
     crumbs: spec.crumbs,
     args: [tab, arg === undefined ? "" : decode(arg)],
   };
+}
+
+function resolveBox([, id, tab, sub]) {
+  if (sub !== undefined && tab !== "terminal" && tab !== "settings") return { redirect: `/boxes/${id}/${tab}` };
+  const args = [decode(id), tab, sub === undefined ? undefined : decode(sub)];
+  return { page: "boxDetail", nav: "boxes", crumbs: ["nav.boxes"], args };
 }
 
 /** The address of a tab, with the box or template it works on when it names one. */
@@ -109,6 +116,11 @@ export function movedBoxHash(hash, fromId, toId) {
   const from = `#/boxes/${encodeURIComponent(fromId)}`;
   if (hash !== from && !hash.startsWith(`${from}/`)) return null;
   return `#/boxes/${encodeURIComponent(toId)}${hash.slice(from.length)}`;
+}
+
+/** The address of a box's terminal, on one of its sessions when `session` names one. */
+export function terminalHash(boxId, session = "") {
+  return `#/boxes/${encodeURIComponent(boxId)}/terminal${session ? `/${encodeURIComponent(session)}` : ""}`;
 }
 
 function decode(segment) {
