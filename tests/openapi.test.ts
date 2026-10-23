@@ -97,6 +97,7 @@ describe("OpenAPI document", () => {
       "box.startup.set",
       "box.stats",
       "box.update",
+      "checkpoint.copy",
       "checkpoint.create",
       "checkpoint.delete",
       "checkpoint.export",

@@ -2,17 +2,24 @@ import { z } from "zod";
 
 import { DEFAULT_TIMEZONE, ruleOf } from "../checkpoints/schedule";
 import { LOCAL_HOST_ID } from "../host/registry";
-import { badRequest } from "../lib/errors";
+import { badRequest, conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { getBox } from "../services/boxes";
 import { clearSchedule, scheduleOf, setSchedule } from "../services/checkpoint-schedule";
-import { assertExportable, exportCheckpoint, importPackage, packageView } from "../services/checkpoint-transfer";
+import {
+  assertCopyable,
+  assertExportable,
+  copyCheckpoint,
+  exportCheckpoint,
+  importPackage,
+  packageView,
+} from "../services/checkpoint-transfer";
 import { getCheckpoint } from "../services/checkpoints";
 import { assertHostDiskRoom } from "../volumes/disk";
 import { boxTarget } from "./boxes";
 import { checkpointId, checkpointTarget } from "./checkpoints";
 import { defineOperation } from "./define";
-import { hostById, hostOfBox, hostOfCheckpoint } from "./routing";
+import { hostById, hostOfBox, hostOfCheckpoint, imageHosts, refuseAgent } from "./routing";
 import { CheckpointPackageSchema, CheckpointScheduleSchema, CheckpointSchema, OkSchema } from "./schemas";
 import {
   addFailure,
@@ -118,6 +125,62 @@ export const checkpointImport = defineOperation({
   }),
 });
 
+export const checkpointCopy = defineOperation({
+  name: "checkpoint.copy",
+  tag: "checkpoints",
+  summary: "Copy a checkpoint to another host",
+  kind: "write",
+  scope: "checkpoint:copy",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    id: checkpointId(),
+    host: hostId().meta({ description: "The host to copy the checkpoint to." }),
+  }),
+  output: z.object({ checkpoint: CheckpointSchema }),
+  rest: [{ method: "POST", path: "/api/checkpoints/:id/copy", body: true, status: 202 }],
+  cli: "checkpoint copy",
+  mcp: {
+    toolset: "storage",
+    name: "copy_checkpoint",
+    description:
+      "Copy a checkpoint to another host, so a box can be forked there. The data is streamed to the target in a sealed package that is removed once the target holds it, and the template the checkpoint names is copied first when the target lacks it. The copy is a new checkpoint with its own id on the target. Owner only. Returns a task id; the task log shows the transfer.",
+  },
+  hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
+  precondition: async ({ host }) => refuseAgent(host, "checkpoints"),
+  resolve: ({ host }, input) => getCheckpoint(host, input.id),
+  beforeTask: async (ctx, input, checkpoint) => {
+    assertCopyable(checkpoint);
+    const target = hostById(ctx, input.host);
+    if (target.host.id === checkpoint.hostId) {
+      throw conflict(msg("checkpoint_copy_same_host", { id: checkpoint.id, host: target.host.id }));
+    }
+    refuseAgent(target, "checkpoints");
+    await assertHostDiskRoom(target);
+  },
+  exclusive: ({ host }, _input, checkpoint) => `checkpoint.item:${host.host.id}:${checkpoint.id}`,
+  activity: { action: () => "checkpoint.copy", target: (_input, checkpoint) => checkpoint.label },
+  audit: {
+    target: (_input, checkpoint) => checkpoint && checkpointTarget(checkpoint),
+    detail: (input, _checkpoint, result) => ({
+      checkpointId: input.id,
+      host: input.host,
+      copy: result?.checkpoint.id ?? null,
+      bytes: result?.checkpoint.bytes ?? null,
+    }),
+  },
+  run: async (ctx, input, checkpoint) => ({
+    checkpoint: await copyCheckpoint(
+      ctx.host,
+      hostById(ctx, input.host),
+      checkpoint.id,
+      ctx.principal.id,
+      imageHosts(ctx),
+      ctx.task,
+    ),
+  }),
+});
+
 export const checkpointScheduleGet = defineOperation({
   name: "checkpoint.schedule.get",
   tag: "checkpoints",
@@ -206,6 +269,7 @@ export const checkpointScheduleClear = defineOperation({
 export const checkpointPackageOperations = [
   checkpointExport,
   checkpointImport,
+  checkpointCopy,
   checkpointScheduleGet,
   checkpointScheduleSet,
   checkpointScheduleClear,

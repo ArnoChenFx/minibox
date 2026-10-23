@@ -1,6 +1,7 @@
 import type { HostCtx } from "../host/registry";
 import { untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
+import { byteLog, type TransferProgress } from "../lib/transfer";
 import { type ImageDetails, isRuntimeError } from "../runtime";
 import { needsImage, sendImage } from "./image-transfer";
 import { copyRecipe } from "./template-builds";
@@ -42,16 +43,19 @@ export async function findTemplateSource(hosts: readonly HostCtx[], ref: string)
 /**
  * Copies the template from `source` to `target` unless the target already holds that image, and gives the target the
  * recipe that built it, so a declared template keeps its setup there. The move that carries a box uses the same transfer,
- * so a template copy and a box move agree on what a host may hold. Returns whether an image was sent.
+ * so a template copy and a box move agree on what a host may hold. Returns whether an image was sent. `progress` carries
+ * the stop signal and the task log that the transfer writes its bytes to.
  */
 export async function copyTemplate(
   source: TemplateSource,
   target: HostCtx,
   ref: string,
-  signal?: AbortSignal,
+  progress?: TransferProgress,
 ): Promise<boolean> {
   const transfer = await needsImage(target, ref, source.image);
-  if (transfer) await sendImage(source.host, target, ref, source.image.id, signal);
+  if (transfer) {
+    await sendImage(source.host, target, ref, source.image.id, progress?.signal, byteLog(progress, "Sent"));
+  }
   copyRecipe(source.host, target, ref, source.image.id);
   return transfer;
 }

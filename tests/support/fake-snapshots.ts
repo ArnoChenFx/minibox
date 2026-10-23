@@ -8,6 +8,7 @@ import type {
   SnapshotEngine,
   SnapshotRef,
 } from "../../src/checkpoints/engine";
+import { SnapshotHeld } from "../../src/checkpoints/engine";
 import {
   MANIFEST_FILE,
   MANIFEST_TAG,
@@ -16,13 +17,21 @@ import {
   writePackageFile,
 } from "../../src/checkpoints/package";
 import type { HostCtx } from "../../src/host/registry";
+import { type ByteProgress, countingChunks } from "../../src/lib/transfer";
 import { RuntimeError } from "../../src/runtime";
 import type { FakeFsEntry, FakeRuntime } from "./fake-runtime";
 import { readTarFiles, type TarEntry, tarBytes } from "./tar";
 
-export interface FakeSnapshot {
+/** What a snapshot holds, apart from the repository it sits in. */
+interface Contents {
   files: Map<string, FakeFsEntry>;
   tags: string[];
+  original: string | null;
+}
+
+export interface FakeSnapshot extends Contents {
+  /** The host whose repository holds the snapshot. Each host has a repository of its own. */
+  host: string;
 }
 
 type EngineCall = "backup" | "restore";
@@ -34,8 +43,8 @@ const clone = (entry: FakeFsEntry): FakeFsEntry => ({
 
 const keyOf = (passphrase: string): string => createHash("sha256").update(passphrase).digest("hex");
 
-/** A snapshot inside a package: its tags and entries, as JSON, so the package stays a plain tar of files. */
-function encodeSnapshot(snapshot: FakeSnapshot): Buffer {
+/** A snapshot inside a package: its tags, origin and entries, as JSON, so the package stays a plain tar of files. */
+function encodeSnapshot(snapshot: Contents): Buffer {
   const files = [...snapshot.files].map(([path, entry]) => ({
     path,
     type: entry.type,
@@ -44,12 +53,13 @@ function encodeSnapshot(snapshot: FakeSnapshot): Buffer {
     gid: entry.gid,
     content: entry.content?.toString("base64"),
   }));
-  return Buffer.from(JSON.stringify({ tags: snapshot.tags, files }));
+  return Buffer.from(JSON.stringify({ tags: snapshot.tags, original: snapshot.original, files }));
 }
 
-function decodeSnapshot(body: Buffer): FakeSnapshot {
+function decodeSnapshot(body: Buffer): Contents {
   const value = JSON.parse(body.toString("utf8")) as {
     tags: string[];
+    original: string | null;
     files: { path: string; type: FakeFsEntry["type"]; mode?: number; uid?: number; gid?: number; content?: string }[];
   };
   const files = new Map<string, FakeFsEntry>();
@@ -62,7 +72,7 @@ function decodeSnapshot(body: Buffer): FakeSnapshot {
       content: item.content === undefined ? undefined : Buffer.from(item.content, "base64"),
     });
   }
-  return { files, tags: value.tags };
+  return { files, tags: value.tags, original: value.original };
 }
 
 async function* oneChunk(bytes: Buffer): AsyncIterable<Uint8Array> {
@@ -71,13 +81,16 @@ async function* oneChunk(bytes: Buffer): AsyncIterable<Uint8Array> {
 
 /**
  * The checkpoint engine over the fake runtime's volume files. A snapshot holds a copy of every file but the root, and a
- * restore writes those files back over the target's, as restic does. `failBackupOf` makes the next backups of a volume
- * fail, to exercise the cleanup of a checkpoint that cannot finish.
+ * restore writes those files back over the target's, as restic does. Each host has its own repository: a snapshot is
+ * found, forgotten and copied only on the host that holds it. `failBackupOf` makes the next backups of a volume fail, to
+ * exercise the cleanup of a checkpoint that cannot finish.
  *
  * Packages are real tar files, checked by the same scanner the engine uses. Their passphrase is stored as a digest, so a
- * wrong passphrase is refused as one. Unpacking gives each snapshot a new id and keeps its tags, as restic's copy does.
+ * wrong passphrase is refused as one. Like restic's copy, packing and unpacking give each snapshot a new id and keep its
+ * tags and origin, and an unpack into a repository that already holds the origin is refused with `SnapshotHeld`.
  */
 export class FakeCheckpointEngine implements SnapshotEngine {
+  /** Every host's snapshots by id. Ids are unique across hosts, so a test can read any of them here. */
   readonly snapshots = new Map<string, FakeSnapshot>();
   readonly failBackupOf = new Set<string>();
   /** Backups and restores that have begun, held or not. A test waits on this to know a call reached the engine. */
@@ -127,7 +140,20 @@ export class FakeCheckpointEngine implements SnapshotEngine {
     return this.sequence.toString(16).padStart(64, "0");
   }
 
-  async backup(_host: HostCtx, volume: string, tags: string[]): Promise<BackupResult> {
+  /** The snapshot `snapshotId` on this host's repository. A snapshot of another host is not found here. */
+  private heldBy(host: HostCtx, snapshotId: string, action: string): FakeSnapshot {
+    const snapshot = this.snapshots.get(snapshotId);
+    if (!snapshot || snapshot.host !== host.host.id) {
+      throw new RuntimeError("engine", `restic ${action} exited with status 1: no snapshot ${snapshotId}`);
+    }
+    return snapshot;
+  }
+
+  private snapshotsOn(host: HostCtx): [string, FakeSnapshot][] {
+    return [...this.snapshots].filter(([, snapshot]) => snapshot.host === host.host.id);
+  }
+
+  async backup(host: HostCtx, volume: string, tags: string[]): Promise<BackupResult> {
     await this.enter("backup");
     if (!this.runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
     if (this.failBackupOf.has(volume)) throw new RuntimeError("engine", `backup of ${volume} failed`);
@@ -136,87 +162,118 @@ export class FakeCheckpointEngine implements SnapshotEngine {
       if (path !== "") files.set(path, clone(entry));
     }
     const snapshotId = this.nextId();
-    this.snapshots.set(snapshotId, { files, tags });
+    this.snapshots.set(snapshotId, { files, tags, host: host.host.id, original: null });
     const bytes = [...files.values()].reduce((sum, entry) => sum + (entry.content?.length ?? 0), 0);
     return { snapshotId, bytes };
   }
 
-  async restore(_host: HostCtx, snapshotId: string, volume: string): Promise<void> {
+  async restore(host: HostCtx, snapshotId: string, volume: string): Promise<void> {
     await this.enter("restore");
-    const snapshot = this.snapshots.get(snapshotId);
-    if (!snapshot) throw new RuntimeError("engine", `restic restore exited with status 1: no snapshot ${snapshotId}`);
+    const snapshot = this.heldBy(host, snapshotId, "restore");
     if (!this.runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
     const files = this.runtime.filesOf(volume);
     for (const [path, entry] of snapshot.files) files.set(path, clone(entry));
   }
 
-  async forget(_host: HostCtx, snapshotId: string): Promise<void> {
-    if (!this.snapshots.delete(snapshotId)) {
-      throw new RuntimeError("engine", `restic forget exited with status 1: no snapshot ${snapshotId}`);
-    }
+  async forget(host: HostCtx, snapshotId: string): Promise<void> {
+    this.heldBy(host, snapshotId, "forget");
+    this.snapshots.delete(snapshotId);
   }
 
-  async usage(_host: HostCtx): Promise<{ bytes: number }> {
+  async usage(host: HostCtx): Promise<{ bytes: number }> {
     if (this.usageFails) throw new RuntimeError("engine", "restic stats exited with status 1");
     if (this.reportedBytes !== null) return { bytes: this.reportedBytes };
     let bytes = 0;
-    for (const snapshot of this.snapshots.values()) {
+    for (const [, snapshot] of this.snapshotsOn(host)) {
       for (const entry of snapshot.files.values()) bytes += entry.content?.length ?? 0;
     }
     return { bytes };
   }
 
-  async tagged(_host: HostCtx, tag: string): Promise<SnapshotRef[]> {
-    return [...this.snapshots]
+  async tagged(host: HostCtx, tag: string): Promise<SnapshotRef[]> {
+    return this.snapshotsOn(host)
       .filter(([, snapshot]) => snapshot.tags.includes(tag))
-      .map(([id, snapshot]) => ({ id, tags: [...snapshot.tags] }));
+      .map(([id, snapshot]) => ({ id, tags: [...snapshot.tags], original: snapshot.original }));
   }
 
-  async pack(_host: HostCtx, input: PackageInput, file: string, maxBytes: number): Promise<PackageDigest> {
+  async pack(
+    host: HostCtx,
+    input: PackageInput,
+    file: string,
+    maxBytes: number,
+    onBytes?: ByteProgress,
+  ): Promise<PackageDigest> {
     const entries: TarEntry[] = [
       { name: "repo/config", body: Buffer.from(JSON.stringify({ key: keyOf(input.passphrase) })) },
     ];
     for (const snapshotId of input.snapshotIds) {
-      const snapshot = this.snapshots.get(snapshotId);
-      if (!snapshot) throw new RuntimeError("engine", `restic copy exited with status 1: no snapshot ${snapshotId}`);
-      entries.push({ name: `repo/snapshots/${snapshotId}`, body: encodeSnapshot(snapshot) });
+      const snapshot = this.heldBy(host, snapshotId, "copy");
+      const packagedId = this.nextId();
+      const original = snapshot.original ?? snapshotId;
+      entries.push({ name: `repo/snapshots/${packagedId}`, body: encodeSnapshot({ ...snapshot, original }) });
     }
-    const manifest: FakeSnapshot = {
+    const manifest: Contents = {
       files: new Map([[MANIFEST_FILE, { type: "file", content: Buffer.from(input.manifest) }]]),
       tags: [MANIFEST_TAG],
+      original: null,
     };
     entries.push({ name: `repo/snapshots/${this.nextId()}`, body: encodeSnapshot(manifest) });
-    return writePackageFile(oneChunk(tarBytes(entries)), file, maxBytes);
+    const bytes = tarBytes(entries);
+    return writePackageFile(onBytes ? countingChunks(oneChunk(bytes), onBytes) : oneChunk(bytes), file, maxBytes);
   }
 
-  async open(_host: HostCtx, file: string, passphrase: string): Promise<OpenedPackage> {
-    const files = readTarFiles(readFileSync(file));
+  async open(host: HostCtx, file: string, passphrase: string, onBytes?: ByteProgress): Promise<OpenedPackage> {
+    const raw = readFileSync(file);
+    onBytes?.(raw.length);
+    const files = readTarFiles(raw);
     const config = files.get("repo/config");
     if (!config) throw new PackageRejected("not_package", "the package holds no repository config");
     const parsed = JSON.parse(config.toString("utf8")) as { key?: unknown };
     if (parsed.key !== keyOf(passphrase)) throw new PackageRejected("passphrase", "the passphrase does not match");
-    const stored = new Map<string, FakeSnapshot>();
+    const stored = new Map<string, Contents>();
     for (const [name, body] of files) {
       const match = /^repo\/snapshots\/([0-9a-f]{64})$/.exec(name);
       if (match) stored.set(match[1] ?? "", decodeSnapshot(body));
     }
     return {
-      snapshots: [...stored].map(([id, snapshot]) => ({ id, tags: [...snapshot.tags] })),
+      snapshots: [...stored].map(([id, snapshot]) => ({ id, tags: [...snapshot.tags], original: snapshot.original })),
       readManifest: async (snapshotId) => {
         const content = stored.get(snapshotId)?.files.get(MANIFEST_FILE)?.content;
         if (!content) throw new PackageRejected("invalid", "the package's manifest is missing");
         return content.toString("utf8");
       },
-      unpack: async (snapshotIds) => {
-        for (const snapshotId of snapshotIds) {
-          const snapshot = stored.get(snapshotId);
-          if (!snapshot)
-            throw new RuntimeError("engine", `restic copy exited with status 1: no snapshot ${snapshotId}`);
-          const files = new Map([...snapshot.files].map(([path, entry]) => [path, clone(entry)]));
-          this.snapshots.set(this.nextId(), { files, tags: [...snapshot.tags] });
-        }
-      },
+      unpack: async (snapshotIds) => this.unpackInto(host, stored, snapshotIds),
       close: async () => {},
     };
+  }
+
+  private unpackInto(host: HostCtx, stored: Map<string, Contents>, snapshotIds: string[]): Map<string, string> {
+    const roots = new Map<string, string>();
+    for (const id of snapshotIds) {
+      const snapshot = stored.get(id);
+      if (!snapshot) throw new RuntimeError("engine", `restic copy exited with status 1: no snapshot ${id}`);
+      roots.set(id, snapshot.original ?? id);
+    }
+    if (new Set(roots.values()).size !== roots.size)
+      throw new PackageRejected("invalid", "the package holds one snapshot twice");
+    for (const root of roots.values()) {
+      if (this.snapshotsOn(host).some(([id, snapshot]) => id === root || snapshot.original === root)) {
+        throw new SnapshotHeld(root);
+      }
+    }
+    const copied = new Map<string, string>();
+    for (const [id, snapshot] of stored) {
+      if (!roots.has(id)) continue;
+      const newId = this.nextId();
+      const files = new Map([...snapshot.files].map(([path, entry]) => [path, clone(entry)]));
+      this.snapshots.set(newId, {
+        files,
+        tags: [...snapshot.tags],
+        host: host.host.id,
+        original: roots.get(id) ?? null,
+      });
+      copied.set(id, newId);
+    }
+    return copied;
   }
 }
