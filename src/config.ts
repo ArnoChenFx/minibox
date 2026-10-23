@@ -64,6 +64,8 @@ export interface Config {
   checkpointKeepDays: number;
   /** Checkpoint repository size in MB at which new automatic checkpoints are refused. 0 sets no limit. */
   checkpointCapacityMb: number;
+  /** Days a deleted box or volume stays in the recycle bin before retention purges it. */
+  trashRetentionDays: number;
   /** Largest checkpoint package in MB that an export writes or an upload accepts. It also caps the HTTP request body. */
   checkpointPackageMaxMb: number;
   /** Largest single file in MB that the file browser or the file API uploads. It caps the request body of that upload. */
@@ -259,6 +261,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     checkpointKeepLast: intInRange(get("CHECKPOINT_KEEP_LAST"), 20, 1, 10_000),
     checkpointKeepDays: intInRange(get("CHECKPOINT_KEEP_DAYS"), 30, 0, 3650),
     checkpointCapacityMb: intInRange(get("CHECKPOINT_CAPACITY_MB"), 0, 0, 1_000_000_000),
+    trashRetentionDays: intInRange(get("TRASH_RETENTION_DAYS"), 7, 1, 365),
     checkpointPackageMaxMb: intInRange(get("CHECKPOINT_PACKAGE_MAX_MB"), 2048, 1, 65536),
     fileUploadMaxMb: intInRange(get("FILE_UPLOAD_MAX_MB"), 1024, 1, 65536),
     hostOvercommit: parseHostOvercommit(get("HOST_OVERCOMMIT")),

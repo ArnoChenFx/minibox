@@ -13,6 +13,8 @@ export interface CheckpointPolicy {
   readonly keepDays: number;
   /** Repository size in bytes at which new automatic checkpoints are refused. */
   readonly capacityBytes: number;
+  /** Days a deleted box or volume stays in the recycle bin. */
+  readonly trashKeepDays: number;
 }
 
 /** The share of the capacity limit from which usage is reported as a warning. */
@@ -25,6 +27,16 @@ export function capacityStateOf(bytes: number, limitBytes: number): CapacityStat
   if (bytes >= limitBytes) return "exceeded";
   if (bytes >= limitBytes * CAPACITY_WARN_RATIO) return "warning";
   return "ok";
+}
+
+/** When a recycle bin entry taken at `now` expires under a retention of `keepDays`. */
+export function trashExpiresAt(now: number, keepDays: number): string {
+  return new Date(now + keepDays * DAY_MS).toISOString();
+}
+
+/** The recycle bin entries whose retention has ended by `now`. Nothing else is a candidate. */
+export function expiredTrash(records: readonly CheckpointRecord[], now: number): CheckpointRecord[] {
+  return records.filter((record) => record.trash !== null && Date.parse(record.trash.expiresAt) <= now);
 }
 
 /**
@@ -40,7 +52,7 @@ export function expiredAutomatic(
 ): CheckpointRecord[] {
   const byBox = new Map<string, CheckpointRecord[]>();
   for (const record of records) {
-    if (!record.auto || record.pinned) continue;
+    if (record.trash !== null || !record.auto || record.pinned || record.boxId === null) continue;
     const group = byBox.get(record.boxId) ?? [];
     group.push(record);
     byBox.set(record.boxId, group);

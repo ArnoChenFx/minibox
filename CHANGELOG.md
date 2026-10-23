@@ -4,13 +4,30 @@
 
 ## [Unreleased]
 
+### 亮点
+- **回收站与安全检查点**：删除 Box 或卷时，数据先保留在回收站中，默认保留 7 天（`TRASH_RETENTION_DAYS`），可恢复为新的 Box 或卷。重建 Box、挂载或卸载卷前，自动拍摄一个安全检查点。
+- **在线备份与异地目标**：MiniBox 运行时即可把数据目录备份为一个用口令封装的文件，并可离线恢复到空目录。检查点包与备份可推送到 S3 兼容存储桶或 SFTP 服务器，也可从那里拉取。
+
+### 新增
+- 回收站与重建安全检查点（[#115](https://github.com/ArnoChenFx/minibox/issues/115)）：删除 Box 或卷时保留其数据副本，保留期由 `TRASH_RETENTION_DAYS` 设定（默认 7，范围 1 到 365），到期后每小时清理一次。删除 Box 时保留其自有的 `/workspace` 与 home 卷；删除卷时保留卷的数据，缓存卷与工具卷除外。控制台的「回收站」页面列出各条记录，可恢复为新的 Box 或卷，或立即彻底删除。恢复 Box 时需要新名称，Box 保留模板、数据、资源与安全档位，但不保留环境变量、启动命令、标签、网络、TTL 与共享挂载。接口为 `GET /api/trash`、`POST /api/trash/:id/restore`（202，任务，可设置 `name`、`cpus`、`memoryMb`）与 `DELETE /api/trash/:id`（202，任务），仅所有者可用。回收站条目计入 `CHECKPOINT_CAPACITY_MB`：超过上限时先清除最旧的条目，仍不够则拒绝删除并说明原因，且不停止、不删除任何内容。宿主机剩余空间低于下限时，保留副本的删除返回 `507`。`DELETE /api/boxes/:id` 与 `DELETE /api/volumes/:id` 接受 `skipTrash=true`，表示不保留副本，需要所有者或持有新令牌权限 `trash:skip` 的令牌；该权限不属于任何预设。删除响应的 `trash` 字段给出保留的条目，没有保留时为 `null`。重建 Box（`POST /api/boxes/:id/rebuild`）以及挂载与卸载卷（`attach`、`detach`）默认先拍摄「重建前」的安全检查点，`safetyCheckpoint: false` 可关闭它。重建失败且 Box 恢复原状时丢弃该检查点；无法原样恢复时保留它，并在错误中给出 id。新增事件 `box.trashed`、`volume.trashed`、`trash.restored` 与 `trash.purged`。命令行新增 `minibox trash ls`、`restore` 与 `purge`；MCP 新增 `list_trash`、`restore_trash` 与 `purge_trash`，位于 `storage` 工具集，仅所有者可用。
+- 在线备份与异地目标（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）：`POST /api/backups`（任务）在 MiniBox 运行时生成数据目录的一致备份。数据库取自 SQLite 的 `VACUUM INTO` 快照，其余文件逐个复制。归档用口令封装（AES-256-GCM，密钥由 scrypt 派生），口令为 12 到 1024 个字符，只用于封装，不写入归档、日志、审计或任务结果。备份可下载（`GET /api/backups/:id/download`）、列出与删除。命令行：`minibox backup` 创建备份，`--out FILE` 下载到本机，`--passphrase-stdin` 从标准输入读取口令；`minibox backup ls` 与 `minibox backup rm <id>` 列出与删除；`minibox restore <文件> --data-dir DIR` 离线恢复到空目录，口令错误、文件损坏、不是备份或目录非空时拒绝恢复。异地目标（`/api/targets`，推送与拉取为任务）支持 S3 兼容存储与 SFTP：凭据保存为 `target.<id>.*` 密钥，SFTP 的主机密钥须先确认才能保存。检查点包与备份可推送到目标或从目标拉取，同一目标同一时间只运行一次传输。设置页新增「异地目标」卡片（中英文），MCP 的 `storage` 工具集提供对应工具。备份与目标操作只对所有者开放，令牌不能使用。
+
+### 变更
+- 删除 Box 与卷的默认行为改变：数据先保留在回收站中，而不是立即删除。要立即删除且不保留副本，需传入 `skipTrash=true`（所有者或 `trash:skip`）。
+- 重建 Box、挂载与卸载卷默认先拍摄安全检查点。需要旧行为的调用方传入 `safetyCheckpoint: false`。
+- 检查点的容量上限现在也统计回收站条目。
+- 控制台各页面标题栏的按钮改为右对齐，换行到标题下方时也是如此。带搜索框的页面（Box、模板）把工具栏放在标题下方一行，搜索框在左，按钮在右。
+
+### 文档
+- 检查点、Box、卷、令牌、配置、API、CLI、MCP 与架构文档，以及 `.env.example`，补充回收站与安全检查点的说明，并提供中文版本。
+- 备份指南（`docs/admin/backups.md`，并提供 `docs/zh-CN/admin/backups.md` 中文版本）说明备份内容、一致性、恢复、卷备份与异地目标，并在检查点、设置、密钥、CLI、API、MCP、数据目录、安全与架构文档中补充相关内容（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）。
+
 ## [0.5.0] - 2026-10-23
 
 ### 亮点
 - **声明式模板**：从 Dockerfile、Git 代码仓库、构建上下文压缩包或 `devcontainer.json`（支持子集）构建模板，创建 Box 时可把代码仓库克隆到 `/workspace`。
 - **启动命令**：Box 每次启动时在 `minibox-init` tmux 会话中运行一条命令，不阻塞启动。
 - **事件通知**：把内存耗尽、命令失败、检查点失败、宿主机离线等事件发送到 Webhook、ntfy 主题或 Telegram 聊天。
-- **在线备份与异地目标**：MiniBox 运行时即可把数据目录备份为一个用口令封装的文件，并可离线恢复到空目录。检查点包与备份可推送到 S3 兼容存储桶或 SFTP 服务器，也可从那里拉取。
 
 ### 新增
 - 声明式模板与镜像拉取：可从粘贴的 Dockerfile、Git 代码仓库（可选分支与子目录）、构建上下文压缩包 URL 或仓库中的 `devcontainer.json` 构建模板（`POST /api/templates`，任务），构建失败不留下模板；`POST /api/templates/:ref/rebuild` 按同一来源重新构建，成功后才替换镜像；`POST /api/images/pull` 按需拉取镜像；`POST /api/boxes` 的 `repo` 可在首次创建时把代码仓库克隆到 `/workspace`，私有仓库使用密钥。构建、重新构建与拉取仅限所有者（Refs #15）
@@ -20,11 +37,9 @@
 - 环境变量 `NOTIFY_ALLOW_PRIVATE`（默认 `false`），允许通知渠道发送到回环、私有网络及其他非公网地址。
 - 卷用量监控、告警与上限（[#119](https://github.com/ArnoChenFx/minibox/issues/119)）：后台按 `VOLUME_USAGE_INTERVAL_SEC`（默认 600 秒，范围 60 到 86400）采样每个卷的用量。本地卷与路径卷用 `du` 统计自身目录树，NFS 卷用 `df` 统计共享根目录，不遍历目录。每次采样有各自的截止时间（目录树 120 秒，NFS 共享 30 秒），一个卡住的挂载只影响它自己。每个卷可设置软上限与硬上限（`PUT /api/volumes/:id/limits` 与 MCP 工具 `set_volume_limits`，仅所有者，默认无上限）：超过软上限记录 `volume.usage_high` 事件，超过硬上限按动作处理，动作为 `warn`（默认，仅警告）或 `stop`（停止挂载该卷的运行中 Box，原因为 `volume_limit`），并发送通知。NFS 卷不支持上限，应在 NAS 导出上设置配额。宿主机剩余空间低于 `HOST_DISK_MIN_FREE_PERCENT`（默认 10%，设为 0 关闭）时记录 `host.disk_low` 并发送通知，此时创建卷（包括新建 Box 的默认卷）与创建检查点都返回 `507`（`insufficient_storage`），定时检查点记为 `disk` 跳过。卷用量超过硬上限、动作为 `stop` 时，创建、启动、重启或重建挂载该卷的 Box，以及把该卷挂到 Box 上，都返回 `409`（`volume_over_limit`）。控制台卷页面显示用量条与趋势线，超过上限的行高亮，Box 详情页显示卷用量。软上限是尽力而为，不是配额；文件系统配额为后续工作。
 - 端口预览子域名隔离（[#122](https://github.com/ArnoChenFx/minibox/issues/122)）：设置 `PREVIEW_BASE_DOMAIN` 后，每个端口预览运行在 `<端口>-<box>.<base>` 上，拥有自己的源，无法读取控制台的 cookie、存储或 API。打开预览时控制台签发一次性、60 秒有效的票据，预览域名将其兑换为只对该预览有效的授权 cookie（`__Host-minibox_preview`，`HttpOnly; Secure; SameSite=Lax`，最长 8 小时）。登录结束、Box 重命名或删除后该预览不能再打开，重启 MiniBox 会使所有授权失效。写入与 WebSocket 只接受来自该预览自身的请求。预览域名之下只接受 `<端口>-<box>` 形式的主机名，其余返回 `404`。子域名模式下预览的沙箱允许同源，应用可以使用自己的 localStorage 与 cookie。设置页的「端口预览」卡片检查通配符 DNS、HTTPS 与域名划分。未设置时仍为默认的路径预览 `/box/<名称>/<端口>/`，其隔离依赖浏览器。见 [子域名预览](docs/zh-CN/admin/preview-subdomains.md)。
-- 在线备份与异地目标（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）：`POST /api/backups`（任务）在 MiniBox 运行时生成数据目录的一致备份。数据库取自 SQLite 的 `VACUUM INTO` 快照，其余文件逐个复制。归档用口令封装（AES-256-GCM，密钥由 scrypt 派生），口令为 12 到 1024 个字符，只用于封装，不写入归档、日志、审计或任务结果。备份可下载（`GET /api/backups/:id/download`）、列出与删除。命令行：`minibox backup` 创建备份，`--out FILE` 下载到本机，`--passphrase-stdin` 从标准输入读取口令；`minibox backup ls` 与 `minibox backup rm <id>` 列出与删除；`minibox restore <文件> --data-dir DIR` 离线恢复到空目录，口令错误、文件损坏、不是备份或目录非空时拒绝恢复。异地目标（`/api/targets`，推送与拉取为任务）支持 S3 兼容存储与 SFTP：凭据保存为 `target.<id>.*` 密钥，SFTP 的主机密钥须先确认才能保存。检查点包与备份可推送到目标或从目标拉取，同一目标同一时间只运行一次传输。设置页新增「异地目标」卡片（中英文），MCP 的 `storage` 工具集提供对应工具。备份与目标操作只对所有者开放，令牌不能使用。
 
 ### 文档
 - 新增通知指南（`docs/user-guide/notifications.md`，并提供 `docs/zh-CN/` 中文版本），并在设置、配置、API、MCP、数据目录、备份与安全文档中补充通知相关内容。
-- 备份指南（`docs/admin/backups.md`，并提供 `docs/zh-CN/admin/backups.md` 中文版本）说明备份内容、一致性、恢复、卷备份与异地目标，并在检查点、设置、密钥、CLI、API、MCP、数据目录、安全与架构文档中补充相关内容（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）。
 - README、项目主页与文档的截图换成中英文、浅色与深色版本，由新脚本 `bun run screenshots` 在隔离的实例中生成（[#125](https://github.com/ArnoChenFx/minibox/issues/125)）。
 - 升级文档新增 1.0 之前的兼容性说明，并汇总 0.4 以来需要手动处理的升级步骤。
 

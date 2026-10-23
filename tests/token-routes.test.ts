@@ -30,6 +30,7 @@ const OWNER_ONLY_ROUTES = [
   "DELETE /api/targets/:id",
   "DELETE /api/tokens/:id",
   "DELETE /api/tools/custom/:id",
+  "DELETE /api/trash/:id",
   "GET /api/activity",
   "GET /api/auth/sessions",
   "GET /api/backups",
@@ -51,6 +52,7 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/targets/:id/objects",
   "GET /api/tokens",
   "GET /api/tools/custom",
+  "GET /api/trash",
   "POST /api/auth/sessions/revoke-others",
   "POST /api/backups",
   "POST /api/checkpoints/:id/export",
@@ -71,6 +73,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/templates/:id/rebuild",
   "POST /api/tasks/:id/cancel",
   "POST /api/tokens",
+  "POST /api/trash/:id/restore",
   "PUT /api/boxes/:id/checkpoint-schedule",
   "PUT /api/notify/channels/:id",
   "PUT /api/pools",
@@ -257,6 +260,9 @@ describe("fail-closed authorization", () => {
       "tool.custom.delete",
       "tool.custom.list",
       "tool.custom.put",
+      "trash.list",
+      "trash.purge",
+      "trash.restore",
       "volume.limits.set",
     ]);
     const unruled = OPERATIONS.filter((op) => requiredScopes(op.scope) !== "owner" && !hasAccessRule(op.name));

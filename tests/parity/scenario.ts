@@ -72,6 +72,12 @@ function boxIdOfTask(task: Record<string, unknown>): string {
 const rollbackAt = (box: string) => `/api/boxes/${box}/rollback`;
 const ifMatch = (revision: number) => ({ "if-match": String(revision) });
 
+/** The recycle bin entry that kept the named box or volume, from a trash list response. */
+function entryNamed(json: Record<string, unknown> | null, name: string): string {
+  const entries = (json?.trash ?? []) as { id?: string; sourceName?: string }[];
+  return String(entries.find((entry) => entry.sourceName === name)?.id ?? "");
+}
+
 function snapshotRef(json: Record<string, unknown> | null): string {
   const direct = (json?.snapshot as { ref?: string } | undefined)?.ref;
   const nested = (json?.result as { snapshot?: { ref?: string } } | undefined)?.snapshot?.ref;
@@ -1033,6 +1039,35 @@ async function recordScenario(): Promise<Exchange[]> {
       `/api/targets/${missingTarget}/pull`,
       notAnObject,
     );
+    const doomed = await post("create a box to delete into the recycle bin", "/api/boxes", {
+      name: "doomed",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    await send("delete the doomed box", "DELETE", `/api/boxes/${boxId(doomed.json)}`);
+    const listed = await send("list the recycle bin", "GET", "/api/trash");
+    const doomedEntry = entryNamed(listed.json, "doomed");
+    const trashRestored = await post(
+      "restore the recycle bin entry as a new box",
+      `/api/trash/${doomedEntry}/restore`,
+      { name: "doomed-copy" },
+    );
+    await waitTask(base, trashRestored.json);
+    await send("read the restore task", "GET", `/api/tasks/${String(trashRestored.json?.taskId ?? "")}`);
+    await post("restore a recycle bin entry that is gone", `/api/trash/${doomedEntry}/restore`, {});
+
+    const keptBox = await post("create a box to keep in the recycle bin", "/api/boxes", {
+      name: "spare-box",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    await send("delete the spare box", "DELETE", `/api/boxes/${boxId(keptBox.json)}`);
+    const kept = entryNamed((await send("list the recycle bin again", "GET", "/api/trash")).json, "spare-box");
+    const purged = await send("purge a recycle bin entry", "DELETE", `/api/trash/${kept}`);
+    await waitTask(base, purged.json);
+    await send("read the purge task", "GET", `/api/tasks/${String(purged.json?.taskId ?? "")}`);
+    await send("purge a recycle bin entry that is gone", "DELETE", `/api/trash/${kept}`);
+    await send("purge a missing recycle bin entry", "DELETE", "/api/trash/ck_0000000000000000000000000");
   } finally {
     server.stop(true);
     app.throttle.stop();

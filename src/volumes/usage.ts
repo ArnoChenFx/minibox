@@ -39,11 +39,11 @@ function poolOf(host: HostCtx, volume: VolumeRecord): StoragePool | undefined {
 }
 
 /**
- * `du -sb` over the volume's own tree. The volume is checked first, so a helper cannot create a volume that was deleted
- * under it, and an image that is missing is reported as such.
+ * `du -sb` over an engine volume's own tree. The volume is checked first, so a helper cannot create a volume that was
+ * deleted under it, and an image that is missing is reported as such.
  */
-async function measureTree(host: HostCtx, volume: VolumeRecord): Promise<number> {
-  await assertVolumesPresent(host, [volume.engineName]);
+export async function measureTree(host: HostCtx, engineName: string): Promise<number> {
+  await assertVolumesPresent(host, [engineName]);
   const image = await helperImage(host);
   if (!image) throw badRequest(msg("helper_image_missing", { image: host.baseTemplateTag }));
   const result = await host.runtime.runHelper({
@@ -51,7 +51,7 @@ async function measureTree(host: HostCtx, volume: VolumeRecord): Promise<number>
     user: "0:0",
     capAdd: ["DAC_READ_SEARCH"],
     cmd: ["du", "-sb", "/mnt"],
-    mounts: [{ source: volume.engineName, target: "/mnt" }],
+    mounts: [{ source: engineName, target: "/mnt" }],
     timeoutSec: TREE_DEADLINE_MS / 1000,
     labels: { [host.keys.internal]: "true" },
   });
@@ -86,7 +86,7 @@ async function measure(host: HostCtx, volume: VolumeRecord, pool: StoragePool | 
     if (pool?.backend === "nfs")
       return { ok: true, at: nowIso(), bytes: await measureShare(host, pool), scope: "share" };
     if (pool?.backend === "path") await assertPoolsReachable(host, [pool.name]);
-    return { ok: true, at: nowIso(), bytes: await measureTree(host, volume), scope: "volume" };
+    return { ok: true, at: nowIso(), bytes: await measureTree(host, volume.engineName), scope: "volume" };
   } catch (error) {
     return { ok: false, at: nowIso(), message: messageOf(error), error };
   }

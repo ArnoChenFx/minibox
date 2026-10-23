@@ -8,6 +8,7 @@ import files from "./zh-CN/files.js";
 import settings from "./zh-CN/settings.js";
 import tasks from "./zh-CN/tasks.js";
 import tools from "./zh-CN/tools.js";
+import trash from "./zh-CN/trash.js";
 import volumes from "./zh-CN/volumes.js";
 
 export default {
@@ -20,6 +21,7 @@ export default {
   ...files,
   ...tasks,
   ...tools,
+  ...trash,
   ...settings,
   // tests/template.test.ts reads this file for the Node.js major, so the templates group stays here.
   "tp.subtitle": "模板保存新 Box 所用的环境。可以将 Box 存为模板，也可以构建内置的基础模板。",

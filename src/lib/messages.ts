@@ -94,6 +94,8 @@ export const MESSAGES = {
     "This change rebuilds the box and was not applied. Send the same request with confirm set to true to apply the preview. Volumes, the stable id and the name are kept. The writable layer, running processes and the container IP are lost.",
   rebuild_start_failed: "The new container did not start. The previous container and spec were restored.",
   rebuild_name_conflict: "Cannot rebuild while {name} is still in use. Remove that container and try again.",
+  rebuild_failed_safety_kept:
+    "The rebuild failed, and the box could not be put back exactly as it was. Its safety checkpoint {id} is kept, so the box can be restored from it.",
   pids_range: "Process limit must be an integer between {min} and {max}.",
   idle_timeout_invalid:
     "Idle timeout must be a whole number of seconds from 0 to {max} (0 means never sleep), or null to inherit the global default.",
@@ -240,6 +242,13 @@ export const MESSAGES = {
   checkpoint_exporting: "Checkpoint {id} is being exported. It can be deleted once the export finishes.",
   checkpoint_export_legacy: "Snapshot {id} was made before checkpoints. It has no data to export.",
   checkpoint_export_empty: "Checkpoint {id} holds no volume data, so there is nothing to export.",
+  checkpoint_export_no_box: "Checkpoint {id} names no box, so a package cannot describe it.",
+  checkpoint_no_spec: "Checkpoint {id} records no box settings, so a box cannot be made from it.",
+  trash_not_found: "Recycle bin entry {id} was not found.",
+  trash_capacity_exceeded:
+    "Keeping this data in the recycle bin needs {need} MB, but the checkpoint repository holds {used} MB of its {limit} MB limit, and purging the recycle bin did not free enough. Delete checkpoints, or delete without keeping a copy.",
+  trash_skip_forbidden:
+    "This credential may not delete without keeping a copy in the recycle bin. Ask the owner for the trash:skip scope, or delete without skipTrash.",
   checkpoint_export_system:
     "Checkpoint {id} includes its system layer, which a package does not carry yet. Take a checkpoint without the system layer to export it.",
   checkpoint_import_exists:

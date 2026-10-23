@@ -59,6 +59,7 @@ function record(id: string, overrides: Partial<CheckpointRecord> = {}): Checkpoi
       },
     ],
     system: null,
+    trash: null,
     createdAt: "2026-10-21T00:00:00.000Z",
     updatedAt: "2026-10-21T00:00:00.000Z",
     ...overrides,

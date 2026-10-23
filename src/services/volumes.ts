@@ -1,3 +1,4 @@
+import type { TrashRef } from "../checkpoints/types";
 import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
@@ -24,7 +25,8 @@ import type {
 } from "../volumes/types";
 import { recordSample, sampleWithin } from "../volumes/usage";
 import { type Box, getBox, readSpec } from "./boxes";
-import { rebuildBox } from "./rebuild";
+import { type RebuildResult, rebuildWithSafety, type SafetyHook } from "./rebuild";
+import { keepsVolume, purgeEntry, trashVolume } from "./trash";
 import type { RecordNote } from "./volume-owner";
 
 export interface VolumeMountView {
@@ -175,6 +177,8 @@ export type StoragePreview =
       role: VolumeRole | null;
       engineName: string;
       bytes: number | null;
+      /** Whether the delete keeps a copy of the data in the recycle bin. */
+      trash: boolean;
     }
   | {
       action: "replace_pools";
@@ -204,7 +208,7 @@ export function previewCreateVolume(
   };
 }
 
-export function previewDeleteVolume(volume: VolumeView): StoragePreview {
+export function previewDeleteVolume(volume: VolumeView, skipTrash: boolean): StoragePreview {
   refuseIfMounted(volume.name, volume.mounts);
   return {
     action: "delete_volume",
@@ -214,6 +218,7 @@ export function previewDeleteVolume(volume: VolumeView): StoragePreview {
     role: volume.role,
     engineName: volume.engineName,
     bytes: volume.bytes,
+    trash: keepsVolume(volume, skipTrash),
   };
 }
 
@@ -230,16 +235,37 @@ export function previewPools(host: HostCtx, drafts: PoolDraft[], roles: RoleDraf
   };
 }
 
-export async function deleteVolume(host: HostCtx, ref: string): Promise<{ name: string }> {
+/**
+ * Deletes a volume and its engine data. Its data is first kept in the recycle bin, unless `skipTrash` is set or its role
+ * keeps nothing. When the engine delete then fails, that copy is purged, so a refused delete leaves no entry behind.
+ */
+export async function deleteVolume(
+  host: HostCtx,
+  ref: string,
+  opts: { skipTrash?: boolean; createdBy?: string | null; record?: RecordNote } = {},
+): Promise<{ name: string; trash: TrashRef | null }> {
   const volume = requireVolume(host, ref);
   refuseIfMounted(volume.name, mountsOf(host, volume));
+  const trash = keepsVolume(volume, opts.skipTrash ?? false)
+    ? await trashVolume(host, volume, opts.createdBy ?? null, opts.record)
+    : null;
   const result = await removeEngine(host, volume.engineName);
   if (result.status === "failed") {
+    await dropCopy(host, trash, opts.record);
     throw conflict(msg("volume_delete_failed", { name: volume.name, detail: result.detail }));
   }
   host.volumes.remove(volume.id);
-  log.info("volume.deleted", { id: volume.id, name: volume.name });
-  return { name: volume.name };
+  log.info("volume.deleted", { id: volume.id, name: volume.name, trash: trash !== null });
+  return { name: volume.name, trash };
+}
+
+async function dropCopy(host: HostCtx, trash: TrashRef | null, record?: RecordNote): Promise<void> {
+  if (trash === null) return;
+  try {
+    await purgeEntry(host, trash.id, "failed", record);
+  } catch (e) {
+    log.warn("volume.delete_copy_kept", { id: trash.id, error: String(e) });
+  }
 }
 
 function nextMounts(current: BoxMount[], mount: BoxMount): BoxMount[] {
@@ -266,28 +292,31 @@ export async function attachVolume(
   host: HostCtx,
   ref: string,
   input: { box: string; path: string; mode: MountMode; revision: number; confirm: boolean },
+  safety: SafetyHook | null,
   record?: RecordNote,
-): Promise<{ box: Box; warning: "shared_rw" | null }> {
+): Promise<{ box: Box; warning: "shared_rw" | null; safety: RebuildResult["safety"] }> {
   const volume = requireVolume(host, ref);
   if (!validMountPath(input.path)) throw badRequest(msg("mount_path_invalid", { path: input.path }));
   const spec = await readSpec(host, input.box);
   const warning = warnShared(host, volume, input.mode, spec.id);
   const mount: BoxMount = { volume: volume.engineName, path: input.path, mode: input.mode };
   const mounts = nextMounts(spec.mounts, mount);
-  return { box: await applyMounts(host, spec.id, input.revision, mounts, input.confirm, spec.mounts, record), warning };
+  const applied = await applyMounts(host, spec.id, input.revision, mounts, input.confirm, spec.mounts, safety, record);
+  return { ...applied, warning };
 }
 
 export async function detachVolume(
   host: HostCtx,
   ref: string,
   input: { box: string; path: string; revision: number; confirm: boolean },
+  safety: SafetyHook | null,
   record?: RecordNote,
-): Promise<{ box: Box }> {
+): Promise<RebuildResult> {
   const volume = requireVolume(host, ref);
   const spec = await readSpec(host, input.box);
   const mounts = spec.mounts.filter((mount) => !(mount.volume === volume.engineName && mount.path === input.path));
   if (mounts.length === spec.mounts.length) throw notFound(msg("mount_not_found", { path: input.path }));
-  return { box: await applyMounts(host, spec.id, input.revision, mounts, input.confirm, spec.mounts, record) };
+  return applyMounts(host, spec.id, input.revision, mounts, input.confirm, spec.mounts, safety, record);
 }
 
 async function applyMounts(
@@ -297,14 +326,15 @@ async function applyMounts(
   mounts: BoxMount[],
   confirm: boolean,
   current: BoxMount[],
+  safety: SafetyHook | null,
   record?: RecordNote,
-): Promise<Box> {
+): Promise<RebuildResult> {
   if (sameMountList(current, mounts)) {
     const spec = await readSpec(host, boxId);
     if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
-    return getBox(host, boxId);
+    return { box: await getBox(host, boxId), safety: null };
   }
-  return rebuildBox(host, boxId, revision, { mounts }, confirm, record);
+  return rebuildWithSafety(host, boxId, revision, { mounts }, confirm, record, safety);
 }
 
 /** Measures a volume now, the same sample the periodic sampler takes. A failed measurement is thrown after it is recorded. */

@@ -35,7 +35,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `session` | Terminal sessions in boxes |
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
-| `storage` | Volumes, storage pools, the owner's checkpoint export, import and schedules, and the owner's backups and off-site targets |
+| `storage` | Volumes, storage pools, the owner's recycle bin, the owner's checkpoint export, import and schedules, and the owner's backups and off-site targets |
 | `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, and pulling images |
 | `network` | Preview ports |
 
@@ -133,6 +133,9 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `remove_target` | `DELETE /api/targets/{id}`. Owner only |
 | `push_to_target` | `POST /api/targets/{id}/push`. Owner only. Returns a task |
 | `pull_from_target` | `POST /api/targets/{id}/pull`. Owner only. Returns a task |
+| `list_trash` | `GET /api/trash`. Owner only. The recycle bin's entries |
+| `restore_trash` | `POST /api/trash/{id}/restore`. Owner only. Returns a task |
+| `purge_trash` | `DELETE /api/trash/{id}`. Owner only. Returns a task |
 
 ### tools
 
@@ -166,6 +169,8 @@ Some tools change things that are hard to undo. They need `confirm: true` in the
 - `rebuild_box` and `move_box`.
 
 `measure_volume` only refreshes a cached size, so it needs no confirmation. `attach_volume` and `detach_volume` rebuild the box, so the same mount rules apply as for `rebuild_box`.
+
+`rebuild_box`, `attach_volume` and `detach_volume` take `safetyCheckpoint`, which defaults to `true`. Send `false` to skip the checkpoint of the box that is taken before the change. `delete_box` and `delete_volume` take `skipTrash`. Set it to `true` to delete without keeping a copy in the recycle bin. That needs the owner, or a token with the `trash:skip` scope.
 
 ## Session tools
 

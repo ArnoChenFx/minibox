@@ -43,4 +43,6 @@ export default {
   "task.op.tool.upgrade": "升级工具",
   "task.op.tool.uninstall": "卸载工具",
   "task.op.tool.reconcile": "补装工具",
+  "task.op.trash.restore": "从回收站恢复",
+  "task.op.trash.purge": "从回收站彻底删除",
 };

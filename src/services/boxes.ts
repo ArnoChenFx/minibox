@@ -5,6 +5,7 @@ export type {
   BoxMountView,
   StartOptions,
   EnsureResult,
+  DeleteBoxOptions,
   DeleteBoxResult,
 } from "./box-model";
 export {

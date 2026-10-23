@@ -76,13 +76,20 @@ function checkTail(value: unknown): Checked<number> {
   return accept(n);
 }
 
-function checkDeleteVolume(value: unknown): Checked<boolean> {
-  if (value === undefined || value === null) return accept(false);
-  if (typeof value === "boolean") return accept(value);
-  if (value === "true" || value === "1") return accept(true);
-  if (value === "false" || value === "0") return accept(false);
-  return reject(msg("not_boolean", { field: "deleteVolume" }), "deleteVolume");
+/** A boolean that also takes the query string's `1` and `0`. Unset takes `fallback`. */
+function boolFlag(field: string, fallback: boolean): (value: unknown) => Checked<boolean> {
+  return (value) => {
+    if (value === undefined || value === null) return accept(fallback);
+    if (typeof value === "boolean") return accept(value);
+    if (value === "true" || value === "1") return accept(true);
+    if (value === "false" || value === "0") return accept(false);
+    return reject(msg("not_boolean", { field }), field);
+  };
 }
+
+const checkDeleteVolume = boolFlag("deleteVolume", false);
+const checkSkipTrash = boolFlag("skipTrash", false);
+const checkSafetyCheckpoint = boolFlag("safetyCheckpoint", true);
 
 function checkImageRef(value: unknown): Checked<string> {
   if (typeof value !== "string" || !value.trim()) return reject(msg("template_required"), "template");
@@ -155,6 +162,14 @@ export const volumeName = () =>
     description:
       "Volume name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed.",
   });
+
+/** The name a restore gives the box or volume it creates. Unset takes the name the entry had when it was deleted. */
+export const restoredName = () =>
+  field((value) => checkName(value, "name"), {
+    ...NAME_META,
+    description:
+      "New name for the restored box or volume: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Defaults to the name it had when it was deleted.",
+  }).optional();
 
 function checkRefresh(value: unknown): Checked<boolean> {
   if (value === undefined || value === null || value === "") return accept(false);
@@ -340,6 +355,24 @@ export const deleteVolumeFlag = () =>
     type: "boolean",
     description: withDefault("Also delete the box's workspace volume. Accepts true, false, 1 or 0.", false),
   }).default(false);
+
+export const skipTrashFlag = () =>
+  field(checkSkipTrash, {
+    type: "boolean",
+    description: withDefault(
+      "Delete without keeping a copy of the data in the recycle bin. Owner only; a token needs the trash:skip scope. Accepts true, false, 1 or 0.",
+      false,
+    ),
+  }).default(false);
+
+export const safetyCheckpointFlag = () =>
+  field(checkSafetyCheckpoint, {
+    type: "boolean",
+    description: withDefault(
+      "Take a checkpoint of the box's data before the change, so a failed rebuild is rolled back to it. Send false to skip it. Accepts true, false, 1 or 0.",
+      true,
+    ),
+  }).default(true);
 
 export const statsFlag = () =>
   field((value) => accept(value !== "false"), {

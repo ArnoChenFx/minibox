@@ -11,7 +11,7 @@ The default location is `./data` in a source checkout, and `/data` in the releas
 | `tokens.json` | `600` | Agent API tokens, written on first token create. Stores SHA-256 hashes only, with the token's scopes, limits and expiry. Rotating `ACCESS_KEY` does not revoke these tokens. |
 | `ssh_host_ed25519_key` | `600` | The SSH gateway's host key, generated when the server starts. `minibox ssh-config` pins its public half. |
 | `boxes/` | `700` | One box spec per file, `<id>.json`, mode `600`. This is where box settings live. |
-| `checkpoints/` | `700` | One checkpoint record per file, `ck_….json`, mode `600`. The data itself is in the checkpoint repository volume. |
+| `checkpoints/` | `700` | One checkpoint record per file, `ck_….json`, mode `600`. A recycle bin entry is a record here too, with a `trash` field. The data itself is in the checkpoint repository volume. |
 | `checkpoints/schedules/` | `700` | One checkpoint schedule per box, `<box id>.json`, mode `600`. It holds the rule with its time zone, the next run and the last run. A box without a file has no schedule. It survives a restart. |
 | `packages/` | `700` | Checkpoint packages, `<id>.mbckpt`, mode `600`, each with a `<id>.json` record beside it. A package is sealed with the passphrase it was exported with. The hourly sweep removes it once it is 24 hours old. |
 | `backups/` | `700` | Stored backups, `<id>.mbbak`, mode `600`, each with a `<id>.json` record beside it. A backup is sealed with the passphrase it was made with. Backups pulled from an off-site target are kept here too. Not included in a backup. See [Backups](backups.md). |

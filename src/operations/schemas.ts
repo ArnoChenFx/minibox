@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { BOX_PROFILES } from "../box-profile";
-import { CONSISTENCY_MODES } from "../checkpoints/types";
+import { CONSISTENCY_MODES, TRASH_KINDS } from "../checkpoints/types";
 import { BUILD_KINDS } from "../services/template-builds";
 import { VOLUME_ROLES } from "../volumes/types";
 
@@ -132,18 +132,39 @@ export const CheckpointSchema = z.object({
   auto: z.boolean(),
   consistency: z.enum(CONSISTENCY_MODES),
   specRevision: z.number().nullable(),
-  spec: z.object({
-    template: z.object({ ref: z.string(), image: z.string(), digest: z.string().nullable() }),
-    cpus: z.number().nullable(),
-    memoryBytes: z.number().nullable(),
-    profile: z.enum(BOX_PROFILES).nullable(),
-  }),
+  spec: z
+    .object({
+      template: z.object({ ref: z.string(), image: z.string(), digest: z.string().nullable() }),
+      cpus: z.number().nullable(),
+      memoryBytes: z.number().nullable(),
+      profile: z.enum(BOX_PROFILES).nullable(),
+    })
+    .nullable(),
   data: z.array(CheckpointDataSchema),
   system: z.object({ image: z.string(), imageId: z.string() }).nullable(),
   bytes: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
+
+/** A recycle bin entry: the data a deleted box or volume left, kept until `expiresAt`. */
+export const TrashEntrySchema = z.object({
+  id: z.string(),
+  hostId: z.string(),
+  kind: z.enum(TRASH_KINDS),
+  sourceId: z.string(),
+  sourceName: z.string(),
+  deletedAt: z.string(),
+  expiresAt: z.string(),
+  bytes: z.number(),
+  createdBy: z.string().nullable(),
+});
+
+/** The recycle bin entry a delete kept. A delete that kept none has null here. */
+export const TrashRefSchema = z.object({ id: z.string(), expiresAt: z.string() });
+
+/** The checkpoint a rebuild took before it changed the box. A rebuild that took none has null here. */
+export const SafetyCheckpointSchema = z.object({ id: z.string(), label: z.string() });
 
 /** The checkpoint repository's size against its limit. `limitBytes` is null when no limit is set. */
 export const CheckpointUsageSchema = z.object({

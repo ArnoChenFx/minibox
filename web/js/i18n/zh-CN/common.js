@@ -133,4 +133,5 @@ export default {
   "label.user": "用户",
   "label.privateKey": "私钥",
   "label.hostKeyFingerprint": "主机密钥指纹",
+  "nav.trash": "回收站",
 };

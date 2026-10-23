@@ -225,7 +225,7 @@ Volumes on an NFS pool take no soft or hard limits, because a limit on one volum
 
 - A snapshot of the whole MiniBox export on the NAS is your disaster-recovery layer. Box checkpoints are per box, and they complement the snapshot. They do not replace it.
 - A storage system is not a backup. Copy the NAS snapshots, and the checkpoint repository with its key, to a second place.
-- Deleting a box with **Also delete the volumes this box owns** removes the Docker volumes. It does not delete their folders on the export. Those stay until you delete `<export>/vol_…` yourself.
+- Deleting a box with **Also delete the volumes this box owns** removes the Docker volumes. Either way, the box's data is kept in the [recycle bin](checkpoints.md#recycle-bin). It does not delete their folders on the export. Those stay until you delete `<export>/vol_…` yourself.
 
 ## Troubleshooting
 

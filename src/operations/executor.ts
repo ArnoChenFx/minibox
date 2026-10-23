@@ -295,12 +295,13 @@ export class Executor {
     const tasks = this.deps.tasks;
     if (!tasks) return;
     const child: OperationContext = { ...ctx, parentId: startedId, task: handle };
+    const running: OperationContext = { ...child, record: (note) => this.recordNote(child, startedId, note) };
     const ref = { taskId: handle.id };
     const emitFinal = (outcome: Outcome) => {
       this.emit(eventOf(ulid(), operation, child, started, { ...outcome, ref }));
     };
     try {
-      const result = operation.output.parse(await operation.run(child, input, resolved));
+      const result = operation.output.parse(await operation.run(running, input, resolved));
       if (tasks.finish(handle.id, { status: "succeeded", result })) {
         this.note(operation, input, resolved, true);
         emitFinal({ status: "ok", input, resolved, result });

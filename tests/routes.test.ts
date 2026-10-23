@@ -293,7 +293,11 @@ describe("box routes", () => {
     const box = await createBox("alpha");
     const res = await del(`/api/boxes/${box.id}?deleteVolume=true`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ name: "alpha", volumeDeleted: true });
+    expect(await res.json()).toEqual({
+      name: "alpha",
+      volumeDeleted: true,
+      trash: { id: expect.any(String), expiresAt: expect.any(String) },
+    });
     expect(runtime.containers.size).toBe(0);
     expect([...runtime.volumes.values()].filter((volume) => volume.labels[keys.role] !== "tools")).toEqual([]);
     expect([...runtime.volumes.values()].filter((volume) => volume.labels[keys.role] === "tools")).toHaveLength(1);

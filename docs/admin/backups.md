@@ -181,4 +181,4 @@ Replace `vol_abc123` with the volume's ID. To restore the archive, see [Restore 
 
 ## Checkpoints and backups
 
-Checkpoints are copies of one box's data, and they are stored on the same host as the boxes. A backup holds the checkpoint records and schedules, but not the checkpoint data, which is in the repository volume. To keep a checkpoint elsewhere, [export](../user-guide/checkpoints.md#export-and-import) it and download the package, or push the package to an [off-site target](#off-site-targets).
+Checkpoints are copies of one box's data, and they are stored on the same host as the boxes. A backup holds the checkpoint records and schedules, but not the checkpoint data, which is in the repository volume. The recycle bin keeps the data of deleted boxes and volumes in the same repository volume, so a backup does not hold it either. To keep a checkpoint elsewhere, [export](../user-guide/checkpoints.md#export-and-import) it and download the package, or push the package to an [off-site target](#off-site-targets).
