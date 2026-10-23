@@ -178,7 +178,8 @@ describe("dry run and removal", () => {
 
     expect(result.volumes.length).toBeGreaterThan(0);
     for (const volume of result.volumes) {
-      expect(volume.lastUsedAt).toBe(recordOf(volume.name).lastMount?.at);
+      const record = recordOf(volume.name);
+      expect(volume.lastUsedAt).toBe(record.lastMount?.at ?? record.createdAt);
       expect(volume.status).toBe("candidate");
     }
     expect(runtime.callsTo("removeVolume")).toHaveLength(0);
