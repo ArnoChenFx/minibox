@@ -89,7 +89,7 @@ Agent 是一个小程序，运行在宿主机上的容器中，并主动连接 M
 
 - 复制或迁移镜像要求目标引擎保留镜像 ID。Docker 的经典镜像存储满足此要求。containerd 镜像存储在加载镜像时会改变镜像 ID，因此 MiniBox 会以 `docker_error` 拒绝复制，并列出两个 ID。若 `docker info` 显示 `driver-type io.containerd.snapshotter.v1`，即表示该引擎使用 containerd 镜像存储。
 - 每个宿主机各自保留检查点，检查点不会在宿主机之间复制。要移动某个检查点，请先[导出](checkpoints.md#导出与导入)，然后导入并选择另一台宿主机。见 [检查点](checkpoints.md)。
-- Agent 宿主机暂不支持迁入或迁出 Box，因为 Agent 不复制镜像或卷。请改为在 Agent 宿主机上创建 Box。Agent 宿主机暂不支持模板、快照与端口预览。
+- Agent 宿主机暂不支持迁入或迁出 Box，因为 Agent 不复制镜像或卷。请改为在 Agent 宿主机上创建 Box。Agent 宿主机暂不支持模板、快照与端口预览，也不能在其上创建带自助令牌的 Box，因为 Agent 无法写入令牌文件。
 - 宿主机级别的 CPU 与内存占用仅对本机宿主机显示。远程宿主机显示其引擎上报的核心数与内存，以及其上 Box 的占用。
 - 命令行工具没有宿主机相关命令。请使用控制台，或 [REST API（英文）](../../reference/api.md)。
 - [Agent 令牌](access-and-tokens.md) 可以限制为特定宿主机。

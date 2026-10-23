@@ -29,6 +29,7 @@ import { moveBox, moveConfirmation, previewMove } from "../services/move";
 import { placeBox } from "../services/placement";
 import { rebuildBox, rebuildWithSafety } from "../services/rebuild";
 import { preRebuildSafety } from "../services/safety";
+import { assertSelfTokenHost } from "../services/self-token";
 import { templateSetupOf } from "../services/template-builds";
 import { deleteBoxToTrash } from "../services/trash";
 import { hasRebuildFields } from "../specs/plan";
@@ -301,6 +302,7 @@ export const boxCreate = defineOperation({
   precondition: async ({ host }, input) => {
     assertCloneWorkspace(input);
     assertRepoSecretSet(host, input.repo);
+    if (input.selfToken) assertSelfTokenHost(host);
     await assertNewBox(host, input);
   },
   activity: { action: () => "box.create", target: (input) => input.name },

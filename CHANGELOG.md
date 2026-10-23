@@ -25,12 +25,16 @@
 - 设置页改为左侧分类导航（窄屏时为可横向滚动的一行）。每次只显示一个分类，每个分类有自己的地址（如 `#/settings/secrets`），浏览器的前进与后退可在分类之间切换，默认显示「会话」。令牌横幅的链接直接打开「Agent API 令牌」分类。
 - 长列表默认只显示前 5 项，其余通过「展开全部（N）」展开，「收起」收回。涉及设置页的会话、令牌、密钥、通知渠道与投递记录、宿主机与异地目标，创建 Box 的工具与模板选择器，以及模板页的卡片列表。设置页中当前会话排在最前。
 
+### 修复
+- Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：在 Agent 宿主机上创建带自助令牌的 Box 时，请求在创建流程开始前即返回 `501`（`self_token_host_unsupported`），不再进入后续检查。
+
 ### 工程化
 - 新增真实引擎的出站集成测试 `tests/docker-egress.test.ts`，由 `bun run test:docker` 运行。它覆盖 `none` 的断网、exec、SSH 与端口预览，`proxy-only` 的允许、拒绝、事件与绕过，以及 `BLOCK_HOST_GATEWAY`。测试使用独立的标签前缀、数据目录与网络，并清理其代理、网络、防火墙规则与镜像。
 
 ### 文档
 - 新增网络出站文档：英文 `docs/admin/network-egress.md` 与中文 `docs/zh-CN/admin/network-egress.md`，说明各档位、白名单、事件、`BLOCK_HOST_GATEWAY` 与限制（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）。安全指南、配置、CLI、检查点与 Box 指南，以及 `.env.example` 同步更新。
 - 模板指南的 `devcontainer.json` 一节改写：列出支持的设置、构建日志中的警告与被拒绝的设置，以及 Box 设置任务的顺序、运行用户、工作目录、时限与失败行为，中英文版本同步。API、CLI、MCP、安全与架构文档同步更新（Refs #15）。
+- Box 内 Agent 与宿主机指南（中英文）说明：Agent 宿主机无法把令牌文件写入 Box，因此不能在其上创建带自助令牌的 Box（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）。
 
 ## [0.5.1] - 2026-10-23
 
