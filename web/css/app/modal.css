@@ -20,7 +20,7 @@
 }
 .rebuild-mount {
   display: grid;
-  grid-template-columns: 1fr 1fr 88px auto;
+  grid-template-columns: 1fr 1fr 132px auto;
   gap: 8px;
   align-items: center;
 }

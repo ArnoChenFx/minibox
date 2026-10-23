@@ -9,6 +9,8 @@ const WEB = join(ROOT, "web");
 const BOX_ACTIONS = join(WEB, "js", "components", "box-actions.js");
 const MOUNT_EDITOR = join(WEB, "js", "components", "mount-editor.js");
 const LIST_TOGGLE = join(WEB, "js", "components", "list-toggle.js");
+const FOLD_SECTION = join(WEB, "js", "components", "fold-section.js");
+const CREATE_BOX = join(WEB, "js", "components", "create-box.js");
 
 const stubs = [
   `const stub = { documentElement: {}, body: {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, removeEventListener() {} };`,
@@ -65,6 +67,12 @@ describe("mount row", () => {
     expect(html).toContain('data-path value="/srv/&quot;x&quot;"');
     expect(html).toContain('<option value="ro" selected>');
     expect(html).toContain("data-remove-mount");
+  });
+
+  test("the mode choices keep the values ro and rw but read as words", () => {
+    const html = mountRowMarkup({ volume: "data", path: "/data", mode: "rw" });
+    expect(html).toContain('<option value="rw" selected>Read-write</option>');
+    expect(html).toContain('<option value="ro" >Read-only</option>');
   });
 
   test("with volumes, the volume is a choice, and a volume another box owns cannot be picked", () => {
@@ -193,5 +201,40 @@ describe("rebuildBody", () => {
     const fn = src.slice(src.indexOf("function rebuildBody"), src.indexOf("/** The HTML for a rebuild preview"));
     expect(fn).toContain("if (template) body.template = template");
     expect(fn).not.toContain("template !== (box.template");
+  });
+});
+
+/** Loads the fold section module in a fresh process and renders one section. */
+function foldSection(options: Record<string, unknown>): string {
+  const script = [
+    ...stubs,
+    `const { foldSectionHtml } = await import(${JSON.stringify(FOLD_SECTION)});`,
+    `console.log(JSON.stringify(foldSectionHtml(${JSON.stringify(options)})));`,
+  ].join("\n");
+  const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
+  if (run.status !== 0) throw new Error(run.stderr);
+  return JSON.parse(run.stdout) as string;
+}
+
+describe("fold sections", () => {
+  test("a folded section's button controls its hidden body", () => {
+    const html = foldSection({ id: "s", title: "Tools", body: "<p>x</p>" });
+    expect(html).toContain(
+      '<button type="button" class="fold-toggle" id="sToggle" aria-expanded="false" aria-controls="sBody">',
+    );
+    expect(html).toContain('<div class="fold-body" id="sBody" hidden><p>x</p></div>');
+  });
+
+  test("an open section shows its body and keeps the heading's extra content", () => {
+    const html = foldSection({ id: "s", title: "Tools", open: true, extraHtml: "<i>search</i>", body: "" });
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('<div class="fold-body" id="sBody"></div>');
+    expect(html).toContain("<i>search</i>");
+  });
+
+  test("every section of the create dialog folds with the same toggle", () => {
+    const src = readFileSync(CREATE_BOX, "utf8");
+    expect(src).not.toContain("<details");
+    expect(src.match(/foldSectionHtml\(\{/g)?.length).toBe(6);
   });
 });
