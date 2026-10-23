@@ -39,7 +39,7 @@ Copy the 64-character key. Keep it private. Anyone with the key controls MiniBox
 
 ## 4. Build the base template
 
-A box starts from a template. The MiniBox image does not include the base template, so build it once.
+A box starts from a template. The MiniBox image does not include the base template. MiniBox builds it the first time a box or a helper needs it, but that first build takes a few minutes, so you can build it now instead.
 
 1. Click **Library** in the sidebar. Its **Templates** tab opens.
 2. Click **Build base template**.

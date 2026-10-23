@@ -66,9 +66,9 @@ bun run build:template   # builds the base template, minibox-template:base
 docker build -t minibox . # builds the release image
 ```
 
-The template description appears in `templates/base/Dockerfile`, in `BASE_DESCRIPTION` in `src/services/templates.ts`, and in the `build:template` script. `tests/template.test.ts` checks that they match.
+The template description appears in `templates/base/Dockerfile`, in `BASE_DESCRIPTION` in `src/services/base-template.ts`, and in the `build:template` script. `tests/template.test.ts` checks that they match.
 
-Several files name the Node.js major version: the base template Dockerfile, `src/services/templates.ts`, both READMEs, the web console strings and `package.json`. `tests/template.test.ts` checks that each one matches the `FROM node:` line in the Dockerfile. Change them together.
+Several files name the Node.js major version: the base template Dockerfile, `src/services/base-template.ts`, both READMEs, the web console strings and `package.json`. `tests/template.test.ts` checks that each one matches the `FROM node:` line in the Dockerfile. Change them together.
 
 ## OpenAPI document
 

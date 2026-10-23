@@ -355,6 +355,7 @@ export default {
   "err.storage_squash_hint":
     "在 NAS 上把导出设置为 all_squash,anonuid=1000,anongid=1000，或 root_squash,anonuid=1000,anongid=1000，使被映射的用户为 uid 1000。设置指南：https://github.com/ArnoChenFx/minibox/blob/main/docs/zh-CN/user-guide/nfs.md",
   "err.helper_image_missing": "基础模板镜像 {image} 不存在，因此无法运行卷辅助容器。",
+  "err.helper_image_build_failed": "基础模板镜像 {image} 不存在，自动构建也失败了：{detail}",
   "err.volume_over_limit": "卷 {volume} 超过硬上限：已用 {used} MB，上限 {limit} MB。挂载它的 Box 无法启动。",
   "err.volume_over_limit_hint": "提高或取消硬上限，或释放卷内空间，然后再启动 Box。",
   "err.volume_limit_order": "软上限不能高于硬上限。",

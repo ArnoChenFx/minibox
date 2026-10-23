@@ -4,6 +4,7 @@ import { badRequest } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { isSshRepoUrl } from "../lib/source";
 import { HELPER_SECRETS_DIR, type VolumeOwner } from "../runtime";
+import { ensureBaseImage } from "./base-template";
 import { extractTar } from "./build-context";
 import { writableWorkspaceVolume } from "./volume-owner";
 
@@ -88,8 +89,9 @@ export async function cloneInto(host: HostCtx, opts: CloneOptions): Promise<void
   ];
   const secretPath = secretRef === undefined ? "" : `${HELPER_SECRETS_DIR}/${secretRef}`;
   if (secret !== null && !ssh) env.push(`MINIBOX_TOKEN_FILE=${secretPath}`);
+  const image = await ensureBaseImage(host, { log: opts.log });
   const result = await host.runtime.runHelper({
-    image: host.baseTemplateTag,
+    image,
     user: `${opts.owner.uid}:${opts.owner.gid}`,
     cmd: ["sh", "-c", CLONE_SCRIPT, "minibox", opts.path, url, branch ?? "", secret !== null && ssh ? secretPath : ""],
     mounts: [{ source: opts.volume, target: opts.path, mode: "rw" }],
@@ -133,7 +135,7 @@ export async function cloneIntoWorkspace(
  */
 export async function copyVolumeOut(host: HostCtx, volume: string, path: string, dest: string): Promise<void> {
   const staging = await host.runtime.createContainer({
-    image: host.baseTemplateTag,
+    image: await ensureBaseImage(host),
     cmd: ["true"],
     labels: { [host.keys.internal]: "true" },
     mounts: [{ source: volume, target: path, mode: "ro" }],

@@ -14,7 +14,7 @@ The base template contains:
 - Python 3, `git`, `curl`, `build-essential`, `tmux`, `jq`, `ripgrep`, `openssh-client`, `sudo` and other common tools.
 - The user `dev`, user ID 1000, with passwordless `sudo`.
 
-The MiniBox image does not include the base template. Build it once from the console:
+The MiniBox image does not include the base template. MiniBox builds it the first time a host needs it, for a box or for the helpers that install tools and prepare volumes. To build it ahead, use the console:
 
 1. Click **Library** in the sidebar. Its **Templates** tab opens.
 2. Click **Build base template**.

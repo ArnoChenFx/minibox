@@ -35,7 +35,7 @@ describe("base template", () => {
     for (const path of [
       "templates/base/Dockerfile",
       "templates/official/node/Dockerfile",
-      "src/services/templates.ts",
+      "src/services/base-template.ts",
       "src/services/official-templates.ts",
       "web/js/i18n/en.js",
       "web/js/i18n/zh-CN.js",

@@ -13,6 +13,7 @@ import { TOOLS_PREFIX, type CatalogEntry, type ToolAction, type ToolStatus } fro
 import { chownEngines, findSharedTools, healSharedTools } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
 import type { VolumeRecord } from "../volumes/types";
+import { ensureBaseImage } from "./base-template";
 import { getBox, type Box } from "./boxes";
 
 const WRITER_MEMORY = 1024 * 1024 * 1024;
@@ -58,12 +59,7 @@ async function runToolsWriter(
 ): Promise<{ exitCode: number; logs: string }> {
   const volume = sharedToolsVolume(host);
   if (!volume) throw badRequest(msg("tool_volume_missing"));
-  const image = host.baseTemplateTag;
-  try {
-    await host.runtime.inspectImage(image);
-  } catch {
-    throw badRequest(msg("helper_image_missing", { image }));
-  }
+  const image = await ensureBaseImage(host, { log: (text) => opts.task?.log(text) });
   await healSharedTools(host, volume, new Set([image]));
   if (host.volumes.readPools().pools.find((pool) => pool.name === volume.pool)?.backend === "local") {
     // Docker copies the image's root-owned /opt/minibox/tools into an empty volume on the first box mount, so the
@@ -161,21 +157,23 @@ interface DetectTarget {
 /**
  * Where detection runs. With a box, that is the box's own image with the box's home volume and the shared tools volume
  * mounted read-only, so a tool baked into the image or installed in the home volume is found the way the box finds it.
- * Without a box, the base template stands in for the image.
+ * Without a box, or when the box's image is gone, the base template stands in for the image. A strict caller is about to
+ * change the tools, so it builds the base template when the host lacks it; a listing does not.
  */
-async function detectTarget(host: HostCtx, box: Box | null): Promise<DetectTarget> {
+async function detectTarget(host: HostCtx, box: Box | null, strict: boolean): Promise<DetectTarget> {
   const mounts: DetectTarget["mounts"] = [];
   const tools = sharedToolsVolume(host);
   if (tools) {
     await healSharedTools(host, tools, new Set());
     mounts.push({ source: tools.engineName, target: TOOLS_PREFIX, mode: "ro" });
   }
-  let image = host.baseTemplateTag;
+  let image: string | null = null;
   if (box) {
     const home = box.mounts.find((mount) => mount.role === "home");
     if (home) mounts.push({ source: home.volume, target: home.path, mode: "ro" });
     if (box.image && (await imageExists(host, box.image))) image = box.image;
   }
+  image ??= strict ? await ensureBaseImage(host) : host.baseTemplateTag;
   return { image, mounts };
 }
 
@@ -201,7 +199,7 @@ export async function detectTools(
 ): Promise<Map<string, DetectResult>> {
   if (entries.length === 0) return new Map();
   try {
-    const target = await detectTarget(host, box);
+    const target = await detectTarget(host, box, opts.strict === true);
     const result = await host.runtime.runHelper({
       image: target.image,
       user: "1000:1000",

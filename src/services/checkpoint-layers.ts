@@ -7,6 +7,7 @@ import { msg } from "../lib/messages";
 import { type ImageDetails, isRuntimeError } from "../runtime";
 import type { BoxSpec, MountMode } from "../specs/types";
 import type { VolumeRecord } from "../volumes/types";
+import { ensureBaseImage } from "./base-template";
 import type { Box } from "./boxes";
 import { envScrubChanges } from "./images";
 
@@ -110,7 +111,7 @@ export async function discardTaken(
 /** Writes one snapshot back into a volume that already exists, then sets its root to the owner the snapshot recorded. */
 export async function restoreLayer(host: HostCtx, layer: DataLayer, volume: VolumeRecord): Promise<void> {
   await host.checkpointEngine.restore(host, layer.snapshotId, volume.engineName);
-  await host.runtime.setVolumeRootOwner(volume.engineName, layer.owner, host.baseTemplateTag);
+  await host.runtime.setVolumeRootOwner(volume.engineName, layer.owner, await ensureBaseImage(host));
 }
 
 export const slug = (path: string): string => path.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "volume";

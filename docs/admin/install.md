@@ -51,7 +51,7 @@ Use at least 20 random characters. See [Security](security.md).
 
 ### The base template
 
-The release image does not include the base template. Build it once before you create boxes, from the **Templates** tab of **Library** in the console: click **Build base template**. See [Templates](../user-guide/templates.md).
+The release image does not include the base template. MiniBox builds it on a host the first time something needs it there: a box created from it, or a helper that installs tools, prepares volumes or runs an egress proxy. To avoid that wait later, build it ahead from the **Templates** tab of **Library** in the console: click **Build base template**. A host reached through an agent cannot build images, so copy the template to it instead. See [Templates](../user-guide/templates.md).
 
 ### Build the image yourself
 
