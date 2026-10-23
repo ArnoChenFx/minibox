@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml"><img src="https://github.com/ArnoChenFx/minibox/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="许可证：Apache-2.0" /></a>
-  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.3-f9f1e1?logo=bun&amp;logoColor=black" alt="运行时：Bun ≥ 1.4.3" /></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.4-f9f1e1?logo=bun&amp;logoColor=black" alt="运行时：Bun ≥ 1.4.4" /></a>
   <img src="https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&amp;logoColor=white" alt="沙箱：Docker" />
 </p>
 
@@ -87,7 +87,7 @@ docker exec minibox cat /data/access_key
 ## 系统要求
 
 - 装有 Docker Engine 的 Linux 宿主机。MiniBox 从 `/proc` 读取宿主机指标。
-- 若从源码安装，需要 [Bun](https://bun.sh) 1.4.3 或更高版本。
+- 若从源码安装，需要 [Bun](https://bun.sh) 1.4.4 或更高版本。
 
 ## 许可证
 
