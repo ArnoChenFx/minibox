@@ -99,6 +99,16 @@ export function keepsVolume(volume: Pick<VolumeRecord, "checkpoint" | "role">, s
   return !skipTrash && volume.checkpoint && volume.role !== "tools";
 }
 
+/** Purges the copy a volume removal kept, once that removal has not gone through. A purge that fails keeps the copy. */
+export async function discardCopy(host: HostCtx, copy: TrashRef | null, record?: RecordNote): Promise<void> {
+  if (copy === null) return;
+  try {
+    await purgeEntry(host, copy.id, "failed", record);
+  } catch (e) {
+    log.warn("volume.delete_copy_kept", { id: copy.id, error: String(e) });
+  }
+}
+
 /**
  * Keeps a copy of a box's data in the recycle bin before the box is removed. The box's power lock is held by the caller,
  * and the box is left stopped for the removal that follows. A box with no spec has nothing to restore from and keeps

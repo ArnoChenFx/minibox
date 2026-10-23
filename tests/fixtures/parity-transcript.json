@@ -3382,5 +3382,45 @@
     "status": 403,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This credential may not run GET /api/overview.\",\"retryable\":false,\"key\":\"operation_forbidden\",\"params\":{\"op\":\"GET /api/overview\"}}}"
+  },
+  {
+    "step": "create a volume for a batch delete",
+    "method": "POST",
+    "path": "/api/volumes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":{\"id\":\"<volumeId>\",\"name\":\"batch\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":null,\"ownership\":\"independent\",\"ownerBoxId\":null,\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"limits\":{\"softBytes\":null,\"hardBytes\":null,\"action\":\"warn\"},\"usage\":{\"scope\":\"volume\",\"level\":\"unknown\",\"history\":[],\"lastError\":null},\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0,\"engineMissing\":false,\"ownerMissing\":false}}"
+  },
+  {
+    "step": "batch delete without confirm",
+    "method": "POST",
+    "path": "/api/volumes/delete",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.\",\"retryable\":false,\"key\":\"storage_confirm_required\",\"details\":{\"preview\":{\"action\":\"delete_volumes\",\"volumes\":[{\"id\":\"<volumeId>\",\"name\":\"batch\",\"hostId\":\"local\",\"pool\":\"local\",\"role\":null,\"bytes\":null,\"trash\":true,\"blocked\":null},{\"id\":\"nowhere\",\"name\":\"nowhere\",\"hostId\":null,\"pool\":null,\"role\":null,\"bytes\":null,\"trash\":false,\"blocked\":\"not_found\"}]}}}}"
+  },
+  {
+    "step": "batch delete a volume and a missing one",
+    "method": "POST",
+    "path": "/api/volumes/delete",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volumes\":[{\"id\":\"<volumeId>\",\"name\":\"batch\",\"hostId\":\"local\",\"status\":\"removed\",\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"},\"error\":null},{\"id\":\"nowhere\",\"name\":\"nowhere\",\"hostId\":null,\"status\":\"failed\",\"trash\":null,\"error\":{\"message\":\"Volume nowhere was not found.\",\"key\":\"volume_not_found\",\"params\":{\"volume\":\"nowhere\"}}}]}"
+  },
+  {
+    "step": "prune orphaned volumes as a dry run",
+    "method": "POST",
+    "path": "/api/volumes/prune",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"dryRun\":true,\"olderThan\":null,\"volumes\":[],\"hosts\":[{\"hostId\":\"local\",\"name\":\"Local\",\"status\":\"checked\",\"error\":null}]}"
+  },
+  {
+    "step": "prune orphaned volumes",
+    "method": "POST",
+    "path": "/api/volumes/prune",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"dryRun\":false,\"olderThan\":null,\"volumes\":[{\"id\":\"nowhere\",\"name\":\"nowhere\",\"hostId\":null,\"pool\":null,\"role\":null,\"bytes\":null,\"lastUsedAt\":null,\"formerBox\":null,\"keepsCopy\":false,\"status\":\"refused\",\"trash\":null,\"error\":{\"message\":\"Volume nowhere was not found.\",\"key\":\"volume_not_found\",\"params\":{\"volume\":\"nowhere\"}}}],\"hosts\":[{\"hostId\":\"local\",\"name\":\"Local\",\"status\":\"checked\",\"error\":null}]}"
   }
 ]

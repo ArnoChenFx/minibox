@@ -6,7 +6,7 @@ import { assertSecretsStartable } from "../secrets/env";
 import { pushHistory } from "../specs/history";
 import { ttlExpired } from "../specs/lifetime";
 import type { DesiredState, StopReason, BoxEnv } from "../specs/types";
-import { assertVolumesPresent, healSharedToolsMounts, poolsUsed } from "../volumes/engine";
+import { assertVolumesPresent, healSharedToolsMounts, noteUnmounted, poolsUsed } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { assertMountsWithinLimits } from "../volumes/limits";
 import { removeEngine } from "../volumes/provision";
@@ -236,6 +236,11 @@ export async function deleteBox(
     host.pulse.clear(box.boxId);
     const result: DeleteBoxResult = { name: box.name, volumeDeleted: false, trash };
     if (deleteVolume) await removeOwnedVolumes(host, box.boxId, [...mounted, ...replaced], result);
+    noteUnmounted(
+      host,
+      { boxId: box.boxId, name: box.name },
+      mounted.map((volume) => volume.engineName),
+    );
     host.checkpoints.removePendingRollback(box.boxId);
     log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
     return result;

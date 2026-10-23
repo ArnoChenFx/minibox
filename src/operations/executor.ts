@@ -188,6 +188,7 @@ export class Executor {
       notify: ctx.notify ?? this.deps.notify,
       backups: ctx.backups ?? this.deps.backups,
       targets: ctx.targets ?? this.deps.targets,
+      recordActivity: (entry) => this.deps.activity.add(entry),
       boxViews: ctx.boxViews ?? (() => (hosts ? allBoxViews(hosts.list()) : specViews(ctx.host.specs.list()))),
       allHosts: ctx.allHosts ?? (() => (hosts ? hosts.list() : [ctx.host])),
       startTask: (child, childInput, childResolved) => {
@@ -351,7 +352,7 @@ export class Executor {
 
   /** The activity feed hears an async operation when it finishes, not when the 202 is returned. */
   private note(operation: Operation, input: unknown, resolved: unknown, ok: boolean, message?: string): void {
-    if (!operation.activity) return;
+    if (!operation.activity || operation.activity.when?.(input) === false) return;
     this.deps.activity.add({
       action: operation.activity.action(input),
       target: operation.activity.target(input, resolved),
@@ -398,7 +399,7 @@ export class Executor {
     resolved: unknown,
     fn: () => Promise<unknown>,
   ): Promise<unknown> {
-    if (!operation.activity) return fn();
+    if (!operation.activity || operation.activity.when?.(input) === false) return fn();
     return tracked(
       this.deps.activity,
       operation.activity.action(input),

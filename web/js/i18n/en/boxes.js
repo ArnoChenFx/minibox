@@ -61,6 +61,7 @@ export default {
   "act.volume.limits": "Changed volume limits",
   "act.volume.usage": "Measured volume usage",
   "act.volume.recreate": "Recreated volume",
+  "act.volume.prune": "Pruned orphaned volume",
   "act.pool.replace": "Updated storage pools",
   "act.tool.install": "Installed tool",
   "act.tool.upgrade": "Upgraded tool",

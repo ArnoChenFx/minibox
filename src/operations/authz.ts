@@ -53,6 +53,14 @@ export async function assertCanSkipTrash(ctx: OperationContext): Promise<void> {
   throw new AuthorizationDenied(new AppError(403, "forbidden", msg("trash_skip_forbidden")));
 }
 
+/**
+ * Whether the caller may delete one volume. A batch or a prune asks per volume, so a refusal for one volume leaves the
+ * others to be judged on their own.
+ */
+export function canDeleteVolume(ctx: OperationContext, volume: VolumeRef): Promise<boolean> {
+  return allowed(ctx, "volume:delete", volume);
+}
+
 /** Replacing storage pools changes where every new volume goes, so only an administrator may do it. */
 export async function assertCanAdministerPools(ctx: OperationContext): Promise<void> {
   if (await allowed(ctx, "pool:admin")) return;

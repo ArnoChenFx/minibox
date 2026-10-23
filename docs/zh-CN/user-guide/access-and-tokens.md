@@ -75,6 +75,7 @@ Box 内 Agent 使用的是另一种令牌，即自助令牌。所有者在创建
 | `volume:read` | 查看卷 |
 | `volume:write` | 创建卷 |
 | `volume:attach` | 将已有卷挂载到 Box |
+| `volume:delete` | 批量删除卷。令牌只能操作它创建的卷。任何预设都不包含它。清理孤立卷只有所有者可以操作。 |
 | `tool:install` | 安装、升级和卸载工具；把 Box 存为模板、删除模板 |
 | `secret:use` | 让 Box 引用密钥，包括代码仓库克隆使用的密钥 |
 | `trash:skip` | 删除 Box 或卷时不在回收站中保留副本。没有任何预设包含它。 |

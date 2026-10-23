@@ -280,6 +280,7 @@ export function blankRecord(host: HostCtx, input: NewVolume, id: string, now: st
     bytes: null,
     bytesAt: null,
     limits: { ...UNLIMITED },
+    lastMount: null,
   };
 }
 
@@ -328,6 +329,7 @@ export function claimInfo(host: HostCtx, info: VolumeInfo, specs: BoxSpec[], now
     bytes: null,
     bytesAt: null,
     limits: { ...UNLIMITED },
+    lastMount: null,
   };
 }
 
@@ -377,6 +379,27 @@ export function ownedByAnotherBox(host: HostCtx, boxId: string | null, engineNam
   if (!record || record.ownership !== "owned" || record.ownerBoxId === null || record.ownerBoxId === boxId)
     return false;
   return host.specs.read(record.ownerBoxId) !== null;
+}
+
+/**
+ * Notes on each volume record a box has stopped mounting, so a volume left without a box shows where it was last used.
+ * The unmount has already happened when this runs, so a write that fails is logged rather than thrown.
+ */
+export function noteUnmounted(
+  host: HostCtx,
+  box: { boxId: string; name: string },
+  engineNames: Iterable<string>,
+): void {
+  const now = new Date().toISOString();
+  for (const engineName of new Set(engineNames)) {
+    const record = host.volumes.findByEngine(host.host.id, engineName);
+    if (!record) continue;
+    try {
+      host.volumes.write({ ...record, lastMount: { at: now, boxId: box.boxId, boxName: box.name }, updatedAt: now });
+    } catch (e) {
+      log.warn("volume.last_mount_failed", { volume: record.name, error: String(e) });
+    }
+  }
 }
 
 /**

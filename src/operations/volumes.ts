@@ -1,35 +1,51 @@
 import { z } from "zod";
 
 import type { EventTarget } from "../events/types";
+import type { HostCtx } from "../host/registry";
 import { preRebuildSafety } from "../services/safety";
+import { pruneVolumes } from "../services/volume-prune";
+import type { OutcomeError } from "../services/volume-refs";
 import {
   attachVolume,
   confirmationRequired,
   createVolume,
   deleteVolume,
+  deleteVolumes,
   detachVolume,
   getPools,
   getVolume,
   listVolumes,
   measureVolume,
+  planDeletes,
   previewCreateVolume,
   previewDeleteVolume,
+  previewDeleteVolumes,
   previewPools,
   savePools,
   setVolumeLimits,
   type VolumeView,
 } from "../services/volumes";
 import { requireRevision } from "../specs/revision";
-import { refusal, specViews, volumeVisible } from "../tokens/model";
+import { hostAllowed, refusal, specViews, volumeVisible } from "../tokens/model";
+import { ageMs } from "../volumes/age";
 import type { PoolDraft, RoleDraft } from "../volumes/pools";
-import { assertCanAdministerPools, assertCanAttach, assertCanSkipTrash, assertCanWrite } from "./authz";
+import {
+  assertCanAdministerPools,
+  assertCanAttach,
+  assertCanSkipTrash,
+  assertCanWrite,
+  canDeleteVolume,
+} from "./authz";
 import { defineOperation } from "./define";
 import { fromEveryHost, hostOfVolume } from "./routing";
 import { BoxSchema, SafetyCheckpointSchema, TrashRefSchema } from "./schemas";
+import type { OperationContext } from "./types";
 import {
   boxId,
   confirmFlag,
+  dryRunFlag,
   expectedRevision,
+  olderThanOption,
   refreshFlag,
   safetyCheckpointFlag,
   skipTrashFlag,
@@ -285,6 +301,179 @@ const volumeDelete = defineOperation({
   },
 });
 
+/** A batch delete names at most this many volumes, so one request stays bounded. */
+const DELETE_BATCH_MAX = 100;
+/** A prune removes at most this many named volumes in one request. */
+const PRUNE_IDS_MAX = 500;
+
+const OutcomeSchema = z.object({
+  message: z.string(),
+  key: z.string().nullable().meta({ description: "The message key a translated client shows instead of the message." }),
+  params: z.record(z.string(), z.union([z.string(), z.number()])).nullable(),
+});
+
+const DeletedVolumeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  hostId: z.string().nullable(),
+  status: z.enum(["removed", "refused", "failed"]),
+  trash: TrashRefSchema.nullable(),
+  error: OutcomeSchema.nullable(),
+});
+
+const PrunedVolumeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  hostId: z.string().nullable(),
+  pool: z.string().nullable(),
+  role: z.enum(["workspace", "home", "tools", "cache"]).nullable(),
+  bytes: z.number().nullable(),
+  lastUsedAt: z.string().nullable(),
+  formerBox: z.string().nullable(),
+  keepsCopy: z.boolean().meta({
+    description:
+      "Whether removing it keeps a copy of its data in the recycle bin. A cache volume keeps none and cannot be restored.",
+  }),
+  status: z.enum(["candidate", "removed", "refused", "failed"]),
+  trash: TrashRefSchema.nullable(),
+  error: OutcomeSchema.nullable(),
+});
+
+const PrunedHostSchema = z.object({
+  hostId: z.string(),
+  name: z.string(),
+  status: z.enum(["checked", "offline", "failed"]),
+  error: OutcomeSchema.nullable(),
+});
+
+/** The hosts a batch delete or a prune reads: every host, or for a token only the hosts its grant covers. */
+function grantedHosts(ctx: OperationContext): HostCtx[] {
+  const { principal } = ctx;
+  const hosts = ctx.allHosts?.() ?? [ctx.host];
+  if (principal.type !== "token") return [...hosts];
+  return hosts.filter((host) => hostAllowed(principal.grants.hosts, host.host.id));
+}
+
+/** One activity entry for each volume a batch delete or a prune removed, or tried to remove. */
+function recordChange(
+  ctx: OperationContext,
+  action: string,
+  row: { name: string; status: string; error: OutcomeError | null },
+): void {
+  ctx.recordActivity?.({
+    action,
+    target: row.name,
+    ok: row.status === "removed",
+    ...(row.error ? { message: row.error.message } : {}),
+  });
+}
+
+const volumeDeleteBatch = defineOperation({
+  name: "volume.delete.batch",
+  tag: "volumes",
+  summary: "Delete several volumes",
+  kind: "destructive",
+  scope: "volume:delete",
+  async: false,
+  conflicts: true,
+  longSync: true,
+  input: z.object({
+    ids: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(DELETE_BATCH_MAX)
+      .meta({ description: `Volume ids (vol_…) or names, on any host. At most ${DELETE_BATCH_MAX}.` }),
+    confirm: storageConfirmFlag(),
+    skipTrash: skipTrashFlag(),
+  }),
+  output: z.object({
+    volumes: z.array(DeletedVolumeSchema).meta({
+      description: "One result per volume named, in the order the request named them.",
+    }),
+  }),
+  rest: [{ method: "POST", path: "/api/volumes/delete", body: true }],
+  cli: "volume delete",
+  mcp: {
+    toolset: "storage",
+    name: "delete_volumes",
+    description:
+      "Delete several volumes, on any host, in one call. Each is deleted as delete_volume deletes it: its data is kept in the recycle bin unless skipTrash is true, and a volume that a box or container uses is refused. Each volume gets its own result, and one failure does not stop the others. A token deletes only the volumes it created. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+  },
+  precondition: async (ctx, input) => {
+    if (input.skipTrash) await assertCanSkipTrash(ctx);
+  },
+  activity: {
+    action: () => "volume.delete",
+    target: (input) => `${input.ids.length} volumes`,
+    when: (input) => input.confirm,
+  },
+  run: async (ctx, input) => {
+    const plans = await planDeletes(ctx.host, grantedHosts(ctx), input.ids, (volume) => canDeleteVolume(ctx, volume));
+    if (!input.confirm) throw confirmationRequired(previewDeleteVolumes(plans, input.skipTrash));
+    const volumes = await deleteVolumes(plans, {
+      skipTrash: input.skipTrash,
+      createdBy: ctx.principal.id,
+      record: ctx.record,
+    });
+    for (const row of volumes) recordChange(ctx, "volume.delete", row);
+    return { volumes };
+  },
+});
+
+const volumePrune = defineOperation({
+  name: "volume.prune",
+  tag: "volumes",
+  summary: "Prune orphaned volumes",
+  kind: "destructive",
+  scope: "volume:prune",
+  async: false,
+  conflicts: true,
+  longSync: true,
+  input: z.object({
+    dryRun: dryRunFlag(),
+    olderThan: olderThanOption(),
+    ids: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(PRUNE_IDS_MAX)
+      .optional()
+      .meta({
+        description: `The volumes to remove, by id (vol_…) or name: the ids a dry run listed. Required when dryRun is false, and nothing outside the list is removed; a named volume that is no longer an orphan is refused with its reason. With a dry run, it limits the listing to these volumes. At most ${PRUNE_IDS_MAX}.`,
+      }),
+  }),
+  output: z.object({
+    dryRun: z.boolean(),
+    olderThan: z.string().nullable(),
+    volumes: z.array(PrunedVolumeSchema),
+    hosts: z.array(PrunedHostSchema).meta({
+      description: "One entry per host. An offline or failing host is reported, and its volumes are skipped.",
+    }),
+  }),
+  rest: [{ method: "POST", path: "/api/volumes/prune", body: true }],
+  cli: "volume prune",
+  mcp: {
+    toolset: "storage",
+    name: "prune_volumes",
+    description:
+      "Find or remove orphaned volumes: volumes MiniBox made that no box spec mounts or owns and no container mounts. The shared tools volume and MiniBox's internal volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans. To remove them, send dryRun false with ids set to the ids the dry run listed: only those are removed, and one that is no longer an orphan is refused. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, except a cache volume's, which cannot be restored. Only the owner may prune.",
+  },
+  activity: { action: () => "volume.prune", target: () => "volumes", when: (input) => !input.dryRun },
+  run: async (ctx, input) => {
+    const olderThan = input.olderThan ?? null;
+    const result = await pruneVolumes(grantedHosts(ctx), {
+      dryRun: input.dryRun,
+      ids: input.ids ?? null,
+      olderThanMs: olderThan === null ? null : ageMs(olderThan),
+      principal: ctx.principal.id,
+      may: (volume) => canDeleteVolume(ctx, volume),
+      tasks: ctx.tasks,
+      record: ctx.record,
+      onRemoval: (row) => recordChange(ctx, "volume.prune", row),
+    });
+    return { dryRun: input.dryRun, olderThan, ...result };
+  },
+});
+
 const volumeAttach = defineOperation({
   name: "volume.attach",
   tag: "volumes",
@@ -526,6 +715,8 @@ export const volumeOperations = [
   volumeGet,
   volumeCreate,
   volumeDelete,
+  volumeDeleteBatch,
+  volumePrune,
   volumeAttach,
   volumeDetach,
   volumeUsage,

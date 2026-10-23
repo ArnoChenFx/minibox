@@ -80,6 +80,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/tasks/:id/cancel",
   "POST /api/tokens",
   "POST /api/trash/:id/restore",
+  "POST /api/volumes/prune",
   "PUT /api/boxes/:id/checkpoint-schedule",
   "PUT /api/notify/channels/:id",
   "PUT /api/pools",
@@ -302,6 +303,7 @@ describe("fail-closed authorization", () => {
       "trash.purge",
       "trash.restore",
       "volume.limits.set",
+      "volume.prune",
     ]);
     const unruled = OPERATIONS.filter((op) => requiredScopes(op.scope) !== "owner" && !hasAccessRule(op.name));
     expect(unruled.map((op) => op.name)).toEqual([]);
