@@ -1416,6 +1416,8 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
       const base = `${prefix}-template`;
       let second: boxes.Box | undefined;
       try {
+        // Earlier tests leave boxes on the shared tools volume, and the engine will not remove a volume in use.
+        for (const leftover of await boxes.listBoxes(host)) await boxes.deleteBox(host, leftover.id, true);
         const { id: seed } = await runtime.createContainer({
           image: IMAGE,
           name: `${prefix}-tools-seed`,
