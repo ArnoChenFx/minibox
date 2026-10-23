@@ -391,6 +391,7 @@ export default {
   "bd.toolsInstalled": "Installed",
   "bd.toolsNotInstalled": "Not installed",
   "bd.toolsTaskStarted": "Tool task started",
+  "bd.toolsTaskQueued": "Queued. Starts when the tool change ahead of it finishes",
   "bd.toolsTaskFailed": "Tool task failed",
   "bd.customAdd": "Custom tool",
   "bd.customBadge": "Custom",

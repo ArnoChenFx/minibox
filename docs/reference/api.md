@@ -58,7 +58,8 @@ Some operations take a while, such as template builds, checkpoints, exports, imp
 
 - `GET /api/tasks/{id}` shows the task, including its status and result.
 - `GET /api/tasks/{id}/events` streams its progress as server-sent events. It is not in the OpenAPI document.
-- A task has the status `running`, `succeeded`, `failed`, `cancelled` or `interrupted`. After a restart, tasks that were running become `interrupted`.
+- A task has the status `queued`, `running`, `succeeded`, `failed`, `cancelled` or `interrupted`. After a restart, tasks that were queued or running become `interrupted`.
+- Tool installs, upgrades, uninstalls and **Install missing** on one host run one at a time, because they share its tools volume. A request made while another runs gets `202` with a task in `queued`, which starts when the tasks ahead of it end, in the order they were queued. Repeating a request that is still queued or running returns that task's `taskId` instead of starting a second one. `POST /api/tasks/{id}/cancel` takes a queued task out of the queue without running it.
 
 ## Errors
 

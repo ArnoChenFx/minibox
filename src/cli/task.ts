@@ -39,7 +39,7 @@ export async function followTask(
     const fresh = unshownLog(shown, output);
     if (fresh !== "") io.stderr(fresh);
     shown = output;
-    if (task.status !== "running") return task;
+    if (task.status !== "running" && task.status !== "queued") return task;
     await new Promise((resolve) => setTimeout(resolve, TASK_POLL_MS));
   }
 }

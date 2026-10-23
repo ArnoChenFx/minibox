@@ -317,7 +317,7 @@ export const BuildResultSchema = z.object({
   ref: z.string(),
 });
 
-export const TaskStatusSchema = z.enum(["running", "succeeded", "failed", "cancelled", "interrupted"]);
+export const TaskStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "cancelled", "interrupted"]);
 
 export const TaskErrorSchema = z.object({
   code: z.string(),

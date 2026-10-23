@@ -34656,6 +34656,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "queued",
                 "running",
                 "succeeded",
                 "failed",
@@ -34711,6 +34712,7 @@
                           "status": {
                             "type": "string",
                             "enum": [
+                              "queued",
                               "running",
                               "succeeded",
                               "failed",
@@ -34944,6 +34946,7 @@
                     "status": {
                       "type": "string",
                       "enum": [
+                        "queued",
                         "running",
                         "succeeded",
                         "failed",
@@ -35180,6 +35183,7 @@
                     "status": {
                       "type": "string",
                       "enum": [
+                        "queued",
                         "running",
                         "succeeded",
                         "failed",
@@ -41172,6 +41176,7 @@
                     "status": {
                       "type": "string",
                       "enum": [
+                        "queued",
                         "running",
                         "succeeded",
                         "failed",

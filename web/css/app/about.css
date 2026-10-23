@@ -190,3 +190,11 @@
   align-items: center;
   gap: 4px;
 }
+.tool-busy {
+  gap: 6px;
+}
+.tool-busy .spinner {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}

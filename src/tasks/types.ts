@@ -3,13 +3,23 @@ import type { Source } from "../events/types";
 /** Crockford base32, 26 characters. The same shape as an event id. */
 export const TASK_ID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
-/** `running` is in progress. `interrupted` means the process stopped before the task finished. */
-export type TaskStatus = "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
+/**
+ * `queued` waits for another task holding the same exclusive key to end. `running` is in progress. `interrupted` means
+ * the process stopped before the task finished.
+ */
+export type TaskStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
 
-export const TASK_STATUSES: readonly TaskStatus[] = ["running", "succeeded", "failed", "cancelled", "interrupted"];
+export const TASK_STATUSES: readonly TaskStatus[] = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "interrupted",
+];
 
 /** A terminal status does not change again. */
-export const isTerminal = (status: TaskStatus): boolean => status !== "running";
+export const isTerminal = (status: TaskStatus): boolean => status !== "running" && status !== "queued";
 
 /** The object a task is about. Same shape as an event target. */
 export interface TaskTarget {
@@ -102,6 +112,11 @@ export interface NewTask {
   readonly source: Source;
   readonly run?: string;
   readonly parentId?: string;
-  /** While a task with this key is running, another begin with the same key is refused. */
+  /** While a task with this key is running, another begin with the same key is refused, or queued with `queue`. */
   readonly exclusiveKey?: string;
+  /**
+   * Wait in line behind the task that holds `exclusiveKey` instead of being refused. A begin that matches a queued or
+   * running task with the same op, key, subject and target joins that task instead of adding a second.
+   */
+  readonly queue?: boolean;
 }
