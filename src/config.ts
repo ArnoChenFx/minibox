@@ -35,6 +35,8 @@ export interface Config {
   trustProxy: boolean;
   cookieSecure: boolean;
   allowedOrigins: string[];
+  /** Whether the owner access key may call `/mcp`. An agent token always may, within its scopes. */
+  mcpAllowOwnerKey: boolean;
   /** Security profile for new boxes when the request does not choose one. */
   boxProfile: BoxProfile;
   /** Maximum number of processes in each box. */
@@ -207,6 +209,21 @@ function parseContainerRuntime(value: string | undefined): string | null {
   return v;
 }
 
+/**
+ * Whether the owner access key may call `/mcp`. It is accepted in this release, and the next minor release refuses it
+ * by default. Flipping that default is a change to this one constant.
+ */
+export const DEFAULT_MCP_ALLOW_OWNER_KEY: boolean = true;
+
+/** A security switch, so anything other than a clear true or false stops startup rather than picking a side. */
+function parseMcpAllowOwnerKey(value: string | undefined): boolean {
+  const v = nonBlank(value)?.toLowerCase();
+  if (v === undefined) return DEFAULT_MCP_ALLOW_OWNER_KEY;
+  if (["true", "1", "yes", "on"].includes(v)) return true;
+  if (["false", "0", "no", "off"].includes(v)) return false;
+  throw new Error(`MCP_ALLOW_OWNER_KEY: "${value?.trim()}" must be true or false`);
+}
+
 export interface LoadOptions {
   /** Dotenv file to read. It is only ever read, never written. Defaults to `<project>/.env`. */
   envFile?: string;
@@ -248,6 +265,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     trustProxy: isTruthy(get("TRUST_PROXY")),
     cookieSecure: isTruthy(get("COOKIE_SECURE")),
     allowedOrigins: parseOrigins(get("ALLOWED_ORIGINS")),
+    mcpAllowOwnerKey: parseMcpAllowOwnerKey(get("MCP_ALLOW_OWNER_KEY")),
     boxProfile: parseBoxProfile(get("BOX_PROFILE")),
     boxPidsLimit: parseBoxPidsLimit(get("BOX_PIDS_LIMIT")),
     containerRuntime: parseContainerRuntime(get("RUNTIME")),

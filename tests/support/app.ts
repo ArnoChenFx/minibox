@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { type App, type AppDeps, createApp } from "../../src/app";
 import { DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT } from "../../src/box-profile";
-import { type Config, DEFAULT_SESSION_TTL_MS, ROOT } from "../../src/config";
+import { type Config, DEFAULT_MCP_ALLOW_OWNER_KEY, DEFAULT_SESSION_TTL_MS, ROOT } from "../../src/config";
 import type { ExecutorHooks } from "../../src/operations/executor";
 import { FakeRuntime } from "./fake-runtime";
 import { FakeCheckpointEngine } from "./fake-snapshots";
@@ -45,6 +45,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     trustProxy: false,
     cookieSecure: false,
     allowedOrigins: [],
+    mcpAllowOwnerKey: DEFAULT_MCP_ALLOW_OWNER_KEY,
     boxProfile: DEFAULT_BOX_PROFILE,
     boxPidsLimit: DEFAULT_PIDS_LIMIT,
     containerRuntime: null,
