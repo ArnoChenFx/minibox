@@ -35,14 +35,20 @@ export function snapshotPlan(volume) {
  * volume is left out: its staged mount is only a change of path or mode.
  */
 export function stagedMountsByVolume(entries, volumes) {
-  const mountedOn = new Map(volumes.map((volume) => [volume.id, new Set(volume.mounts.map((mount) => mount.boxId))]));
+  // A staged mount names the volume by its engine name, which is its id for a volume MiniBox created and its old name
+  // for one it adopted.
+  const byRef = new Map();
+  for (const volume of volumes) {
+    for (const ref of [volume.name, volume.engineName, volume.id]) if (ref) byRef.set(ref, volume);
+  }
   const out = new Map();
   for (const { box, staged } of entries) {
     for (const mount of staged?.fields?.mounts ?? []) {
-      if (mountedOn.get(mount.volume)?.has(box.boxId)) continue;
-      const list = out.get(mount.volume) ?? [];
+      const volume = byRef.get(mount.volume);
+      if (!volume || volume.mounts.some((item) => item.boxId === box.boxId)) continue;
+      const list = out.get(volume.id) ?? [];
       list.push(box.name);
-      out.set(mount.volume, list);
+      out.set(volume.id, list);
     }
   }
   return out;

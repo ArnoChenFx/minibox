@@ -768,10 +768,15 @@ export function render(view) {
     });
     if (!ok) return;
     const label = `${volume.name} ${dateTime(new Date().toISOString())}`.slice(0, 80);
-    const started = await api(`/api/boxes/${enc(plan.boxId)}/checkpoints`, {
-      method: "POST",
-      body: { label, include: { volumes: plan.include } },
-    });
+    let started;
+    try {
+      started = await api(`/api/boxes/${enc(plan.boxId)}/checkpoints`, {
+        method: "POST",
+        body: { label, include: { volumes: plan.include } },
+      });
+    } catch (e) {
+      return toastError(t("ck.takeFailed"), e);
+    }
     toast(t("ck.takeStarted"), { type: "info", message: boxName });
     const done = await waitTask(started.taskId);
     if (done.status !== "succeeded") return toastError(t("ck.takeFailed"), { message: taskErrorText(done.error) });

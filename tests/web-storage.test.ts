@@ -107,4 +107,18 @@ describe("storage volume rows", () => {
     expect(staged.has("v1")).toBe(false);
     expect(staged.get("v2")).toEqual(["one", "two"]);
   });
+
+  test("a staged mount of an adopted volume, named by its engine name, counts for that volume", () => {
+    const staged = stagedMountsByVolume(
+      [
+        {
+          box: { boxId: "b1", name: "one" },
+          staged: { fields: { mounts: [{ volume: "old-data" }, { volume: "gone" }] } },
+        },
+      ],
+      [{ id: "vol_1", name: "old-data", engineName: "old-data", mounts: [] }],
+    );
+    expect(staged.get("vol_1")).toEqual(["one"]);
+    expect(staged.size).toBe(1);
+  });
 });

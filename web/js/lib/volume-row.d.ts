@@ -35,5 +35,5 @@ export interface StagedEntry {
 
 export declare function stagedMountsByVolume(
   entries: readonly StagedEntry[],
-  volumes: readonly { id: string; mounts: readonly { boxId: string }[] }[],
+  volumes: readonly { id: string; name?: string; engineName?: string; mounts: readonly { boxId: string }[] }[],
 ): Map<string, string[]>;
