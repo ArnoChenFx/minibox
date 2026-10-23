@@ -36,6 +36,7 @@ import {
   NAME_RE,
   reject,
 } from "../lib/validation";
+import { OFFICIAL_NAMES } from "../services/official-templates";
 import type { BoxEnv, BoxMount } from "../specs/types";
 import { STARTUP_COMMAND_MAX_BYTES, startupCommandProblem, startupProblemMessage } from "../startup/command";
 import { isTargetSecretName } from "../targets/types";
@@ -241,6 +242,9 @@ export const templateName = () =>
     ...NAME_META,
     description: "Template name, with the same rules as a box name.",
   });
+
+export const officialName = () =>
+  z.enum(OFFICIAL_NAMES).meta({ description: `Official template name: ${OFFICIAL_NAMES.join(", ")}.` });
 
 export const templateDescription = () =>
   field(checkDescription, {

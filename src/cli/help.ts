@@ -33,6 +33,8 @@ Commands:
                                        Rebuild a template from the source it was built from
   minibox template sync <ref> --host ID [--no-wait] [--json]
                                        Copy a template from a host that holds it to ID, so a box can start there
+  minibox template build-official <name> [--host ID] [--no-wait] [--json]
+                                       Build an official template (node, python, go or minimal) from its shipped Dockerfile
   minibox checkpoint copy <id> --host ID [--no-wait] [--json]
                                        Copy a checkpoint to host ID, so a box can be forked there. Prints the copy's id
   minibox image pull <ref> [--host ID] [--no-wait] [--json]

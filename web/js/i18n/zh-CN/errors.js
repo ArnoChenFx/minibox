@@ -263,7 +263,7 @@ export default {
   "err.host_id_invalid": "宿主机 id 为 1 至 32 个小写字母、数字或连字符，且以字母开头。",
   "err.host_id_reserved": "「{host}」是保留字，不能作为宿主机 id。",
   "err.host_auto_offline": "没有可以放置 Box 的在线宿主机。",
-  "err.host_auto_no_room": "持有该模板且在线的宿主机都没有容纳 {cpus} 核、{memoryMb} MB 内存 Box 的余量。",
+  "err.host_auto_no_room": "持有该模板、或能够构建它的在线宿主机都没有容纳 {cpus} 核、{memoryMb} MB 内存 Box 的余量。",
   "err.host_exists": "已存在 id 为「{host}」的宿主机。",
   "err.host_not_found": "找不到宿主机「{host}」。",
   "err.host_is_local": "不能移除本机宿主机。",

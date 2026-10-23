@@ -1131,6 +1131,26 @@ async function recordScenario(): Promise<Exchange[]> {
     await asBox("the revoked self token is refused", "GET", "/api/self", self);
     await send("delete the self box", "DELETE", `/api/boxes/${selfBox}`);
 
+    await send("list the official templates", "GET", "/api/templates/official");
+    await post("build an official template that does not exist", "/api/templates/official/rust/build", {});
+    await send(
+      "build an official template on a host that is not added",
+      "POST",
+      "/api/templates/official/minimal/build?host=nowhere",
+    );
+    const minimal = await send("build the minimal official template", "POST", "/api/templates/official/minimal/build");
+    await waitTask(base, minimal.json);
+    await send("read the minimal build task", "GET", `/api/tasks/${String(minimal.json?.taskId ?? "")}`);
+    await send("build the minimal official template again", "POST", "/api/templates/official/minimal/build");
+    const pyBox = await post("create a box from an official template nobody has built", "/api/boxes", {
+      name: "pybox",
+      template: "mbtest-template:python",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    const copied = (pyBox.json?.sync as { taskId?: string } | undefined)?.taskId;
+    await send("read the build that the box create waited for", "GET", `/api/tasks/${copied ?? ""}`);
+    await send("list templates after the official builds", "GET", "/api/templates");
     await post("copy a missing checkpoint", "/api/checkpoints/ck_0000000000000000000000000/copy", { host: "lab" });
     await post("copy a checkpoint with no host", "/api/checkpoints/ck_0000000000000000000000000/copy", {});
     const reader = await post("create a token that reads the overview", "/api/tokens", {

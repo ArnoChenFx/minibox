@@ -282,6 +282,14 @@ export const TemplateSchema = ImageSchema.extend({
   buildKind: z.enum(BUILD_KINDS).optional(),
 });
 
+/** An official template as the catalog lists it. `base` is the pinned image its Dockerfile starts from. */
+export const OfficialTemplateSchema = z.object({
+  name: z.string(),
+  ref: z.string(),
+  description: z.string(),
+  base: z.string(),
+});
+
 export const ImagePulledSchema = z.object({
   ref: z.string(),
   id: z.string(),

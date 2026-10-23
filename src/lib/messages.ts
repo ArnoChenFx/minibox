@@ -367,7 +367,8 @@ export const MESSAGES = {
   host_id_invalid: "A host id is 1 to 32 lowercase letters, digits or hyphens, starting with a letter.",
   host_id_reserved: "“{host}” is reserved and cannot be a host id.",
   host_auto_offline: "No host is online to place the box on.",
-  host_auto_no_room: "No online host that holds the template has room for a box of {cpus} CPUs and {memoryMb} MB.",
+  host_auto_no_room:
+    "No online host that holds the template, or can build it, has room for a box of {cpus} CPUs and {memoryMb} MB.",
   host_exists: "A host with the id “{host}” already exists.",
   host_not_found: "Host “{host}” was not found.",
   host_is_local: "The local host cannot be removed.",

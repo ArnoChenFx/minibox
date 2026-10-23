@@ -1042,6 +1042,25 @@ describe("CLI templates, images and box clones", () => {
     }
   });
 
+  test("template build-official builds the official template on a host and prints its ref; a name the host holds is refused", async () => {
+    const env = serve();
+    try {
+      const built = io();
+      expect(
+        await runCli(["template", "build-official", "minimal", "--host", "local"], env.env, built, lines([])),
+      ).toBe(0);
+      expect(built.out).toBe("mbtest-template:minimal\n");
+      expect(env.runtime.builds.at(-1)?.tag).toBe("mbtest-template:minimal");
+
+      const again = io();
+      expect(await runCli(["template", "build-official", "minimal"], env.env, again, lines([]))).toBe(1);
+      expect(again.out).toBe("");
+      expect(again.err).toContain("A template named “minimal” already exists.");
+    } finally {
+      env.stop();
+    }
+  });
+
   test("the new commands take --help, and their usage errors exit 2 without calling the server", async () => {
     const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
     const dir = mkdtempSync(join(tmpdir(), "mb-cli-usage-"));
@@ -1067,6 +1086,8 @@ describe("CLI templates, images and box clones", () => {
       ["template", "create", "tool", "--repo"],
       ["template", "rebuild"],
       ["template", "rebuild", "a", "b"],
+      ["template", "build-official"],
+      ["template", "build-official", "minimal", "extra"],
       ["image"],
       ["image", "pull"],
       ["image", "pull", "alpine", "--color", "red"],
