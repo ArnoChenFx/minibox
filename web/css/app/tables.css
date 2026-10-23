@@ -357,6 +357,8 @@ table.table {
 }
 .table.sck-table {
   table-layout: fixed;
+  /* The fixed columns take 676px: below this the label column would shrink to nothing, so the table scrolls instead. */
+  min-width: 820px;
 }
 .table.sck-table :is(th, td) {
   padding-left: 12px;
@@ -409,4 +411,17 @@ table.table {
   display: flex;
   gap: 2px;
   flex: none;
+}
+/* On a phone the rollback line puts its text on its own row, above the two buttons. */
+@media (max-width: 640px) {
+  .sck-pending {
+    flex-wrap: wrap;
+  }
+  .sck-pending-body {
+    flex-basis: calc(100% - 32px);
+  }
+  .sck-pending-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
 }
